@@ -1,0 +1,202 @@
+{
+  "id": "16972470084297462352",
+  "computeChainId": 9745,
+  "distributionChainId": 9745,
+  "campaignId": "0x39f02667981161ad736753ddb931495b13fca70663cd400b765f6a930098bf46",
+  "type": "MULTILOG_DUTCH",
+  "distributionType": "DUTCH_AUCTION",
+  "subType": 0,
+  "rewardTokenId": "9177007823639843523",
+  "amount": "3744078750000000000000000",
+  "opportunityId": "9766821286796505187",
+  "startTimestamp": 1758801600,
+  "endTimestamp": 1759406400,
+  "dailyRewards": 599052.6000000001,
+  "apr": 5.737616783859388,
+  "creatorAddress": "0xdef1FA4CEfe67365ba046a7C630D6B885298E210",
+  "params": {
+    "url": "",
+    "hooks": [],
+    "duration": 604800,
+    "blacklist": [],
+    "whitelist": [],
+    "forwarders": [],
+    "composedCampaigns": [
+      {
+        "index": 23,
+        "amount": "3744078750000000000000000",
+        "chainId": 9745,
+        "creator": "0xdef1FA4CEfe67365ba046a7C630D6B885298E210",
+        "campaignId": "0x94a805f8e60f39e4549788b5e74b0526872231a8",
+        "rewardToken": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
+        "campaignType": 60,
+        "composedType": "DEFAULT",
+        "endTimestamp": 1759406400,
+        "composedIndex": 1,
+        "mainParameter": "0x5D72a9d9A9510Cd8cBdBA12aC62593A58930a948",
+        "computeChainId": 9745,
+        "startTimestamp": 1758801600,
+        "campaignSubType": 0,
+        "campaignParameters": {
+          "duration": 604800,
+          "blacklist": [],
+          "whitelist": [],
+          "forwarders": [],
+          "targetToken": "0x5D72a9d9A9510Cd8cBdBA12aC62593A58930a948",
+          "underlyingToken": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
+          "symbolRewardToken": "WXPL",
+          "symbolTargetToken": "aPlaUSDT0",
+          "decimalsRewardToken": 18,
+          "decimalsTargetToken": 6,
+          "symbolUnderlyingToken": "USDT0",
+          "computeScoreParameters": {
+            "computeMethod": "genericScore"
+          },
+          "decimalsUnderlyingToken": 6,
+          "distributionMethodParameters": {
+            "distributionMethod": "DUTCH_AUCTION",
+            "distributionSettings": {}
+          }
+        },
+        "composedMultiplier": "1000000000000000000000"
+      },
+      {
+        "index": 23,
+        "amount": "3744078750000000000000000",
+        "chainId": 9745,
+        "creator": "0xdef1FA4CEfe67365ba046a7C630D6B885298E210",
+        "campaignId": "0x00e4682540e2c2fdab4a8e38b67958cd9d8f27a9",
+        "rewardToken": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
+        "campaignType": 61,
+        "composedType": "DEFAULT",
+        "endTimestamp": 1759406400,
+        "composedIndex": 2,
+        "mainParameter": "0xCBBC427b5658672768E11BFDa00879839DB4785F",
+        "computeChainId": 9745,
+        "startTimestamp": 1758801600,
+        "campaignSubType": 0,
+        "campaignParameters": {
+          "duration": 604800,
+          "blacklist": [],
+          "whitelist": [],
+          "forwarders": [],
+          "targetToken": "0xCBBC427b5658672768E11BFDa00879839DB4785F",
+          "underlyingToken": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
+          "symbolRewardToken": "WXPL",
+          "symbolTargetToken": "variableDebtPlaUSDT0",
+          "decimalsRewardToken": 18,
+          "decimalsTargetToken": 6,
+          "symbolUnderlyingToken": "USDT0",
+          "computeScoreParameters": {
+            "computeMethod": "genericScore"
+          },
+          "decimalsUnderlyingToken": 6,
+          "distributionMethodParameters": {
+            "distributionMethod": "DUTCH_AUCTION",
+            "distributionSettings": {}
+          }
+        },
+        "composedMultiplier": "1000000000000000000000"
+      },
+      {
+        "index": 23,
+        "amount": "3744078750000000000000000",
+        "chainId": 9745,
+        "creator": "0xdef1FA4CEfe67365ba046a7C630D6B885298E210",
+        "campaignId": "0x00e4682540e2c2fdab4a8e38b67958cd9d8f27a8",
+        "rewardToken": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
+        "campaignType": 61,
+        "composedType": "MAIN",
+        "endTimestamp": 1759406400,
+        "composedIndex": 3,
+        "mainParameter": "0xCBBC427b5658672768E11BFDa00879839DB4785F",
+        "computeChainId": 9745,
+        "startTimestamp": 1758801600,
+        "campaignSubType": 0,
+        "campaignParameters": {
+          "duration": 604800,
+          "blacklist": [],
+          "whitelist": [],
+          "forwarders": [],
+          "targetToken": "0xEa650893085DAd858150915291645F57164A4257",
+          "underlyingToken": "0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34",
+          "symbolRewardToken": "WXPL",
+          "symbolTargetToken": "variableDebtPlaUSDe",
+          "decimalsRewardToken": 18,
+          "decimalsTargetToken": 18,
+          "symbolUnderlyingToken": "USDe",
+          "computeScoreParameters": {
+            "computeMethod": "genericScore"
+          },
+          "decimalsUnderlyingToken": 18,
+          "distributionMethodParameters": {
+            "distributionMethod": "DUTCH_AUCTION",
+            "distributionSettings": {}
+          }
+        },
+        "composedMultiplier": "1000000000"
+      }
+    ],
+    "symbolRewardToken": "WXPL",
+    "decimalsRewardToken": 18,
+    "computeScoreParameters": {
+      "computeMethod": "genericTimeWeighted",
+      "computeSettings": {}
+    },
+    "composedCampaignsCompute": "1 - 2 - 3",
+    "distributionMethodParameters": {
+      "distributionMethod": "DUTCH_AUCTION",
+      "distributionSettings": {}
+    }
+  },
+  "chain": {
+    "id": 9745,
+    "name": "Plasma",
+    "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
+    "liveCampaigns": 29,
+    "endOfDisputePeriod": 1759212000
+  },
+  "rewardToken": {
+    "id": "9177007823639843523",
+    "name": "Wrapped XPL",
+    "chainId": 9745,
+    "address": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
+    "decimals": 18,
+    "icon": "https://cdn.routescan.io/cdn/chains/plasma/token1.png",
+    "verified": true,
+    "isTest": false,
+    "type": "TOKEN",
+    "isNative": false,
+    "price": 1.12,
+    "updatedAt": 1759222289,
+    "priceSource": "Price Source WXPL",
+    "symbol": "WXPL"
+  },
+  "distributionChain": {
+    "id": 9745,
+    "name": "Plasma",
+    "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
+    "liveCampaigns": 29,
+    "endOfDisputePeriod": 1759212000
+  },
+  "campaignStatus": {
+    "status": "SUCCESS",
+    "error": "",
+    "details": "{}",
+    "delay": 7244,
+    "computedUntil": 1759215600,
+    "processingStarted": 1759217624
+  },
+  "creator": {
+    "address": "0xdef1FA4CEfe67365ba046a7C630D6B885298E210",
+    "tags": [
+      "aave"
+    ],
+    "creatorId": "aave"
+  },
+  "createdAt": "2025-09-25T10:57:44.170Z",
+  "childCampaignIds": [
+    "4862564011028325547"
+  ],
+  "program": null
+}
