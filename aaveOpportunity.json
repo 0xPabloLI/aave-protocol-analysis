@@ -1,337 +1,28 @@
 [
   {
-    "chainId": 9745,
-    "type": "MULTILOG_DUTCH",
-    "identifier": "0xa969ee9f11887c59bef1d23f6515dc9fe2a24a8c",
-    "name": "Lend USDT0 on Aave (net lending)",
-    "description": "Earn rewards by lending USDT0 on Aave on Plasma. This is a net lending opportunity: lending USDT0 & borrowing USDT0 or USDe will make you earn rewards based only on the difference of the two total amounts.",
-    "howToSteps": [
-      "Lend assets on Aave.",
-      "Rewards accumulate automatically."
-    ],
-    "status": "LIVE",
-    "action": "LEND",
-    "tvl": 3810888862.691228,
-    "apr": 5.737616783859388,
-    "maxApr": 0,
-    "dailyRewards": 599052.6000000001,
-    "tags": [
-      "aave",
-      "plasma"
-    ],
-    "liveCampaigns": 1,
-    "id": "9766821286796505187",
-    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb&marketName=proto_plasma_v3",
-    "explorerAddress": "0x5D72a9d9A9510Cd8cBdBA12aC62593A58930a948",
-    "lastCampaignCreatedAt": 1758797864,
-    "tokens": [
-      {
-        "id": "12173189759084764841",
-        "name": "Aave Plasma USDT0",
-        "chainId": 9745,
-        "address": "0x5D72a9d9A9510Cd8cBdBA12aC62593A58930a948",
-        "decimals": 6,
-        "icon": "",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 1,
-        "updatedAt": 1759222286,
-        "priceSource": "Price Source 0x5D72a9d9A9510Cd8cBdBA12aC62593A58930a948",
-        "symbol": "aPlaUSDT0"
-      },
-      {
-        "id": "5737761031982269701",
-        "name": "USDT0",
-        "chainId": 9745,
-        "address": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
-        "decimals": 6,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USD%E2%82%AE0.png",
-        "verified": true,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 1,
-        "updatedAt": 1759222294,
-        "priceSource": "Price Source USDT0",
-        "symbol": "USDT0"
-      }
-    ],
-    "chain": {
-      "id": 9745,
-      "name": "Plasma",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
-      "liveCampaigns": 29,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
-        {
-          "id": "14261454752756197884",
-          "type": "ETHERSCAN",
-          "url": "https://plasmascan.to/",
-          "chainId": 9745
-        }
-      ]
-    },
-    "protocol": {
-      "id": "aave",
-      "tags": [
-        "LENDING",
-        "zksync",
-        "drip",
-        "plasma"
-      ],
-      "name": "Aave",
-      "description": "A decentralized liquidity protocol where users can deposit and borrow",
-      "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
-    },
-    "activePrograms": [],
-    "aprRecord": {
-      "cumulated": 5.737616783859388,
-      "timestamp": "1759222412",
-      "breakdowns": [
-        {
-          "distributionType": "DUTCH_AUCTION",
-          "identifier": "0x39f02667981161ad736753ddb931495b13fca70663cd400b765f6a930098bf46",
-          "type": "CAMPAIGN",
-          "value": 5.737616783859388,
-          "timestamp": "1759222412"
-        }
-      ]
-    },
-    "tvlRecord": {
-      "id": "8146259768538377427",
-      "total": 3810888862.691228,
-      "timestamp": "1759222412",
-      "breakdowns": [
-        {
-          "identifier": "16058088019252379489",
-          "type": "TOKEN",
-          "value": 3807081780.910318
-        }
-      ]
-    },
-    "rewardsRecord": {
-      "id": "8146259768538377427",
-      "total": 599052.6000000001,
-      "timestamp": "1759222412",
-      "breakdowns": [
-        {
-          "token": {
-            "id": "9177007823639843523",
-            "name": "Wrapped XPL",
-            "chainId": 9745,
-            "address": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
-            "decimals": 18,
-            "symbol": "WXPL",
-            "displaySymbol": "",
-            "icon": "https://cdn.routescan.io/cdn/chains/plasma/token1.png",
-            "verified": true,
-            "isTest": false,
-            "type": "TOKEN",
-            "isNative": false,
-            "price": 1.12,
-            "updatedAt": 1759222289,
-            "priceSource": "Price Source WXPL"
-          },
-          "amount": "534868392857142852321280",
-          "value": 599052.6000000001,
-          "distributionType": "DUTCH_AUCTION",
-          "id": "673995cc-0879-4d24-96f5-18604666176e",
-          "timestamp": "1759222412",
-          "campaignId": "16972470084297462352",
-          "dailyRewardsRecordId": "8146259768538377427"
-        }
-      ]
-    }
-  },
-  {
     "chainId": 1,
     "type": "MULTILOG_DUTCH",
-    "identifier": "0x7361e6f04060154e0268a8402b073cbf97e11ae3BORROW_BL",
-    "name": "Lend sUSDe and USDe on Aave (looping required)",
-    "description": "This campaign is part of Ethena’s Liquid Leverage program, with Merkl acting as the distribution partner in collaboration with the ACI. The campaign considers the lowest amount of tokens lent across the sUSDe and USDe markets. It will run indefinitely, with the stated rate expected to remain roughly in line with the sUSDe rate for the foreseeable future. To be eligible, users must also borrow USDC, USDT, or USDS and maintain a health factor below 2.5.",
-    "howToSteps": [
-      "Lend assets on Aave.",
-      "Rewards accumulate automatically."
-    ],
-    "status": "LIVE",
-    "action": "LEND",
-    "tvl": 1053069362.578536,
-    "apr": 6.000000000000001,
-    "maxApr": 0.06,
-    "dailyRewards": 173107.2924786635,
-    "tags": [
-      "ethena-aci"
-    ],
-    "liveCampaigns": 1,
-    "id": "15414954609679045755",
-    "depositUrl": "https://app.aave.com/markets/?marketName=proto_mainnet_v3",
-    "explorerAddress": "0x4F5923Fc5FD4a93352581b38B7cD26943012DECF",
-    "lastCampaignCreatedAt": 1758797864,
-    "tokens": [
-      {
-        "id": "17880246127664837591",
-        "name": "Aave Ethereum USDe",
-        "chainId": 1,
-        "address": "0x4F5923Fc5FD4a93352581b38B7cD26943012DECF",
-        "decimals": 18,
-        "icon": "",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 1.001,
-        "updatedAt": 1759222285,
-        "priceSource": "Price Source aEthUSDe",
-        "symbol": "aEthUSDe"
-      },
-      {
-        "id": "3886227253063060387",
-        "name": "USDe",
-        "chainId": 1,
-        "address": "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
-        "decimals": 18,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDe.png",
-        "verified": true,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 1.001,
-        "updatedAt": 1759222267,
-        "priceSource": "Price Source USDe",
-        "symbol": "USDe"
-      },
-      {
-        "id": "9891486449584741297",
-        "name": "Aave Ethereum sUSDe",
-        "chainId": 1,
-        "address": "0x4579a27aF00A62C0EB156349f31B345c08386419",
-        "decimals": 18,
-        "icon": "",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 1.2,
-        "updatedAt": 1759222286,
-        "priceSource": "Price Source aEthsUSDe",
-        "symbol": "aEthsUSDe"
-      }
-    ],
-    "chain": {
-      "id": 1,
-      "name": "Ethereum",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
-      "liveCampaigns": 125,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
-        {
-          "id": "13265570907942326370",
-          "type": "ETHERSCAN",
-          "url": "https://etherscan.io",
-          "chainId": 1
-        }
-      ]
-    },
-    "protocol": {
-      "id": "aave",
-      "tags": [
-        "LENDING",
-        "zksync",
-        "drip",
-        "plasma"
-      ],
-      "name": "Aave",
-      "description": "A decentralized liquidity protocol where users can deposit and borrow",
-      "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
-    },
-    "activePrograms": [],
-    "aprRecord": {
-      "cumulated": 6.000000000000001,
-      "timestamp": "1759222420",
-      "breakdowns": [
-        {
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "identifier": "0xb269c8cd84cc3158b2f504180ce500e654c638a0eec76d0b803e6b0b3d169441",
-          "type": "CAMPAIGN",
-          "value": 6.000000000000001,
-          "timestamp": "1759222420"
-        }
-      ]
-    },
-    "tvlRecord": {
-      "id": "10629261806913947288",
-      "total": 1053069362.578536,
-      "timestamp": "1759222420",
-      "breakdowns": [
-        {
-          "identifier": "17880246127664837591",
-          "type": "TOKEN",
-          "value": 1052017345.233303
-        }
-      ]
-    },
-    "rewardsRecord": {
-      "id": "10629261806913947288",
-      "total": 173107.2924786635,
-      "timestamp": "1759222420",
-      "breakdowns": [
-        {
-          "token": {
-            "id": "14126760259967828026",
-            "name": "Aave Ethereum USDe (wrapped)",
-            "chainId": 1,
-            "address": "0x3a4de44B29995a3D8Cd02d46243E1563E55bCc8b",
-            "decimals": 18,
-            "symbol": "aEthUSDe",
-            "displaySymbol": "",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDe.png",
-            "verified": true,
-            "isTest": false,
-            "type": "TOKEN",
-            "isNative": false,
-            "price": 1.001,
-            "updatedAt": 1759222285,
-            "priceSource": "Price Source aEthUSDe"
-          },
-          "amount": "172934358120543023005696",
-          "value": 173107.29247866353,
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "9ec3de38-d94c-4721-b9be-d5e6dc650c11",
-          "timestamp": "1759222420",
-          "campaignId": "14698756317326614613",
-          "dailyRewardsRecordId": "10629261806913947288"
-        }
-      ]
-    }
-  },
-  {
-    "chainId": 1,
-    "type": "MULTILOG_DUTCH",
-    "identifier": "0xa3ffd5adb8659870397ba352f6260554c62655a6",
+    "identifier": "0x03264f03de18e61b49c95d9adfcdfd180d2e5d85",
     "name": "Lend RLUSD on Aave Core (net lending)",
-    "description": "Earn rewards by lending RLUSD to Aave Core. This is a net lending opportunity: lending & borrowing the same asset will make you earn rewards based only on the difference of the two amounts.",
+    "description": "Earn rewards by lending RLUSD to Aave Core. This is a net lending opportunity: lending & borrowing the same asset will make you earn rewards based only on the difference of the two amounts",
     "howToSteps": [
       "Lend assets on Aave.",
       "Rewards accumulate automatically."
     ],
     "status": "LIVE",
     "action": "LEND",
-    "tvl": 398174486.1844718,
-    "apr": 9.02699433279302,
-    "maxApr": 0.1,
-    "dailyRewards": 98474.48849999999,
+    "tvl": 599619660.758113,
+    "apr": 5,
+    "maxApr": 0.05,
+    "dailyRewards": 82139.6795559059,
     "tags": [
       "aave"
     ],
     "liveCampaigns": 1,
-    "id": "5927807286157508878",
+    "id": "9585122153395693161",
     "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x8292bb45bf1ee4d140127049757c2e0ff06317ed&marketName=proto_mainnet_v3",
     "explorerAddress": "0xFa82580c16A31D0c1bC632A36F82e83EfEF3Eec0",
-    "lastCampaignCreatedAt": 1758694887,
+    "lastCampaignCreatedAt": 1764597440,
     "tokens": [
       {
         "id": "3202538623482834796",
@@ -339,24 +30,42 @@
         "chainId": 1,
         "address": "0xFa82580c16A31D0c1bC632A36F82e83EfEF3Eec0",
         "decimals": 18,
+        "symbol": "aEthRLUSD",
         "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/aEthRLUSD.svg",
         "verified": true,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
+        "price": 0.999622241697661,
+        "updatedAt": 1765594931,
+        "priceSource": "Price Source 0xFa82580c16A31D0c1bC632A36F82e83EfEF3Eec0",
+        "displaySymbol": "aEthRLUSD"
+      },
+      {
+        "id": "6340883670170224181",
+        "name": "RLUSD",
+        "chainId": 1,
+        "address": "0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD",
+        "decimals": 18,
+        "symbol": "RLUSD",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/RLUSD.svg",
+        "verified": true,
         "isNative": false,
-        "price": 0.999741,
-        "updatedAt": 1759222293,
-        "priceSource": "Price Source aEthRLUSD",
-        "symbol": "aEthRLUSD"
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 0.999622241697661,
+        "updatedAt": 1765594905,
+        "priceSource": "Price Source RLUSD",
+        "displaySymbol": "RLUSD"
       }
     ],
     "chain": {
       "id": 1,
       "name": "Ethereum",
       "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
-      "liveCampaigns": 125,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
+      "liveCampaigns": 104,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
         {
           "id": "13265570907942326370",
           "type": "ETHERSCAN",
@@ -376,38 +85,47 @@
       "name": "Aave",
       "description": "A decentralized liquidity protocol where users can deposit and borrow",
       "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
     },
     "activePrograms": [],
     "aprRecord": {
-      "cumulated": 9.02699433279302,
-      "timestamp": "1759222420",
+      "cumulated": 5,
+      "timestamp": "1765595052",
       "breakdowns": [
         {
           "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "identifier": "0x8529a990e873659c9fe641dec1ec1c08ba2890a6aac8bd798a6f0a1cd884caa4",
+          "identifier": "0xd6a725f4f385c30c640ed9a68c50c3dd789baf3af8884de47055487708902124",
           "type": "CAMPAIGN",
-          "value": 9.02699433279302,
-          "timestamp": "1759222420"
+          "value": 5,
+          "timestamp": "1765595052"
         }
       ]
     },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0xfa82580c16a31d0c1bc632a36f82e83efef3eec0",
+      "description": "Native supply APR for 0xfa82580c16a31d0c1bc632a36f82e83efef3eec0 on Aave on chain 1",
+      "value": 0.839614670888808,
+      "timestamp": "1765594843"
+    },
     "tvlRecord": {
-      "id": "15528018060276597577",
-      "total": 398174486.1844718,
-      "timestamp": "1759222420",
+      "id": "14539806616503115792",
+      "total": 599619660.758113,
+      "timestamp": "1765595052",
       "breakdowns": [
         {
           "identifier": "3202538623482834796",
           "type": "TOKEN",
-          "value": 398277640.0932559
+          "value": 599846257.662072
         }
       ]
     },
     "rewardsRecord": {
-      "id": "15528018060276597577",
-      "total": 98474.48849999999,
-      "timestamp": "1759222420",
+      "id": "14539806616503115792",
+      "total": 82139.6795559059,
+      "timestamp": "1765595052",
       "breakdowns": [
         {
           "token": {
@@ -423,17 +141,202 @@
             "isTest": false,
             "type": "TOKEN",
             "isNative": false,
-            "price": 0.999741,
-            "updatedAt": 1759222293,
+            "price": 0.999622241697661,
+            "updatedAt": 1765594928,
             "priceSource": "Price Source aEthRLUSD"
           },
-          "amount": "98500000000000007340032",
-          "value": 98474.48849999999,
+          "amount": "82170720227681116356608",
+          "value": 82139.6795559059,
           "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "ed5930ba-5d34-4d0f-b3ea-35e8512d7a1d",
-          "timestamp": "1759222420",
-          "campaignId": "9563882382855961930",
-          "dailyRewardsRecordId": "15528018060276597577"
+          "onChainCampaignId": "0xd6a725f4f385c30c640ed9a68c50c3dd789baf3af8884de47055487708902124",
+          "id": "6912c35b-d444-4042-8dbf-59a99eccead8",
+          "timestamp": "1765595052",
+          "campaignId": "3715263407855330689",
+          "dailyRewardsRecordId": "14539806616503115792"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": 1,
+    "type": "MULTILOG_DUTCH",
+    "identifier": "0x8014e0076e5393e62c49a7134070d8fccc922e46BORROW_BL",
+    "name": "Lend sUSDe and USDe on Aave (looping required)",
+    "description": "This campaign is part of Ethena’s Liquid Leverage program, with Merkl acting as the distribution partner in collaboration with the ACI. The campaign considers the lowest amount of tokens lent across the sUSDe and USDe markets. It will run indefinitely, with the stated rate expected to remain roughly in line with the sUSDe rate for the foreseeable future. To be eligible, users must also borrow USDC, USDT, or USDS and maintain a health factor below 2.5.",
+    "howToSteps": [
+      "Lend assets on Aave.",
+      "Rewards accumulate automatically."
+    ],
+    "status": "LIVE",
+    "action": "LEND",
+    "tvl": 635321848.744053,
+    "apr": 4.25,
+    "maxApr": 0.0425,
+    "dailyRewards": 73975.8317030747,
+    "tags": [
+      "ethena-aci"
+    ],
+    "liveCampaigns": 1,
+    "id": "5877322385708089533",
+    "depositUrl": "https://app.aave.com/markets/?marketName=proto_mainnet_v3",
+    "explorerAddress": "0x4F5923Fc5FD4a93352581b38B7cD26943012DECF",
+    "lastCampaignCreatedAt": 1765464327,
+    "tokens": [
+      {
+        "id": "1009687949609727810",
+        "name": "Staked USDe",
+        "chainId": 1,
+        "address": "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
+        "decimals": 18,
+        "symbol": "sUSDe",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/sUSDe.png",
+        "verified": true,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 1.20941029682159,
+        "updatedAt": 1765594904,
+        "priceSource": "Price Source sUSDe",
+        "displaySymbol": "sUSDe"
+      },
+      {
+        "id": "17880246127664837591",
+        "name": "Aave Ethereum USDe",
+        "chainId": 1,
+        "address": "0x4F5923Fc5FD4a93352581b38B7cD26943012DECF",
+        "decimals": 18,
+        "symbol": "aEthUSDe",
+        "icon": "",
+        "verified": false,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 0.999315351353627,
+        "updatedAt": 1765594930,
+        "priceSource": "Price Source aEthUSDe"
+      },
+      {
+        "id": "3886227253063060387",
+        "name": "USDe",
+        "chainId": 1,
+        "address": "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
+        "decimals": 18,
+        "symbol": "USDe",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDe.png",
+        "verified": true,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 0.999315351353627,
+        "updatedAt": 1765594902,
+        "priceSource": "Price Source USDe",
+        "displaySymbol": "USDe"
+      },
+      {
+        "id": "9891486449584741297",
+        "name": "Aave Ethereum sUSDe",
+        "chainId": 1,
+        "address": "0x4579a27aF00A62C0EB156349f31B345c08386419",
+        "decimals": 18,
+        "symbol": "aEthsUSDe",
+        "icon": "",
+        "verified": false,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 1.20941029682159,
+        "updatedAt": 1765594931,
+        "priceSource": "Price Source aEthsUSDe"
+      }
+    ],
+    "chain": {
+      "id": 1,
+      "name": "Ethereum",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
+      "liveCampaigns": 104,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
+        {
+          "id": "13265570907942326370",
+          "type": "ETHERSCAN",
+          "url": "https://etherscan.io",
+          "chainId": 1
+        }
+      ]
+    },
+    "protocol": {
+      "id": "aave",
+      "tags": [
+        "LENDING",
+        "zksync",
+        "drip",
+        "plasma"
+      ],
+      "name": "Aave",
+      "description": "A decentralized liquidity protocol where users can deposit and borrow",
+      "url": "https://app.aave.com/",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
+    },
+    "activePrograms": [],
+    "aprRecord": {
+      "cumulated": 4.25,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "identifier": "0xda19c481bf8d322e7ae870f5b899c3eebaa1a1813432f2040aa55bb3203fd9b0",
+          "type": "CAMPAIGN",
+          "value": 4.25,
+          "timestamp": "1765595052"
+        }
+      ]
+    },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0x4f5923fc5fd4a93352581b38b7cd26943012decf",
+      "description": "Native supply APR for 0x4f5923fc5fd4a93352581b38b7cd26943012decf on Aave on chain 1",
+      "value": 1.51813822572799,
+      "timestamp": "1765594843"
+    },
+    "tvlRecord": {
+      "id": "5689929190402491444",
+      "total": 635321848.744053,
+      "timestamp": "1765595052",
+      "breakdowns": []
+    },
+    "rewardsRecord": {
+      "id": "5689929190402491444",
+      "total": 73975.8317030747,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "token": {
+            "id": "14126760259967828026",
+            "name": "Aave Ethereum USDe (wrapped)",
+            "chainId": 1,
+            "address": "0x3a4de44B29995a3D8Cd02d46243E1563E55bCc8b",
+            "decimals": 18,
+            "symbol": "aEthUSDe",
+            "displaySymbol": "",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDe.png",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 0.999315351353627,
+            "updatedAt": 1765594930,
+            "priceSource": "Price Source aEthUSDe"
+          },
+          "amount": "74026513855581607952384",
+          "value": 73975.8317030747,
+          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "onChainCampaignId": "0xda19c481bf8d322e7ae870f5b899c3eebaa1a1813432f2040aa55bb3203fd9b0",
+          "id": "2ed21a84-5c6c-412d-819f-a27561593205",
+          "timestamp": "1765595052",
+          "campaignId": "12466766230881169090",
+          "dailyRewardsRecordId": "5689929190402491444"
         }
       ]
     }
@@ -441,28 +344,28 @@
   {
     "chainId": 9745,
     "type": "MULTILOG_DUTCH",
-    "identifier": "0xe97e5a845f62fc25ed124438015477e4ce67de2e",
-    "name": "Borrow USDT0 from Aave (net borrow)",
-    "description": "Earn rewards by borrowing USDT0 on Aave on Plasma. This is a net borrowing opportunity: borrowing & lending the same asset will make you earn rewards based only on the difference of the two amounts.",
+    "identifier": "0xff7eb38fce1372e4a2a37fcc47668352da6c406b",
+    "name": "Borrow USDT0 from Aave on Plasma",
+    "description": "Earn rewards by borrowing USDT0 on Aave",
     "howToSteps": [
       "Borrow assets on Aave.",
       "Rewards accumulate automatically."
     ],
     "status": "LIVE",
     "action": "BORROW",
-    "tvl": 2100159408.407002,
-    "apr": 1.156812711584975,
+    "tvl": 1728426605.72841,
+    "apr": 0.984380893941957,
     "maxApr": 0,
-    "dailyRewards": 66561.40000000001,
+    "dailyRewards": 46614.5240345205,
     "tags": [
       "aave",
       "plasma"
     ],
-    "liveCampaigns": 1,
-    "id": "6216592732217613040",
-    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb&marketName=proto_plasma_v3",
+    "liveCampaigns": 2,
+    "id": "14162857367574650843",
+    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
     "explorerAddress": "0xCBBC427b5658672768E11BFDa00879839DB4785F",
-    "lastCampaignCreatedAt": 1758797865,
+    "lastCampaignCreatedAt": 1764807702,
     "tokens": [
       {
         "id": "5737761031982269701",
@@ -470,15 +373,16 @@
         "chainId": 9745,
         "address": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
         "decimals": 6,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USD%E2%82%AE0.png",
+        "symbol": "USDT0",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDT0.svg",
         "verified": true,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 1,
-        "updatedAt": 1759222294,
+        "price": 1.00014601919073,
+        "updatedAt": 1765594927,
         "priceSource": "Price Source USDT0",
-        "symbol": "USDT0"
+        "displaySymbol": "USDT0"
       },
       {
         "id": "8783025235520225863",
@@ -486,24 +390,24 @@
         "chainId": 9745,
         "address": "0xCBBC427b5658672768E11BFDa00879839DB4785F",
         "decimals": 6,
+        "symbol": "variableDebtPlaUSDT0",
         "icon": "",
         "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 1,
-        "updatedAt": 1759222291,
-        "priceSource": "Price Source 0xCBBC427b5658672768E11BFDa00879839DB4785F",
-        "symbol": "variableDebtPlaUSDT0"
+        "price": 1.00014601919073,
+        "updatedAt": 1765594929,
+        "priceSource": "Price Source 0xCBBC427b5658672768E11BFDa00879839DB4785F"
       }
     ],
     "chain": {
       "id": 9745,
       "name": "Plasma",
       "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
-      "liveCampaigns": 29,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
+      "liveCampaigns": 40,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
         {
           "id": "14261454752756197884",
           "type": "ETHERSCAN",
@@ -523,38 +427,225 @@
       "name": "Aave",
       "description": "A decentralized liquidity protocol where users can deposit and borrow",
       "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
     },
     "activePrograms": [],
     "aprRecord": {
-      "cumulated": 1.156812711584975,
-      "timestamp": "1759222412",
+      "cumulated": 0.984380893941957,
+      "timestamp": "1765595078",
       "breakdowns": [
         {
           "distributionType": "DUTCH_AUCTION",
-          "identifier": "0x957463196e7d3820fc58dc7b2aced50e2a6ad6e14d6c21bfdd16133a3ae9302b",
+          "identifier": "0xda39cf756e73ec88c8af8517d5d5caa7b25d71e69a6342c3f6b1218d0fb93745",
           "type": "CAMPAIGN",
-          "value": 1.156812711584975,
-          "timestamp": "1759222412"
+          "value": 0.0565850720455457,
+          "timestamp": "1765595078"
+        },
+        {
+          "distributionType": "DUTCH_AUCTION",
+          "identifier": "0x0658ab625f75e02a1a90567389367a93662a6e71454f2dec75422d382709389a",
+          "type": "CAMPAIGN",
+          "value": 0.927795821896411,
+          "timestamp": "1765595078"
         }
       ]
     },
     "tvlRecord": {
-      "id": "2432603032889553274",
-      "total": 2100159408.407002,
-      "timestamp": "1759222412",
+      "id": "4034966014791205266",
+      "total": 1728426605.72841,
+      "timestamp": "1765595078",
       "breakdowns": [
         {
           "identifier": "8783025235520225863",
           "type": "TOKEN",
-          "value": 2100159408.407002
+          "value": 1728174259.12166
         }
       ]
     },
     "rewardsRecord": {
-      "id": "2432603032889553274",
-      "total": 66561.40000000001,
-      "timestamp": "1759222412",
+      "id": "4034966014791205266",
+      "total": 46614.5240345205,
+      "timestamp": "1765595078",
+      "breakdowns": [
+        {
+          "token": {
+            "id": "6934973107080008747",
+            "name": "USDT0 (wrapped)",
+            "chainId": 9745,
+            "address": "0x9421F7A094c299AF6d4451E68bA7bEC09a8a062D",
+            "decimals": 6,
+            "symbol": "USDT0",
+            "displaySymbol": "",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDT0.svg",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 1.00014601919073,
+            "updatedAt": 1765594927,
+            "priceSource": "Price Source USDT0"
+          },
+          "amount": "43928571428",
+          "value": 43934.9858424498,
+          "distributionType": "DUTCH_AUCTION",
+          "onChainCampaignId": "0x0658ab625f75e02a1a90567389367a93662a6e71454f2dec75422d382709389a",
+          "id": "fb82eb9a-38d1-4664-83a4-b007d72ea0cd",
+          "timestamp": "1765595078",
+          "campaignId": "8550471163398809178",
+          "dailyRewardsRecordId": "4034966014791205266"
+        },
+        {
+          "token": {
+            "id": "9177007823639843523",
+            "name": "Wrapped XPL",
+            "chainId": 9745,
+            "address": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
+            "decimals": 18,
+            "symbol": "WXPL",
+            "displaySymbol": "",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/XPL.png",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 0.147111900741136,
+            "updatedAt": 1765594929,
+            "priceSource": "Price Source WXPL"
+          },
+          "amount": "18214285714285710540800",
+          "value": 2679.53819207069,
+          "distributionType": "DUTCH_AUCTION",
+          "onChainCampaignId": "0xda39cf756e73ec88c8af8517d5d5caa7b25d71e69a6342c3f6b1218d0fb93745",
+          "id": "0b06bb40-e0a0-406d-8239-f2614a65937c",
+          "timestamp": "1765595078",
+          "campaignId": "61805878361666393",
+          "dailyRewardsRecordId": "4034966014791205266"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": 9745,
+    "type": "MULTILOG_DUTCH",
+    "identifier": "0xc5b5dcb9552773c51838559cca8939ed9811a593",
+    "name": "Lend USDT0 on Aave (net lending)",
+    "description": "Earn rewards by lending USDT0 on Aave",
+    "howToSteps": [
+      "Lend assets on Aave.",
+      "Rewards accumulate automatically."
+    ],
+    "status": "LIVE",
+    "action": "LEND",
+    "tvl": 2087921113.87381,
+    "apr": 0.800748194555683,
+    "maxApr": 0,
+    "dailyRewards": 45805.4537618944,
+    "tags": [
+      "aave"
+    ],
+    "liveCampaigns": 1,
+    "id": "8915897169124342183",
+    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34",
+    "explorerAddress": "0x5D72a9d9A9510Cd8cBdBA12aC62593A58930a948",
+    "lastCampaignCreatedAt": 1764807697,
+    "tokens": [
+      {
+        "id": "12173189759084764841",
+        "name": "Aave Plasma USDT0",
+        "chainId": 9745,
+        "address": "0x5D72a9d9A9510Cd8cBdBA12aC62593A58930a948",
+        "decimals": 6,
+        "symbol": "aPlaUSDT0",
+        "icon": "",
+        "verified": false,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 1.00014601919073,
+        "updatedAt": 1765594925,
+        "priceSource": "Price Source 0x5D72a9d9A9510Cd8cBdBA12aC62593A58930a948"
+      },
+      {
+        "id": "7813912985197822726",
+        "name": "USD₮0",
+        "chainId": 57073,
+        "address": "0x0200C29006150606B650577BBE7B6248F58470c1",
+        "decimals": 6,
+        "symbol": "USD₮0",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USD%E2%82%AE.svg",
+        "verified": false,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 1.00014601919073,
+        "updatedAt": 1765594930,
+        "priceSource": "Price Source USD₮0"
+      }
+    ],
+    "chain": {
+      "id": 9745,
+      "name": "Plasma",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
+      "liveCampaigns": 40,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
+        {
+          "id": "14261454752756197884",
+          "type": "ETHERSCAN",
+          "url": "https://plasmascan.to/",
+          "chainId": 9745
+        }
+      ]
+    },
+    "protocol": {
+      "id": "aave",
+      "tags": [
+        "LENDING",
+        "zksync",
+        "drip",
+        "plasma"
+      ],
+      "name": "Aave",
+      "description": "A decentralized liquidity protocol where users can deposit and borrow",
+      "url": "https://app.aave.com/",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
+    },
+    "activePrograms": [],
+    "aprRecord": {
+      "cumulated": 0.800748194555683,
+      "timestamp": "1765595078",
+      "breakdowns": [
+        {
+          "distributionType": "DUTCH_AUCTION",
+          "identifier": "0x46ca3a646e8c4ea72219f7a43d5f8180dd0d94a3eee59f22e6b7654e6feb76ee",
+          "type": "CAMPAIGN",
+          "value": 0.800748194555683,
+          "timestamp": "1765595078"
+        }
+      ]
+    },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0x5d72a9d9a9510cd8cbdba12ac62593a58930a948",
+      "description": "Native supply APR for 0x5d72a9d9a9510cd8cbdba12ac62593a58930a948 on Aave on chain 9745",
+      "value": 3.84928925895852,
+      "timestamp": "1765594843"
+    },
+    "tvlRecord": {
+      "id": "9761685795894291115",
+      "total": 2087921113.87381,
+      "timestamp": "1765595078",
+      "breakdowns": []
+    },
+    "rewardsRecord": {
+      "id": "9761685795894291115",
+      "total": 45805.4537618944,
+      "timestamp": "1765595078",
       "breakdowns": [
         {
           "token": {
@@ -565,22 +656,181 @@
             "decimals": 18,
             "symbol": "WXPL",
             "displaySymbol": "",
-            "icon": "https://cdn.routescan.io/cdn/chains/plasma/token1.png",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/XPL.png",
             "verified": true,
             "isTest": false,
             "type": "TOKEN",
             "isNative": false,
-            "price": 1.12,
-            "updatedAt": 1759222289,
+            "price": 0.147111900741136,
+            "updatedAt": 1765594929,
             "priceSource": "Price Source WXPL"
           },
-          "amount": "59429821428571423375360",
-          "value": 66561.40000000001,
+          "amount": "311364706261904656433152",
+          "value": 45805.4537618944,
           "distributionType": "DUTCH_AUCTION",
-          "id": "0517f9b9-516e-43fc-b2b1-4a8cced66d81",
-          "timestamp": "1759222412",
-          "campaignId": "2044328871336967553",
-          "dailyRewardsRecordId": "2432603032889553274"
+          "onChainCampaignId": "0x46ca3a646e8c4ea72219f7a43d5f8180dd0d94a3eee59f22e6b7654e6feb76ee",
+          "id": "55dff52e-6d15-4bd8-ae45-c7f967bacfbd",
+          "timestamp": "1765595078",
+          "campaignId": "16364793202953999984",
+          "dailyRewardsRecordId": "9761685795894291115"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": 1,
+    "type": "MULTILOG_DUTCH",
+    "identifier": "0x784f4b9b2350ba51bdb175d19f68ecd2841e0e1a",
+    "name": "Lend PYUSD on Aave",
+    "description": "Earn rewards by lending PYUSD to Aave on Ethereum",
+    "howToSteps": [
+      "Lend assets on Aave.",
+      "Rewards accumulate automatically."
+    ],
+    "status": "LIVE",
+    "action": "LEND",
+    "tvl": 399064849.286887,
+    "apr": 3.86108030139559,
+    "maxApr": 0.06,
+    "dailyRewards": 42214.285714,
+    "tags": [
+      "aave"
+    ],
+    "liveCampaigns": 1,
+    "id": "15656226846119298153",
+    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x6c3ea9036406852006290770BEdFcAbA0e23A0e8",
+    "explorerAddress": "0x0C0d01AbF3e6aDfcA0989eBbA9d6e85dD58EaB1E",
+    "lastCampaignCreatedAt": 1764729017,
+    "tokens": [
+      {
+        "id": "12458891416669648626",
+        "name": "PayPal USD",
+        "chainId": 1,
+        "address": "0x6c3ea9036406852006290770BEdFcAbA0e23A0e8",
+        "decimals": 6,
+        "symbol": "PYUSD",
+        "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/tokens/pyusd.png",
+        "verified": true,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 1,
+        "updatedAt": 1765594901,
+        "priceSource": "Price Source PYUSD",
+        "displaySymbol": "PYUSD"
+      },
+      {
+        "id": "646586063857321295",
+        "name": "Aave Ethereum PYUSD",
+        "chainId": 1,
+        "address": "0x0C0d01AbF3e6aDfcA0989eBbA9d6e85dD58EaB1E",
+        "decimals": 6,
+        "symbol": "aEthPYUSD",
+        "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/tokens/pyusd.png",
+        "verified": true,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 1,
+        "updatedAt": 1765594901,
+        "priceSource": "Price Source aEthPYUSD",
+        "displaySymbol": "aEthPYUSD"
+      }
+    ],
+    "chain": {
+      "id": 1,
+      "name": "Ethereum",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
+      "liveCampaigns": 104,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
+        {
+          "id": "13265570907942326370",
+          "type": "ETHERSCAN",
+          "url": "https://etherscan.io",
+          "chainId": 1
+        }
+      ]
+    },
+    "protocol": {
+      "id": "aave",
+      "tags": [
+        "LENDING",
+        "zksync",
+        "drip",
+        "plasma"
+      ],
+      "name": "Aave",
+      "description": "A decentralized liquidity protocol where users can deposit and borrow",
+      "url": "https://app.aave.com/",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
+    },
+    "activePrograms": [],
+    "aprRecord": {
+      "cumulated": 3.86108030139559,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "identifier": "0x92c993636cbb5cf93d5d3109a9fcf05fe4cb7c61debaeb08fb706fd267c14f85",
+          "type": "CAMPAIGN",
+          "value": 3.86108030139559,
+          "timestamp": "1765595052"
+        }
+      ]
+    },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0x0c0d01abf3e6adfca0989ebba9d6e85dd58eab1e",
+      "description": "Native supply APR for 0x0c0d01abf3e6adfca0989ebba9d6e85dd58eab1e on Aave on chain 1",
+      "value": 2.00005663911491,
+      "timestamp": "1765594843"
+    },
+    "tvlRecord": {
+      "id": "2041887550608414663",
+      "total": 399064849.286887,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "identifier": "646586063857321295",
+          "type": "TOKEN",
+          "value": 399064849.286887
+        }
+      ]
+    },
+    "rewardsRecord": {
+      "id": "2041887550608414663",
+      "total": 42214.285714,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "token": {
+            "id": "3664513675029745144",
+            "name": "Aave Ethereum PYUSD (wrapped)",
+            "chainId": 1,
+            "address": "0x0f1eb8D5568E9C1ee72E6dE7B5a9e2837A530019",
+            "decimals": 6,
+            "symbol": "aEthPYUSD",
+            "displaySymbol": "",
+            "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/tokens/pyusd.png",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 1,
+            "updatedAt": 1765594931,
+            "priceSource": "Price Source 0x0f1eb8D5568E9C1ee72E6dE7B5a9e2837A530019"
+          },
+          "amount": "42214285714",
+          "value": 42214.285714,
+          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "onChainCampaignId": "0x92c993636cbb5cf93d5d3109a9fcf05fe4cb7c61debaeb08fb706fd267c14f85",
+          "id": "0e04f8a9-cd39-465e-a868-8244288003a6",
+          "timestamp": "1765595052",
+          "campaignId": "12043615957095386840",
+          "dailyRewardsRecordId": "2041887550608414663"
         }
       ]
     }
@@ -588,26 +838,27 @@
   {
     "chainId": 9745,
     "type": "MULTILOG_DUTCH",
-    "identifier": "0x67264783f1e9a2af8627a235853057a6fc975bd2BORROW_BL",
-    "name": " Lend sUSDe and USDe on Aave (looping required)",
-    "description": "This campaign is part of Ethena’s Liquid Leverage program, with Merkl acting as the distribution partner in collaboration with the ACI. The campaign considers the lowest amount of tokens lent across the sUSDe and USDe markets. It will run indefinitely, with the stated rate expected to remain roughly in line with the sUSDe rate for the foreseeable future. To be eligible, users must borrow on any market other than USDe, and maintain a health factor below 2.5.",
+    "identifier": "0xeefac321069fbecc9d6b2aed2948f6d5503d8633BORROW_BL",
+    "name": "Lend sUSDe and USDe on Aave (looping required)",
+    "description": "This campaign is part of Ethena’s Liquid Leverage program, with Merkl acting as the distribution partner in collaboration with the ACI. The campaign considers the lowest amount of tokens lent across the sUSDe and USDe markets. It will run indefinitely, with the stated rate expected to remain roughly in line with the sUSDe rate for the foreseeable future. To be eligible, users must also borrow USDC, USDT, or USDS and maintain a health factor below 2.5.",
     "howToSteps": [
       "Lend assets on Aave.",
       "Rewards accumulate automatically."
     ],
     "status": "LIVE",
     "action": "LEND",
-    "tvl": 344532904.4714218,
-    "apr": 5.999999999999999,
-    "maxApr": 0.06,
-    "dailyRewards": 56635.54594050769,
+    "tvl": 227430857.590225,
+    "apr": 4.25,
+    "maxApr": 0.0425,
+    "dailyRewards": 26481.6751988618,
     "tags": [
       "ethena-aci"
     ],
     "liveCampaigns": 1,
-    "id": "965308064815838471",
+    "id": "3303167475767527441",
     "depositUrl": "https://app.aave.com/markets/",
-    "lastCampaignCreatedAt": 1759165420,
+    "explorerAddress": "0x7519403E12111ff6b710877Fcd821D0c12CAF43A",
+    "lastCampaignCreatedAt": 1765448493,
     "tokens": [
       {
         "id": "11226507666967847048",
@@ -615,15 +866,15 @@
         "chainId": 9745,
         "address": "0x211Cc4DD073734dA055fbF44a2b4667d5E5fE5d2",
         "decimals": 18,
+        "symbol": "sUSDe",
         "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/sUSDe.png",
         "verified": true,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 1.2,
-        "updatedAt": 1759222264,
-        "priceSource": "Price Source sUSDe",
-        "symbol": "sUSDe"
+        "price": 1.20941029682159,
+        "updatedAt": 1765594904,
+        "priceSource": "Price Source sUSDe"
       },
       {
         "id": "15416915424259961704",
@@ -631,15 +882,15 @@
         "chainId": 9745,
         "address": "0xC1A318493fF07a68fE438Cee60a7AD0d0DBa300E",
         "decimals": 18,
+        "symbol": "aPlasUSDe",
         "icon": "",
         "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": null,
-        "updatedAt": null,
-        "priceSource": null,
-        "symbol": "aPlasUSDe"
+        "price": 1.20941029682159,
+        "updatedAt": 1765594927,
+        "priceSource": "Price Source 0xC1A318493fF07a68fE438Cee60a7AD0d0DBa300E"
       },
       {
         "id": "2121272964818336184",
@@ -647,56 +898,40 @@
         "chainId": 9745,
         "address": "0x7519403E12111ff6b710877Fcd821D0c12CAF43A",
         "decimals": 18,
+        "symbol": "aPlaUSDe",
         "icon": "",
         "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 1.001,
-        "updatedAt": 1759222285,
-        "priceSource": "Price Source 0x7519403E12111ff6b710877Fcd821D0c12CAF43A",
-        "symbol": "aPlaUSDe"
+        "price": 0.999315351353627,
+        "updatedAt": 1765594930,
+        "priceSource": "Price Source 0x7519403E12111ff6b710877Fcd821D0c12CAF43A"
       },
       {
-        "id": "3886227253063060387",
+        "id": "9310019237196849870",
         "name": "USDe",
-        "chainId": 1,
-        "address": "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
+        "chainId": 9745,
+        "address": "0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34",
         "decimals": 18,
+        "symbol": "USDe",
         "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDe.png",
         "verified": true,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 1.001,
-        "updatedAt": 1759222267,
-        "priceSource": "Price Source USDe",
-        "symbol": "USDe"
-      },
-      {
-        "id": "9891486449584741297",
-        "name": "Aave Ethereum sUSDe",
-        "chainId": 1,
-        "address": "0x4579a27aF00A62C0EB156349f31B345c08386419",
-        "decimals": 18,
-        "icon": "",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 1.2,
-        "updatedAt": 1759222286,
-        "priceSource": "Price Source aEthsUSDe",
-        "symbol": "aEthsUSDe"
+        "price": 0.999315351353627,
+        "updatedAt": 1765594928,
+        "priceSource": "Price Source 0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34"
       }
     ],
     "chain": {
       "id": 9745,
       "name": "Plasma",
       "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
-      "liveCampaigns": 29,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
+      "liveCampaigns": 40,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
         {
           "id": "14261454752756197884",
           "type": "ETHERSCAN",
@@ -716,38 +951,41 @@
       "name": "Aave",
       "description": "A decentralized liquidity protocol where users can deposit and borrow",
       "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
     },
     "activePrograms": [],
     "aprRecord": {
-      "cumulated": 5.999999999999999,
-      "timestamp": "1759222412",
+      "cumulated": 4.25,
+      "timestamp": "1765595078",
       "breakdowns": [
         {
           "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "identifier": "0x2ac5106dc22d2b9147c4f213a8b8d0a23d7bf537a4fbbe558940d1be8f2d4220",
+          "identifier": "0xde1c2f851fd0b11837997948d13a710f626d1bbe75bcb0dd8f3a7b9b957e19cd",
           "type": "CAMPAIGN",
-          "value": 5.999999999999999,
-          "timestamp": "1759222412"
+          "value": 4.25,
+          "timestamp": "1765595078"
         }
       ]
+    },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0x7519403e12111ff6b710877fcd821d0c12caf43a",
+      "description": "Native supply APR for 0x7519403e12111ff6b710877fcd821d0c12caf43a on Aave on chain 9745",
+      "value": 1.54463214636779,
+      "timestamp": "1765594843"
     },
     "tvlRecord": {
-      "id": "7921538867355984959",
-      "total": 344532904.4714218,
-      "timestamp": "1759222412",
-      "breakdowns": [
-        {
-          "identifier": "2121272964818336184",
-          "type": "TOKEN",
-          "value": 344188715.7556662
-        }
-      ]
+      "id": "17649415940800912057",
+      "total": 227430857.590225,
+      "timestamp": "1765595078",
+      "breakdowns": []
     },
     "rewardsRecord": {
-      "id": "7921538867355984959",
-      "total": 56635.54594050769,
-      "timestamp": "1759222412",
+      "id": "17649415940800912057",
+      "total": 26481.6751988618,
+      "timestamp": "1765595078",
       "breakdowns": [
         {
           "token": {
@@ -763,17 +1001,810 @@
             "isTest": false,
             "type": "TOKEN",
             "isNative": false,
-            "price": 1.001,
-            "updatedAt": 1759222283,
+            "price": 0.999315351353627,
+            "updatedAt": 1765594926,
             "priceSource": "Price Source 0x63dC02BB25E7BF7Eaa0E42E71D785a388AcD740b"
           },
-          "amount": "56578966973534158454784",
-          "value": 56635.54594050769,
+          "amount": "26499818263565031178240",
+          "value": 26481.6751988618,
           "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "5d9000e6-f6f0-4882-9ea5-4f1d2c885488",
-          "timestamp": "1759222412",
-          "campaignId": "12624058241212668968",
-          "dailyRewardsRecordId": "7921538867355984959"
+          "onChainCampaignId": "0xde1c2f851fd0b11837997948d13a710f626d1bbe75bcb0dd8f3a7b9b957e19cd",
+          "id": "7a8476dc-cb3c-4fd8-a3c0-b80a09937523",
+          "timestamp": "1765595078",
+          "campaignId": "13729453282510857457",
+          "dailyRewardsRecordId": "17649415940800912057"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": 1,
+    "type": "MULTILOG_DUTCH",
+    "identifier": "0xa52b48680b066d23acfcb1ee16ab097e244ad500",
+    "name": "Lend RLUSD on Aave Horizon (net lending)",
+    "description": "Earn rewards by lending RLUSD to Aave on Ethereum",
+    "howToSteps": [
+      "Lend assets on Aave.",
+      "Rewards accumulate automatically."
+    ],
+    "status": "LIVE",
+    "action": "LEND",
+    "tvl": 165037935.25978,
+    "apr": 5,
+    "maxApr": 0.05,
+    "dailyRewards": 22607.9363369562,
+    "tags": [
+      "aave"
+    ],
+    "liveCampaigns": 1,
+    "id": "2052473411633500913",
+    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD",
+    "explorerAddress": "0xE3190143Eb552456F88464662f0c0C4aC67A77eB",
+    "lastCampaignCreatedAt": 1765283956,
+    "tokens": [
+      {
+        "id": "11261881697134983979",
+        "name": "Aave Horizon RWA RLUSD",
+        "chainId": 1,
+        "address": "0xE3190143Eb552456F88464662f0c0C4aC67A77eB",
+        "decimals": 18,
+        "symbol": "aHorRwaRLUSD",
+        "icon": "",
+        "verified": false,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 0.999622241697661,
+        "updatedAt": 1765594928,
+        "priceSource": "Price Source aHorRwaRLUSD"
+      },
+      {
+        "id": "6340883670170224181",
+        "name": "RLUSD",
+        "chainId": 1,
+        "address": "0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD",
+        "decimals": 18,
+        "symbol": "RLUSD",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/RLUSD.svg",
+        "verified": true,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 0.999622241697661,
+        "updatedAt": 1765594905,
+        "priceSource": "Price Source RLUSD",
+        "displaySymbol": "RLUSD"
+      }
+    ],
+    "chain": {
+      "id": 1,
+      "name": "Ethereum",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
+      "liveCampaigns": 104,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
+        {
+          "id": "13265570907942326370",
+          "type": "ETHERSCAN",
+          "url": "https://etherscan.io",
+          "chainId": 1
+        }
+      ]
+    },
+    "protocol": {
+      "id": "aave",
+      "tags": [
+        "LENDING",
+        "zksync",
+        "drip",
+        "plasma"
+      ],
+      "name": "Aave",
+      "description": "A decentralized liquidity protocol where users can deposit and borrow",
+      "url": "https://app.aave.com/",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
+    },
+    "activePrograms": [],
+    "aprRecord": {
+      "cumulated": 5,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "identifier": "0xf525f115ffb38b0de1bd96d4e2e2902eb5f96a50353d6db80459333138e84de1",
+          "type": "CAMPAIGN",
+          "value": 5,
+          "timestamp": "1765595052"
+        }
+      ]
+    },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0xe3190143eb552456f88464662f0c0c4ac67a77eb",
+      "description": "Native supply APR for 0xe3190143eb552456f88464662f0c0c4ac67a77eb on Aave on chain 1",
+      "value": 1.36992112474083,
+      "timestamp": "1765594843"
+    },
+    "tvlRecord": {
+      "id": "194384494800533885",
+      "total": 165037935.25978,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "identifier": "11261881697134983979",
+          "type": "TOKEN",
+          "value": 165100303.270059
+        }
+      ]
+    },
+    "rewardsRecord": {
+      "id": "194384494800533885",
+      "total": 22607.9363369562,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "token": {
+            "id": "10685697343448723888",
+            "name": "Aave Horizon RWA RLUSD (wrapped)",
+            "chainId": 1,
+            "address": "0x503D751B13a71D8e69Db021DF110bfa7aE1dA889",
+            "decimals": 18,
+            "symbol": "aHorRwaRLUSD",
+            "displaySymbol": "",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/aEthRLUSD.svg",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 0.999622241697661,
+            "updatedAt": 1765594928,
+            "priceSource": "Price Source aHorRwaRLUSD"
+          },
+          "amount": "22616479900008110358528",
+          "value": 22607.9363369562,
+          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "onChainCampaignId": "0xf525f115ffb38b0de1bd96d4e2e2902eb5f96a50353d6db80459333138e84de1",
+          "id": "620e217e-34f9-4fbf-872f-d5b35c3711ad",
+          "timestamp": "1765595052",
+          "campaignId": "10397514469574097616",
+          "dailyRewardsRecordId": "194384494800533885"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": 42161,
+    "type": "MULTILOG_DUTCH",
+    "identifier": "0xe0b9e069b0cb46329e7d37e87e635a84ea772fcf",
+    "name": "Lend WETH on Aave (net lending)",
+    "description": "Earn rewards by lending WETH to Aave on Arbitrum. All borrowed ETH will be removed from the eligible balance",
+    "howToSteps": [
+      "Lend assets on Aave.",
+      "Rewards accumulate automatically."
+    ],
+    "status": "LIVE",
+    "action": "LEND",
+    "tvl": 667957071.994766,
+    "apr": 0.644085815504257,
+    "maxApr": 0,
+    "dailyRewards": 11786.8952174681,
+    "tags": [
+      "aave",
+      "drip"
+    ],
+    "liveCampaigns": 1,
+    "id": "1940397393794227909",
+    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    "explorerAddress": "0xe50fA9b3c56FfB159cB0FCA61F5c9D750e8128c8",
+    "lastCampaignCreatedAt": 1765332555,
+    "tokens": [
+      {
+        "id": "13549685192978041260",
+        "name": "Wrapped Ether",
+        "chainId": 42161,
+        "address": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+        "decimals": 18,
+        "symbol": "wETH",
+        "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/tokens/WETH.png",
+        "verified": true,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 3085.25535700465,
+        "updatedAt": 1765594928,
+        "priceSource": "Price Source wETH",
+        "displaySymbol": "wETH"
+      }
+    ],
+    "chain": {
+      "id": 42161,
+      "name": "Arbitrum",
+      "icon": "https://storage.googleapis.com/merkl-static-assets/chains/42161.svg",
+      "liveCampaigns": 22,
+      "endOfDisputePeriod": 1765533600,
+      "explorers": [
+        {
+          "id": "10929345527520936005",
+          "type": "ETHERSCAN",
+          "url": "https://arbiscan.io",
+          "chainId": 42161
+        }
+      ]
+    },
+    "protocol": {
+      "id": "aave",
+      "tags": [
+        "LENDING",
+        "zksync",
+        "drip",
+        "plasma"
+      ],
+      "name": "Aave",
+      "description": "A decentralized liquidity protocol where users can deposit and borrow",
+      "url": "https://app.aave.com/",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
+    },
+    "activePrograms": [
+      {
+        "slug": "drip",
+        "name": "DRIP",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/chains/42161.svg",
+        "id": "a28c862f-72be-4151-baac-962a6e4c4ca9"
+      }
+    ],
+    "aprRecord": {
+      "cumulated": 0.644085815504257,
+      "timestamp": "1765595067",
+      "breakdowns": [
+        {
+          "distributionType": "DUTCH_AUCTION",
+          "identifier": "0x65539f32edcaed580099f64870d120251f57245827cd14ec481bc28b1f48e9b6",
+          "type": "CAMPAIGN",
+          "value": 0.644085815504257,
+          "timestamp": "1765595067"
+        }
+      ]
+    },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0xe50fa9b3c56ffb159cb0fca61f5c9d750e8128c8",
+      "description": "Native supply APR for 0xe50fa9b3c56ffb159cb0fca61f5c9d750e8128c8 on Aave on chain 42161",
+      "value": 1.76203195940697,
+      "timestamp": "1765594843"
+    },
+    "tvlRecord": {
+      "id": "2080948980826920551",
+      "total": 667957071.994766,
+      "timestamp": "1765595067",
+      "breakdowns": [
+        {
+          "identifier": "9926154329894653973",
+          "type": "TOKEN",
+          "value": 216499.768966696
+        }
+      ]
+    },
+    "rewardsRecord": {
+      "id": "2080948980826920551",
+      "total": 11786.8952174681,
+      "timestamp": "1765595067",
+      "breakdowns": [
+        {
+          "token": {
+            "id": "17301190844578321034",
+            "name": "Aave Arbitrum ARB (wrapped)",
+            "chainId": 42161,
+            "address": "0x2c63f9da936624Ac7313b972251D340260A4bF08",
+            "decimals": 18,
+            "symbol": "aArbARB",
+            "displaySymbol": "",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/chains/42161.svg",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 0.206270666305691,
+            "updatedAt": 1765594928,
+            "priceSource": "Price Source aArbARB"
+          },
+          "amount": "57142857142857136865280",
+          "value": 11786.8952174681,
+          "distributionType": "DUTCH_AUCTION",
+          "onChainCampaignId": "0x65539f32edcaed580099f64870d120251f57245827cd14ec481bc28b1f48e9b6",
+          "id": "e24d3127-3cba-4ccb-b926-a82eb748f713",
+          "timestamp": "1765595067",
+          "campaignId": "160665495172804991",
+          "dailyRewardsRecordId": "2080948980826920551"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": 1,
+    "type": "MULTILOG_DUTCH",
+    "identifier": "0xd5dd0dcccee848354b1ed450d9fed6d410a64798",
+    "name": "Borrow USDT using syrupUSDT as collateral on Aave",
+    "description": "Earn rewards by borrowing USDT using syrupUSDT as collateral on Aave on Ethereum",
+    "howToSteps": [
+      "Lend assets on Aave.",
+      "Rewards accumulate automatically."
+    ],
+    "status": "LIVE",
+    "action": "LEND",
+    "tvl": 134948193.517453,
+    "apr": 1.5,
+    "maxApr": 0,
+    "dailyRewards": 5545.81617195012,
+    "tags": [
+      "aave"
+    ],
+    "liveCampaigns": 1,
+    "id": "6827595074906080624",
+    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x356b8d89c1e1239cbbb9de4815c39a1474d5ba7d&marketName=proto_mainnet_v3",
+    "explorerAddress": "0x24Ab03a9a5Bc2C49E5523e8d915A3536ac38B91D",
+    "lastCampaignCreatedAt": 1764769937,
+    "tokens": [
+      {
+        "id": "10038567945439165155",
+        "name": "Aave Ethereum syrupUSDT",
+        "chainId": 1,
+        "address": "0x24Ab03a9a5Bc2C49E5523e8d915A3536ac38B91D",
+        "decimals": 6,
+        "symbol": "aEthsyrupUSDT",
+        "icon": "",
+        "verified": false,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 1.14123800755321,
+        "updatedAt": 1765594926,
+        "priceSource": "Price Source aEthsyrupUSDT",
+        "displaySymbol": "aEthsyrupUSDT"
+      },
+      {
+        "id": "15609197095940067767",
+        "name": "Syrup USDT",
+        "chainId": 1,
+        "address": "0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
+        "decimals": 6,
+        "symbol": "syrupUSDT",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/syrupUSDT.png",
+        "verified": true,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 1.14123800755321,
+        "updatedAt": 1765594906,
+        "priceSource": "Price Source syrupUSDT",
+        "displaySymbol": "syrupUSDT"
+      },
+      {
+        "id": "17219907654548380551",
+        "name": "Aave Ethereum Variable Debt USDT",
+        "chainId": 1,
+        "address": "0x6df1C1E379bC5a00a7b4C6e67A203333772f45A8",
+        "decimals": 6,
+        "symbol": "variableDebtEthUSDT",
+        "icon": "",
+        "verified": false,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "displaySymbol": "variableDebtEthUSDT"
+      }
+    ],
+    "chain": {
+      "id": 1,
+      "name": "Ethereum",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
+      "liveCampaigns": 104,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
+        {
+          "id": "13265570907942326370",
+          "type": "ETHERSCAN",
+          "url": "https://etherscan.io",
+          "chainId": 1
+        }
+      ]
+    },
+    "protocol": {
+      "id": "aave",
+      "tags": [
+        "LENDING",
+        "zksync",
+        "drip",
+        "plasma"
+      ],
+      "name": "Aave",
+      "description": "A decentralized liquidity protocol where users can deposit and borrow",
+      "url": "https://app.aave.com/",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
+    },
+    "activePrograms": [],
+    "aprRecord": {
+      "cumulated": 1.5,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "distributionType": "FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "identifier": "0x9fca1757afcb11866b80054111b454ff22347e7fdba6effdc05d0943d89ba048",
+          "type": "CAMPAIGN",
+          "value": 1.5,
+          "timestamp": "1765595052"
+        }
+      ]
+    },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0x24ab03a9a5bc2c49e5523e8d915a3536ac38b91d",
+      "description": "Native supply APR for 0x24ab03a9a5bc2c49e5523e8d915a3536ac38b91d on Aave on chain 1",
+      "value": 0,
+      "timestamp": "1765594843"
+    },
+    "tvlRecord": {
+      "id": "9028218500777364216",
+      "total": 134948193.517453,
+      "timestamp": "1765595052",
+      "breakdowns": []
+    },
+    "rewardsRecord": {
+      "id": "9028218500777364216",
+      "total": 5545.81617195012,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "token": {
+            "id": "15609197095940067767",
+            "name": "Syrup USDT",
+            "chainId": 1,
+            "address": "0x356B8d89c1e1239Cbbb9dE4815c39A1474d5BA7D",
+            "decimals": 6,
+            "symbol": "syrupUSDT",
+            "displaySymbol": "syrupUSDT",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/syrupUSDT.png",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 1.14123800755321,
+            "updatedAt": 1765594906,
+            "priceSource": "Price Source syrupUSDT"
+          },
+          "amount": "4859473777",
+          "value": 5545.81617102056,
+          "distributionType": "FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "onChainCampaignId": "0x9fca1757afcb11866b80054111b454ff22347e7fdba6effdc05d0943d89ba048",
+          "id": "b93057a5-d29f-4f1e-98a8-2e0850bf8456",
+          "timestamp": "1765595052",
+          "campaignId": "5677995071462322215",
+          "dailyRewardsRecordId": "9028218500777364216"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": 1,
+    "type": "MULTILOG_DUTCH",
+    "identifier": "0x5229d1f5b09b7541d372a1c275f12e2806e26bf9",
+    "name": "Borrow USDC from Aave Horizon market on Ethereum",
+    "description": "Earn rewards by borrowing USDC on Aave",
+    "howToSteps": [
+      "Borrow assets on Aave.",
+      "Rewards accumulate automatically."
+    ],
+    "status": "LIVE",
+    "action": "BORROW",
+    "tvl": 21310433.5267268,
+    "apr": 3.5,
+    "maxApr": 0.035,
+    "dailyRewards": 2043.46622859024,
+    "tags": [
+      "aave"
+    ],
+    "liveCampaigns": 1,
+    "id": "11471138873387414119",
+    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "explorerAddress": "0x4139EcBe83d78ef5EFF0A6eDA6f894Be9D590FC7",
+    "lastCampaignCreatedAt": 1764712455,
+    "tokens": [
+      {
+        "id": "3460729690457214808",
+        "name": "USD Coin",
+        "chainId": 1,
+        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "decimals": 6,
+        "symbol": "USDC",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDC.png",
+        "verified": true,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 0.999863711056876,
+        "updatedAt": 1765594903,
+        "priceSource": "Price Source USDC",
+        "displaySymbol": "USDC"
+      },
+      {
+        "id": "9075542061670106119",
+        "name": "Aave Horizon RWA Variable Debt USDC",
+        "chainId": 1,
+        "address": "0x4139EcBe83d78ef5EFF0A6eDA6f894Be9D590FC7",
+        "decimals": 6,
+        "symbol": "variableDebtHorRwaUSDC",
+        "icon": "",
+        "verified": false,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 0.999863711056876,
+        "updatedAt": 1765594931,
+        "priceSource": "Price Source variableDebtHorRwaUSDC"
+      }
+    ],
+    "chain": {
+      "id": 1,
+      "name": "Ethereum",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
+      "liveCampaigns": 104,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
+        {
+          "id": "13265570907942326370",
+          "type": "ETHERSCAN",
+          "url": "https://etherscan.io",
+          "chainId": 1
+        }
+      ]
+    },
+    "protocol": {
+      "id": "aave",
+      "tags": [
+        "LENDING",
+        "zksync",
+        "drip",
+        "plasma"
+      ],
+      "name": "Aave",
+      "description": "A decentralized liquidity protocol where users can deposit and borrow",
+      "url": "https://app.aave.com/",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
+    },
+    "activePrograms": [],
+    "aprRecord": {
+      "cumulated": 3.5,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "identifier": "0xb786d4f7d0ee8e5ced6b3d964acc05d6d8699e8833485a8a64564b49b882e3e6",
+          "type": "CAMPAIGN",
+          "value": 3.5,
+          "timestamp": "1765595052"
+        }
+      ]
+    },
+    "tvlRecord": {
+      "id": "7126013912673124496",
+      "total": 21310433.5267268,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "identifier": "9075542061670106119",
+          "type": "TOKEN",
+          "value": 21313338.299078
+        }
+      ]
+    },
+    "rewardsRecord": {
+      "id": "7126013912673124496",
+      "total": 2043.46622859024,
+      "timestamp": "1765595052",
+      "breakdowns": [
+        {
+          "token": {
+            "id": "18223636270594819525",
+            "name": "Aave Horizon RWA USDC (wrapped)",
+            "chainId": 1,
+            "address": "0x0AD8ac496B4280bC3B36fb1b6372abdEc8eE7C54",
+            "decimals": 6,
+            "symbol": "aHorRwaUSDC",
+            "displaySymbol": "",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDC.png",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 0.999863711056876,
+            "updatedAt": 1765594929,
+            "priceSource": "Price Source aHorRwaUSDC"
+          },
+          "amount": "2043744768",
+          "value": 2043.46622818555,
+          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "onChainCampaignId": "0xb786d4f7d0ee8e5ced6b3d964acc05d6d8699e8833485a8a64564b49b882e3e6",
+          "id": "f484b76e-a222-49d3-8ff5-a0877e2b6202",
+          "timestamp": "1765595052",
+          "campaignId": "13836669075698917088",
+          "dailyRewardsRecordId": "7126013912673124496"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": 1,
+    "type": "AAVE_NET_BORROWING",
+    "identifier": "d5769609a4b224d1",
+    "name": "Borrow EURC on Aave (net borrowing)",
+    "description": "Earn rewards on your net borrowing position (EURC borrow minus EURC supply) on Aave on Ethereum",
+    "howToSteps": [
+      "Borrow assets on Aave.",
+      "Rewards accumulate automatically."
+    ],
+    "status": "LIVE",
+    "action": "BORROW",
+    "tvl": 29813696.7666168,
+    "apr": 2.5,
+    "maxApr": 0.025,
+    "dailyRewards": 2042.03402511074,
+    "tags": [
+      "aave"
+    ],
+    "liveCampaigns": 1,
+    "id": "12090162070507971207",
+    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c",
+    "explorerAddress": "0x6c82c66622Eb360FC973D3F492f9D8E9eA538b08",
+    "lastCampaignCreatedAt": 1765465643,
+    "tokens": [
+      {
+        "id": "11224292305622382692",
+        "name": "Aave Ethereum EURC",
+        "chainId": 1,
+        "address": "0xAA6e91C82942aeAE040303Bf96c15a6dBcB82CA0",
+        "decimals": 6,
+        "symbol": "aEURC",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/aEthEURC.svg",
+        "verified": true,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 1.17311032143524,
+        "updatedAt": 1765594905,
+        "priceSource": "Price Source aEthEURC",
+        "displaySymbol": "aEURC"
+      },
+      {
+        "id": "12026865349871675473",
+        "name": "Aave Ethereum Variable Debt EURC",
+        "chainId": 1,
+        "address": "0x6c82c66622Eb360FC973D3F492f9D8E9eA538b08",
+        "decimals": 6,
+        "symbol": "variableDebtEthEURC",
+        "icon": "",
+        "verified": false,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 1.17255946041153,
+        "updatedAt": 1765594927,
+        "priceSource": "Price Source variableDebtEthEURC",
+        "displaySymbol": "variableDebtEthEURC"
+      },
+      {
+        "id": "3464200950583167625",
+        "name": "Euro Coin",
+        "chainId": 1,
+        "address": "0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c",
+        "decimals": 6,
+        "symbol": "EURC",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/EURC.svg",
+        "verified": true,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 1.17255946041153,
+        "updatedAt": 1765594929,
+        "priceSource": "Price Source EURC",
+        "displaySymbol": "EURC"
+      }
+    ],
+    "chain": {
+      "id": 1,
+      "name": "Ethereum",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
+      "liveCampaigns": 104,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
+        {
+          "id": "13265570907942326370",
+          "type": "ETHERSCAN",
+          "url": "https://etherscan.io",
+          "chainId": 1
+        }
+      ]
+    },
+    "protocol": {
+      "id": "aave",
+      "tags": [
+        "LENDING",
+        "zksync",
+        "drip",
+        "plasma"
+      ],
+      "name": "Aave",
+      "description": "A decentralized liquidity protocol where users can deposit and borrow",
+      "url": "https://app.aave.com/",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
+    },
+    "activePrograms": [],
+    "aprRecord": {
+      "cumulated": 2.5,
+      "timestamp": "1765595053",
+      "breakdowns": [
+        {
+          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "identifier": "0x62d59d0de2e3c3c09bcc88f530fac1ff213b6be12d66ba703a764cc6e4d2e74f",
+          "type": "CAMPAIGN",
+          "value": 2.5,
+          "timestamp": "1765595053"
+        }
+      ]
+    },
+    "tvlRecord": {
+      "id": "729396657581714783",
+      "total": 29813696.7666168,
+      "timestamp": "1765595053",
+      "breakdowns": [
+        {
+          "identifier": "12026865349871675473",
+          "type": "TOKEN",
+          "value": 25426170.504098
+        }
+      ]
+    },
+    "rewardsRecord": {
+      "id": "729396657581714783",
+      "total": 2042.03402511074,
+      "timestamp": "1765595053",
+      "breakdowns": [
+        {
+          "token": {
+            "id": "6032658829901505600",
+            "name": "EURC (wrapped)",
+            "chainId": 1,
+            "address": "0x3D6d9D386feAba912E5cAD20770b3D797258Ed7d",
+            "decimals": 6,
+            "symbol": "EURC",
+            "displaySymbol": "EURC",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/EURC.svg",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 1.17255946041153,
+            "updatedAt": 1765594929,
+            "priceSource": "Price Source EURC"
+          },
+          "amount": "1741518527",
+          "value": 2042.03402431581,
+          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+          "onChainCampaignId": "0x62d59d0de2e3c3c09bcc88f530fac1ff213b6be12d66ba703a764cc6e4d2e74f",
+          "id": "81e7cd8c-4401-4446-b7e3-f7442fd6aa45",
+          "timestamp": "1765595053",
+          "campaignId": "5161664587933485408",
+          "dailyRewardsRecordId": "729396657581714783"
         }
       ]
     }
@@ -781,28 +1812,28 @@
   {
     "chainId": 9745,
     "type": "MULTILOG_DUTCH",
-    "identifier": "0xd0d8cfae6ec2d4df98cb91c5426f4113637cd101",
+    "identifier": "0x153a3c8615ceeea4f42ec6f867a538fe20fda244",
     "name": "Lend WETH on Aave (net lending)",
-    "description": "Earn rewards by lending WETH on Aave on Plasma. This is a net lending opportunity: lending & borrowing the same asset will make you earn rewards based only on the difference of the two amounts.",
+    "description": "Earn rewards by lending WETH to Aave on Plasma",
     "howToSteps": [
       "Lend assets on Aave.",
       "Rewards accumulate automatically."
     ],
     "status": "LIVE",
     "action": "LEND",
-    "tvl": 497687222.9838362,
-    "apr": 3.115890720888297,
+    "tvl": 91913366.8814777,
+    "apr": 0.510758235911593,
     "maxApr": 0,
-    "dailyRewards": 42486.00000000001,
+    "dailyRewards": 1286.17833219393,
     "tags": [
       "aave",
       "plasma"
     ],
     "liveCampaigns": 1,
-    "id": "14291272010934229152",
-    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x9895d81bb462a195b4922ed7de0e3acd007c32cb&marketName=proto_plasma_v3",
+    "id": "1066843715043513228",
+    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x9895D81bB462A195b4922ED7De0e3ACD007c32CB",
     "explorerAddress": "0xf1aB7f60128924d69f6d7dE25A20eF70bBd43d07",
-    "lastCampaignCreatedAt": 1758797866,
+    "lastCampaignCreatedAt": 1764807700,
     "tokens": [
       {
         "id": "11782607725304456266",
@@ -810,15 +1841,15 @@
         "chainId": 9745,
         "address": "0xf1aB7f60128924d69f6d7dE25A20eF70bBd43d07",
         "decimals": 18,
+        "symbol": "aPlaWETH",
         "icon": "",
         "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 4174.2,
-        "updatedAt": 1759222288,
-        "priceSource": "Price Source 0xf1aB7f60128924d69f6d7dE25A20eF70bBd43d07",
-        "symbol": "aPlaWETH"
+        "price": 3085.25535700465,
+        "updatedAt": 1765594927,
+        "priceSource": "Price Source 0xf1aB7f60128924d69f6d7dE25A20eF70bBd43d07"
       },
       {
         "id": "13641117210526610882",
@@ -826,24 +1857,24 @@
         "chainId": 9745,
         "address": "0x9895D81bB462A195b4922ED7De0e3ACD007c32CB",
         "decimals": 18,
+        "symbol": "WETH",
         "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/WETH.png",
         "verified": true,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 4174.2,
-        "updatedAt": 1759222265,
-        "priceSource": "Price Source WETH",
-        "symbol": "WETH"
+        "price": 3085.25535700465,
+        "updatedAt": 1765594905,
+        "priceSource": "Price Source WETH"
       }
     ],
     "chain": {
       "id": 9745,
       "name": "Plasma",
       "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
-      "liveCampaigns": 29,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
+      "liveCampaigns": 40,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
         {
           "id": "14261454752756197884",
           "type": "ETHERSCAN",
@@ -863,38 +1894,47 @@
       "name": "Aave",
       "description": "A decentralized liquidity protocol where users can deposit and borrow",
       "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
     },
     "activePrograms": [],
     "aprRecord": {
-      "cumulated": 3.115890720888297,
-      "timestamp": "1759222412",
+      "cumulated": 0.510758235911593,
+      "timestamp": "1765595078",
       "breakdowns": [
         {
           "distributionType": "DUTCH_AUCTION",
-          "identifier": "0x01602c7bcecc0b09a8479005fbd76e08049b7c36e1a3d9242db50e879eb760a1",
+          "identifier": "0x2f9a7ce9c84f32c2a8e9a3a1a92a003f1f5ce2f98d3b7905a0cfcd9cd44a8de8",
           "type": "CAMPAIGN",
-          "value": 3.115890720888297,
-          "timestamp": "1759222412"
+          "value": 0.510758235911593,
+          "timestamp": "1765595078"
         }
       ]
     },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0xf1ab7f60128924d69f6d7de25a20ef70bbd43d07",
+      "description": "Native supply APR for 0xf1ab7f60128924d69f6d7de25a20ef70bbd43d07 on Aave on chain 9745",
+      "value": 1.11566616035759,
+      "timestamp": "1765594843"
+    },
     "tvlRecord": {
-      "id": "4836136477080632727",
-      "total": 497687222.9838362,
-      "timestamp": "1759222412",
+      "id": "6993514755202961805",
+      "total": 91913366.8814777,
+      "timestamp": "1765595078",
       "breakdowns": [
         {
           "identifier": "11782607725304456266",
           "type": "TOKEN",
-          "value": 119229.3668209085
+          "value": 29791.1700154093
         }
       ]
     },
     "rewardsRecord": {
-      "id": "4836136477080632727",
-      "total": 42486.00000000001,
-      "timestamp": "1759222412",
+      "id": "6993514755202961805",
+      "total": 1286.17833219393,
+      "timestamp": "1765595078",
       "breakdowns": [
         {
           "token": {
@@ -905,22 +1945,179 @@
             "decimals": 18,
             "symbol": "WXPL",
             "displaySymbol": "",
-            "icon": "https://cdn.routescan.io/cdn/chains/plasma/token1.png",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/XPL.png",
             "verified": true,
             "isTest": false,
             "type": "TOKEN",
             "isNative": false,
-            "price": 1.12,
-            "updatedAt": 1759222289,
+            "price": 0.147111900741136,
+            "updatedAt": 1765594929,
             "priceSource": "Price Source WXPL"
           },
-          "amount": "37933928571428568825856",
-          "value": 42486.00000000001,
+          "amount": "8742857142857143156736",
+          "value": 1286.17833219393,
           "distributionType": "DUTCH_AUCTION",
-          "id": "569dad31-012a-4249-963a-292070f8267f",
-          "timestamp": "1759222412",
-          "campaignId": "4941749232725575305",
-          "dailyRewardsRecordId": "4836136477080632727"
+          "onChainCampaignId": "0x2f9a7ce9c84f32c2a8e9a3a1a92a003f1f5ce2f98d3b7905a0cfcd9cd44a8de8",
+          "id": "11bca19e-4492-48ae-8ad5-e4dfd98c17b4",
+          "timestamp": "1765595078",
+          "campaignId": "18196938144971173471",
+          "dailyRewardsRecordId": "6993514755202961805"
+        }
+      ]
+    }
+  },
+  {
+    "chainId": 9745,
+    "type": "MULTILOG_DUTCH",
+    "identifier": "0xcb7c7e6bf43534e41197f15e67f611ec7bcf7a78",
+    "name": " Lend weETH on Aave (net lending)",
+    "description": "Earn rewards by lending weETH to Aave on Plasma. This is a net lending opportunity: lending & borrowing the same asset will make you earn rewards based only on the difference of the two amounts",
+    "howToSteps": [
+      "Lend assets on Aave.",
+      "Rewards accumulate automatically."
+    ],
+    "status": "LIVE",
+    "action": "LEND",
+    "tvl": 272533439.200878,
+    "apr": 0.110670239871836,
+    "maxApr": 0,
+    "dailyRewards": 826.338112039937,
+    "tags": [
+      "aave"
+    ],
+    "liveCampaigns": 1,
+    "id": "6397446418992379567",
+    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0xa3d68b74bf0528fdd07263c60d6488749044914b&marketName=proto_plasma_v3",
+    "explorerAddress": "0xAf1a7a488c8348b41d5860C04162af7d3D38A996",
+    "lastCampaignCreatedAt": 1765071382,
+    "tokens": [
+      {
+        "id": "14178706307683891785",
+        "name": "Aave Plasma weETH",
+        "chainId": 9745,
+        "address": "0xAf1a7a488c8348b41d5860C04162af7d3D38A996",
+        "decimals": 18,
+        "symbol": "aPlaweETH",
+        "icon": "",
+        "verified": false,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 3341.09097632646,
+        "updatedAt": 1765595079,
+        "priceSource": "Computed Price - 0x1eb9850dab5a7b71e86446f721384d7645ac0eda08a531d69a56a1a879c13eeb on chain 9745"
+      },
+      {
+        "id": "3885658325202072166",
+        "name": "Wrapped eETH",
+        "chainId": 9745,
+        "address": "0xA3D68b74bF0528fdD07263c60d6488749044914b",
+        "decimals": 18,
+        "symbol": "weETH",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/weETH.webp",
+        "verified": true,
+        "isNative": false,
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 3341.09097632646,
+        "updatedAt": 1765594925,
+        "priceSource": "Price Source weETH"
+      }
+    ],
+    "chain": {
+      "id": 9745,
+      "name": "Plasma",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
+      "liveCampaigns": 40,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
+        {
+          "id": "14261454752756197884",
+          "type": "ETHERSCAN",
+          "url": "https://plasmascan.to/",
+          "chainId": 9745
+        }
+      ]
+    },
+    "protocol": {
+      "id": "aave",
+      "tags": [
+        "LENDING",
+        "zksync",
+        "drip",
+        "plasma"
+      ],
+      "name": "Aave",
+      "description": "A decentralized liquidity protocol where users can deposit and borrow",
+      "url": "https://app.aave.com/",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
+    },
+    "activePrograms": [],
+    "aprRecord": {
+      "cumulated": 0.110670239871836,
+      "timestamp": "1765595078",
+      "breakdowns": [
+        {
+          "distributionType": "DUTCH_AUCTION",
+          "identifier": "0x5870e1b9b9ef1c6254d195c620815a9934e234535a27453765da831cf39a331c",
+          "type": "CAMPAIGN",
+          "value": 0.110670239871836,
+          "timestamp": "1765595078"
+        }
+      ]
+    },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0xaf1a7a488c8348b41d5860c04162af7d3d38a996",
+      "description": "Native supply APR for 0xaf1a7a488c8348b41d5860c04162af7d3d38a996 on Aave on chain 9745",
+      "value": 0,
+      "timestamp": "1765594843"
+    },
+    "tvlRecord": {
+      "id": "8155438530886146322",
+      "total": 272533439.200878,
+      "timestamp": "1765595078",
+      "breakdowns": [
+        {
+          "identifier": "14178706307683891785",
+          "type": "TOKEN",
+          "value": 81570.194027021
+        }
+      ]
+    },
+    "rewardsRecord": {
+      "id": "8155438530886146322",
+      "total": 826.338112039937,
+      "timestamp": "1765595078",
+      "breakdowns": [
+        {
+          "token": {
+            "id": "11147101301458094682",
+            "name": "ether.fi governance token",
+            "chainId": 1,
+            "address": "0xFe0c30065B384F05761f15d0CC899D4F9F9Cc0eB",
+            "decimals": 18,
+            "symbol": "ETHFI",
+            "displaySymbol": "ETHFI",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/ETHFI.jpeg",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 0.800789125650146,
+            "updatedAt": 1765594903,
+            "priceSource": "Price Source ETHFI"
+          },
+          "amount": "1031904761904761929728",
+          "value": 826.338112039937,
+          "distributionType": "DUTCH_AUCTION",
+          "onChainCampaignId": "0x5870e1b9b9ef1c6254d195c620815a9934e234535a27453765da831cf39a331c",
+          "id": "8b5c7848-238a-49b5-8db5-8da6309628e5",
+          "timestamp": "1765595078",
+          "campaignId": "7477281772290040159",
+          "dailyRewardsRecordId": "8155438530886146322"
         }
       ]
     }
@@ -937,10 +2134,10 @@
     ],
     "status": "LIVE",
     "action": "LEND",
-    "tvl": 179723600,
-    "apr": 1.575975553572263,
+    "tvl": 272533439.200878,
+    "apr": 0.0717733165496011,
     "maxApr": 0,
-    "dailyRewards": 7760.000000000001,
+    "dailyRewards": 535.907638414139,
     "tags": [
       "aave",
       "plasma"
@@ -949,7 +2146,7 @@
     "id": "10393099370774181763",
     "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0xa3d68b74bf0528fdd07263c60d6488749044914b&marketName=proto_plasma_v3",
     "explorerAddress": "0xAf1a7a488c8348b41d5860C04162af7d3D38A996",
-    "lastCampaignCreatedAt": 1758797867,
+    "lastCampaignCreatedAt": 1764807701,
     "tokens": [
       {
         "id": "14178706307683891785",
@@ -957,15 +2154,15 @@
         "chainId": 9745,
         "address": "0xAf1a7a488c8348b41d5860C04162af7d3D38A996",
         "decimals": 18,
+        "symbol": "aPlaweETH",
         "icon": "",
         "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 4493.09,
-        "updatedAt": 1759222413,
-        "priceSource": "Computed Price - 0x7ea6f3684438972d46fa9e600e5d93ff760cc905b7cd5803260167c00fd37ea8 on chain 9745",
-        "symbol": "aPlaweETH"
+        "price": 3341.09097632646,
+        "updatedAt": 1765595079,
+        "priceSource": "Computed Price - 0x1eb9850dab5a7b71e86446f721384d7645ac0eda08a531d69a56a1a879c13eeb on chain 9745"
       },
       {
         "id": "3885658325202072166",
@@ -973,24 +2170,24 @@
         "chainId": 9745,
         "address": "0xA3D68b74bF0528fdD07263c60d6488749044914b",
         "decimals": 18,
+        "symbol": "weETH",
         "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/weETH.webp",
         "verified": true,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 4493.09,
-        "updatedAt": 1759222292,
-        "priceSource": "Price Source weETH",
-        "symbol": "weETH"
+        "price": 3341.09097632646,
+        "updatedAt": 1765594925,
+        "priceSource": "Price Source weETH"
       }
     ],
     "chain": {
       "id": 9745,
       "name": "Plasma",
       "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
-      "liveCampaigns": 29,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
+      "liveCampaigns": 40,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
         {
           "id": "14261454752756197884",
           "type": "ETHERSCAN",
@@ -1010,38 +2207,47 @@
       "name": "Aave",
       "description": "A decentralized liquidity protocol where users can deposit and borrow",
       "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
     },
     "activePrograms": [],
     "aprRecord": {
-      "cumulated": 1.575975553572263,
-      "timestamp": "1759222413",
+      "cumulated": 0.0717733165496011,
+      "timestamp": "1765595079",
       "breakdowns": [
         {
           "distributionType": "DUTCH_AUCTION",
-          "identifier": "0x7ea6f3684438972d46fa9e600e5d93ff760cc905b7cd5803260167c00fd37ea8",
+          "identifier": "0x1eb9850dab5a7b71e86446f721384d7645ac0eda08a531d69a56a1a879c13eeb",
           "type": "CAMPAIGN",
-          "value": 1.575975553572263,
-          "timestamp": "1759222413"
+          "value": 0.0717733165496011,
+          "timestamp": "1765595079"
         }
       ]
     },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0xaf1a7a488c8348b41d5860c04162af7d3d38a996",
+      "description": "Native supply APR for 0xaf1a7a488c8348b41d5860c04162af7d3d38a996 on Aave on chain 9745",
+      "value": 0,
+      "timestamp": "1765594843"
+    },
     "tvlRecord": {
-      "id": "6634045112137460489",
-      "total": 179723600,
-      "timestamp": "1759222413",
+      "id": "6049133103005748611",
+      "total": 272533439.200878,
+      "timestamp": "1765595079",
       "breakdowns": [
         {
           "identifier": "14178706307683891785",
           "type": "TOKEN",
-          "value": 40000
+          "value": 81570.194027021
         }
       ]
     },
     "rewardsRecord": {
-      "id": "6634045112137460489",
-      "total": 7760.000000000001,
-      "timestamp": "1759222413",
+      "id": "6049133103005748611",
+      "total": 535.907638414139,
+      "timestamp": "1765595079",
       "breakdowns": [
         {
           "token": {
@@ -1052,310 +2258,23 @@
             "decimals": 18,
             "symbol": "WXPL",
             "displaySymbol": "",
-            "icon": "https://cdn.routescan.io/cdn/chains/plasma/token1.png",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/XPL.png",
             "verified": true,
             "isTest": false,
             "type": "TOKEN",
             "isNative": false,
-            "price": 1.12,
-            "updatedAt": 1759222289,
+            "price": 0.147111900741136,
+            "updatedAt": 1765594929,
             "priceSource": "Price Source WXPL"
           },
-          "amount": "6928571428571428421632",
-          "value": 7760.000000000001,
+          "amount": "3642857142857143156736",
+          "value": 535.907638414139,
           "distributionType": "DUTCH_AUCTION",
-          "id": "9e99eaa4-bad0-48b6-8991-4d210a04766a",
-          "timestamp": "1759222413",
-          "campaignId": "7836484784708183357",
-          "dailyRewardsRecordId": "6634045112137460489"
-        }
-      ]
-    }
-  },
-  {
-    "chainId": 1,
-    "type": "MULTILOG_DUTCH",
-    "identifier": "0x6c1cf9a60dc6683726a1974ac00c234167224a54",
-    "name": "Lend RLUSD on Aave Horizon (net lending)",
-    "description": "Earn rewards by lending RLUSD to Aave Horizon. This is a net lending opportunity: lending & borrowing the same asset will make you earn rewards based only on the difference of the two amounts.",
-    "howToSteps": [
-      "Lend assets on Aave.",
-      "Rewards accumulate automatically."
-    ],
-    "status": "LIVE",
-    "action": "LEND",
-    "tvl": 14750585.72010315,
-    "apr": 8.702605583779357,
-    "maxApr": 0.15,
-    "dailyRewards": 3516.946017857143,
-    "tags": [],
-    "liveCampaigns": 1,
-    "id": "13244723471854175442",
-    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x8292bb45bf1ee4d140127049757c2e0ff06317ed&marketName=proto_horizon_v3",
-    "explorerAddress": "0xE3190143Eb552456F88464662f0c0C4aC67A77eB",
-    "lastCampaignCreatedAt": 1758030520,
-    "tokens": [
-      {
-        "id": "11261881697134983979",
-        "name": "Aave Horizon RWA RLUSD",
-        "chainId": 1,
-        "address": "0xE3190143Eb552456F88464662f0c0C4aC67A77eB",
-        "decimals": 18,
-        "icon": "",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 0.999741,
-        "updatedAt": 1759222292,
-        "priceSource": "Price Source aHorRwaRLUSD",
-        "symbol": "aHorRwaRLUSD"
-      },
-      {
-        "id": "6340883670170224181",
-        "name": "RLUSD",
-        "chainId": 1,
-        "address": "0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD",
-        "decimals": 18,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/RLUSD.svg",
-        "verified": true,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 0.999741,
-        "updatedAt": 1759222270,
-        "priceSource": "Price Source RLUSD",
-        "symbol": "RLUSD"
-      }
-    ],
-    "chain": {
-      "id": 1,
-      "name": "Ethereum",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
-      "liveCampaigns": 125,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
-        {
-          "id": "13265570907942326370",
-          "type": "ETHERSCAN",
-          "url": "https://etherscan.io",
-          "chainId": 1
-        }
-      ]
-    },
-    "protocol": {
-      "id": "aave",
-      "tags": [
-        "LENDING",
-        "zksync",
-        "drip",
-        "plasma"
-      ],
-      "name": "Aave",
-      "description": "A decentralized liquidity protocol where users can deposit and borrow",
-      "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
-    },
-    "activePrograms": [],
-    "aprRecord": {
-      "cumulated": 8.702605583779357,
-      "timestamp": "1759222420",
-      "breakdowns": [
-        {
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "identifier": "0xa6f104147affd699373a20d9f2eec43c88c96734a7ab04119edf8484394e6cb9",
-          "type": "CAMPAIGN",
-          "value": 8.702605583779357,
-          "timestamp": "1759222420"
-        }
-      ]
-    },
-    "tvlRecord": {
-      "id": "18132047036235053085",
-      "total": 14750585.72010315,
-      "timestamp": "1759222420",
-      "breakdowns": [
-        {
-          "identifier": "11261881697134983979",
-          "type": "TOKEN",
-          "value": 14754407.11154504
-        }
-      ]
-    },
-    "rewardsRecord": {
-      "id": "18132047036235053085",
-      "total": 3516.946017857143,
-      "timestamp": "1759222420",
-      "breakdowns": [
-        {
-          "token": {
-            "id": "10685697343448723888",
-            "name": "Aave Horizon RWA RLUSD (wrapped)",
-            "chainId": 1,
-            "address": "0x503D751B13a71D8e69Db021DF110bfa7aE1dA889",
-            "decimals": 18,
-            "symbol": "aHorRwaRLUSD",
-            "displaySymbol": "",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/aEthRLUSD.svg",
-            "verified": true,
-            "isTest": false,
-            "type": "TOKEN",
-            "isNative": false,
-            "price": 0.999741,
-            "updatedAt": 1759222292,
-            "priceSource": "Price Source aHorRwaRLUSD"
-          },
-          "amount": "3517857142857142894592",
-          "value": 3516.946017857143,
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "226feeff-e784-4736-838b-47ba7869dac8",
-          "timestamp": "1759222420",
-          "campaignId": "5578943079079056681",
-          "dailyRewardsRecordId": "18132047036235053085"
-        }
-      ]
-    }
-  },
-  {
-    "chainId": 1,
-    "type": "AAVE_BORROW",
-    "identifier": "0x4139EcBe83d78ef5EFF0A6eDA6f894Be9D590FC7",
-    "name": "Borrow USDC on Aave Horizon",
-    "description": "Earn rewards by borrowing USDC on Aave Horizon",
-    "howToSteps": [
-      "Borrow assets on Aave.",
-      "Rewards accumulate automatically."
-    ],
-    "status": "LIVE",
-    "action": "BORROW",
-    "tvl": 16042667.6248395,
-    "apr": 3.5,
-    "maxApr": 0.035,
-    "dailyRewards": 1538.337991422966,
-    "tags": [],
-    "liveCampaigns": 1,
-    "id": "12946343134549345232",
-    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48&marketName=proto_horizon_v3",
-    "explorerAddress": "0x4139EcBe83d78ef5EFF0A6eDA6f894Be9D590FC7",
-    "lastCampaignCreatedAt": 1758618576,
-    "tokens": [
-      {
-        "id": "3460729690457214808",
-        "name": "USD Coin",
-        "chainId": 1,
-        "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-        "decimals": 6,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDC.png",
-        "verified": true,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 0.999704,
-        "updatedAt": 1759222267,
-        "priceSource": "Price Source USDC",
-        "symbol": "USDC"
-      },
-      {
-        "id": "9075542061670106119",
-        "name": "Aave Horizon RWA Variable Debt USDC",
-        "chainId": 1,
-        "address": "0x4139EcBe83d78ef5EFF0A6eDA6f894Be9D590FC7",
-        "decimals": 6,
-        "icon": "",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 0.999704,
-        "updatedAt": 1759222413,
-        "priceSource": "Computed Price - 0x83f65033ed7ccff04bb44765baad4d6fb750fa2527e89578c241a0f974da1b44 on chain 1",
-        "symbol": "variableDebtHorRwaUSDC"
-      }
-    ],
-    "chain": {
-      "id": 1,
-      "name": "Ethereum",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
-      "liveCampaigns": 125,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
-        {
-          "id": "13265570907942326370",
-          "type": "ETHERSCAN",
-          "url": "https://etherscan.io",
-          "chainId": 1
-        }
-      ]
-    },
-    "protocol": {
-      "id": "aave",
-      "tags": [
-        "LENDING",
-        "zksync",
-        "drip",
-        "plasma"
-      ],
-      "name": "Aave",
-      "description": "A decentralized liquidity protocol where users can deposit and borrow",
-      "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
-    },
-    "activePrograms": [],
-    "aprRecord": {
-      "cumulated": 3.5,
-      "timestamp": "1759222413",
-      "breakdowns": [
-        {
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "identifier": "0x83f65033ed7ccff04bb44765baad4d6fb750fa2527e89578c241a0f974da1b44",
-          "type": "CAMPAIGN",
-          "value": 3.5,
-          "timestamp": "1759222413"
-        }
-      ]
-    },
-    "tvlRecord": {
-      "id": "7148835723949171134",
-      "total": 16042667.6248395,
-      "timestamp": "1759222413",
-      "breakdowns": [
-        {
-          "identifier": "9075542061670106119",
-          "type": "TOKEN",
-          "value": 16047417.660467
-        }
-      ]
-    },
-    "rewardsRecord": {
-      "id": "7148835723949171134",
-      "total": 1538.337991422966,
-      "timestamp": "1759222413",
-      "breakdowns": [
-        {
-          "token": {
-            "id": "18223636270594819525",
-            "name": "Aave Horizon RWA USDC (wrapped)",
-            "chainId": 1,
-            "address": "0x0AD8ac496B4280bC3B36fb1b6372abdEc8eE7C54",
-            "decimals": 6,
-            "symbol": "aHorRwaUSDC",
-            "displaySymbol": "",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDC.png",
-            "verified": true,
-            "isTest": false,
-            "type": "TOKEN",
-            "isNative": false,
-            "price": 0.999704,
-            "updatedAt": 1759222290,
-            "priceSource": "Price Source aHorRwaUSDC"
-          },
-          "amount": "1538793474",
-          "value": 1538.337991131696,
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "3e4be628-ee41-4443-9072-9c8ebe790bfe",
-          "timestamp": "1759222413",
-          "campaignId": "17824953838545081924",
-          "dailyRewardsRecordId": "7148835723949171134"
+          "onChainCampaignId": "0x1eb9850dab5a7b71e86446f721384d7645ac0eda08a531d69a56a1a879c13eeb",
+          "id": "edbaab60-dbd9-4a08-b515-fdaa13cdc030",
+          "timestamp": "1765595079",
+          "campaignId": "7307447420779598021",
+          "dailyRewardsRecordId": "6049133103005748611"
         }
       ]
     }
@@ -1364,18 +2283,18 @@
     "chainId": 146,
     "type": "MULTILOG_DUTCH",
     "identifier": "0x1ad91377856c4ba9602c45240a4f64ef174036f4",
-    "name": "Borrow USDC from Aave on Sonic",
-    "description": "Earn rewards by borrowing USDC on Aave",
+    "name": "Borrow USDC from Aave on Sonic (net borrowing)",
+    "description": "Earn rewards by borrowing USDC on Aave. This is a net borrowing opportunity: borrowing & lending the same asset will make you earn rewards based only on the difference of the two amounts.",
     "howToSteps": [
       "Borrow assets on Aave.",
       "Rewards accumulate automatically."
     ],
     "status": "LIVE",
     "action": "BORROW",
-    "tvl": 16139792.70944823,
+    "tvl": 6498386.4349169,
     "apr": 2,
     "maxApr": 0.02,
-    "dailyRewards": 884.3722032574373,
+    "dailyRewards": 356.075969036542,
     "tags": [
       "aave"
     ],
@@ -1387,19 +2306,20 @@
     "tokens": [
       {
         "id": "1300888395985067717",
-        "name": "Bridged USDC (Sonic Labs)",
+        "name": "USDC",
         "chainId": 146,
         "address": "0x29219dd400f2Bf60E5a23d13Be72B486D4038894",
         "decimals": 6,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDC.e.png",
-        "verified": true,
+        "symbol": "USDC",
+        "icon": "",
+        "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 0.999704,
-        "updatedAt": 1759222292,
-        "priceSource": "Price Source USDC.e",
-        "symbol": "USDC"
+        "price": 0.999863711056876,
+        "updatedAt": 1765594903,
+        "priceSource": "Price Source USDC",
+        "displaySymbol": "USDC"
       },
       {
         "id": "6612455135278004637",
@@ -1407,24 +2327,24 @@
         "chainId": 146,
         "address": "0x2273caBAd63b7D247A6b107E723c803fc49953A0",
         "decimals": 6,
+        "symbol": "variableDebtSonUSDC",
         "icon": "",
         "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 0.999704,
-        "updatedAt": 1759222289,
-        "priceSource": "Price Source 0x2273caBAd63b7D247A6b107E723c803fc49953A0",
-        "symbol": "variableDebtSonUSDC"
+        "price": 0.999863711056876,
+        "updatedAt": 1765594926,
+        "priceSource": "Price Source 0x2273caBAd63b7D247A6b107E723c803fc49953A0"
       }
     ],
     "chain": {
       "id": 146,
       "name": "Sonic",
       "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/sonic.svg",
-      "liveCampaigns": 24,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
+      "liveCampaigns": 1,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
         {
           "id": "16575424833232667279",
           "type": "ETHERSCAN",
@@ -1444,38 +2364,41 @@
       "name": "Aave",
       "description": "A decentralized liquidity protocol where users can deposit and borrow",
       "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
     },
     "activePrograms": [],
     "aprRecord": {
       "cumulated": 2,
-      "timestamp": "1759222403",
+      "timestamp": "1765595092",
       "breakdowns": [
         {
           "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
           "identifier": "0x0b1dbf5e9c3352eb0416834bfb645751cc27da49f6b15eacf0f01ca1df06ddba",
           "type": "CAMPAIGN",
           "value": 2,
-          "timestamp": "1759222403"
+          "timestamp": "1765595092"
         }
       ]
     },
     "tvlRecord": {
-      "id": "11765247418521430562",
-      "total": 16139792.70944823,
-      "timestamp": "1759222403",
+      "id": "14459073242091820786",
+      "total": 6498386.4349169,
+      "timestamp": "1765595092",
       "breakdowns": [
         {
           "identifier": "6612455135278004637",
           "type": "TOKEN",
-          "value": 16144571.502613
+          "value": 6499272.213858
         }
       ]
     },
     "rewardsRecord": {
-      "id": "11765247418521430562",
-      "total": 884.3722032574373,
-      "timestamp": "1759222403",
+      "id": "14459073242091820786",
+      "total": 356.075969036542,
+      "timestamp": "1765595092",
       "breakdowns": [
         {
           "token": {
@@ -1491,170 +2414,169 @@
             "isTest": false,
             "type": "TOKEN",
             "isNative": false,
-            "price": 0.999704,
-            "updatedAt": 1759222267,
+            "price": 0.999863711056876,
+            "updatedAt": 1765594903,
             "priceSource": "Price Source USDC"
           },
-          "amount": "884634054",
-          "value": 884.3722023200161,
+          "amount": "356124504",
+          "value": 356.075968167729,
           "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "a4ba9939-a0f0-4988-9832-f6e84100f3b9",
-          "timestamp": "1759222403",
+          "onChainCampaignId": "0x0b1dbf5e9c3352eb0416834bfb645751cc27da49f6b15eacf0f01ca1df06ddba",
+          "id": "53e068d5-b06a-4a3d-8344-02cca0fc276c",
+          "timestamp": "1765595092",
           "campaignId": "7574773069215409696",
-          "dailyRewardsRecordId": "11765247418521430562"
+          "dailyRewardsRecordId": "14459073242091820786"
         }
       ]
     }
   },
   {
-    "chainId": 8453,
-    "type": "ERC20LOGPROCESSOR",
-    "identifier": "0x96F93F632DA15d425a030Ae0E06A43E4947607FF",
-    "name": "Provide liquidity to the Spectra yvBal-GHO-USR / PT-yvBal-GHO-USR(Aave GHO-USR)-2026/01/18 pool",
-    "description": "Earn rewards by providing liquidity to the Spectra yvBal-GHO-USR-PT-yvBal-GHO-USR(Aave GHO-USR)-2026/01/18 pool on Base",
+    "chainId": 9745,
+    "type": "ERC20_MAPPING",
+    "identifier": "0xE0126F0c4451B2B917064A93040fd4770D6774b5",
+    "name": "Hold Wrapped Aave Plasma USDT0 on Plasma",
+    "description": "Earn rewards by holding Wrapped Aave Plasma USDT0 on Aave on Plasma",
     "howToSteps": [
-      "Provide liquidity on Spectra.",
-      "Earn rewards based on your liquidity position."
+      "Hold USDT0.",
+      "Rewards accumulate automatically."
     ],
     "status": "LIVE",
-    "action": "POOL",
-    "tvl": 1033263.376851132,
-    "apr": 13.69808692837826,
+    "action": "HOLD",
+    "tvl": 13491524.4910459,
+    "apr": 0.789545511434902,
     "maxApr": 0,
-    "dailyRewards": 314.0300942787404,
+    "dailyRewards": 291.840345323819,
     "tags": [
-      "spectra"
+      "aave"
     ],
     "liveCampaigns": 1,
-    "id": "2857703663540179740",
-    "depositUrl": "https://app.spectra.finance/pools/base:0x96f93f632da15d425a030ae0e06a43e4947607ff",
-    "explorerAddress": "0x96F93F632DA15d425a030Ae0E06A43E4947607FF",
-    "lastCampaignCreatedAt": 1758755735,
+    "id": "1346782122726275227",
+    "depositUrl": "https://app.aave.com/markets/",
+    "explorerAddress": "0xE0126F0c4451B2B917064A93040fd4770D6774b5",
+    "lastCampaignCreatedAt": 1764855398,
     "tokens": [
       {
-        "id": "12125067611674427949",
-        "name": "Principal Token: yvBal-GHO-USR(Aave GHO-USR) 2026/01/18",
-        "chainId": 8453,
-        "address": "0x1Ff893C9071d04F8A965a90FcB0de22406A3eEaa",
-        "decimals": 18,
+        "id": "2415185426052881855",
+        "name": "Wrapped Aave Plasma USDT0",
+        "chainId": 9745,
+        "address": "0xE0126F0c4451B2B917064A93040fd4770D6774b5",
+        "decimals": 6,
+        "symbol": "waPlaUSDT0",
         "icon": "",
         "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": null,
-        "updatedAt": 1758943976,
-        "priceSource": null,
-        "symbol": "PT-yvBal-GHO-USR(Aave GHO-USR)-2026/01/18"
+        "price": 1.00855426561157,
+        "updatedAt": 1765595080,
+        "priceSource": "Computed Price - 13439309626655985760 on chain 9745"
       },
       {
-        "id": "1372306709664351819",
-        "name": "Spectra-PT/IBT",
-        "chainId": 8453,
-        "address": "0x96F93F632DA15d425a030Ae0E06A43E4947607FF",
-        "decimals": 18,
-        "icon": "",
-        "verified": false,
+        "id": "5737761031982269701",
+        "name": "USDT0",
+        "chainId": 9745,
+        "address": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
+        "decimals": 6,
+        "symbol": "USDT0",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDT0.svg",
+        "verified": true,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 1.011448996141674,
-        "updatedAt": 1759222424,
-        "priceSource": "Computed Price - 0xcc84e366133c82f7d9d173b6a3ce09dea6c64c53456242e1c32c4d8d2bd66a82 on chain 8453",
-        "symbol": "SPT-PT/IBT"
-      },
-      {
-        "id": "6575940097031119463",
-        "name": "Balancer GHO-USR yVault",
-        "chainId": 8453,
-        "address": "0x69eFa3Cd7FC773fE227b9Cc4f41132dcde020A29",
-        "decimals": 18,
-        "icon": "",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": null,
-        "updatedAt": 1758943976,
-        "priceSource": null,
-        "symbol": "yvBal-GHO-USR"
+        "price": 1.00014601919073,
+        "updatedAt": 1765594927,
+        "priceSource": "Price Source USDT0",
+        "displaySymbol": "USDT0"
       }
     ],
     "chain": {
-      "id": 8453,
-      "name": "Base",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/base.svg",
-      "liveCampaigns": 129,
-      "endOfDisputePeriod": 1759226400,
-      "Explorer": [
+      "id": 9745,
+      "name": "Plasma",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
+      "liveCampaigns": 40,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
         {
-          "id": "8899908752688737472",
+          "id": "14261454752756197884",
           "type": "ETHERSCAN",
-          "url": "https://basescan.org",
-          "chainId": 8453
+          "url": "https://plasmascan.to/",
+          "chainId": 9745
         }
       ]
     },
     "protocol": {
-      "id": "spectra",
+      "id": "aave",
       "tags": [
-        "POOL"
+        "LENDING",
+        "zksync",
+        "drip",
+        "plasma"
       ],
-      "name": "Spectra",
-      "description": "",
-      "url": "",
-      "icon": "https://icons.llamao.fi/icons/protocols/spectra?w=96&h=96"
+      "name": "Aave",
+      "description": "A decentralized liquidity protocol where users can deposit and borrow",
+      "url": "https://app.aave.com/",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
     },
     "activePrograms": [],
     "aprRecord": {
-      "cumulated": 13.69808692837826,
-      "timestamp": "1759222423",
+      "cumulated": 0.789545511434902,
+      "timestamp": "1765595080",
       "breakdowns": [
         {
           "distributionType": "DUTCH_AUCTION",
-          "identifier": "0xcc84e366133c82f7d9d173b6a3ce09dea6c64c53456242e1c32c4d8d2bd66a82",
+          "identifier": "13439309626655985760",
           "type": "CAMPAIGN",
-          "value": 13.69808692837826,
-          "timestamp": "1759222423"
+          "value": 0.789545511434902,
+          "timestamp": "1765595080"
         }
       ]
     },
     "tvlRecord": {
-      "id": "7102544765420037086",
-      "total": 1033263.376851132,
-      "timestamp": "1759222423",
-      "breakdowns": []
+      "id": "10089397115193669186",
+      "total": 13491524.4910459,
+      "timestamp": "1765595080",
+      "breakdowns": [
+        {
+          "identifier": "5737761031982269701",
+          "type": "TOKEN",
+          "value": 13489554.757177
+        }
+      ]
     },
     "rewardsRecord": {
-      "id": "7102544765420037086",
-      "total": 314.0300942787404,
-      "timestamp": "1759222423",
+      "id": "10089397115193669186",
+      "total": 291.840345323819,
+      "timestamp": "1765595080",
       "breakdowns": [
         {
           "token": {
-            "id": "13594827693922332331",
-            "name": "Spectra Token",
-            "chainId": 8453,
-            "address": "0x64FCC3A02eeEba05Ef701b7eed066c6ebD5d4E51",
+            "id": "9177007823639843523",
+            "name": "Wrapped XPL",
+            "chainId": 9745,
+            "address": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
             "decimals": 18,
-            "symbol": "SPECTRA",
-            "displaySymbol": "SPECTRA",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/SPECTRA.svg",
+            "symbol": "WXPL",
+            "displaySymbol": "",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/XPL.png",
             "verified": true,
             "isTest": false,
             "type": "TOKEN",
             "isNative": false,
-            "price": 0.01999068,
-            "updatedAt": 1759222270,
-            "priceSource": "Price Source SPECTRA"
+            "price": 0.147111900741136,
+            "updatedAt": 1765594929,
+            "priceSource": "Price Source WXPL"
           },
-          "amount": "15708825026399320408064",
-          "value": 314.03009427874036,
+          "amount": "1983798345705233842176",
+          "value": 291.840345323819,
           "distributionType": "DUTCH_AUCTION",
-          "id": "eec73997-6827-49dd-abf9-e5fb010d59ab",
-          "timestamp": "1759222423",
-          "campaignId": "7507892078779508299",
-          "dailyRewardsRecordId": "7102544765420037086"
+          "onChainCampaignId": "13439309626655985760",
+          "id": "df337b8c-b2f1-4340-a49b-6450e16f0843",
+          "timestamp": "1765595080",
+          "campaignId": "17090657616320094876",
+          "dailyRewardsRecordId": "10089397115193669186"
         }
       ]
     }
@@ -1671,16 +2593,16 @@
     ],
     "status": "LIVE",
     "action": "LEND",
-    "tvl": 1427488.620537738,
-    "apr": 4.100000000000001,
-    "maxApr": 0.041,
-    "dailyRewards": 160.3480368275268,
+    "tvl": 2203789.43127013,
+    "apr": 3.73126781295496,
+    "maxApr": 0.0375,
+    "dailyRewards": 225.285714285714,
     "tags": [],
     "liveCampaigns": 1,
     "id": "9623615825108171573",
     "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0xc139190f447e929f090edeb554d95abb8b18ac1c&marketName=proto_mainnet_v3",
     "explorerAddress": "0xEc4ef66D4fCeEba34aBB4dE69dB391Bc5476ccc8",
-    "lastCampaignCreatedAt": 1758618930,
+    "lastCampaignCreatedAt": 1765464326,
     "tokens": [
       {
         "id": "3699719112610190865",
@@ -1688,15 +2610,15 @@
         "chainId": 1,
         "address": "0xC139190F447e929f090Edeb554D95AbB8b18aC1C",
         "decimals": 18,
+        "symbol": "USDtb",
         "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/aUSDtb.svg",
         "verified": true,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
         "price": 1,
-        "updatedAt": 1759222262,
-        "priceSource": "Price Source USDtb",
-        "symbol": "USDtb"
+        "updatedAt": 1765594901,
+        "priceSource": "Price Source USDtb"
       },
       {
         "id": "6044969808114221237",
@@ -1704,24 +2626,24 @@
         "chainId": 1,
         "address": "0xEc4ef66D4fCeEba34aBB4dE69dB391Bc5476ccc8",
         "decimals": 18,
+        "symbol": "aEthUSDtb",
         "icon": "",
         "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
         "price": 1,
-        "updatedAt": 1759222413,
-        "priceSource": "Computed Price - 0x722624df2888169de84bf9f8c903230cf775a4fe6df079e8e756d2f8b41ea320 on chain 1",
-        "symbol": "aEthUSDtb"
+        "updatedAt": 1765595053,
+        "priceSource": "Computed Price - 0x3827f2e7a003a51fda344fa4bf9534acc49f10a06b482b709484e07752483f33 on chain 1"
       }
     ],
     "chain": {
       "id": 1,
       "name": "Ethereum",
       "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
-      "liveCampaigns": 125,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
+      "liveCampaigns": 104,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
         {
           "id": "13265570907942326370",
           "type": "ETHERSCAN",
@@ -1741,38 +2663,47 @@
       "name": "Aave",
       "description": "A decentralized liquidity protocol where users can deposit and borrow",
       "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
     },
     "activePrograms": [],
     "aprRecord": {
-      "cumulated": 4.100000000000001,
-      "timestamp": "1759222413",
+      "cumulated": 3.73126781295496,
+      "timestamp": "1765595053",
       "breakdowns": [
         {
           "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "identifier": "0x722624df2888169de84bf9f8c903230cf775a4fe6df079e8e756d2f8b41ea320",
+          "identifier": "0x3827f2e7a003a51fda344fa4bf9534acc49f10a06b482b709484e07752483f33",
           "type": "CAMPAIGN",
-          "value": 4.100000000000001,
-          "timestamp": "1759222413"
+          "value": 3.73126781295496,
+          "timestamp": "1765595053"
         }
       ]
     },
+    "nativeAprRecord": {
+      "title": "Aave Supply Native APR - 0xec4ef66d4fceeba34abb4de69db391bc5476ccc8",
+      "description": "Native supply APR for 0xec4ef66d4fceeba34abb4de69db391bc5476ccc8 on Aave on chain 1",
+      "value": 1.32269914762663,
+      "timestamp": "1765594843"
+    },
     "tvlRecord": {
-      "id": "6834177031584575658",
-      "total": 1427488.620537738,
-      "timestamp": "1759222413",
+      "id": "17122122519243582201",
+      "total": 2203789.43127013,
+      "timestamp": "1765595053",
       "breakdowns": [
         {
           "identifier": "6044969808114221237",
           "type": "TOKEN",
-          "value": 1427488.620537738
+          "value": 2203789.43127013
         }
       ]
     },
     "rewardsRecord": {
-      "id": "6834177031584575658",
-      "total": 160.3480368275268,
-      "timestamp": "1759222413",
+      "id": "17122122519243582201",
+      "total": 225.285714285714,
+      "timestamp": "1765595053",
       "breakdowns": [
         {
           "token": {
@@ -1789,844 +2720,279 @@
             "type": "TOKEN",
             "isNative": false,
             "price": 1,
-            "updatedAt": 1759222257,
+            "updatedAt": 1765594900,
             "priceSource": "Price Source aUSDtb"
           },
-          "amount": "160348036827526823936",
-          "value": 160.3480368275268,
+          "amount": "225285714285714309120",
+          "value": 225.285714285714,
           "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "ffe116cf-4b2d-4a93-9471-c495b3a3f536",
-          "timestamp": "1759222413",
-          "campaignId": "12799612359152341789",
-          "dailyRewardsRecordId": "6834177031584575658"
+          "onChainCampaignId": "0x3827f2e7a003a51fda344fa4bf9534acc49f10a06b482b709484e07752483f33",
+          "id": "838cb4fc-ca2f-4949-8d67-9185d1c4f271",
+          "timestamp": "1765595053",
+          "campaignId": "967416878810713890",
+          "dailyRewardsRecordId": "17122122519243582201"
         }
       ]
     }
   },
   {
-    "chainId": 324,
-    "type": "MULTILOG_DUTCH",
-    "identifier": "0x932244031e44fa71f7874cde81b7611d904450a1",
-    "name": "Borrow WETH from Aave on zkSync (net borrowing)",
-    "description": "Earn rewards by borrowing WETH on Aave. This is a net borrowing opportunity: borrowing & lending the same asset will make you earn rewards based only on the difference of the two amounts.",
+    "chainId": 9745,
+    "type": "ERC20LOGPROCESSOR",
+    "identifier": "0x0E09e465476C7eA1Fd7f6cea1Bd459ab74e2bC62",
+    "name": "Hold Pendle YT or LP of Aave aUSDT0 26 Feb 2026",
+    "description": "Earn rewards by depositing aUSDT0 into Pendle and holding the Yield Token on Plasma",
     "howToSteps": [
-      "Borrow assets on Aave.",
+      "Deposit USDT0 into Pendle, and get the YT or LP associated to SY Aave Plasma USDT0.",
       "Rewards accumulate automatically."
     ],
     "status": "LIVE",
-    "action": "BORROW",
-    "tvl": 2695414.480745845,
-    "apr": 1.5,
-    "maxApr": 0.015,
-    "dailyRewards": 110.7704581128429,
+    "action": "HOLD",
+    "tvl": 3017455.81804601,
+    "apr": 1.92804412693974,
+    "maxApr": 0,
+    "dailyRewards": 159.391451185857,
     "tags": [
-      "angles"
+      "plasma"
     ],
-    "liveCampaigns": 1,
-    "id": "6575943308181214119",
-    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
-    "explorerAddress": "0x98dC737eA0E9bCb254c3F98510a71c5E11F74238",
-    "lastCampaignCreatedAt": 1757434721,
+    "liveCampaigns": 2,
+    "id": "3951642281597727433",
+    "depositUrl": "https://app.pendle.finance/trade/markets?chains=plasma",
+    "explorerAddress": "0x0E09e465476C7eA1Fd7f6cea1Bd459ab74e2bC62",
+    "lastCampaignCreatedAt": 1764855400,
     "tokens": [
       {
-        "id": "1690446589080997791",
-        "name": "Wrapped Ether",
-        "chainId": 324,
-        "address": "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
-        "decimals": 18,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/WETH.png",
+        "id": "5737761031982269701",
+        "name": "USDT0",
+        "chainId": 9745,
+        "address": "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb",
+        "decimals": 6,
+        "symbol": "USDT0",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDT0.svg",
         "verified": true,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 4174.2,
-        "updatedAt": 1759222265,
-        "priceSource": "Price Source WETH",
-        "symbol": "WETH"
+        "price": 1.00014601919073,
+        "updatedAt": 1765594927,
+        "priceSource": "Price Source USDT0",
+        "displaySymbol": "USDT0"
       },
       {
-        "id": "675848464412371541",
-        "name": "Aave ZkSync Variable Debt WETH",
-        "chainId": 324,
-        "address": "0x98dC737eA0E9bCb254c3F98510a71c5E11F74238",
-        "decimals": 18,
+        "id": "8603117641757612106",
+        "name": "SY Aave Plasma USDT0",
+        "chainId": 9745,
+        "address": "0x0E09e465476C7eA1Fd7f6cea1Bd459ab74e2bC62",
+        "decimals": 6,
+        "symbol": "SY-aPlaUSDT0",
         "icon": "",
         "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 4174.2,
-        "updatedAt": 1759222295,
-        "priceSource": "Price Source variableDebtZksWETH",
-        "symbol": "variableDebtZksWETH"
+        "price": 1.0085542656365,
+        "updatedAt": 1765595085,
+        "priceSource": "Computed Price - 0x598521162806b7431d73f506d8dc402cec5a4fde6d3c43a3c42657885549fd10 on chain 9745"
       }
     ],
     "chain": {
-      "id": 324,
-      "name": "ZKsync Era",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/zksync.svg",
-      "liveCampaigns": 4,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
+      "id": 9745,
+      "name": "Plasma",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
+      "liveCampaigns": 40,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
         {
-          "id": "16247906888707834641",
+          "id": "14261454752756197884",
           "type": "ETHERSCAN",
-          "url": "https://era.zksync.network",
-          "chainId": 324
+          "url": "https://plasmascan.to/",
+          "chainId": 9745
         }
       ]
     },
     "protocol": {
-      "id": "aave",
+      "id": "pendle",
       "tags": [
-        "LENDING",
-        "zksync",
-        "drip",
-        "plasma"
+        "HOLD"
       ],
-      "name": "Aave",
-      "description": "A decentralized liquidity protocol where users can deposit and borrow",
-      "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
+      "name": "Pendle",
+      "description": "",
+      "url": "https://www.pendle.finance/",
+      "icon": "https://icons.llamao.fi/icons/protocols/pendle?w=64&h=64",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
     },
     "activePrograms": [],
     "aprRecord": {
-      "cumulated": 1.5,
-      "timestamp": "1759222409",
+      "cumulated": 1.92804412693974,
+      "timestamp": "1765595084",
       "breakdowns": [
         {
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "identifier": "0x08591c9d83a8880406776f3c25cc20d055e4152f17d6112e92911715b1c51796",
+          "distributionType": "DUTCH_AUCTION",
+          "identifier": "17173711793460146484",
           "type": "CAMPAIGN",
-          "value": 1.5,
-          "timestamp": "1759222409"
+          "value": 0.801065264631948,
+          "timestamp": "1765595084"
+        },
+        {
+          "distributionType": "DUTCH_AUCTION",
+          "identifier": "0x598521162806b7431d73f506d8dc402cec5a4fde6d3c43a3c42657885549fd10",
+          "type": "CAMPAIGN",
+          "value": 1.1269788623078,
+          "timestamp": "1765595084"
         }
       ]
     },
     "tvlRecord": {
-      "id": "13922027052264721189",
-      "total": 2695414.480745845,
-      "timestamp": "1759222409",
+      "id": "1160578844669771722",
+      "total": 3017455.81804601,
+      "timestamp": "1765595084",
       "breakdowns": [
         {
-          "identifier": "675848464412371541",
+          "identifier": "5737761031982269701",
           "type": "TOKEN",
-          "value": 645.7319919375797
+          "value": 0
+        },
+        {
+          "identifier": "12173189759084764841",
+          "type": "TOKEN",
+          "value": 3017015.275917
         }
       ]
     },
     "rewardsRecord": {
-      "id": "13922027052264721189",
-      "total": 110.7704581128429,
-      "timestamp": "1759222409",
+      "id": "1160578844669771722",
+      "total": 159.391451185857,
+      "timestamp": "1765595084",
       "breakdowns": [
         {
           "token": {
-            "id": "17652896972264996251",
-            "name": "Aave ZkSync ZK",
-            "chainId": 324,
-            "address": "0xd6cD2c0fC55936498726CacC497832052A9B2D1B",
+            "id": "9177007823639843523",
+            "name": "Wrapped XPL",
+            "chainId": 9745,
+            "address": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
             "decimals": 18,
-            "symbol": "aZksZK",
-            "displaySymbol": "aZK",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/aZksZK.svg",
-            "verified": true,
-            "isTest": false,
-            "type": "TOKEN",
-            "isNative": false,
-            "price": 0.04938042,
-            "updatedAt": 1759222287,
-            "priceSource": "Price Source aZksZK"
-          },
-          "amount": "2243206074651509784576",
-          "value": 110.77045811284292,
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "9d79112f-896a-493e-afaa-56fa5e14b72b",
-          "timestamp": "1759222409",
-          "campaignId": "7069460864963330747",
-          "dailyRewardsRecordId": "13922027052264721189"
-        }
-      ]
-    }
-  },
-  {
-    "chainId": 324,
-    "type": "MULTILOG_DUTCH",
-    "identifier": "0x47e4ffb0b2f2b368a1dc6b3b4cd6bc20f9930830",
-    "name": "Borrow USDC from Aave on zkSync (net borrowing)",
-    "description": "Earn rewards by borrowing USDC on Aave. This is a net borrowing opportunity: borrowing & lending the same asset will make you earn rewards based only on the difference of the two amounts.",
-    "howToSteps": [
-      "Borrow assets on Aave.",
-      "Rewards accumulate automatically."
-    ],
-    "status": "LIVE",
-    "action": "BORROW",
-    "tvl": 962826.6835356731,
-    "apr": 3,
-    "maxApr": 0.03,
-    "dailyRewards": 79.13643974265806,
-    "tags": [
-      "angles"
-    ],
-    "liveCampaigns": 1,
-    "id": "11650675487457723853",
-    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4",
-    "explorerAddress": "0x0049250D15A8550c5a14Baa5AF5B662a93a525B9",
-    "lastCampaignCreatedAt": 1757423746,
-    "tokens": [
-      {
-        "id": "11874131791832998561",
-        "name": "Aave ZkSync Variable Debt USDC",
-        "chainId": 324,
-        "address": "0x0049250D15A8550c5a14Baa5AF5B662a93a525B9",
-        "decimals": 6,
-        "icon": "",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 0.999704,
-        "updatedAt": 1759222289,
-        "priceSource": "Price Source variableDebtZksUSDC",
-        "symbol": "variableDebtZksUSDC"
-      },
-      {
-        "id": "1610739310155958189",
-        "name": "USDC",
-        "chainId": 324,
-        "address": "0x1d17CBcF0D6D143135aE902365D2E5e2A16538D4",
-        "decimals": 6,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDC.png",
-        "verified": true,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 0.999704,
-        "updatedAt": 1759222267,
-        "priceSource": "Price Source USDC",
-        "symbol": "USDC"
-      }
-    ],
-    "chain": {
-      "id": 324,
-      "name": "ZKsync Era",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/zksync.svg",
-      "liveCampaigns": 4,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
-        {
-          "id": "16247906888707834641",
-          "type": "ETHERSCAN",
-          "url": "https://era.zksync.network",
-          "chainId": 324
-        }
-      ]
-    },
-    "protocol": {
-      "id": "aave",
-      "tags": [
-        "LENDING",
-        "zksync",
-        "drip",
-        "plasma"
-      ],
-      "name": "Aave",
-      "description": "A decentralized liquidity protocol where users can deposit and borrow",
-      "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
-    },
-    "activePrograms": [],
-    "aprRecord": {
-      "cumulated": 3,
-      "timestamp": "1759222409",
-      "breakdowns": [
-        {
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "identifier": "0x4cdd9710186b04c34b2eeaf5dfd27ed67252e6e273d09d8214ec29587700af6e",
-          "type": "CAMPAIGN",
-          "value": 3,
-          "timestamp": "1759222409"
-        }
-      ]
-    },
-    "tvlRecord": {
-      "id": "7704115047773289621",
-      "total": 962826.6835356731,
-      "timestamp": "1759222409",
-      "breakdowns": [
-        {
-          "identifier": "11874131791832998561",
-          "type": "TOKEN",
-          "value": 963111.764618
-        }
-      ]
-    },
-    "rewardsRecord": {
-      "id": "7704115047773289621",
-      "total": 79.13643974265806,
-      "timestamp": "1759222409",
-      "breakdowns": [
-        {
-          "token": {
-            "id": "17652896972264996251",
-            "name": "Aave ZkSync ZK",
-            "chainId": 324,
-            "address": "0xd6cD2c0fC55936498726CacC497832052A9B2D1B",
-            "decimals": 18,
-            "symbol": "aZksZK",
-            "displaySymbol": "aZK",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/aZksZK.svg",
-            "verified": true,
-            "isTest": false,
-            "type": "TOKEN",
-            "isNative": false,
-            "price": 0.04938042,
-            "updatedAt": 1759222287,
-            "priceSource": "Price Source aZksZK"
-          },
-          "amount": "1602587417090782920704",
-          "value": 79.13643974265804,
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "6d116c32-b635-4faa-ac4c-5711bdd0dcbc",
-          "timestamp": "1759222409",
-          "campaignId": "10737393606316054494",
-          "dailyRewardsRecordId": "7704115047773289621"
-        }
-      ]
-    }
-  },
-  {
-    "chainId": 534352,
-    "type": "MULTILOG_DUTCH",
-    "identifier": "0x6b023ade086c622232e14be68d228e73cdf06740",
-    "name": "Borrow USDC from Aave on Scroll (net borrowing)",
-    "description": "Earn rewards by borrowing USDC on Aave. This is a net borrowing opportunity: borrowing & lending the same asset will make you earn rewards based only on the difference of the two amounts.",
-    "howToSteps": [
-      "Borrow assets on Aave.",
-      "Rewards accumulate automatically."
-    ],
-    "status": "LIVE",
-    "action": "BORROW",
-    "tvl": 1378404.871578933,
-    "apr": 2,
-    "maxApr": 0.02,
-    "dailyRewards": 75.52903405911961,
-    "tags": [
-      "angles"
-    ],
-    "liveCampaigns": 1,
-    "id": "3842692107141356528",
-    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4",
-    "explorerAddress": "0x3d2E209af5BFa79297C88D6b57F89d792F6E28EE",
-    "lastCampaignCreatedAt": 1757423373,
-    "tokens": [
-      {
-        "id": "6138266483312681883",
-        "name": "Aave Scroll Variable Debt USDC",
-        "chainId": 534352,
-        "address": "0x3d2E209af5BFa79297C88D6b57F89d792F6E28EE",
-        "decimals": 6,
-        "icon": "",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 0.999704,
-        "updatedAt": 1759222285,
-        "priceSource": "Price Source variableDebtScrUSDC",
-        "symbol": "variableDebtScrUSDC"
-      },
-      {
-        "id": "7894895852720349264",
-        "name": "USD Coin",
-        "chainId": 534352,
-        "address": "0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4",
-        "decimals": 6,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/USDC.png",
-        "verified": true,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 0.999704,
-        "updatedAt": 1759222267,
-        "priceSource": "Price Source USDC",
-        "symbol": "USDC"
-      }
-    ],
-    "chain": {
-      "id": 534352,
-      "name": "Scroll",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/scroll.svg",
-      "liveCampaigns": 2,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
-        {
-          "id": "12294198939130133065",
-          "type": "ETHERSCAN",
-          "url": "https://scrollscan.com",
-          "chainId": 534352
-        }
-      ]
-    },
-    "protocol": {
-      "id": "aave",
-      "tags": [
-        "LENDING",
-        "zksync",
-        "drip",
-        "plasma"
-      ],
-      "name": "Aave",
-      "description": "A decentralized liquidity protocol where users can deposit and borrow",
-      "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
-    },
-    "activePrograms": [],
-    "aprRecord": {
-      "cumulated": 2,
-      "timestamp": "1759222419",
-      "breakdowns": [
-        {
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "identifier": "0x915205716ecbfbc66622a50f92a690335fdd690adf5ea5f090983564c5f49156",
-          "type": "CAMPAIGN",
-          "value": 2,
-          "timestamp": "1759222419"
-        }
-      ]
-    },
-    "tvlRecord": {
-      "id": "3845663330112205332",
-      "total": 1378404.871578933,
-      "timestamp": "1759222419",
-      "breakdowns": [
-        {
-          "identifier": "6138266483312681883",
-          "type": "TOKEN",
-          "value": 1378813.000227
-        }
-      ]
-    },
-    "rewardsRecord": {
-      "id": "3845663330112205332",
-      "total": 75.52903405911961,
-      "timestamp": "1759222419",
-      "breakdowns": [
-        {
-          "token": {
-            "id": "4575039729080448108",
-            "name": "Aave Scroll SCR (wrapped)",
-            "chainId": 534352,
-            "address": "0xb8021254f00C1aFb67b861f274cea175FB97c2Af",
-            "decimals": 18,
-            "symbol": "aScrSCR",
+            "symbol": "WXPL",
             "displaySymbol": "",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/scr.svg",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/XPL.png",
             "verified": true,
             "isTest": false,
             "type": "TOKEN",
             "isNative": false,
-            "price": 0.2763,
-            "updatedAt": 1759222295,
-            "priceSource": "Price Source aScrSCR"
+            "price": 0.147111900741136,
+            "updatedAt": 1765594929,
+            "priceSource": "Price Source WXPL"
           },
-          "amount": "273358791382988095488",
-          "value": 75.52903405911961,
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "84c7cd34-e6a4-458c-bdb0-b3ece2dba869",
-          "timestamp": "1759222419",
-          "campaignId": "11972590411877198797",
-          "dailyRewardsRecordId": "3845663330112205332"
-        }
-      ]
-    }
-  },
-  {
-    "chainId": 534352,
-    "type": "MULTILOG_DUTCH",
-    "identifier": "0xa01045e06fe8a57e6ba8b4c154a60e83a42287ab",
-    "name": "Lend WETH on Aave (net lending)",
-    "description": "Earn rewards by lending WETH to Aave on Scroll. This is a net lending opportunity: lending & borrowing the same asset will make you earn rewards based only on the difference of the two amounts. Only addresses with a health factor below 1.75 are eligible to rewards",
-    "howToSteps": [
-      "Lend assets on Aave.",
-      "Rewards accumulate automatically."
-    ],
-    "status": "LIVE",
-    "action": "LEND",
-    "tvl": 2661045.532777749,
-    "apr": 1,
-    "maxApr": 0.01,
-    "dailyRewards": 72.9053570624041,
-    "tags": [
-      "angles"
-    ],
-    "liveCampaigns": 1,
-    "id": "12918318491769023548",
-    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x5300000000000000000000000000000000000004",
-    "explorerAddress": "0xf301805bE1Df81102C957f6d4Ce29d2B8c056B2a",
-    "lastCampaignCreatedAt": 1757423375,
-    "tokens": [
-      {
-        "id": "13205043977158567645",
-        "name": "Wrapped Ether",
-        "chainId": 534352,
-        "address": "0x5300000000000000000000000000000000000004",
-        "decimals": 18,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/WETH.png",
-        "verified": true,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 4174.2,
-        "updatedAt": 1759222265,
-        "priceSource": "Price Source WETH",
-        "symbol": "WETH"
-      },
-      {
-        "id": "13993083768451285447",
-        "name": "Aave Scroll WETH",
-        "chainId": 534352,
-        "address": "0xf301805bE1Df81102C957f6d4Ce29d2B8c056B2a",
-        "decimals": 18,
-        "icon": "",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 4174.2,
-        "updatedAt": 1759222286,
-        "priceSource": "Price Source 0xf301805bE1Df81102C957f6d4Ce29d2B8c056B2a",
-        "symbol": "aScrWETH"
-      }
-    ],
-    "chain": {
-      "id": 534352,
-      "name": "Scroll",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/scroll.svg",
-      "liveCampaigns": 2,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
-        {
-          "id": "12294198939130133065",
-          "type": "ETHERSCAN",
-          "url": "https://scrollscan.com",
-          "chainId": 534352
-        }
-      ]
-    },
-    "protocol": {
-      "id": "aave",
-      "tags": [
-        "LENDING",
-        "zksync",
-        "drip",
-        "plasma"
-      ],
-      "name": "Aave",
-      "description": "A decentralized liquidity protocol where users can deposit and borrow",
-      "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
-    },
-    "activePrograms": [],
-    "aprRecord": {
-      "cumulated": 1,
-      "timestamp": "1759222419",
-      "breakdowns": [
-        {
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "identifier": "0xf2c826ee4287cce4a9a06df3df96030fca61c168ad328929c5a208534b75325d",
-          "type": "CAMPAIGN",
-          "value": 1,
-          "timestamp": "1759222419"
-        }
-      ]
-    },
-    "tvlRecord": {
-      "id": "6172300699384769635",
-      "total": 2661045.532777749,
-      "timestamp": "1759222419",
-      "breakdowns": [
-        {
-          "identifier": "13993083768451285447",
-          "type": "TOKEN",
-          "value": 637.4983308844209
-        }
-      ]
-    },
-    "rewardsRecord": {
-      "id": "6172300699384769635",
-      "total": 72.9053570624041,
-      "timestamp": "1759222419",
-      "breakdowns": [
+          "amount": "633309523809523859456",
+          "value": 93.1673678050829,
+          "distributionType": "DUTCH_AUCTION",
+          "onChainCampaignId": "0x598521162806b7431d73f506d8dc402cec5a4fde6d3c43a3c42657885549fd10",
+          "id": "66f126ac-d9ba-42e6-8aa1-3618428a8fc2",
+          "timestamp": "1765595084",
+          "campaignId": "13123140479012514348",
+          "dailyRewardsRecordId": "1160578844669771722"
+        },
         {
           "token": {
-            "id": "4575039729080448108",
-            "name": "Aave Scroll SCR (wrapped)",
-            "chainId": 534352,
-            "address": "0xb8021254f00C1aFb67b861f274cea175FB97c2Af",
+            "id": "9177007823639843523",
+            "name": "Wrapped XPL",
+            "chainId": 9745,
+            "address": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
             "decimals": 18,
-            "symbol": "aScrSCR",
+            "symbol": "WXPL",
             "displaySymbol": "",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/scr.svg",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/XPL.png",
             "verified": true,
             "isTest": false,
             "type": "TOKEN",
             "isNative": false,
-            "price": 0.2763,
-            "updatedAt": 1759222295,
-            "priceSource": "Price Source aScrSCR"
+            "price": 0.147111900741136,
+            "updatedAt": 1765594929,
+            "priceSource": "Price Source WXPL"
           },
-          "amount": "263863036780326125568",
-          "value": 72.90535706240411,
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "e68ae6c0-dbff-40f0-b5ab-441ac2ec2878",
-          "timestamp": "1759222419",
-          "campaignId": "14068766520744986496",
-          "dailyRewardsRecordId": "6172300699384769635"
+          "amount": "450161292506879164416",
+          "value": 66.2240833807736,
+          "distributionType": "DUTCH_AUCTION",
+          "onChainCampaignId": "17173711793460146484",
+          "id": "0103dd6a-1413-4965-9c22-02aa90f5ca9c",
+          "timestamp": "1765595084",
+          "campaignId": "3390854734847274838",
+          "dailyRewardsRecordId": "1160578844669771722"
         }
       ]
     }
   },
   {
-    "chainId": 8453,
-    "type": "CLAMM",
-    "identifier": "0x846E89Cffc54160A7E4ACBeECC4f99C2528d1ca8",
-    "name": "Provide liquidity to  Quickswap WETH-AAVE 0.3%",
-    "description": "Earn rewards by providing liquidity to the Quickswap WETH pool on Base",
+    "chainId": 1,
+    "type": "ERC20LOGPROCESSOR",
+    "identifier": "0x6A1792a91C08e9f0bFe7a990871B786643237f0F",
+    "name": "Hold Wrapped Aave Ethereum RLUSD on Ethereum",
+    "description": "Earn rewards by holding Wrapped Aave Ethereum RLUSD on Aave on Ethereum",
     "howToSteps": [
-      "Provide liquidity on Quickswap.",
-      "Earn rewards based on your liquidity position."
-    ],
-    "status": "LIVE",
-    "action": "POOL",
-    "tvl": 67564.41359746216,
-    "apr": 16.53753715554292,
-    "maxApr": 0,
-    "dailyRewards": 30.612301377,
-    "tags": [
-      "quickswap"
-    ],
-    "liveCampaigns": 1,
-    "id": "7431872749833994981",
-    "depositUrl": "https://quickswap.exchange/#pools?currency0=0x4200000000000000000000000000000000000006&currency1=0x63706e401c06ac8513145b7687a14804d17f814b",
-    "explorerAddress": "0x846E89Cffc54160A7E4ACBeECC4f99C2528d1ca8",
-    "lastCampaignCreatedAt": 1758790125,
-    "tokens": [
-      {
-        "id": "7098872648049545941",
-        "name": "Aave Token",
-        "chainId": 8453,
-        "address": "0x63706e401c06ac8513145b7687A14804d17f814b",
-        "decimals": 18,
-        "icon": "",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 272.2,
-        "updatedAt": 1759222268,
-        "priceSource": "Price Source AAVE",
-        "symbol": "AAVE"
-      },
-      {
-        "id": "8352774015293944871",
-        "name": "Wrapped Ether",
-        "chainId": 8453,
-        "address": "0x4200000000000000000000000000000000000006",
-        "decimals": 18,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/WETH.png",
-        "verified": true,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 4174.2,
-        "updatedAt": 1759222265,
-        "priceSource": "Price Source WETH",
-        "symbol": "wETH"
-      }
-    ],
-    "chain": {
-      "id": 8453,
-      "name": "Base",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/base.svg",
-      "liveCampaigns": 129,
-      "endOfDisputePeriod": 1759226400,
-      "Explorer": [
-        {
-          "id": "8899908752688737472",
-          "type": "ETHERSCAN",
-          "url": "https://basescan.org",
-          "chainId": 8453
-        }
-      ]
-    },
-    "protocol": {
-      "id": "quickswap",
-      "tags": [
-        "POOL"
-      ],
-      "name": "Quickswap",
-      "description": "",
-      "url": "https://quickswap.exchange/",
-      "icon": "https://icons.llamao.fi/icons/protocols/quickswap?w=48&h=48"
-    },
-    "activePrograms": [],
-    "aprRecord": {
-      "cumulated": 16.53753715554292,
-      "timestamp": "1759222428",
-      "breakdowns": [
-        {
-          "distributionType": "DUTCH_AUCTION",
-          "identifier": "0x24ec58b36159045dc60cce442517fa9a76c3b9c70c71e47625c0fcafb338e12b",
-          "type": "CAMPAIGN",
-          "value": 16.53753715554292,
-          "timestamp": "1759222428"
-        },
-        {
-          "identifier": "Gamma 0x0ec754f1fa3f51a301f1808ccc345b8f9a864ccf",
-          "type": "PROTOCOL",
-          "value": 18.26223021292316,
-          "timestamp": "1759222428"
-        },
-        {
-          "identifier": "Steer 0x2b0658563d97c757c55bcba76c3944d794030269",
-          "type": "PROTOCOL",
-          "value": 17.43623255847875,
-          "timestamp": "1759222428"
-        }
-      ]
-    },
-    "tvlRecord": {
-      "id": "5587186591250494331",
-      "total": 67564.41359746216,
-      "timestamp": "1759222428",
-      "breakdowns": [
-        {
-          "identifier": "0x4200000000000000000000000000000000000006",
-          "type": "TOKEN",
-          "value": 7.338097957097715
-        },
-        {
-          "identifier": "0x63706e401c06ac8513145b7687A14804d17f814b",
-          "type": "TOKEN",
-          "value": 135.6859849557123
-        },
-        {
-          "identifier": "Gamma 0x0ec754f1fa3f51a301f1808ccc345b8f9a864ccf",
-          "type": "PROTOCOL",
-          "value": 2.008787456294028
-        },
-        {
-          "identifier": "Steer 0x2b0658563d97c757c55bcba76c3944d794030269",
-          "type": "PROTOCOL",
-          "value": 58405.26079850929
-        }
-      ]
-    },
-    "rewardsRecord": {
-      "id": "5587186591250494331",
-      "total": 30.612301377,
-      "timestamp": "1759222428",
-      "breakdowns": [
-        {
-          "token": {
-            "id": "9012826549321072558",
-            "name": "QuickSwap",
-            "chainId": 8453,
-            "address": "0x7094c27f342DBAdfbbeD005b219431595E33b305",
-            "decimals": 18,
-            "symbol": "QUICK",
-            "displaySymbol": "QUICK",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/QUICK.svg",
-            "verified": true,
-            "isTest": false,
-            "type": "TOKEN",
-            "isNative": false,
-            "price": 0.02082682,
-            "updatedAt": 1759222264,
-            "priceSource": "Price Source QUICK"
-          },
-          "amount": "1469849999999999934464",
-          "value": 30.612301376999998,
-          "distributionType": "DUTCH_AUCTION",
-          "id": "61d7d32f-3ffb-4ade-9deb-e5603702be09",
-          "timestamp": "1759222428",
-          "campaignId": "18022188486081471855",
-          "dailyRewardsRecordId": "5587186591250494331"
-        }
-      ]
-    }
-  },
-  {
-    "chainId": 324,
-    "type": "MULTILOG_DUTCH",
-    "identifier": "0xc4e33dcdf4dda97b4ff4f3f8df46f47058b018f6",
-    "name": "Lend WETH on Aave (net lending)",
-    "description": "Earn rewards by lending WETH to Aave on zkSync. This is a net lending opportunity: lending & borrowing the same asset will make you earn rewards based only on the difference of the two amounts.",
-    "howToSteps": [
-      "Lend assets on Aave.",
+      "Hold RLUSD.",
       "Rewards accumulate automatically."
     ],
     "status": "LIVE",
-    "action": "LEND",
-    "tvl": 739588.1820178009,
-    "apr": 1.5,
-    "maxApr": 0.015,
-    "dailyRewards": 30.39403487744387,
+    "action": "HOLD",
+    "tvl": 1003159.2800631,
+    "apr": 5.00067468746267,
+    "maxApr": 0,
+    "dailyRewards": 137.437622446707,
     "tags": [
-      "angles"
+      "aave"
     ],
     "liveCampaigns": 1,
-    "id": "2380459720503520680",
-    "depositUrl": "https://app.aave.com/reserve-overview/?underlyingAsset=0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
-    "explorerAddress": "0xb7b93bCf82519bB757Fd18b23A389245Dbd8ca64",
-    "lastCampaignCreatedAt": 1757435076,
+    "id": "772175469516744805",
+    "depositUrl": "https://app.aave.com/markets/",
+    "explorerAddress": "0x6A1792a91C08e9f0bFe7a990871B786643237f0F",
+    "lastCampaignCreatedAt": 1764760034,
     "tokens": [
       {
-        "id": "16074389614704641858",
-        "name": "Aave ZkSync WETH",
-        "chainId": 324,
-        "address": "0xb7b93bCf82519bB757Fd18b23A389245Dbd8ca64",
+        "id": "11023349986594603734",
+        "name": "Wrapped Aave Ethereum RLUSD",
+        "chainId": 1,
+        "address": "0x6A1792a91C08e9f0bFe7a990871B786643237f0F",
         "decimals": 18,
+        "symbol": "waEthRLUSD",
         "icon": "",
         "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 4174.2,
-        "updatedAt": 1759222294,
-        "priceSource": "Price Source 0xb7b93bCf82519bB757Fd18b23A389245Dbd8ca64",
-        "symbol": "aZksWETH"
+        "price": 1.0044851202572,
+        "updatedAt": 1765595063,
+        "priceSource": "Computed Price - 5317808988662637172 on chain 1"
       },
       {
-        "id": "1690446589080997791",
-        "name": "Wrapped Ether",
-        "chainId": 324,
-        "address": "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
+        "id": "6340883670170224181",
+        "name": "RLUSD",
+        "chainId": 1,
+        "address": "0x8292Bb45bf1Ee4d140127049757C2E0fF06317eD",
         "decimals": 18,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/WETH.png",
+        "symbol": "RLUSD",
+        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/RLUSD.svg",
         "verified": true,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
-        "isNative": false,
-        "price": 4174.2,
-        "updatedAt": 1759222265,
-        "priceSource": "Price Source WETH",
-        "symbol": "WETH"
+        "price": 0.999622241697661,
+        "updatedAt": 1765594905,
+        "priceSource": "Price Source RLUSD",
+        "displaySymbol": "RLUSD"
       }
     ],
     "chain": {
-      "id": 324,
-      "name": "ZKsync Era",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/zksync.svg",
-      "liveCampaigns": 4,
-      "endOfDisputePeriod": 1759212000,
-      "Explorer": [
+      "id": 1,
+      "name": "Ethereum",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/ethereum.svg",
+      "liveCampaigns": 104,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
         {
-          "id": "16247906888707834641",
+          "id": "13265570907942326370",
           "type": "ETHERSCAN",
-          "url": "https://era.zksync.network",
-          "chainId": 324
+          "url": "https://etherscan.io",
+          "chainId": 1
         }
       ]
     },
@@ -2641,490 +3007,284 @@
       "name": "Aave",
       "description": "A decentralized liquidity protocol where users can deposit and borrow",
       "url": "https://app.aave.com/",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg"
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/protocols/aave.svg",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
     },
     "activePrograms": [],
     "aprRecord": {
-      "cumulated": 1.5,
-      "timestamp": "1759222409",
+      "cumulated": 5.00067468746267,
+      "timestamp": "1765595057",
       "breakdowns": [
         {
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "identifier": "0x25b8654ea256513f279fe16334ffadb84b4d713ecc7e091beda2208120a7d8b4",
+          "distributionType": "DUTCH_AUCTION",
+          "identifier": "5317808988662637172",
           "type": "CAMPAIGN",
-          "value": 1.5,
-          "timestamp": "1759222409"
+          "value": 5.00067468746267,
+          "timestamp": "1765595057"
         }
       ]
     },
     "tvlRecord": {
-      "id": "4232031208356395",
-      "total": 739588.1820178009,
-      "timestamp": "1759222409",
+      "id": "17037742552484060540",
+      "total": 1003159.2800631,
+      "timestamp": "1765595057",
       "breakdowns": [
         {
-          "identifier": "16074389614704641858",
+          "identifier": "6340883670170224181",
           "type": "TOKEN",
-          "value": 177.1808207603375
+          "value": 1003538.37501597
         }
       ]
     },
     "rewardsRecord": {
-      "id": "4232031208356395",
-      "total": 30.39403487744387,
-      "timestamp": "1759222409",
+      "id": "17037742552484060540",
+      "total": 137.437622446707,
+      "timestamp": "1765595057",
       "breakdowns": [
         {
           "token": {
-            "id": "17652896972264996251",
-            "name": "Aave ZkSync ZK",
-            "chainId": 324,
-            "address": "0xd6cD2c0fC55936498726CacC497832052A9B2D1B",
+            "id": "4424314858495009744",
+            "name": "Aave Ethereum RLUSD (wrapped)",
+            "chainId": 1,
+            "address": "0x72eEED8043Dcce2Fe7CdAC950D928F80f472ab80",
             "decimals": 18,
-            "symbol": "aZksZK",
-            "displaySymbol": "aZK",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/aZksZK.svg",
+            "symbol": "aEthRLUSD",
+            "displaySymbol": "",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/RLUSD.svg",
             "verified": true,
             "isTest": false,
             "type": "TOKEN",
             "isNative": false,
-            "price": 0.04938042,
-            "updatedAt": 1759222287,
-            "priceSource": "Price Source aZksZK"
+            "price": 0.999622241697661,
+            "updatedAt": 1765594928,
+            "priceSource": "Price Source aEthRLUSD"
           },
-          "amount": "615507824304529473536",
-          "value": 30.394034877443872,
-          "distributionType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-          "id": "0baf7708-3f2d-48f7-8d8d-4edb4cfe1bfa",
-          "timestamp": "1759222409",
-          "campaignId": "12426622816954113157",
-          "dailyRewardsRecordId": "4232031208356395"
+          "amount": "137489560269583597568",
+          "value": 137.437622446707,
+          "distributionType": "DUTCH_AUCTION",
+          "onChainCampaignId": "5317808988662637172",
+          "id": "2ee1bfb7-8ef4-4a7b-bee5-77f1d7996e15",
+          "timestamp": "1765595057",
+          "campaignId": "5004359450158309868",
+          "dailyRewardsRecordId": "17037742552484060540"
         }
       ]
     }
   },
   {
-    "chainId": 137,
-    "type": "CLAMM",
-    "identifier": "0x44720A6f572649526Ac9073caE9200755cc78e0A",
-    "name": "Provide liquidity to  Quickswap WETH-AAVE 0.21%",
-    "description": "Earn rewards by providing liquidity to the Quickswap wETH-AAVE pool on Polygon, or through a liquidity manager supported by Merkl",
+    "chainId": 9745,
+    "type": "ERC20LOGPROCESSOR",
+    "identifier": "0x0B47Cf5F2DBae10DF506D51A1BD0851AFFe5CAae",
+    "name": "Hold Pendle YT Aave USDT0 26FEB2026",
+    "description": "Earn rewards by holding YT-aPlaUSDT0-26FEB2026",
     "howToSteps": [
-      "Provide liquidity on Quickswap.",
-      "Earn rewards based on your liquidity position."
+      "Hold YT-aPlaUSDT0-26FEB2026.",
+      "Rewards accumulate automatically."
     ],
     "status": "LIVE",
-    "action": "POOL",
-    "tvl": 147362.5289202667,
-    "apr": 2.527696005417642,
+    "action": "HOLD",
+    "tvl": 26161.3993574568,
+    "apr": 162.827135513102,
     "maxApr": 0,
-    "dailyRewards": 10.2051418,
-    "tags": [],
-    "liveCampaigns": 1,
-    "id": "11307291616470044497",
-    "depositUrl": "https://quickswap.exchange/#/pools?currency0=0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619&currency1=0xD6DF932A45C0f255f85145f286eA0b292B21C90B",
-    "explorerAddress": "0x44720A6f572649526Ac9073caE9200755cc78e0A",
-    "lastCampaignCreatedAt": 1758705233,
-    "tokens": [
-      {
-        "id": "12161554698994251101",
-        "name": "Wrapped Ether",
-        "chainId": 137,
-        "address": "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
-        "decimals": 18,
-        "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/tokens/WETH.png",
-        "verified": true,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 4174.2,
-        "updatedAt": 1759222295,
-        "priceSource": "Price Source wETH",
-        "symbol": "wETH"
-      },
-      {
-        "id": "1308956270274251153",
-        "name": "Aave (PoS)",
-        "chainId": 137,
-        "address": "0xD6DF932A45C0f255f85145f286eA0b292B21C90B",
-        "decimals": 18,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/AAVE.png",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 272.2,
-        "updatedAt": 1759222268,
-        "priceSource": "Price Source AAVE",
-        "symbol": "AAVE"
-      }
-    ],
-    "chain": {
-      "id": 137,
-      "name": "Polygon",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/polygon.svg",
-      "liveCampaigns": 52,
-      "endOfDisputePeriod": 1759222800,
-      "Explorer": [
-        {
-          "id": "17928672915163412988",
-          "type": "ETHERSCAN",
-          "url": "https://polygonscan.com",
-          "chainId": 137
-        }
-      ]
-    },
-    "protocol": {
-      "id": "quickswap",
-      "tags": [
-        "POOL"
-      ],
-      "name": "Quickswap",
-      "description": "",
-      "url": "https://quickswap.exchange/",
-      "icon": "https://icons.llamao.fi/icons/protocols/quickswap?w=48&h=48"
-    },
-    "activePrograms": [],
-    "aprRecord": {
-      "cumulated": 2.527696005417642,
-      "timestamp": "1759222416",
-      "breakdowns": [
-        {
-          "distributionType": "DUTCH_AUCTION",
-          "identifier": "0x8796fc366a5d4932bfe01370fa6e9c2b4d5567b2d9d6972a3f32eabe21f9d622",
-          "type": "CAMPAIGN",
-          "value": 2.527696005417642,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "Gamma 0x5ba383530db75a22e028239dbc777c7ee8ce4752",
-          "type": "PROTOCOL",
-          "value": 2.589767071768456,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "DefiEdge 0x5276feac519bbec9f5568cef9dfb7807e93be2dc",
-          "type": "PROTOCOL",
-          "value": 1.894826777930836,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "DefiEdge 0x5b770a2d5d70cb6d71d4fdc8c02776f05a8c3742",
-          "type": "PROTOCOL",
-          "value": 1.693213757092972,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "DefiEdge 0x7e7478516e5928cc9f4ad19af3092782f3382cd8",
-          "type": "PROTOCOL",
-          "value": 1.902203738876371,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "Ichi 0xb2b34446d9cfb6719543ef5246481f218367b43a",
-          "type": "PROTOCOL",
-          "value": 0.5962169992831423,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "Steer 0x59184e9e86f767adb9c6e0244b60fba8ba330837",
-          "type": "PROTOCOL",
-          "value": 2.430113127921603,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "Steer 0x63607e5fada1a65a04fa8f27ee51c18865c534e5",
-          "type": "PROTOCOL",
-          "value": 4.306397897330083,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "Steer 0x987ad9e7ae6027f7e194d0e345d0cd40145fb54a",
-          "type": "PROTOCOL",
-          "value": 0,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "Steer 0xa56bbbfb70f1fa0cd635e06caafd060c67e4226c",
-          "type": "PROTOCOL",
-          "value": 0,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "Steer 0xb9c47898b934f6b231d1126bdec6f6e3c28c10bd",
-          "type": "PROTOCOL",
-          "value": 0,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "Steer 0xd77749ab43ef413ce877bf752839de8f70881cbf",
-          "type": "PROTOCOL",
-          "value": 0,
-          "timestamp": "1759222416"
-        },
-        {
-          "identifier": "GammaChef 0x20ec0d06f447d550fc6edee42121bc8c1817b97d",
-          "type": "PROTOCOL",
-          "value": 2.589767071768455,
-          "timestamp": "1759222416"
-        }
-      ]
-    },
-    "tvlRecord": {
-      "id": "14296057501772980396",
-      "total": 147362.5289202667,
-      "timestamp": "1759222416",
-      "breakdowns": [
-        {
-          "identifier": "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
-          "type": "TOKEN",
-          "value": 6.962998790933689
-        },
-        {
-          "identifier": "0xD6DF932A45C0f255f85145f286eA0b292B21C90B",
-          "type": "TOKEN",
-          "value": 434.5980138396449
-        },
-        {
-          "identifier": "Gamma 0x5ba383530db75a22e028239dbc777c7ee8ce4752",
-          "type": "PROTOCOL",
-          "value": 125512.8715868288
-        },
-        {
-          "identifier": "DefiEdge 0x5276feac519bbec9f5568cef9dfb7807e93be2dc",
-          "type": "PROTOCOL",
-          "value": 1.260161105009656
-        },
-        {
-          "identifier": "DefiEdge 0x5b770a2d5d70cb6d71d4fdc8c02776f05a8c3742",
-          "type": "PROTOCOL",
-          "value": 1872.857982948464
-        },
-        {
-          "identifier": "DefiEdge 0x7e7478516e5928cc9f4ad19af3092782f3382cd8",
-          "type": "PROTOCOL",
-          "value": 5.885334102714105
-        },
-        {
-          "identifier": "Ichi 0xb2b34446d9cfb6719543ef5246481f218367b43a",
-          "type": "PROTOCOL",
-          "value": 5822.469590948351
-        },
-        {
-          "identifier": "Steer 0x59184e9e86f767adb9c6e0244b60fba8ba330837",
-          "type": "PROTOCOL",
-          "value": 0.07718778636796612
-        },
-        {
-          "identifier": "Steer 0x63607e5fada1a65a04fa8f27ee51c18865c534e5",
-          "type": "PROTOCOL",
-          "value": 44.20084680797299
-        },
-        {
-          "identifier": "Steer 0x987ad9e7ae6027f7e194d0e345d0cd40145fb54a",
-          "type": "PROTOCOL",
-          "value": 0
-        },
-        {
-          "identifier": "Steer 0xa56bbbfb70f1fa0cd635e06caafd060c67e4226c",
-          "type": "PROTOCOL",
-          "value": 0
-        },
-        {
-          "identifier": "Steer 0xb9c47898b934f6b231d1126bdec6f6e3c28c10bd",
-          "type": "PROTOCOL",
-          "value": 0
-        },
-        {
-          "identifier": "Steer 0xd77749ab43ef413ce877bf752839de8f70881cbf",
-          "type": "PROTOCOL",
-          "value": 0
-        },
-        {
-          "identifier": "GammaChef 0x20ec0d06f447d550fc6edee42121bc8c1817b97d",
-          "type": "PROTOCOL",
-          "value": 14264.58388216075
-        }
-      ]
-    },
-    "rewardsRecord": {
-      "id": "14296057501772980396",
-      "total": 10.2051418,
-      "timestamp": "1759222416",
-      "breakdowns": [
-        {
-          "token": {
-            "id": "934250890304918029",
-            "name": "QuickSwap",
-            "chainId": 137,
-            "address": "0xB5C064F955D8e7F38fE0460C556a72987494eE17",
-            "decimals": 18,
-            "symbol": "QUICK",
-            "displaySymbol": "QUICK",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/QUICK.svg",
-            "verified": true,
-            "isTest": false,
-            "type": "TOKEN",
-            "isNative": false,
-            "price": 0.02082682,
-            "updatedAt": 1759222264,
-            "priceSource": "Price Source QUICK"
-          },
-          "amount": "490000000000000000000",
-          "value": 10.2051418,
-          "distributionType": "DUTCH_AUCTION",
-          "id": "2f776419-5b7d-4f37-b47d-2f0371dcdfd3",
-          "timestamp": "1759222416",
-          "campaignId": "7926678708044645869",
-          "dailyRewardsRecordId": "14296057501772980396"
-        }
-      ]
-    }
-  },
-  {
-    "chainId": 137,
-    "type": "CLAMM",
-    "identifier": "0x8b5047E823A3081B29bdca5dE0Cd56CF4Aab8E06",
-    "name": "Provide liquidity to SushiSwapV3 THREE-AAVE 0.3%",
-    "description": "Earn rewards by providing liquidity to the Sushiswap AAVE-THREE pool on Polygon, or through a liquidity manager supported by Merkl",
-    "howToSteps": [
-      "Provide liquidity on Sushiswap.",
-      "Earn rewards based on your liquidity position."
-    ],
-    "status": "LIVE",
-    "action": "POOL",
-    "tvl": 5127.846606024526,
-    "apr": 10.98580492609984,
-    "maxApr": 0,
-    "dailyRewards": 1.543384178212291,
+    "dailyRewards": 116.706458038055,
     "tags": [
-      "sushiswap"
+      "aave",
+      "plasma"
     ],
-    "liveCampaigns": 1,
-    "id": "4308393757976465350",
-    "depositUrl": "https://www.sushi.com/polygon/pool/v3/0x8b5047e823a3081b29bdca5de0cd56cf4aab8e06",
-    "explorerAddress": "0x8b5047E823A3081B29bdca5dE0Cd56CF4Aab8E06",
-    "lastCampaignCreatedAt": 1743772004,
+    "liveCampaigns": 3,
+    "id": "16919770468788881765",
+    "depositUrl": "https://www.pendle.finance/",
+    "explorerAddress": "0x0B47Cf5F2DBae10DF506D51A1BD0851AFFe5CAae",
+    "lastCampaignCreatedAt": 1764856102,
     "tokens": [
       {
-        "id": "1308956270274251153",
-        "name": "Aave (PoS)",
-        "chainId": 137,
-        "address": "0xD6DF932A45C0f255f85145f286eA0b292B21C90B",
-        "decimals": 18,
-        "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/AAVE.png",
-        "verified": false,
-        "isTest": false,
-        "type": "TOKEN",
-        "isNative": false,
-        "price": 272.2,
-        "updatedAt": 1759222268,
-        "priceSource": "Price Source AAVE",
-        "symbol": "AAVE"
-      },
-      {
-        "id": "15153362051133042732",
-        "name": "ThreeCoin",
-        "chainId": 137,
-        "address": "0x9B034262e0095210ab9ddec60199741a8a1FbFe7",
-        "decimals": 18,
+        "id": "12173189759084764841",
+        "name": "Aave Plasma USDT0",
+        "chainId": 9745,
+        "address": "0x5D72a9d9A9510Cd8cBdBA12aC62593A58930a948",
+        "decimals": 6,
+        "symbol": "aPlaUSDT0",
         "icon": "",
         "verified": false,
+        "isNative": false,
         "isTest": false,
         "type": "TOKEN",
+        "price": 1.00014601919073,
+        "updatedAt": 1765594925,
+        "priceSource": "Price Source 0x5D72a9d9A9510Cd8cBdBA12aC62593A58930a948"
+      },
+      {
+        "id": "16199800531683762928",
+        "name": "YT Aave Plasma USDT0 26FEB2026",
+        "chainId": 9745,
+        "address": "0x0B47Cf5F2DBae10DF506D51A1BD0851AFFe5CAae",
+        "decimals": 6,
+        "symbol": "YT-aPlaUSDT0-26FEB2026",
+        "icon": "",
+        "verified": false,
         "isNative": false,
-        "price": 6216.13,
-        "updatedAt": 1759222281,
-        "priceSource": "Price Source THREE",
-        "symbol": "THREE"
+        "isTest": false,
+        "type": "TOKEN",
+        "price": 0.0121467278386676,
+        "updatedAt": 1765595085,
+        "priceSource": "Computed Price - 0x70176f8aed46365d1717eca94d27f5bda0ab86338b708e545e4e334ed04cff86 on chain 9745"
       }
     ],
     "chain": {
-      "id": 137,
-      "name": "Polygon",
-      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/polygon.svg",
-      "liveCampaigns": 52,
-      "endOfDisputePeriod": 1759222800,
-      "Explorer": [
+      "id": 9745,
+      "name": "Plasma",
+      "icon": "https://raw.githubusercontent.com/AngleProtocol/angle-token-list/main/src/assets/chains/plasma.png",
+      "liveCampaigns": 40,
+      "endOfDisputePeriod": 1765576800,
+      "explorers": [
         {
-          "id": "17928672915163412988",
+          "id": "14261454752756197884",
           "type": "ETHERSCAN",
-          "url": "https://polygonscan.com",
-          "chainId": 137
+          "url": "https://plasmascan.to/",
+          "chainId": 9745
         }
       ]
     },
     "protocol": {
-      "id": "sushi-swap",
+      "id": "pendle",
       "tags": [
-        "POOL"
+        "HOLD"
       ],
-      "name": "Sushiswap",
+      "name": "Pendle",
       "description": "",
-      "url": "https://www.sushi.com/ethereum/swap",
-      "icon": "https://icons.llamao.fi/icons/protocols/sushiswap?w=64&h=64"
+      "url": "https://www.pendle.finance/",
+      "icon": "https://icons.llamao.fi/icons/protocols/pendle?w=64&h=64",
+      "banner": null,
+      "opportunityBannerLight": null,
+      "opportunityBannerDark": null
     },
     "activePrograms": [],
     "aprRecord": {
-      "cumulated": 10.98580492609984,
-      "timestamp": "1759222414",
+      "cumulated": 162.827135513102,
+      "timestamp": "1765595084",
       "breakdowns": [
         {
           "distributionType": "DUTCH_AUCTION",
-          "identifier": "0x446ce9d8c70f4241ad8f4caedfc2dc347f37b05c63fd0923716a91dc985fc4aa",
+          "identifier": "5087619725603142656",
           "type": "CAMPAIGN",
-          "value": 10.98580492609984,
-          "timestamp": "1759222414"
+          "value": 93.1108254351651,
+          "timestamp": "1765595084"
+        },
+        {
+          "distributionType": "DUTCH_AUCTION",
+          "identifier": "13521476134833425326",
+          "type": "CAMPAIGN",
+          "value": 62.8746979968655,
+          "timestamp": "1765595084"
+        },
+        {
+          "distributionType": "DUTCH_AUCTION",
+          "identifier": "0x70176f8aed46365d1717eca94d27f5bda0ab86338b708e545e4e334ed04cff86",
+          "type": "CAMPAIGN",
+          "value": 6.84161208107161,
+          "timestamp": "1765595084"
         }
       ]
     },
     "tvlRecord": {
-      "id": "10924821988532206300",
-      "total": 5127.846606024526,
-      "timestamp": "1759222414",
+      "id": "7051960812337220989",
+      "total": 26161.3993574568,
+      "timestamp": "1765595084",
       "breakdowns": [
         {
-          "identifier": "0x9B034262e0095210ab9ddec60199741a8a1FbFe7",
+          "identifier": "5737761031982269701",
           "type": "TOKEN",
-          "value": 0.3774788927904748
-        },
-        {
-          "identifier": "0xD6DF932A45C0f255f85145f286eA0b292B21C90B",
-          "type": "TOKEN",
-          "value": 10.21818051499953
+          "value": 2142582.460459
         }
       ]
     },
     "rewardsRecord": {
-      "id": "10924821988532206300",
-      "total": 1.543384178212291,
-      "timestamp": "1759222414",
+      "id": "7051960812337220989",
+      "total": 116.706458038055,
+      "timestamp": "1765595084",
       "breakdowns": [
         {
           "token": {
-            "id": "9389755618034087105",
-            "name": "SushiToken (PoS)",
-            "chainId": 137,
-            "address": "0x0b3F868E0BE5597D5DB7fEB59E1CADBb0fdDa50a",
+            "id": "9177007823639843523",
+            "name": "Wrapped XPL",
+            "chainId": 9745,
+            "address": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
             "decimals": 18,
-            "symbol": "SUSHI",
-            "displaySymbol": "SUSHI",
-            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/SUSHI.png",
+            "symbol": "WXPL",
+            "displaySymbol": "",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/XPL.png",
             "verified": true,
             "isTest": false,
             "type": "TOKEN",
             "isNative": false,
-            "price": 0.662349,
-            "updatedAt": 1759222272,
-            "priceSource": "Price Source SUSHI"
+            "price": 0.147111900741136,
+            "updatedAt": 1765594929,
+            "priceSource": "Price Source WXPL"
           },
-          "amount": "2330167597765362688",
-          "value": 1.5433841782122903,
+          "amount": "33333333333333344256",
+          "value": 4.90373002470454,
           "distributionType": "DUTCH_AUCTION",
-          "id": "5043b420-65c4-45cd-8483-9859882d896b",
-          "timestamp": "1759222414",
-          "campaignId": "11535482019101763367",
-          "dailyRewardsRecordId": "10924821988532206300"
+          "onChainCampaignId": "0x70176f8aed46365d1717eca94d27f5bda0ab86338b708e545e4e334ed04cff86",
+          "id": "562f4aa9-dd9d-4262-9ca1-767bd1e732fa",
+          "timestamp": "1765595084",
+          "campaignId": "9824000679326297970",
+          "dailyRewardsRecordId": "7051960812337220989"
+        },
+        {
+          "token": {
+            "id": "9177007823639843523",
+            "name": "Wrapped XPL",
+            "chainId": 9745,
+            "address": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
+            "decimals": 18,
+            "symbol": "WXPL",
+            "displaySymbol": "",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/XPL.png",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 0.147111900741136,
+            "updatedAt": 1765594929,
+            "priceSource": "Price Source WXPL"
+          },
+          "amount": "306334712013357907968",
+          "value": 45.0654817472737,
+          "distributionType": "DUTCH_AUCTION",
+          "onChainCampaignId": "13521476134833425326",
+          "id": "dd30482f-3119-4e66-b67d-df63355a518b",
+          "timestamp": "1765595084",
+          "campaignId": "2566682779035781965",
+          "dailyRewardsRecordId": "7051960812337220989"
+        },
+        {
+          "token": {
+            "id": "9177007823639843523",
+            "name": "Wrapped XPL",
+            "chainId": 9745,
+            "address": "0x6100E367285b01F48D07953803A2d8dCA5D19873",
+            "decimals": 18,
+            "symbol": "WXPL",
+            "displaySymbol": "",
+            "icon": "https://storage.googleapis.com/merkl-static-assets/tokens/XPL.png",
+            "verified": true,
+            "isTest": false,
+            "type": "TOKEN",
+            "isNative": false,
+            "price": 0.147111900741136,
+            "updatedAt": 1765594929,
+            "priceSource": "Price Source WXPL"
+          },
+          "amount": "453649541130667753472",
+          "value": 66.7372462660768,
+          "distributionType": "DUTCH_AUCTION",
+          "onChainCampaignId": "5087619725603142656",
+          "id": "0e911a75-9eb1-4774-a7a1-c9725ed80ea2",
+          "timestamp": "1765595084",
+          "campaignId": "14832017191702898290",
+          "dailyRewardsRecordId": "7051960812337220989"
         }
       ]
     }
