@@ -178,14 +178,25 @@ async function processMerklData(): Promise<Map<string, { supply: MerklCampaignBr
   
   for (const opportunity of aaveOpportunities) {
     // 查找底层代币（通常不是 aToken）
-    const underlyingToken = opportunity.tokens.find(token => 
+    // 先找到所有符合条件的代币
+    const candidateTokens = opportunity.tokens.filter(token => 
       (!token.symbol.startsWith('a') && !token.symbol.startsWith('variableDebt')) ||
       token.symbol === 'AAVE' // AAVE 本身是例外
     );
     
-    if (!underlyingToken) {
+    // 如果没有找到符合条件的代币
+    if (candidateTokens.length === 0) {
       console.log(`   ⚠️ No underlying token found for opportunity ${opportunity.id}`);
       continue;
+    }
+    
+    // 如果有多个符合条件的代币，优先选择 USDE
+    // 特殊情况：如果同时存在 sUSDE 和 USDR，优先选择 USDE
+    let underlyingToken = candidateTokens.find(token => token.symbol === 'USDE');
+    
+    // 如果没有找到 USDE，使用第一个符合条件的代币
+    if (!underlyingToken) {
+      underlyingToken = candidateTokens[0];
     }
     
     const key = `${opportunity.chainId}-${underlyingToken.address.toLowerCase()}`;
