@@ -1,8 +1,10 @@
 import { writeFile, mkdir } from 'fs/promises';
-import { chainId } from "@aave/client";
+import { chainId, AaveClient } from "@aave/client";
 import { markets } from "@aave/client/actions";
-import { client } from "./client.js";
 import * as addressBook from "@bgd-labs/aave-address-book";
+
+// 创建 Aave 客户端实例
+const client = AaveClient.create();
 import fetch from 'node-fetch';
 import { join } from 'path';
 import { logger } from './logger.js';
