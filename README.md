@@ -17,7 +17,15 @@
 aave/
 ├── src/
 │   ├── client.ts      # Aave 客户端配置
+│   ├── logger.ts      # 日志配置模块
 │   └── index.ts       # 主要逻辑
+├── data/              # 输出数据文件夹
+│   ├── aave-all-markets-data.json
+│   ├── aave-formatted-data.json
+│   └── aave-formatted-data.csv
+├── logs/              # 日志文件文件夹
+│   ├── combined.log   # 所有日志
+│   └── error.log      # 错误日志
 ├── package.json       # 项目依赖
 ├── tsconfig.json      # TypeScript 配置
 └── README.md          # 项目说明
@@ -44,9 +52,37 @@ npm start
 
 ## 输出文件
 
-运行成功后，会在项目根目录生成：
-- `aave-all-markets-data.json` - 包含所有支持网络的完整市场数据 (3.3MB)
+运行成功后，会在 `data/` 文件夹生成：
+- `aave-all-markets-data.json` - 包含所有支持网络的完整市场数据
+- `aave-formatted-data.json` - 格式化后的 JSON 数据
+- `aave-formatted-data.csv` - CSV 格式数据
 - `aave-all-markets-error.json` - 如果出现错误，会保存错误信息
+
+## 日志系统
+
+项目使用 [winston](https://github.com/winstonjs/winston) 日志库来统一管理日志输出。
+
+### 日志文件
+
+所有日志会自动保存到 `logs/` 文件夹：
+- `logs/combined.log` - 包含所有级别的日志（info, warn, error, debug）
+- `logs/error.log` - 仅包含 error 级别的日志
+
+### 日志级别
+
+- **info** - 一般信息（默认级别）
+- **warn** - 警告信息
+- **error** - 错误信息
+- **debug** - 调试信息（开发环境启用）
+
+### 日志配置
+
+- 日志文件大小限制：5MB
+- 日志文件保留数量：5个（自动轮转）
+- 控制台输出：彩色格式，便于查看
+- 文件输出：JSON 格式，包含时间戳和元数据
+
+日志文件会自动创建，无需手动配置。
 
 ## 支持的网络
 
@@ -115,6 +151,7 @@ interface NetworkInfo {
 - **TypeScript**: 类型安全的 JavaScript
 - **@aave/client**: Aave 官方 SDK
 - **@bgd-labs/aave-address-book**: Aave 地址簿，包含所有网络配置
+- **winston**: 日志管理库
 - **Node.js**: JavaScript 运行环境
 
 ## 相关链接

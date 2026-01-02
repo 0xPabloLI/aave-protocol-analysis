@@ -7,12 +7,35 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "extract-brevis-api": "tsx scripts/extract-brevis-api.ts",
+    "extract-api-simple": "tsx scripts/extract-api-simple.ts",
+    "extract-api-html": "tsx scripts/extract-api-from-html.ts",
+    "test-api": "tsx scripts/test-api-direct.ts",
+    "fetch-activities": "tsx scripts/fetch-brevis-activities.ts",
+    "test-brevis-api": "tsx scripts/test-brevis-api.ts",
+    "analyze-brevis": "tsx scripts/analyze-brevis-response.ts",
+    "extract-apr": "tsx scripts/extract-apr-data.ts",
+    "analyze-browser-response": "tsx scripts/analyze-browser-response.ts",
+    "reverse-apr": "tsx scripts/reverse-engineer-apr.ts",
+    "format-apr": "tsx scripts/format-apr-results.ts",
+    "generate-proto": "tsx scripts/generate-proto-from-analysis.ts",
+    "analyze-api": "tsx scripts/analyze-api-data.ts",
+    "fetch-decode": "tsx scripts/fetch-and-decode.ts",
+    "analyze-proto-structure": "tsx scripts/analyze-protobuf-structure.ts",
+    "decode-simple": "tsx scripts/decode-simple.ts",
+    "fetch-precise": "tsx scripts/fetch-and-extract-precise.ts",
+    "reverse-complete": "tsx scripts/reverse-engineer-complete.ts",
+    "extract-complete": "tsx scripts/extract-complete-data.ts",
+    "fetch-aave-aprs": "tsx scripts/fetch-aave-aprs.ts"
   },
   "dependencies": {
     "@aave/client": "^0.6.1",
     "@bgd-labs/aave-address-book": "^4.30.3",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "protobufjs": "^8.0.0",
+    "puppeteer": "^21.11.0",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
