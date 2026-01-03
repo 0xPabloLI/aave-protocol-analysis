@@ -29,16 +29,13 @@ export interface MerklOpportunity {
       // API 可能返回其他字段，但处理逻辑中未使用
     }>;
   };
-  aprRecord: {
-    cumulated: number;
-  };
 }
 
 export interface MerklCampaignDetails {
   startedAt: string;
   endedAt: string;
   id: string;
-  // apr 字段已移除：实际使用的是 opp.aprRecord.cumulated，而不是 campaignDetails.apr
+  apr: number;
 }
 
 // Merkl 数据结构：每个 opportunity 存储一次
@@ -98,7 +95,8 @@ export async function fetchMerklCampaignDetails(campaignId: string): Promise<Mer
     return {
       startedAt,
       endedAt,
-      id: campaignId
+      id: campaignId,
+      apr: campaign.apr || 0
     };
   } catch (error) {
     logger.error(`❌ Error fetching campaign ${campaignId}:`, error);
@@ -198,7 +196,7 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
       const campaignDetails = campaignDetailsCache.get(rewardBreakdown.campaignId);
       if (campaignDetails) {
         breakdowns.push({
-          campaignApr: opp.aprRecord.cumulated,
+          campaignApr: campaignDetails.apr,
           campaignStartedAt: campaignDetails.startedAt,
           campaignEndedAt: campaignDetails.endedAt,
           campaignId: rewardBreakdown.campaignId

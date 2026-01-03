@@ -85,3 +85,5 @@ jspm_packages/
 node_modules
 
 scripts/
+
+data/
