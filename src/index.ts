@@ -60,9 +60,9 @@ interface FormattedReserveData {
     requiredBorrowTokens: string[]; // 需要 borrow 的 token 列表，如果是 'multiple' 则表示任意 token
     isSelf?: boolean; // 是否为 self 格式
   }>;
-  merklSupplyApr: number[]; // 数组，包含所有匹配 opportunities 的 APR 值
-  merklBorrowApr: number[]; // 数组，包含所有匹配 opportunities 的 APR 值
-  merklHoldApr: number[]; // 数组，包含所有匹配 opportunities 的 APR 值
+  merklSupplyApr: number; // 所有匹配 opportunities 的 APR 值总和
+  merklBorrowApr: number; // 所有匹配 opportunities 的 APR 值总和
+  merklHoldApr: number; // 所有匹配 opportunities 的 APR 值总和
   merklSupplyAprBreakdowns: MerklCampaignBreakdown[]; // 合并所有匹配 opportunities 的 breakdowns
   merklBorrowAprBreakdowns: MerklCampaignBreakdown[]; // 合并所有匹配 opportunities 的 breakdowns
   merklHoldAprBreakdowns: MerklCampaignBreakdown[]; // 合并所有匹配 opportunities 的 breakdowns
@@ -472,10 +472,10 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           meritSelfBorrow: [],
           meritBorrowWithSupplyRequirement: undefined,
           meritSupplyWithBorrowRequirement: undefined,
-          // Merkl APR 激励字段 - 初始化为空数组
-          merklSupplyApr: [],
-          merklBorrowApr: [],
-          merklHoldApr: [],
+          // Merkl APR 激励字段 - 初始化为 0
+          merklSupplyApr: 0,
+          merklBorrowApr: 0,
+          merklHoldApr: 0,
           merklSupplyAprBreakdowns: [],
           merklBorrowAprBreakdowns: [],
           merklHoldAprBreakdowns: [],
@@ -600,41 +600,40 @@ function enrichDatasetWithIncentiveData(
     const matchedOpportunities = findMatchingMerklOpportunities(item, merklData);
     
     if (matchedOpportunities.length > 0) {
-      const supplyAprs: number[] = [];
-      const borrowAprs: number[] = [];
-      const holdAprs: number[] = [];
+      let merklSupplyApr = 0;
+      let merklBorrowApr = 0;
+      let merklHoldApr = 0;
       const supplyBreakdowns: MerklCampaignBreakdown[] = [];
       const borrowBreakdowns: MerklCampaignBreakdown[] = [];
       const holdBreakdowns: MerklCampaignBreakdown[] = [];
       
       for (const opp of matchedOpportunities) {
-        // 只有当对应的 breakdowns 数组不为空时才计算并 push APR
         if (opp.supply.length > 0) {
           const supplyApr = calculateActiveCampaignApr(opp.supply);
           if (supplyApr > 0) {
-            supplyAprs.push(supplyApr);
+            merklSupplyApr += supplyApr;
           }
           supplyBreakdowns.push(...opp.supply);
         }
         if (opp.borrow.length > 0) {
           const borrowApr = calculateActiveCampaignApr(opp.borrow);
           if (borrowApr > 0) {
-            borrowAprs.push(borrowApr);
+            merklBorrowApr += borrowApr;
           }
           borrowBreakdowns.push(...opp.borrow);
         }
         if (opp.hold.length > 0) {
           const holdApr = calculateActiveCampaignApr(opp.hold);
           if (holdApr > 0) {
-            holdAprs.push(holdApr);
+            merklHoldApr += holdApr;
           }
           holdBreakdowns.push(...opp.hold);
         }
       }
       
-      item.merklSupplyApr = supplyAprs;
-      item.merklBorrowApr = borrowAprs;
-      item.merklHoldApr = holdAprs;
+      item.merklSupplyApr = merklSupplyApr;
+      item.merklBorrowApr = merklBorrowApr;
+      item.merklHoldApr = merklHoldApr;
       item.merklSupplyAprBreakdowns = supplyBreakdowns;
       item.merklBorrowAprBreakdowns = borrowBreakdowns;
       item.merklHoldAprBreakdowns = holdBreakdowns;
@@ -742,9 +741,9 @@ function generateCSV(data: FormattedReserveData[]): string {
       row.meritSupplyWithBorrowRequirement && row.meritSupplyWithBorrowRequirement.length > 0
         ? `"${row.meritSupplyWithBorrowRequirement.map(req => `${req.apr}:${req.requiredBorrowTokens.join(',')}`).join('; ')}"`
         : '',
-      row.merklSupplyApr.length > 0 ? `"${row.merklSupplyApr.join(';')}"` : '',
-      row.merklBorrowApr.length > 0 ? `"${row.merklBorrowApr.join(';')}"` : '',
-      row.merklHoldApr.length > 0 ? `"${row.merklHoldApr.join(';')}"` : '',
+      row.merklSupplyApr > 0 ? row.merklSupplyApr : '',
+      row.merklBorrowApr > 0 ? row.merklBorrowApr : '',
+      row.merklHoldApr > 0 ? row.merklHoldApr : '',
       `"${formatMerklBreakdown(row.merklSupplyAprBreakdowns)}"`,
       `"${formatMerklBreakdown(row.merklBorrowAprBreakdowns)}"`,
       `"${formatMerklBreakdown(row.merklHoldAprBreakdowns)}"`,
