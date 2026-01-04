@@ -3,11 +3,16 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { logger } from './logger.js';
 
+// 配置参数：Tydro points 到 USD 的转换率（1 point = 1 USD）
+export const TYDRO_POINT_TO_USD_RATE = 1;
+
 export interface MerklCampaignBreakdown {
   campaignApr: number;
   campaignStartedAt: string;
   campaignEndedAt: string;
   campaignId: string;
+  pointsPerThousandUsd?: number; // Tydro 协议的 points/1000USD 值
+  dailyPoints?: number; // Tydro 协议的每日 points
 }
 
 // API 响应的完整类型（用于类型断言）
@@ -17,7 +22,11 @@ export interface MerklOpportunity {
   action: string; // "LEND" or "BORROW" or "HOLD"
   chainId: number;
   explorerAddress?: string; // 用于索引的地址
-  // protocol 字段已移除：已通过 mainProtocolId=aave 过滤，处理逻辑中未使用
+  status?: string; // "LIVE" or other statuses
+  tvl?: number; // TVL 值，用于计算 points/1000USD
+  protocol?: {
+    id: string; // 协议 ID，用于识别 tydro
+  };
   tokens?: Array<{
     address: string;
     symbol: string;
@@ -26,6 +35,7 @@ export interface MerklOpportunity {
   rewardsRecord: {
     breakdowns: Array<{
       campaignId: string; // 实际使用的字段
+      value?: number; // points 值，用于 tydro 协议
       // API 可能返回其他字段，但处理逻辑中未使用
     }>;
   };
@@ -48,21 +58,34 @@ export interface MerklOpportunityData {
 }
 
 /**
- * 获取 Merkl opportunities（使用 mainProtocolId 参数，只返回 Aave 相关的数据）
+ * 获取 Merkl opportunities（使用 mainProtocolId 参数，返回 Aave 和 Tydro 相关的数据）
  */
 export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
   try {
-    logger.info('🔄 Fetching Merkl opportunities for Aave...');
-    const response = await fetch('https://api.merkl.xyz/v4/opportunities?mainProtocolId=aave');
+    logger.info('🔄 Fetching Merkl opportunities for Aave and Tydro...');
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    // 并发获取 aave 和 tydro 的数据
+    const [aaveResponse, tydroResponse] = await Promise.all([
+      fetch('https://api.merkl.xyz/v4/opportunities?mainProtocolId=aave'),
+      fetch('https://api.merkl.xyz/v4/opportunities?mainProtocolId=tydro')
+    ]);
+    
+    if (!aaveResponse.ok) {
+      throw new Error(`HTTP error! status: ${aaveResponse.status}`);
+    }
+    if (!tydroResponse.ok) {
+      logger.warn(`⚠️ Failed to fetch Tydro opportunities: HTTP ${tydroResponse.status}`);
     }
     
-    const opportunities = await response.json() as MerklOpportunity[];
-    logger.info(`✅ Found ${opportunities.length} Merkl opportunities`);
+    const aaveOpportunities = await aaveResponse.json() as MerklOpportunity[];
+    const tydroOpportunities = tydroResponse.ok 
+      ? (await tydroResponse.json() as MerklOpportunity[])
+      : [];
     
-    return opportunities;
+    const allOpportunities = [...aaveOpportunities, ...tydroOpportunities];
+    logger.info(`✅ Found ${aaveOpportunities.length} Aave opportunities and ${tydroOpportunities.length} Tydro opportunities (total: ${allOpportunities.length})`);
+    
+    return allOpportunities;
   } catch (error) {
     logger.error('❌ Error fetching Merkl opportunities:', error);
     return [];
@@ -148,12 +171,20 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
   const merklData: Record<string, MerklOpportunityData[]> = {};
   logger.info('🔍 Processing Merkl opportunities...');
   
-  // 由于使用了 mainProtocolId=aave 参数，API 已经只返回 Aave 相关的数据，无需再过滤
-  logger.info(`Processing ${opportunities.length} Aave opportunities`);
+  // 过滤出 status 为 "LIVE" 的 opportunities
+  const liveOpportunities = opportunities.filter(opp => opp.status === 'LIVE');
+  const tydroCount = liveOpportunities.filter(opp => opp.protocol?.id === 'tydro').length;
+  const aaveCount = liveOpportunities.length - tydroCount;
+  logger.info(`Processing ${liveOpportunities.length} live opportunities (${aaveCount} Aave, ${tydroCount} Tydro, filtered from ${opportunities.length} total)`);
+  
+  if (liveOpportunities.length < opportunities.length) {
+    const filteredCount = opportunities.length - liveOpportunities.length;
+    logger.info(`⚠️ Filtered out ${filteredCount} non-live opportunities`);
+  }
   
   // 优化：收集所有唯一的 campaignId，批量并发请求
   const uniqueCampaignIds = new Set<string>();
-  for (const opp of opportunities) {
+  for (const opp of liveOpportunities) {
     if (opp.rewardsRecord?.breakdowns) {
       for (const breakdown of opp.rewardsRecord.breakdowns) {
         if (breakdown.campaignId) {
@@ -177,12 +208,15 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
   await Promise.all(campaignPromises);
   logger.info(`✅ Fetched ${campaignDetailsCache.size} campaign details`);
   
-  // 处理所有 opportunities（现在可以快速从缓存中获取数据）
-  for (const opp of opportunities) {
+  // 处理所有 live opportunities（现在可以快速从缓存中获取数据）
+  for (const opp of liveOpportunities) {
     if (!opp.explorerAddress) {
       logger.warn(`   ⚠️ No explorerAddress found for opportunity ${opp.id}`);
       continue;
     }
+    
+    // 检查是否是 tydro 协议
+    const isTydro = opp.protocol?.id === 'tydro';
     
     // 只有在 chainId === 1 时才需要解析 marketName
     const marketName = opp.chainId === 1 
@@ -192,15 +226,53 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
     
     // 处理 campaign breakdowns（从缓存中快速获取）
     const breakdowns: MerklCampaignBreakdown[] = [];
-    for (const rewardBreakdown of opp.rewardsRecord.breakdowns) {
-      const campaignDetails = campaignDetailsCache.get(rewardBreakdown.campaignId);
-      if (campaignDetails) {
+    
+    if (isTydro) {
+      // Tydro 协议特殊处理：计算 points/1000USD，在 breakdown 中存储 points 信息
+      const rewardsBreakdown = opp.rewardsRecord.breakdowns[0];
+      if (rewardsBreakdown && rewardsBreakdown.value !== undefined) {
+        const dailyPoints = Number(rewardsBreakdown.value);
+        const tvl = Number(opp.tvl) || 0;
+        const pointsPerThousandUsd = tvl > 0 ? (dailyPoints / tvl) * 1000 : 0;
+        
+        // 根据配置参数计算 APR（用于显示，但 breakdown 中主要存储 points）
+        // 公式：pointsPerThousandUsd = 每 1000 USD 每天获得的 points
+        // 如果 1 point = TYDRO_POINT_TO_USD_RATE USD，则：
+        // 每 1000 USD 每天获得的价值 = pointsPerThousandUsd * TYDRO_POINT_TO_USD_RATE USD
+        // 每天的收益率 = (pointsPerThousandUsd * TYDRO_POINT_TO_USD_RATE) / 1000
+        // 年化 APR（百分比）= ((pointsPerThousandUsd * TYDRO_POINT_TO_USD_RATE) / 1000) * 365 * 100
+        // 简化：年化 APR（百分比）= pointsPerThousandUsd * TYDRO_POINT_TO_USD_RATE * 36.5
+        const annualAprPercent = pointsPerThousandUsd * TYDRO_POINT_TO_USD_RATE * 36.5;
+        
+        // 对于 tydro，我们需要从 campaign details 获取时间信息，如果没有则使用默认值
+        const campaignDetails = rewardsBreakdown.campaignId 
+          ? campaignDetailsCache.get(rewardsBreakdown.campaignId)
+          : null;
+        
+        // Tydro 的 breakdown 中存储 points 信息，而不是 APR
         breakdowns.push({
-          campaignApr: campaignDetails.apr,
-          campaignStartedAt: campaignDetails.startedAt,
-          campaignEndedAt: campaignDetails.endedAt,
-          campaignId: rewardBreakdown.campaignId
+          campaignApr: annualAprPercent, // 仍然计算 APR 用于兼容性，但主要信息是 points
+          campaignStartedAt: campaignDetails?.startedAt || '',
+          campaignEndedAt: campaignDetails?.endedAt || '',
+          campaignId: rewardsBreakdown.campaignId || opp.id,
+          pointsPerThousandUsd: pointsPerThousandUsd, // 存储 points/1000USD
+          dailyPoints: dailyPoints // 存储每日 points
         });
+        
+        logger.info(`   📊 Tydro opportunity ${opp.id}: ${dailyPoints} daily points, TVL: ${tvl}, Points/1000USD: ${pointsPerThousandUsd.toFixed(4)}, APR: ${annualAprPercent.toFixed(2)}%`);
+      }
+    } else {
+      // Aave 协议：使用原有的处理逻辑
+      for (const rewardBreakdown of opp.rewardsRecord.breakdowns) {
+        const campaignDetails = campaignDetailsCache.get(rewardBreakdown.campaignId);
+        if (campaignDetails) {
+          breakdowns.push({
+            campaignApr: campaignDetails.apr,
+            campaignStartedAt: campaignDetails.startedAt,
+            campaignEndedAt: campaignDetails.endedAt,
+            campaignId: rewardBreakdown.campaignId
+          });
+        }
       }
     }
     
@@ -236,7 +308,8 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
   const merklRawDataPath = join('data', 'merkl-raw-data.json');
   await writeFile(merklRawDataPath, JSON.stringify({
     timestamp: new Date().toISOString(),
-    rawOpportunities: opportunities,
+    rawOpportunities: opportunities, // 保存所有原始数据（包括非 live 的）
+    liveOpportunities: liveOpportunities, // 保存过滤后的 live opportunities
     processedData,
     index: merklData
   }, null, 2), 'utf-8');

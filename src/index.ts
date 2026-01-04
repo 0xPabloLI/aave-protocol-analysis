@@ -17,6 +17,11 @@ import {
   findMatchingMerklOpportunities,
   formatMerklBreakdown
 } from './merkl-api.js';
+import {
+  MeritDataItem,
+  fetchMeritData,
+  getMeritDataFromMarket
+} from './merit-api.js';
 
 interface NetworkInfo {
   name: string;
@@ -50,14 +55,14 @@ interface FormattedReserveData {
   meritBorrowApr: string[]; // Merit borrow APR
   meritSelfSupply: string[]; // Merit self supply APR
   meritSelfBorrow: string[]; // Merit self borrow APR
-  meritBorrowWithSupplyRequirement?: Array<{
-    apr: string;
-    requiredSupplyTokens: string[]; // 需要 supply 的 token 列表，如果是 'multiple' 则表示任意 token
-    isSelf?: boolean; // 是否为 self 格式
-  }>;
   meritSupplyWithBorrowRequirement?: Array<{
     apr: string;
     requiredBorrowTokens: string[]; // 需要 borrow 的 token 列表，如果是 'multiple' 则表示任意 token
+    isSelf?: boolean; // 是否为 self 格式
+  }>;
+  meritBorrowWithSupplyRequirement?: Array<{
+    apr: string;
+    requiredSupplyTokens: string[]; // 需要 supply 的 token 列表，如果是 'multiple' 则表示任意 token
     isSelf?: boolean; // 是否为 self 格式
   }>;
   merklSupplyApr: number; // 所有匹配 opportunities 的 APR 值总和
@@ -68,33 +73,29 @@ interface FormattedReserveData {
   merklHoldAprBreakdowns: MerklCampaignBreakdown[]; // 合并所有匹配 opportunities 的 breakdowns
   brevisSupplyApr: number | null;  // Brevis Network Linea Surge Supply APR
   brevisBorrowApr: number | null;   // Brevis Network Linea Surge Borrow APR
-}
-
-interface MeritAPRResponse {
-  previousAPR: any;
-  currentAPR: {
-    actionsAPR: Record<string, number | null>;
-  };
+  totalIncentiveSupplyApy: number; // 所有激励 APR 转换为 APY 后的总和
+  totalSupplyApy: number; // 原生 supplyApy + totalIncentiveSupplyApy
+  totalIncentiveBorrowApy: number; // 所有激励 APR 转换为 APY 后的总和
+  totalBorrowApy: number | null; // 原生 borrowApy + totalIncentiveBorrowApy
 }
 
 
-// Merit 数据项结构
-interface MeritDataItem {
-  meritSupplyApr: string[];
-  meritBorrowApr: string[];
-  meritSelfSupply: string[];
-  meritSelfBorrow: string[];
-  meritBorrowWithSupplyRequirement: Array<{
-    apr: string;
-    requiredSupplyTokens: string[];
-    isSelf?: boolean;
-  }>;
-  meritSupplyWithBorrowRequirement: Array<{
-    apr: string;
-    requiredBorrowTokens: string[];
-    isSelf?: boolean;
-  }>;
-}
+/**
+ * Converts APR to APY using monthly compounding
+ * Assumes users claim rewards once per month and reinvest them
+ * Formula: APY = (1 + APR/12)^12 - 1
+ *
+ * This function is used to align incentive calculations with other protocol APYs
+ * throughout the app, providing more accurate representations of compound returns.
+ *
+ * @param apr - Annual Percentage Rate as a decimal (e.g., 0.05 for 5%)
+ * @returns APY as a decimal
+ */
+export const convertAprToApy = (apr: number): number => {
+  const monthlyRate = apr / 12;
+  const apy = Math.pow(1 + monthlyRate, 12) - 1;
+  return apy;
+};
 
 // 从 baseDataset 构建链-代币索引：chainNameLower -> Set<tokenSymbolLower>
 function buildChainTokenIndex(baseDataset: FormattedReserveData[]): Record<string, Set<string>> {
@@ -105,7 +106,8 @@ function buildChainTokenIndex(baseDataset: FormattedReserveData[]): Record<strin
     if (!chainName) return;
     if (!index[chainName]) index[chainName] = new Set<string>();
     const tokenSymbol = item.tokenSymbol;
-    if (tokenSymbol) index[chainName].add(tokenSymbol);
+    // 将 tokenSymbol 转换为小写，以便与 Brevis description（已转换为小写）匹配
+    if (tokenSymbol) index[chainName].add(tokenSymbol.toLowerCase());
   });
   
   logger.info(`🗂️  Built chain-token index: ${Object.keys(index).length} chains`);
@@ -135,169 +137,6 @@ function getAllAaveV3Networks(): NetworkInfo[] {
   return networkInfo;
 }
 
-async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
-  try {
-    logger.info('🎁 Fetching Merit APR data...');
-    const response = await fetch('https://apps.aavechan.com/api/merit/aprs');
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const data = await response.json() as MeritAPRResponse;
-    logger.info(`✅ Merit APR data fetched successfully`);
-    
-    const meritAPRs = data.currentAPR.actionsAPR;
-    
-    // 建立 Merit APR 数据索引
-    // 作用：将原始 Merit APR 数据（键格式复杂，如 "ethereum-supply-weth"）转换为统一的索引格式
-    // 输入：Record<string, number | null> - 原始数据，键可能包含多种格式（supply/borrow/prime/multiple/self- 等）
-    // 输出：Record<chain-token, {...}> - 统一索引，键为 "chain-token" 格式（如 "ethereum-weth"）
-    logger.info('🔍 Indexing Merit APR data...');
-    const meritData: Record<string, MeritDataItem> = {};
-
-    // 创建索引条目的辅助函数
-    function createIndexEntry(indexKey: string) {
-      if (!(indexKey in meritData)) {
-        meritData[indexKey] = {
-          meritSupplyApr: [],
-          meritBorrowApr: [],
-          meritSelfSupply: [],
-          meritSelfBorrow: [],
-          meritBorrowWithSupplyRequirement: [],
-          meritSupplyWithBorrowRequirement: []
-        };
-      }
-      return meritData[indexKey]!;
-    }
-
-    // 处理 supply/borrow 代币对的辅助函数
-    function processTokenPair(
-      supplyTokens: string[],
-      borrowTokens: string[],
-      chainKey: string,
-      value: number | null,
-      isSelfFormat: boolean = false
-    ) {
-      if (value === null) return;
-      
-      const aprValue = value.toString();
-
-      const borrowTargets = borrowTokens.filter(t => t !== 'multiple');
-      const supplyTargets = supplyTokens.filter(t => t !== 'multiple');
-      const hasBorrowTokens = borrowTargets.length > 0;
-      const hasBorrowMultiple = borrowTokens.includes('multiple');
-      const hasSupplyTokens = supplyTargets.length > 0;
-
-      // 情况 1: borrowToken 不是 'multiple'，为每个 borrow token 分别处理
-      if (hasBorrowTokens) {
-        for (const bt of borrowTargets) {
-          const indexKey = `${chainKey.toLowerCase()}-${bt.toLowerCase()}`;
-          const incentives = createIndexEntry(indexKey);
-
-          if (supplyTokens.length > 0) {
-            incentives.meritBorrowWithSupplyRequirement.push({
-              apr: aprValue,
-              requiredSupplyTokens: supplyTokens,
-              isSelf: isSelfFormat
-            });
-          } else {
-            addAprValue(incentives, aprValue, false, isSelfFormat);
-          }
-        }
-
-        if (hasSupplyTokens) {
-          for (const st of supplyTargets) {
-            const supplyIndexKey = `${chainKey.toLowerCase()}-${st.toLowerCase()}`;
-            const supplyIncentives = createIndexEntry(supplyIndexKey);
-            supplyIncentives.meritSupplyWithBorrowRequirement.push({
-              apr: aprValue,
-              requiredBorrowTokens: borrowTokens,
-              isSelf: isSelfFormat
-            });
-          }
-        }
-      }
-
-      // 情况 2: borrowToken 是 'multiple'，为每个 supply token 分别处理
-      if (hasBorrowMultiple && hasSupplyTokens) {
-        for (const st of supplyTargets) {
-          const indexKey = `${chainKey.toLowerCase()}-${st.toLowerCase()}`;
-          const incentives = createIndexEntry(indexKey);
-          incentives.meritSupplyWithBorrowRequirement.push({
-            apr: aprValue,
-            requiredBorrowTokens: ['multiple'],
-            isSelf: isSelfFormat
-          });
-        }
-      }
-
-      // 情况 3: 只有 supply token，没有 borrow token（简单 supply 场景）
-      if (!hasBorrowTokens && !hasBorrowMultiple && hasSupplyTokens) {
-        for (const st of supplyTargets) {
-          const indexKey = `${chainKey.toLowerCase()}-${st.toLowerCase()}`;
-          const incentives = createIndexEntry(indexKey);
-          addAprValue(incentives, aprValue, true, isSelfFormat);
-        }
-      }
-    }
-
-    // 遍历所有原始 Merit APR 数据，解析并构建索引
-    Object.entries(meritAPRs).forEach(([key, value]) => {
-      const parts = key.split('-');
-      if (parts.length < 2) return;
-      
-      const isSelfFormat = key.startsWith('self-');
-      const actualKey = isSelfFormat ? key.substring(5) : key;
-      const actualParts = actualKey.split('-');
-      
-      if (actualParts.length < 2) return;
-      
-      let chainKey = parseChainKey(actualParts);
-      
-      let supplyTokens: string[] = [];
-      let borrowTokens: string[] = [];
-
-      if (actualKey.includes('-supply-') && actualKey.includes('-borrow-')) {
-        const supplyIndex = actualParts.indexOf('supply');
-        const borrowIndex = actualParts.indexOf('borrow');
-        if (supplyIndex >= 0 && borrowIndex >= 0) {
-          const rawSupplyToken = actualParts.slice(supplyIndex + 1, borrowIndex).join('-');
-          const rawBorrowToken = actualParts.slice(borrowIndex + 1).join('-');
-          supplyTokens = rawSupplyToken.includes('-or-') 
-            ? rawSupplyToken.split('-or-')
-                .map(t => t.toLowerCase())
-                .filter(Boolean)
-            : rawSupplyToken ? [rawSupplyToken.toLowerCase()] : [];
-          borrowTokens = rawBorrowToken.includes('-or-')
-            ? rawBorrowToken.split('-or-')
-                .map(t => t.toLowerCase())
-                .filter(Boolean)
-            : rawBorrowToken ? [rawBorrowToken.toLowerCase()] : [];
-        }
-      } else if (actualKey.includes('-supply-')) {
-        const token = actualParts[actualParts.length - 1].toLowerCase();
-        if (token) supplyTokens = [token];
-      } else if (actualKey.includes('-borrow-')) {
-        const token = actualParts[actualParts.length - 1].toLowerCase();
-        if (token) borrowTokens = [token];
-      } else if (actualParts.length === 2 ) {
-        const token = actualParts[1].toLowerCase();
-        if (token) supplyTokens = [token];
-      }
-
-      if (supplyTokens.length > 0 || borrowTokens.length > 0) {
-        processTokenPair(supplyTokens, borrowTokens, chainKey, value, isSelfFormat);
-      }
-    });
-
-    logger.info(`✅ Indexed Merit data for ${Object.keys(meritData).length} chain-token combinations`);
-    return meritData;
-  } catch (error) {
-    logger.error('❌ Error fetching Merit APR data:', error);
-    return {};
-  }
-}
 
 // Brevis APR 提取：基于 Aave 市场链/代币列表匹配描述
 async function fetchBrevisAprs(
@@ -350,6 +189,7 @@ async function fetchBrevisAprs(
           break;
         }
       }
+      
       if (!matchedChain) continue;
       chainMatched++;
 
@@ -370,6 +210,7 @@ async function fetchBrevisAprs(
       tokenMatched++;
 
       const key = `${matchedChain}-${matchedToken}`;
+      
       if (!(key in brevisIndex)) {
         brevisIndex[key] = { supplyApr: null, borrowApr: null };
       }
@@ -470,8 +311,8 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           meritBorrowApr: [],
           meritSelfSupply: [],
           meritSelfBorrow: [],
-          meritBorrowWithSupplyRequirement: undefined,
           meritSupplyWithBorrowRequirement: undefined,
+          meritBorrowWithSupplyRequirement: undefined,
           // Merkl APR 激励字段 - 初始化为 0
           merklSupplyApr: 0,
           merklBorrowApr: 0,
@@ -481,7 +322,12 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           merklHoldAprBreakdowns: [],
           // Brevis APR 激励字段 - 初始化为 null
           brevisSupplyApr: null,
-          brevisBorrowApr: null
+          brevisBorrowApr: null,
+          // 总 APY 字段 - 初始化为 0，将在 enrichDatasetWithIncentiveData 中计算
+          totalIncentiveSupplyApy: 0,
+          totalSupplyApy: 0,
+          totalIncentiveBorrowApy: 0,
+          totalBorrowApy: null
         });
       });
     }
@@ -490,84 +336,131 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
   return baseDataset;
 }
 
-// 解析链名，处理特殊情况如 ethereum-prime
-function parseChainKey(parts: string[]): string {
-  // 注意：传入的 parts 已经移除了 self- 前缀
-  if (parts.length >= 2 && parts[0] === 'ethereum' && parts[1] !== 'supply' && parts[1] !== 'borrow') {
-    // ethereum-xxx 格式：ethereum-xxx-action-token (xxx 不是 supply 或 borrow)
-    return `ethereum-${parts[1]}`;
-  } else {
-    // 标准格式：chain-action-token
-    return parts[0];
-  }
-}
 
-// 根据 marketName 和 tokenSymbol 获取对应的 meritData
-function getMeritDataFromMarket(
-  marketName: string,
-  chainName: string,
-  tokenSymbol: string,
-  meritData: Record<string, MeritDataItem>
-): MeritDataItem | null {
-  // 根据 marketName 确定 chainKey
-  let chainKey: string;
-  if (marketName === 'AaveV3EthereumEtherFi') {
-    chainKey = 'ethereum-etherfi';
-  } else if (marketName === 'AaveV3EthereumLido') {
-    chainKey = 'ethereum-prime';
-  } else if (marketName === 'AaveV3EthereumHorizon') {
-    chainKey = 'ethereum-horizon';
-  } else {
-    chainKey = chainName.toLowerCase();
-  }
 
-  // 尝试匹配 tokenSymbol，使用各种 fallback 策略
-  const tokenLower = tokenSymbol.toLowerCase();
-  
-  // 生成所有可能的 tokenSymbol 变体用于匹配
-  const tokenVariants: string[] = [tokenLower];
-  
-  // 1. 如果有小数点，去掉小数点
-  if (tokenLower.includes('.')) {
-    tokenVariants.push(tokenLower.replace(/\./g, ''));
-  }
-  
-  // 2. 如果有₮，将₮转化为t
-  if (tokenLower.includes('₮')) {
-    tokenVariants.push(tokenLower.replace(/₮/g, 't'));
-  }
-  
-  // 3. 如果是weth，换成eth
-  if (tokenLower === 'weth') {
-    tokenVariants.push('eth');
-  }
-  
-  // 4. 如果结尾是.e，去掉.e
-  if (tokenLower.endsWith('.e')) {
-    tokenVariants.push(tokenLower.slice(0, -2));
-  }
-  
-  // 5. 如果是usdt0或usd₮0，试一下usdt
-  if (tokenLower === 'usdt0' || tokenLower === 'usd₮0') {
-    tokenVariants.push('usdt');
-  }
 
-  // 去重
-  const uniqueVariants = [...new Set(tokenVariants)];
-
-  // 尝试每个变体来查找匹配的 meritData
-  for (const variant of uniqueVariants) {
-    const indexKey = `${chainKey}-${variant}`;
-    if (meritData[indexKey]) {
-      return meritData[indexKey];
+// 计算总激励 APR 和总 APY
+function calculateTotalApy(item: FormattedReserveData): void {
+  // 计算 Supply 激励 APR 总和
+  let totalSupplyIncentiveApr = 0;
+  
+  // 1. Protocol supply incentives (supplyIncentives)
+  item.supplyIncentives.forEach(incentive => {
+    const apr = parseFloat(incentive);
+    if (!isNaN(apr)) {
+      totalSupplyIncentiveApr += apr / 100; // 转换为小数
     }
+  });
+  
+  // 2. Merit supply APR (meritSupplyApr)
+  item.meritSupplyApr.forEach(apr => {
+    const aprValue = parseFloat(apr);
+    if (!isNaN(aprValue)) {
+      totalSupplyIncentiveApr += aprValue / 100; // 转换为小数
+    }
+  });
+  
+  // 3. Merit self supply APR (meritSelfSupply)
+  item.meritSelfSupply.forEach(apr => {
+    const aprValue = parseFloat(apr);
+    if (!isNaN(aprValue)) {
+      totalSupplyIncentiveApr += aprValue / 100; // 转换为小数
+    }
+  });
+  
+  // 4. Merit supply with borrow requirement APR (meritSupplyWithBorrowRequirement)
+  if (item.meritSupplyWithBorrowRequirement && item.meritSupplyWithBorrowRequirement.length > 0) {
+    item.meritSupplyWithBorrowRequirement.forEach(req => {
+      const aprValue = parseFloat(req.apr);
+      if (!isNaN(aprValue)) {
+        totalSupplyIncentiveApr += aprValue / 100; // 转换为小数
+      }
+    });
   }
-
-  // 如果都没找到，返回 null
-  return null;
+  
+  // 5. Merkl supply APR (merklSupplyApr)
+  if (item.merklSupplyApr > 0) {
+    totalSupplyIncentiveApr += item.merklSupplyApr / 100; // 转换为小数
+  }
+  
+  // 6. Brevis supply APR (brevisSupplyApr)
+  if (item.brevisSupplyApr !== null && item.brevisSupplyApr > 0) {
+    totalSupplyIncentiveApr += item.brevisSupplyApr / 100; // 转换为小数
+  }
+  
+  // 转换为 APY
+  item.totalIncentiveSupplyApy = convertAprToApy(totalSupplyIncentiveApr);
+  
+  // 计算总 Supply APY = 原生 supplyApy + totalIncentiveSupplyApy
+  const nativeSupplyApy = parseFloat(item.supplyApy);
+  if (!isNaN(nativeSupplyApy)) {
+    item.totalSupplyApy = (nativeSupplyApy / 100) + item.totalIncentiveSupplyApy;
+  } else {
+    item.totalSupplyApy = item.totalIncentiveSupplyApy;
+  }
+  
+  // 计算 Borrow 激励 APR 总和
+  let totalBorrowIncentiveApr = 0;
+  
+  // 1. Protocol borrow incentives (borrowIncentives)
+  item.borrowIncentives.forEach(incentive => {
+    const apr = parseFloat(incentive);
+    if (!isNaN(apr)) {
+      totalBorrowIncentiveApr += apr / 100; // 转换为小数
+    }
+  });
+  
+  // 2. Merit borrow APR (meritBorrowApr)
+  item.meritBorrowApr.forEach(apr => {
+    const aprValue = parseFloat(apr);
+    if (!isNaN(aprValue)) {
+      totalBorrowIncentiveApr += aprValue / 100; // 转换为小数
+    }
+  });
+  
+  // 3. Merit self borrow APR (meritSelfBorrow)
+  item.meritSelfBorrow.forEach(apr => {
+    const aprValue = parseFloat(apr);
+    if (!isNaN(aprValue)) {
+      totalBorrowIncentiveApr += aprValue / 100; // 转换为小数
+    }
+  });
+  
+  // 4. Merit borrow with supply requirement APR (meritBorrowWithSupplyRequirement)
+  if (item.meritBorrowWithSupplyRequirement && item.meritBorrowWithSupplyRequirement.length > 0) {
+    item.meritBorrowWithSupplyRequirement.forEach(req => {
+      const aprValue = parseFloat(req.apr);
+      if (!isNaN(aprValue)) {
+        totalBorrowIncentiveApr += aprValue / 100; // 转换为小数
+      }
+    });
+  }
+  
+  // 5. Merkl borrow APR (merklBorrowApr)
+  if (item.merklBorrowApr > 0) {
+    totalBorrowIncentiveApr += item.merklBorrowApr / 100; // 转换为小数
+  }
+  
+  // 6. Brevis borrow APR (brevisBorrowApr)
+  if (item.brevisBorrowApr !== null && item.brevisBorrowApr > 0) {
+    totalBorrowIncentiveApr += item.brevisBorrowApr / 100; // 转换为小数
+  }
+  
+  // 转换为 APY
+  item.totalIncentiveBorrowApy = convertAprToApy(totalBorrowIncentiveApr);
+  
+  // 计算总 Borrow APY = 原生 borrowApy + totalIncentiveBorrowApy
+  if (item.borrowApy !== null) {
+    const nativeBorrowApy = parseFloat(item.borrowApy);
+    if (!isNaN(nativeBorrowApy)) {
+      item.totalBorrowApy = (nativeBorrowApy / 100) + item.totalIncentiveBorrowApy;
+    } else {
+      item.totalBorrowApy = item.totalIncentiveBorrowApy;
+    }
+  } else {
+    item.totalBorrowApy = item.totalIncentiveBorrowApy > 0 ? item.totalIncentiveBorrowApy : null;
+  }
 }
-
-
 
 // 将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
 function enrichDatasetWithIncentiveData(
@@ -600,40 +493,27 @@ function enrichDatasetWithIncentiveData(
     const matchedOpportunities = findMatchingMerklOpportunities(item, merklData);
     
     if (matchedOpportunities.length > 0) {
-      let merklSupplyApr = 0;
-      let merklBorrowApr = 0;
-      let merklHoldApr = 0;
       const supplyBreakdowns: MerklCampaignBreakdown[] = [];
       const borrowBreakdowns: MerklCampaignBreakdown[] = [];
       const holdBreakdowns: MerklCampaignBreakdown[] = [];
       
+      // 先收集所有 matchedOpportunities 中的 breakdowns
       for (const opp of matchedOpportunities) {
         if (opp.supply.length > 0) {
-          const supplyApr = calculateActiveCampaignApr(opp.supply);
-          if (supplyApr > 0) {
-            merklSupplyApr += supplyApr;
-          }
           supplyBreakdowns.push(...opp.supply);
         }
         if (opp.borrow.length > 0) {
-          const borrowApr = calculateActiveCampaignApr(opp.borrow);
-          if (borrowApr > 0) {
-            merklBorrowApr += borrowApr;
-          }
           borrowBreakdowns.push(...opp.borrow);
         }
         if (opp.hold.length > 0) {
-          const holdApr = calculateActiveCampaignApr(opp.hold);
-          if (holdApr > 0) {
-            merklHoldApr += holdApr;
-          }
           holdBreakdowns.push(...opp.hold);
         }
       }
       
-      item.merklSupplyApr = merklSupplyApr;
-      item.merklBorrowApr = merklBorrowApr;
-      item.merklHoldApr = merklHoldApr;
+      // 一次性计算所有 breakdowns 的总 APR
+      item.merklSupplyApr = calculateActiveCampaignApr(supplyBreakdowns);
+      item.merklBorrowApr = calculateActiveCampaignApr(borrowBreakdowns);
+      item.merklHoldApr = calculateActiveCampaignApr(holdBreakdowns);
       item.merklSupplyAprBreakdowns = supplyBreakdowns;
       item.merklBorrowAprBreakdowns = borrowBreakdowns;
       item.merklHoldAprBreakdowns = holdBreakdowns;
@@ -641,37 +521,20 @@ function enrichDatasetWithIncentiveData(
     
     // 获取对应的 Brevis 数据并更新
     // Brevis 数据主要在 Linea 链上，chainId 为 59144
-    // 根据 tokenAddress 匹配
+    // 根据 chainName 和 tokenSymbol 匹配（indexKey 格式：chainName-tokenSymbol）
     const brevisInfo = brevisData[indexKey];
     if (brevisInfo) {
       item.brevisSupplyApr = brevisInfo.supplyApr;
       item.brevisBorrowApr = brevisInfo.borrowApr;
     }
     
+    // 计算总激励 APY 和总 APY
+    calculateTotalApy(item);
+    
     return item;
   });
 }
 
-// 辅助函数：根据 isSelfFormat 添加 APR 值
-// 作用：将 APR 值添加到对应的数组中
-// 重要：使用 push() 方法，意味着如果同一个 chain-token 的同一字段被多次调用，所有值都会累积
-// 例如：如果 "ethereum-weth" 的 supply APR 被调用 3 次（值分别为 "5.2", "1.0", "0.5"）
-//       那么 meritSupplyApr 最终会是 ["5.2", "1.0", "0.5"]
-function addAprValue(incentives: any, aprValue: string, isSupply: boolean, isSelfFormat: boolean) {
-  if (isSupply) {
-    if (isSelfFormat) {
-      incentives.meritSelfSupply.push(aprValue);
-    } else {
-      incentives.meritSupplyApr.push(aprValue);
-    }
-  } else {
-    if (isSelfFormat) {
-      incentives.meritSelfBorrow.push(aprValue);
-    } else {
-      incentives.meritBorrowApr.push(aprValue);
-    }
-  }
-}
 
 /* Token 别名映射表：不同渠道可能使用不同名称指向同一个 token
 const tokenAliases: Record<string, string[]> = {
@@ -712,7 +575,11 @@ function generateCSV(data: FormattedReserveData[]): string {
     'Merkl Borrow Campaigns',
     'Merkl Hold Campaigns',
     'Brevis Supply APR (%)',
-    'Brevis Borrow APR (%)'
+    'Brevis Borrow APR (%)',
+    'Total Incentive Supply APY (%)',
+    'Total Supply APY (%)',
+    'Total Incentive Borrow APY (%)',
+    'Total Borrow APY (%)'
   ];
 
   // 生成 CSV 行
@@ -733,13 +600,13 @@ function generateCSV(data: FormattedReserveData[]): string {
       row.meritBorrowApr.length > 0 ? `"${row.meritBorrowApr.join(';')}"` : '',
       row.meritSelfSupply.length > 0 ? `"${row.meritSelfSupply.join(';')}"` : '',
       row.meritSelfBorrow.length > 0 ? `"${row.meritSelfBorrow.join(';')}"` : '',
-      // 格式化 meritBorrowWithSupplyRequirement：格式为 "APR1:token1,token2;APR2:token3"
-      row.meritBorrowWithSupplyRequirement && row.meritBorrowWithSupplyRequirement.length > 0
-        ? `"${row.meritBorrowWithSupplyRequirement.map(req => `${req.apr}:${req.requiredSupplyTokens.join(',')}`).join('; ')}"`
-        : '',
       // 格式化 meritSupplyWithBorrowRequirement：格式为 "APR1:token1,token2;APR2:token3"
       row.meritSupplyWithBorrowRequirement && row.meritSupplyWithBorrowRequirement.length > 0
         ? `"${row.meritSupplyWithBorrowRequirement.map(req => `${req.apr}:${req.requiredBorrowTokens.join(',')}`).join('; ')}"`
+        : '',
+      // 格式化 meritBorrowWithSupplyRequirement：格式为 "APR1:token1,token2;APR2:token3"
+      row.meritBorrowWithSupplyRequirement && row.meritBorrowWithSupplyRequirement.length > 0
+        ? `"${row.meritBorrowWithSupplyRequirement.map(req => `${req.apr}:${req.requiredSupplyTokens.join(',')}`).join('; ')}"`
         : '',
       row.merklSupplyApr > 0 ? row.merklSupplyApr : '',
       row.merklBorrowApr > 0 ? row.merklBorrowApr : '',
@@ -748,7 +615,11 @@ function generateCSV(data: FormattedReserveData[]): string {
       `"${formatMerklBreakdown(row.merklBorrowAprBreakdowns)}"`,
       `"${formatMerklBreakdown(row.merklHoldAprBreakdowns)}"`,
       row.brevisSupplyApr !== null ? row.brevisSupplyApr : '',
-      row.brevisBorrowApr !== null ? row.brevisBorrowApr : ''
+      row.brevisBorrowApr !== null ? row.brevisBorrowApr : '',
+      row.totalIncentiveSupplyApy > 0 ? (row.totalIncentiveSupplyApy * 100).toFixed(6) : '',
+      (row.totalSupplyApy * 100).toFixed(6),
+      row.totalIncentiveBorrowApy > 0 ? (row.totalIncentiveBorrowApy * 100).toFixed(6) : '',
+      row.totalBorrowApy !== null ? (row.totalBorrowApy * 100).toFixed(6) : ''
     ].join(','))
   ];
 
