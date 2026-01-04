@@ -36,22 +36,27 @@
 ```
 aave/
 ├── src/
-│   ├── index.ts          # 主要逻辑
+│   ├── index.ts          # 主要逻辑，整合所有数据源
 │   ├── logger.ts         # 日志配置模块
-│   └── brevis-api.ts     # Brevis API 客户端
-├── data/                 # 输出数据文件夹
+│   ├── brevis-api.ts     # Brevis Network API 客户端
+│   ├── merit-api.ts      # Merit Protocol API 客户端
+│   └── merkl-api.ts      # Merkl API 客户端
+├── data/                 # 输出数据文件夹（git 忽略）
 │   ├── aave-all-markets-data.json      # 原始市场数据
 │   ├── aave-formatted-data.json        # 格式化后的 JSON 数据
 │   ├── aave-formatted-data.csv         # CSV 格式数据
 │   ├── brevis-raw-activities.json      # Brevis 原始活动数据
 │   └── merkl-raw-data.json             # Merkl 原始数据
-├── logs/                 # 日志文件文件夹
+├── logs/                 # 日志文件文件夹（git 忽略）
 │   ├── combined.log      # 所有日志
 │   └── error.log         # 错误日志
-├── dist/                 # TypeScript 编译输出
-├── package.json          # 项目依赖
+├── dist/                 # TypeScript 编译输出（git 忽略）
+├── node_modules/         # 依赖包（git 忽略）
+├── package.json          # 项目依赖和脚本配置
+├── package-lock.json     # 依赖锁定文件
 ├── tsconfig.json         # TypeScript 配置
-└── README.md             # 项目说明
+├── LICENSE               # MIT 许可证
+└── README.md             # 项目说明文档
 ```
 
 ## 快速开始
