@@ -4,174 +4,180 @@
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-这个项目使用 Aave TypeScript SDK 和 @bgd-labs/aave-address-book 获取所有支持网络的市场数据，并整合 Merit、Merkl 和 Brevis 激励数据，将结果保存到 JSON 和 CSV 文件中。
+This project uses the Aave TypeScript SDK and @bgd-labs/aave-address-book to fetch market data from all supported networks, and integrates Merit, Merkl, and Brevis incentive data, saving the results to JSON and CSV files.
 
-## 📋 目录
+## 📋 Table of Contents
 
-- [功能特性](#功能特性)
-- [项目结构](#项目结构)
-- [快速开始](#快速开始)
-- [使用说明](#使用说明)
-- [输出文件](#输出文件)
-- [数据字段说明](#数据字段说明)
-- [技术栈](#技术栈)
-- [API 数据源](#api-数据源)
-- [贡献指南](#贡献指南)
-- [许可证](#许可证)
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+- [Output Files](#output-files)
+- [Data Fields](#data-fields)
+- [Tech Stack](#tech-stack)
+- [API Data Sources](#api-data-sources)
+- [Contributing](#contributing)
+- [License](#license)
 
-## 功能特性
+## Features
 
-- 🌐 使用 @bgd-labs/aave-address-book 自动发现所有 AaveV3 网络
-- 🔄 使用 Aave SDK 获取多链市场数据（17个链，20个市场）
-- 💰 整合 Merit APR 激励数据
-- 🎁 整合 Merkl 激励活动数据
-- 🌐 整合 Brevis Network Linea Surge APR 数据
-- 💾 将数据保存到 JSON 和 CSV 文件
-- 📊 在控制台显示详细的市场分布信息
-- ⚠️ 自动识别并跳过不支持的网络
-- ❌ 完善的错误处理和日志记录
+- 🌐 Automatically discovers all AaveV3 networks using @bgd-labs/aave-address-book
+- 🔄 Fetches multi-chain market data using Aave SDK (17 chains, 20 markets)
+- 💰 Integrates Merit APR incentive data
+- 🎁 Integrates Merkl incentive campaign data
+- 🌐 Integrates Brevis Network Linea Surge APR data
+- 💾 Saves data to JSON and CSV files
+- 📊 Displays detailed market distribution information in console
+- ⚠️ Automatically identifies and skips unsupported networks
+- ❌ Comprehensive error handling and logging
 
-## 项目结构
+## Project Structure
 
 ```
 aave/
 ├── src/
-│   ├── index.ts          # 主要逻辑，整合所有数据源
-│   ├── logger.ts         # 日志配置模块
-│   ├── brevis-api.ts     # Brevis Network API 客户端
-│   ├── merit-api.ts      # Merit Protocol API 客户端
-│   └── merkl-api.ts      # Merkl API 客户端
-├── data/                 # 输出数据文件夹（git 忽略）
-│   ├── aave-all-markets-data.json      # 原始市场数据
-│   ├── aave-formatted-data.json        # 格式化后的 JSON 数据
-│   ├── aave-formatted-data.csv         # CSV 格式数据
-│   ├── brevis-raw-activities.json      # Brevis 原始活动数据
-│   └── merkl-raw-data.json             # Merkl 原始数据
-├── logs/                 # 日志文件文件夹（git 忽略）
-│   ├── combined.log      # 所有日志
-│   └── error.log         # 错误日志
-├── dist/                 # TypeScript 编译输出（git 忽略）
-├── node_modules/         # 依赖包（git 忽略）
-├── package.json          # 项目依赖和脚本配置
-├── package-lock.json     # 依赖锁定文件
-├── tsconfig.json         # TypeScript 配置
-├── LICENSE               # MIT 许可证
-└── README.md             # 项目说明文档
+│   ├── index.ts          # Main logic, integrates all data sources
+│   ├── logger.ts         # Logging configuration module
+│   ├── brevis-api.ts     # Brevis Network API client
+│   ├── merit-api.ts      # Merit Protocol API client
+│   └── merkl-api.ts      # Merkl API client
+├── data/                 # Output data folder (git ignored)
+│   ├── aave-all-markets-data.json      # Raw market data
+│   ├── aave-formatted-data.json        # Formatted JSON data
+│   ├── aave-formatted-data.csv         # CSV format data
+│   ├── brevis-raw-activities.json      # Brevis raw activity data
+│   └── merkl-raw-data.json             # Merkl raw data
+├── logs/                 # Log files folder (git ignored)
+│   ├── combined.log      # All logs
+│   └── error.log         # Error logs only
+├── dist/                 # TypeScript compilation output (git ignored)
+├── node_modules/         # Dependencies (git ignored)
+├── package.json          # Project dependencies and scripts
+├── package-lock.json     # Dependency lock file
+├── tsconfig.json         # TypeScript configuration
+├── LICENSE               # MIT License
+└── README.md             # Project documentation
 ```
 
-## 快速开始
+## Quick Start
 
-### 前置要求
+### Prerequisites
 
-- Node.js 20 或更高版本
-- npm 或 yarn 包管理器
+- Node.js 20 or higher
+- npm or yarn package manager
 
-### 安装依赖
+### Install Dependencies
 
 ```bash
 npm install
 ```
 
-### 运行项目
+### Run the Project
 
-#### 开发模式（推荐）
+#### Development Mode (Recommended)
 ```bash
 npm run dev
 ```
 
-#### 构建并运行
+#### Build and Run
 ```bash
 npm run build
 npm start
 ```
 
-运行成功后，数据文件将保存在 `data/` 目录中。
+After successful execution, data files will be saved in the `data/` directory.
 
-## 输出文件
+## Output Files
 
-运行成功后，会在 `data/` 文件夹生成：
+After successful execution, the following files will be generated in the `data/` folder:
 
-- `aave-all-markets-data.json` - 包含所有支持网络的完整市场数据
-- `aave-formatted-data.json` - 格式化后的 JSON 数据，包含所有激励信息
-- `aave-formatted-data.csv` - CSV 格式数据，便于在 Excel 中查看
-- `brevis-raw-activities.json` - Brevis Network Linea Surge 原始活动数据
-- `merkl-raw-data.json` - Merkl 激励活动原始数据
+- `aave-all-markets-data.json` - Complete market data for all supported networks
+- `aave-formatted-data.json` - Formatted JSON data with all incentive information
+- `aave-formatted-data.csv` - CSV format data for easy viewing in Excel
+- `brevis-raw-activities.json` - Brevis Network Linea Surge raw activity data
+- `merkl-raw-data.json` - Merkl incentive campaign raw data
 
-## 数据字段说明
+## Data Fields
 
-输出的格式化数据包含以下字段：
+The formatted output data contains the following fields:
 
-### 基础字段
-- `marketName` - 市场名称（如 AaveV3Ethereum）
-- `chainName` - 链名称（如 ethereum）
-- `chainId` - 链 ID
-- `tokenName` - 代币名称
-- `tokenSymbol` - 代币符号
-- `tokenAddress` - 代币合约地址
-- `supplyApy` - 供应 APY
-- `borrowApy` - 借贷 APY
+### Basic Fields
+- `marketName` - Market name (e.g., AaveV3Ethereum)
+- `chainName` - Chain name (e.g., ethereum)
+- `chainId` - Chain ID
+- `tokenName` - Token name
+- `tokenSymbol` - Token symbol
+- `tokenAddress` - Token contract address
+- `supplyApy` - Supply APY
+- `borrowApy` - Borrow APY
 
-### 协议激励
-- `supplyIncentives` - Aave 协议供应激励
-- `borrowIncentives` - Aave 协议借贷激励
+### Protocol Incentives
+- `supplyIncentives` - Aave protocol supply incentives
+- `borrowIncentives` - Aave protocol borrow incentives
 
-### Merit 激励
-- `meritSupplyApr` - Merit 供应 APR
-- `meritBorrowApr` - Merit 借贷 APR
-- `meritSelfSupply` - Merit 自供应 APR
-- `meritSelfBorrow` - Merit 自借贷 APR
-- `meritBorrowWithSupplyRequirement` - 需要先供应才能获得的借贷 APR
-- `meritSupplyWithBorrowRequirement` - 需要先借贷才能获得的供应 APR
+### Merit Incentives
+- `meritSupplyApr` - Merit supply APR
+- `meritBorrowApr` - Merit borrow APR
+- `meritSelfSupply` - Merit self supply APR
+- `meritSelfBorrow` - Merit self borrow APR
+- `meritBorrowWithSupplyRequirement` - Borrow APR that requires supply first
+- `meritSupplyWithBorrowRequirement` - Supply APR that requires borrow first
 
-### Merkl 激励
-- `merklSupplyApr` - Merkl 供应 APR（数组）
-- `merklBorrowApr` - Merkl 借贷 APR（数组）
-- `merklHoldApr` - Merkl 持有 APR（数组）
-- `merklSupplyAprBreakdowns` - Merkl 供应活动详情
-- `merklBorrowAprBreakdowns` - Merkl 借贷活动详情
-- `merklHoldAprBreakdowns` - Merkl 持有活动详情
+### Merkl Incentives
+- `merklSupplyApr` - Merkl supply APR (number)
+- `merklBorrowApr` - Merkl borrow APR (number)
+- `merklHoldApr` - Merkl hold APR (number)
+- `merklSupplyAprBreakdowns` - Merkl supply campaign details
+- `merklBorrowAprBreakdowns` - Merkl borrow campaign details
+- `merklHoldAprBreakdowns` - Merkl hold campaign details
 
-### Brevis 激励
-- `brevisSupplyApr` - Brevis Network Linea Surge 供应 APR
-- `brevisBorrowApr` - Brevis Network Linea Surge 借贷 APR
+### Brevis Incentives
+- `brevisSupplyApr` - Brevis Network Linea Surge supply APR
+- `brevisBorrowApr` - Brevis Network Linea Surge borrow APR
 
-## 日志系统
+### Total APY Fields
+- `totalIncentiveSupplyApy` - Total incentive supply APY (all incentives converted to APY)
+- `totalSupplyApy` - Total supply APY (native supplyApy + totalIncentiveSupplyApy)
+- `totalIncentiveBorrowApy` - Total incentive borrow APY (all incentives converted to APY)
+- `totalBorrowApy` - Total borrow APY (native borrowApy + totalIncentiveBorrowApy)
 
-项目使用 [winston](https://github.com/winstonjs/winston) 日志库来统一管理日志输出。
+## Logging System
 
-### 日志文件
+The project uses [winston](https://github.com/winstonjs/winston) logging library to manage log output.
 
-所有日志会自动保存到 `logs/` 文件夹：
-- `logs/combined.log` - 包含所有级别的日志（info, warn, error, debug）
-- `logs/error.log` - 仅包含 error 级别的日志
+### Log Files
 
-### 日志级别
+All logs are automatically saved to the `logs/` folder:
+- `logs/combined.log` - Contains all log levels (info, warn, error, debug)
+- `logs/error.log` - Contains only error level logs
 
-- **info** - 一般信息（默认级别）
-- **warn** - 警告信息
-- **error** - 错误信息
-- **debug** - 调试信息（开发环境启用）
+### Log Levels
 
-### 日志配置
+- **info** - General information (default level)
+- **warn** - Warning messages
+- **error** - Error messages
+- **debug** - Debug information (enabled in development environment)
 
-- 日志文件大小限制：5MB
-- 日志文件保留数量：5个（自动轮转）
-- 控制台输出：彩色格式，便于查看
-- 文件输出：JSON 格式，包含时间戳和元数据
+### Log Configuration
 
-日志文件会自动创建，无需手动配置。
+- Log file size limit: 5MB
+- Number of log files retained: 5 (automatic rotation)
+- Console output: Colored format for easy viewing
+- File output: JSON format with timestamps and metadata
 
-## 支持的网络
+Log files are created automatically, no manual configuration required.
 
-项目自动获取所有 AaveV3 网络的市场数据。根据运行时的实际情况，通常会获取：
+## Supported Networks
 
-- **19 个 AaveV3 网络**，分布在 **17 个不同的链**上
-- **约 20 个市场**
-- **约 229 个代币储备**
+The project automatically fetches market data from all AaveV3 networks. Based on runtime conditions, it typically fetches:
 
-### 主要支持的网络
+- **19 AaveV3 networks** across **17 different chains**
+- **Approximately 20 markets**
+- **Approximately 229 token reserves**
 
-- **Ethereum** (Chain ID: 1) - 4 个市场（AaveV3Ethereum, AaveV3EthereumEtherFi, AaveV3EthereumLido, AaveV3EthereumHorizon）
+### Main Supported Networks
+
+- **Ethereum** (Chain ID: 1) - 4 markets (AaveV3Ethereum, AaveV3EthereumEtherFi, AaveV3EthereumLido, AaveV3EthereumHorizon)
 - **Arbitrum** (42161)
 - **Avalanche** (43114)
 - **BNB Chain** (56)
@@ -189,80 +195,80 @@ npm start
 - **Soneium** (1868)
 - **Sonic** (146)
 
-项目会自动跳过测试网络（如 Sepolia、Fuji）和不支持的网络。
+The project automatically skips test networks (such as Sepolia, Fuji) and unsupported networks.
 
-## 技术栈
+## Tech Stack
 
-- **TypeScript**: 类型安全的 JavaScript
-- **@aave/client**: Aave 官方 SDK
-- **@bgd-labs/aave-address-book**: Aave 地址簿，包含所有网络配置
-- **winston**: 日志管理库
-- **node-fetch**: HTTP 请求库
-- **Node.js**: JavaScript 运行环境
+- **TypeScript**: Type-safe JavaScript
+- **@aave/client**: Official Aave SDK
+- **@bgd-labs/aave-address-book**: Aave address book containing all network configurations
+- **winston**: Logging management library
+- **node-fetch**: HTTP request library
+- **Node.js**: JavaScript runtime environment
 
-## API 数据源
+## API Data Sources
 
-项目从以下 API 获取激励数据：
+The project fetches incentive data from the following APIs:
 
 - **Merit APR**: `https://apps.aavechan.com/api/merit/aprs`
 - **Merkl Opportunities**: `https://api.merkl.xyz/v4/opportunities?name=aave`
 - **Merkl Campaigns**: `https://api.merkl.xyz/v4/campaigns/{campaignId}`
 - **Brevis Network**: `https://linea-surge-endpoint.brevis.network/LineaSurgeV2Provider/GetActivities`
 
-## 使用说明
+## Usage
 
-### 数据更新
+### Data Updates
 
-项目会自动从以下数据源获取最新数据：
-- Aave 官方 SDK 获取市场数据
-- Merit API 获取 APR 激励数据
-- Merkl API 获取活动激励数据
-- Brevis Network API 获取 Linea Surge APR 数据
+The project automatically fetches the latest data from the following sources:
+- Aave official SDK for market data
+- Merit API for APR incentive data
+- Merkl API for campaign incentive data
+- Brevis Network API for Linea Surge APR data
 
-### 日志查看
+### Viewing Logs
 
-所有日志文件保存在 `logs/` 目录：
-- `combined.log` - 所有级别的日志
-- `error.log` - 仅错误日志
+All log files are saved in the `logs/` directory:
+- `combined.log` - All log levels
+- `error.log` - Error logs only
 
-### 数据文件说明
+### Data File Descriptions
 
-生成的数据文件位于 `data/` 目录：
-- `aave-all-markets-data.json` - 原始市场数据（包含所有网络信息）
-- `aave-formatted-data.json` - 格式化后的完整数据（包含所有激励信息）
-- `aave-formatted-data.csv` - CSV 格式数据（便于 Excel 分析）
-- `brevis-raw-activities.json` - Brevis 原始活动数据
-- `merkl-raw-data.json` - Merkl 原始激励数据
+Generated data files are located in the `data/` directory:
+- `aave-all-markets-data.json` - Raw market data (includes all network information)
+- `aave-formatted-data.json` - Formatted complete data (includes all incentive information)
+- `aave-formatted-data.csv` - CSV format data (for easy Excel analysis)
+- `brevis-raw-activities.json` - Brevis raw activity data
+- `merkl-raw-data.json` - Merkl raw incentive data
 
-## 贡献指南
+## Contributing
 
-欢迎贡献代码！请遵循以下步骤：
+Contributions are welcome! Please follow these steps:
 
-1. Fork 本仓库
-2. 创建你的特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交你的更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启一个 Pull Request
+1. Fork this repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-### 开发规范
+### Development Guidelines
 
-- 使用 TypeScript 编写代码
-- 遵循现有的代码风格
-- 添加适当的注释和文档
-- 确保代码通过 TypeScript 编译检查
+- Write code in TypeScript
+- Follow existing code style
+- Add appropriate comments and documentation
+- Ensure code passes TypeScript compilation checks
 
-## 许可证
+## License
 
-本项目采用 MIT 许可证。详情请参阅 [LICENSE](LICENSE) 文件。
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-## 相关链接
+## Related Links
 
-- [Aave V3 文档](https://aave.com/docs/developers/aave-v3/markets/data#listing-available-markets)
+- [Aave V3 Documentation](https://aave.com/docs/developers/aave-v3/markets/data#listing-available-markets)
 - [Aave SDK](https://github.com/aave/aave-sdk)
 - [Merit Protocol](https://apps.aavechan.com/)
 - [Merkl](https://merkl.xyz/)
 - [Brevis Network](https://brevis.network/)
 
-## 作者
+## Author
 
-如有问题或建议，请提交 Issue 或 Pull Request。
+For questions or suggestions, please submit an Issue or Pull Request.
