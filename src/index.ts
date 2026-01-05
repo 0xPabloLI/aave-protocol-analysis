@@ -755,9 +755,18 @@ async function fetchAaveMarkets(): Promise<void> {
     
     logger.info(`🎯 Final dataset contains ${formattedData.length} token combinations`);
     
-    // 保存格式化的JSON数据
+    // 保存格式化的JSON数据（包含时间戳元数据）
+    // 使用从 fetchAaveMarketData 返回的时间戳，而不是重新生成
     const formattedJsonPath = join('data', 'aave-formatted-data.json');
-    await writeFile(formattedJsonPath, JSON.stringify(formattedData, null, 2), 'utf-8');
+    const dataWithMetadata = {
+      _metadata: {
+        timestamp: marketData.timestamp, // 使用从 fetchAaveMarketData 返回的时间戳
+        version: '1.0',
+        dataCount: formattedData.length,
+      },
+      data: formattedData,
+    };
+    await writeFile(formattedJsonPath, JSON.stringify(dataWithMetadata, null, 2), 'utf-8');
     
     // 生成CSV格式
     const csvData = generateCSV(formattedData);
@@ -805,10 +814,7 @@ async function fetchAaveMarkets(): Promise<void> {
   }
 }
 
-// 执行主函数
-fetchAaveMarkets().then(() => {
-  logger.info('🏁 Process completed');
-}).catch((error) => {
-  logger.error('💥 Fatal error:', error);
-  process.exit(1);
-});
+// 导出主函数，以便其他模块可以调用
+export async function fetchAaveMarketsData(): Promise<void> {
+  return fetchAaveMarkets();
+}
