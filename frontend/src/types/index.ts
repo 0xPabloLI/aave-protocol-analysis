@@ -66,4 +66,3 @@ export interface FilterOptions {
   minSupplyApy?: number;
   maxBorrowApy?: number;
 }
-

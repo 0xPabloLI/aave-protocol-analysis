@@ -314,4 +314,3 @@ export async function refreshMarkets(req: Request, res: Response): Promise<void>
       });
     });
 }
-

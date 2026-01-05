@@ -296,4 +296,3 @@ export function getMeritDataFromMarket(
   // 如果都没找到，返回 null
   return null;
 }
-

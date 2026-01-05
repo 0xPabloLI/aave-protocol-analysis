@@ -404,4 +404,3 @@ export function formatMerklBreakdown(breakdowns: MerklCampaignBreakdown[]): stri
     return `${b.campaignApr}% (${startDate} - ${endDate}, ${b.campaignId})`;
   }).join('; ');
 }
-

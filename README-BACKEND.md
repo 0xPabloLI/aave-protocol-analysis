@@ -2,25 +2,25 @@
 
 ## 安装依赖
 
-```bash
+\`\`\`bash
 cd backend
 npm install
-```
+\`\`\`
 
 ## 开发模式运行
 
-```bash
+\`\`\`bash
 npm run dev
-```
+\`\`\`
 
 服务器将在 `http://localhost:3001` 启动
 
 ## 构建
 
-```bash
+\`\`\`bash
 npm run build
 npm start
-```
+\`\`\`
 
 ## API 端点
 
@@ -37,14 +37,14 @@ npm start
 - `maxBorrowApy`: 最大 Borrow APY
 
 响应：
-```json
+\`\`\`json
 {
   "data": [...],
   "lastUpdated": "2024-01-01T00:00:00.000Z",
   "isStale": false,
   "updateInProgress": false
 }
-```
+\`\`\`
 
 ### GET /api/markets/stats
 
@@ -61,4 +61,3 @@ npm start
 ## 数据更新
 
 后端使用定时任务每 1 分钟自动更新数据。数据从 `../data/aave-formatted-data.json` 读取。
-

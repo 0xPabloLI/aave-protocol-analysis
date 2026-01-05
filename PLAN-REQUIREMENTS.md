@@ -84,7 +84,7 @@
 
 #### 目录结构
 
-```
+\`\`\`
 backend/
 ├── src/
 │   ├── server.ts                  # Express 服务器入口
@@ -102,7 +102,7 @@ backend/
 │       └── cors.ts               # CORS 配置
 ├── package.json
 └── tsconfig.json
-```
+\`\`\`
 
 #### API 端点设计
 
@@ -116,14 +116,14 @@ backend/
      - `minSupplyApy`: 最小 Supply APY 阈值
      - `maxBorrowApy`: 最大 Borrow APY 阈值
    - 响应格式：
-     ```typescript
+     \`\`\`typescript
      {
        data: MarketWithSpread[],
        lastUpdated: string,        // ISO 时间戳
        isStale: boolean,           // 如果超过1分钟未更新则为true
        updateInProgress: boolean   // 是否正在更新中
      }
-     ```
+     \`\`\`
 
 2. **GET /api/markets/stats**
    - 获取统计信息（总代币数、链数等）
@@ -185,7 +185,7 @@ backend/
 
 #### 目录结构
 
-```
+\`\`\`
 frontend/
 ├── src/
 │   ├── App.tsx              # 主应用组件
@@ -205,7 +205,7 @@ frontend/
 ├── package.json
 ├── tsconfig.json
 └── vite.config.ts
-```
+\`\`\`
 
 #### UI 设计要点
 
@@ -241,7 +241,7 @@ frontend/
 
 ### 正常请求流程
 
-```
+\`\`\`
 用户操作 → React 组件 → GET /api/markets → Express 后端
                                     ↓
                           检查内存缓存（如果为空则从文件加载）
@@ -255,11 +255,11 @@ frontend/
                             React 组件更新
                           根据 APY/APR 切换模式显示
                           如果 isStale → 显示警告提示
-```
+\`\`\`
 
 ### 数据更新流程（后台定时任务）
 
-```
+\`\`\`
 定时任务触发（每 1 分钟）→ 检查是否正在更新
                                     ↓
                             如果正在更新 → 跳过本次，等待下次
@@ -279,11 +279,11 @@ frontend/
                             释放文件锁 → 更新内存缓存
                                     ↓
                             设置状态为"空闲" → 记录更新时间戳
-```
+\`\`\`
 
 ### 手动刷新流程
 
-```
+\`\`\`
 用户点击刷新 → POST /api/markets/refresh → 检查是否正在更新
                                     ↓
                             如果正在更新 → 返回更新状态（不重复触发）
@@ -293,7 +293,7 @@ frontend/
                             立即返回（不等待完成）
                                     ↓
                             前端轮询更新状态或等待完成
-```
+\`\`\`
 
 ## 关键实现细节
 
@@ -301,7 +301,7 @@ frontend/
 
 在 `marketsController.ts` 中，读取 JSON 后需要计算并添加 `apySpread` 字段：
 
-```typescript
+\`\`\`typescript
 interface MarketWithSpread extends FormattedReserveData {
   apySpread: number | null; // totalSupplyApy - totalBorrowApy
 }
@@ -313,7 +313,7 @@ const dataWithSpread: MarketWithSpread[] = formattedData.map(item => ({
     ? item.totalSupplyApy - item.totalBorrowApy 
     : null
 }));
-```
+\`\`\`
 
 ### 前端排序逻辑（列头双向箭头）
 
@@ -414,9 +414,9 @@ const dataWithSpread: MarketWithSpread[] = formattedData.map(item => ({
 
 创建 `frontend/.env` 文件：
 
-```
+\`\`\`
 VITE_API_URL=http://localhost:3001/api
-```
+\`\`\`
 
 ## 开发注意事项
 
@@ -461,4 +461,3 @@ VITE_API_URL=http://localhost:3001/api
 - 设置指南：`SETUP.md`
 - 现有数据获取逻辑：`src/index.ts`
 - 数据文件：`data/aave-formatted-data.json`
-

@@ -56,4 +56,3 @@ export interface UpdateStatus {
   lastSuccessfulUpdate: string | null;
   error?: string;
 }
-

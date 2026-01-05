@@ -116,23 +116,23 @@
 ## 建议的下一步
 
 1. **运行主项目数据获取脚本**
-   ```bash
+   \`\`\`bash
    cd /Users/pabloli/.cursor/worktrees/aave/eca
    npm run dev
-   ```
+   \`\`\`
    这将生成 `data/aave-formatted-data.json` 文件
 
 2. **启动后端服务器**
-   ```bash
+   \`\`\`bash
    cd backend
    npm run dev
-   ```
+   \`\`\`
 
 3. **启动前端开发服务器**
-   ```bash
+   \`\`\`bash
    cd frontend
    npm run dev
-   ```
+   \`\`\`
 
 4. **完善 APY/APR 切换功能**
    - 后端返回原始 APR 数据
@@ -146,4 +146,3 @@
 📝 **需要实际数据**: 需要运行主项目脚本生成数据文件才能完整测试
 
 总体而言，项目已按照需求实现，可以进行实际运行测试。
-

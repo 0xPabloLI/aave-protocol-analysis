@@ -2,24 +2,24 @@
 
 ## 安装依赖
 
-```bash
+\`\`\`bash
 cd frontend
 npm install
-```
+\`\`\`
 
 ## 开发模式运行
 
-```bash
+\`\`\`bash
 npm run dev
-```
+\`\`\`
 
 前端将在 `http://localhost:5173` 启动
 
 ## 构建
 
-```bash
+\`\`\`bash
 npm run build
-```
+\`\`\`
 
 构建产物在 `dist/` 目录
 
@@ -27,9 +27,9 @@ npm run build
 
 创建 `.env` 文件：
 
-```
+\`\`\`
 VITE_API_URL=http://localhost:3001/api
-```
+\`\`\`
 
 ## 功能特性
 
@@ -40,4 +40,3 @@ VITE_API_URL=http://localhost:3001/api
 - 🔁 APY/APR 切换
 - ⚡ 实时数据更新（1分钟时效）
 - 🎨 现代化的 UI 设计（Tailwind CSS）
-

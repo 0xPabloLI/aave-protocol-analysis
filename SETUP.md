@@ -4,35 +4,35 @@
 
 ### 1. 安装后端依赖
 
-```bash
+\`\`\`bash
 cd backend
 npm install
-```
+\`\`\`
 
 ### 2. 安装前端依赖
 
-```bash
+\`\`\`bash
 cd frontend
 npm install
-```
+\`\`\`
 
 ### 3. 首次运行数据获取（可选）
 
 如果需要生成数据文件，运行主项目的数据获取脚本：
 
-```bash
+\`\`\`bash
 # 在项目根目录
 npm run dev
-```
+\`\`\`
 
 这会在 `data/aave-formatted-data.json` 生成数据文件。
 
 ### 4. 启动后端服务器
 
-```bash
+\`\`\`bash
 cd backend
 npm run dev
-```
+\`\`\`
 
 后端将在 `http://localhost:3001` 启动
 
@@ -40,10 +40,10 @@ npm run dev
 
 在新的终端窗口：
 
-```bash
+\`\`\`bash
 cd frontend
 npm run dev
-```
+\`\`\`
 
 前端将在 `http://localhost:5173` 启动
 
@@ -75,13 +75,12 @@ npm run dev
 前端可以配置 API URL（可选）：
 
 在 `frontend/.env` 中：
-```
+\`\`\`
 VITE_API_URL=http://localhost:3001/api
-```
+\`\`\`
 
 ## 注意事项
 
 - 确保数据文件 `data/aave-formatted-data.json` 存在
 - 后端需要访问父目录的 `data/` 文件夹
 - 前端需要后端 API 运行在 `http://localhost:3001`
-

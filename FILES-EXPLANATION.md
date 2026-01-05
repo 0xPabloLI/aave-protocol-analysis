@@ -322,7 +322,7 @@
 
 ### 后端数据流
 
-```
+\`\`\`
 server.ts (启动)
   ├── dataService.loadData() → 加载数据到内存
   ├── startUpdateScheduler() → 启动定时任务
@@ -337,11 +337,11 @@ server.ts (启动)
               ├── getStats() → dataService.getData() → 统计
               ├── getChains() → dataService.getData() → 链列表
               └── refreshMarkets() → fetchService.fetchMarketData() → 手动刷新
-```
+\`\`\`
 
 ### 前端数据流
 
-```
+\`\`\`
 main.tsx (入口)
   └── App.tsx
         └── MarketsTable.tsx
@@ -355,7 +355,7 @@ main.tsx (入口)
               │
               └── 表格展示
                     └── 列头排序 → 更新 useMarkets 参数 → 重新获取数据
-```
+\`\`\`
 
 ---
 
@@ -387,4 +387,3 @@ main.tsx (入口)
 - @aave/client 是后端 Node.js SDK，适合服务端数据获取
 - @aave/react 是前端 React hooks，用于浏览器中的链上交互（连接钱包、提交交易）
 - 未来如果需要前端交互功能，再考虑引入 @aave/react
-

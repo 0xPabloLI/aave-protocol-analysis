@@ -42,4 +42,3 @@ dataService.loadData()
   });
 
 export default app;
-

@@ -16,4 +16,3 @@ router.get('/chains', getChains);
 router.get('/list', getMarketsList);
 
 export default router;
-

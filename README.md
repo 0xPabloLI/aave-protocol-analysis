@@ -33,7 +33,7 @@ This project uses the Aave TypeScript SDK and @bgd-labs/aave-address-book to fet
 
 ## Project Structure
 
-```
+\`\`\`
 aave/
 ├── src/
 │   ├── index.ts          # Main logic, integrates all data sources
@@ -57,7 +57,7 @@ aave/
 ├── tsconfig.json         # TypeScript configuration
 ├── LICENSE               # MIT License
 └── README.md             # Project documentation
-```
+\`\`\`
 
 ## Quick Start
 
@@ -68,22 +68,22 @@ aave/
 
 ### Install Dependencies
 
-```bash
+\`\`\`bash
 npm install
-```
+\`\`\`
 
 ### Run the Project
 
 #### Development Mode (Recommended)
-```bash
+\`\`\`bash
 npm run dev
-```
+\`\`\`
 
 #### Build and Run
-```bash
+\`\`\`bash
 npm run build
 npm start
-```
+\`\`\`
 
 After successful execution, data files will be saved in the `data/` directory.
 
