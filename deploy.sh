@@ -129,6 +129,12 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   mkdir -p data
   node dist/index.js || echo "⚠️  Initial data fetch failed, but continuing deployment..."
   
+  # Ensure data file is in the correct location (data service expects it in /root/aave/data/)
+  if [ -f "backend/data/aave-formatted-data.json" ] && [ ! -f "data/aave-formatted-data.json" ]; then
+    echo "Copying data file to correct location..."
+    cp backend/data/aave-formatted-data.json data/
+  fi
+  
   # Install backend dependencies
   echo "Installing backend dependencies..."
   cd backend
