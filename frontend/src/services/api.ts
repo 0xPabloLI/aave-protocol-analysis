@@ -3,10 +3,76 @@ import type { MarketsResponse, MarketsStats } from '../types/index.js';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
+// 在浏览器控制台输出 API URL 用于调试（仅在开发环境）
+if (import.meta.env.DEV) {
+  console.log('API Base URL:', API_BASE_URL);
+  console.log('Environment variables:', {
+    VITE_API_URL: import.meta.env.VITE_API_URL,
+    MODE: import.meta.env.MODE,
+    PROD: import.meta.env.PROD,
+    DEV: import.meta.env.DEV,
+  });
+}
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
 });
+
+// 添加请求拦截器用于调试
+apiClient.interceptors.request.use(
+  (config) => {
+    if (import.meta.env.DEV) {
+      console.log('API Request:', config.method?.toUpperCase(), config.url);
+    }
+    return config;
+  },
+  (error) => {
+    console.error('API Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// 添加响应拦截器用于错误处理
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // 提供更详细的错误信息
+    if (error.response) {
+      // 服务器返回了错误响应
+      console.error('API Error Response:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+        url: error.config?.url,
+        baseURL: error.config?.baseURL,
+      });
+    } else if (error.request) {
+      // 请求已发出但没有收到响应
+      console.error('API Request Error (No Response):', {
+        message: error.message,
+        url: error.config?.url,
+        baseURL: error.config?.baseURL,
+        code: error.code,
+      });
+      
+      // 提供更友好的错误消息
+      if (error.code === 'ECONNABORTED') {
+        error.message = '请求超时，请检查网络连接或 API 服务器是否正常运行';
+      } else if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
+        error.message = `无法连接到 API 服务器。请检查：
+1. API URL 是否正确配置: ${API_BASE_URL}
+2. 后端服务是否正在运行
+3. 是否存在 CORS 问题
+4. 网络连接是否正常`;
+      }
+    } else {
+      // 设置请求时出错
+      console.error('API Error:', error.message);
+    }
+    return Promise.reject(error);
+  }
+);
 
 export const marketsApi = {
   /**

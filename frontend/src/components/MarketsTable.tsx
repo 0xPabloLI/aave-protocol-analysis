@@ -122,10 +122,24 @@ export function MarketsTable() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="card-elevated p-8 text-center max-w-md">
-          <div className="text-red-600 text-xl font-semibold mb-2">Error</div>
-          <div className="text-gray-600">{error.message}</div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="card-elevated p-8 text-center max-w-2xl">
+          <div className="text-red-600 text-xl font-semibold mb-4">⚠️ 连接错误</div>
+          <div className="text-gray-700 mb-4 whitespace-pre-line text-left">
+            {error.message}
+          </div>
+          <div className="mt-6 p-4 bg-gray-100 rounded-lg text-left text-sm">
+            <div className="font-semibold mb-2">排查步骤：</div>
+            <ol className="list-decimal list-inside space-y-1 text-gray-600">
+              <li>检查浏览器控制台（F12）查看详细错误信息</li>
+              <li>确认 Vercel 环境变量 <code className="bg-gray-200 px-1 rounded">VITE_API_URL</code> 已正确配置</li>
+              <li>确认后端服务 <code className="bg-gray-200 px-1 rounded">http://43.247.134.242:3001</code> 正在运行</li>
+              <li>检查是否存在 CORS 或网络连接问题</li>
+            </ol>
+          </div>
+          <div className="mt-4 text-xs text-gray-500">
+            API URL: {import.meta.env.VITE_API_URL || '未配置（使用默认值）'}
+          </div>
         </div>
       </div>
     );
