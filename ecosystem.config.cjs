@@ -9,7 +9,7 @@ module.exports = {
     max_memory_restart: '500M',
     env: {
       NODE_ENV: 'production',
-      PORT: 80
+      PORT: 3001  // 使用 Cloudflare Tunnel 时，后端监听 3001 端口（更安全）
     },
     error_file: './logs/pm2-error.log',
     out_file: './logs/pm2-out.log',
