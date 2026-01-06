@@ -1,7 +1,22 @@
 import axios from 'axios';
 import type { MarketsResponse, MarketsStats } from '../types/index.js';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// 在 Vercel 生产环境中，使用相对路径通过代理访问 API
+// 这样可以避免混合内容问题（HTTPS -> HTTP）和 CORS 问题
+const getApiBaseUrl = () => {
+  // 如果明确配置了环境变量，使用环境变量
+  if (import.meta.env.VITE_API_URL) {
+    // 在生产环境（Vercel）中，如果配置的是 HTTP，使用代理路径
+    if (import.meta.env.PROD && import.meta.env.VITE_API_URL.startsWith('http://')) {
+      return '/api'; // 使用 Vercel 代理
+    }
+    return import.meta.env.VITE_API_URL;
+  }
+  // 开发环境使用 localhost
+  return 'http://localhost:3001/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // 在浏览器控制台输出 API URL 用于调试（仅在开发环境）
 if (import.meta.env.DEV) {
