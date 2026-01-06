@@ -193,27 +193,44 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   echo "Saving PM2 process list..."
   pm2 save
   
-  # Check if firewall allows port 3001
-  echo "Checking firewall configuration for port 3001..."
+  # Check if firewall allows port 80 (for Cloudflare HTTPS)
+  echo "Checking firewall configuration for port 80..."
   if command -v ufw &> /dev/null; then
-    if ! ufw status | grep -q "3001"; then
-      echo "Opening port 3001 in UFW firewall..."
-      sudo ufw allow 3001/tcp
-      echo "Port 3001 is now open in UFW"
+    if ! ufw status | grep -q "80"; then
+      echo "Opening port 80 in UFW firewall..."
+      sudo ufw allow 80/tcp
+      echo "Port 80 is now open in UFW"
     else
-      echo "Port 3001 is already allowed in UFW"
+      echo "Port 80 is already allowed in UFW"
     fi
   elif command -v firewall-cmd &> /dev/null; then
-    if ! sudo firewall-cmd --list-ports | grep -q "3001"; then
-      echo "Opening port 3001 in firewalld..."
-      sudo firewall-cmd --permanent --add-port=3001/tcp
+    if ! sudo firewall-cmd --list-ports | grep -q "80"; then
+      echo "Opening port 80 in firewalld..."
+      sudo firewall-cmd --permanent --add-port=80/tcp
       sudo firewall-cmd --reload
-      echo "Port 3001 is now open in firewalld"
+      echo "Port 80 is now open in firewalld"
     else
-      echo "Port 3001 is already allowed in firewalld"
+      echo "Port 80 is already allowed in firewalld"
     fi
   else
-    echo "⚠️  No firewall management tool found (ufw/firewalld). Please manually ensure port 3001 is open."
+    echo "⚠️  No firewall management tool found (ufw/firewalld). Please manually ensure port 80 is open."
+  fi
+  
+  # Also ensure port 443 is open (for direct HTTPS if needed)
+  echo "Checking firewall configuration for port 443..."
+  if command -v ufw &> /dev/null; then
+    if ! ufw status | grep -q "443"; then
+      echo "Opening port 443 in UFW firewall..."
+      sudo ufw allow 443/tcp
+      echo "Port 443 is now open in UFW"
+    fi
+  elif command -v firewall-cmd &> /dev/null; then
+    if ! sudo firewall-cmd --list-ports | grep -q "443"; then
+      echo "Opening port 443 in firewalld..."
+      sudo firewall-cmd --permanent --add-port=443/tcp
+      sudo firewall-cmd --reload
+      echo "Port 443 is now open in firewalld"
+    fi
   fi
   
   # Display service information
@@ -221,9 +238,14 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   echo "=========================================="
   echo "Deployment completed successfully!"
   echo "=========================================="
-  echo "Service URL: http://43.247.134.242:3001"
-  echo "Health check: http://43.247.134.242:3001/health"
-  echo "API endpoint: http://43.247.134.242:3001/api/markets"
+  echo "Service URL: http://43.247.134.242"
+  echo "Health check: http://43.247.134.242/health"
+  echo "API endpoint: http://43.247.134.242/api/markets"
+  echo ""
+  echo "If using Cloudflare with HTTPS:"
+  echo "HTTPS URL: https://api.aaveapy.com"
+  echo "Health check: https://api.aaveapy.com/health"
+  echo "API endpoint: https://api.aaveapy.com/api/markets"
   echo ""
   echo "PM2 Status:"
   pm2 status
