@@ -7,6 +7,16 @@
 1. **GitHub 账户** - 代码已推送到 GitHub
 2. **Vercel 账户** - 如果没有，访问 https://vercel.com 注册（可以使用 GitHub 账号登录）
 
+## 重要说明：不需要在 GitHub 中分环境
+
+**你不需要在 GitHub 中创建不同的分支或环境配置。**
+
+- ✅ 使用同一个 `main` 分支即可
+- ✅ 环境变量在 Vercel Dashboard 中配置
+- ✅ Vercel 会根据部署类型自动选择环境（Production/Preview/Development）
+
+详细说明请查看 `VERCEL-ENVIRONMENT-EXPLAIN.md`
+
 ## 部署步骤
 
 ### 方法 1: 通过 Vercel Dashboard（推荐）
