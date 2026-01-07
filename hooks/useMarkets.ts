@@ -1,7 +1,9 @@
+'use client'
+
 import { useState, useEffect, useMemo } from 'react';
-import { marketsApi } from '../services/api.js';
-import type { MarketWithSpread, FilterOptions, SortField, SortOrder } from '../types/index.js';
-import { isTokenInCategory, fetchCoinGeckoTokens } from '../services/tokenFilter.js';
+import { marketsApi } from '@/services/api';
+import type { MarketWithSpread, FilterOptions, SortField, SortOrder } from '@/types';
+import { isTokenInCategory, fetchCoinGeckoTokens } from '@/services/tokenFilter';
 
 export function useMarkets(
   sortField: SortField,
@@ -143,3 +145,4 @@ export function useMarkets(
     },
   };
 }
+

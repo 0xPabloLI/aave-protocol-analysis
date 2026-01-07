@@ -27,9 +27,9 @@ const corsOptions = process.env.NODE_ENV === 'production' && process.env.FRONTEN
     }
   : {
       origin: true, // 开发环境允许所有来源
-      credentials: true,
-      methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
     };
 
 export const corsMiddleware = cors(corsOptions);

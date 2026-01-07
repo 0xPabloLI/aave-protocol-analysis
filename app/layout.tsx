@@ -1,15 +1,16 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
+import { Inter } from 'next/font/google'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const inter = Inter({ 
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-inter',
+})
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.app',
+  title: 'Aave Markets Dashboard',
+  description: '实时 Aave 市场数据和分析',
   icons: {
     icon: [
       {
@@ -31,14 +32,13 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
-    <html lang="en">
-      <body className={`font-sans antialiased`}>
+    <html lang="zh-CN">
+      <body className={`${inter.variable} font-sans antialiased`}>
         {children}
-        <Analytics />
       </body>
     </html>
   )

@@ -1,31 +1,30 @@
-import axios from 'axios';
-import type { MarketsResponse, MarketsStats } from '../types/index.js';
+'use client'
 
-// 在 Vercel 生产环境中，使用相对路径通过代理访问 API
-// 这样可以避免混合内容问题（HTTPS -> HTTP）和 CORS 问题
+import axios from 'axios';
+import type { MarketsResponse, MarketsStats } from '@/types';
+
+// 在 Next.js 中，使用 NEXT_PUBLIC_ 前缀的环境变量
 const getApiBaseUrl = () => {
   // 如果明确配置了环境变量，使用环境变量
-  if (import.meta.env.VITE_API_URL) {
-    // 在生产环境（Vercel）中，如果配置的是 HTTP，使用代理路径
-    if (import.meta.env.PROD && import.meta.env.VITE_API_URL.startsWith('http://')) {
-      return '/api'; // 使用 Vercel 代理
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    // 在生产环境中，如果配置的是 HTTP，使用代理路径
+    if (process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_API_URL.startsWith('http://')) {
+      return '/api'; // 使用 Next.js 代理
     }
-    return import.meta.env.VITE_API_URL;
+    return process.env.NEXT_PUBLIC_API_URL;
   }
-  // 开发环境使用 localhost
-  return 'http://localhost:3001/api';
+  // 默认使用远程 HTTPS API
+  return 'https://api.aaveapy.com/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();
 
 // 在浏览器控制台输出 API URL 用于调试（仅在开发环境）
-if (import.meta.env.DEV) {
+if (process.env.NODE_ENV === 'development') {
   console.log('API Base URL:', API_BASE_URL);
   console.log('Environment variables:', {
-    VITE_API_URL: import.meta.env.VITE_API_URL,
-    MODE: import.meta.env.MODE,
-    PROD: import.meta.env.PROD,
-    DEV: import.meta.env.DEV,
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+    NODE_ENV: process.env.NODE_ENV,
   });
 }
 
@@ -37,7 +36,7 @@ const apiClient = axios.create({
 // 添加请求拦截器用于调试
 apiClient.interceptors.request.use(
   (config) => {
-    if (import.meta.env.DEV) {
+    if (process.env.NODE_ENV === 'development') {
       console.log('API Request:', config.method?.toUpperCase(), config.url);
     }
     return config;
@@ -138,3 +137,4 @@ export const marketsApi = {
     return response.data;
   },
 };
+

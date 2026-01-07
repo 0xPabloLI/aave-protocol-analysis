@@ -1,7 +1,7 @@
 "use client"
 
-import { fetchAaveMarketsData } from "../src/index"
+import { MarketsTable } from '@/components/MarketsTable'
 
-export default function SyntheticV0PageForDeployment() {
-  return <fetchAaveMarketsData />
+export default function Home() {
+  return <MarketsTable />
 }

@@ -1,10 +1,12 @@
+'use client'
+
 import { useState, useEffect } from 'react';
-import type { SortField, SortOrder } from '../types/index.js';
-import { FilterControls } from './FilterControls.js';
-import { LoadingSpinner } from './LoadingSpinner.js';
-import { useMarkets } from '../hooks/useMarkets.js';
-import { marketsApi } from '../services/api.js';
-import type { FilterOptions } from '../types/index.js';
+import type { SortField, SortOrder } from '@/types';
+import { FilterControls } from './FilterControls';
+import { LoadingSpinner } from './LoadingSpinner';
+import { useMarkets } from '@/hooks/useMarkets';
+import { marketsApi } from '@/services/api';
+import type { FilterOptions } from '@/types';
 
 // Map Ethereum market names to display names
 const ETHEREUM_MARKET_MAP: Record<string, string> = {
@@ -78,7 +80,7 @@ export function MarketsTable() {
     const interval = setInterval(refreshData, 30000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [lastUpdated]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -108,13 +110,13 @@ export function MarketsTable() {
   };
 
   const getSortClass = (field: SortField) => {
-    if (sortField !== field) return 'text-gray-400';
-    return 'text-blue-600';
+    if (sortField !== field) return 'text-aave-text-muted';
+    return 'text-aave-cyan';
   };
 
   if (loading && data.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-aave-bg-primary flex items-center justify-center">
         <LoadingSpinner />
       </div>
     );
@@ -122,23 +124,23 @@ export function MarketsTable() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="card-elevated p-8 text-center max-w-2xl">
-          <div className="text-red-600 text-xl font-semibold mb-4">⚠️ 连接错误</div>
-          <div className="text-gray-700 mb-4 whitespace-pre-line text-left">
+      <div className="min-h-screen bg-aave-bg-primary flex items-center justify-center p-4">
+        <div className="aave-card p-8 text-center max-w-2xl">
+          <div className="text-aave-error text-xl font-semibold mb-4">⚠️ 连接错误</div>
+          <div className="text-aave-text-secondary mb-4 whitespace-pre-line text-left">
             {error.message}
           </div>
-          <div className="mt-6 p-4 bg-gray-100 rounded-lg text-left text-sm">
-            <div className="font-semibold mb-2">排查步骤：</div>
-            <ol className="list-decimal list-inside space-y-1 text-gray-600">
+          <div className="mt-6 p-4 bg-aave-bg-tertiary rounded-lg text-left text-sm">
+            <div className="font-semibold mb-2 text-aave-text-primary">排查步骤：</div>
+            <ol className="list-decimal list-inside space-y-1 text-aave-text-secondary">
               <li>检查浏览器控制台（F12）查看详细错误信息</li>
-              <li>确认 Vercel 环境变量 <code className="bg-gray-200 px-1 rounded">VITE_API_URL</code> 已正确配置</li>
-              <li>确认后端服务 <code className="bg-gray-200 px-1 rounded">http://43.247.134.242:3001</code> 正在运行</li>
+              <li>确认环境变量 <code className="bg-aave-bg-secondary px-1 rounded text-aave-cyan">NEXT_PUBLIC_API_URL</code> 已正确配置（默认使用 https://api.aaveapy.com/api）</li>
+              <li>确认远程 API 服务可访问</li>
               <li>检查是否存在 CORS 或网络连接问题</li>
             </ol>
           </div>
-          <div className="mt-4 text-xs text-gray-500">
-            API URL: {import.meta.env.VITE_API_URL || '未配置（使用默认值）'}
+          <div className="mt-4 text-xs text-aave-text-muted">
+            API URL: {process.env.NEXT_PUBLIC_API_URL || '未配置（使用默认值）'}
           </div>
         </div>
       </div>
@@ -146,49 +148,53 @@ export function MarketsTable() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-aave-bg-primary">
+      {/* 背景装饰 */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-aave-purple/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-aave-cyan/10 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-6">
             <div>
-              <h1 className="text-4xl font-bold text-gray-900 mb-2 tracking-tight">
-                Aave Markets Dashboard
+              <h1 className="text-4xl font-bold text-aave-text-primary mb-2 tracking-tight">
+                <span className="aave-gradient-text">Aave</span> Markets Dashboard
               </h1>
-              <p className="text-gray-600 text-sm">实时市场数据和分析</p>
+              <p className="text-aave-text-secondary text-sm">实时市场数据和分析</p>
             </div>
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
               {/* APY/APR Toggle */}
-              <div className="card-elevated px-6 py-3 flex items-center gap-4">
+              <div className="aave-card px-6 py-3 flex items-center gap-4">
                 <span className={`text-sm font-semibold transition-colors ${
-                  apyAprMode === 'apy' ? 'text-blue-600' : 'text-gray-400'
+                  apyAprMode === 'apy' ? 'text-aave-cyan' : 'text-aave-text-muted'
                 }`}>
                   APY
                 </span>
                 <button
                   onClick={() => setApyAprMode(apyAprMode === 'apy' ? 'apr' : 'apy')}
-                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                    apyAprMode === 'apr' ? 'bg-blue-600' : 'bg-gray-300'
+                  className={`aave-toggle ${
+                    apyAprMode === 'apr' ? 'aave-toggle-active' : ''
                   }`}
                   aria-label="Toggle APY/APR"
                 >
-                  <span
-                    className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
-                      apyAprMode === 'apr' ? 'translate-x-7' : 'translate-x-1'
-                    }`}
-                  />
+                  <span className="aave-toggle-knob" style={{
+                    transform: apyAprMode === 'apr' ? 'translateX(28px)' : 'translateX(0)'
+                  }} />
                 </button>
                 <span className={`text-sm font-semibold transition-colors ${
-                  apyAprMode === 'apr' ? 'text-blue-600' : 'text-gray-400'
+                  apyAprMode === 'apr' ? 'text-aave-cyan' : 'text-aave-text-muted'
                 }`}>
                   APR
                 </span>
               </div>
               {/* Last Updated */}
               {lastUpdated && (
-                <div className="card-elevated px-6 py-3">
-                  <div className="text-xs text-gray-500 mb-1">最后更新</div>
-                  <div className="text-sm font-semibold text-gray-900">
+                <div className="aave-card px-6 py-3">
+                  <div className="text-xs text-aave-text-muted mb-1">最后更新</div>
+                  <div className="text-sm font-semibold text-aave-text-primary">
                     {new Date(lastUpdated).toLocaleString('zh-CN', {
                       year: 'numeric',
                       month: '2-digit',
@@ -212,38 +218,38 @@ export function MarketsTable() {
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="card-elevated p-6">
-            <div className="text-sm font-medium text-gray-600 mb-1">总市场数</div>
-            <div className="text-3xl font-bold text-gray-900">{data.length}</div>
+          <div className="stat-card">
+            <div className="text-sm font-medium text-aave-text-secondary mb-1">总市场数</div>
+            <div className="text-3xl font-bold text-aave-text-primary">{data.length}</div>
           </div>
-          <div className="card-elevated p-6">
-            <div className="text-sm font-medium text-gray-600 mb-1">平均 Supply APY</div>
-            <div className="text-3xl font-bold text-green-600">
+          <div className="stat-card">
+            <div className="text-sm font-medium text-aave-text-secondary mb-1">平均 Supply APY</div>
+            <div className="text-3xl font-bold text-aave-success">
               {data.length > 0 ? (data.reduce((sum, item) => sum + (item.totalSupplyApy * 100), 0) / data.length).toFixed(2) : '0.00'}%
             </div>
           </div>
-          <div className="card-elevated p-6">
-            <div className="text-sm font-medium text-gray-600 mb-1">平均 Borrow APY</div>
-            <div className="text-3xl font-bold text-blue-600">
+          <div className="stat-card">
+            <div className="text-sm font-medium text-aave-text-secondary mb-1">平均 Borrow APY</div>
+            <div className="text-3xl font-bold text-aave-cyan">
               {data.length > 0 ? (data.filter(item => item.totalBorrowApy !== null).reduce((sum, item) => sum + ((item.totalBorrowApy || 0) * 100), 0) / data.filter(item => item.totalBorrowApy !== null).length || 0).toFixed(2) : '0.00'}%
             </div>
           </div>
         </div>
 
         {/* Table */}
-        <div className="card-elevated overflow-hidden">
+        <div className="aave-card overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="table-header">
+            <table className="aave-table">
+              <thead className="aave-table-header">
                 <tr>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-aave-text-secondary uppercase tracking-wider">
                     代币
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-aave-text-secondary uppercase tracking-wider">
                     市场
                   </th>
-                  <th 
-                    className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  <th
+                    className="px-6 py-4 text-left text-xs font-semibold text-aave-text-secondary uppercase tracking-wider cursor-pointer hover:bg-aave-surface-hover transition-colors"
                     onClick={() => handleSort('totalSupplyApy')}
                   >
                     <div className="flex items-center gap-2">
@@ -251,8 +257,8 @@ export function MarketsTable() {
                       <span className={getSortClass('totalSupplyApy')}>{getSortIcon('totalSupplyApy')}</span>
                     </div>
                   </th>
-                  <th 
-                    className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  <th
+                    className="px-6 py-4 text-left text-xs font-semibold text-aave-text-secondary uppercase tracking-wider cursor-pointer hover:bg-aave-surface-hover transition-colors"
                     onClick={() => handleSort('totalBorrowApy')}
                   >
                     <div className="flex items-center gap-2">
@@ -260,8 +266,8 @@ export function MarketsTable() {
                       <span className={getSortClass('totalBorrowApy')}>{getSortIcon('totalBorrowApy')}</span>
                     </div>
                   </th>
-                  <th 
-                    className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  <th
+                    className="px-6 py-4 text-left text-xs font-semibold text-aave-text-secondary uppercase tracking-wider cursor-pointer hover:bg-aave-surface-hover transition-colors"
                     onClick={() => handleSort('apySpread')}
                   >
                     <div className="flex items-center gap-2">
@@ -271,45 +277,45 @@ export function MarketsTable() {
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody>
                 {data.map((item, index) => {
                   const spreadValue = item.apySpread !== null ? item.apySpread * 100 : null;
                   const isNegativeSpread = spreadValue !== null && spreadValue < 0;
-                  
+
                   return (
-                    <tr key={index} className="table-row">
+                    <tr key={index} className="aave-table-row">
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="font-bold text-gray-900 text-base">{item.tokenSymbol}</div>
-                        <div className="text-sm text-gray-500 mt-0.5">{item.tokenName}</div>
+                        <div className="font-bold text-aave-text-primary text-base">{item.tokenSymbol}</div>
+                        <div className="text-sm text-aave-text-muted mt-0.5">{item.tokenName}</div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                        <span className="aave-badge">
                           {getMarketDisplayName(item.marketName, item.chainName)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="font-bold text-green-600 text-base">
+                        <span className="font-bold text-aave-success text-base">
                           {formatPercent(item.totalSupplyApy)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {item.totalBorrowApy !== null ? (
-                          <span className="font-bold text-blue-600 text-base">
+                          <span className="font-bold text-aave-cyan text-base">
                             {formatPercent(item.totalBorrowApy)}
                           </span>
                         ) : (
-                          <span className="text-gray-400">-</span>
+                          <span className="text-aave-text-muted">-</span>
                         )}
                       </td>
                       <td className={`px-6 py-4 whitespace-nowrap font-bold text-base ${
-                        isNegativeSpread ? 'text-orange-600' : 'text-green-600'
+                        isNegativeSpread ? 'text-aave-warning' : 'text-aave-success'
                       }`}>
                         {spreadValue !== null ? (
                           <span>
                             {spreadValue > 0 ? '+' : ''}{spreadValue.toFixed(2)}%
                           </span>
                         ) : (
-                          <span className="text-gray-400">-</span>
+                          <span className="text-aave-text-muted">-</span>
                         )}
                       </td>
                     </tr>
@@ -321,15 +327,16 @@ export function MarketsTable() {
         </div>
 
         {data.length === 0 && !loading && (
-          <div className="card-elevated mt-6 text-center py-12">
-            <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="aave-card mt-6 text-center py-12">
+            <svg className="mx-auto h-12 w-12 text-aave-text-muted mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
             </svg>
-            <p className="text-lg text-gray-700 font-semibold mb-2">没有找到匹配的市场</p>
-            <p className="text-sm text-gray-500">尝试调整筛选条件</p>
+            <p className="text-lg text-aave-text-primary font-semibold mb-2">没有找到匹配的市场</p>
+            <p className="text-sm text-aave-text-secondary">尝试调整筛选条件</p>
           </div>
         )}
       </div>
     </div>
   );
 }
+

@@ -1,6 +1,8 @@
+'use client'
+
 import { useState, useEffect } from 'react';
-import { marketsApi } from '../services/api.js';
-import type { FilterOptions, TokenCategory } from '../types/index.js';
+import { marketsApi } from '@/services/api';
+import type { FilterOptions, TokenCategory } from '@/types';
 
 interface FilterControlsProps {
   filters: FilterOptions;
@@ -109,8 +111,8 @@ export function FilterControls({ filters, onFiltersChange }: FilterControlsProps
   return (
     <div className="space-y-4">
       {/* Market Filter */}
-      <div className="card-elevated p-6">
-        <label className="block text-sm font-bold mb-4 text-gray-800">
+      <div className="aave-card p-6">
+        <label className="block text-sm font-bold mb-4 text-aave-text-primary">
           市场筛选
         </label>
         <div className="space-y-3">
@@ -121,10 +123,10 @@ export function FilterControls({ filters, onFiltersChange }: FilterControlsProps
                   <button
                     key={market.key}
                     onClick={() => handleMarketToggle(market.key)}
-                    className={`btn-filter ${
+                    className={`aave-btn ${
                       selectedMarkets.includes(market.key)
-                        ? 'btn-filter-active'
-                        : 'btn-filter-inactive'
+                        ? 'aave-btn-active'
+                        : ''
                     }`}
                   >
                     {market.label}
@@ -137,8 +139,8 @@ export function FilterControls({ filters, onFiltersChange }: FilterControlsProps
       </div>
 
       {/* Token Filter */}
-      <div className="card-elevated p-6">
-        <label className="block text-sm font-bold mb-4 text-gray-800">
+      <div className="aave-card p-6">
+        <label className="block text-sm font-bold mb-4 text-aave-text-primary">
           代币筛选
         </label>
         <div className="flex flex-wrap gap-2 mb-4">
@@ -146,20 +148,20 @@ export function FilterControls({ filters, onFiltersChange }: FilterControlsProps
             <button
               key={category.value}
               onClick={() => handleTokenCategoryToggle(category.value)}
-              className={`btn-filter ${
+              className={`aave-btn ${
                 selectedTokenCategories.includes(category.value)
-                  ? 'btn-filter-active'
-                  : 'btn-filter-inactive'
+                  ? 'aave-btn-active'
+                  : ''
               }`}
             >
               {category.label}
             </button>
           ))}
         </div>
-        
+
         {/* Token Search */}
         <div>
-          <label className="block text-sm font-semibold mb-2 text-gray-700">
+          <label className="block text-sm font-semibold mb-2 text-aave-text-secondary">
             代币搜索
           </label>
           <input
@@ -167,10 +169,11 @@ export function FilterControls({ filters, onFiltersChange }: FilterControlsProps
             value={tokenSearch}
             onChange={(e) => handleTokenSearch(e.target.value)}
             placeholder="输入代币符号或名称..."
-            className="w-full max-w-md px-4 py-3 bg-white border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+            className="aave-input max-w-md"
           />
         </div>
       </div>
     </div>
   );
 }
+
