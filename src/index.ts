@@ -775,6 +775,7 @@ async function fetchAaveMarkets(): Promise<void> {
     const csvPath = join(DATA_DIR, 'aave-formatted-data.csv');
     await writeFile(csvPath, csvData, 'utf-8');
     
+    const outputPath = join(DATA_DIR, 'aave-all-markets-data.json');
     logger.info(`💾 Original data saved to ${outputPath}`);
     logger.info(`📊 Formatted JSON saved to ${formattedJsonPath}`);
     logger.info(`📈 CSV data saved to ${csvPath}`);
