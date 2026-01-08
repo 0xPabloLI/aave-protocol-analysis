@@ -150,180 +150,82 @@
 
 ---
 
-## 前端文件（frontend/）
+## 数据获取服务文件（src/）
 
-### 配置文件
+### 核心文件
 
-#### `frontend/package.json`
-- **功能**：前端项目的依赖管理文件
-- **作用**：定义前端所需的依赖包（react, vite, axios, tailwindcss 等）
+#### `src/index.ts`
+- **功能**：数据获取服务主入口
+- **作用**：
+  - 集成所有数据源（Aave SDK, Merit API, Merkl API, Brevis API）
+  - 获取市场数据并格式化
+  - 保存数据到 JSON 和 CSV 文件
+  - 输出详细的市场分布信息
 
-#### `frontend/tsconfig.json`, `frontend/tsconfig.app.json`, `frontend/tsconfig.node.json`
-- **功能**：TypeScript 配置（主配置、应用配置、Node 配置）
-- **作用**：定义前端 TypeScript 编译选项
+#### `src/logger.ts`
+- **功能**：日志配置模块
+- **作用**：使用 winston 配置日志输出（控制台和文件）
 
-#### `frontend/vite.config.ts`
-- **功能**：Vite 构建工具配置
-- **作用**：配置开发服务器、构建选项、插件等
+#### `src/merit-api.ts`
+- **功能**：Merit Protocol API 客户端
+- **作用**：获取 Merit APR 激励数据
 
-#### `frontend/tailwind.config.js`
-- **功能**：Tailwind CSS 配置
-- **作用**：配置 Tailwind CSS 的扫描路径、主题等
+#### `src/merkl-api.ts`
+- **功能**：Merkl API 客户端
+- **作用**：获取 Merkl 激励活动数据
 
-#### `frontend/.env`
-- **功能**：环境变量配置
-- **作用**：定义后端 API URL（`VITE_API_URL=http://localhost:3001/api`）
+#### `src/brevis-api.ts`
+- **功能**：Brevis Network API 客户端
+- **作用**：获取 Brevis Network Linea Surge APR 数据
 
 ---
 
-### 核心应用文件
+## 根目录配置文件
 
-#### `frontend/src/main.tsx`
-- **功能**：React 应用入口文件
-- **作用**：
-  - 创建 React 根节点
-  - 渲染 `App` 组件
-  - 启用严格模式
+#### `package.json`
+- **功能**：根目录依赖管理文件
+- **作用**：定义数据获取服务所需的依赖包和脚本命令
+- **关键依赖**：
+  - `@aave/client`：Aave SDK
+  - `@bgd-labs/aave-address-book`：Aave 地址簿
+  - `winston`：日志管理
+  - `node-fetch`：HTTP 请求
 
-#### `frontend/src/App.tsx`
-- **功能**：主应用组件
-- **作用**：
-  - 应用的最外层容器
-  - 渲染 `MarketsTable` 组件
-  - 应用全局样式
-
-#### `frontend/src/index.css`
-- **功能**：全局样式文件
-- **作用**：
-  - 导入 Tailwind CSS（@tailwind base/components/utilities）
-  - 定义全局样式（字体、字体平滑等）
-
----
-
-### 服务和类型定义
-
-#### `frontend/src/services/api.ts`
-- **功能**：API 客户端封装
-- **作用**：
-  - 使用 `axios` 封装所有后端 API 调用
-  - 统一管理 API 基础 URL
-  - 提供类型安全的 API 方法
-- **核心方法**：
-  - `getMarkets(params)`：获取市场数据（支持排序和筛选参数）
-  - `getStats()`：获取统计信息
-  - `getChains()`：获取链列表
-  - `refreshMarkets()`：手动刷新数据
-
-#### `frontend/src/types/index.ts`
-- **功能**：TypeScript 类型定义
-- **作用**：
-  - 定义前端使用的所有接口和类型
-  - 与后端类型保持一致
-- **核心类型**：
-  - `MarketWithSpread`：市场数据项（包含 apySpread）
-  - `MarketsResponse`：API 响应格式
-  - `MarketsStats`：统计信息
-  - `SortField`：排序字段类型
-  - `SortOrder`：排序方向类型
-  - `FilterOptions`：筛选选项类型
-
----
-
-### Hooks
-
-#### `frontend/src/hooks/useMarkets.ts`
-- **功能**：市场数据获取的 React Hook
-- **作用**：
-  - 封装数据获取逻辑
-  - 管理加载状态、错误状态
-  - 根据排序和筛选参数自动重新获取数据
-  - 返回数据、加载状态、错误、最后更新时间、是否过期等信息
-- **核心逻辑**：
-  - 使用 `useEffect` 监听排序和筛选参数变化
-  - 参数变化时自动重新请求数据
-  - 使用 `cancelled` 标志防止竞态条件
-
----
-
-### 组件
-
-#### `frontend/src/components/MarketsTable.tsx`
-- **功能**：市场数据表格组件（核心组件）
-- **作用**：
-  - 展示所有市场数据的表格
-  - 实现列头双向箭头排序功能
-  - 集成筛选控件
-  - 实现 APY/APR 切换功能（UI 已实现）
-  - 显示数据最后更新时间和过期状态
-  - 高亮显示负数 APY Spread（looping 机会）
-- **核心功能**：
-  1. **排序功能**：
-     - `handleSort(field)`：处理列头点击，切换排序状态
-     - 排序状态循环：无排序 → 升序 → 降序 → 无排序
-     - `getSortIcon(field)`：获取排序图标（⇅ ↑ ↓）
-     - `getSortClass(field)`：获取排序样式类（蓝色高亮）
-
-  2. **数据展示**：
-     - 使用 `useMarkets` hook 获取数据
-     - 表格展示：Token、Chain、Supply APY、Borrow APY、Total Supply APY、Total Borrow APY、APY Spread
-     - 负数 APY Spread 用橙色高亮显示
-
-  3. **APY/APR 切换**：
-     - 切换按钮 UI（Toggle）
-     - 当前仅 UI 实现，实际计算逻辑待完善
-
-  4. **加载和错误处理**：
-     - 显示加载状态（LoadingSpinner）
-     - 显示错误信息
-     - 显示数据过期警告
-
-#### `frontend/src/components/FilterControls.tsx`
-- **功能**：筛选控件组件
-- **作用**：
-  - 实现按链筛选（多选按钮）
-  - 实现代币搜索（输入框）
-  - 实时更新筛选参数，触发数据重新获取
-- **核心功能**：
-  - `handleChainToggle(chain)`：切换链的选中状态
-  - `handleTokenSearch(value)`：处理代币搜索输入
-  - 从 API 获取可用链列表
-  - 多选按钮样式（选中：蓝色，未选中：白色边框）
-
-#### `frontend/src/components/LoadingSpinner.tsx`
-- **功能**：加载指示器组件
-- **作用**：
-  - 显示数据加载中的动画效果
-  - 使用 Tailwind CSS 的动画类（animate-spin）
-  - 简单的旋转圆环动画
+#### `tsconfig.json`
+- **功能**：TypeScript 编译器配置
+- **作用**：定义 TypeScript 编译选项（目标版本、模块系统、输出目录等）
 
 ---
 
 ## 文档文件
 
-#### `PLAN-REQUIREMENTS.md`
-- **功能**：需求与架构文档
-- **作用**：详细说明项目的需求、架构设计、实现细节，供其他 agent 参考
-
-#### `SETUP.md`
-- **功能**：设置指南
-- **作用**：快速开始指南，说明如何安装依赖、启动前后端服务
+#### `README.md`
+- **功能**：项目主文档
+- **作用**：项目概述、快速开始、功能说明等
 
 #### `README-BACKEND.md`
 - **功能**：后端 README
 - **作用**：后端 API 的使用说明和 API 端点文档
 
-#### `README-FRONTEND.md`
-- **功能**：前端 README
-- **作用**：前端功能特性说明和使用指南
+#### `SETUP.md`
+- **功能**：设置指南
+- **作用**：快速开始指南，说明如何安装依赖、启动服务
 
 ---
 
 ## 文件关系图
 
-### 后端数据流
+### 数据流
 
 \`\`\`
-server.ts (启动)
+src/index.ts (数据获取)
+  ├── fetchAaveMarkets() → Aave SDK
+  ├── fetchMeritData() → Merit API
+  ├── fetchMerklData() → Merkl API
+  └── fetchBrevisData() → Brevis API
+        └── 保存到 data/aave-formatted-data.json
+
+backend/src/server.ts (API 服务器)
   ├── dataService.loadData() → 加载数据到内存
   ├── startUpdateScheduler() → 启动定时任务
   │     └── updateScheduler.ts
@@ -337,24 +239,6 @@ server.ts (启动)
               ├── getStats() → dataService.getData() → 统计
               ├── getChains() → dataService.getData() → 链列表
               └── refreshMarkets() → fetchService.fetchMarketData() → 手动刷新
-\`\`\`
-
-### 前端数据流
-
-\`\`\`
-main.tsx (入口)
-  └── App.tsx
-        └── MarketsTable.tsx
-              ├── useMarkets() hook
-              │     └── api.ts → GET /api/markets
-              │           └── 后端 API
-              │
-              ├── FilterControls.tsx
-              │     └── api.ts → GET /api/markets/chains
-              │           └── 获取链列表
-              │
-              └── 表格展示
-                    └── 列头排序 → 更新 useMarkets 参数 → 重新获取数据
 \`\`\`
 
 ---
@@ -372,18 +256,12 @@ main.tsx (入口)
 - 避免外部 API 限流（1 分钟间隔足够分散请求）
 - 如果更新还在进行中，跳过本次（避免并发）
 
-### 3. 为什么使用列头双向箭头而不是大按钮？
-- 更简洁的 UI 设计
-- 用户可以直接在表格上操作
-- 符合常见的表格交互习惯
-
-### 4. 为什么复用主项目的 fetchAaveMarkets？
+### 3. 为什么复用主项目的 fetchAaveMarkets？
 - 避免代码重复
 - 保持数据获取逻辑的一致性
 - 维护更方便（只需要维护一套逻辑）
 
-### 5. 为什么使用 @aave/client 而不是 @aave/react？
-- 当前只需要数据展示，不需要链上交互
+### 4. 为什么使用 @aave/client？
 - @aave/client 是后端 Node.js SDK，适合服务端数据获取
-- @aave/react 是前端 React hooks，用于浏览器中的链上交互（连接钱包、提交交易）
-- 未来如果需要前端交互功能，再考虑引入 @aave/react
+- 提供完整的市场数据访问接口
+- 支持多链数据获取

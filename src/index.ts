@@ -6,7 +6,8 @@ import * as addressBook from "@bgd-labs/aave-address-book";
 // 创建 Aave 客户端实例
 const client = AaveClient.create();
 import fetch from 'node-fetch';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { brevisApi } from './brevis-api.js';
 import {
@@ -79,6 +80,7 @@ interface FormattedReserveData {
   totalBorrowApy: number | null; // 原生 borrowApy + totalIncentiveBorrowApy
 }
 
+const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 
 /**
  * Converts APR to APY using monthly compounding
@@ -149,9 +151,9 @@ async function fetchBrevisAprs(
     const allActivities = await brevisApi.getAllActivities();
     
     // 输出原始 Brevis 数据，方便查看
-    await mkdir('data', { recursive: true });
+    await mkdir(DATA_DIR, { recursive: true });
     await writeFile(
-      join('data', 'brevis-raw-activities.json'),
+      join(DATA_DIR, 'brevis-raw-activities.json'),
       JSON.stringify({
         timestamp: new Date().toISOString(),
         totalActivities: allActivities.length,
@@ -159,7 +161,7 @@ async function fetchBrevisAprs(
       }, null, 2),
       'utf-8'
     );
-    logger.info('💾 Brevis raw activities saved to data/brevis-raw-activities.json');
+    logger.info(`💾 Brevis raw activities saved to ${join(DATA_DIR, 'brevis-raw-activities.json')}`);
 
     // 只处理 Aave 相关的活动
     const aaveActivities = allActivities.filter(activity => 
@@ -715,10 +717,10 @@ async function fetchAaveMarketData(): Promise<MarketData> {
   */
 
   // 确保 data 文件夹存在
-  await mkdir('data', { recursive: true });
+  await mkdir(DATA_DIR, { recursive: true });
   
   // 保存原始数据到JSON文件
-  const outputPath = join('data', 'aave-all-markets-data.json');
+  const outputPath = join(DATA_DIR, 'aave-all-markets-data.json');
   await writeFile(outputPath, JSON.stringify(marketData, null, 2), 'utf-8');
   
   return marketData;
@@ -757,7 +759,7 @@ async function fetchAaveMarkets(): Promise<void> {
     
     // 保存格式化的JSON数据（包含时间戳元数据）
     // 使用从 fetchAaveMarketData 返回的时间戳，而不是重新生成
-    const formattedJsonPath = join('data', 'aave-formatted-data.json');
+    const formattedJsonPath = join(DATA_DIR, 'aave-formatted-data.json');
     const dataWithMetadata = {
       _metadata: {
         timestamp: marketData.timestamp, // 使用从 fetchAaveMarketData 返回的时间戳
@@ -770,13 +772,13 @@ async function fetchAaveMarkets(): Promise<void> {
     
     // 生成CSV格式
     const csvData = generateCSV(formattedData);
-    const csvPath = join('data', 'aave-formatted-data.csv');
+    const csvPath = join(DATA_DIR, 'aave-formatted-data.csv');
     await writeFile(csvPath, csvData, 'utf-8');
     
-    logger.info(`💾 Original data saved to data/aave-all-markets-data.json`);
+    logger.info(`💾 Original data saved to ${outputPath}`);
     logger.info(`📊 Formatted JSON saved to ${formattedJsonPath}`);
     logger.info(`📈 CSV data saved to ${csvPath}`);
-    logger.info(`📁 File location: ${process.cwd()}/data/`);
+    logger.info(`📁 File location: ${DATA_DIR}`);
     logger.info(`📈 Total markets: ${marketData.markets.length}`);
     logger.info(`🪙 Total reserves: ${formattedData.length}`);
     logger.info(`🌐 Networks discovered: ${marketData.totalNetworks}`);
@@ -804,8 +806,8 @@ async function fetchAaveMarkets(): Promise<void> {
     
     try {
       // 确保 data 文件夹存在
-      await mkdir('data', { recursive: true });
-      const errorPath = join('data', 'aave-all-markets-error.json');
+      await mkdir(DATA_DIR, { recursive: true });
+      const errorPath = join(DATA_DIR, 'aave-all-markets-error.json');
       await writeFile(errorPath, JSON.stringify(errorData, null, 2), 'utf-8');
       logger.info(`💾 Error data saved to ${errorPath}`);
     } catch (writeError) {

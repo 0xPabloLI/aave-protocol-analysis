@@ -4,7 +4,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-This project uses the Aave TypeScript SDK and @bgd-labs/aave-address-book to fetch market data from all supported networks, and integrates Merit, Merkl, and Brevis incentive data, saving the results to JSON and CSV files.
+This project provides a backend service that uses the Aave TypeScript SDK and @bgd-labs/aave-address-book to fetch market data from all supported networks, and integrates Merit, Merkl, and Brevis incentive data. The service includes both a data fetcher and a REST API server.
 
 ## 📋 Table of Contents
 
@@ -35,12 +35,20 @@ This project uses the Aave TypeScript SDK and @bgd-labs/aave-address-book to fet
 
 \`\`\`
 aave/
-├── src/
+├── src/                  # Data fetcher service
 │   ├── index.ts          # Main logic, integrates all data sources
 │   ├── logger.ts         # Logging configuration module
 │   ├── brevis-api.ts     # Brevis Network API client
 │   ├── merit-api.ts      # Merit Protocol API client
 │   └── merkl-api.ts      # Merkl API client
+├── backend/              # REST API server
+│   ├── src/
+│   │   ├── server.ts     # Express API server
+│   │   ├── controllers/  # API controllers
+│   │   ├── services/     # Business logic services
+│   │   ├── routes/       # API routes
+│   │   └── middleware/   # Express middleware
+│   └── package.json      # Backend dependencies
 ├── data/                 # Output data folder (git ignored)
 │   ├── aave-all-markets-data.json      # Raw market data
 │   ├── aave-formatted-data.json        # Formatted JSON data
@@ -52,7 +60,7 @@ aave/
 │   └── error.log         # Error logs only
 ├── dist/                 # TypeScript compilation output (git ignored)
 ├── node_modules/         # Dependencies (git ignored)
-├── package.json          # Project dependencies and scripts
+├── package.json          # Root dependencies and scripts
 ├── package-lock.json     # Dependency lock file
 ├── tsconfig.json         # TypeScript configuration
 ├── LICENSE               # MIT License
@@ -72,7 +80,7 @@ aave/
 npm install
 \`\`\`
 
-### Run the Project
+### Run the Data Fetcher
 
 #### Development Mode (Recommended)
 \`\`\`bash
@@ -86,6 +94,25 @@ npm start
 \`\`\`
 
 After successful execution, data files will be saved in the `data/` directory.
+
+### Run the Backend API Server
+
+#### Development Mode
+\`\`\`bash
+cd backend
+npm run dev
+\`\`\`
+
+The API server will start on `http://localhost:3001` by default.
+
+#### Production Mode
+\`\`\`bash
+cd backend
+npm run build
+npm start
+\`\`\`
+
+See [README-BACKEND.md](README-BACKEND.md) for more details about the API server.
 
 ## Output Files
 
@@ -199,12 +226,18 @@ The project automatically skips test networks (such as Sepolia, Fuji) and unsupp
 
 ## Tech Stack
 
+### Data Fetcher
 - **TypeScript**: Type-safe JavaScript
 - **@aave/client**: Official Aave SDK
 - **@bgd-labs/aave-address-book**: Aave address book containing all network configurations
 - **winston**: Logging management library
 - **node-fetch**: HTTP request library
 - **Node.js**: JavaScript runtime environment
+
+### Backend API
+- **Express**: Web framework for Node.js
+- **CORS**: Cross-origin resource sharing middleware
+- **node-cron**: Task scheduler for automatic data updates
 
 ## API Data Sources
 

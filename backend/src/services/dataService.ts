@@ -1,9 +1,10 @@
 import { readFile, stat } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { MarketWithSpread } from '../types/index.js';
 
-// 获取数据文件路径：backend 目录的父目录下的 data 文件夹
-const DATA_FILE_PATH = join(process.cwd(), '..', 'data', 'aave-formatted-data.json');
+const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
+const DATA_FILE_PATH = join(DATA_DIR, 'aave-formatted-data.json');
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 class DataService {

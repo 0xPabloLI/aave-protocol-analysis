@@ -1,10 +1,13 @@
 import fetch from 'node-fetch';
 import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 
 // 配置参数：Tydro points 到 USD 的转换率（1 point = 1 USD）
 export const TYDRO_POINT_TO_USD_RATE = 1;
+
+const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 
 export interface MerklCampaignBreakdown {
   campaignApr: number;
@@ -304,8 +307,8 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
   logger.info(`📊 Created index with ${Object.keys(merklData).length} token keys`);
   
   // 保存 Merkl 原始数据
-  await mkdir('data', { recursive: true });
-  const merklRawDataPath = join('data', 'merkl-raw-data.json');
+  await mkdir(DATA_DIR, { recursive: true });
+  const merklRawDataPath = join(DATA_DIR, 'merkl-raw-data.json');
   await writeFile(merklRawDataPath, JSON.stringify({
     timestamp: new Date().toISOString(),
     rawOpportunities: opportunities, // 保存所有原始数据（包括非 live 的）
