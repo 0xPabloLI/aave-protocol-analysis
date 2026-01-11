@@ -270,7 +270,18 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         const vTokenAddress = reserve.vToken?.address || null;
         
         // 检查 borrowingState 是否为 "DISABLED"，如果是则表示该 token 不能被 borrow
-        const isBorrowDisabled = reserve.borrowInfo?.borrowingState === "DISABLED";
+        const isBorrowDisabledByState = reserve.borrowInfo?.borrowingState === "DISABLED";
+        
+        // 检查 borrowCap.value 是否为 1 且 borrowApy.formatted 是否为 0
+        // 如果满足这些条件，即使 borrowingState 不是 DISABLED，也应该视为禁用
+        const borrowCapValue = reserve.borrowInfo?.borrowCap?.amount?.value;
+        const borrowApyFormatted = reserve.borrowInfo?.apy?.formatted;
+        const borrowCapIsOne = borrowCapValue !== undefined && parseFloat(borrowCapValue) === 1;
+        const borrowApyIsZero = borrowApyFormatted !== undefined && parseFloat(borrowApyFormatted) === 0;
+        const isBorrowDisabledByCap = borrowCapIsOne && borrowApyIsZero;
+        
+        // 如果通过状态禁用，或者通过 cap 和 APY 条件禁用，则视为禁用
+        const isBorrowDisabled = isBorrowDisabledByState || isBorrowDisabledByCap;
         const borrowApy = isBorrowDisabled
           ? null 
           : (reserve.borrowInfo?.apy?.formatted || reserve.borrowInfo?.apy?.value || null);
@@ -817,7 +828,13 @@ async function fetchAaveMarkets(): Promise<void> {
   }
 }
 
-// 导出主函数，以便其他模块可以调用
+// 导出主函数,以便其他模块可以调用
 export async function fetchAaveMarketsData(): Promise<void> {
   return fetchAaveMarkets();
 }
+
+// 执行主函数
+fetchAaveMarkets().catch(error => {
+  logger.error('❌ Failed to fetch Aave markets:', error);
+  process.exit(1);
+});
