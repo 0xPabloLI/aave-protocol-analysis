@@ -136,13 +136,20 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
     # Update hash file timestamp
     echo "$NEW_ROOT_HASH" > "$ROOT_HASH_FILE"
   else
-    echo "Installing root directory dependencies (this may take a few minutes due to large packages like puppeteer)..."
+    if [ -n "$OLD_ROOT_HASH" ] && [ "$NEW_ROOT_HASH" != "$OLD_ROOT_HASH" ]; then
+      echo "📦 package-lock.json has changed, cleaning old dependencies..."
+      # npm ci will automatically remove node_modules, but we can be explicit
+      rm -rf node_modules 2>/dev/null || true
+    fi
+    echo "Installing root directory dependencies..."
+    # npm ci automatically removes node_modules and reinstalls based on package-lock.json
+    # This ensures unused packages (like puppeteer) are removed
     # Use --prefer-offline to use cache when possible, --no-audit to skip security audit, --loglevel=error to reduce output
     npm ci --prefer-offline --no-audit --loglevel=error || npm ci --no-audit --loglevel=error
     if [ -n "$NEW_ROOT_HASH" ]; then
       echo "$NEW_ROOT_HASH" > "$ROOT_HASH_FILE"
     fi
-    echo "✅ Dependencies installed successfully"
+    echo "✅ Dependencies installed successfully (old unused packages removed)"
   fi
   
   # Build root directory code (data fetching script)
@@ -182,13 +189,19 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
     # Update hash file timestamp
     echo "$NEW_BACKEND_HASH" > "$BACKEND_HASH_FILE"
   else
+    if [ -n "$OLD_BACKEND_HASH" ] && [ "$NEW_BACKEND_HASH" != "$OLD_BACKEND_HASH" ]; then
+      echo "📦 Backend package-lock.json has changed, cleaning old dependencies..."
+      # npm ci will automatically remove node_modules, but we can be explicit
+      rm -rf node_modules 2>/dev/null || true
+    fi
     echo "Installing backend dependencies..."
+    # npm ci automatically removes node_modules and reinstalls based on package-lock.json
     # Use --prefer-offline to use cache when possible, --no-audit to skip security audit, --loglevel=error to reduce output
     npm ci --prefer-offline --no-audit --loglevel=error || npm ci --no-audit --loglevel=error
     if [ -n "$NEW_BACKEND_HASH" ]; then
       echo "$NEW_BACKEND_HASH" > "$BACKEND_HASH_FILE"
     fi
-    echo "✅ Backend dependencies installed successfully"
+    echo "✅ Backend dependencies installed successfully (old unused packages removed)"
   fi
   
   # Build backend code
