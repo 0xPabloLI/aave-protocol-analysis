@@ -5,7 +5,7 @@ import { MarketWithSpread } from '../types/index.js';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
 const DATA_FILE_PATH = join(DATA_DIR, 'aave-formatted-data.json');
-const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
+const STALE_THRESHOLD_MS = 1 * 60 * 1000; // 1 minute in milliseconds
 
 class DataService {
   private cache: MarketWithSpread[] | null = null;
@@ -38,13 +38,8 @@ class DataService {
         throw new Error('Invalid data file format');
       }
       
-      // 计算 apySpread 字段
-      const dataWithSpread: MarketWithSpread[] = data.map((item: any) => ({
-        ...item,
-        apySpread: item.totalBorrowApy !== null 
-          ? item.totalSupplyApy - item.totalBorrowApy 
-          : null
-      }));
+      // 直接使用数据，不需要计算 apySpread（前端自己计算）
+      const dataWithSpread: MarketWithSpread[] = data;
 
       this.cache = dataWithSpread;
       this.lastCacheUpdate = new Date();

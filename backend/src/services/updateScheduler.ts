@@ -6,22 +6,30 @@ import { setUpdateStatus, getUpdateStatus } from '../controllers/marketsControll
 /**
  * 启动定时更新任务
  * 每 1 分钟执行一次数据更新
+ * 注意：此定时任务作为后备机制，主要的数据更新由 API 请求自动触发
  */
 export function startUpdateScheduler(): void {
-  console.log('📅 Starting update scheduler (every 1 minute)');
+  console.log('📅 Starting update scheduler (every 1 minute) as backup mechanism');
 
   // 每 1 分钟执行一次 (cron: */1 * * * *)
   cron.schedule('*/1 * * * *', async () => {
     const currentStatus = getUpdateStatus();
-    
+
     // 如果正在更新中，跳过本次更新
     if (currentStatus.status === 'updating') {
       console.log('⏭️  Update in progress, skipping scheduled update');
       return;
     }
 
-    console.log('🔄 Starting scheduled data update...');
-    
+    // 检查数据是否过期
+    const isStale = dataService.isStale();
+    if (!isStale) {
+      console.log('✅ Data is fresh, skipping scheduled update');
+      return;
+    }
+
+    console.log('🔄 Starting scheduled data update (backup mechanism)...');
+
     setUpdateStatus({
       status: 'updating',
       lastUpdated: currentStatus.lastUpdated,
@@ -30,11 +38,11 @@ export function startUpdateScheduler(): void {
 
     try {
       await fetchAaveMarketsData();
-      
+
       // 更新成功后刷新缓存
       await dataService.refreshCache();
       const lastUpdated = dataService.getLastUpdated();
-      
+
       setUpdateStatus({
         status: 'idle',
         lastUpdated: lastUpdated?.toISOString() || null,

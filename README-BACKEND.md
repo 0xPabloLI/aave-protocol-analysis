@@ -24,9 +24,20 @@ npm start
 
 ## API 端点
 
+### 数据新鲜度自动检查机制
+
+**重要更新**：所有 API 端点现在都会自动检查数据新鲜度（1分钟窗口）。如果数据过期，会自动触发更新并等待完成后返回最新数据。
+
+- ✅ 无需手动调用刷新端点
+- ✅ 自动并发控制，防止重复更新
+- ✅ 更新失败时返回缓存数据
+- ❌ 已移除 `POST /api/markets/refresh` 端点
+
+详细说明请参考：[backend/DATA-FRESHNESS-MECHANISM.md](./backend/DATA-FRESHNESS-MECHANISM.md)
+
 ### GET /api/markets
 
-获取所有市场数据
+获取所有市场数据（自动检查数据新鲜度）
 
 查询参数：
 - `sort`: 排序字段（totalSupplyApy, totalBorrowApy, apySpread, supplyApy, borrowApy）
@@ -48,15 +59,38 @@ npm start
 
 ### GET /api/markets/stats
 
-获取统计信息
+获取统计信息（自动检查数据新鲜度）
+
+响应：
+```json
+{
+  "totalMarkets": 100,
+  "totalChains": 5,
+  "totalTokens": 20,
+  "chains": ["Ethereum", "Polygon", ...]
+}
+```
 
 ### GET /api/markets/chains
 
-获取所有链列表
+获取所有链列表（自动检查数据新鲜度）
 
-### POST /api/markets/refresh
+响应：
+```json
+["Ethereum", "Polygon", "Arbitrum", ...]
+```
 
-手动触发数据刷新
+### GET /api/markets/list
+
+获取所有市场列表（自动检查数据新鲜度）
+
+响应：
+```json
+[
+  {"marketName": "Main Market", "chainName": "Ethereum"},
+  ...
+]
+```
 
 ## 数据更新
 

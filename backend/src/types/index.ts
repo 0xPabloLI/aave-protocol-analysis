@@ -36,11 +36,10 @@ export interface MarketWithSpread {
   merklHoldAprBreakdowns: any[];
   brevisSupplyApr: number | null;
   brevisBorrowApr: number | null;
+  totalIncentiveSupplyApr: number; // 所有激励 APR 的总和（未转换为 APY）
   totalIncentiveSupplyApy: number;
-  totalSupplyApy: number;
+  totalIncentiveBorrowApr: number; // 所有激励 APR 的总和（未转换为 APY）
   totalIncentiveBorrowApy: number;
-  totalBorrowApy: number | null;
-  apySpread: number | null; // totalSupplyApy - totalBorrowApy
 }
 
 export interface MarketsResponse {

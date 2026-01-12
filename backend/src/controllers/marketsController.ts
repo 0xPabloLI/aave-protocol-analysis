@@ -4,6 +4,60 @@ import { fetchAaveMarketsData } from '../../../dist/index.js';
 import { MarketsResponse, MarketWithSpread, UpdateStatus } from '../types/index.js';
 
 /**
+ * 检查数据新鲜度并在需要时自动更新
+ * 使用锁机制防止并发更新
+ */
+async function checkAndUpdateDataIfStale(): Promise<void> {
+  const isStale = dataService.isStale();
+  const currentStatus = getUpdateStatus();
+
+  // 如果数据过期且没有正在进行的更新，触发更新
+  if (isStale && currentStatus.status !== 'updating') {
+    console.log('🔄 Data is stale, triggering automatic update...');
+
+    // 设置更新状态（作为锁）
+    setUpdateStatus({
+      status: 'updating',
+      lastUpdated: currentStatus.lastUpdated,
+      lastSuccessfulUpdate: currentStatus.lastSuccessfulUpdate,
+    });
+
+    // 执行更新，等待完成
+    try {
+      await fetchAaveMarketsData();
+
+      // 更新成功后刷新缓存
+      await dataService.refreshCache();
+      const lastUpdated = dataService.getLastUpdated();
+
+      setUpdateStatus({
+        status: 'idle',
+        lastUpdated: lastUpdated?.toISOString() || null,
+        lastSuccessfulUpdate: lastUpdated?.toISOString() || null,
+      });
+
+      console.log('✅ Automatic update completed successfully');
+    } catch (error) {
+      console.error('❌ Automatic update failed:', error);
+      const errorStatus = getUpdateStatus();
+      setUpdateStatus({
+        status: 'error',
+        lastUpdated: errorStatus.lastUpdated,
+        lastSuccessfulUpdate: errorStatus.lastSuccessfulUpdate,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // 更新失败时继续使用缓存数据
+      console.log('⚠️  Continuing with cached data after update failure');
+    }
+  } else if (currentStatus.status === 'updating') {
+    console.log('⏳ Update already in progress, waiting...');
+    // 如果已经有更新在进行，等待一小段时间让更新完成
+    // 这样可以避免返回过期数据
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+}
+
+/**
  * 排序和筛选数据
  */
 function sortAndFilterData(
@@ -54,22 +108,23 @@ function sortAndFilterData(
     );
   }
 
-  // 最小 Supply APY 筛选
-  if (minSupplyApy !== undefined) {
-    filtered = filtered.filter(item => {
-      const supplyApy = item.totalSupplyApy * 100; // 转换为百分比
-      return supplyApy >= minSupplyApy;
-    });
-  }
+  // 最小 Supply APY 筛选（前端需要根据用户选择的 APR/APY 来计算）
+  // 这里暂时移除，如果需要筛选，前端应该自己处理
+  // if (minSupplyApy !== undefined) {
+  //   filtered = filtered.filter(item => {
+  //     // 前端需要根据 APR/APY 选择来计算 totalSupply
+  //     return true;
+  //   });
+  // }
 
-  // 最大 Borrow APY 筛选
-  if (maxBorrowApy !== undefined) {
-    filtered = filtered.filter(item => {
-      if (item.totalBorrowApy === null) return false;
-      const borrowApy = item.totalBorrowApy * 100; // 转换为百分比
-      return borrowApy <= maxBorrowApy;
-    });
-  }
+  // 最大 Borrow APY 筛选（前端需要根据用户选择的 APR/APY 来计算）
+  // 这里暂时移除，如果需要筛选，前端应该自己处理
+  // if (maxBorrowApy !== undefined) {
+  //   filtered = filtered.filter(item => {
+  //     // 前端需要根据 APR/APY 选择来计算 totalBorrow
+  //     return true;
+  //   });
+  // }
 
   // 排序
   if (sort) {
@@ -78,18 +133,10 @@ function sortAndFilterData(
       let bVal: number | null = null;
 
       switch (sort) {
-        case 'totalSupplyApy':
-          aVal = a.totalSupplyApy;
-          bVal = b.totalSupplyApy;
-          break;
-        case 'totalBorrowApy':
-          aVal = a.totalBorrowApy;
-          bVal = b.totalBorrowApy;
-          break;
-        case 'apySpread':
-          aVal = a.apySpread;
-          bVal = b.apySpread;
-          break;
+        // totalSupplyApy 和 totalBorrowApy 已移除，前端需要自己计算
+        // case 'totalSupplyApy':
+        // case 'totalBorrowApy':
+        // case 'apySpread':
         case 'supplyApy':
           aVal = parseFloat(a.supplyApy) / 100;
           bVal = parseFloat(b.supplyApy) / 100;
@@ -118,6 +165,7 @@ function sortAndFilterData(
 /**
  * GET /api/markets
  * 获取所有市场数据
+ * 自动检查数据新鲜度，如果超过1分钟则触发更新
  */
 export async function getMarkets(req: Request, res: Response): Promise<void> {
   try {
@@ -131,9 +179,12 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
       maxBorrowApy,
     } = req.query;
 
-    // 获取数据
+    // 检查数据新鲜度并自动更新
+    await checkAndUpdateDataIfStale();
+
+    // 获取数据（可能是刚更新的，也可能是缓存的）
     const data = await dataService.getData();
-    
+
     // 排序和筛选
     const sortedData = sortAndFilterData(
       data,
@@ -169,14 +220,18 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 /**
  * GET /api/markets/stats
  * 获取统计信息
+ * 自动检查数据新鲜度，如果超过1分钟则触发更新
  */
 export async function getStats(req: Request, res: Response): Promise<void> {
   try {
+    // 检查数据新鲜度并自动更新
+    await checkAndUpdateDataIfStale();
+
     const data = await dataService.getData();
 
     // 统计链数
     const chains = new Set(data.map(item => item.chainName));
-    
+
     // 统计代币数
     const tokens = new Set(data.map(item => item.tokenSymbol));
 
@@ -198,9 +253,13 @@ export async function getStats(req: Request, res: Response): Promise<void> {
 /**
  * GET /api/chains
  * 获取所有链列表
+ * 自动检查数据新鲜度，如果超过1分钟则触发更新
  */
 export async function getChains(req: Request, res: Response): Promise<void> {
   try {
+    // 检查数据新鲜度并自动更新
+    await checkAndUpdateDataIfStale();
+
     const data = await dataService.getData();
     const chains = new Set(data.map(item => item.chainName));
     res.json(Array.from(chains).sort());
@@ -216,12 +275,16 @@ export async function getChains(req: Request, res: Response): Promise<void> {
 /**
  * GET /api/markets/list
  * 获取所有市场列表（用于前端过滤器）
+ * 自动检查数据新鲜度，如果超过1分钟则触发更新
  */
 export async function getMarketsList(req: Request, res: Response): Promise<void> {
   try {
+    // 检查数据新鲜度并自动更新
+    await checkAndUpdateDataIfStale();
+
     const data = await dataService.getData();
     const marketsMap = new Map<string, { marketName: string; chainName: string }>();
-    
+
     data.forEach(item => {
       const key = `${item.marketName}-${item.chainName}`;
       if (!marketsMap.has(key)) {
@@ -231,7 +294,7 @@ export async function getMarketsList(req: Request, res: Response): Promise<void>
         });
       }
     });
-    
+
     const markets = Array.from(marketsMap.values());
     res.json(markets);
   } catch (error) {
@@ -256,61 +319,4 @@ export function getUpdateStatus(): UpdateStatus {
 
 export function setUpdateStatus(status: UpdateStatus): void {
   updateStatus = status;
-}
-
-/**
- * POST /api/markets/refresh
- * 手动触发数据刷新
- */
-export async function refreshMarkets(req: Request, res: Response): Promise<void> {
-  const currentStatus = getUpdateStatus();
-  
-  // 如果正在更新中，返回状态
-  if (currentStatus.status === 'updating') {
-    res.json({
-      status: 'updating',
-      message: 'Update already in progress',
-      lastUpdated: currentStatus.lastUpdated,
-    });
-    return;
-  }
-
-  // 异步触发更新
-  setUpdateStatus({
-    status: 'updating',
-    lastUpdated: currentStatus.lastUpdated,
-    lastSuccessfulUpdate: currentStatus.lastSuccessfulUpdate,
-  });
-
-  // 立即返回，不等待更新完成
-  res.json({
-    status: 'updating',
-    message: 'Update started',
-    lastUpdated: currentStatus.lastUpdated,
-  });
-
-  // 在后台执行更新
-  fetchAaveMarketsData()
-    .then(async () => {
-      // 更新成功后刷新缓存
-      await dataService.refreshCache();
-      const lastUpdated = dataService.getLastUpdated();
-      const newStatus = getUpdateStatus();
-      
-      setUpdateStatus({
-        status: 'idle',
-        lastUpdated: lastUpdated?.toISOString() || null,
-        lastSuccessfulUpdate: lastUpdated?.toISOString() || null,
-      });
-    })
-    .catch((error) => {
-      console.error('Error refreshing markets:', error);
-      const newStatus = getUpdateStatus();
-      setUpdateStatus({
-        status: 'error',
-        lastUpdated: newStatus.lastUpdated,
-        lastSuccessfulUpdate: newStatus.lastSuccessfulUpdate,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
 }

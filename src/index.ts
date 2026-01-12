@@ -74,10 +74,13 @@ interface FormattedReserveData {
   merklHoldAprBreakdowns: MerklCampaignBreakdown[]; // 合并所有匹配 opportunities 的 breakdowns
   brevisSupplyApr: number | null;  // Brevis Network Linea Surge Supply APR
   brevisBorrowApr: number | null;   // Brevis Network Linea Surge Borrow APR
+  totalIncentiveSupplyApr: number; // 所有激励 APR 的总和（未转换为 APY）
   totalIncentiveSupplyApy: number; // 所有激励 APR 转换为 APY 后的总和
-  totalSupplyApy: number; // 原生 supplyApy + totalIncentiveSupplyApy
+  totalIncentiveBorrowApr: number; // 所有激励 APR 的总和（未转换为 APY）
   totalIncentiveBorrowApy: number; // 所有激励 APR 转换为 APY 后的总和
-  totalBorrowApy: number | null; // 原生 borrowApy + totalIncentiveBorrowApy
+  // 以下字段仅用于 CSV 导出，不包含在 API 响应中
+  totalSupplyApy?: number; // 原生 supplyApy + totalIncentiveSupplyApy（仅 CSV）
+  totalBorrowApy?: number | null; // 原生 borrowApy - totalIncentiveBorrowApy（仅 CSV）
 }
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
@@ -336,11 +339,11 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           // Brevis APR 激励字段 - 初始化为 null
           brevisSupplyApr: null,
           brevisBorrowApr: null,
-          // 总 APY 字段 - 初始化为 0，将在 enrichDatasetWithIncentiveData 中计算
+          // 总激励字段 - 初始化为 0，将在 enrichDatasetWithIncentiveData 中计算
+          totalIncentiveSupplyApr: 0,
           totalIncentiveSupplyApy: 0,
-          totalSupplyApy: 0,
-          totalIncentiveBorrowApy: 0,
-          totalBorrowApy: null
+          totalIncentiveBorrowApr: 0,
+          totalIncentiveBorrowApy: 0
         });
       });
     }
@@ -391,20 +394,23 @@ function calculateTotalApy(item: FormattedReserveData): void {
     });
   }
   
-  // 5. Merkl supply APR (merklSupplyApr)
-  if (item.merklSupplyApr > 0) {
-    totalSupplyIncentiveApr += item.merklSupplyApr / 100; // 转换为小数
+  // 5. Merkl supply APR (merklSupplyApr) - 可以是负数
+  if (item.merklSupplyApr !== 0) {
+    totalSupplyIncentiveApr += item.merklSupplyApr / 100; // 转换为小数（可以是负数）
   }
   
-  // 6. Brevis supply APR (brevisSupplyApr)
-  if (item.brevisSupplyApr !== null && item.brevisSupplyApr > 0) {
-    totalSupplyIncentiveApr += item.brevisSupplyApr / 100; // 转换为小数
+  // 6. Brevis supply APR (brevisSupplyApr) - 可以是负数
+  if (item.brevisSupplyApr !== null && item.brevisSupplyApr !== 0) {
+    totalSupplyIncentiveApr += item.brevisSupplyApr / 100; // 转换为小数（可以是负数）
   }
+  
+  // 保存 APR 值（未转换）
+  item.totalIncentiveSupplyApr = totalSupplyIncentiveApr;
   
   // 转换为 APY
   item.totalIncentiveSupplyApy = convertAprToApy(totalSupplyIncentiveApr);
   
-  // 计算总 Supply APY = 原生 supplyApy + totalIncentiveSupplyApy
+  // 计算总 Supply APY（仅用于 CSV）
   const nativeSupplyApy = parseFloat(item.supplyApy);
   if (!isNaN(nativeSupplyApy)) {
     item.totalSupplyApy = (nativeSupplyApy / 100) + item.totalIncentiveSupplyApy;
@@ -427,7 +433,7 @@ function calculateTotalApy(item: FormattedReserveData): void {
   item.meritBorrowApr.forEach(apr => {
     const aprValue = parseFloat(apr);
     if (!isNaN(aprValue)) {
-      totalBorrowIncentiveApr += aprValue / 100; // 转换为小数
+      totalBorrowIncentiveApr += aprValue / 100; // 转换为小数（可以是负数）
     }
   });
   
@@ -435,7 +441,7 @@ function calculateTotalApy(item: FormattedReserveData): void {
   item.meritSelfBorrow.forEach(apr => {
     const aprValue = parseFloat(apr);
     if (!isNaN(aprValue)) {
-      totalBorrowIncentiveApr += aprValue / 100; // 转换为小数
+      totalBorrowIncentiveApr += aprValue / 100; // 转换为小数（可以是负数）
     }
   });
   
@@ -444,34 +450,41 @@ function calculateTotalApy(item: FormattedReserveData): void {
     item.meritBorrowWithSupplyRequirement.forEach(req => {
       const aprValue = parseFloat(req.apr);
       if (!isNaN(aprValue)) {
-        totalBorrowIncentiveApr += aprValue / 100; // 转换为小数
+        totalBorrowIncentiveApr += aprValue / 100; // 转换为小数（可以是负数）
       }
     });
   }
   
-  // 5. Merkl borrow APR (merklBorrowApr)
-  if (item.merklBorrowApr > 0) {
-    totalBorrowIncentiveApr += item.merklBorrowApr / 100; // 转换为小数
+  // 5. Merkl borrow APR (merklBorrowApr) - 可以是负数
+  if (item.merklBorrowApr !== 0) {
+    totalBorrowIncentiveApr += item.merklBorrowApr / 100; // 转换为小数（可以是负数）
   }
   
-  // 6. Brevis borrow APR (brevisBorrowApr)
-  if (item.brevisBorrowApr !== null && item.brevisBorrowApr > 0) {
-    totalBorrowIncentiveApr += item.brevisBorrowApr / 100; // 转换为小数
+  // 6. Brevis borrow APR (brevisBorrowApr) - 可以是负数
+  if (item.brevisBorrowApr !== null && item.brevisBorrowApr !== 0) {
+    totalBorrowIncentiveApr += item.brevisBorrowApr / 100; // 转换为小数（可以是负数）
   }
+  
+  // 保存 APR 值（未转换）
+  item.totalIncentiveBorrowApr = totalBorrowIncentiveApr;
   
   // 转换为 APY
   item.totalIncentiveBorrowApy = convertAprToApy(totalBorrowIncentiveApr);
   
-  // 计算总 Borrow APY = 原生 borrowApy + totalIncentiveBorrowApy
+  // 计算总 Borrow APY（仅用于 CSV）
+  // 如果 incentive APR 是正数，则 borrowApy - incentive（相减）
+  // 如果 incentive APR 是负数，则 borrowApy + incentive（相加，因为减去负数等于加上正数）
+  // 等价于：borrowApy - totalIncentiveBorrowApy
   if (item.borrowApy !== null) {
     const nativeBorrowApy = parseFloat(item.borrowApy);
     if (!isNaN(nativeBorrowApy)) {
-      item.totalBorrowApy = (nativeBorrowApy / 100) + item.totalIncentiveBorrowApy;
+      const nativeBorrowApyDecimal = nativeBorrowApy / 100; // 转换为小数
+      item.totalBorrowApy = nativeBorrowApyDecimal - item.totalIncentiveBorrowApy;
     } else {
-      item.totalBorrowApy = item.totalIncentiveBorrowApy;
+      item.totalBorrowApy = -item.totalIncentiveBorrowApy;
     }
   } else {
-    item.totalBorrowApy = item.totalIncentiveBorrowApy > 0 ? item.totalIncentiveBorrowApy : null;
+    item.totalBorrowApy = -item.totalIncentiveBorrowApy;
   }
 }
 
@@ -589,8 +602,10 @@ function generateCSV(data: FormattedReserveData[]): string {
     'Merkl Hold Campaigns',
     'Brevis Supply APR (%)',
     'Brevis Borrow APR (%)',
+    'Total Incentive Supply APR (%)',
     'Total Incentive Supply APY (%)',
     'Total Supply APY (%)',
+    'Total Incentive Borrow APR (%)',
     'Total Incentive Borrow APY (%)',
     'Total Borrow APY (%)'
   ];
@@ -629,10 +644,12 @@ function generateCSV(data: FormattedReserveData[]): string {
       `"${formatMerklBreakdown(row.merklHoldAprBreakdowns)}"`,
       row.brevisSupplyApr !== null ? row.brevisSupplyApr : '',
       row.brevisBorrowApr !== null ? row.brevisBorrowApr : '',
-      row.totalIncentiveSupplyApy > 0 ? (row.totalIncentiveSupplyApy * 100).toFixed(6) : '',
-      (row.totalSupplyApy * 100).toFixed(6),
-      row.totalIncentiveBorrowApy > 0 ? (row.totalIncentiveBorrowApy * 100).toFixed(6) : '',
-      row.totalBorrowApy !== null ? (row.totalBorrowApy * 100).toFixed(6) : ''
+      (row.totalIncentiveSupplyApr * 100).toFixed(6),
+      (row.totalIncentiveSupplyApy * 100).toFixed(6),
+      (row.totalSupplyApy ?? 0) * 100 > 0 ? ((row.totalSupplyApy ?? 0) * 100).toFixed(6) : '',
+      (row.totalIncentiveBorrowApr * 100).toFixed(6),
+      (row.totalIncentiveBorrowApy * 100).toFixed(6),
+      row.totalBorrowApy !== null && row.totalBorrowApy !== undefined ? (row.totalBorrowApy * 100).toFixed(6) : ''
     ].join(','))
   ];
 
@@ -764,7 +781,10 @@ async function fetchAaveMarkets(): Promise<void> {
     
     // 第二步：将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
     logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
-    const formattedData = enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
+    const enrichedData = enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
+    
+    // 移除 totalSupplyApy 和 totalBorrowApy，不包含在 JSON 输出中（仅用于 CSV）
+    const formattedData = enrichedData.map(({ totalSupplyApy, totalBorrowApy, ...item }) => item);
     
     logger.info(`🎯 Final dataset contains ${formattedData.length} token combinations`);
     
@@ -781,8 +801,8 @@ async function fetchAaveMarkets(): Promise<void> {
     };
     await writeFile(formattedJsonPath, JSON.stringify(dataWithMetadata, null, 2), 'utf-8');
     
-    // 生成CSV格式
-    const csvData = generateCSV(formattedData);
+    // 生成CSV格式（使用包含 totalSupplyApy 和 totalBorrowApy 的数据）
+    const csvData = generateCSV(enrichedData);
     const csvPath = join(DATA_DIR, 'aave-formatted-data.csv');
     await writeFile(csvPath, csvData, 'utf-8');
     
