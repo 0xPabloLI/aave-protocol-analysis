@@ -78,6 +78,10 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
     echo "Adding github.com to known_hosts..."
     ssh-keyscan github.com >> ~/.ssh/known_hosts
   fi
+  
+  # Configure npm to use faster registry if needed (optional)
+  # Uncomment if server is in China and want to use Taobao mirror:
+  # npm config set registry https://registry.npmmirror.com
 
   # Navigate to the project directory
   cd /root
@@ -95,6 +99,13 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   
   # Fetch and pull latest changes
   echo "Fetching latest changes from GitHub..."
+  # Save current package-lock.json hash before git reset (to check if dependencies changed)
+  OLD_ROOT_HASH=""
+  ROOT_HASH_FILE=".package-lock-hash"
+  if [ -f "package-lock.json" ] && [ -f "$ROOT_HASH_FILE" ]; then
+    OLD_ROOT_HASH=$(cat "$ROOT_HASH_FILE" 2>/dev/null || echo "")
+  fi
+  
   # Try to fetch from main branch first, fallback to master
   if git ls-remote --heads origin main | grep -q main; then
     git fetch origin main
@@ -117,8 +128,22 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   fi
 
   # Install root directory dependencies (for data fetching script)
-  echo "Installing root directory dependencies..."
-  npm ci
+  # Check if dependencies need to be reinstalled by comparing package-lock.json hash
+  NEW_ROOT_HASH=$(md5sum package-lock.json 2>/dev/null | cut -d' ' -f1 || md5 -q package-lock.json 2>/dev/null || sha256sum package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "")
+  
+  if [ -n "$NEW_ROOT_HASH" ] && [ -n "$OLD_ROOT_HASH" ] && [ "$NEW_ROOT_HASH" = "$OLD_ROOT_HASH" ] && [ -d "node_modules" ]; then
+    echo "✅ Dependencies are up to date (package-lock.json unchanged), skipping installation..."
+    # Update hash file timestamp
+    echo "$NEW_ROOT_HASH" > "$ROOT_HASH_FILE"
+  else
+    echo "Installing root directory dependencies (this may take a few minutes due to large packages like puppeteer)..."
+    # Use --prefer-offline to use cache when possible, --no-audit to skip security audit, --loglevel=error to reduce output
+    npm ci --prefer-offline --no-audit --loglevel=error || npm ci --no-audit --loglevel=error
+    if [ -n "$NEW_ROOT_HASH" ]; then
+      echo "$NEW_ROOT_HASH" > "$ROOT_HASH_FILE"
+    fi
+    echo "✅ Dependencies installed successfully"
+  fi
   
   # Build root directory code (data fetching script)
   echo "Building root directory code..."
@@ -136,13 +161,35 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   fi
   
   # Install backend dependencies
-  echo "Installing backend dependencies..."
   cd backend
   if [ ! -f package-lock.json ]; then
     echo "package-lock.json not found in backend directory! Please commit and push it. Aborting deployment."
     exit 1
   fi
-  npm ci
+  
+  # Save current package-lock.json hash before checking (from previous deployment)
+  OLD_BACKEND_HASH=""
+  BACKEND_HASH_FILE=".package-lock-hash"
+  if [ -f "$BACKEND_HASH_FILE" ]; then
+    OLD_BACKEND_HASH=$(cat "$BACKEND_HASH_FILE" 2>/dev/null || echo "")
+  fi
+  
+  # Check if dependencies need to be reinstalled by comparing package-lock.json hash
+  NEW_BACKEND_HASH=$(md5sum package-lock.json 2>/dev/null | cut -d' ' -f1 || md5 -q package-lock.json 2>/dev/null || sha256sum package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "")
+  
+  if [ -n "$NEW_BACKEND_HASH" ] && [ -n "$OLD_BACKEND_HASH" ] && [ "$NEW_BACKEND_HASH" = "$OLD_BACKEND_HASH" ] && [ -d "node_modules" ]; then
+    echo "✅ Backend dependencies are up to date (package-lock.json unchanged), skipping installation..."
+    # Update hash file timestamp
+    echo "$NEW_BACKEND_HASH" > "$BACKEND_HASH_FILE"
+  else
+    echo "Installing backend dependencies..."
+    # Use --prefer-offline to use cache when possible, --no-audit to skip security audit, --loglevel=error to reduce output
+    npm ci --prefer-offline --no-audit --loglevel=error || npm ci --no-audit --loglevel=error
+    if [ -n "$NEW_BACKEND_HASH" ]; then
+      echo "$NEW_BACKEND_HASH" > "$BACKEND_HASH_FILE"
+    fi
+    echo "✅ Backend dependencies installed successfully"
+  fi
   
   # Build backend code
   echo "Building backend code..."
