@@ -5,7 +5,6 @@ import * as addressBook from "@bgd-labs/aave-address-book";
 
 // 创建 Aave 客户端实例
 const client = AaveClient.create();
-import fetch from 'node-fetch';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
@@ -13,8 +12,8 @@ import { brevisApi } from './brevis-api.js';
 import {
   MerklCampaignBreakdown,
   MerklOpportunityData,
+  MerklOpportunityGroup,
   processMerklData,
-  calculateActiveCampaignApr,
   findMatchingMerklOpportunities,
   formatMerklBreakdown
 } from './merkl-api.js';
@@ -48,39 +47,35 @@ interface FormattedReserveData {
   tokenAddress: string; // underlying token address
   aTokenAddress: string | null; // aToken address
   vTokenAddress: string | null; // variableDebtToken address
-  supplyApy: string;
-  borrowApy: string | null;
-  supplyIncentives: string[]; // Protocol supply incentives from reserve.incentives (AaveSupplyIncentive)
-  borrowIncentives: string[]; // Protocol borrow incentives from reserve.incentives (AaveBorrowIncentive)
-  meritSupplyApr: string[]; // Merit supply APR
-  meritBorrowApr: string[]; // Merit borrow APR
-  meritSelfSupply: string[]; // Merit self supply APR
-  meritSelfBorrow: string[]; // Merit self borrow APR
-  meritSupplyWithBorrowRequirement?: Array<{
-    apr: string;
-    requiredBorrowTokens: string[]; // 需要 borrow 的 token 列表，如果是 'multiple' 则表示任意 token
-    isSelf?: boolean; // 是否为 self 格式
+  supplyApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
+  borrowApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
+  supplyIncentives: number[]; // Protocol supply incentives 百分比值数组
+  borrowIncentives: number[]; // Protocol borrow incentives 百分比值数组
+  meritSupplys?: Array<{
+    apr: number; // APR 百分比值
+    selfApr?: number; // Self APR 百分比值（如果有对应的 self- 前缀的 key）
+    link: string;
+    startDate: string;
+    endDate: string;
+    requiredBorrowTokens?: string[];
+    startBlock?: string; // 仅用于 CSV
+    endBlock?: string; // 仅用于 CSV
   }>;
-  meritBorrowWithSupplyRequirement?: Array<{
-    apr: string;
-    requiredSupplyTokens: string[]; // 需要 supply 的 token 列表，如果是 'multiple' 则表示任意 token
-    isSelf?: boolean; // 是否为 self 格式
+  meritBorrows?: Array<{
+    apr: number; // APR 百分比值
+    selfApr?: number; // Self APR 百分比值（如果有对应的 self- 前缀的 key）
+    link: string;
+    startDate: string;
+    endDate: string;
+    requiredSupplyTokens?: string[];
+    startBlock?: string; // 仅用于 CSV
+    endBlock?: string; // 仅用于 CSV
   }>;
-  merklSupplyApr: number; // 所有匹配 opportunities 的 APR 值总和
-  merklBorrowApr: number; // 所有匹配 opportunities 的 APR 值总和
-  merklHoldApr: number; // 所有匹配 opportunities 的 APR 值总和
-  merklSupplyAprBreakdowns: MerklCampaignBreakdown[]; // 合并所有匹配 opportunities 的 breakdowns
-  merklBorrowAprBreakdowns: MerklCampaignBreakdown[]; // 合并所有匹配 opportunities 的 breakdowns
-  merklHoldAprBreakdowns: MerklCampaignBreakdown[]; // 合并所有匹配 opportunities 的 breakdowns
-  brevisSupplyApr: number | null;  // Brevis Network Linea Surge Supply APR
-  brevisBorrowApr: number | null;   // Brevis Network Linea Surge Borrow APR
-  totalIncentiveSupplyApr: number; // 所有激励 APR 的总和（未转换为 APY）
-  totalIncentiveSupplyApy: number; // 所有激励 APR 转换为 APY 后的总和
-  totalIncentiveBorrowApr: number; // 所有激励 APR 的总和（未转换为 APY）
-  totalIncentiveBorrowApy: number; // 所有激励 APR 转换为 APY 后的总和
-  // 以下字段仅用于 CSV 导出，不包含在 API 响应中
-  totalSupplyApy?: number; // 原生 supplyApy + totalIncentiveSupplyApy（仅 CSV）
-  totalBorrowApy?: number | null; // 原生 borrowApy - totalIncentiveBorrowApy（仅 CSV）
+  merklSupplys?: MerklOpportunityGroup[]; // 按 opportunity 分组的 supply 数据
+  merklBorrows?: MerklOpportunityGroup[]; // 按 opportunity 分组的 borrow 数据
+  merklHolds?: MerklOpportunityGroup[]; // 按 opportunity 分组的 hold 数据
+  brevisSupplyApr?: number | undefined;  // Brevis Network Linea Surge Supply APR
+  brevisBorrowApr?: number | undefined;   // Brevis Network Linea Surge Borrow APR
 }
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
@@ -269,45 +264,55 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
 
         const tokenSymbol = reserve.underlyingToken?.symbol || 'Unknown';
         const tokenAddress = reserve.underlyingToken?.address || '';
-        const aTokenAddress = reserve.aToken?.address || null;
-        const vTokenAddress = reserve.vToken?.address || null;
+        const aTokenAddress = reserve.aToken?.address || undefined;
+        const vTokenAddress = reserve.vToken?.address || undefined;
+        
+        // 检查 supplyCap，如果为 1 则将 supplyApy 设置为 undefined（因为对用户没有意义）
+        const supplyCapValue = reserve.supplyInfo?.supplyCap?.amount?.value;
+        const supplyCapIsOne = supplyCapValue !== undefined && parseFloat(supplyCapValue) === 1;
+        // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
+        const supplyApyValue = reserve.supplyInfo?.apy?.value;
+        const supplyApy = supplyCapIsOne || !supplyApyValue
+          ? undefined
+          : parseFloat(supplyApyValue) * 100;
         
         // 检查 borrowingState 是否为 "DISABLED"，如果是则表示该 token 不能被 borrow
         const isBorrowDisabledByState = reserve.borrowInfo?.borrowingState === "DISABLED";
         
-        // 检查 borrowCap.value 是否为 1 且 borrowApy.formatted 是否为 0
-        // 如果满足这些条件，即使 borrowingState 不是 DISABLED，也应该视为禁用
+        // 检查 borrowCap，如果为 1 则将 borrowApy 设置为 undefined（因为对用户没有意义）
         const borrowCapValue = reserve.borrowInfo?.borrowCap?.amount?.value;
-        const borrowApyFormatted = reserve.borrowInfo?.apy?.formatted;
         const borrowCapIsOne = borrowCapValue !== undefined && parseFloat(borrowCapValue) === 1;
-        const borrowApyIsZero = borrowApyFormatted !== undefined && parseFloat(borrowApyFormatted) === 0;
-        const isBorrowDisabledByCap = borrowCapIsOne && borrowApyIsZero;
-        
-        // 如果通过状态禁用，或者通过 cap 和 APY 条件禁用，则视为禁用
-        const isBorrowDisabled = isBorrowDisabledByState || isBorrowDisabledByCap;
-        const borrowApy = isBorrowDisabled
-          ? null 
-          : (reserve.borrowInfo?.apy?.formatted || reserve.borrowInfo?.apy?.value || null);
+        const isBorrowDisabled = isBorrowDisabledByState || borrowCapIsOne;
+        // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
+        const borrowApyValue = reserve.borrowInfo?.apy?.value;
+        const borrowApy = isBorrowDisabled || !borrowApyValue
+          ? undefined 
+          : parseFloat(borrowApyValue) * 100;
         
         // 从 reserve.incentives 中提取 protocol supply 和 borrow incentives
-        const protocolSupplyIncentives: string[] = [];
-        const protocolBorrowIncentives: string[] = [];
+        // 使用 value*100 转换为百分比值数组
+        const protocolSupplyIncentives: number[] = [];
+        const protocolBorrowIncentives: number[] = [];
         
         if (reserve.incentives && Array.isArray(reserve.incentives)) {
           reserve.incentives.forEach((incentive: any) => {
-            if (incentive.__typename === 'AaveSupplyIncentive' && incentive.extraSupplyApr?.formatted) {
-              protocolSupplyIncentives.push(incentive.extraSupplyApr.formatted);
+            if (incentive.__typename === 'AaveSupplyIncentive') {
+              const aprValue = incentive.extraSupplyApr?.value || incentive.supplyApr?.value;
+              if (aprValue) {
+                protocolSupplyIncentives.push(parseFloat(aprValue) * 100);
+              }
             } else if (incentive.__typename === 'AaveBorrowIncentive') {
               // AaveBorrowIncentive 可能使用 extraBorrowApr 或其他字段名
-              const borrowApr = incentive.extraBorrowApr?.formatted || incentive.borrowApr?.formatted;
-              if (borrowApr) {
-                protocolBorrowIncentives.push(borrowApr);
+              const aprValue = incentive.extraBorrowApr?.value || incentive.borrowApr?.value;
+              if (aprValue) {
+                protocolBorrowIncentives.push(parseFloat(aprValue) * 100);
               }
             }
           });
         }
         
         // 创建完整的结构化数据，包含所有激励字段
+        // 空值初始化为 undefined，以便在 JSON 序列化时省略
         baseDataset.push({
           marketName,
           chainName,
@@ -317,175 +322,17 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           tokenAddress,
           aTokenAddress,
           vTokenAddress,
-          supplyApy: reserve.supplyInfo?.apy?.formatted || reserve.supplyInfo?.apy?.value || '0',
+          supplyApy,
           borrowApy,
           // Protocol incentives - 从 reserve.incentives 提取
-          supplyIncentives: protocolSupplyIncentives,
-          borrowIncentives: protocolBorrowIncentives,
-          // Merit APR 激励字段 - 初始化为空数组
-          meritSupplyApr: [],
-          meritBorrowApr: [],
-          meritSelfSupply: [],
-          meritSelfBorrow: [],
-          meritSupplyWithBorrowRequirement: undefined,
-          meritBorrowWithSupplyRequirement: undefined,
-          // Merkl APR 激励字段 - 初始化为 0
-          merklSupplyApr: 0,
-          merklBorrowApr: 0,
-          merklHoldApr: 0,
-          merklSupplyAprBreakdowns: [],
-          merklBorrowAprBreakdowns: [],
-          merklHoldAprBreakdowns: [],
-          // Brevis APR 激励字段 - 初始化为 null
-          brevisSupplyApr: null,
-          brevisBorrowApr: null,
-          // 总激励字段 - 初始化为 0，将在 enrichDatasetWithIncentiveData 中计算
-          totalIncentiveSupplyApr: 0,
-          totalIncentiveSupplyApy: 0,
-          totalIncentiveBorrowApr: 0,
-          totalIncentiveBorrowApy: 0
+          supplyIncentives: protocolSupplyIncentives.length > 0 ? protocolSupplyIncentives : undefined as any,
+          borrowIncentives: protocolBorrowIncentives.length > 0 ? protocolBorrowIncentives : undefined as any
         });
       });
     }
   });
 
   return baseDataset;
-}
-
-
-
-
-// 计算总激励 APR 和总 APY
-function calculateTotalApy(item: FormattedReserveData): void {
-  // 计算 Supply 激励 APR 总和
-  let totalSupplyIncentiveApr = 0;
-  
-  // 1. Protocol supply incentives (supplyIncentives)
-  item.supplyIncentives.forEach(incentive => {
-    const apr = parseFloat(incentive);
-    if (!isNaN(apr)) {
-      totalSupplyIncentiveApr += apr / 100; // 转换为小数
-    }
-  });
-  
-  // 2. Merit supply APR (meritSupplyApr)
-  item.meritSupplyApr.forEach(apr => {
-    const aprValue = parseFloat(apr);
-    if (!isNaN(aprValue)) {
-      totalSupplyIncentiveApr += aprValue / 100; // 转换为小数
-    }
-  });
-  
-  // 3. Merit self supply APR (meritSelfSupply)
-  item.meritSelfSupply.forEach(apr => {
-    const aprValue = parseFloat(apr);
-    if (!isNaN(aprValue)) {
-      totalSupplyIncentiveApr += aprValue / 100; // 转换为小数
-    }
-  });
-  
-  // 4. Merit supply with borrow requirement APR (meritSupplyWithBorrowRequirement)
-  if (item.meritSupplyWithBorrowRequirement && item.meritSupplyWithBorrowRequirement.length > 0) {
-    item.meritSupplyWithBorrowRequirement.forEach(req => {
-      const aprValue = parseFloat(req.apr);
-      if (!isNaN(aprValue)) {
-        totalSupplyIncentiveApr += aprValue / 100; // 转换为小数
-      }
-    });
-  }
-  
-  // 5. Merkl supply APR (merklSupplyApr) - 可以是负数
-  if (item.merklSupplyApr !== 0) {
-    totalSupplyIncentiveApr += item.merklSupplyApr / 100; // 转换为小数（可以是负数）
-  }
-  
-  // 6. Brevis supply APR (brevisSupplyApr) - 可以是负数
-  if (item.brevisSupplyApr !== null && item.brevisSupplyApr !== 0) {
-    totalSupplyIncentiveApr += item.brevisSupplyApr / 100; // 转换为小数（可以是负数）
-  }
-  
-  // 保存 APR 值（未转换）
-  item.totalIncentiveSupplyApr = totalSupplyIncentiveApr;
-  
-  // 转换为 APY
-  item.totalIncentiveSupplyApy = convertAprToApy(totalSupplyIncentiveApr);
-  
-  // 计算总 Supply APY（仅用于 CSV）
-  const nativeSupplyApy = parseFloat(item.supplyApy);
-  if (!isNaN(nativeSupplyApy)) {
-    item.totalSupplyApy = (nativeSupplyApy / 100) + item.totalIncentiveSupplyApy;
-  } else {
-    item.totalSupplyApy = item.totalIncentiveSupplyApy;
-  }
-  
-  // 计算 Borrow 激励 APR 总和
-  let totalBorrowIncentiveApr = 0;
-  
-  // 1. Protocol borrow incentives (borrowIncentives)
-  item.borrowIncentives.forEach(incentive => {
-    const apr = parseFloat(incentive);
-    if (!isNaN(apr)) {
-      totalBorrowIncentiveApr += apr / 100; // 转换为小数
-    }
-  });
-  
-  // 2. Merit borrow APR (meritBorrowApr)
-  item.meritBorrowApr.forEach(apr => {
-    const aprValue = parseFloat(apr);
-    if (!isNaN(aprValue)) {
-      totalBorrowIncentiveApr += aprValue / 100; // 转换为小数（可以是负数）
-    }
-  });
-  
-  // 3. Merit self borrow APR (meritSelfBorrow)
-  item.meritSelfBorrow.forEach(apr => {
-    const aprValue = parseFloat(apr);
-    if (!isNaN(aprValue)) {
-      totalBorrowIncentiveApr += aprValue / 100; // 转换为小数（可以是负数）
-    }
-  });
-  
-  // 4. Merit borrow with supply requirement APR (meritBorrowWithSupplyRequirement)
-  if (item.meritBorrowWithSupplyRequirement && item.meritBorrowWithSupplyRequirement.length > 0) {
-    item.meritBorrowWithSupplyRequirement.forEach(req => {
-      const aprValue = parseFloat(req.apr);
-      if (!isNaN(aprValue)) {
-        totalBorrowIncentiveApr += aprValue / 100; // 转换为小数（可以是负数）
-      }
-    });
-  }
-  
-  // 5. Merkl borrow APR (merklBorrowApr) - 可以是负数
-  if (item.merklBorrowApr !== 0) {
-    totalBorrowIncentiveApr += item.merklBorrowApr / 100; // 转换为小数（可以是负数）
-  }
-  
-  // 6. Brevis borrow APR (brevisBorrowApr) - 可以是负数
-  if (item.brevisBorrowApr !== null && item.brevisBorrowApr !== 0) {
-    totalBorrowIncentiveApr += item.brevisBorrowApr / 100; // 转换为小数（可以是负数）
-  }
-  
-  // 保存 APR 值（未转换）
-  item.totalIncentiveBorrowApr = totalBorrowIncentiveApr;
-  
-  // 转换为 APY
-  item.totalIncentiveBorrowApy = convertAprToApy(totalBorrowIncentiveApr);
-  
-  // 计算总 Borrow APY（仅用于 CSV）
-  // 如果 incentive APR 是正数，则 borrowApy - incentive（相减）
-  // 如果 incentive APR 是负数，则 borrowApy + incentive（相加，因为减去负数等于加上正数）
-  // 等价于：borrowApy - totalIncentiveBorrowApy
-  if (item.borrowApy !== null) {
-    const nativeBorrowApy = parseFloat(item.borrowApy);
-    if (!isNaN(nativeBorrowApy)) {
-      const nativeBorrowApyDecimal = nativeBorrowApy / 100; // 转换为小数
-      item.totalBorrowApy = nativeBorrowApyDecimal - item.totalIncentiveBorrowApy;
-    } else {
-      item.totalBorrowApy = -item.totalIncentiveBorrowApy;
-    }
-  } else {
-    item.totalBorrowApy = -item.totalIncentiveBorrowApy;
-  }
 }
 
 // 将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
@@ -501,48 +348,90 @@ function enrichDatasetWithIncentiveData(
     
     // 如果有 Merit 数据，直接更新对应字段
     if (meritItemData) {
-      item.meritSupplyApr = meritItemData.meritSupplyApr.length > 0 ? meritItemData.meritSupplyApr : [];
-      item.meritBorrowApr = meritItemData.meritBorrowApr.length > 0 ? meritItemData.meritBorrowApr : [];
-      item.meritSelfSupply = meritItemData.meritSelfSupply.length > 0 ? meritItemData.meritSelfSupply : [];
-      item.meritSelfBorrow = meritItemData.meritSelfBorrow.length > 0 ? meritItemData.meritSelfBorrow : [];
-      // 处理需要先 supply 的 borrow APR 信息
-      if (meritItemData.meritBorrowWithSupplyRequirement.length > 0) {
-        item.meritBorrowWithSupplyRequirement = meritItemData.meritBorrowWithSupplyRequirement;
-      }
-      // 处理需要先 borrow 的 supply APR 信息
-      if (meritItemData.meritSupplyWithBorrowRequirement.length > 0) {
-        item.meritSupplyWithBorrowRequirement = meritItemData.meritSupplyWithBorrowRequirement;
-      }
+      // 只有当数组不为空时才赋值，否则保持 undefined
+      item.meritSupplys = meritItemData.meritSupplys.length > 0 ? meritItemData.meritSupplys : undefined;
+      item.meritBorrows = meritItemData.meritBorrows.length > 0 ? meritItemData.meritBorrows : undefined;
     }
     
     // 获取对应的 Merkl 数据并更新
     const matchedOpportunities = findMatchingMerklOpportunities(item, merklData);
     
     if (matchedOpportunities.length > 0) {
+      // 用于 CSV 格式化的平铺 breakdowns（带 opportunityLink 以保持对应关系）
       const supplyBreakdowns: MerklCampaignBreakdown[] = [];
       const borrowBreakdowns: MerklCampaignBreakdown[] = [];
       const holdBreakdowns: MerklCampaignBreakdown[] = [];
       
-      // 先收集所有 matchedOpportunities 中的 breakdowns
+      // 用于 JSON 的分组数据（按 opportunity 分组，避免重复）
+      const supplyOpportunities: MerklOpportunityGroup[] = [];
+      const borrowOpportunities: MerklOpportunityGroup[] = [];
+      const holdOpportunities: MerklOpportunityGroup[] = [];
+      
+      // 收集所有 matchedOpportunities 中的 breakdowns
       for (const opp of matchedOpportunities) {
-        if (opp.supply.length > 0) {
-          supplyBreakdowns.push(...opp.supply);
-        }
-        if (opp.borrow.length > 0) {
-          borrowBreakdowns.push(...opp.borrow);
-        }
-        if (opp.hold.length > 0) {
-          holdBreakdowns.push(...opp.hold);
+        if (opp.opportunityLink) {
+          if (opp.supply.length > 0) {
+            // 为 CSV 格式化：添加 opportunityLink（临时用于格式化）
+            const supplyWithLinks = opp.supply.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
+            supplyBreakdowns.push(...supplyWithLinks);
+            // 为 JSON：按 opportunity 分组（不包含 opportunityLink 在 breakdown 中）
+            supplyOpportunities.push({
+              opportunityLink: opp.opportunityLink,
+              breakdowns: opp.supply
+            });
+          }
+          if (opp.borrow.length > 0) {
+            const borrowWithLinks = opp.borrow.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
+            borrowBreakdowns.push(...borrowWithLinks);
+            borrowOpportunities.push({
+              opportunityLink: opp.opportunityLink,
+              breakdowns: opp.borrow
+            });
+          }
+          if (opp.hold.length > 0) {
+            const holdWithLinks = opp.hold.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
+            holdBreakdowns.push(...holdWithLinks);
+            holdOpportunities.push({
+              opportunityLink: opp.opportunityLink,
+              breakdowns: opp.hold
+            });
+          }
+        } else {
+          // 如果没有链接，直接添加 breakdowns
+          if (opp.supply.length > 0) {
+            supplyBreakdowns.push(...opp.supply);
+            supplyOpportunities.push({
+              opportunityLink: '', // 空链接，但保持结构一致
+              breakdowns: opp.supply
+            });
+          }
+          if (opp.borrow.length > 0) {
+            borrowBreakdowns.push(...opp.borrow);
+            borrowOpportunities.push({
+              opportunityLink: '',
+              breakdowns: opp.borrow
+            });
+          }
+          if (opp.hold.length > 0) {
+            holdBreakdowns.push(...opp.hold);
+            holdOpportunities.push({
+              opportunityLink: '',
+              breakdowns: opp.hold
+            });
+          }
         }
       }
       
-      // 一次性计算所有 breakdowns 的总 APR
-      item.merklSupplyApr = calculateActiveCampaignApr(supplyBreakdowns);
-      item.merklBorrowApr = calculateActiveCampaignApr(borrowBreakdowns);
-      item.merklHoldApr = calculateActiveCampaignApr(holdBreakdowns);
-      item.merklSupplyAprBreakdowns = supplyBreakdowns;
-      item.merklBorrowAprBreakdowns = borrowBreakdowns;
-      item.merklHoldAprBreakdowns = holdBreakdowns;
+      // 用于 JSON：按 opportunity 分组的数据（避免重复，结构清晰）
+      if (supplyOpportunities.length > 0) {
+        item.merklSupplys = supplyOpportunities;
+      }
+      if (borrowOpportunities.length > 0) {
+        item.merklBorrows = borrowOpportunities;
+      }
+      if (holdOpportunities.length > 0) {
+        item.merklHolds = holdOpportunities;
+      }
     }
     
     // 获取对应的 Brevis 数据并更新
@@ -550,12 +439,10 @@ function enrichDatasetWithIncentiveData(
     // 根据 chainName 和 tokenSymbol 匹配（indexKey 格式：chainName-tokenSymbol）
     const brevisInfo = brevisData[indexKey];
     if (brevisInfo) {
-      item.brevisSupplyApr = brevisInfo.supplyApr;
-      item.brevisBorrowApr = brevisInfo.borrowApr;
+      // 只有当值不为 null 时才赋值，否则保持 undefined（保留 0 值，因为 0 是有效值）
+      item.brevisSupplyApr = brevisInfo.supplyApr !== null ? brevisInfo.supplyApr : undefined as any;
+      item.brevisBorrowApr = brevisInfo.borrowApr !== null ? brevisInfo.borrowApr : undefined as any;
     }
-    
-    // 计算总激励 APY 和总 APY
-    calculateTotalApy(item);
     
     return item;
   });
@@ -588,26 +475,13 @@ function generateCSV(data: FormattedReserveData[]): string {
     'Borrow APY (%)',
     'Supply Incentives (%)',
     'Borrow Incentives (%)',
-    'Merit Supply (%)',
-    'Merit Borrow (%)',
-    'Merit Self Supply (%)',
-    'Merit Self Borrow (%)',
-    'Merit Borrow With Supply Requirement',
-    'Merit Supply With Borrow Requirement',
-    'Merkl Supply APR (%)',
-    'Merkl Borrow APR (%)',
-    'Merkl Hold APR (%)',
-    'Merkl Supply Campaigns',
-    'Merkl Borrow Campaigns',
-    'Merkl Hold Campaigns',
+    'Merit Supplys',
+    'Merit Borrows',
+    'Merkl Supplys',
+    'Merkl Borrows',
+    'Merkl Holds',
     'Brevis Supply APR (%)',
-    'Brevis Borrow APR (%)',
-    'Total Incentive Supply APR (%)',
-    'Total Incentive Supply APY (%)',
-    'Total Supply APY (%)',
-    'Total Incentive Borrow APR (%)',
-    'Total Incentive Borrow APY (%)',
-    'Total Borrow APY (%)'
+    'Brevis Borrow APR (%)'
   ];
 
   // 生成 CSV 行
@@ -620,36 +494,48 @@ function generateCSV(data: FormattedReserveData[]): string {
       `"${row.tokenName}"`,
       `"${row.tokenSymbol}"`,
       `"${row.tokenAddress}"`,
-      row.supplyApy,
-      row.borrowApy || '',
-      row.supplyIncentives.length > 0 ? `"${row.supplyIncentives.join(';')}"` : '',
-      row.borrowIncentives.length > 0 ? `"${row.borrowIncentives.join(';')}"` : '',
-      row.meritSupplyApr.length > 0 ? `"${row.meritSupplyApr.join(';')}"` : '',
-      row.meritBorrowApr.length > 0 ? `"${row.meritBorrowApr.join(';')}"` : '',
-      row.meritSelfSupply.length > 0 ? `"${row.meritSelfSupply.join(';')}"` : '',
-      row.meritSelfBorrow.length > 0 ? `"${row.meritSelfBorrow.join(';')}"` : '',
-      // 格式化 meritSupplyWithBorrowRequirement：格式为 "APR1:token1,token2;APR2:token3"
-      row.meritSupplyWithBorrowRequirement && row.meritSupplyWithBorrowRequirement.length > 0
-        ? `"${row.meritSupplyWithBorrowRequirement.map(req => `${req.apr}:${req.requiredBorrowTokens.join(',')}`).join('; ')}"`
+      row.supplyApy !== undefined ? row.supplyApy.toString() : '',
+      row.borrowApy !== undefined ? row.borrowApy.toString() : '',
+      (row.supplyIncentives && row.supplyIncentives.length > 0) ? `"${row.supplyIncentives.join(';')}"` : '',
+      (row.borrowIncentives && row.borrowIncentives.length > 0) ? `"${row.borrowIncentives.join(';')}"` : '',
+      // 格式化 meritSupplys：平铺所有数据，格式为 "APR1:selfApr1:link1:startDate1:endDate1;APR2:selfApr2:link2:startDate2:endDate2"
+      (row.meritSupplys && row.meritSupplys.length > 0) 
+        ? `"${row.meritSupplys.map(e => {
+            const parts = [e.apr.toString()];
+            if (e.selfApr !== undefined) parts.push(e.selfApr.toString());
+            parts.push(e.link, e.startDate, e.endDate);
+            if (e.requiredBorrowTokens) parts.push(`req:${e.requiredBorrowTokens.join(',')}`);
+            return parts.join(':');
+          }).join(';')}"` 
         : '',
-      // 格式化 meritBorrowWithSupplyRequirement：格式为 "APR1:token1,token2;APR2:token3"
-      row.meritBorrowWithSupplyRequirement && row.meritBorrowWithSupplyRequirement.length > 0
-        ? `"${row.meritBorrowWithSupplyRequirement.map(req => `${req.apr}:${req.requiredSupplyTokens.join(',')}`).join('; ')}"`
+      // 格式化 meritBorrows：平铺所有数据，格式同上
+      (row.meritBorrows && row.meritBorrows.length > 0) 
+        ? `"${row.meritBorrows.map(e => {
+            const parts = [e.apr.toString()];
+            if (e.selfApr !== undefined) parts.push(e.selfApr.toString());
+            parts.push(e.link, e.startDate, e.endDate);
+            if (e.requiredSupplyTokens) parts.push(`req:${e.requiredSupplyTokens.join(',')}`);
+            return parts.join(':');
+          }).join(';')}"` 
         : '',
-      row.merklSupplyApr > 0 ? row.merklSupplyApr : '',
-      row.merklBorrowApr > 0 ? row.merklBorrowApr : '',
-      row.merklHoldApr > 0 ? row.merklHoldApr : '',
-      `"${formatMerklBreakdown(row.merklSupplyAprBreakdowns)}"`,
-      `"${formatMerklBreakdown(row.merklBorrowAprBreakdowns)}"`,
-      `"${formatMerklBreakdown(row.merklHoldAprBreakdowns)}"`,
-      row.brevisSupplyApr !== null ? row.brevisSupplyApr : '',
-      row.brevisBorrowApr !== null ? row.brevisBorrowApr : '',
-      (row.totalIncentiveSupplyApr * 100).toFixed(6),
-      (row.totalIncentiveSupplyApy * 100).toFixed(6),
-      (row.totalSupplyApy ?? 0) * 100 > 0 ? ((row.totalSupplyApy ?? 0) * 100).toFixed(6) : '',
-      (row.totalIncentiveBorrowApr * 100).toFixed(6),
-      (row.totalIncentiveBorrowApy * 100).toFixed(6),
-      row.totalBorrowApy !== null && row.totalBorrowApy !== undefined ? (row.totalBorrowApy * 100).toFixed(6) : ''
+      // 从分组数据中提取 breakdowns 用于 CSV 格式化（带 opportunityLink）
+      `"${formatMerklBreakdown(
+        row.merklSupplys?.flatMap(g => 
+          g.breakdowns.map(b => ({ ...b, opportunityLink: g.opportunityLink }))
+        ) || []
+      )}"`,
+      `"${formatMerklBreakdown(
+        row.merklBorrows?.flatMap(g => 
+          g.breakdowns.map(b => ({ ...b, opportunityLink: g.opportunityLink }))
+        ) || []
+      )}"`,
+      `"${formatMerklBreakdown(
+        row.merklHolds?.flatMap(g => 
+          g.breakdowns.map(b => ({ ...b, opportunityLink: g.opportunityLink }))
+        ) || []
+      )}"`,
+      (row.brevisSupplyApr !== undefined && row.brevisSupplyApr !== null) ? row.brevisSupplyApr : '',
+      (row.brevisBorrowApr !== undefined && row.brevisBorrowApr !== null) ? row.brevisBorrowApr : ''
     ].join(','))
   ];
 
@@ -717,32 +603,6 @@ async function fetchAaveMarketData(): Promise<MarketData> {
   if (errors.length > 0) {
     logger.warn(`⚠️ ${errors.length} chains had errors or no data`);
   }
-  
-  /* 按链分组统计，仅用于console输出
-  const marketsByChain = marketList.reduce((acc: Record<number, any[]>, market) => {
-    const chainId = market.chain?.chainId || 0;
-    if (!acc[chainId]) acc[chainId] = [];
-    acc[chainId].push(market);
-    return acc;
-  }, {});
-  logger.info('\n📋 Markets by Chain:');
-  Object.entries(marketsByChain).forEach(([chainIdStr, chainMarkets]) => {
-    const chainId = parseInt(chainIdStr);
-    const networkNames = marketData.networkInfo
-      .filter(info => info.chainId === chainId)
-      .map(info => info.name.replace('AaveV3', ''))
-      .join(', ');
-    
-    logger.info(`   Chain ${chainId} (${networkNames}): ${chainMarkets.length} markets`);
-    chainMarkets.forEach((market, index) => {
-      logger.info(`     ${index + 1}. ${market.name || 'Unknown'} - ${market.address || 'Unknown'}`);
-      logger.debug(`        Market Size: ${market.totalMarketSize || 'N/A'}`);
-      logger.debug(`        Liquidity: ${market.totalAvailableLiquidity || 'N/A'}`);
-      logger.debug(`        Reserves: ${market.supplyReserves?.length || 0} supply, ${market.borrowReserves?.length || 0} borrow`);
-    });
-    logger.info('');
-  });
-  */
 
   // 确保 data 文件夹存在
   await mkdir(DATA_DIR, { recursive: true });
@@ -770,7 +630,7 @@ async function fetchAaveMarkets(): Promise<void> {
     // 构建 Brevis 解析用的链/代币索引（基于 baseDataset，确保数据一致性）
     const chainTokenIndex = buildChainTokenIndex(baseDataset);
 
-    // 获取 Merit APR 数据（已包含索引）
+    // 获取 Merit APR 数据（已包含索引和时间范围）
     const meritData = await fetchMeritData();
     
     // 获取 Merkl 数据（内部会保存原始数据文件）
@@ -783,10 +643,7 @@ async function fetchAaveMarkets(): Promise<void> {
     logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
     const enrichedData = enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
     
-    // 移除 totalSupplyApy 和 totalBorrowApy，不包含在 JSON 输出中（仅用于 CSV）
-    const formattedData = enrichedData.map(({ totalSupplyApy, totalBorrowApy, ...item }) => item);
-    
-    logger.info(`🎯 Final dataset contains ${formattedData.length} token combinations`);
+    logger.info(`🎯 Final dataset contains ${enrichedData.length} token combinations`);
     
     // 保存格式化的JSON数据（包含时间戳元数据）
     // 使用从 fetchAaveMarketData 返回的时间戳，而不是重新生成
@@ -795,13 +652,21 @@ async function fetchAaveMarkets(): Promise<void> {
       _metadata: {
         timestamp: marketData.timestamp, // 使用从 fetchAaveMarketData 返回的时间戳
         version: '1.0',
-        dataCount: formattedData.length,
+        dataCount: enrichedData.length,
       },
-      data: formattedData,
+      data: enrichedData,
     };
-    await writeFile(formattedJsonPath, JSON.stringify(dataWithMetadata, null, 2), 'utf-8');
+    // 使用自定义 replacer 函数，确保 undefined 字段被完全省略，null 也会被转换为 undefined 并省略
+    await writeFile(formattedJsonPath, JSON.stringify(dataWithMetadata, (key, value) => {
+      // 将 null 转换为 undefined，这样会被省略（JSON.stringify 默认会省略 undefined）
+      // 注意：JSON.stringify 默认行为：
+      // - undefined: 被省略（不序列化）
+      // - null: 序列化为 "null"（会出现在 JSON 中）
+      // 所以我们把 null 也转换为 undefined 来省略它
+      return value === null ? undefined : (value === undefined ? undefined : value);
+    }, 2), 'utf-8');
     
-    // 生成CSV格式（使用包含 totalSupplyApy 和 totalBorrowApy 的数据）
+    // 生成CSV格式
     const csvData = generateCSV(enrichedData);
     const csvPath = join(DATA_DIR, 'aave-formatted-data.csv');
     await writeFile(csvPath, csvData, 'utf-8');
@@ -812,7 +677,7 @@ async function fetchAaveMarkets(): Promise<void> {
     logger.info(`📈 CSV data saved to ${csvPath}`);
     logger.info(`📁 File location: ${DATA_DIR}`);
     logger.info(`📈 Total markets: ${marketData.markets.length}`);
-    logger.info(`🪙 Total reserves: ${formattedData.length}`);
+    logger.info(`🪙 Total reserves: ${enrichedData.length}`);
     logger.info(`🌐 Networks discovered: ${marketData.totalNetworks}`);
     logger.info(`✅ Supported networks: ${marketData.networkInfo.length}`);
     logger.info(`⛓️ Supported chains: ${marketData.chainIds.length}`);

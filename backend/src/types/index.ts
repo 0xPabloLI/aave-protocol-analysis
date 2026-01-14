@@ -10,36 +10,61 @@ export interface MarketWithSpread {
   tokenAddress: string;
   aTokenAddress: string | null;
   vTokenAddress: string | null;
-  supplyApy: string;
-  borrowApy: string | null;
-  supplyIncentives: string[];
-  borrowIncentives: string[];
-  meritSupplyApr: string[];
-  meritBorrowApr: string[];
-  meritSelfSupply: string[];
-  meritSelfBorrow: string[];
-  meritSupplyWithBorrowRequirement?: Array<{
-    apr: string;
-    requiredBorrowTokens: string[];
-    isSelf?: boolean;
+  supplyApy: number | null;
+  borrowApy: number | null;
+  supplyIncentives: number[];
+  borrowIncentives: number[];
+  meritSupplys?: Array<{
+    apr: number;
+    selfApr?: number;
+    link: string;
+    startDate: string;
+    endDate: string;
+    requiredBorrowTokens?: string[];
   }>;
-  meritBorrowWithSupplyRequirement?: Array<{
-    apr: string;
-    requiredSupplyTokens: string[];
-    isSelf?: boolean;
+  meritBorrows?: Array<{
+    apr: number;
+    selfApr?: number;
+    link: string;
+    startDate: string;
+    endDate: string;
+    requiredSupplyTokens?: string[];
   }>;
-  merklSupplyApr: number;
-  merklBorrowApr: number;
-  merklHoldApr: number;
-  merklSupplyAprBreakdowns: any[];
-  merklBorrowAprBreakdowns: any[];
-  merklHoldAprBreakdowns: any[];
+  merklSupplys?: Array<{
+    opportunityLink: string;
+    breakdowns: Array<{
+      campaignApr: number;
+      campaignStartedAt: string;
+      campaignEndedAt: string;
+      campaignId: string;
+      pointsPerThousandUsd?: number;
+      dailyPoints?: number;
+    }>;
+  }>;
+  merklBorrows?: Array<{
+    opportunityLink: string;
+    breakdowns: Array<{
+      campaignApr: number;
+      campaignStartedAt: string;
+      campaignEndedAt: string;
+      campaignId: string;
+      pointsPerThousandUsd?: number;
+      dailyPoints?: number;
+    }>;
+  }>;
+  merklHolds?: Array<{
+    opportunityLink: string;
+    breakdowns: Array<{
+      campaignApr: number;
+      campaignStartedAt: string;
+      campaignEndedAt: string;
+      campaignId: string;
+      pointsPerThousandUsd?: number;
+      dailyPoints?: number;
+    }>;
+  }>;
   brevisSupplyApr: number | null;
   brevisBorrowApr: number | null;
-  totalIncentiveSupplyApr: number; // 所有激励 APR 的总和（未转换为 APY）
-  totalIncentiveSupplyApy: number;
-  totalIncentiveBorrowApr: number; // 所有激励 APR 的总和（未转换为 APY）
-  totalIncentiveBorrowApy: number;
 }
 
 export interface MarketsResponse {

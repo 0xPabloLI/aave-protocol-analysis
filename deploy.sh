@@ -213,6 +213,35 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   mkdir -p logs
   cd ..
   
+  # Check .env file conflicts in backend directory (before PM2 starts)
+  echo "Checking .env file conflicts..."
+  if [ -f "backend/.env" ]; then
+    conflicts=0
+    conflict_vars=""
+    while IFS='=' read -r key value || [ -n "$key" ]; do
+      [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+      key=$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | cut -d'=' -f1)
+      [ -z "$key" ] && continue
+      system_value=$(printenv "$key" 2>/dev/null)
+      if [ -n "$system_value" ]; then
+        if [ $conflicts -eq 0 ]; then
+          echo "⚠️  发现环境变量冲突（系统环境变量会覆盖 .env 文件）："
+        fi
+        env_value=$(grep "^${key}=" "backend/.env" | cut -d'=' -f2- | sed 's/^[[:space:]]*//')
+        echo "   $key: .env=$env_value, 系统=$system_value"
+        conflict_vars="$conflict_vars $key"
+        conflicts=$((conflicts + 1))
+      fi
+    done < "backend/.env"
+    if [ $conflicts -gt 0 ]; then
+      echo "⚠️  发现 $conflicts 个冲突的环境变量，系统环境变量将覆盖 .env 文件中的值"
+      echo "💡 提示：如需使用 .env 文件的值，请取消设置系统环境变量：unset $conflict_vars"
+    else
+      echo "✅ 未发现环境变量冲突"
+    fi
+    echo ""
+  fi
+  
   # Check if the backend app is running
   if pm2 list | grep -q "aave-backend" && pm2 show aave-backend | grep -q "online"; then
     echo "Aave backend is running. Reloading with PM2..."

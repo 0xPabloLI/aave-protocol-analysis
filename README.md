@@ -112,7 +112,25 @@ npm run build
 npm start
 \`\`\`
 
-See [README-BACKEND.md](README-BACKEND.md) for more details about the API server.
+The server uses environment variables for configuration (see `backend/env.example`). Key settings:
+- `PORT` - Server port (default: 3001)
+- `NODE_ENV` - Environment (development/production)
+- `FRONTEND_URL` - CORS allowed origins for production (comma-separated)
+
+### API Endpoints
+
+The backend API server runs on `http://localhost:3001` by default. Available endpoints:
+
+- `GET /health` - Health check endpoint
+- `GET /api/markets` - Get all market data (no query parameters, all sorting and filtering handled client-side)
+  - Response includes: `data`, `lastUpdated`, `isStale`, `updateInProgress`
+- `GET /api/markets/stats` - Get statistics (total pools, chains, tokens)
+- `GET /api/markets/chains` - Get list of supported chains
+- `GET /api/markets/list` - Get list of markets
+
+**Data Freshness Mechanism**: All endpoints automatically check data freshness (1-minute window). If data is stale, the system automatically triggers an update and waits for completion before returning results. This ensures users always receive up-to-date information without manual refresh.
+
+For detailed information about the data freshness mechanism, see [backend/DATA-FRESHNESS-MECHANISM.md](backend/DATA-FRESHNESS-MECHANISM.md).
 
 ## Output Files
 
@@ -135,8 +153,8 @@ The formatted output data contains the following fields:
 - `tokenName` - Token name
 - `tokenSymbol` - Token symbol
 - `tokenAddress` - Token contract address
-- `supplyApy` - Supply APY
-- `borrowApy` - Borrow APY
+- `supplyApy` - Supply APY (string | null, null when supplyCap is 1)
+- `borrowApy` - Borrow APY (string | null, null when borrowCap is 1 or borrowing is disabled)
 
 ### Protocol Incentives
 - `supplyIncentives` - Aave protocol supply incentives
@@ -223,6 +241,25 @@ The project automatically fetches market data from all AaveV3 networks. Based on
 - **Sonic** (146)
 
 The project automatically skips test networks (such as Sepolia, Fuji) and unsupported networks.
+
+## Data Processing Rules
+
+### APY Null Handling
+
+The service applies special handling for tokens with extremely low capacity limits:
+
+- **Supply APY**: When `supplyCap` is `1`, the `supplyApy` field is set to `null` because such low capacity limits make the APY meaningless for users.
+- **Borrow APY**: When `borrowCap` is `1` or when borrowing is disabled (`borrowingState === "DISABLED"`), the `borrowApy` field is set to `null`.
+
+This ensures that users only see meaningful APY values in the data. When an APY is `null`, it indicates that the operation (supply or borrow) is either disabled or has a capacity limit so low that it's not practical for users.
+
+### Frozen/Paused Reserves
+
+Reserves with `isFrozen === true` or `isPaused === true` are automatically excluded from the output data, as these reserves are not available for supply operations.
+
+### Data Freshness
+
+The backend API server automatically checks data freshness (1-minute window). If data is stale, it automatically triggers an update before returning results. This ensures users always receive up-to-date information.
 
 ## Tech Stack
 

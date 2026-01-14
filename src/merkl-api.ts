@@ -18,13 +18,27 @@ export interface MerklCampaignBreakdown {
   dailyPoints?: number; // Tydro 协议的每日 points
 }
 
+/**
+ * Merkl Opportunity 分组数据（用于 JSON 输出，避免重复）
+ * 一个 opportunity 包含一个链接和多个 breakdowns
+ */
+export interface MerklOpportunityGroup {
+  opportunityLink: string; // Opportunity 链接
+  breakdowns: MerklCampaignBreakdown[]; // 该 opportunity 的所有 breakdowns
+}
+
 // API 响应的完整类型（用于类型断言）
 export interface MerklOpportunity {
   id: string;
   name?: string; // opportunity name for market detection
   action: string; // "LEND" or "BORROW" or "HOLD"
   chainId: number;
+  chain?: {
+    name: string; // 链名称，用于构建链接（如 "Ethereum", "Plasma"）
+  };
   explorerAddress?: string; // 用于索引的地址
+  identifier?: string; // 用于构建 Merkl opportunity 链接的标识符
+  type?: string; // opportunity 类型，用于构建链接（如 MULTILOG_DUTCH, EULER 等）
   status?: string; // "LIVE" or other statuses
   tvl?: number; // TVL 值，用于计算 points/1000USD
   protocol?: {
@@ -58,6 +72,7 @@ export interface MerklOpportunityData {
   hold: MerklCampaignBreakdown[];
   marketName: string;
   chainId: number;
+  opportunityLink?: string; // Merkl opportunity 详情页链接
 }
 
 /**
@@ -128,6 +143,27 @@ export async function fetchMerklCampaignDetails(campaignId: string): Promise<Mer
     logger.error(`❌ Error fetching campaign ${campaignId}:`, error);
     return null;
   }
+}
+
+/**
+ * 生成 Merkl opportunity 详情页链接
+ * 格式：https://app.merkl.xyz/opportunities/{chainName}/{type}/{identifier}
+ * 
+ * @param opportunity Merkl opportunity 对象
+ * @returns Merkl opportunity 详情页的完整 URL，如果缺少必要字段则返回 null
+ */
+export function generateMerklOpportunityLink(opportunity: MerklOpportunity): string | null {
+  // 需要 identifier、type 和 chain.name 字段来构建链接
+  if (!opportunity.identifier || !opportunity.type || !opportunity.chain?.name) {
+    return null;
+  }
+  
+  // 将链名称转换为小写（Merkl URL 使用小写链名称）
+  const chainName = opportunity.chain.name.toLowerCase();
+  const baseUrl = 'https://app.merkl.xyz';
+  const link = `${baseUrl}/opportunities/${chainName}/${opportunity.type}/${opportunity.identifier}`;
+  
+  return link;
 }
 
 /**
@@ -227,6 +263,13 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
       : 'Unknown';
     const explorerAddress = opp.explorerAddress.toLowerCase();
     
+    // 生成 Merkl opportunity 链接（在 if-else 之前生成，以便在外部使用）
+    const opportunityLink = generateMerklOpportunityLink(opp);
+    
+    if (!opportunityLink) {
+      logger.warn(`   ⚠️ Could not generate link for opportunity ${opp.id}: missing identifier, type, or chain.name`);
+    }
+    
     // 处理 campaign breakdowns（从缓存中快速获取）
     const breakdowns: MerklCampaignBreakdown[] = [];
     
@@ -285,7 +328,8 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
       borrow: opp.action === 'BORROW' ? breakdowns : [],
       hold: opp.action === 'HOLD' ? breakdowns : [],
       marketName,
-      chainId: opp.chainId
+      chainId: opp.chainId,
+      ...(opportunityLink && { opportunityLink })
     };
     
     // 创建索引键并添加到索引
@@ -375,11 +419,36 @@ export function findMatchingMerklOpportunities(
 }
 
 /**
- * 格式化 Merkl campaign breakdown 为字符串
+ * 格式化 Merkl campaign breakdown 为字符串（用于 CSV）
  * 字段顺序：campaignApr, campaignStartedAt, campaignEndedAt, campaignId
+ * 
+ * 按 opportunity 分组显示，每个 opportunity 的 breakdowns 后跟其对应的链接
+ * 格式：breakdown1; breakdown2, link1; breakdown3; breakdown4, link2
+ * 
+ * @param breakdowns Merkl campaign breakdowns 数组（用于 CSV 时，每个 breakdown 可能包含 opportunityLink 属性）
  */
-export function formatMerklBreakdown(breakdowns: MerklCampaignBreakdown[]): string {
-  return breakdowns.map(b => {
+export function formatMerklBreakdown(breakdowns: Array<MerklCampaignBreakdown & { opportunityLink?: string }>): string {
+  if (breakdowns.length === 0) {
+    return '';
+  }
+  
+  // 按 opportunityLink 分组
+  const groupedByLink = new Map<string, Array<MerklCampaignBreakdown & { opportunityLink?: string }>>();
+  const noLinkBreakdowns: Array<MerklCampaignBreakdown & { opportunityLink?: string }> = [];
+  
+  for (const b of breakdowns) {
+    if (b.opportunityLink) {
+      if (!groupedByLink.has(b.opportunityLink)) {
+        groupedByLink.set(b.opportunityLink, []);
+      }
+      groupedByLink.get(b.opportunityLink)!.push(b);
+    } else {
+      noLinkBreakdowns.push(b);
+    }
+  }
+  
+  // 格式化每个分组的 breakdowns
+  const formatBreakdown = (b: MerklCampaignBreakdown): string => {
     let startDate = 'N/A';
     if (b.campaignStartedAt) {
       const date = new Date(b.campaignStartedAt);
@@ -405,5 +474,21 @@ export function formatMerklBreakdown(breakdowns: MerklCampaignBreakdown[]): stri
       });
     }
     return `${b.campaignApr}% (${startDate} - ${endDate}, ${b.campaignId})`;
-  }).join('; ');
+  };
+  
+  // 构建分组后的字符串
+  const parts: string[] = [];
+  
+  // 处理有链接的分组：每个分组的 breakdowns 后跟其链接
+  for (const [link, groupBreakdowns] of groupedByLink.entries()) {
+    const breakdownsStr = groupBreakdowns.map(formatBreakdown).join('; ');
+    parts.push(`${breakdownsStr}, ${link}`);
+  }
+  
+  // 处理没有链接的 breakdowns
+  if (noLinkBreakdowns.length > 0) {
+    parts.push(noLinkBreakdowns.map(formatBreakdown).join('; '));
+  }
+  
+  return parts.join('; ');
 }

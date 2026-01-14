@@ -27,7 +27,7 @@ echo ""
 # 测试 2: 获取统计信息
 echo "Test 2: GET /api/markets/stats"
 echo "-------------------------------"
-stats=$(curl -s http://localhost:3001/api/markets/stats | jq -r '.totalMarkets, .totalChains')
+stats=$(curl -s http://localhost:3001/api/markets/stats | jq -r '.totalPools, .totalChains')
 echo "Total Markets: $(echo "$stats" | sed -n '1p')"
 echo "Total Chains: $(echo "$stats" | sed -n '2p')"
 echo ""
@@ -68,4 +68,3 @@ echo "💡 Tips:"
 echo "  - Check backend logs to see automatic update triggers"
 echo "  - Data should auto-refresh if older than 1 minute"
 echo "  - Concurrent requests should not trigger duplicate updates"
-

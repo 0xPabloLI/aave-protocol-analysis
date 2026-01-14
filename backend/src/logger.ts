@@ -1,14 +1,14 @@
+import 'dotenv/config';
 import winston from 'winston';
 import { mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
-// 确保 logs 目录存在（同步方式，确保在 logger 创建前目录已存在）
-// 使用绝对路径，确保无论从哪里运行都写入根目录的 logs/
+// 确保 logs 目录存在
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const ROOT_DIR = resolve(__dirname, '..');
-const LOGS_DIR = resolve(ROOT_DIR, 'logs');
+const BACKEND_DIR = resolve(__dirname, '..');
+const LOGS_DIR = resolve(BACKEND_DIR, 'logs');
 
 try {
   mkdirSync(LOGS_DIR, { recursive: true });
@@ -47,26 +47,32 @@ const consoleFormat = winston.format.combine(
 export const logger = winston.createLogger({
   level: 'info',
   format: logFormat,
-  defaultMeta: { service: 'aave-markets-data' },
+  defaultMeta: { service: 'aave-backend' },
   transports: [
     // 错误日志文件（只记录 error 级别）
     new winston.transports.File({
       filename: join(LOGS_DIR, 'error.log'),
       level: 'error',
       maxsize: 5242880, // 5MB
-      maxFiles: 5,
+      maxFiles: 5, // 保留5个文件，自动轮转
     }),
     // 所有日志文件
     new winston.transports.File({
       filename: join(LOGS_DIR, 'combined.log'),
       maxsize: 5242880, // 5MB
-      maxFiles: 5,
+      maxFiles: 5, // 保留5个文件，自动轮转
     }),
-    // 控制台输出
+    // 控制台输出（生产环境可以移除，因为PM2会捕获）
     new winston.transports.Console({
       format: consoleFormat,
+      // 生产环境下，控制台输出会被PM2捕获，可以保留用于调试
     }),
   ],
 });
+
+// 如果是开发环境，设置为 debug 级别
+if (process.env.NODE_ENV === 'development') {
+  logger.level = 'debug';
+}
 
 export default logger;

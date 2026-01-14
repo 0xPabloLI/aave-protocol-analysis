@@ -15,9 +15,11 @@ Run these from the repo root unless noted.
 - `npm install` installs root dependencies.
 - `npm run dev` runs the data fetcher directly (writes to `data/`).
 - `npm run build` compiles the TypeScript fetcher; `npm start` runs it.
-- `cd backend && npm run dev` starts the API server on `http://localhost:3001`.
+- `cd backend && npm run dev` starts the API server in development mode (uses tsx, no PM2) on `http://localhost:3001`.
 - `cd backend && npm run build` compiles the backend TypeScript code.
-- `cd backend && npm start` runs the compiled backend server.
+- `cd backend && npm start` runs the compiled backend server (production mode).
+- `cd backend && ./deploy.sh pm2` deploys with PM2 (production deployment).
+- Root `./deploy.sh [host]` is for remote server deployment via SSH.
 
 ## Coding Style & Naming Conventions
 
