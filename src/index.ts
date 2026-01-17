@@ -636,6 +636,9 @@ async function fetchAaveMarketData(): Promise<MarketData> {
 }
 
 async function fetchAaveMarkets(): Promise<void> {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:638',message:'fetchAaveMarkets started',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B'})}).catch(()=>{});
+  // #endregion
   try {
     // 从所有链获取市场数据（已包含保存原始数据到文件）
     const marketData = await fetchAaveMarketData();
@@ -702,8 +705,14 @@ async function fetchAaveMarkets(): Promise<void> {
     if (marketData.errors.length > 0) {
       logger.warn(`❌ Failed chains: ${marketData.errors.length}`);
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:704',message:'fetchAaveMarkets completed successfully',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B'})}).catch(()=>{});
+    // #endregion
     
   } catch (error) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:708',message:'fetchAaveMarkets error in catch',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     logger.error('💥 Unexpected error:', error);
     
     const networkInfo = getAllAaveV3Networks();
@@ -738,6 +747,34 @@ export async function fetchAaveMarketsData(): Promise<void> {
 
 // 执行主函数
 fetchAaveMarkets().catch(error => {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:740',message:'fetchAaveMarkets error caught',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   logger.error('❌ Failed to fetch Aave markets:', error);
+  process.exit(1);
+}).then(async () => {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:747',message:'fetchAaveMarkets success - entering finally',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+  // #endregion
+  // 关闭 Puppeteer 浏览器实例
+  const { closeBrowser } = await import('./merit-api.js');
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:750',message:'before closeBrowser call',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+  await closeBrowser().catch((err) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:753',message:'closeBrowser error',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+  });
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:757',message:'after closeBrowser - before process.exit',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B'})}).catch(()=>{});
+  // #endregion
+  process.exit(0);
+}).catch(async (error) => {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:760',message:'then block error',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
+  const { closeBrowser } = await import('./merit-api.js');
+  await closeBrowser().catch(() => {});
   process.exit(1);
 });
