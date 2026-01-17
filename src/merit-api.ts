@@ -14,6 +14,12 @@ export interface MeritAPRResponse {
   };
 }
 
+// Campaign info 描述项
+export interface MeritCampaignInfo {
+  action?: string; // Action 描述
+  description?: string; // Description 文本
+}
+
 // Merit APR 条目（扁平化结构，timeRange 直接作为字段）
 export interface MeritAprEntry {
   apr: number; // APR 百分比值（如 5.2 表示 5.2%）
@@ -21,6 +27,8 @@ export interface MeritAprEntry {
   link: string;
   startDate: string;
   endDate: string;
+  name?: string; // Campaign 名称（如 "Supply (Celo or ETH) and borrow USDT"）
+  description?: MeritCampaignInfo[]; // Campaign 信息数组（可能有多条 action 和 description）
   requiredBorrowTokens?: string[]; // 需要 borrow 的 token 列表（用于 supply with borrow requirement）
   requiredSupplyTokens?: string[]; // 需要 supply 的 token 列表（用于 borrow with supply requirement）
   startBlock?: string; // 仅用于 CSV，不放入接口
@@ -159,57 +167,6 @@ function getRpcUrlsFromChainName(chainName: string): string[] {
 }
 
 /**
- * 辅助函数：添加 APR 条目到对应的数组
- * 作用：将 APR 条目添加到对应的数组中，统一使用 meritSupplys 和 meritBorrows
- */
-function addMeritAprEntry(
-  incentives: MeritDataItem, 
-  entry: MeritAprEntry,
-  isSupply: boolean
-) {
-  if (isSupply) {
-    incentives.meritSupplys.push(entry);
-  } else {
-    incentives.meritBorrows.push(entry);
-  }
-}
-
-/**
- * 查找或创建匹配的 APR 条目（用于合并 self 和非 self 的 APR）
- */
-function findOrCreateMatchingEntry(
-  entries: MeritAprEntry[],
-  link: string,
-  startDate: string,
-  endDate: string,
-  requiredTokens?: string[],
-  isRequiredBorrow?: boolean
-): MeritAprEntry | null {
-  // 查找匹配的条目：相同的 link、时间范围和要求
-  for (const entry of entries) {
-    if (entry.link === link && 
-        entry.startDate === startDate && 
-        entry.endDate === endDate) {
-      // 检查要求是否匹配
-      if (isRequiredBorrow) {
-        const entryRequired = entry.requiredBorrowTokens || [];
-        const matchRequired = requiredTokens || [];
-        if (JSON.stringify(entryRequired.sort()) === JSON.stringify(matchRequired.sort())) {
-          return entry;
-        }
-      } else {
-        const entryRequired = entry.requiredSupplyTokens || [];
-        const matchRequired = requiredTokens || [];
-        if (JSON.stringify(entryRequired.sort()) === JSON.stringify(matchRequired.sort())) {
-          return entry;
-        }
-      }
-    }
-  }
-  return null;
-}
-
-/**
  * 获取 Merit APR 数据并构建索引
  * 总是获取时间范围信息（必选）
  */
@@ -248,8 +205,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       return meritData[indexKey]!;
     }
 
-    // 获取 key 对应的 link、时间范围和 block 信息（处理 self- 前缀）
-    function getLinkAndTimeRange(key: string): { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string } {
+    // 获取 key 对应的 link、时间范围、block、name 和 description 信息（处理 self- 前缀）
+    function getLinkAndTimeRange(key: string): { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; description?: MeritCampaignInfo[] } {
       const isSelfFormat = key.startsWith('self-');
       const baseKey = isSelfFormat ? key.substring(5) : key;
       
@@ -261,7 +218,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
           startDate: timeRangeData.startDate,
           endDate: timeRangeData.endDate,
           startBlock: timeRangeData.startBlock,
-          endBlock: timeRangeData.endBlock
+          endBlock: timeRangeData.endBlock,
+          ...(timeRangeData.name && { name: timeRangeData.name }),
+          ...(timeRangeData.description && timeRangeData.description.length > 0 && { description: timeRangeData.description })
         };
       }
       
@@ -353,7 +312,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       
       // 决定使用哪个 key 获取时间范围（优先使用 nonSelf，因为 self 会跳过获取时间范围）
       const keyForTimeRange = nonSelfInfo?.key || selfInfo?.key || baseKey;
-      const { link, startDate, endDate, startBlock, endBlock } = getLinkAndTimeRange(keyForTimeRange);
+      const { link, startDate, endDate, startBlock, endBlock, name, description } = getLinkAndTimeRange(keyForTimeRange);
       
       // 决定 APR 值
       const aprValue = nonSelfInfo?.value;
@@ -392,7 +351,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               startDate,
               endDate,
               startBlock,
-              endBlock
+              endBlock,
+              ...(name && { name }),
+              ...(description && description.length > 0 && { description })
             };
             incentives.meritBorrows.push(entry);
           } else {
@@ -404,7 +365,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               startDate,
               endDate,
               startBlock,
-              endBlock
+              endBlock,
+              ...(name && { name }),
+              ...(description && description.length > 0 && { description })
             };
             incentives.meritBorrows.push(entry);
           }
@@ -423,7 +386,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               startDate,
               endDate,
               startBlock,
-              endBlock
+              endBlock,
+              ...(name && { name }),
+              ...(description && description.length > 0 && { description })
             };
             supplyIncentives.meritSupplys.push(entry);
           }
@@ -444,7 +409,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             startDate,
             endDate,
             startBlock,
-            endBlock
+            endBlock,
+            ...(name && { name }),
+            ...(description && description.length > 0 && { description })
           };
           incentives.meritSupplys.push(entry);
         }
@@ -462,7 +429,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             startDate,
             endDate,
             startBlock,
-            endBlock
+            endBlock,
+            ...(name && { name }),
+            ...(description && description.length > 0 && { description })
           };
           incentives.meritSupplys.push(entry);
         }
@@ -499,10 +468,10 @@ export async function fetchAllMeritTimeRanges(
   options: { 
     maxConcurrent?: number;
   } = {}
-): Promise<Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string }>> {
+): Promise<Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; description?: MeritCampaignInfo[] }>> {
   const { maxConcurrent = 5 } = options;
   
-  const timeRanges: Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string }> = {};
+  const timeRanges: Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; description?: MeritCampaignInfo[] }> = {};
   const uniqueKeys = Object.keys(meritAPRs);
   
   if (uniqueKeys.length === 0) {
@@ -524,7 +493,7 @@ export async function fetchAllMeritTimeRanges(
   
   // 使用并发控制来避免过多请求
   const semaphore = { count: 0 };
-  const results: Array<{ key: string; data: { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string } }> = [];
+  const results: Array<{ key: string; data: { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; description?: MeritCampaignInfo[] } }> = [];
   
   const fetchWithLimit = async (key: string) => {
     while (semaphore.count >= maxConcurrent) {
@@ -659,7 +628,7 @@ function extractDatesFromDom(html: string): { startDate?: string; endDate?: stri
     
     // 查找所有带有 class "text-xs whitespace-nowrap" 的 span 元素
     const candidateSpans: string[] = [];
-    $('span.text-xs.whitespace-nowrap').each((_, element) => {
+    $('span.text-xs.whitespace-nowrap').each((_index: number, element: any) => {
       const text = $(element).text().trim();
       if (text) {
         candidateSpans.push(text);
@@ -868,13 +837,223 @@ async function convertBlocksToDates(
 }
 
 /**
+ * 从 HTML 中提取 campaign 名称
+ * 名称通常在页面主标题位置（如 "Borrow GHO", "Supply (Celo or ETH) and borrow USDT"）
+ * 在 Next.js SSR 页面中，这些信息通常在 script 标签的 JSON 数据中
+ */
+function extractCampaignName(html: string): string | undefined {
+  try {
+    const $ = cheerio.load(html);
+    const scriptContent = $('script').text();
+    
+    // 优先级 #1：从 script 标签中的 JSON 数据提取页面主标题
+    // 查找常见的 campaign 名称模式
+    const namePatterns = [
+      // "Supply (Celo or ETH) and borrow USDT" 格式
+      /"Supply\s*\([^)]+\)\s+and\s+borrow\s+[A-Z]+"/i,
+      // "Supply Celo and borrow USDT" 格式
+      /"Supply\s+[A-Z]+\s+and\s+borrow\s+[A-Z]+"/i,
+      // "Supply Celo or ETH and borrow USDT" 格式
+      /"Supply\s+[A-Z]+\s+or\s+[A-Z]+\s+and\s+borrow\s+[A-Z]+"/i,
+      // "Borrow GHO" 格式（简单 borrow）
+      /"Borrow\s+[A-Z]+"/i,
+      // "Supply [TOKEN]" 格式（简单 supply）
+      /"Supply\s+[A-Z]+"/i,
+      // children 数组中的格式
+      /children":\["Supply\s*\([^)]+\)\s+and\s+borrow\s+[A-Z]+"/i,
+      /children":\["Borrow\s+[A-Z]+"/i,
+      /children":\["Supply\s+[A-Z]+"/i,
+    ];
+    
+    for (const pattern of namePatterns) {
+      const match = scriptContent.match(pattern);
+      if (match) {
+        let extracted = match[0]
+          .replace(/^"|"$/g, '')
+          .replace(/^children":\["/, '')
+          .replace(/"$/, '');
+        
+        // 清理可能的转义字符
+        extracted = extracted.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+        
+        if (extracted.length > 3 && extracted.length < 200) {
+          return extracted;
+        }
+      }
+    }
+    
+    // 优先级 #2：从 h1 标题提取（页面中可能有 "Last supply (celo or eth) and borrow usdt..."）
+    const h1Text = $('h1').first().text().trim();
+    if (h1Text && h1Text.length > 5) {
+      // 尝试从 h1 文本中提取 campaign 名称（去掉 "Last" 和 "campaign round has ended" 等前缀后缀）
+      const nameMatch = h1Text.match(/(?:Last\s+)?(Supply\s*(?:\([^)]+\))?\s+(?:and|or)\s+borrow\s+[A-Z]+)/i) ||
+                       h1Text.match(/(?:Last\s+)?(Borrow\s+[A-Z]+)/i) ||
+                       h1Text.match(/(?:Last\s+)?(Supply\s+[A-Z]+)/i);
+      if (nameMatch && nameMatch[1]) {
+        return nameMatch[1];
+      }
+      // 如果 h1 文本本身就很短且看起来像标题，直接使用
+      if (h1Text.length < 100 && !h1Text.toLowerCase().includes('campaign round has ended')) {
+        return h1Text;
+      }
+    }
+    
+    // 优先级 #3：使用正则从 HTML 文本中提取
+    const nameRegex = /(?:Supply\s*(?:\([^)]+\))?\s+(?:and|or)\s+borrow\s+[A-Z]+|Borrow\s+[A-Z]+|Supply\s+[A-Z]+)/i;
+    const htmlMatch = html.match(nameRegex);
+    if (htmlMatch) {
+      return htmlMatch[0];
+    }
+  } catch (error) {
+    logger.debug('Error extracting campaign name:', error);
+  }
+  
+  return undefined;
+}
+
+/**
+ * 从 HTML 中提取 campaign info（action 和 description）
+ * 从 Campaign info 弹窗的表格中提取 action 和 description
+ * 在 Next.js SSR 页面中，这些信息通常在 script 标签的 JSON 数据中
+ * 表格格式：Action | Description
+ */
+function extractCampaignInfo(html: string): MeritCampaignInfo[] {
+  try {
+    const $ = cheerio.load(html);
+    const campaignInfos: MeritCampaignInfo[] = [];
+    const scriptContent = $('script').text();
+    
+    // 优先级 #1：从 script 标签中的 JSON 数据提取表格行（Next.js SSR）
+    // 查找表格行格式：["$","tr","Action Text",{...},"Action Text",...,"Description Text"]
+    // 或者：["$","tr","Borrow GHO on Aave V3 Base",{...},"Borrow GHO on Aave V3 Base",...,"Rewards are distributed..."]
+    
+    // 匹配包含 Action 和 Description 的表格行
+    // 查找 "tr" 后面跟着 action 文本，然后是 description 文本的模式
+    const tableRowPattern = /"\$","tr","([^"]{10,150})"[^"]*"([^"]{20,500})"/g;
+    const matches = [...scriptContent.matchAll(tableRowPattern)];
+    
+    // 过滤出有效的 action-description 对
+    for (const match of matches) {
+      const potentialAction = match[1].trim();
+      const potentialDesc = match[2].trim();
+      
+      // 检查是否是有效的 action（通常包含 Supply/Borrow/Stake 等关键词）
+      const isAction = /^(Supply|Borrow|Stake|Hold)\s+/i.test(potentialAction) ||
+                      /on\s+Aave\s+V3/i.test(potentialAction);
+      
+      // 检查是否是有效的 description（通常包含 "Rewards are distributed" 或类似文本）
+      const isDescription = /Rewards\s+are\s+distributed/i.test(potentialDesc) ||
+                           /formula:/i.test(potentialDesc) ||
+                           (potentialDesc.length > 50 && potentialDesc.length < 500);
+      
+      if (isAction && isDescription) {
+        campaignInfos.push({
+          action: potentialAction,
+          description: potentialDesc
+        });
+      }
+    }
+    
+    // 如果上面没有找到，尝试更宽松的匹配
+    if (campaignInfos.length === 0) {
+      // 查找所有包含 "Rewards are distributed" 的描述
+      const descPattern = /"Rewards\s+are\s+distributed[^"]{20,500}"/g;
+      const descriptions = [...scriptContent.matchAll(descPattern)];
+      
+      // 查找对应的 action（在 description 之前的表格行中）
+      for (const descMatch of descriptions) {
+        const descText = descMatch[0].replace(/^"|"$/g, '');
+        const descIndex = descMatch.index || 0;
+        
+        // 在 description 之前查找 action
+        const beforeDesc = scriptContent.substring(Math.max(0, descIndex - 500), descIndex);
+        const actionMatch = beforeDesc.match(/"([^"]{10,150})"[^"]*"([^"]{10,150})"/);
+        
+        if (actionMatch) {
+          const potentialAction = actionMatch[1] || actionMatch[2];
+          if (potentialAction && /^(Supply|Borrow|Stake|Hold)\s+/i.test(potentialAction)) {
+            campaignInfos.push({
+              action: potentialAction,
+              description: descText
+            });
+          }
+        }
+      }
+    }
+    
+    // 优先级 #2：如果上面没有找到，尝试从 HTML DOM 中提取
+    if (campaignInfos.length === 0) {
+      // 尝试查找表格元素（Campaign info 弹窗中的表格）
+      $('table tbody tr').each((_index: number, element: any) => {
+        const tds = $(element).find('td');
+        if (tds.length >= 2) {
+          const action = $(tds[0]).text().trim();
+          const description = $(tds[1]).text().trim();
+          
+          // 验证 action 和 description 的有效性
+          if (action && description && 
+              action.length > 5 && action.length < 200 &&
+              description.length > 10 && description.length < 1000) {
+            // 检查是否是有效的 action
+            const isValidAction = /^(Supply|Borrow|Stake|Hold)\s+/i.test(action) ||
+                                 /on\s+Aave/i.test(action);
+            if (isValidAction) {
+              campaignInfos.push({ action, description });
+            }
+          }
+        }
+      });
+    }
+    
+    // 优先级 #3：使用正则从 script 内容中提取更广泛的模式
+    if (campaignInfos.length === 0) {
+      // 查找各种 action 模式
+      const actionPatterns = [
+        /"Supply\s+([^"]+)\s+and\s+borrow\s+([^"]+)"/gi,
+        /"Borrow\s+([^"]+)\s+on\s+Aave\s+V3\s+([^"]+)"/gi,
+        /"Supply\s+([^"]+)"/gi,
+        /"Borrow\s+([^"]+)"/gi,
+      ];
+      
+      for (const pattern of actionPatterns) {
+        const actionMatches = [...scriptContent.matchAll(pattern)];
+        for (const match of actionMatches) {
+          const action = match[0].replace(/^"|"$/g, '');
+          if (action.length > 5 && action.length < 200) {
+            campaignInfos.push({ action });
+          }
+        }
+      }
+    }
+    
+    // 去重：如果多个条目有相同的 action，只保留第一个
+    const seenActions = new Set<string>();
+    const uniqueInfos: MeritCampaignInfo[] = [];
+    for (const info of campaignInfos) {
+      if (info.action && !seenActions.has(info.action.toLowerCase())) {
+        seenActions.add(info.action.toLowerCase());
+        uniqueInfos.push(info);
+      } else if (!info.action) {
+        // 如果没有 action，也保留（可能只有 description）
+        uniqueInfos.push(info);
+      }
+    }
+    
+    return uniqueInfos.length > 0 ? uniqueInfos : [];
+  } catch (error) {
+    logger.debug('Error extracting campaign info:', error);
+    return [];
+  }
+}
+
+/**
  * 获取 Merit 激励的时间范围和链接
  * 按照三层优先级策略提取数据
- * 返回包含 link、startDate、endDate 和 block 信息的对象
+ * 返回包含 link、startDate、endDate、block、name 和 description 信息的对象
  */
-export async function fetchMeritTimeRange(key: string): Promise<{ link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string }> {
+export async function fetchMeritTimeRange(key: string): Promise<{ link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; description?: MeritCampaignInfo[] }> {
   const link = `https://apps.aavechan.com/merit/${key}`;
-  const result: { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string } = {
+  const result: { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; description?: MeritCampaignInfo[] } = {
     link,
     startDate: '',
     endDate: ''
@@ -888,6 +1067,18 @@ export async function fetchMeritTimeRange(key: string): Promise<{ link: string; 
     if (!html) {
       logger.warn(`⚠️ Failed to fetch HTML for key: ${key}`);
       return result;
+    }
+    
+    // 提取 campaign 名称和描述（无论是否成功提取日期都要尝试）
+    const name = extractCampaignName(html);
+    const description = extractCampaignInfo(html);
+    if (name) {
+      result.name = name;
+      logger.debug(`✅ Extracted campaign name: ${name}`);
+    }
+    if (description.length > 0) {
+      result.description = description;
+      logger.debug(`✅ Extracted ${description.length} campaign info items`);
     }
     
     // 优先级 #1：从 DOM 直接提取日期（基于 class "text-xs whitespace-nowrap" 的 span 元素）
