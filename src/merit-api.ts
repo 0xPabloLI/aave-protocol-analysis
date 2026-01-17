@@ -1,6 +1,11 @@
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
+import { writeFile, mkdir } from 'fs/promises';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+
+const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 
 export interface MeritAPRResponse {
   previousAPR: any;
@@ -465,6 +470,18 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     }
 
     logger.info(`✅ Indexed Merit data for ${Object.keys(meritData).length} chain-token combinations`);
+    
+    // 保存 Merit 原始数据
+    await mkdir(DATA_DIR, { recursive: true });
+    const meritRawDataPath = join(DATA_DIR, 'merit-raw-data.json');
+    await writeFile(meritRawDataPath, JSON.stringify({
+      timestamp: new Date().toISOString(),
+      rawAPRs: data.currentAPR.actionsAPR,
+      timeRanges,
+      index: meritData
+    }, null, 2), 'utf-8');
+    logger.info(`💾 Merit raw data saved to ${meritRawDataPath}`);
+    
     return meritData;
   } catch (error) {
     logger.error('❌ Error fetching Merit APR data:', error);
@@ -492,10 +509,18 @@ export async function fetchAllMeritTimeRanges(
     return timeRanges;
   }
   
-  // 过滤掉以 self- 开头的 key，因为它们与去掉 self- 前缀的 key 共享相同的 URL 和时间范围
-  const keysToFetch = uniqueKeys.filter(key => !key.startsWith('self-'));
+  // 过滤掉以下情况的 key：
+  // 1. 值为 null 的 key（如 "avalanche-supply-savax": null），这些不需要获取时间范围
+  // 2. 以 self- 开头的 key，因为它们与去掉 self- 前缀的 key 共享相同的 URL 和时间范围
+  const keysToFetch = uniqueKeys.filter(key => {
+    const value = meritAPRs[key];
+    if (value === null) return false; // 跳过 null 值
+    if (key.startsWith('self-')) return false; // 跳过 self- 前缀
+    return true;
+  });
   
-  logger.info(`📅 Fetching time ranges for ${keysToFetch.length} Merit campaigns (skipping ${uniqueKeys.length - keysToFetch.length} self- keys)...`);
+  const skippedCount = uniqueKeys.length - keysToFetch.length;
+  logger.info(`📅 Fetching time ranges for ${keysToFetch.length} Merit campaigns (skipping ${skippedCount} null/self- keys)...`);
   
   // 使用并发控制来避免过多请求
   const semaphore = { count: 0 };

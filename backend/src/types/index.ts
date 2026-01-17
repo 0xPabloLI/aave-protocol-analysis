@@ -32,6 +32,8 @@ export interface MarketWithSpread {
   }>;
   merklSupplys?: Array<{
     opportunityLink: string;
+    name?: string;
+    description?: string;
     breakdowns: Array<{
       campaignApr: number;
       campaignStartedAt: string;
@@ -43,6 +45,8 @@ export interface MarketWithSpread {
   }>;
   merklBorrows?: Array<{
     opportunityLink: string;
+    name?: string;
+    description?: string;
     breakdowns: Array<{
       campaignApr: number;
       campaignStartedAt: string;
@@ -54,6 +58,8 @@ export interface MarketWithSpread {
   }>;
   merklHolds?: Array<{
     opportunityLink: string;
+    name?: string;
+    description?: string;
     breakdowns: Array<{
       campaignApr: number;
       campaignStartedAt: string;
@@ -63,8 +69,20 @@ export interface MarketWithSpread {
       dailyPoints?: number;
     }>;
   }>;
-  brevisSupplyApr: number | null;
-  brevisBorrowApr: number | null;
+  brevisSupplys?: Array<{
+    apr: number;
+    link: string;
+    startDate: string;
+    endDate: string;
+    message: string;
+  }>;
+  brevisBorrows?: Array<{
+    apr: number;
+    link: string;
+    startDate: string;
+    endDate: string;
+    message: string;
+  }>;
 }
 
 export interface MarketsResponse {

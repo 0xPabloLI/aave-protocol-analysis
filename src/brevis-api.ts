@@ -2,386 +2,625 @@ import fetch from 'node-fetch';
 import { logger } from './logger.js';
 
 /**
- * Brevis Network Linea Surge API 客户端
+ * Brevis Incentra API 客户端
  * 
- * 基于逆向工程的结果，可以提取活动的完整数据，包括：
- * - Last Week APR
- * - Last Week Rewards
- * - Last Week Rewards USD
- * - Last Week TVL
+ * 基于 Brevis Incentra API 文档，获取 Aave 协议相关的 campaign 数据
+ * API 文档: https://incentra-docs.brevis.network
  * 
- * API 端点: https://linea-surge-endpoint.brevis.network/LineaSurgeV2Provider/GetActivities
- * 协议: gRPC-Web (application/grpc-web+proto)
+ * 支持的数据：
+ * - APR (从 reward_info.apr)
+ * - Chain ID 和 Pool Token Address 作为索引
+ * - Campaign 开始和结束时间
+ * - Action 类型（用于区分 supply/borrow/both）
+ * - Campaign 链接
+ * - Campaign 描述信息（message）
  */
-export class BrevisApiClient {
-  private baseUrl = 'https://linea-surge-endpoint.brevis.network';
-  private origin = 'https://linea-ignition.brevis.network';
+export interface BrevisCampaignInfo {
+  chainId: number;
+  poolAddress: string; // pool_id from URL
+  tokenAddress: string | null; // token address if available
+  action: number; // campaign type (e.g. 2001/2002/3001)
+  actionType: 'supply' | 'borrow' | 'both' | 'unknown';
+  campaignId: string;
+  campaignName: string;
+  startTime: number; // Unix timestamp
+  endTime: number; // Unix timestamp
+  apr: number; // APR as decimal (e.g., 0.024 for 2.4%)
+  link: string; // Campaign URL
+  message: string; // Campaign description/message
+  status: string; // Campaign status (string label)
+  rewardInfo?: {
+    tokenAddress: string;
+    tokenSymbol: string;
+    rewardAmt: string;
+    rewardUsdPrice: string;
+    apr: number;
+    tvl: number;
+  };
+}
 
-  // 根据逆向工程确定的字段位置（相对活动描述结束位置）
-  private readonly FIELD_OFFSETS = {
-    LAST_WEEK_APR: 11,        // double64_le
-    LAST_WEEK_REWARDS: 20,    // double64_le
-    LAST_WEEK_REWARDS_USD: 29, // double64_le
+export interface BrevisCampaignData {
+  supply: BrevisCampaignInfo[];
+  borrow: BrevisCampaignInfo[];
+}
+
+// Brevis Campaign Item（用于 FormattedReserveData）
+export interface BrevisCampaignItem {
+  apr: number; // APR 百分比值
+  link: string; // Campaign URL
+  startDate: string; // ISO date string
+  endDate: string; // ISO date string
+  message: string; // Campaign description/message
+}
+
+// Brevis 数据项结构（类似 MeritDataItem）
+export interface BrevisDataItem {
+  brevisSupplys: BrevisCampaignItem[];
+  brevisBorrows: BrevisCampaignItem[];
+}
+
+export class BrevisApiClient {
+  private frontendUrl = 'https://incentra.brevis.network';
+  private grpcBaseUrl = 'https://incentra-prd.brevis.network';
+  private grpcEndpoints = {
+    getAllProtocolDetail: '/IncentiveProvider/GetAllProtocolDetail',
+    getAllProtocols: '/IncentiveProvider/GetAllProtocols',
   };
 
-  /**
-   * 获取默认请求头
-   */
-  private getDefaultHeaders(): Record<string, string> {
+
+  private getGrpcHeaders(): Record<string, string> {
     return {
-      'accept': '*/*',
-      'accept-encoding': 'gzip, deflate, br, zstd',
-      'accept-language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
-      'cache-control': 'no-cache',
       'content-type': 'application/grpc-web+proto',
-      'origin': this.origin,
-      'referer': `${this.origin}/`,
-      'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
       'x-grpc-web': '1',
       'x-user-agent': 'grpc-web-javascript/0.1',
+      'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
     };
   }
 
-  /**
-   * 编码 gRPC-Web 请求体
-   */
-  private encodeGrpcWebBody(data?: any): Uint8Array {
-    // 空请求体，返回最小的 gRPC-Web 帧
-    // gRPC-Web 帧格式: [flags(1 byte)][length(4 bytes)][data]
-    const frame = new Uint8Array(5);
-    frame[0] = 0; // 标志位：0 = 数据帧
-    frame[1] = 0; // 长度 = 0
-    frame[2] = 0;
-    frame[3] = 0;
-    frame[4] = 0;
-    return frame;
+  private encodeVarint(value: number): Buffer {
+    const chunks: number[] = [];
+    let current = value;
+    while (current > 127) {
+      chunks.push((current & 0x7f) | 0x80);
+      current >>= 7;
+    }
+    chunks.push(current & 0x7f);
+    return Buffer.from(chunks);
   }
 
-  /**
-   * 解码 gRPC-Web 响应
-   */
-  private decodeGrpcWebResponse(buffer: ArrayBuffer): any {
-    const uint8Array = new Uint8Array(buffer);
-    
-    if (buffer.byteLength === 0) {
-      return {
-        success: true,
-        data: null,
-        message: '响应为空'
-      };
+  private encodeKey(fieldNumber: number, wireType: number): Buffer {
+    return this.encodeVarint((fieldNumber << 3) | wireType);
+  }
+
+  private encodeLengthDelimited(data: Buffer): Buffer {
+    return Buffer.concat([this.encodeVarint(data.length), data]);
+  }
+
+  private buildGrpcWebFrame(payload: Buffer): Buffer {
+    const header = Buffer.alloc(5);
+    header.writeUInt8(0x00, 0);
+    header.writeUInt32BE(payload.length, 1);
+    return Buffer.concat([header, payload]);
+  }
+
+  private encodePackedVarints(values: number[]): Buffer {
+    const chunks: Buffer[] = [];
+    for (const value of values) {
+      chunks.push(this.encodeVarint(value));
+    }
+    return this.encodeLengthDelimited(Buffer.concat(chunks));
+  }
+
+  private async grpcUnaryCall(endpoint: string, payload: Buffer): Promise<Buffer> {
+    const body = this.buildGrpcWebFrame(payload);
+    const response = await fetch(`${this.grpcBaseUrl}${endpoint}`, {
+      method: 'POST',
+      headers: this.getGrpcHeaders(),
+      body,
+    });
+
+    if (!response.ok) {
+      throw new Error(`gRPC 请求失败: ${response.status}`);
     }
 
-    // 解析 gRPC-Web 帧
-    const frames: any[] = [];
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length < 5) {
+      throw new Error('gRPC 响应为空');
+    }
+
+    const frames: Buffer[] = [];
     let offset = 0;
+    while (offset + 5 <= buffer.length) {
+      const flag = buffer.readUInt8(offset);
+      const length = buffer.readUInt32BE(offset + 1);
+      offset += 5;
+      const chunk = buffer.slice(offset, offset + length);
+      offset += length;
+      if (flag === 0x00) {
+        frames.push(chunk);
+      }
+    }
 
-    while (offset < buffer.byteLength) {
-      if (offset + 5 > buffer.byteLength) break;
+    if (frames.length === 0) {
+      throw new Error('未解析到 gRPC message frame');
+    }
 
-      const flags = uint8Array[offset];
-      const length = (uint8Array[offset + 1] << 24) | 
-                    (uint8Array[offset + 2] << 16) | 
-                    (uint8Array[offset + 3] << 8) | 
-                    uint8Array[offset + 4];
+    return frames[0];
+  }
 
-      if (length > 0 && offset + 5 + length <= buffer.byteLength) {
-        const frameData = uint8Array.slice(offset + 5, offset + 5 + length);
-        frames.push({
-          flags,
-          length,
-          data: frameData
-        });
-        offset += 5 + length;
-      } else {
+  private readVarint(buffer: Buffer, offset: number): { value: number; offset: number } {
+    let result = 0;
+    let shift = 0;
+    let cursor = offset;
+
+    while (cursor < buffer.length) {
+      const byte = buffer.readUInt8(cursor);
+      cursor += 1;
+      result |= (byte & 0x7f) << shift;
+      if ((byte & 0x80) === 0) {
         break;
       }
+      shift += 7;
     }
 
-    return {
-      success: true,
-      frames,
-      rawLength: buffer.byteLength,
-    };
+    return { value: result, offset: cursor };
   }
 
-  /**
-   * 从二进制数据中提取活动描述
-   */
-  private extractActivities(bytes: Uint8Array): Array<{ description: string; offset: number; endOffset: number }> {
-    const textDecoder = new TextDecoder('utf-8', { fatal: false });
-    const activities: Array<{ description: string; offset: number; endOffset: number }> = [];
-    let current: number[] = [];
-    let startIdx = 0;
+  private parseMessage(buffer: Buffer): Array<{ field: number; wireType: number; value: number | Buffer }> {
+    const fields: Array<{ field: number; wireType: number; value: number | Buffer }> = [];
+    let offset = 0;
 
-    for (let i = 0; i < bytes.length; i++) {
-      const b = bytes[i];
-      if (b >= 32 && b <= 126) {
-        if (current.length === 0) startIdx = i;
-        current.push(b);
-      } else {
-        if (current.length >= 4) {
-          const text = textDecoder.decode(Uint8Array.from(current)).trim();
-          if (text && /Supply to|Euler|Aave|Etherex|Provide liquidity/i.test(text)) {
-            activities.push({
-              description: text,
-              offset: startIdx,
-              endOffset: i - 1
-            });
-          }
-        }
-        current = [];
+    while (offset < buffer.length) {
+      const key = this.readVarint(buffer, offset);
+      const fieldNumber = key.value >> 3;
+      const wireType = key.value & 0x07;
+      offset = key.offset;
+
+      if (wireType === 0) {
+        const value = this.readVarint(buffer, offset);
+        offset = value.offset;
+        fields.push({ field: fieldNumber, wireType, value: value.value });
+        continue;
       }
+
+      if (wireType === 2) {
+        const lengthInfo = this.readVarint(buffer, offset);
+        const length = lengthInfo.value;
+        offset = lengthInfo.offset;
+        const value = buffer.slice(offset, offset + length);
+        offset += length;
+        fields.push({ field: fieldNumber, wireType, value });
+        continue;
+      }
+
+      if (wireType === 5) {
+        const value = buffer.readUInt32LE(offset);
+        offset += 4;
+        fields.push({ field: fieldNumber, wireType, value });
+        continue;
+      }
+
+      break;
     }
 
-    return activities;
+    return fields;
+  }
+
+  private readFloatFromUint32(value: number): number {
+    const buf = Buffer.alloc(4);
+    buf.writeUInt32LE(value, 0);
+    return buf.readFloatLE(0);
+  }
+
+  private parseProtocol(buffer: Buffer): any {
+    const protocol: any = {};
+    for (const field of this.parseMessage(buffer)) {
+      if (field.field === 1 && typeof field.value === 'number') protocol.chainId = field.value;
+      if (field.field === 2 && typeof field.value === 'number') protocol.type = field.value;
+      if (field.field === 3 && Buffer.isBuffer(field.value)) protocol.id = field.value.toString('utf-8');
+      if (field.field === 4 && Buffer.isBuffer(field.value)) protocol.name = field.value.toString('utf-8');
+      if (field.field === 6 && typeof field.value === 'number') protocol.tvl = this.readFloatFromUint32(field.value);
+      if (field.field === 7 && typeof field.value === 'number') protocol.apr = this.readFloatFromUint32(field.value);
+      if (field.field === 11 && typeof field.value === 'number') protocol.protocolStatus = field.value;
+    }
+    return protocol;
+  }
+
+  private parseRewardToken(buffer: Buffer): any {
+    const token: any = {};
+    for (const field of this.parseMessage(buffer)) {
+      if (field.field === 1 && Buffer.isBuffer(field.value)) token.addr = field.value.toString('utf-8');
+      if (field.field === 2 && Buffer.isBuffer(field.value)) token.iconUrl = field.value.toString('utf-8');
+      if (field.field === 3 && Buffer.isBuffer(field.value)) token.symbol = field.value.toString('utf-8');
+      if (field.field === 4 && typeof field.value === 'number') token.decimals = field.value;
+    }
+    return token;
+  }
+
+  private parseRewardTokenWithAmt(buffer: Buffer): any {
+    const reward: any = {};
+    for (const field of this.parseMessage(buffer)) {
+      if (field.field === 1 && Buffer.isBuffer(field.value)) reward.token = this.parseRewardToken(field.value);
+      if (field.field === 2 && Buffer.isBuffer(field.value)) reward.totalAmt = field.value.toString('utf-8');
+      if (field.field === 3 && Buffer.isBuffer(field.value)) reward.depositAmt = field.value.toString('utf-8');
+      if (field.field === 4 && Buffer.isBuffer(field.value)) reward.rewardPerHourAmt = field.value.toString('utf-8');
+    }
+    return reward;
   }
 
   /**
-   * 从活动描述位置提取字段值
+   * 解析 CampaignConfig 消息
+   * Protocol Buffers field 映射（通过分析 gRPC 响应得到）：
+   * - field 1: chainId (uint32)
+   * - field 2: name (string)
+   * - field 3: type (uint32)
+   * - field 4: start (uint64)
+   * - field 5: end (uint64)
+   * - field 6: tokenAmtList (repeated RewardTokenWithAmt)
    */
-  private extractFieldValue(
-    bytes: Uint8Array,
-    activityEndOffset: number,
-    fieldOffset: number
-  ): number | null {
-    const fieldPosition = activityEndOffset + fieldOffset;
+  private parseCampaignConfig(buffer: Buffer): any {
+    const config: any = { tokenAmtList: [] };
+    for (const field of this.parseMessage(buffer)) {
+      if (field.field === 1 && typeof field.value === 'number') config.chainId = field.value;
+      if (field.field === 2 && Buffer.isBuffer(field.value)) config.name = field.value.toString('utf-8');
+      if (field.field === 3 && typeof field.value === 'number') config.type = field.value;
+      if (field.field === 4 && typeof field.value === 'number') config.start = field.value;
+      if (field.field === 5 && typeof field.value === 'number') config.end = field.value;
+      if (field.field === 6 && Buffer.isBuffer(field.value)) config.tokenAmtList.push(this.parseRewardTokenWithAmt(field.value));
+    }
+    return config;
+  }
+
+  private parseCampaign(buffer: Buffer): any {
+    const campaign: any = {};
+    for (const field of this.parseMessage(buffer)) {
+      if (field.field === 1 && typeof field.value === 'number') campaign.chainId = field.value;
+      if (field.field === 2 && typeof field.value === 'number') campaign.status = field.value;
+      if (field.field === 3 && typeof field.value === 'number') campaign.id = field.value;
+      if (field.field === 4 && typeof field.value === 'number') campaign.type = field.value;
+      if (field.field === 5 && Buffer.isBuffer(field.value)) campaign.config = this.parseCampaignConfig(field.value);
+      if (field.field === 6 && typeof field.value === 'number') campaign.submitChainId = field.value;
+      if (field.field === 7 && Buffer.isBuffer(field.value)) campaign.submitAddr = field.value.toString('utf-8');
+      if (field.field === 8 && typeof field.value === 'number') campaign.claimChainId = field.value;
+      if (field.field === 9 && Buffer.isBuffer(field.value)) campaign.claimAddr = field.value.toString('utf-8');
+    }
+    return campaign;
+  }
+
+  /**
+   * 解析 CampaignDetail 消息
+   * Protocol Buffers field 映射（通过分析 gRPC 响应得到）：
+   * - field 1: campaign (Campaign 消息)
+   * - field 2: lastRewardAttestationTime (uint64)
+   * - field 3: protocolId (string)
+   * - field 4: lastEpochStartTime (uint64)
+   * - field 5: lastEpochEndTime (uint64)
+   */
+  private parseCampaignDetail(buffer: Buffer): any {
+    const detail: any = {};
+    for (const field of this.parseMessage(buffer)) {
+      if (field.field === 1 && Buffer.isBuffer(field.value)) detail.campaign = this.parseCampaign(field.value);
+      if (field.field === 2 && typeof field.value === 'number') detail.lastRewardAttestationTime = field.value;
+      if (field.field === 3 && Buffer.isBuffer(field.value)) detail.protocolId = field.value.toString('utf-8');
+      if (field.field === 4 && typeof field.value === 'number') detail.lastEpochStartTime = field.value;
+      if (field.field === 5 && typeof field.value === 'number') detail.lastEpochEndTime = field.value;
+    }
+    return detail;
+  }
+
+  private parseGetAllProtocolDetailResponse(payload: Buffer): any {
+    const response: any = { campaignDetailsList: [] };
+    for (const field of this.parseMessage(payload)) {
+      if (field.field === 1 && Buffer.isBuffer(field.value)) response.err = field.value;
+      if (field.field === 2 && Buffer.isBuffer(field.value)) response.protocol = this.parseProtocol(field.value);
+      if (field.field === 3 && Buffer.isBuffer(field.value)) response.campaignDetailsList.push(this.parseCampaignDetail(field.value));
+    }
+    return response;
+  }
+
+  private parseGetAllProtocolsResponse(payload: Buffer): any {
+    const response: any = { protocolsList: [] };
+    for (const field of this.parseMessage(payload)) {
+      if (field.field === 1 && Buffer.isBuffer(field.value)) response.err = field.value;
+      if (field.field === 2 && Buffer.isBuffer(field.value)) response.protocolsList.push(this.parseProtocol(field.value));
+    }
+    return response;
+  }
+
+
+  private async getAllProtocolDetailFromGrpc(params: {
+    chainId?: number;
+    type?: number;
+    id?: string;
+  } = {}): Promise<any> {
+    const payloadParts: Buffer[] = [];
     
-    if (fieldPosition + 8 > bytes.length) {
-      return null;
+    // 只有提供了参数才添加到 payload（不支持数组参数，测试证明 API 不支持）
+    if (params.chainId !== undefined) {
+      payloadParts.push(this.encodeKey(1, 0));
+      payloadParts.push(this.encodeVarint(params.chainId));
     }
+    
+    if (params.type !== undefined) {
+      payloadParts.push(this.encodeKey(2, 0));
+      payloadParts.push(this.encodeVarint(params.type));
+    }
+    
+    if (params.id !== undefined) {
+      payloadParts.push(this.encodeKey(3, 2));
+      payloadParts.push(this.encodeLengthDelimited(Buffer.from(params.id, 'utf-8')));
+    }
+    
+    // 如果不传任何参数，payloadParts 就是空数组（发送空 payload）
+    const payload = payloadParts.length > 0 
+      ? Buffer.concat(payloadParts) 
+      : Buffer.alloc(0);
+      
+    logger.debug(`[getAllProtocolDetailFromGrpc] Sending payload with ${payloadParts.length} fields (empty: ${payload.length === 0})`);
+    
+    const frame = await this.grpcUnaryCall(this.grpcEndpoints.getAllProtocolDetail, payload);
+    return this.parseGetAllProtocolDetailResponse(frame);
+  }
 
-    try {
-      const dv = new DataView(bytes.buffer, bytes.byteOffset + fieldPosition, 8);
-      const value = dv.getFloat64(0, true); // little-endian
-      return value;
-    } catch (error) {
-      return null;
+  private mapActionType(campaignType: number): 'supply' | 'borrow' | 'both' | 'unknown' {
+    if (campaignType === 2002) return 'supply';
+    if (campaignType === 2001) return 'borrow';
+    if (campaignType === 3001) return 'both';
+    return 'unknown';
+  }
+
+  private mapStatusLabel(status: number | string): string {
+    if (typeof status === 'string') return status;
+    switch (status) {
+      case 1: return 'DEPLOYING';
+      case 2: return 'CREATING_FAILED';
+      case 3: return 'INACTIVE';
+      case 4: return 'ACTIVE';
+      case 5: return 'ENDED';
+      case 6: return 'DEACTIVATED';
+      default: return 'UNKNOWN';
     }
   }
 
-  /**
-   * 提取活动的完整数据
-   */
-  private extractActivityData(
-    activity: { description: string; offset: number; endOffset: number },
-    bytes: Uint8Array
-  ): any {
-    const data: any = {
-      description: activity.description,
-    };
 
-    // 提取 Last Week APR
-    const aprValue = this.extractFieldValue(bytes, activity.endOffset, this.FIELD_OFFSETS.LAST_WEEK_APR);
-    if (aprValue && aprValue > 0.0001 && aprValue < 0.5) {
-      const aprPercent = aprValue * 100;
-      if (aprPercent > 0.01 && aprPercent < 50) {
-        data.lastWeekApr = aprPercent;
-        data.lastWeekAprRaw = aprValue;
-      }
-    }
-
-    // 提取 Last Week Rewards
-    const rewardsValue = this.extractFieldValue(bytes, activity.endOffset, this.FIELD_OFFSETS.LAST_WEEK_REWARDS);
-    if (rewardsValue && rewardsValue > 0 && rewardsValue < 1e10) {
-      data.lastWeekRewards = rewardsValue;
-    }
-
-    // 提取 Last Week Rewards USD
-    const rewardsUsdValue = this.extractFieldValue(bytes, activity.endOffset, this.FIELD_OFFSETS.LAST_WEEK_REWARDS_USD);
-    if (rewardsUsdValue && rewardsUsdValue > 0 && rewardsUsdValue < 1e6) {
-      data.lastWeekRewardsUsd = rewardsUsdValue;
-    }
-
-    // 提取地址和 URL
-    const searchWindow = 300;
-    const searchStart = Math.max(0, activity.offset - searchWindow);
-    const searchEnd = Math.min(bytes.length, activity.endOffset + searchWindow);
-    const textDecoder = new TextDecoder('utf-8', { fatal: false });
-    const contextText = textDecoder.decode(bytes.slice(searchStart, searchEnd));
-
-    const addresses = [...new Set(contextText.match(/0x[a-fA-F0-9]{40}/g) || [])];
-    const urls = [...new Set(contextText.match(/https?:\/\/[^\s"']+/g) || [])];
-
-    // 识别协议
-    let protocol = 'Unknown';
-    if (activity.description.includes('Aave')) protocol = 'Aave';
-    else if (activity.description.includes('Euler')) protocol = 'Euler Finance';
-    else if (activity.description.includes('Etherex')) protocol = 'Etherex';
-
-    data.protocol = protocol;
-    data.pool_address = addresses[0] || null;
-    data.token_address = addresses[1] || null;
-    data.addresses = addresses.slice(0, 5);
-    data.detail_url = urls[0] || null;
-    data.reward_rules_url = urls.find((u: string) => u.includes('reward') || u.includes('rule')) || null;
-
-    return data;
-  }
 
   /**
-   * 调用 GetActivities API
+   * 从 gRPC GetAllProtocolDetail 响应解析 campaign 数据
    */
-  async getActivities(requestBody?: any): Promise<any> {
-    const url = `${this.baseUrl}/LineaSurgeV2Provider/GetActivities`;
-    const headers = this.getDefaultHeaders();
-    const body = this.encodeGrpcWebBody(requestBody);
+  private parseCampaignsFromGrpcResponse(response: any): BrevisCampaignInfo[] {
+    const campaigns: BrevisCampaignInfo[] = [];
+    const protocol = response?.protocol;
+    const details = response?.campaignDetailsList || [];
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: Buffer.from(body),
+    for (const detail of details) {
+      const campaign = detail?.campaign || {};
+      const config = campaign?.config || {};
+      const type = campaign?.type ?? config?.type ?? 0;
+      const actionType = this.mapActionType(type);
+      const token = config?.tokenAmtList?.[0]?.token;
+      const link = protocol?.id && protocol?.chainId && type
+        ? `${this.frontendUrl}/campaign/?pool_id=${protocol.id}&type=${type}&chainId=${protocol.chainId}`
+        : '';
+
+      campaigns.push({
+        chainId: protocol?.chainId || campaign?.chainId || 0,
+        poolAddress: protocol?.id || detail?.protocolId || '',
+        tokenAddress: token?.addr || null,
+        action: type,
+        actionType,
+        campaignId: campaign?.id ? String(campaign.id) : '',
+        campaignName: config?.name || '',
+        startTime: config?.start || 0,
+        endTime: config?.end || 0,
+        apr: protocol?.apr || 0,
+        link,
+        message: config?.name || '',
+        status: this.mapStatusLabel(campaign?.status || 'UNKNOWN'),
+        rewardInfo: token ? {
+          tokenAddress: token.addr || '',
+          tokenSymbol: token.symbol || '',
+          rewardAmt: config?.tokenAmtList?.[0]?.totalAmt || '0',
+          rewardUsdPrice: '',
+          apr: protocol?.apr || 0,
+          tvl: protocol?.tvl || 0,
+        } : undefined,
       });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const contentType = response.headers.get('content-type') || '';
-      
-      if (contentType.includes('application/grpc-web+proto')) {
-        const buffer = await response.arrayBuffer();
-        return this.decodeGrpcWebResponse(buffer);
-      } else {
-        const text = await response.text();
-        return { raw: text };
-      }
-    } catch (error: any) {
-      throw new Error(`API 调用失败: ${error.message}`);
     }
+
+    return campaigns;
   }
 
   /**
-   * 获取所有活动数据
+   * 直接从 gRPC 获取单个 pool 的 campaign 详情（用于页面数据）
+   * 注意：API 不支持数组参数，只支持单个值
    */
-  async getAllActivities(): Promise<any[]> {
+  async getCampaignDetailByPool(params: {
+    chainId?: number;
+    type?: number;
+    poolId?: string;
+  } = {}): Promise<{ raw: any; rawCampaigns: any[]; campaigns: BrevisCampaignInfo[] }> {
+    // 确保参数是单个值（不支持数组）
+    const response = await this.getAllProtocolDetailFromGrpc({
+      chainId: params.chainId,
+      type: params.type,
+      id: params.poolId,
+    });
+
+    return {
+      raw: response,
+      rawCampaigns: response?.campaignDetailsList || [],
+      campaigns: this.parseCampaignsFromGrpcResponse(response),
+    };
+  }
+
+  /**
+   * 获取全部 protocol/pool 列表（gRPC）
+   */
+  async getAllProtocolsList(params: {
+    chainIds?: number[];
+    types?: number[];
+    searchInput?: string;
+    campaignStatus?: number[];
+  } = {}): Promise<{ raw: any; protocols: any[] }> {
+    const payloadParts: Buffer[] = [];
+
+    if (params.chainIds?.length) {
+      payloadParts.push(this.encodeKey(1, 2));
+      payloadParts.push(this.encodePackedVarints(params.chainIds));
+    }
+
+    if (params.types?.length) {
+      payloadParts.push(this.encodeKey(2, 2));
+      payloadParts.push(this.encodePackedVarints(params.types));
+    }
+
+    if (params.searchInput) {
+      payloadParts.push(this.encodeKey(3, 2));
+      payloadParts.push(this.encodeLengthDelimited(Buffer.from(params.searchInput, 'utf-8')));
+    }
+
+    if (params.campaignStatus?.length) {
+      payloadParts.push(this.encodeKey(4, 2));
+      payloadParts.push(this.encodePackedVarints(params.campaignStatus));
+    }
+
+    const payload = Buffer.concat(payloadParts);
+    const frame = await this.grpcUnaryCall(this.grpcEndpoints.getAllProtocols, payload);
+    const raw = this.parseGetAllProtocolsResponse(frame);
+
+    return {
+      raw,
+      protocols: raw.protocolsList || [],
+    };
+  }
+
+
+  /**
+   * 获取所有 Aave 相关的 campaign 数据
+   * 从 getAllProtocols 获取所有 protocols，过滤出 Aave 的，然后获取每个的详情
+   * 返回格式：Record<`${chainId}-${tokenAddress}`, BrevisDataItem>
+   */
+  async getAaveCampaignsData(): Promise<{
+    index: Record<string, BrevisDataItem>;
+    rawProtocolsList: any;
+    rawProtocolDetails: Array<{ protocol: any; response: any }>;
+  }> {
     try {
-      logger.info('📡 调用 Brevis GetActivities API...');
-      const result = await this.getActivities();
-      
-      const successfulResult = result.frames?.find((f: any) => f.length > 0);
-      if (!successfulResult) {
-        throw new Error('没有找到响应数据');
-      }
+      logger.info('📡 从 gRPC 获取所有 protocols 列表...');
 
-      const frameData = successfulResult.data;
-      const bytes = Uint8Array.from(Object.values(frameData) as number[]);
+      // 1. 获取所有 protocols（保存原始响应）
+      const protocolsResult = await this.getAllProtocolsList();
+      const allProtocols = protocolsResult.protocols || [];
+      const rawProtocolsList = protocolsResult.raw;
 
-      logger.info(`📦 处理 ${bytes.length} 字节的数据`);
-
-      // 提取活动
-      const activities = this.extractActivities(bytes);
-      logger.info(`📋 找到 ${activities.length} 个活动描述`);
-
-      // 提取每个活动的数据
-      const activitiesData = activities.map(activity => 
-        this.extractActivityData(activity, bytes)
+      // 2. 过滤出 Aave 相关的 protocols（name 中包含 "aave"）
+      const aaveProtocols = allProtocols.filter((p: any) => 
+        p.name?.toLowerCase().includes('aave')
       );
 
-      // 去重
-      const uniqueActivities = new Map<string, any>();
-      for (const activity of activitiesData) {
-        const key = activity.description.trim();
-        if (!uniqueActivities.has(key) || 
-            (activity.lastWeekApr && !uniqueActivities.get(key).lastWeekApr)) {
-          uniqueActivities.set(key, activity);
+      logger.info(`🔍 找到 ${aaveProtocols.length} 个 Aave protocols（共 ${allProtocols.length} 个 protocols）`);
+
+      // 3. 对每个 Aave protocol 获取详情（保存原始响应）
+      const campaignsIndex: Record<string, BrevisDataItem> = {};
+      const rawProtocolDetails: Array<{ protocol: any; response: any }> = [];
+
+      for (const protocol of aaveProtocols) {
+        try {
+          const response = await this.getAllProtocolDetailFromGrpc({
+            chainId: protocol.chainId,
+            type: protocol.type,
+            id: protocol.id,
+          });
+
+          // 保存原始响应
+          rawProtocolDetails.push({
+            protocol: protocol,
+            response: response,
+          });
+
+          const campaignDetails = response?.campaignDetailsList || [];
+
+          // 解析每个 campaign detail
+          // campaignDetailsList 的结构来自 Protocol Buffers 解析（通过分析 gRPC 响应得到）：
+          // - parseGetAllProtocolDetailResponse: field 3 -> campaignDetailsList (parseCampaignDetail)
+          // - parseCampaignDetail: field 1 -> campaign (parseCampaign)
+          // - parseCampaign: field 5 -> config (parseCampaignConfig)
+          // - parseCampaignConfig: field 6 -> tokenAmtList (parseRewardTokenWithAmt)
+          for (const detail of campaignDetails) {
+            const campaign = detail?.campaign || {};
+            const config = campaign?.config || {};
+            const type = campaign?.type ?? config?.type ?? 0;
+            const actionType = this.mapActionType(type);
+            const token = config?.tokenAmtList?.[0]?.token;
+            const tokenAmt = config?.tokenAmtList?.[0];
+
+            // 构建 link
+            const link = protocol.id && protocol.chainId && type
+              ? `${this.frontendUrl}/campaign/?pool_id=${protocol.id}&type=${type}&chainId=${protocol.chainId}`
+              : '';
+
+            // 使用 protocol.apr（从 getAllProtocolsList 返回的 protocol 对象）
+            // 注意：不使用 response.protocol.apr（来自 getAllProtocolDetailFromGrpc），
+            // 因为两个接口返回的 APR 值可能不同（response.protocol.apr 可能不准确或含义不同）
+            // protocol.apr 是小数形式（如 0.024 表示 2.4%），需要 * 100 转换为百分比
+            const apr = (protocol?.apr || 0) * 100;
+
+            // 构建 campaign item
+            const campaignItem: BrevisCampaignItem = {
+              apr: apr,
+              link,
+              startDate: new Date((config?.start || 0) * 1000).toISOString(),
+              endDate: new Date((config?.end || 0) * 1000).toISOString(),
+              message: config?.name || protocol?.name || '',
+            };
+
+            // 使用 chainId + tokenAddress 作为索引（如果 tokenAddress 存在）
+            // 否则使用 chainId + poolAddress
+            const tokenAddress = token?.addr?.toLowerCase() || null;
+            const poolAddress = protocol.id?.toLowerCase() || '';
+            
+            let indexKey: string;
+            if (tokenAddress) {
+              indexKey = `${protocol.chainId}-${tokenAddress}`;
+            } else {
+              indexKey = `${protocol.chainId}-${poolAddress}`;
+            }
+
+            if (!campaignsIndex[indexKey]) {
+              campaignsIndex[indexKey] = { brevisSupplys: [], brevisBorrows: [] };
+            }
+
+            // 根据 actionType 添加到对应的数组
+            if (actionType === 'supply' || actionType === 'both') {
+              campaignsIndex[indexKey].brevisSupplys.push(campaignItem);
+            }
+            if (actionType === 'borrow' || actionType === 'both') {
+              campaignsIndex[indexKey].brevisBorrows.push(campaignItem);
+            }
+          }
+        } catch (error: any) {
+          logger.warn(`⚠️ 获取 protocol ${protocol.id} 详情失败: ${error.message}`);
+          continue;
         }
       }
 
-      return Array.from(uniqueActivities.values());
+      const totalSupply = Object.values(campaignsIndex).reduce((sum, item) => sum + item.brevisSupplys.length, 0);
+      const totalBorrow = Object.values(campaignsIndex).reduce((sum, item) => sum + item.brevisBorrows.length, 0);
+
+      logger.info(`✅ 索引了 ${Object.keys(campaignsIndex).length} 个 chain-token 组合`);
+      logger.info(`   Supply campaigns: ${totalSupply}, Borrow campaigns: ${totalBorrow}`);
+
+      return {
+        index: campaignsIndex,
+        rawProtocolsList: rawProtocolsList,
+        rawProtocolDetails: rawProtocolDetails,
+      };
     } catch (error: any) {
-      logger.error(`❌ 获取活动数据失败: ${error.message}`);
+      logger.error(`❌ 获取 Aave campaign 数据失败: ${error.message}`);
       throw error;
     }
   }
 
-  /**
-   * 获取 Aave 相关的活动 APR 数据
-   * 
-   * @returns Aave 活动的 APR 数据数组
-   */
-  async getAaveAprs(): Promise<Array<{
-    description: string;
-    lastWeekApr: number | null;
-    lastWeekRewards: number | null;
-    lastWeekRewardsUsd: number | null;
-    pool_address: string | null;
-    token_address: string | null;
-    detail_url: string | null;
-  }>> {
-    try {
-      logger.info('🎯 获取 Aave 相关 APR 数据...');
-      
-      const allActivities = await this.getAllActivities();
-      
-      // 过滤出 Aave 相关的活动
-      const aaveActivities = allActivities.filter(activity => 
-        activity.protocol === 'Aave' && 
-        activity.description.toLowerCase().includes('aave')
-      );
-
-      logger.info(`✅ 找到 ${aaveActivities.length} 个 Aave 活动`);
-
-      // 格式化返回数据
-      return aaveActivities.map(activity => ({
-        description: activity.description,
-        lastWeekApr: activity.lastWeekApr || null,
-        lastWeekRewards: activity.lastWeekRewards || null,
-        lastWeekRewardsUsd: activity.lastWeekRewardsUsd || null,
-        pool_address: activity.pool_address || null,
-        token_address: activity.token_address || null,
-        detail_url: activity.detail_url || null,
-      }));
-    } catch (error: any) {
-      logger.error(`❌ 获取 Aave APR 数据失败: ${error.message}`);
-      throw error;
-    }
-  }
-
-  /**
-   * 获取指定协议的活动数据
-   * 
-   * @param protocol 协议名称 ('Aave', 'Euler Finance', 'Etherex')
-   * @returns 该协议的活动数据数组
-   */
-  async getActivitiesByProtocol(protocol: string): Promise<any[]> {
-    try {
-      logger.info(`🎯 获取 ${protocol} 相关活动数据...`);
-      
-      const allActivities = await this.getAllActivities();
-      
-      const filteredActivities = allActivities.filter(activity => 
-        activity.protocol === protocol
-      );
-
-      logger.info(`✅ 找到 ${filteredActivities.length} 个 ${protocol} 活动`);
-
-      return filteredActivities;
-    } catch (error: any) {
-      logger.error(`❌ 获取 ${protocol} 活动数据失败: ${error.message}`);
-      throw error;
-    }
-  }
-
-  /**
-   * 尝试不同的请求格式来获取数据（带重试机制）
-   */
-  async getActivitiesWithRetry(): Promise<any> {
-    const results: any[] = [];
-
-    // 尝试 1: 空请求体
-    try {
-      const result1 = await this.getActivities();
-      results.push({ method: 'empty', success: true, data: result1 });
-    } catch (error: any) {
-      results.push({ method: 'empty', success: false, error: error.message });
-    }
-
-    return {
-      timestamp: new Date().toISOString(),
-      results
-    };
-  }
 }
 
 // 导出单例实例

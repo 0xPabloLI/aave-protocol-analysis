@@ -24,6 +24,8 @@ export interface MerklCampaignBreakdown {
  */
 export interface MerklOpportunityGroup {
   opportunityLink: string; // Opportunity 链接
+  name?: string; // Opportunity 名称
+  description?: string; // Opportunity 描述
   breakdowns: MerklCampaignBreakdown[]; // 该 opportunity 的所有 breakdowns
 }
 
@@ -31,6 +33,7 @@ export interface MerklOpportunityGroup {
 export interface MerklOpportunity {
   id: string;
   name?: string; // opportunity name for market detection
+  description?: string; // opportunity description
   action: string; // "LEND" or "BORROW" or "HOLD"
   chainId: number;
   chain?: {
@@ -73,6 +76,8 @@ export interface MerklOpportunityData {
   marketName: string;
   chainId: number;
   opportunityLink?: string; // Merkl opportunity 详情页链接
+  name?: string; // Opportunity 名称
+  description?: string; // Opportunity 描述
 }
 
 /**
@@ -329,7 +334,9 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
       hold: opp.action === 'HOLD' ? breakdowns : [],
       marketName,
       chainId: opp.chainId,
-      ...(opportunityLink && { opportunityLink })
+      ...(opportunityLink && { opportunityLink }),
+      ...(opp.name && { name: opp.name }),
+      ...(opp.description && { description: opp.description })
     };
     
     // 创建索引键并添加到索引

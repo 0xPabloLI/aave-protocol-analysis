@@ -19,9 +19,11 @@ import {
 } from './merkl-api.js';
 import {
   MeritDataItem,
+  MeritAprEntry,
   fetchMeritData,
   getMeritDataFromMarket
 } from './merit-api.js';
+import type { BrevisCampaignItem, BrevisDataItem } from './brevis-api.js';
 
 interface NetworkInfo {
   name: string;
@@ -51,31 +53,13 @@ interface FormattedReserveData {
   borrowApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
   supplyIncentives: number[]; // Protocol supply incentives 百分比值数组
   borrowIncentives: number[]; // Protocol borrow incentives 百分比值数组
-  meritSupplys?: Array<{
-    apr: number; // APR 百分比值
-    selfApr?: number; // Self APR 百分比值（如果有对应的 self- 前缀的 key）
-    link: string;
-    startDate: string;
-    endDate: string;
-    requiredBorrowTokens?: string[];
-    startBlock?: string; // 仅用于 CSV
-    endBlock?: string; // 仅用于 CSV
-  }>;
-  meritBorrows?: Array<{
-    apr: number; // APR 百分比值
-    selfApr?: number; // Self APR 百分比值（如果有对应的 self- 前缀的 key）
-    link: string;
-    startDate: string;
-    endDate: string;
-    requiredSupplyTokens?: string[];
-    startBlock?: string; // 仅用于 CSV
-    endBlock?: string; // 仅用于 CSV
-  }>;
-  merklSupplys?: MerklOpportunityGroup[]; // 按 opportunity 分组的 supply 数据
-  merklBorrows?: MerklOpportunityGroup[]; // 按 opportunity 分组的 borrow 数据
-  merklHolds?: MerklOpportunityGroup[]; // 按 opportunity 分组的 hold 数据
-  brevisSupplyApr?: number | undefined;  // Brevis Network Linea Surge Supply APR
-  brevisBorrowApr?: number | undefined;   // Brevis Network Linea Surge Borrow APR
+  meritSupplys?: MeritAprEntry[];
+  meritBorrows?: MeritAprEntry[];
+  merklSupplys?: MerklOpportunityGroup[];
+  merklBorrows?: MerklOpportunityGroup[];
+  merklHolds?: MerklOpportunityGroup[];
+  brevisSupplys?: BrevisCampaignItem[];
+  brevisBorrows?: BrevisCampaignItem[];
 }
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
@@ -138,104 +122,41 @@ function getAllAaveV3Networks(): NetworkInfo[] {
 }
 
 
-// Brevis APR 提取：基于 Aave 市场链/代币列表匹配描述
+// Brevis APR 提取：基于 Aave 市场链/代币列表匹配 campaign 数据
 async function fetchBrevisAprs(
-  chainTokenIndex: Record<string, Set<string>>
-): Promise<Record<string, { supplyApr: number | null; borrowApr: number | null }>> {
+  baseDataset: FormattedReserveData[]
+): Promise<BrevisDataIndex> {
   try {
-    logger.info('🌐 Fetching Brevis Network Linea Surge APR data...');
+    logger.info('🌐 Fetching Brevis Incentra Aave campaign data...');
     
-    // 获取所有活动数据
-    const allActivities = await brevisApi.getAllActivities();
+    // 获取所有 Aave campaign 数据（包含原始响应数据）
+    const brevisResult = await brevisApi.getAaveCampaignsData();
+    const brevisIndex: BrevisDataIndex = brevisResult.index;
     
-    // 输出原始 Brevis 数据，方便查看
+    // 输出原始 Brevis 数据（包括原始 API 响应），方便查看和调试
     await mkdir(DATA_DIR, { recursive: true });
+    const totalSupply = Object.values(brevisIndex).reduce((sum, item) => sum + item.brevisSupplys.length, 0);
+    const totalBorrow = Object.values(brevisIndex).reduce((sum, item) => sum + item.brevisBorrows.length, 0);
+    
     await writeFile(
-      join(DATA_DIR, 'brevis-raw-activities.json'),
+      join(DATA_DIR, 'brevis-raw-data.json'),
       JSON.stringify({
         timestamp: new Date().toISOString(),
-        totalActivities: allActivities.length,
-        activities: allActivities
+        totalSupplyCampaigns: totalSupply,
+        totalBorrowCampaigns: totalBorrow,
+        indexedBy: 'chainId-tokenAddress',
+        // 原始 API 响应数据（用于调试和问题排查）
+        rawProtocolsList: brevisResult.rawProtocolsList,
+        rawProtocolDetails: brevisResult.rawProtocolDetails,
+        // 处理后的索引数据
+        index: brevisIndex
       }, null, 2),
       'utf-8'
     );
-    logger.info(`💾 Brevis raw activities saved to ${join(DATA_DIR, 'brevis-raw-activities.json')}`);
-
-    // 只处理 Aave 相关的活动
-    const aaveActivities = allActivities.filter(activity => 
-      activity.protocol === 'Aave' && 
-      activity.description.toLowerCase().includes('aave')
-    );
+    logger.info(`💾 Brevis raw data saved to ${join(DATA_DIR, 'brevis-raw-data.json')}`);
     
-    logger.info(`✅ Found ${aaveActivities.length} Aave activities from Brevis`);
-    
-    // 构建索引：key 为 `${chainKey}-${token}` (小写)，value 为 APR 数据
-    const brevisIndex: Record<string, { supplyApr: number | null; borrowApr: number | null }> = {};
-
-    let matchedActivities = 0;
-    let chainMatched = 0;
-    let tokenMatched = 0;
-
-    for (const activity of aaveActivities) {
-      const descLower = activity.description.toLowerCase();
-      const isSupply = descLower.includes('supply');
-      const isBorrow = descLower.includes('borrow');
-
-      // 匹配 chain
-      let matchedChain: string | null = null;
-      for (const chainKey of Object.keys(chainTokenIndex)) {
-        if (descLower.includes(chainKey)) {
-          matchedChain = chainKey;
-          break;
-        }
-      }
-      
-      if (!matchedChain) continue;
-      chainMatched++;
-
-      // 匹配 token：检查索引中的标准名称和所有别名
-      const tokens = Array.from(chainTokenIndex[matchedChain] || []);
-      let matchedToken: string | null = null;
-      
-      for (const token of tokens) {
-        // 检查标准名称
-        if (descLower.includes(token)) {
-          matchedToken = token;
-          break;
-        }
-        if (matchedToken) break;
-      }
-      
-      if (!matchedToken) continue;
-      tokenMatched++;
-
-      const key = `${matchedChain}-${matchedToken}`;
-      
-      if (!(key in brevisIndex)) {
-        brevisIndex[key] = { supplyApr: null, borrowApr: null };
-      }
-
-      if (activity.lastWeekApr !== null && activity.lastWeekApr !== undefined) {
-        if (isSupply) {
-          if (brevisIndex[key].supplyApr === null || activity.lastWeekApr > brevisIndex[key].supplyApr!) {
-            brevisIndex[key].supplyApr = activity.lastWeekApr;
-          }
-        } else if (isBorrow) {
-          if (brevisIndex[key].borrowApr === null || activity.lastWeekApr > brevisIndex[key].borrowApr!) {
-            brevisIndex[key].borrowApr = activity.lastWeekApr;
-          }
-        } else {
-          // 默认视为 supply
-          if (brevisIndex[key].supplyApr === null || activity.lastWeekApr > brevisIndex[key].supplyApr!) {
-            brevisIndex[key].supplyApr = activity.lastWeekApr;
-          }
-        }
-        matchedActivities++;
-      }
-    }
-    
-    logger.info(`✅ Indexed Brevis APR data for ${Object.keys(brevisIndex).length} chain-token pairs`);
-    logger.info(`   Matches: chain=${chainMatched}, token=${tokenMatched}, activities=${matchedActivities}`);
+    logger.info(`✅ Indexed Brevis campaign data for ${Object.keys(brevisIndex).length} chain-token combinations`);
+    logger.info(`   Supply campaigns: ${totalSupply}, Borrow campaigns: ${totalBorrow}`);
     
     return brevisIndex;
   } catch (error) {
@@ -264,8 +185,8 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
 
         const tokenSymbol = reserve.underlyingToken?.symbol || 'Unknown';
         const tokenAddress = reserve.underlyingToken?.address || '';
-        const aTokenAddress = reserve.aToken?.address || undefined;
-        const vTokenAddress = reserve.vToken?.address || undefined;
+        const aTokenAddress = reserve.aToken?.address ?? null;
+        const vTokenAddress = reserve.vToken?.address ?? null;
         
         // 检查 supplyCap，如果为 1 则将 supplyApy 设置为 undefined（因为对用户没有意义）
         const supplyCapValue = reserve.supplyInfo?.supplyCap?.amount?.value;
@@ -336,14 +257,18 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
 }
 
 // 将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
+// 类型别名：用于数据索引
+type MeritDataIndex = Record<string, MeritDataItem>;
+type MerklDataIndex = Record<string, MerklOpportunityData[]>;
+type BrevisDataIndex = Record<string, BrevisDataItem>;
+
 function enrichDatasetWithIncentiveData(
   baseDataset: FormattedReserveData[],
-  meritData: Record<string, MeritDataItem>,
-  merklData: Record<string, MerklOpportunityData[]>,
-  brevisData: Record<string, { supplyApr: number | null; borrowApr: number | null }>
+  meritData: MeritDataIndex,
+  merklData: MerklDataIndex,
+  brevisData: BrevisDataIndex
 ): FormattedReserveData[] {
   return baseDataset.map(item => {
-    const indexKey = `${item.chainName.toLowerCase()}-${item.tokenSymbol.toLowerCase()}`;
     const meritItemData = getMeritDataFromMarket(item.marketName, item.chainName, item.tokenSymbol, meritData);
     
     // 如果有 Merit 数据，直接更新对应字段
@@ -377,6 +302,8 @@ function enrichDatasetWithIncentiveData(
             // 为 JSON：按 opportunity 分组（不包含 opportunityLink 在 breakdown 中）
             supplyOpportunities.push({
               opportunityLink: opp.opportunityLink,
+              ...(opp.name && { name: opp.name }),
+              ...(opp.description && { description: opp.description }),
               breakdowns: opp.supply
             });
           }
@@ -385,6 +312,8 @@ function enrichDatasetWithIncentiveData(
             borrowBreakdowns.push(...borrowWithLinks);
             borrowOpportunities.push({
               opportunityLink: opp.opportunityLink,
+              ...(opp.name && { name: opp.name }),
+              ...(opp.description && { description: opp.description }),
               breakdowns: opp.borrow
             });
           }
@@ -393,6 +322,8 @@ function enrichDatasetWithIncentiveData(
             holdBreakdowns.push(...holdWithLinks);
             holdOpportunities.push({
               opportunityLink: opp.opportunityLink,
+              ...(opp.name && { name: opp.name }),
+              ...(opp.description && { description: opp.description }),
               breakdowns: opp.hold
             });
           }
@@ -402,6 +333,8 @@ function enrichDatasetWithIncentiveData(
             supplyBreakdowns.push(...opp.supply);
             supplyOpportunities.push({
               opportunityLink: '', // 空链接，但保持结构一致
+              ...(opp.name && { name: opp.name }),
+              ...(opp.description && { description: opp.description }),
               breakdowns: opp.supply
             });
           }
@@ -409,6 +342,8 @@ function enrichDatasetWithIncentiveData(
             borrowBreakdowns.push(...opp.borrow);
             borrowOpportunities.push({
               opportunityLink: '',
+              ...(opp.name && { name: opp.name }),
+              ...(opp.description && { description: opp.description }),
               breakdowns: opp.borrow
             });
           }
@@ -416,6 +351,8 @@ function enrichDatasetWithIncentiveData(
             holdBreakdowns.push(...opp.hold);
             holdOpportunities.push({
               opportunityLink: '',
+              ...(opp.name && { name: opp.name }),
+              ...(opp.description && { description: opp.description }),
               breakdowns: opp.hold
             });
           }
@@ -435,13 +372,22 @@ function enrichDatasetWithIncentiveData(
     }
     
     // 获取对应的 Brevis 数据并更新
-    // Brevis 数据主要在 Linea 链上，chainId 为 59144
-    // 根据 chainName 和 tokenSymbol 匹配（indexKey 格式：chainName-tokenSymbol）
-    const brevisInfo = brevisData[indexKey];
+    // 尝试通过 chainId + tokenAddress 匹配
+    let brevisInfo: BrevisDataItem | undefined;
+    
+    if (item.tokenAddress) {
+      const tokenKey = `${item.chainId}-${item.tokenAddress.toLowerCase()}`;
+      brevisInfo = brevisData[tokenKey];
+    }
+    
     if (brevisInfo) {
-      // 只有当值不为 null 时才赋值，否则保持 undefined（保留 0 值，因为 0 是有效值）
-      item.brevisSupplyApr = brevisInfo.supplyApr !== null ? brevisInfo.supplyApr : undefined as any;
-      item.brevisBorrowApr = brevisInfo.borrowApr !== null ? brevisInfo.borrowApr : undefined as any;
+      // 只有当数组不为空时才赋值
+      if (brevisInfo.brevisSupplys.length > 0) {
+        item.brevisSupplys = brevisInfo.brevisSupplys;
+      }
+      if (brevisInfo.brevisBorrows.length > 0) {
+        item.brevisBorrows = brevisInfo.brevisBorrows;
+      }
     }
     
     return item;
@@ -480,8 +426,8 @@ function generateCSV(data: FormattedReserveData[]): string {
     'Merkl Supplys',
     'Merkl Borrows',
     'Merkl Holds',
-    'Brevis Supply APR (%)',
-    'Brevis Borrow APR (%)'
+    'Brevis Supplys',
+    'Brevis Borrows'
   ];
 
   // 生成 CSV 行
@@ -534,8 +480,20 @@ function generateCSV(data: FormattedReserveData[]): string {
           g.breakdowns.map(b => ({ ...b, opportunityLink: g.opportunityLink }))
         ) || []
       )}"`,
-      (row.brevisSupplyApr !== undefined && row.brevisSupplyApr !== null) ? row.brevisSupplyApr : '',
-      (row.brevisBorrowApr !== undefined && row.brevisBorrowApr !== null) ? row.brevisBorrowApr : ''
+      // Brevis Supplys：格式为 "APR1:link1:startDate1:endDate1:message1;APR2:link2:startDate2:endDate2:message2"
+      (row.brevisSupplys && row.brevisSupplys.length > 0) 
+        ? `"${row.brevisSupplys.map(c => {
+            const parts = [c.apr.toString(), c.link, c.startDate, c.endDate, c.message || ''];
+            return parts.join(':');
+          }).join(';')}"` 
+        : '',
+      // Brevis Borrows：格式同上
+      (row.brevisBorrows && row.brevisBorrows.length > 0) 
+        ? `"${row.brevisBorrows.map(c => {
+            const parts = [c.apr.toString(), c.link, c.startDate, c.endDate, c.message || ''];
+            return parts.join(':');
+          }).join(';')}"` 
+        : ''
     ].join(','))
   ];
 
@@ -564,27 +522,90 @@ async function fetchAaveMarketData(): Promise<MarketData> {
   
   // 逐个尝试每个链ID，获取marketList和supportedChainIds
   for (const chainIdValue of chainIds) {
-    try {
-      logger.debug(`   Trying Chain ID: ${chainIdValue}`);
-      const result = await markets(client, {
-        chainIds: [chainId(chainIdValue)],
-      });
+    let retries = 3;
+    let lastError: any = null;
+    
+    while (retries > 0) {
+      try {
+        logger.debug(`   Trying Chain ID: ${chainIdValue} (${4 - retries}/3 attempts)`);
+        const result = await markets(client, {
+          chainIds: [chainId(chainIdValue)],
+        });
       
-      if (result && typeof result === 'object' && 'value' in result && result.value.length > 0) {
-        marketList.push(...result.value);
-        supportedChainIds.push(chainIdValue);
-        logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
+      // @aave/client 使用 Result<T, E> 模式，需要检查 isOk() 或 isErr()
+      if (result && typeof result === 'object' && 'isErr' in result && typeof result.isErr === 'function') {
+        if (result.isErr()) {
+          const errorInfo = result.error;
+          const errorMsg = `Chain ${chainIdValue}: ${errorInfo.name || 'UnknownError'}${errorInfo.message ? ` - ${errorInfo.message}` : ''}`;
+          lastError = new Error(errorMsg);
+          retries--;
+          
+          if (retries > 0) {
+            const delayMs = 2000 * (4 - retries); // 递增延迟：2s, 4s, 6s
+            logger.warn(`   ⚠️ Chain ${chainIdValue}: API error, retrying in ${delayMs}ms... (${errorMsg})`);
+            if (errorInfo.stack) {
+              logger.debug(`   Chain ${chainIdValue} error stack: ${errorInfo.stack}`);
+            }
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue; // 继续重试
+          } else {
+            errors.push(errorMsg);
+            logger.error(`   ❌ ${errorMsg}`);
+            if (errorInfo.stack) {
+              logger.debug(`   Chain ${chainIdValue} error stack: ${errorInfo.stack}`);
+            }
+            break; // 重试次数用完，跳出循环
+          }
+        }
+        
+        // 成功的情况，使用 result.value
+        if (result.value && Array.isArray(result.value) && result.value.length > 0) {
+          marketList.push(...result.value);
+          supportedChainIds.push(chainIdValue);
+          logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
+          break; // 成功获取数据，跳出重试循环
+        } else {
+          logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty or undefined)`);
+          break; // 虽然没有数据，但不是错误，不需要重试
+        }
+      } else if (result && typeof result === 'object' && 'value' in result) {
+        // 兼容旧的返回格式
+        if (result.value && Array.isArray(result.value) && result.value.length > 0) {
+          marketList.push(...result.value);
+          supportedChainIds.push(chainIdValue);
+          logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
+          break; // 成功获取数据，跳出重试循环
+        } else {
+          logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty array or undefined)`);
+          break; // 虽然没有数据，但不是错误，不需要重试
+        }
       } else if (result && Array.isArray(result) && result.length > 0) {
+        // 直接返回数组的情况
         marketList.push(...result);
         supportedChainIds.push(chainIdValue);
         logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.length} markets`);
+        break; // 成功获取数据，跳出重试循环
       } else {
-        logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found`);
+        logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (unexpected result format: ${JSON.stringify(result).substring(0, 200)})`);
+        break; // 虽然没有数据，但不是错误，不需要重试
       }
-    } catch (error) {
-      const errorMsg = `Chain ${chainIdValue}: ${error instanceof Error ? error.message : String(error)}`;
-      errors.push(errorMsg);
-      logger.error(`   ❌ Chain ${chainIdValue}: ${error instanceof Error ? error.message : String(error)}`);
+      } catch (error) {
+        lastError = error;
+        retries--;
+        
+        if (retries > 0) {
+          const delayMs = 2000 * (4 - retries); // 递增延迟：2s, 4s, 6s
+          logger.warn(`   ⚠️ Chain ${chainIdValue}: Attempt failed, retrying in ${delayMs}ms... (${error instanceof Error ? error.message : String(error)})`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          const errorMsg = `Chain ${chainIdValue}: ${error instanceof Error ? error.message : String(error)}`;
+          errors.push(errorMsg);
+          logger.error(`   ❌ Chain ${chainIdValue}: ${error instanceof Error ? error.message : String(error)}`);
+          if (error instanceof Error && error.stack) {
+            logger.debug(`   Chain ${chainIdValue} error stack: ${error.stack}`);
+          }
+        }
+      }
     }
   }
   
@@ -626,9 +647,6 @@ async function fetchAaveMarkets(): Promise<void> {
     logger.info('📊 Creating base dataset from Aave markets...');
     const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
     logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
-    
-    // 构建 Brevis 解析用的链/代币索引（基于 baseDataset，确保数据一致性）
-    const chainTokenIndex = buildChainTokenIndex(baseDataset);
 
     // 获取 Merit APR 数据（已包含索引和时间范围）
     const meritData = await fetchMeritData();
@@ -636,8 +654,8 @@ async function fetchAaveMarkets(): Promise<void> {
     // 获取 Merkl 数据（内部会保存原始数据文件）
     const merklData = await processMerklData();
     
-    // 获取 Brevis APR 数据（使用链/代币索引匹配描述）
-    const brevisData = await fetchBrevisAprs(chainTokenIndex);
+    // 获取 Brevis APR 数据（使用 baseDataset 匹配 campaign）
+    const brevisData = await fetchBrevisAprs(baseDataset);
     
     // 第二步：将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
     logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');

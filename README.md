@@ -53,7 +53,7 @@ aave/
 │   ├── aave-all-markets-data.json      # Raw market data
 │   ├── aave-formatted-data.json        # Formatted JSON data
 │   ├── aave-formatted-data.csv         # CSV format data
-│   ├── brevis-raw-activities.json      # Brevis raw activity data
+│   ├── brevis-raw-data.json            # Brevis raw data (includes raw API responses)
 │   └── merkl-raw-data.json             # Merkl raw data
 ├── logs/                 # Log files folder (git ignored)
 │   ├── combined.log      # All logs

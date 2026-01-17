@@ -130,17 +130,19 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   # Install root directory dependencies (for data fetching script)
   # Check if dependencies need to be reinstalled by comparing package-lock.json hash
   NEW_ROOT_HASH=$(md5sum package-lock.json 2>/dev/null | cut -d' ' -f1 || md5 -q package-lock.json 2>/dev/null || sha256sum package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "")
+  ROOT_NODE_MODULES_HASH=""
+  if [ -f "node_modules/.package-lock.json" ]; then
+    ROOT_NODE_MODULES_HASH=$(md5sum node_modules/.package-lock.json 2>/dev/null | cut -d' ' -f1 || md5 -q node_modules/.package-lock.json 2>/dev/null || sha256sum node_modules/.package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "")
+  fi
   
   if [ -n "$NEW_ROOT_HASH" ] && [ -n "$OLD_ROOT_HASH" ] && [ "$NEW_ROOT_HASH" = "$OLD_ROOT_HASH" ] && [ -d "node_modules" ]; then
     echo "✅ Dependencies are up to date (package-lock.json unchanged), skipping installation..."
     # Update hash file timestamp
     echo "$NEW_ROOT_HASH" > "$ROOT_HASH_FILE"
+  elif [ -n "$NEW_ROOT_HASH" ] && [ -n "$ROOT_NODE_MODULES_HASH" ] && [ "$NEW_ROOT_HASH" = "$ROOT_NODE_MODULES_HASH" ] && [ -d "node_modules" ]; then
+    echo "✅ Dependencies already match the new package-lock.json, skipping installation..."
+    echo "$NEW_ROOT_HASH" > "$ROOT_HASH_FILE"
   else
-    if [ -n "$OLD_ROOT_HASH" ] && [ "$NEW_ROOT_HASH" != "$OLD_ROOT_HASH" ]; then
-      echo "📦 package-lock.json has changed, cleaning old dependencies..."
-      # npm ci will automatically remove node_modules, but we can be explicit
-      rm -rf node_modules 2>/dev/null || true
-    fi
     echo "Installing root directory dependencies..."
     # npm ci automatically removes node_modules and reinstalls based on package-lock.json
     # This ensures unused packages (like puppeteer) are removed
@@ -183,17 +185,19 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   
   # Check if dependencies need to be reinstalled by comparing package-lock.json hash
   NEW_BACKEND_HASH=$(md5sum package-lock.json 2>/dev/null | cut -d' ' -f1 || md5 -q package-lock.json 2>/dev/null || sha256sum package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "")
+  BACKEND_NODE_MODULES_HASH=""
+  if [ -f "node_modules/.package-lock.json" ]; then
+    BACKEND_NODE_MODULES_HASH=$(md5sum node_modules/.package-lock.json 2>/dev/null | cut -d' ' -f1 || md5 -q node_modules/.package-lock.json 2>/dev/null || sha256sum node_modules/.package-lock.json 2>/dev/null | cut -d' ' -f1 || echo "")
+  fi
   
   if [ -n "$NEW_BACKEND_HASH" ] && [ -n "$OLD_BACKEND_HASH" ] && [ "$NEW_BACKEND_HASH" = "$OLD_BACKEND_HASH" ] && [ -d "node_modules" ]; then
     echo "✅ Backend dependencies are up to date (package-lock.json unchanged), skipping installation..."
     # Update hash file timestamp
     echo "$NEW_BACKEND_HASH" > "$BACKEND_HASH_FILE"
+  elif [ -n "$NEW_BACKEND_HASH" ] && [ -n "$BACKEND_NODE_MODULES_HASH" ] && [ "$NEW_BACKEND_HASH" = "$BACKEND_NODE_MODULES_HASH" ] && [ -d "node_modules" ]; then
+    echo "✅ Backend dependencies already match the new package-lock.json, skipping installation..."
+    echo "$NEW_BACKEND_HASH" > "$BACKEND_HASH_FILE"
   else
-    if [ -n "$OLD_BACKEND_HASH" ] && [ "$NEW_BACKEND_HASH" != "$OLD_BACKEND_HASH" ]; then
-      echo "📦 Backend package-lock.json has changed, cleaning old dependencies..."
-      # npm ci will automatically remove node_modules, but we can be explicit
-      rm -rf node_modules 2>/dev/null || true
-    fi
     echo "Installing backend dependencies..."
     # npm ci automatically removes node_modules and reinstalls based on package-lock.json
     # Use --prefer-offline to use cache when possible, --no-audit to skip security audit, --loglevel=error to reduce output
@@ -342,4 +346,3 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
 EOF
 
 echo "Deployment script execution finished."
-

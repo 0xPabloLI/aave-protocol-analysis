@@ -73,6 +73,8 @@ Merkl 机会分组数据，用于 JSON 输出，避免重复。
 ```typescript
 interface MerklOpportunityGroup {
   opportunityLink: string;              // Opportunity 详情页链接
+  name?: string;                        // Opportunity 名称（可选）
+  description?: string;                 // Opportunity 描述（可选）
   breakdowns: MerklCampaignBreakdown[]; // 该 opportunity 的所有 breakdowns
 }
 
