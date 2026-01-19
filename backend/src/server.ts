@@ -24,7 +24,19 @@ app.use('/api/markets', marketsRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    environment: {
+      nodeEnv: process.env.NODE_ENV || 'development',
+      port: PORT,
+      corsMode: process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL 
+        ? 'whitelist' 
+        : 'allow-all',
+      frontendUrl: process.env.FRONTEND_URL || 'not set',
+      allowedDevOrigins: process.env.ALLOWED_DEV_ORIGINS || 'not set'
+    }
+  });
 });
 
 // 启动时加载数据到缓存
