@@ -1,10 +1,15 @@
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
 import puppeteer, { type Browser, type Page } from 'puppeteer';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+import {
+  extractCampaignInfoWithWorker,
+  extractMeritDynamicInfoWithWorker,
+  extractSelfAuthenticationDescriptionWithCloudflare,
+} from './cloudflare-browser.js';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 
@@ -28,12 +33,12 @@ export interface MeritAprEntry {
   link: string;
   startDate: string;
   endDate: string;
+  startBlock?: string; // 开始区块号（用于判断 campaign 是否结束）
+  endBlock?: string; // 结束区块号（用于判断 campaign 是否结束）
   name?: string; // Campaign 名称（如 "Supply (Celo or ETH) and borrow USDT"）
   message?: MeritCampaignInfo[]; // Campaign 信息数组（从 Campaign info 弹窗表格中提取，可能有多条 action 和 description）
   requiredBorrowTokens?: string[]; // 需要 borrow 的 token 列表（用于 supply with borrow requirement）
   requiredSupplyTokens?: string[]; // 需要 supply 的 token 列表（用于 borrow with supply requirement）
-  startBlock?: string; // 仅用于 CSV，不放入接口
-  endBlock?: string; // 仅用于 CSV，不放入接口
 }
 
 // Merit 数据项结构（简化：只保留 supply 和 borrow）
@@ -168,8 +173,333 @@ function getRpcUrlsFromChainName(chainName: string): string[] {
 }
 
 /**
+ * 获取当前区块号（用于判断 campaign 是否结束）
+ */
+async function getCurrentBlockNumber(chainName: string): Promise<number | null> {
+  try {
+    const rpcUrls = getRpcUrlsFromChainName(chainName);
+    if (rpcUrls.length === 0) {
+      return null;
+    }
+    
+    for (const rpcUrl of rpcUrls) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      try {
+        const response = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'eth_blockNumber',
+            params: [],
+            id: 1
+          })
+        });
+        
+        if (!response.ok) {
+          continue;
+        }
+        
+        const data = await response.json() as { result?: string };
+        if (data.result) {
+          const blockNumber = parseInt(data.result, 16);
+          return blockNumber;
+        }
+      } catch {
+        // 忽略错误，尝试下一个 RPC
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+/**
+ * 检查 campaign 是否需要更新非 APR 数据（timeRanges、message 等）
+ * 只有在 campaign 结束时（当前时间 >= endDate 或当前区块 >= endBlock）才需要更新
+ * 
+ * 规则：
+ * 1. 如果没有缓存数据 → 需要更新
+ * 2. 如果有缓存数据但没有 endBlock 和 endDate（无法判断是否结束）→ 需要更新
+ * 3. 如果有 endDate 且当前时间 >= endDate → 需要更新（campaign 已结束）
+ * 4. 如果有 endBlock 且当前区块 >= endBlock → 需要更新（campaign 已结束）
+ * 5. 其他情况（campaign 进行中）→ 不需要更新
+ */
+async function evaluateTimeRangeUpdate(
+  cachedTimeRange: { endDate?: string; endBlock?: string; link?: string } | undefined,
+  key: string
+): Promise<{ needsUpdate: boolean; reasons: string[] }> {
+  const reasons: string[] = [];
+
+  // 如果没有缓存数据，需要更新
+  if (!cachedTimeRange) {
+    reasons.push('missing-cache');
+    return { needsUpdate: true, reasons };
+  }
+  
+  // 如果既没有 endBlock 也没有 endDate，无法判断是否结束，需要更新
+  if (!cachedTimeRange.endBlock && !cachedTimeRange.endDate) {
+    reasons.push('missing-endDate-and-endBlock');
+    return { needsUpdate: true, reasons };
+  }
+  
+  // 检查 endDate
+  if (cachedTimeRange.endDate) {
+    try {
+      // 尝试解析各种日期格式
+      let endDate: Date | null = null;
+      
+      // 尝试直接解析
+      endDate = new Date(cachedTimeRange.endDate);
+      if (isNaN(endDate.getTime())) {
+        // 如果直接解析失败，尝试解析 "Wed Jan 21 2026" 格式
+        const dateMatch = cachedTimeRange.endDate.match(/(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\w+)\s+(\d+)\s+(\d+)/);
+        if (dateMatch) {
+          endDate = new Date(cachedTimeRange.endDate);
+        }
+      }
+      
+      if (endDate && !isNaN(endDate.getTime())) {
+        const now = new Date();
+        // 如果当前时间已经超过结束时间，需要更新（campaign 已结束，可能有新数据）
+        if (now >= endDate) {
+          reasons.push('endDate-passed');
+          return { needsUpdate: true, reasons };
+        }
+        // 如果当前时间 < 结束时间，campaign 还在进行中，不需要更新
+        return { needsUpdate: false, reasons };
+      }
+    } catch (e) {
+      // 日期解析失败，需要更新
+      reasons.push('endDate-parse-error');
+      return { needsUpdate: true, reasons };
+    }
+  }
+  
+  // 检查 endBlock（如果提供了结束区块号）
+  if (cachedTimeRange.endBlock) {
+    try {
+      const endBlock = parseInt(cachedTimeRange.endBlock, 10);
+      if (!isNaN(endBlock)) {
+        // 从 key 中提取链名
+        const parts = key.split('-');
+        const chainName = parts[0];
+        
+        // 获取当前区块号
+        const currentBlock = await getCurrentBlockNumber(chainName);
+        if (currentBlock !== null) {
+          // 如果当前区块已经超过结束区块，需要更新
+          if (currentBlock >= endBlock) {
+            reasons.push('endBlock-passed');
+            return { needsUpdate: true, reasons };
+          }
+          // 如果当前区块 < 结束区块，campaign 还在进行中，不需要更新
+          return { needsUpdate: false, reasons };
+        } else {
+          // 无法获取当前区块号，为了安全起见，需要更新
+          reasons.push('current-block-null');
+          return { needsUpdate: true, reasons };
+        }
+      }
+    } catch (e) {
+      // 区块号解析失败，需要更新
+      reasons.push('endBlock-parse-error');
+      return { needsUpdate: true, reasons };
+    }
+  }
+  
+  // 如果到这里，说明有缓存数据但无法判断状态，为了安全起见，需要更新
+  reasons.push('unknown-state');
+  return { needsUpdate: true, reasons };
+}
+
+/**
+ * 从文件加载缓存的 timeRanges 数据
+ * 只保留有全量数据的条目（包含数据结构定义的所有字段）
+ * 如果文件不存在或解析失败，返回空对象（会触发所有条目重新获取）
+ * 
+ * 验证规则：如果之前爬虫成功获取了数据，所有字段都应该存在
+ * - 必填字段：link, startDate, endDate（必须存在且非空）
+ * - 区块字段：startBlock, endBlock（必须存在，用于判断 campaign 是否结束）
+ * - 名称字段：name（必须存在，campaign 名称）
+ * - 消息字段：message（可选，对于 key 长度为 2 的条目可能不存在）
+ * 
+ * 如果缺少任何必填字段，说明之前爬虫出问题了，需要重新获取
+ */
+async function loadCachedTimeRanges(): Promise<Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }>> {
+  try {
+    const cachedDataPath = join(DATA_DIR, 'merit-raw-data.json');
+    const cachedData = await readFile(cachedDataPath, 'utf-8');
+    const parsed = JSON.parse(cachedData);
+    const timeRanges = parsed.timeRanges || {};
+    
+    // 验证缓存数据的完整性：确保每个条目都有全量数据
+    const validatedTimeRanges: Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }> = {};
+    
+    for (const [key, value] of Object.entries(timeRanges)) {
+      const timeRange = value as { 
+        link?: string; 
+        startDate?: string; 
+        endDate?: string; 
+        startBlock?: string; 
+        endBlock?: string; 
+        name?: string; 
+        message?: MeritCampaignInfo[] 
+      };
+      
+      // 检查所有必填字段：link, startDate, endDate（必须存在且非空）
+      const hasRequiredFields = 
+        timeRange.link && 
+        timeRange.link.trim() !== '' &&
+        timeRange.startDate && 
+        timeRange.startDate.trim() !== '' &&
+        timeRange.endDate && 
+        timeRange.endDate.trim() !== '';
+      
+      // 检查区块字段：startBlock, endBlock
+      // 注意：endBlock 可能提取不到（如果 HTML 中没有区块链接），但如果有 startBlock 通常也应该有 endBlock
+      // 如果都没有区块信息，至少要有 endDate 来判断结束时间
+      const hasBlockFields = 
+        timeRange.startBlock && 
+        timeRange.startBlock.trim() !== '' &&
+        timeRange.endBlock && 
+        timeRange.endBlock.trim() !== '';
+      
+      // 检查名称字段：name（必须存在）
+      const hasName = 
+        timeRange.name && 
+        timeRange.name.trim() !== '';
+      
+      // 检查至少有一个用于判断结束的字段：endDate 或 endBlock
+      const hasEndIndicator = 
+        (timeRange.endDate && timeRange.endDate.trim() !== '') || 
+        (timeRange.endBlock && timeRange.endBlock.trim() !== '');
+      
+      // 根据 key length 判断 message 是否必需
+      // key 长度为 2 的条目（如 "ethereum-sgho"）不需要 message
+      const keyParts = key.split('-');
+      const shouldHaveMessage = keyParts.length > 2;
+      const hasMessage = 
+        !shouldHaveMessage || // 如果不需要 message，跳过检查
+        (timeRange.message && Array.isArray(timeRange.message) && timeRange.message.length > 0);
+      
+      // 只保留有全量数据的条目（所有必填字段都存在）
+      // message 字段根据 key length 判断是否必需
+      if (hasRequiredFields && hasName && hasEndIndicator && hasMessage) {
+        // 如果有区块字段，也要验证完整性
+        if (timeRange.startBlock || timeRange.endBlock) {
+          // 如果有一个区块字段，另一个也应该存在
+          if (!hasBlockFields) {
+            logger.warn(`⚠️ Cached entry "${key}" has partial block fields, will refetch`);
+            continue;
+          }
+        }
+        
+        validatedTimeRanges[key] = timeRange as { 
+          link: string; 
+          startDate: string; 
+          endDate: string; 
+          startBlock?: string; 
+          endBlock?: string; 
+          name?: string; 
+          message?: MeritCampaignInfo[] 
+        };
+      } else {
+        // 记录缺失的字段，便于调试
+        const missingFields: string[] = [];
+        if (!hasRequiredFields) missingFields.push('link/startDate/endDate');
+        if (!hasName) missingFields.push('name');
+        if (!hasEndIndicator) missingFields.push('endDate/endBlock');
+        if (!hasMessage && shouldHaveMessage) missingFields.push('message');
+        logger.warn(`⚠️ Cached entry "${key}" missing fields: ${missingFields.join(', ')}, will refetch`);
+      }
+    }
+    
+    const filteredCount = Object.keys(timeRanges).length - Object.keys(validatedTimeRanges).length;
+    if (filteredCount > 0) {
+      logger.info(`📦 Filtered out ${filteredCount} incomplete cached entries (missing required fields), will refetch them`);
+    }
+    
+    return validatedTimeRanges;
+  } catch (error) {
+    // 文件不存在或解析失败，返回空对象（会触发所有条目重新获取）
+    logger.info('📦 No cached time ranges found, will fetch all entries');
+    return {};
+  }
+}
+
+function getHasSelfAuthForKey(meritAPRs: Record<string, number | null>, key: string): boolean {
+  return meritAPRs[`self-${key}`] !== null && meritAPRs[`self-${key}`] !== undefined;
+}
+
+function hasSelfAuthMessage(message: MeritCampaignInfo[] | undefined): boolean {
+  return !!message?.some((m) => (m.action || '').toLowerCase().includes('self authentication'));
+}
+
+function isCachedTimeRangeComplete(params: {
+  key: string;
+  cached: {
+    link?: string;
+    startDate?: string;
+    endDate?: string;
+    startBlock?: string;
+    endBlock?: string;
+    name?: string;
+    message?: MeritCampaignInfo[];
+  } | undefined;
+  hasSelfAuth: boolean;
+}): { isComplete: boolean; missing: string[] } {
+  const { key, cached, hasSelfAuth } = params;
+  const missing: string[] = [];
+  if (!cached) return { isComplete: false, missing: ['missing-cache'] };
+
+  const linkOk = !!cached.link && cached.link.trim() !== '';
+  const startDateOk = !!cached.startDate && cached.startDate.trim() !== '';
+  const endDateOk = !!cached.endDate && cached.endDate.trim() !== '';
+  const nameOk = !!cached.name && cached.name.trim() !== '';
+  const hasEndIndicatorOk = endDateOk || (!!cached.endBlock && cached.endBlock.trim() !== '');
+
+  if (!linkOk) missing.push('link');
+  if (!startDateOk) missing.push('startDate');
+  if (!endDateOk) missing.push('endDate');
+  if (!nameOk) missing.push('name');
+  if (!hasEndIndicatorOk) missing.push('endDate/endBlock');
+
+  const keyParts = key.split('-');
+  const shouldHaveMessage = keyParts.length > 2;
+  if (shouldHaveMessage) {
+    const msgOk = Array.isArray(cached.message) && cached.message.length > 0;
+    if (!msgOk) missing.push('message');
+  }
+
+  // Block fields: if one exists, require both
+  const hasAnyBlock = !!cached.startBlock || !!cached.endBlock;
+  if (hasAnyBlock) {
+    const startBlockOk = !!cached.startBlock && cached.startBlock.trim() !== '';
+    const endBlockOk = !!cached.endBlock && cached.endBlock.trim() !== '';
+    if (!startBlockOk || !endBlockOk) missing.push('startBlock/endBlock');
+  }
+
+  // Self-auth required only when the self- key exists for this campaign
+  if (hasSelfAuth && shouldHaveMessage) {
+    if (!hasSelfAuthMessage(cached.message)) missing.push('self-auth');
+  }
+
+  return { isComplete: missing.length === 0, missing };
+}
+
+/**
  * 获取 Merit APR 数据并构建索引
- * 总是获取时间范围信息（必选）
+ * 优化：非 APR 数据（timeRanges、message 等）只在 campaign 结束时更新
  */
 export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
   try {
@@ -185,8 +515,15 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     
     const meritAPRs = data.currentAPR.actionsAPR;
     
-    // 获取时间范围信息（必选）
-    const timeRanges = await fetchAllMeritTimeRanges(meritAPRs, { maxConcurrent: 5 });
+    // 加载缓存的 timeRanges 数据
+    const cachedTimeRanges = await loadCachedTimeRanges();
+    logger.info(`📦 Loaded ${Object.keys(cachedTimeRanges).length} cached time ranges`);
+    
+    // 获取时间范围信息（只在需要时更新）
+    const timeRanges = await fetchAllMeritTimeRanges(meritAPRs, { 
+      maxConcurrent: 5,
+      cachedTimeRanges 
+    });
     
     // 建立 Merit APR 数据索引
     // 作用：将原始 Merit APR 数据（键格式复杂，如 "ethereum-supply-weth"）转换为统一的索引格式
@@ -311,6 +648,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       const nonSelfInfo = group.nonSelf;
       const selfInfo = group.self;
       
+      // 检查 key 长度，如果长度为 2（如 ethereum-sgho），跳过获取 message
+      const keyParts = baseKey.split('-');
+      const shouldFetchMessage = keyParts.length > 2;
+      
       // 决定使用哪个 key 获取时间范围（优先使用 nonSelf，因为 self 会跳过获取时间范围）
       const keyForTimeRange = nonSelfInfo?.key || selfInfo?.key || baseKey;
       const { link, startDate, endDate, startBlock, endBlock, name, message } = getLinkAndTimeRange(keyForTimeRange);
@@ -328,6 +669,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       
       // 如果没有 nonSelf，跳过
       if (!nonSelfInfo) continue;
+      
+      // message 已经包含了 Self authentication（如果在 fetchAllMeritTimeRanges 中获取到了）
+      // 直接使用 timeRanges 中的 message，它已经包含了 Self authentication
+      const finalMessage = message || [];
       
       const { supplyTokens, borrowTokens, chainKey } = nonSelfInfo;
       const borrowTargets = borrowTokens.filter(t => t !== 'multiple');
@@ -354,7 +699,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               startBlock,
               endBlock,
               ...(name && { name }),
-              ...(message && message.length > 0 && { message })
+              ...(finalMessage.length > 0 && { message: finalMessage })
             };
             incentives.meritBorrows.push(entry);
           } else {
@@ -368,7 +713,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               startBlock,
               endBlock,
               ...(name && { name }),
-              ...(message && message.length > 0 && { message })
+              ...(finalMessage.length > 0 && { message: finalMessage })
             };
             incentives.meritBorrows.push(entry);
           }
@@ -389,7 +734,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               startBlock,
               endBlock,
               ...(name && { name }),
-              ...(message && message.length > 0 && { message })
+              ...(finalMessage.length > 0 && { message: finalMessage })
             };
             supplyIncentives.meritSupplys.push(entry);
           }
@@ -412,11 +757,11 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             startBlock,
             endBlock,
             ...(name && { name }),
-              ...(message && message.length > 0 && { message })
+            ...(finalMessage.length > 0 && { message: finalMessage })
           };
           incentives.meritSupplys.push(entry);
+          }
         }
-      }
 
       // 情况 3: 只有 supply token，没有 borrow token（简单 supply 场景）
       if (!hasBorrowTokens && !hasBorrowMultiple && hasSupplyTokens) {
@@ -432,7 +777,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             startBlock,
             endBlock,
             ...(name && { name }),
-              ...(message && message.length > 0 && { message })
+            ...(finalMessage.length > 0 && { message: finalMessage })
           };
           incentives.meritSupplys.push(entry);
         }
@@ -463,16 +808,21 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
  * 批量获取所有 Merit key 的时间范围和链接信息
  * 这个函数会为每个唯一的 key 获取时间范围信息
  * 注意：跳过以 self- 开头的 key，因为它们与去掉 self- 前缀的 key 共享相同的 URL 和时间范围
+ * 
+ * 优化：只在 campaign 结束时更新非 APR 数据（timeRanges、message 等）
  */
 export async function fetchAllMeritTimeRanges(
   meritAPRs: Record<string, number | null>,
   options: { 
     maxConcurrent?: number;
+    cachedTimeRanges?: Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }>;
   } = {}
 ): Promise<Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }>> {
-  const { maxConcurrent = 5 } = options;
+  const { maxConcurrent = 1, cachedTimeRanges = {} } = options;
+  await loadMeritKeyAliases();
   
-  const timeRanges: Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }> = {};
+  // 从缓存开始，只更新需要更新的部分
+  const timeRanges: Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }> = { ...cachedTimeRanges };
   const uniqueKeys = Object.keys(meritAPRs);
   
   if (uniqueKeys.length === 0) {
@@ -482,15 +832,115 @@ export async function fetchAllMeritTimeRanges(
   // 过滤掉以下情况的 key：
   // 1. 值为 null 的 key（如 "avalanche-supply-savax": null），这些不需要获取时间范围
   // 2. 以 self- 开头的 key，因为它们与去掉 self- 前缀的 key 共享相同的 URL 和时间范围
-  const keysToFetch = uniqueKeys.filter(key => {
+  // 3. 长度为 2 的 key（如 "ethereum-sgho"），这些不需要获取 message
+  const allKeysToCheck = uniqueKeys.filter(key => {
     const value = meritAPRs[key];
     if (value === null) return false; // 跳过 null 值
     if (key.startsWith('self-')) return false; // 跳过 self- 前缀
+    const keyParts = key.split('-');
+    if (keyParts.length <= 2) return false; // 跳过长度为 2 的 key（不需要 message）
     return true;
   });
   
-  const skippedCount = uniqueKeys.length - keysToFetch.length;
-  logger.info(`📅 Fetching time ranges for ${keysToFetch.length} Merit campaigns (skipping ${skippedCount} null/self- keys)...`);
+  // 检查哪些 key 需要更新（只在 campaign 结束时更新）
+  const keysToFetch: string[] = [];
+  const keysToSkip: string[] = [];
+  
+  // 并发检查所有 key 是否需要更新
+  // Canonical-key support: some keys redirect to another key page (e.g. sonic-supply-usdce -> sonic-supply-usdc).
+  // We keep only canonical keys in fetch list, but we will alias duplicates to the canonical result.
+  const canonicalMap = new Map<string, string>();
+  const canonicalToAliases = new Map<string, Set<string>>();
+
+  // Known redirect aliases (fast-path, avoids extra request just to detect redirect)
+  const knownRedirectAliases: Record<string, string> = {
+    'sonic-supply-usdce': 'sonic-supply-usdc',
+  };
+
+  const getCanonicalKey = (k: string) => discoveredRedirectAliases.get(k) ?? knownRedirectAliases[k] ?? k;
+
+  const updateChecks = await Promise.all(
+    allKeysToCheck.map(async (key) => {
+      const canonicalKey = getCanonicalKey(key);
+      canonicalMap.set(key, canonicalKey);
+      if (!canonicalToAliases.has(canonicalKey)) canonicalToAliases.set(canonicalKey, new Set());
+      canonicalToAliases.get(canonicalKey)!.add(key);
+
+      const cached = cachedTimeRanges[key] ?? cachedTimeRanges[canonicalKey];
+      const hasSelfAuth = getHasSelfAuthForKey(meritAPRs, canonicalKey);
+      const completeness = isCachedTimeRangeComplete({ key: canonicalKey, cached, hasSelfAuth });
+      const needsUpdateByCompleteness = !completeness.isComplete;
+
+      const { needsUpdate: needsUpdateByEndState, reasons: endStateReasons } = await evaluateTimeRangeUpdate(cached, canonicalKey);
+      const needsUpdate = needsUpdateByEndState || needsUpdateByCompleteness;
+
+      return {
+        key,
+        canonicalKey,
+        needsUpdate,
+        cached,
+        debug: {
+          completenessMissing: completeness.missing,
+          endStateReasons,
+        },
+      };
+    })
+  );
+  
+  const canonicalNeedsUpdate = new Map<string, boolean>();
+  const canonicalCached = new Map<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] } | undefined>();
+
+  for (const { canonicalKey, needsUpdate, cached, debug } of updateChecks) {
+    canonicalNeedsUpdate.set(canonicalKey, (canonicalNeedsUpdate.get(canonicalKey) ?? false) || needsUpdate);
+    if (cached && !canonicalCached.has(canonicalKey)) {
+      canonicalCached.set(canonicalKey, cached);
+    }
+
+    if (needsUpdate) {
+      const logParts = [
+        `key=${canonicalKey}`,
+        debug?.completenessMissing?.length ? `missing=[${debug.completenessMissing.join(',')}]` : 'missing=[]',
+        debug?.endStateReasons?.length ? `endState=[${debug.endStateReasons.join(',')}]` : 'endState=[]',
+      ];
+      logger.info(`🧭 Merit timeRange refresh: ${logParts.join(' | ')}`);
+    }
+  }
+
+  // Build fetch/skip lists on canonical keys only
+  const canonicalKeys = [...canonicalToAliases.keys()];
+  for (const canonicalKey of canonicalKeys) {
+    const needsUpdate = canonicalNeedsUpdate.get(canonicalKey) ?? true;
+    const cached = canonicalCached.get(canonicalKey);
+    if (needsUpdate) {
+      keysToFetch.push(canonicalKey);
+    } else {
+      keysToSkip.push(canonicalKey);
+      if (cached) timeRanges[canonicalKey] = cached;
+    }
+  }
+  
+  const skippedCount = uniqueKeys.length - allKeysToCheck.length;
+  logger.info(`📅 Checking ${allKeysToCheck.length} Merit campaigns...`);
+  logger.info(`   • ${keysToFetch.length} campaigns need update (ended or new)`);
+  logger.info(`   • ${keysToSkip.length} campaigns using cached data (still active)`);
+  logger.info(`   • ${skippedCount} campaigns skipped (null/self-/short keys)`);
+  if (knownRedirectAliases && Object.keys(knownRedirectAliases).length > 0) {
+    logger.info(`🔁 Known redirect alias map active (${Object.keys(knownRedirectAliases).length} entries)`);
+  }
+  if (keysToFetch.length > 0) {
+    logger.info('🧾 Merit campaigns to fetch (index -> key):');
+    keysToFetch.forEach((key, idx) => {
+      const hasSelfAuth = meritAPRs[`self-${key}`] !== null && meritAPRs[`self-${key}`] !== undefined;
+      logger.info(`   • [${idx + 1}/${keysToFetch.length}] ${key}${hasSelfAuth ? ' (has self-auth)' : ''}`);
+    });
+  }
+  if (keysToSkip.length > 0) {
+    logger.info('🧾 Merit campaigns using cache (index -> key):');
+    keysToSkip.forEach((key, idx) => {
+      const hasSelfAuth = meritAPRs[`self-${key}`] !== null && meritAPRs[`self-${key}`] !== undefined;
+      logger.info(`   • [${idx + 1}/${keysToSkip.length}] ${key}${hasSelfAuth ? ' (has self-auth)' : ''}`);
+    });
+  }
   
   // 使用并发控制来避免过多请求
   const semaphore = { count: 0 };
@@ -503,7 +953,8 @@ export async function fetchAllMeritTimeRanges(
     
     semaphore.count++;
     try {
-      const data = await fetchMeritTimeRange(key);
+      const hasSelfAuth = meritAPRs[`self-${key}`] !== null && meritAPRs[`self-${key}`] !== undefined;
+      const data = await fetchMeritTimeRange(key, { hasSelfAuth });
       results.push({ key, data });
     } catch (error) {
       // 静默失败，继续处理其他 key
@@ -512,12 +963,27 @@ export async function fetchAllMeritTimeRanges(
     }
   };
   
-  // 并发获取所有时间范围（只处理非 self- 开头的 key）
-  await Promise.all(keysToFetch.map(key => fetchWithLimit(key)));
-  
-  // 构建结果映射
-  for (const { key, data } of results) {
-    timeRanges[key] = data;
+  // 只并发获取需要更新的时间范围
+  if (keysToFetch.length > 0) {
+    await Promise.all(keysToFetch.map(key => fetchWithLimit(key)));
+    
+    // 更新结果映射
+    for (const { key, data } of results) {
+      timeRanges[key] = data;
+    }
+  }
+
+  // Apply canonical aliases (so duplicate keys reuse canonical result without refetching)
+  // This keeps dataset consistent while preventing duplicate crawling.
+  if (canonicalToAliases.size > 0) {
+    for (const [canonicalKey, aliases] of canonicalToAliases.entries()) {
+      const canonicalData = timeRanges[canonicalKey];
+      if (!canonicalData) continue;
+      for (const alias of aliases) {
+        if (alias === canonicalKey) continue;
+        timeRanges[alias] = canonicalData;
+      }
+    }
   }
   
   logger.info(`✅ Fetched time ranges for ${Object.keys(timeRanges).length} Merit campaigns`);
@@ -592,24 +1058,102 @@ export function getMeritDataFromMarket(
   return null;
 }
 
+// ============================================================================
+// Browser Instance Management (Production-Grade)
+// ============================================================================
+
 // 全局浏览器实例（复用以提高性能）
 let browserInstance: Browser | null = null;
 
 /**
  * 获取或创建浏览器实例（单例模式）
+ * PRODUCTION-GRADE: 检查连接状态，自动恢复断开的连接
  */
 async function getBrowser(): Promise<Browser> {
-  if (!browserInstance) {
+  // 如果浏览器存在，检查连接状态
+  if (browserInstance) {
+    try {
+      // 尝试获取页面列表来验证连接
+      await browserInstance.pages();
+      return browserInstance;
+    } catch (error) {
+      // 浏览器已断开，清除实例
+      logger.warn('⚠️ Browser instance disconnected, will create new one');
+      browserInstance = null;
+    }
+  }
+
+  // 创建新浏览器实例
+  try {
     browserInstance = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
+    logger.info('✅ Browser instance created');
+    return browserInstance;
+  } catch (error) {
+    browserInstance = null;
+    throw error;
   }
-  return browserInstance;
+}
+
+// ============================================================================
+// Semaphore for Page Concurrency Control
+// ============================================================================
+
+interface Semaphore {
+  acquire(): Promise<() => void>;
+}
+
+/**
+ * 简单的 semaphore 实现，用于控制并发页面操作
+ * PRODUCTION-GRADE: 防止无限制的并行 newPage() 调用
+ */
+function createSemaphore(concurrency: number): Semaphore {
+  let available = concurrency;
+  const queue: Array<() => void> = [];
+
+  return {
+    async acquire(): Promise<() => void> {
+      return new Promise((resolve) => {
+        if (available > 0) {
+          available--;
+          resolve(() => {
+            available++;
+            const next = queue.shift();
+            if (next) next();
+          });
+        } else {
+          queue.push(() => {
+            available--;
+            resolve(() => {
+              available++;
+              const next = queue.shift();
+              if (next) next();
+            });
+          });
+        }
+      });
+    },
+  };
+}
+
+// 全局 semaphore，默认并发数：2（安全默认值）
+const DEFAULT_PAGE_CONCURRENCY = 2;
+let pageSemaphore: Semaphore | null = null;
+
+function getPageSemaphore(): Semaphore {
+  if (!pageSemaphore) {
+    const concurrency = Number(process.env.PUPPETEER_PAGE_CONCURRENCY ?? DEFAULT_PAGE_CONCURRENCY);
+    pageSemaphore = createSemaphore(concurrency);
+    logger.info(`📊 Created page semaphore with concurrency=${concurrency}`);
+  }
+  return pageSemaphore;
 }
 
 /**
  * 关闭浏览器实例
+ * PRODUCTION-GRADE: 使用 browser.close() 而不是 disconnect()
  */
 export async function closeBrowser(): Promise<void> {
   // #region agent log
@@ -619,8 +1163,14 @@ export async function closeBrowser(): Promise<void> {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/merit-api.ts:617',message:'closing browser instance',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
     // #endregion
-    await browserInstance.close();
-    browserInstance = null;
+    try {
+      await browserInstance.close();
+      logger.info('✅ Browser instance closed');
+    } catch (error) {
+      logger.error('❌ Error closing browser instance:', error);
+    } finally {
+      browserInstance = null;
+    }
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/merit-api.ts:620',message:'browser instance closed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
     // #endregion
@@ -636,7 +1186,60 @@ export async function closeBrowser(): Promise<void> {
  * name 和 date 在 SSR HTML 中就有，不需要 JavaScript 渲染
  * 这样可以减少性能消耗，避免不必要的 Puppeteer 调用
  */
-async function fetchMeritPageHtmlStatic(key: string): Promise<string | null> {
+const MERIT_KEY_ALIASES_PATH = join(DATA_DIR, 'merit-key-aliases.json');
+const discoveredRedirectAliases = new Map<string, string>();
+let loadedRedirectAliases = false;
+let persistAliasesTimer: NodeJS.Timeout | null = null;
+
+async function loadMeritKeyAliases(): Promise<void> {
+  if (loadedRedirectAliases) return;
+  loadedRedirectAliases = true;
+  try {
+    const raw = await readFile(MERIT_KEY_ALIASES_PATH, 'utf-8');
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    for (const [from, to] of Object.entries(parsed || {})) {
+      if (typeof from === 'string' && typeof to === 'string' && from && to && from !== to) {
+        discoveredRedirectAliases.set(from, to);
+      }
+    }
+    const count = Object.keys(parsed || {}).length;
+    if (count > 0) {
+      logger.info(`🔁 Loaded ${count} Merit key aliases from ${MERIT_KEY_ALIASES_PATH}`);
+    }
+  } catch {
+    // file not found / invalid json -> ignore
+  }
+}
+
+async function persistMeritKeyAliasesSoon(): Promise<void> {
+  if (persistAliasesTimer) return;
+  persistAliasesTimer = setTimeout(async () => {
+    persistAliasesTimer = null;
+    await flushMeritKeyAliases();
+  }, 500);
+}
+
+export async function flushMeritKeyAliases(): Promise<void> {
+  if (persistAliasesTimer) {
+    clearTimeout(persistAliasesTimer);
+    persistAliasesTimer = null;
+  }
+  try {
+    await mkdir(DATA_DIR, { recursive: true });
+    const obj: Record<string, string> = {};
+    for (const [from, to] of discoveredRedirectAliases.entries()) {
+      obj[from] = to;
+    }
+    if (Object.keys(obj).length > 0) {
+      await writeFile(MERIT_KEY_ALIASES_PATH, JSON.stringify(obj, null, 2), 'utf-8');
+      logger.info(`💾 Persisted ${Object.keys(obj).length} Merit key aliases to ${MERIT_KEY_ALIASES_PATH}`);
+    }
+  } catch (e) {
+    logger.warn(`⚠️ Failed to persist Merit key aliases to ${MERIT_KEY_ALIASES_PATH}:`, e);
+  }
+}
+
+async function fetchMeritPageHtmlStatic(key: string): Promise<{ html: string; finalKey: string } | null> {
   try {
     const url = `https://apps.aavechan.com/merit/${key}`;
     
@@ -650,8 +1253,22 @@ async function fetchMeritPageHtmlStatic(key: string): Promise<string | null> {
       logger.warn(`⚠️ Failed to fetch Merit page ${url}: HTTP ${response.status}`);
       return null;
     }
-    
-    return await response.text();
+
+    // node-fetch follows redirects; capture final URL to detect canonical key
+    const finalUrl = response.url || url;
+    const match = finalUrl.match(/\/merit\/([^/?#]+)/);
+    const finalKey = match?.[1] ? decodeURIComponent(match[1]) : key;
+    if (finalKey && finalKey !== key) {
+      const wasNew = !discoveredRedirectAliases.has(key);
+      discoveredRedirectAliases.set(key, finalKey);
+      if (wasNew) {
+        logger.info(`🔁 Discovered redirect alias: ${key} -> ${finalKey}`);
+        await persistMeritKeyAliasesSoon();
+      }
+    }
+
+    const html = await response.text();
+    return { html, finalKey };
   } catch (error) {
     logger.error(`❌ Error fetching Merit page for key ${key}:`, error);
     return null;
@@ -663,11 +1280,24 @@ async function fetchMeritPageHtmlStatic(key: string): Promise<string | null> {
  * 打开 Campaign info 弹窗，从表格中提取 action 和 description
  */
 async function extractCampaignInfoWithBrowser(key: string): Promise<MeritCampaignInfo[]> {
+  // Cloudflare Workers Browser Rendering primary
+  const workerInfos = await extractCampaignInfoWithWorker(key);
+  if (workerInfos.length > 0) {
+    return workerInfos;
+  }
+
+  // Fallback: local Puppeteer (keep for reliability)
+  // PRODUCTION-GRADE: Use semaphore for concurrency control
+  const semaphore = getPageSemaphore();
+  const release = await semaphore.acquire();
+  
+  let page: Page | null = null;
+  
   try {
     const url = `https://apps.aavechan.com/merit/${key}`;
     
     const browser = await getBrowser();
-    const page = await browser.newPage();
+    page = await browser.newPage();
     
     try {
       // 设置视口和 User-Agent
@@ -773,11 +1403,245 @@ async function extractCampaignInfoWithBrowser(key: string): Promise<MeritCampaig
       
       return [];
     } finally {
-      await page.close();
+      // PRODUCTION-GRADE: Always close page, even on errors
+      if (page) {
+        try {
+          await page.close();
+        } catch (error) {
+          logger.warn('⚠️ Error closing page:', error);
+        }
+      }
+      // Release semaphore slot
+      release();
     }
   } catch (error) {
+    // Release semaphore even on outer error
+    release();
     // 静默失败，fallback 到其他方法
+    logger.warn(`⚠️ extractCampaignInfoWithBrowser failed for ${key}:`, error);
     return [];
+  }
+}
+
+interface MeritDynamicInfo {
+  campaignInfo: MeritCampaignInfo[];
+  selfAuthDescription: string | null;
+  source: 'worker' | 'puppeteer';
+}
+
+async function extractMeritDynamicInfoWithBrowser(
+  key: string,
+  options: { needCampaignInfo: boolean; needSelfAuth: boolean }
+): Promise<MeritDynamicInfo> {
+  const { needCampaignInfo, needSelfAuth } = options;
+  const allowLocalPuppeteerFallback = process.env.MERIT_ALLOW_LOCAL_PUPPETEER !== 'false';
+
+  // Cloudflare Workers Browser Rendering primary (single navigation on worker side)
+  const workerResult = await extractMeritDynamicInfoWithWorker(key);
+  if (workerResult) {
+    return {
+      campaignInfo: needCampaignInfo ? workerResult.campaignInfo : [],
+      selfAuthDescription: needSelfAuth ? workerResult.selfAuthDescription : null,
+      source: 'worker',
+    };
+  }
+
+  if (!allowLocalPuppeteerFallback) {
+    return { campaignInfo: [], selfAuthDescription: null, source: 'puppeteer' };
+  }
+
+  // Fallback: local Puppeteer (single navigation locally)
+  // PRODUCTION-GRADE: Use semaphore for concurrency control
+  const semaphore = getPageSemaphore();
+  const release = await semaphore.acquire();
+  
+  let page: Page | null = null;
+  
+  try {
+    const url = `https://apps.aavechan.com/merit/${key}`;
+    const browser = await getBrowser();
+    page = await browser.newPage();
+
+    try {
+      await page.setViewport({ width: 1920, height: 1080 });
+      await page.setUserAgent(
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      );
+
+      await page.goto(url, {
+        waitUntil: 'networkidle2',
+        timeout: 30000,
+      });
+
+      await page.waitForSelector('body', { timeout: 10000 });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      const [campaignInfo, selfAuthDescription] = await Promise.all([
+        (async () => {
+          if (!needCampaignInfo) return [];
+          try {
+            const buttons = await page.$$('button');
+            for (const button of buttons) {
+              const text = await page.evaluate((el) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                return (el as any).textContent || '';
+              }, button);
+              if (text && /campaign\s+info/i.test(text)) {
+                await button.click();
+                await new Promise((resolve) => setTimeout(resolve, 800));
+                break;
+              }
+            }
+          } catch {}
+
+          try {
+            const infoButtonIndex = await page.$$eval('button', (buttons) => {
+              return buttons.findIndex((btn) => {
+                const text = btn.textContent || '';
+                return /info/i.test(text) && text.length < 50;
+              });
+            });
+            if (infoButtonIndex >= 0) {
+              const buttons = await page.$$('button');
+              if (buttons[infoButtonIndex]) {
+                await buttons[infoButtonIndex].click();
+                await new Promise((resolve) => setTimeout(resolve, 800));
+              }
+            }
+          } catch {}
+
+          const infos = await page.evaluate(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const infos: Array<{ action?: string; description?: string }> = [];
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const doc = (globalThis as any).document;
+            if (!doc) return infos;
+            const tables = doc.querySelectorAll('table');
+            for (let i = 0; i < tables.length; i++) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const table = tables[i] as any;
+              const rows = table.querySelectorAll('tbody tr');
+              for (let j = 0; j < rows.length; j++) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const row = rows[j] as any;
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 2) {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const action = (cells[0] as any)?.textContent?.trim() || '';
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const description = (cells[1] as any)?.textContent?.trim() || '';
+                  if (action.length > 0 && description.length > action.length && description.length > 20) {
+                    infos.push({ action, description });
+                  }
+                }
+              }
+            }
+            return infos;
+          });
+
+          return (Array.isArray(infos) ? infos : []) as MeritCampaignInfo[];
+        })(),
+        (async () => {
+          if (!needSelfAuth) return null;
+          return await page.evaluate(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const doc = (globalThis as any).document;
+            if (!doc) return null;
+
+            function norm(s: any) {
+              return String(s || '').replace(/\s+/g, ' ').trim();
+            }
+
+            function hasSelfAuth(s: any) {
+              const t = String(s || '').toLowerCase();
+              return t.includes('self') && (t.includes('authentication') || t.includes('verify') || t.includes('proof'));
+            }
+
+            function scoreEl(el: any) {
+              const text = norm(el?.textContent);
+              if (!text || !hasSelfAuth(text)) return -1;
+              let score = 0;
+              if (text.length >= 60 && text.length <= 900) score += 3;
+              if (text.toLowerCase().includes('supply')) score += 1;
+              if (text.toLowerCase().includes('borrow')) score += 1;
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const cs = (globalThis as any).getComputedStyle(el);
+                const bg = cs?.backgroundColor || '';
+                if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') score += 2;
+                const border = cs?.borderColor || '';
+                if (border && border !== 'rgba(0, 0, 0, 0)' && border !== 'transparent') score += 1;
+              } catch {}
+              if (text.length > 900) score -= 3;
+              return score;
+            }
+
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const candidates = doc.querySelectorAll('section,article,aside,div,p,li') as any;
+
+              let best: any = null;
+              let bestScore = -1;
+              for (let i = 0; i < candidates.length; i++) {
+                const el = candidates[i];
+                const s = scoreEl(el);
+                if (s > bestScore) {
+                  bestScore = s;
+                  best = el;
+                }
+              }
+
+              if (best) {
+                let container: any = best;
+                for (let i = 0; i < 4; i++) {
+                  const t = norm(container?.textContent);
+                  if (t.length >= 60 && t.length <= 900 && hasSelfAuth(t)) break;
+                  container = container?.parentElement;
+                  if (!container) break;
+                }
+                const finalText = norm(container?.textContent);
+                if (finalText && hasSelfAuth(finalText) && finalText.length <= 1200) {
+                  return finalText.length > 950 ? finalText.slice(0, 950) : finalText;
+                }
+              }
+            } catch {}
+
+            // text-based fallback
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const allElements = doc.querySelectorAll('*') as any;
+            for (let i = 0; i < allElements.length; i++) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const element = allElements[i] as any;
+              if (!element) continue;
+              const text = norm(element.textContent || '');
+              if (hasSelfAuth(text) && text.length > 60 && text.length < 1000) {
+                return text;
+              }
+            }
+
+            return null;
+          });
+        })(),
+      ]);
+
+      return { campaignInfo, selfAuthDescription, source: 'puppeteer' };
+    } finally {
+      // PRODUCTION-GRADE: Always close page, even on errors
+      if (page) {
+        try {
+          await page.close();
+        } catch (error) {
+          logger.warn('⚠️ Error closing page:', error);
+        }
+      }
+      // Release semaphore slot
+      release();
+    }
+  } catch (error) {
+    // Release semaphore even on outer error
+    release();
+    logger.warn(`⚠️ extractMeritDynamicInfoWithBrowser failed for ${key}:`, error);
+    return { campaignInfo: [], selfAuthDescription: null, source: 'puppeteer' };
   }
 }
 
@@ -1076,6 +1940,231 @@ function extractCampaignName(html: string): string | undefined {
 }
 
 /**
+ * 使用 browser rendering 提取 Self authentication 描述
+ * 基于位置提取：根据截图，Self 认证描述出现在一个浅绿色框中
+ * 不依赖精确文本匹配，而是基于 DOM 结构位置
+ * 需要使用 browser rendering 因为内容可能需要 JavaScript 渲染
+ */
+export async function extractSelfAuthenticationDescriptionWithBrowser(key: string): Promise<string | null> {
+  // Cloudflare Browser Rendering (REST API) primary
+  const cloudflareDescription = await extractSelfAuthenticationDescriptionWithCloudflare(key);
+  if (cloudflareDescription) {
+    return cloudflareDescription;
+  }
+
+  // Fallback: local Puppeteer (keep for reliability)
+  // PRODUCTION-GRADE: Use semaphore for concurrency control
+  const semaphore = getPageSemaphore();
+  const release = await semaphore.acquire();
+  
+  let page: Page | null = null;
+  
+  try {
+    const url = `https://apps.aavechan.com/merit/${key}`;
+    logger.info(`🔍 [Self Auth] Starting extraction for ${key} from ${url}`);
+    
+    const browser = await getBrowser();
+    page = await browser.newPage();
+    
+    try {
+      // 设置视口和 User-Agent
+      await page.setViewport({ width: 1920, height: 1080 });
+      await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+      
+      // 导航到页面
+      logger.info(`🔍 [Self Auth] Navigating to ${url}...`);
+      await page.goto(url, { 
+        waitUntil: 'networkidle2',
+        timeout: 30000 
+      });
+      
+      // 等待页面加载
+      await page.waitForSelector('body', { timeout: 10000 });
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      logger.info(`🔍 [Self Auth] Page loaded, starting extraction...`);
+      
+      // 在浏览器中提取 Self authentication 描述
+      // 基于页面布局定位：根据截图，Self 认证描述出现在一个浅绿色信息框中
+      // 优先使用 CSS 选择器、DOM 结构和样式来定位，而不是文本内容
+      // @ts-ignore - page.evaluate 中的代码在浏览器环境中执行，DOM API 可用
+      const selfDescription = await page.evaluate(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const doc = (globalThis as any).document;
+        if (!doc) return null;
+
+        // Shared helpers for all strategies (do NOT rely on aave.self.xyz)
+        function norm(s: any) {
+          return String(s || '').replace(/\s+/g, ' ').trim();
+        }
+
+        function hasSelfAuth(s: any) {
+          const t = String(s || '').toLowerCase();
+          return t.includes('self') && (t.includes('authentication') || t.includes('verify') || t.includes('proof'));
+        }
+        
+        // 方法1: 不依赖链接，基于 Self + authentication 语义 + 布局（更鲁棒）
+        // 用户要求：即使没有完整的 aave.self.xyz，也要能识别 Self authentication 相关文案
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const candidates = doc.querySelectorAll('section,article,aside,div,p,li') as any;
+          function scoreEl(el: any) {
+            const text = norm(el?.textContent);
+            if (!text || !hasSelfAuth(text)) return -1;
+            let score = 0;
+            if (text.length >= 60 && text.length <= 900) score += 3;
+            if (text.toLowerCase().includes('supply')) score += 1;
+            if (text.toLowerCase().includes('borrow')) score += 1;
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const cs = (globalThis as any).getComputedStyle(el);
+              const bg = cs?.backgroundColor || '';
+              if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') score += 2;
+              const border = cs?.borderColor || '';
+              if (border && border !== 'rgba(0, 0, 0, 0)' && border !== 'transparent') score += 1;
+            } catch {}
+            if (text.length > 900) score -= 3;
+            return score;
+          }
+
+          let best: any = null;
+          let bestScore = -1;
+          for (let i = 0; i < candidates.length; i++) {
+            const el = candidates[i];
+            const s = scoreEl(el);
+            if (s > bestScore) {
+              bestScore = s;
+              best = el;
+            }
+          }
+
+          if (best) {
+            let container: any = best;
+            for (let i = 0; i < 4; i++) {
+              const t = norm(container?.textContent);
+              if (t.length >= 60 && t.length <= 900 && hasSelfAuth(t)) break;
+              container = container?.parentElement;
+              if (!container) break;
+            }
+            const finalText = norm(container?.textContent);
+            if (finalText && hasSelfAuth(finalText) && finalText.length <= 1200) {
+              return finalText.length > 950 ? finalText.slice(0, 950) : finalText;
+            }
+          }
+        } catch (e) {
+          // 忽略选择器错误
+        }
+        
+        // 方法2: 根据 CSS 类/样式定位 - 查找浅绿色背景的信息框
+        // 尝试查找包含特定背景色相关的 CSS 类的元素
+        const styleSelectors = [
+          '[class*="green"]',
+          '[class*="emerald"]',
+          '[class*="lime"]',
+          '[class*="bg-"]', // Tailwind CSS 背景色类
+        ];
+        
+        for (const selector of styleSelectors) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const elements = doc.querySelectorAll(selector) as any;
+            for (let i = 0; i < elements.length; i++) {
+              const element = elements[i];
+              if (!element) continue;
+              
+              // 检查元素的计算样式，看是否有浅绿色背景
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const computedStyle = (globalThis as any).getComputedStyle(element);
+              const bgColor = computedStyle.backgroundColor;
+              
+              // 检查 Self authentication 语义（不依赖链接）
+              const text = norm(element.textContent || '');
+              if (hasSelfAuth(text) && text.length > 50 && text.length < 1000) {
+                return text;
+              }
+            }
+          } catch (e) {
+            // 忽略选择器错误
+          }
+        }
+        
+        // 方法3: 根据 DOM 结构定位 - 查找特定的容器类型
+        // 信息框通常在 div、section、article 等容器中，且可能包含特定的结构
+        const containerSelectors = ['div', 'section', 'article', 'aside'];
+        for (const tagName of containerSelectors) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const containers = doc.querySelectorAll(tagName) as any;
+            for (let i = 0; i < containers.length; i++) {
+              const container = containers[i];
+              if (!container) continue;
+              
+              const text = norm(container.textContent || '');
+              if (hasSelfAuth(text) && text.length > 50 && text.length < 1000) {
+                return text;
+              }
+            }
+          } catch (e) {
+            // 忽略错误
+          }
+        }
+        
+        // 方法4: 文本定位（fallback）- 如果所有布局定位都失败，使用文本定位作为最后手段
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const allElements = doc.querySelectorAll('*') as any;
+        for (let i = 0; i < allElements.length; i++) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const element = allElements[i] as any;
+          if (!element) continue;
+          
+          const text = norm(element.textContent || '');
+          if (hasSelfAuth(text) && text.length > 60 && text.length < 1000) {
+            return text;
+          }
+        }
+        
+        return null;
+      });
+      
+      // 获取浏览器控制台的输出
+      const consoleMessages = await page.evaluate(() => {
+        // 尝试获取 console.log 的输出（如果页面有存储的话）
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (globalThis as any).__selfAuthDebug || null;
+      });
+      
+      if (consoleMessages) {
+        logger.info(`🔍 [Self Auth] Browser console output: ${JSON.stringify(consoleMessages)}`);
+      }
+      
+      if (selfDescription) {
+        logger.info(`✅ [Self Auth] Successfully extracted for ${key}: ${selfDescription.substring(0, 100)}...`);
+        logger.info(`📝 [Self Auth] Full extracted text (${selfDescription.length} chars): ${selfDescription}`);
+      } else {
+        logger.warn(`⚠️ [Self Auth] No description found for ${key}`);
+      }
+      
+      return selfDescription;
+    } finally {
+      // PRODUCTION-GRADE: Always close page, even on errors
+      if (page) {
+        try {
+          await page.close();
+        } catch (error) {
+          logger.warn('⚠️ Error closing page:', error);
+        }
+      }
+      // Release semaphore slot
+      release();
+    }
+  } catch (error) {
+    // Release semaphore even on outer error
+    release();
+    logger.warn(`⚠️ Failed to extract Self description with browser for ${key}:`, error);
+    return null;
+  }
+}
+
+/**
  * 从 HTML 中提取 campaign info（action 和 description）
  * 从 Campaign info 弹窗的表格中提取 action 和 description
  * 基于表格结构提取，不依赖具体的文字内容
@@ -1117,11 +2206,9 @@ function extractCampaignInfo(html: string): MeritCampaignInfo[] {
         
         // 在 action 之后查找 description（在 30000 字符内，因为中间可能有大量其他内容）
         const searchStart = actionIndex + actionMatch[0].length;
-        const searchEnd = Math.min(searchStart + 30000, rawHtml.length);
-        const searchRegion = rawHtml.substring(searchStart, searchEnd);
         
         // 查找 "Rewards are distributed" 开头的 description
-        // 直接在原始 HTML 中查找（不限制在 searchRegion 中）
+        // 直接在原始 HTML 中查找（不限制在特定区域中）
         const fullRewardsIndex = rawHtml.indexOf('Rewards are distributed', searchStart);
         if (fullRewardsIndex > 0 && fullRewardsIndex < searchStart + 30000) {
           // 向前查找 "children"，向后查找结束引号
@@ -1241,7 +2328,10 @@ function extractCampaignInfo(html: string): MeritCampaignInfo[] {
  * 按照三层优先级策略提取数据
  * 返回包含 link、startDate、endDate、block、name 和 description 信息的对象
  */
-export async function fetchMeritTimeRange(key: string): Promise<{ link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }> {
+export async function fetchMeritTimeRange(
+  key: string,
+  options: { hasSelfAuth?: boolean } = {}
+): Promise<{ link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }> {
   const link = `https://apps.aavechan.com/merit/${key}`;
   const result: { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] } = {
     link,
@@ -1249,39 +2339,63 @@ export async function fetchMeritTimeRange(key: string): Promise<{ link: string; 
     endDate: ''
   };
   
+  // 检查 key 长度，如果长度为 2（如 ethereum-sgho），跳过获取 message
+  const keyParts = key.split('-');
+  const shouldFetchMessage = keyParts.length > 2;
+  
   try {
     // 获取页面 HTML（使用静态 fetch，name 和 date 在 SSR 中就有，不需要 Puppeteer）
-    const html = await fetchMeritPageHtmlStatic(key);
-    if (!html) {
+    const page = await fetchMeritPageHtmlStatic(key);
+    if (!page) {
       logger.warn(`⚠️ Failed to fetch HTML for key: ${key}`);
       return result;
     }
+    const { html, finalKey } = page;
+    // Note: redirect detection and alias recording already happened in fetchMeritPageHtmlStatic
     
     // 提取 campaign 名称（使用静态 HTML，原来方法就很好，不需要 Puppeteer）
     const name = extractCampaignName(html);
     
-    // 优先级 #1：使用 browser rendering 提取 campaign info（最可靠，不依赖文字匹配）
-    let message = await extractCampaignInfoWithBrowser(key);
-    
-    // 优先级 #2：如果 browser rendering 失败，尝试从 HTML DOM 表格提取
-    if (message.length === 0) {
-      const $ = cheerio.load(html);
-      $('table tbody tr').each((_index: number, element: any) => {
-        const tds = $(element).find('td');
-        if (tds.length >= 2) {
-          const action = $(tds[0]).text().trim();
-          const description = $(tds[1]).text().trim();
-          if (action && description && action.length > 0 && description.length > 0) {
-            message.push({ action, description });
-          }
-        }
-      });
+  const { hasSelfAuth = false } = options;
+
+  // 只有当 key 长度大于 2 时才提取 message（Self-auth 也挂在 message 里，所以也需要）
+    let message: MeritCampaignInfo[] = [];
+    let messageStrategy: string | null = null;
+    let selfAuthStrategy: string | null = null;
+    let dateStrategy: string | null = null;
+
+  if (shouldFetchMessage) {
+    // 优先级 #1：静态 HTML 解析（零额外网络请求）
+    message = extractCampaignInfo(html);
+    if (message.length > 0) messageStrategy = 'message:p1:static-dom/regex';
+  }
+
+  const needDynamicCampaignInfo = shouldFetchMessage && message.length === 0;
+  const needDynamicSelfAuth = hasSelfAuth;
+
+  let dynamicSource: 'worker' | 'puppeteer' | null = null;
+  if (needDynamicCampaignInfo || needDynamicSelfAuth) {
+    const dynamic = await extractMeritDynamicInfoWithBrowser(key, {
+      needCampaignInfo: needDynamicCampaignInfo,
+      needSelfAuth: needDynamicSelfAuth,
+    });
+    dynamicSource = dynamic.source;
+
+    if (needDynamicCampaignInfo && dynamic.campaignInfo.length > 0) {
+      message = dynamic.campaignInfo;
+      messageStrategy = `message:p2:dynamic:${dynamic.source}`;
     }
-    
-    // 优先级 #3：最后方案 - 使用正则表达式从 HTML 中提取（不推荐，因为无法预设所有文字内容）
-    if (message.length === 0) {
-      message = extractCampaignInfo(html);
+
+    if (needDynamicSelfAuth && dynamic.selfAuthDescription) {
+      message = [
+        ...(message || []),
+        { action: 'Self authentication', description: dynamic.selfAuthDescription },
+      ];
+      selfAuthStrategy = `self-auth:p2:dynamic:${dynamic.source}`;
+    } else if (needDynamicSelfAuth && !dynamic.selfAuthDescription) {
+      logger.warn(`⚠️ Self authentication description missing for ${key} (dynamic extraction returned empty)`);
     }
+  }
     
     if (name) {
       result.name = name;
@@ -1289,18 +2403,28 @@ export async function fetchMeritTimeRange(key: string): Promise<{ link: string; 
     if (message.length > 0) {
       result.message = message;
     }
+
+    // Strategy summary (helps optimize resource usage) — logged after date strategy is decided.
     
     // 优先级 #1：从 DOM 直接提取日期（基于 class "text-xs whitespace-nowrap" 的 span 元素）
     let dates = extractDatesFromDom(html);
     if (dates.startDate && dates.endDate) {
       result.startDate = dates.startDate;
       result.endDate = dates.endDate;
+      dateStrategy = 'date:p1:dom-spans';
       
-      // 同时尝试提取区块号（用于 CSV，不放入接口）
+      // 同时尝试提取区块号
       const blocks = extractBlockNumbers(html);
       if (blocks.startBlock) result.startBlock = blocks.startBlock;
       if (blocks.endBlock) result.endBlock = blocks.endBlock;
       
+      logger.info(
+        `🧠 Merit crawl strategies for ${key}: ${[
+          messageStrategy ?? 'message:none',
+          hasSelfAuth ? (selfAuthStrategy ?? 'self-auth:missing') : 'self-auth:n/a',
+          dateStrategy ?? 'date:missing',
+        ].join(' | ')}`
+      );
       return result;
     }
     
@@ -1309,12 +2433,20 @@ export async function fetchMeritTimeRange(key: string): Promise<{ link: string; 
     if (dates.startDate && dates.endDate) {
       result.startDate = dates.startDate;
       result.endDate = dates.endDate;
+      dateStrategy = 'date:p2:regex';
       
       // 同时尝试提取区块号
       const blocks = extractBlockNumbers(html);
       if (blocks.startBlock) result.startBlock = blocks.startBlock;
       if (blocks.endBlock) result.endBlock = blocks.endBlock;
       
+      logger.info(
+        `🧠 Merit crawl strategies for ${key}: ${[
+          messageStrategy ?? 'message:none',
+          hasSelfAuth ? (selfAuthStrategy ?? 'self-auth:missing') : 'self-auth:n/a',
+          dateStrategy ?? 'date:missing',
+        ].join(' | ')}`
+      );
       return result;
     }
     
@@ -1331,16 +2463,31 @@ export async function fetchMeritTimeRange(key: string): Promise<{ link: string; 
       const blockDates = await convertBlocksToDates(blocks.startBlock, blocks.endBlock, chainName);
       if (blockDates.startDate) result.startDate = blockDates.startDate;
       if (blockDates.endDate) result.endDate = blockDates.endDate;
+      dateStrategy = 'date:p3:block->rpc';
       
       // 如果仍然没有日期，使用空字符串（必填字段）
       if (!result.startDate) result.startDate = '';
       if (!result.endDate) result.endDate = '';
       
+      logger.info(
+        `🧠 Merit crawl strategies for ${key}: ${[
+          messageStrategy ?? 'message:none',
+          hasSelfAuth ? (selfAuthStrategy ?? 'self-auth:missing') : 'self-auth:n/a',
+          dateStrategy ?? 'date:missing',
+        ].join(' | ')}`
+      );
       return result;
     }
     
     logger.warn(`⚠️ Could not extract time range information for key: ${key}`);
     // 即使没有找到，也返回默认值（必填字段）
+    logger.info(
+      `🧠 Merit crawl strategies for ${key}: ${[
+        messageStrategy ?? 'message:none',
+        hasSelfAuth ? (selfAuthStrategy ?? 'self-auth:missing') : 'self-auth:n/a',
+        dateStrategy ?? 'date:missing',
+      ].join(' | ')}`
+    );
     return result;
     
   } catch (error) {

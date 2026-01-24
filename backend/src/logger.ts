@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import winston from 'winston';
 import { mkdirSync } from 'fs';
 import { join, dirname, resolve } from 'path';

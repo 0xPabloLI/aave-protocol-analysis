@@ -16,8 +16,38 @@ fi
 TARGET_HOST=$1
 echo "Starting manual deployment to production server: $TARGET_HOST..."
 
+# Read DOPPLER_TOKEN from local .env file (if exists)
+# This allows you to store DOPPLER_TOKEN in local .env and have it automatically passed to the server
+DOPPLER_TOKEN_FROM_ENV=""
+if [ -f ".env" ]; then
+  echo "📋 Reading DOPPLER_TOKEN from local .env file..."
+  # Parse .env file to extract DOPPLER_TOKEN
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Skip comments and empty lines
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    # Check if this line contains DOPPLER_TOKEN
+    if [[ "$line" =~ ^[[:space:]]*DOPPLER_TOKEN[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      DOPPLER_TOKEN_FROM_ENV="${BASH_REMATCH[1]}"
+      # Remove surrounding quotes if present
+      DOPPLER_TOKEN_FROM_ENV=$(echo "$DOPPLER_TOKEN_FROM_ENV" | sed 's/^["'\'']//;s/["'\'']$//')
+      echo "✅ Found DOPPLER_TOKEN in local .env (will be passed to remote server)"
+      break
+    fi
+  done < ".env"
+fi
+
+# If DOPPLER_TOKEN is found in .env, export it so it can be passed to remote via SSH
+if [ -n "$DOPPLER_TOKEN_FROM_ENV" ]; then
+  export DOPPLER_TOKEN="$DOPPLER_TOKEN_FROM_ENV"
+  echo "💡 DOPPLER_TOKEN will be injected into remote PM2 environment via SSH"
+else
+  echo "ℹ️  No DOPPLER_TOKEN found in local .env (will use remote server's existing DOPPLER_TOKEN if set)"
+fi
+echo ""
+
 # Connect to the server with explicit SSH agent forwarding and run commands
-ssh -A -t "$TARGET_HOST" << 'EOF'
+# Note: Using EOF (not 'EOF') so that $DOPPLER_TOKEN from local shell is expanded
+ssh -A -t "$TARGET_HOST" << EOF
   echo "Connected to remote server..."
   
   # --- Node.js/NVM logic: always ensure node is available at the start ---
@@ -73,6 +103,49 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   pm2 status
   echo "------------------"
   
+  # Check and install Doppler CLI (for Secret Manager integration)
+  echo "Checking Doppler CLI installation..."
+  if ! command -v doppler &> /dev/null; then
+    echo "Doppler CLI not found. Installing..."
+    # Install Doppler CLI (official installation script)
+    curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh || {
+      echo "⚠️  Failed to install Doppler CLI. Continuing deployment, but secrets may not be available."
+      echo "💡 To install manually: curl -Ls https://cli.doppler.com/install.sh | sh"
+    }
+    
+    # Verify installation
+    if command -v doppler &> /dev/null; then
+      echo "✅ Doppler CLI installed successfully"
+    else
+      echo "⚠️  Doppler CLI installation failed. Please install manually."
+    fi
+  else
+    echo "✅ Doppler CLI is already installed"
+    doppler --version || echo "⚠️  Doppler CLI found but version check failed"
+  fi
+  
+  # Check if DOPPLER_TOKEN is set in the environment
+  # It may come from:
+  # 1. Local .env file (passed via SSH from deploy.sh)
+  # 2. Remote server's existing environment (e.g., ~/.bashrc, /etc/environment)
+  # IMPORTANT: Never echo the actual token value to avoid logging it
+  echo "Checking DOPPLER_TOKEN environment variable..."
+  if [ -z "$DOPPLER_TOKEN" ]; then
+    echo "⚠️  WARNING: DOPPLER_TOKEN is not set in the current environment."
+    echo "💡 The application will fall back to reading .env file (if exists) or use defaults."
+    echo "💡 Options to set DOPPLER_TOKEN:"
+    echo "   1. Add DOPPLER_TOKEN to local .env file (will be auto-passed via deploy.sh)"
+    echo "   2. Add it to remote server's ~/.bashrc: export DOPPLER_TOKEN='your-token-here'"
+    echo "   3. Add it to remote server's /etc/environment: DOPPLER_TOKEN='your-token-here'"
+    echo ""
+    echo "⚠️  Continuing deployment, but secrets from Secret Manager will not be available."
+  else
+    # Token is set, but we don't log anything about it to avoid any potential leaks
+    # The token will be injected into PM2 process environment via --update-env
+    echo "✅ DOPPLER_TOKEN is set (will be injected into PM2 process environment)"
+  fi
+  echo ""
+  
   # Fix 1: Ensure GitHub is in known_hosts for SSH fetch
   if ! ssh-keygen -F github.com > /dev/null; then
     echo "Adding github.com to known_hosts..."
@@ -96,7 +169,7 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   else
     cd aave
   fi
-  
+    
   # Fetch and pull latest changes
   echo "Fetching latest changes from GitHub..."
   # Save current package-lock.json hash before git reset (to check if dependencies changed)
@@ -217,47 +290,21 @@ ssh -A -t "$TARGET_HOST" << 'EOF'
   mkdir -p logs
   cd ..
   
-  # Check .env file conflicts in backend directory (before PM2 starts)
-  echo "Checking .env file conflicts..."
-  if [ -f "backend/.env" ]; then
-    conflicts=0
-    conflict_vars=""
-    while IFS='=' read -r key value || [ -n "$key" ]; do
-      [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
-      key=$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | cut -d'=' -f1)
-      [ -z "$key" ] && continue
-      system_value=$(printenv "$key" 2>/dev/null)
-      if [ -n "$system_value" ]; then
-        if [ $conflicts -eq 0 ]; then
-          echo "⚠️  发现环境变量冲突（系统环境变量会覆盖 .env 文件）："
-        fi
-        env_value=$(grep "^${key}=" "backend/.env" | cut -d'=' -f2- | sed 's/^[[:space:]]*//')
-        echo "   $key: .env=$env_value, 系统=$system_value"
-        conflict_vars="$conflict_vars $key"
-        conflicts=$((conflicts + 1))
-      fi
-    done < "backend/.env"
-    if [ $conflicts -gt 0 ]; then
-      echo "⚠️  发现 $conflicts 个冲突的环境变量，系统环境变量将覆盖 .env 文件中的值"
-      echo "💡 提示：如需使用 .env 文件的值，请取消设置系统环境变量：unset $conflict_vars"
-    else
-      echo "✅ 未发现环境变量冲突"
-    fi
-    echo ""
-  fi
+  # Note: we intentionally do NOT rely on a server-side .env file.
+  # Secrets should be provided via Secret Manager (e.g. Doppler) using DOPPLER_TOKEN in the server environment.
   
   # Check if the backend app is running
   if pm2 list | grep -q "aave-backend" && pm2 show aave-backend | grep -q "online"; then
     echo "Aave backend is running. Reloading with PM2..."
     # Reload from root directory where ecosystem.config.cjs is located
-    pm2 reload ecosystem.config.cjs --only aave-backend
+    pm2 reload ecosystem.config.cjs --only aave-backend --update-env
     echo "--- PM2 Status after reload aave-backend ---"
     pm2 status
     echo "----------------------------------------------"
   else
     echo "Aave backend is not running. Starting with PM2..."
     # Start from root directory where ecosystem.config.cjs is located
-    pm2 start ecosystem.config.cjs --only aave-backend --env production
+    pm2 start ecosystem.config.cjs --only aave-backend --env production --update-env
     echo "--- PM2 Status after start aave-backend ---"
     pm2 status
     echo "---------------------------------------------"

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { dataService } from '../services/dataService.js';
 import { fetchAaveMarketsData } from '../../../dist/index.js';
 import { MarketsResponse, MarketWithSpread, UpdateStatus } from '../types/index.js';
+import { withTimeout, UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
 
 /**
  * 检查数据新鲜度并在需要时自动更新
@@ -22,9 +23,9 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
       lastSuccessfulUpdate: currentStatus.lastSuccessfulUpdate,
     });
 
-    // 执行更新，等待完成
+    // 执行更新，等待完成（带超时保护，避免因 Cloudflare 重试等导致的长时间阻塞）
     try {
-      await fetchAaveMarketsData();
+      await withTimeout(fetchAaveMarketsData(), UPDATE_TIMEOUT_MS);
 
       // 更新成功后刷新缓存
       await dataService.refreshCache();
@@ -40,6 +41,13 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
     } catch (error) {
       console.error('❌ Automatic update failed:', error);
       const errorStatus = getUpdateStatus();
+      
+      // 如果是超时错误，特别标记
+      const isTimeout = error instanceof Error && error.message.includes('timeout');
+      if (isTimeout) {
+        console.warn(`⏰ Update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, resetting status to allow next update`);
+      }
+      
       setUpdateStatus({
         status: 'error',
         lastUpdated: errorStatus.lastUpdated,

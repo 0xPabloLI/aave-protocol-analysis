@@ -50,7 +50,7 @@ export interface BrevisCampaignItem {
   link: string; // Campaign URL
   startDate: string; // ISO date string
   endDate: string; // ISO date string
-  message: string; // Campaign description/message
+  name: string; // Campaign description/name
 }
 
 // Brevis 数据项结构（类似 MeritDataItem）
@@ -571,7 +571,7 @@ export class BrevisApiClient {
               link,
               startDate: new Date((config?.start || 0) * 1000).toISOString(),
               endDate: new Date((config?.end || 0) * 1000).toISOString(),
-              message: config?.name || protocol?.name || '',
+              name: config?.name || protocol?.name || '',
             };
 
             // 使用 chainId + tokenAddress 作为索引（如果 tokenAddress 存在）

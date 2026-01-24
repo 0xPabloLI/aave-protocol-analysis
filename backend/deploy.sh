@@ -161,7 +161,7 @@ EOF
     local)
         echo "💻 本地运行模式（推荐用于本地测试）..."
         echo "⚠️  注意：这种方式不会在后台运行，按 Ctrl+C 停止"
-        echo "⚠️  环境变量从 backend/.env 文件读取（NODE_ENV=development）"
+        echo "⚠️  环境变量从仓库根目录 .env 文件读取（NODE_ENV=development）"
         
         cd "$BACKEND_DIR"
         npm start

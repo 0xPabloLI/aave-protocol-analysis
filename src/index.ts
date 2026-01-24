@@ -1,3 +1,4 @@
+import './env.js';
 import { writeFile, mkdir } from 'fs/promises';
 import { chainId, AaveClient } from "@aave/client";
 import { markets } from "@aave/client/actions";
@@ -24,6 +25,10 @@ import {
   getMeritDataFromMarket
 } from './merit-api.js';
 import type { BrevisCampaignItem, BrevisDataItem } from './brevis-api.js';
+import {
+  checkAndReportSessionStatus,
+  closeBrowserInstances
+} from './cloudflare-browser.js';
 
 interface NetworkInfo {
   name: string;
@@ -299,11 +304,11 @@ function enrichDatasetWithIncentiveData(
             // 为 CSV 格式化：添加 opportunityLink（临时用于格式化）
             const supplyWithLinks = opp.supply.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
             supplyBreakdowns.push(...supplyWithLinks);
-            // 为 JSON：按 opportunity 分组（不包含 opportunityLink 在 breakdown 中）
+            // 为 JSON：按 opportunity 分组（不包含 link 在 breakdown 中）
             supplyOpportunities.push({
-              opportunityLink: opp.opportunityLink,
+              link: opp.opportunityLink || '',
               ...(opp.name && { name: opp.name }),
-              ...(opp.description && { description: opp.description }),
+              ...(opp.description && { message: opp.description }),
               breakdowns: opp.supply
             });
           }
@@ -311,9 +316,9 @@ function enrichDatasetWithIncentiveData(
             const borrowWithLinks = opp.borrow.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
             borrowBreakdowns.push(...borrowWithLinks);
             borrowOpportunities.push({
-              opportunityLink: opp.opportunityLink,
+              link: opp.opportunityLink || '',
               ...(opp.name && { name: opp.name }),
-              ...(opp.description && { description: opp.description }),
+              ...(opp.description && { message: opp.description }),
               breakdowns: opp.borrow
             });
           }
@@ -321,9 +326,9 @@ function enrichDatasetWithIncentiveData(
             const holdWithLinks = opp.hold.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
             holdBreakdowns.push(...holdWithLinks);
             holdOpportunities.push({
-              opportunityLink: opp.opportunityLink,
+              link: opp.opportunityLink || '',
               ...(opp.name && { name: opp.name }),
-              ...(opp.description && { description: opp.description }),
+              ...(opp.description && { message: opp.description }),
               breakdowns: opp.hold
             });
           }
@@ -332,27 +337,27 @@ function enrichDatasetWithIncentiveData(
           if (opp.supply.length > 0) {
             supplyBreakdowns.push(...opp.supply);
             supplyOpportunities.push({
-              opportunityLink: '', // 空链接，但保持结构一致
+              link: '', // 空链接，但保持结构一致
               ...(opp.name && { name: opp.name }),
-              ...(opp.description && { description: opp.description }),
+              ...(opp.description && { message: opp.description }),
               breakdowns: opp.supply
             });
           }
           if (opp.borrow.length > 0) {
             borrowBreakdowns.push(...opp.borrow);
             borrowOpportunities.push({
-              opportunityLink: '',
+              link: '',
               ...(opp.name && { name: opp.name }),
-              ...(opp.description && { description: opp.description }),
+              ...(opp.description && { message: opp.description }),
               breakdowns: opp.borrow
             });
           }
           if (opp.hold.length > 0) {
             holdBreakdowns.push(...opp.hold);
             holdOpportunities.push({
-              opportunityLink: '',
+              link: '',
               ...(opp.name && { name: opp.name }),
-              ...(opp.description && { description: opp.description }),
+              ...(opp.description && { message: opp.description }),
               breakdowns: opp.hold
             });
           }
@@ -444,12 +449,20 @@ function generateCSV(data: FormattedReserveData[]): string {
       row.borrowApy !== undefined ? row.borrowApy.toString() : '',
       (row.supplyIncentives && row.supplyIncentives.length > 0) ? `"${row.supplyIncentives.join(';')}"` : '',
       (row.borrowIncentives && row.borrowIncentives.length > 0) ? `"${row.borrowIncentives.join(';')}"` : '',
-      // 格式化 meritSupplys：平铺所有数据，格式为 "APR1:selfApr1:link1:startDate1:endDate1;APR2:selfApr2:link2:startDate2:endDate2"
+      // 格式化 meritSupplys：平铺所有数据，格式为 "APR1:selfApr1:link1:startDate1:endDate1:startBlock1:endBlock1:name1:message1;APR2:..."
+      // message 格式为 "action1|description1;action2|description2"（多条用分号分隔，action和description用竖线分隔）
       (row.meritSupplys && row.meritSupplys.length > 0) 
         ? `"${row.meritSupplys.map(e => {
             const parts = [e.apr.toString()];
             if (e.selfApr !== undefined) parts.push(e.selfApr.toString());
             parts.push(e.link, e.startDate, e.endDate);
+            if (e.startBlock) parts.push(e.startBlock);
+            if (e.endBlock) parts.push(e.endBlock);
+            if (e.name) parts.push(e.name);
+            if (e.message && e.message.length > 0) {
+              const messageStr = e.message.map(m => `${m.action || ''}|${m.description || ''}`).join(';');
+              parts.push(messageStr);
+            }
             if (e.requiredBorrowTokens) parts.push(`req:${e.requiredBorrowTokens.join(',')}`);
             return parts.join(':');
           }).join(';')}"` 
@@ -460,37 +473,73 @@ function generateCSV(data: FormattedReserveData[]): string {
             const parts = [e.apr.toString()];
             if (e.selfApr !== undefined) parts.push(e.selfApr.toString());
             parts.push(e.link, e.startDate, e.endDate);
+            if (e.startBlock) parts.push(e.startBlock);
+            if (e.endBlock) parts.push(e.endBlock);
+            if (e.name) parts.push(e.name);
+            if (e.message && e.message.length > 0) {
+              const messageStr = e.message.map(m => `${m.action || ''}|${m.description || ''}`).join(';');
+              parts.push(messageStr);
+            }
             if (e.requiredSupplyTokens) parts.push(`req:${e.requiredSupplyTokens.join(',')}`);
             return parts.join(':');
           }).join(';')}"` 
         : '',
-      // 从分组数据中提取 breakdowns 用于 CSV 格式化（带 opportunityLink）
-      `"${formatMerklBreakdown(
-        row.merklSupplys?.flatMap(g => 
-          g.breakdowns.map(b => ({ ...b, opportunityLink: g.opportunityLink }))
-        ) || []
-      )}"`,
-      `"${formatMerklBreakdown(
-        row.merklBorrows?.flatMap(g => 
-          g.breakdowns.map(b => ({ ...b, opportunityLink: g.opportunityLink }))
-        ) || []
-      )}"`,
-      `"${formatMerklBreakdown(
-        row.merklHolds?.flatMap(g => 
-          g.breakdowns.map(b => ({ ...b, opportunityLink: g.opportunityLink }))
-        ) || []
-      )}"`,
-      // Brevis Supplys：格式为 "APR1:link1:startDate1:endDate1:message1;APR2:link2:startDate2:endDate2:message2"
+      // 格式化 Merkl Supplys：包含 name 和 message
+      (row.merklSupplys && row.merklSupplys.length > 0)
+        ? `"${row.merklSupplys.map(g => {
+            const parts: string[] = [];
+            // 添加 name 和 message（如果有）
+            if (g.name) parts.push(`name:${g.name}`);
+            if (g.message) parts.push(`msg:${g.message}`);
+            // 添加 breakdowns（格式化为字符串）
+            const breakdownStr = formatMerklBreakdown(
+              g.breakdowns.map(b => ({ ...b, opportunityLink: g.link }))
+            );
+            if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
+            // 添加 link
+            parts.push(`link:${g.link}`);
+            return parts.join('|');
+          }).join(';')}"`
+        : '',
+      // 格式化 Merkl Borrows：包含 name 和 message
+      (row.merklBorrows && row.merklBorrows.length > 0)
+        ? `"${row.merklBorrows.map(g => {
+            const parts: string[] = [];
+            if (g.name) parts.push(`name:${g.name}`);
+            if (g.message) parts.push(`msg:${g.message}`);
+            const breakdownStr = formatMerklBreakdown(
+              g.breakdowns.map(b => ({ ...b, opportunityLink: g.link }))
+            );
+            if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
+            parts.push(`link:${g.link}`);
+            return parts.join('|');
+          }).join(';')}"`
+        : '',
+      // 格式化 Merkl Holds：包含 name 和 message
+      (row.merklHolds && row.merklHolds.length > 0)
+        ? `"${row.merklHolds.map(g => {
+            const parts: string[] = [];
+            if (g.name) parts.push(`name:${g.name}`);
+            if (g.message) parts.push(`msg:${g.message}`);
+            const breakdownStr = formatMerklBreakdown(
+              g.breakdowns.map(b => ({ ...b, opportunityLink: g.link }))
+            );
+            if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
+            parts.push(`link:${g.link}`);
+            return parts.join('|');
+          }).join(';')}"`
+        : '',
+      // Brevis Supplys：格式为 "APR1:link1:startDate1:endDate1:name1;APR2:link2:startDate2:endDate2:name2"
       (row.brevisSupplys && row.brevisSupplys.length > 0) 
         ? `"${row.brevisSupplys.map(c => {
-            const parts = [c.apr.toString(), c.link, c.startDate, c.endDate, c.message || ''];
+            const parts = [c.apr.toString(), c.link, c.startDate, c.endDate, c.name || ''];
             return parts.join(':');
           }).join(';')}"` 
         : '',
       // Brevis Borrows：格式同上
       (row.brevisBorrows && row.brevisBorrows.length > 0) 
         ? `"${row.brevisBorrows.map(c => {
-            const parts = [c.apr.toString(), c.link, c.startDate, c.endDate, c.message || ''];
+            const parts = [c.apr.toString(), c.link, c.startDate, c.endDate, c.name || ''];
             return parts.join(':');
           }).join(';')}"` 
         : ''
@@ -639,6 +688,22 @@ async function fetchAaveMarkets(): Promise<void> {
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:638',message:'fetchAaveMarkets started',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B'})}).catch(()=>{});
   // #endregion
+
+  // 🧹 启动时检查并清理 Cloudflare browser sessions
+  // 这是为了避免之前程序异常退出后残留的 session 占用配额
+  logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
+  await checkAndReportSessionStatus();
+
+  // 如果环境变量 CLOSE_BROWSERS_ON_START 设置为 true，则关闭所有现有浏览器实例
+  // 注意：这会关闭浏览器实例释放配额，不是清理 session。Session 应该尽量复用。
+  if (process.env.CLOSE_BROWSERS_ON_START === 'true') {
+    logger.info('🔌 CLOSE_BROWSERS_ON_START=true, closing existing browser instances...');
+    await closeBrowserInstances();
+    // 关闭后等待一段时间，让 Cloudflare 有时间释放资源
+    logger.info('⏳ Waiting 30s after closing browsers for Cloudflare to release resources...');
+    await new Promise(resolve => setTimeout(resolve, 30000));
+  }
+
   try {
     // 从所有链获取市场数据（已包含保存原始数据到文件）
     const marketData = await fetchAaveMarketData();
@@ -745,8 +810,21 @@ export async function fetchAaveMarketsData(): Promise<void> {
   return fetchAaveMarkets();
 }
 
-// 执行主函数
-fetchAaveMarkets().catch(error => {
+// 只有当这个文件作为主模块直接运行时，才执行以下代码
+// 这样可以避免在作为模块被导入时执行 process.exit()
+// 检查逻辑：
+// 1. 如果 process.argv[1] 包含 'server'，说明是从 backend server 运行的，不应该执行
+// 2. 如果当前文件路径在 dist 目录下，说明是被编译后导入的，不应该执行
+// 3. 否则，说明是直接运行这个文件（npm run dev 在根目录），应该执行
+const mainScript = process.argv[1] || '';
+const currentFile = fileURLToPath(import.meta.url);
+const isMainModule = !mainScript.includes('server') && 
+                     !currentFile.includes('/dist/') &&
+                     !currentFile.includes('\\dist\\');
+
+if (isMainModule) {
+  // 执行主函数（仅当作为独立脚本运行时）
+  fetchAaveMarkets().catch(error => {
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:740',message:'fetchAaveMarkets error caught',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
   // #endregion
@@ -756,11 +834,12 @@ fetchAaveMarkets().catch(error => {
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:747',message:'fetchAaveMarkets success - entering finally',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
   // #endregion
-  // 关闭 Puppeteer 浏览器实例
-  const { closeBrowser } = await import('./merit-api.js');
+  // 关闭 Puppeteer 浏览器实例并 flush aliases
+  const { closeBrowser, flushMeritKeyAliases } = await import('./merit-api.js');
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:750',message:'before closeBrowser call',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
   // #endregion
+  await flushMeritKeyAliases().catch(() => {});
   await closeBrowser().catch((err) => {
     // #region agent log
     fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:753',message:'closeBrowser error',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
@@ -774,7 +853,9 @@ fetchAaveMarkets().catch(error => {
   // #region agent log
   fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:760',message:'then block error',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
   // #endregion
-  const { closeBrowser } = await import('./merit-api.js');
+  const { closeBrowser, flushMeritKeyAliases } = await import('./merit-api.js');
+  await flushMeritKeyAliases().catch(() => {});
   await closeBrowser().catch(() => {});
   process.exit(1);
-});
+  });
+}

@@ -8,13 +8,19 @@ module.exports = {
     watch: false,
     max_memory_restart: '500M',
     // 环境变量配置（生产环境专用）
-    // 注意：PM2配置文件中的env会覆盖.env文件中的配置
+    // 生产最佳实践：不要依赖服务器上的 .env 文件
+    // - 应用启动时会优先从 Secret Manager 拉取（例如 Doppler），再回退到本地/开发的根目录 .env
+    // - 这里的 env 只放“非敏感默认值”，避免覆盖 Secret Manager 注入的变量
     // 此文件用于生产环境部署（deploy.sh远程部署脚本使用）
     // 本地测试请使用 backend/deploy.sh local 或直接 npm start
     env: {
       NODE_ENV: 'production',
-      // PORT 从 backend/.env 文件读取，或使用系统环境变量
-      // 如果都没有设置，server.ts 会使用默认值 3001
+      PORT: process.env.PORT || '3001',
+      // 开发/测试环境白名单（非敏感默认值）
+      ALLOWED_DEV_ORIGINS: process.env.ALLOWED_DEV_ORIGINS || 'https://codex.warp.dev,https://warp.dev,http://103.151.172.89,http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000',
+      // DOPPLER_TOKEN: 从系统环境变量继承（不要在这里硬编码）
+      // 应该在服务器上通过 ~/.bashrc 或 /etc/environment 设置，或使用 pm2 set pm2:env DOPPLER_TOKEN "xxx"
+      // 应用启动时会自动从 Doppler 拉取 secrets（如果 DOPPLER_TOKEN 存在）
     },
     // PM2 日志配置
     // 注意：应用使用 winston 记录日志到 backend/logs/，PM2 只保留错误日志

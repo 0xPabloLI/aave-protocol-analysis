@@ -20,6 +20,8 @@ export interface MarketWithSpread {
     link: string;
     startDate: string;
     endDate: string;
+    startBlock?: string;
+    endBlock?: string;
     requiredBorrowTokens?: string[];
   }>;
   meritBorrows?: Array<{
@@ -28,12 +30,14 @@ export interface MarketWithSpread {
     link: string;
     startDate: string;
     endDate: string;
+    startBlock?: string;
+    endBlock?: string;
     requiredSupplyTokens?: string[];
   }>;
   merklSupplys?: Array<{
-    opportunityLink: string;
+    link: string;
     name?: string;
-    description?: string;
+    message?: string;
     breakdowns: Array<{
       campaignApr: number;
       campaignStartedAt: string;
@@ -44,9 +48,9 @@ export interface MarketWithSpread {
     }>;
   }>;
   merklBorrows?: Array<{
-    opportunityLink: string;
+    link: string;
     name?: string;
-    description?: string;
+    message?: string;
     breakdowns: Array<{
       campaignApr: number;
       campaignStartedAt: string;
@@ -57,9 +61,9 @@ export interface MarketWithSpread {
     }>;
   }>;
   merklHolds?: Array<{
-    opportunityLink: string;
+    link: string;
     name?: string;
-    description?: string;
+    message?: string;
     breakdowns: Array<{
       campaignApr: number;
       campaignStartedAt: string;
@@ -74,14 +78,14 @@ export interface MarketWithSpread {
     link: string;
     startDate: string;
     endDate: string;
-    message: string;
+    name: string;
   }>;
   brevisBorrows?: Array<{
     apr: number;
     link: string;
     startDate: string;
     endDate: string;
-    message: string;
+    name: string;
   }>;
 }
 

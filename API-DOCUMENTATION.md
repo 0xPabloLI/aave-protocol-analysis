@@ -7,7 +7,9 @@
 ## 基础信息
 
 - **服务地址**: `http://localhost:3001` (开发环境)
-- **API 基础路径**: `/api/markets`
+- **API 基础路径**: 
+  - `/api/markets` - 市场数据相关接口
+  - `/api/coingecko-categories` - CoinGecko 分类数据接口
 - **数据格式**: JSON
 - **字符编码**: UTF-8
 
@@ -44,6 +46,8 @@ interface FormattedReserveData {
     link: string;                         // Merit 活动详情页链接
     startDate: string;                    // 活动开始日期
     endDate: string;                      // 活动结束日期
+    startBlock?: string;                  // 活动开始区块（可选）
+    endBlock?: string;                    // 活动结束区块（可选）
     requiredBorrowTokens?: string[];      // 需要 borrow 的 token 列表（用于 supply with borrow requirement），'multiple' 表示任意 token
   }>;
   meritBorrows?: Array<{
@@ -52,6 +56,8 @@ interface FormattedReserveData {
     link: string;                         // Merit 活动详情页链接
     startDate: string;                    // 活动开始日期
     endDate: string;                      // 活动结束日期
+    startBlock?: string;                  // 活动开始区块（可选）
+    endBlock?: string;                    // 活动结束区块（可选）
     requiredSupplyTokens?: string[];      // 需要 supply 的 token 列表（用于 borrow with supply requirement），'multiple' 表示任意 token
   }>;
   
@@ -60,9 +66,21 @@ interface FormattedReserveData {
   merklBorrows?: MerklOpportunityGroup[];
   merklHolds?: MerklOpportunityGroup[];
   
-  // Brevis APR 激励（可选字段）
-  brevisSupplyApr?: number;               // Brevis Network Linea Surge Supply APR（百分比数值），如果为 undefined 则在 JSON 中不出现
-  brevisBorrowApr?: number;               // Brevis Network Linea Surge Borrow APR（百分比数值），如果为 undefined 则在 JSON 中不出现
+  // Brevis APR 激励（可选字段，仅在存在数据时出现）
+  brevisSupplys?: Array<{
+    apr: number;                         // APR 百分比值（如 1.5 表示 1.5%）
+    link: string;                        // Brevis 活动详情页链接
+    startDate: string;                    // 活动开始日期
+    endDate: string;                      // 活动结束日期
+    name: string;                        // 活动名称
+  }>;
+  brevisBorrows?: Array<{
+    apr: number;                         // APR 百分比值（如 1.5 表示 1.5%）
+    link: string;                        // Brevis 活动详情页链接
+    startDate: string;                    // 活动开始日期
+    endDate: string;                      // 活动结束日期
+    name: string;                        // 活动名称
+  }>;
 }
 ```
 
@@ -72,9 +90,9 @@ Merkl 机会分组数据，用于 JSON 输出，避免重复。
 
 ```typescript
 interface MerklOpportunityGroup {
-  opportunityLink: string;              // Opportunity 详情页链接
+  link: string;                         // Opportunity 详情页链接
   name?: string;                        // Opportunity 名称（可选）
-  description?: string;                 // Opportunity 描述（可选）
+  message?: string;                     // Opportunity 消息/描述（可选）
   breakdowns: MerklCampaignBreakdown[]; // 该 opportunity 的所有 breakdowns
 }
 
@@ -147,7 +165,8 @@ interface MarketsResponse {
       ],
       "merklSupplys": [
         {
-          "opportunityLink": "https://app.merkl.xyz/opportunities/arbitrum/MULTILOG_DUTCH/0xe0b9e069b0cb46329e7d37e87e635a84ea772fcf",
+          "link": "https://app.merkl.xyz/opportunities/arbitrum/MULTILOG_DUTCH/0xe0b9e069b0cb46329e7d37e87e635a84ea772fcf",
+          "name": "MultiLog Dutch Auction",
           "breakdowns": [
             {
               "campaignApr": 0.329,
@@ -159,7 +178,15 @@ interface MarketsResponse {
         }
       ],
       "merklBorrows": [],
-      "brevisSupplyApr": 1.5
+      "brevisSupplys": [
+        {
+          "apr": 1.5,
+          "link": "https://brevis.network/linea-surge",
+          "startDate": "Thu Jan 01 2026",
+          "endDate": "Thu Jan 31 2026",
+          "name": "Linea Surge Supply"
+        }
+      ]
     }
   ],
   "lastUpdated": "2026-01-13T11:00:06.895Z",
@@ -257,7 +284,7 @@ interface MarketsResponse {
 
 **端点**: `GET /health`
 
-**描述**: 检查服务健康状态。
+**描述**: 检查服务健康状态，返回服务状态和环境配置信息。
 
 **请求参数**: 无
 
@@ -266,12 +293,63 @@ interface MarketsResponse {
 ```json
 {
   "status": "ok",
-  "timestamp": "2026-01-13T11:00:06.895Z"
+  "timestamp": "2026-01-13T11:00:06.895Z",
+  "environment": {
+    "nodeEnv": "development",
+    "port": 3001,
+    "corsMode": "allow-all",
+    "frontendUrl": "not set",
+    "allowedDevOrigins": "not set"
+  }
 }
 ```
 
 **状态码**:
 - `200`: 服务正常
+
+**响应字段说明**:
+- `status`: 服务状态，通常为 `"ok"`
+- `timestamp`: 当前时间戳（ISO 8601 格式）
+- `environment`: 环境配置信息
+  - `nodeEnv`: Node.js 环境（development/production）
+  - `port`: 服务端口号
+  - `corsMode`: CORS 模式（`"whitelist"` 或 `"allow-all"`）
+  - `frontendUrl`: 前端 URL（生产环境配置）
+  - `allowedDevOrigins`: 允许的开发环境源（开发环境配置）
+
+---
+
+### 6. 获取 CoinGecko 分类数据
+
+**端点**: `GET /api/coingecko-categories`
+
+**描述**: 获取 CoinGecko 分类数据，包括稳定币和以太坊相关代币的分类信息。数据缓存 6 小时。
+
+**请求参数**: 无
+
+**响应格式**:
+
+```json
+{
+  "uniqueSymbolsStablecoins": ["USDT", "USDC", "DAI", "BUSD", ...],
+  "uniqueSymbolsEth": ["WETH", "STETH", "RETH", "CBETH", ...]
+}
+```
+
+**响应字段说明**:
+- `uniqueSymbolsStablecoins`: 稳定币代币符号数组（去重后，已排序）
+- `uniqueSymbolsEth`: 以太坊相关代币符号数组（包括 liquid-staked-eth、ether-fi-ecosystem、liquid-staking-tokens 分类，去重后，已排序）
+
+**状态码**:
+- `200`: 成功
+- `500`: 服务器错误
+
+**注意事项**:
+- 数据来自 CoinGecko API，包含多个分类：
+  - 稳定币：`stablecoins` 分类（2 页数据）
+  - 以太坊相关：`liquid-staked-eth`、`ether-fi-ecosystem`、`liquid-staking-tokens` 分类
+- 响应数据缓存 6 小时，减少对 CoinGecko API 的请求
+- 如果设置了 `COINGECKO_API_KEY` 环境变量，会使用 API Key 进行认证
 
 ---
 
@@ -287,9 +365,10 @@ interface MarketsResponse {
      - `selfApr`: 可选的 Self APR 百分比值（如果有对应的 self- 前缀的 key）
      - `link`: Merit 活动详情页链接
      - `startDate` / `endDate`: 活动时间范围
+     - `startBlock` / `endBlock`: 可选的区块范围
      - `requiredBorrowTokens` / `requiredSupplyTokens`: 可选的条件要求 token 列表
-   - `merklSupplys` / `merklBorrows` / `merklHolds`: 对象数组，每个对象包含 `opportunityLink` 和 `breakdowns` 数组
-   - `brevisSupplyApr` / `brevisBorrowApr`: 数值格式的百分比，如果为 `undefined` 则在 JSON 中不出现
+   - `merklSupplys` / `merklBorrows` / `merklHolds`: 对象数组，每个对象包含 `link`、`name`（可选）、`message`（可选）和 `breakdowns` 数组
+   - `brevisSupplys` / `brevisBorrows`: 对象数组，每个对象包含 `apr`、`link`、`startDate`、`endDate` 和 `name`
 
 2. **可选字段和空值处理**:
    - 标记为 `?` 的字段为可选字段
@@ -307,9 +386,9 @@ interface MarketsResponse {
      - `supplyIncentives` / `borrowIncentives`（空数组时）
      - `meritSupplys` / `meritBorrows`（空数组时）
      - `merklSupplys` / `merklBorrows` / `merklHolds`（空数组时）
+     - `brevisSupplys` / `brevisBorrows`（空数组时）
      - `aTokenAddress` / `vTokenAddress`（null 时）
      - `supplyApy` / `borrowApy`（undefined 时）
-     - `brevisSupplyApr` / `brevisBorrowApr`（undefined 时）
 
 3. **Merit 数据结构说明**:
    - `meritSupplys` 和 `meritBorrows` 是数组，每个元素代表一个 Merit 激励活动
@@ -384,20 +463,30 @@ curl http://localhost:3001/api/markets/stats
 # 获取链列表
 curl http://localhost:3001/api/markets/chains
 
+# 获取市场列表
+curl http://localhost:3001/api/markets/list
+
 # 健康检查
 curl http://localhost:3001/health
+
+# 获取 CoinGecko 分类数据
+curl http://localhost:3001/api/coingecko-categories
 ```
 
 ## 版本信息
 
-- **API 版本**: 2.0
+- **API 版本**: 2.1
 - **文档更新时间**: 2026-01-13
 - **最后更新**: 
-  - 重构 Merit 数据结构：统一为 `meritSupplys` 和 `meritBorrows` 数组，每个条目包含完整的活动信息（apr, selfApr, link, startDate, endDate）
+  - 重构 Merit 数据结构：统一为 `meritSupplys` 和 `meritBorrows` 数组，每个条目包含完整的活动信息（apr, selfApr, link, startDate, endDate, startBlock, endBlock）
   - 统一命名：所有激励字段使用复数形式（meritSupplys, meritBorrows, merklSupplys, merklBorrows, merklHolds）
   - 数据类型优化：APY/APR 值统一为 `number` 类型（百分比数值），不再使用字符串
   - 协议激励改为数值数组：`supplyIncentives` 和 `borrowIncentives` 现在为 `number[]`
   - 移除 Merkl APR 总和字段：`merklSupplyApr`、`merklBorrowApr`、`merklHoldApr` 已移除，数据已包含在对应的 opportunities 中
+  - Merkl 数据结构增强：添加 `name` 和 `message` 字段到 opportunity 对象
+  - Brevis 数据结构重构：从单个 `brevisSupplyApr`/`brevisBorrowApr` 字段改为 `brevisSupplys`/`brevisBorrows` 数组，支持多个活动
+  - 新增 CoinGecko 分类接口：`/api/coingecko-categories` 提供稳定币和以太坊相关代币分类
+  - 健康检查接口增强：返回详细的环境配置信息
 
 ## 注意事项
 
@@ -415,7 +504,12 @@ curl http://localhost:3001/health
    - 如果活动有 self 版本，会在同一条目中通过 `selfApr` 字段表示
 5. **Merkl 数据结构**:
    - 不再提供 APR 总和字段，所有数据都在 `merklSupplys`、`merklBorrows`、`merklHolds` 数组中
-   - 每个 opportunity 包含多个 breakdowns（活动详情）
-6. **数据新鲜度**: 建议根据 `isStale` 和 `lastUpdated` 字段判断数据是否可用
-7. **更新机制**: 数据更新是异步的，更新过程中会返回缓存数据
-8. **过滤逻辑**: 所有排序和过滤应在客户端完成，API 不提供查询参数
+   - 每个 opportunity 包含 `link`、可选的 `name` 和 `message` 字段，以及多个 `breakdowns`（活动详情）
+6. **Brevis 数据结构**:
+   - 已从单个 APR 字段改为数组结构：`brevisSupplys` 和 `brevisBorrows`
+   - 每个条目包含完整的活动信息：`apr`、`link`、`startDate`、`endDate`、`name`
+   - 支持多个 Brevis 活动同时存在
+7. **数据新鲜度**: 建议根据 `isStale` 和 `lastUpdated` 字段判断数据是否可用
+8. **更新机制**: 数据更新是异步的，更新过程中会返回缓存数据
+9. **过滤逻辑**: 所有排序和过滤应在客户端完成，API 不提供查询参数
+10. **CoinGecko 分类数据**: `/api/coingecko-categories` 接口提供稳定币和以太坊相关代币的分类信息，数据缓存 6 小时

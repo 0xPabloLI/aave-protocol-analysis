@@ -12,6 +12,7 @@ const DEV_ENV_PATTERNS = [
   'localhost',
   '127.0.0.1',
   '0.0.0.0',
+  '103.151.172.89', // 用户服务器 IP
 ];
 
 const corsOptions = process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL

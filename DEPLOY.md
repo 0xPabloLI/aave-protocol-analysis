@@ -108,7 +108,7 @@ npm start
 
 ## 环境变量
 
-**重要：统一在 `backend/.env` 文件中配置环境变量，这是唯一推荐的配置位置。**
+**重要：统一在仓库根目录 `.env` 文件中配置环境变量（只维护这一份）。**
 
 可以通过环境变量配置服务：
 
@@ -118,12 +118,12 @@ npm start
 示例：
 
 ```bash
-# 在 backend/.env 文件中设置
+# 在仓库根目录 .env 文件中设置
 PORT=3001
 NODE_ENV=production
 ```
 
-复制 `backend/env.example` 为 `backend/.env` 并修改配置。
+将需要的变量写入仓库根目录 `.env`（并确保不要提交到 Git）。
 
 ## 数据更新
 

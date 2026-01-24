@@ -1,13 +1,71 @@
 import fetch from 'node-fetch';
+import type { RequestInit, Response } from 'node-fetch';
 import { writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+import { merklFetchConfig } from './config.js';
 
 // 配置参数：Tydro points 到 USD 的转换率（1 point = 1 USD）
 export const TYDRO_POINT_TO_USD_RATE = 1;
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableError(error: unknown): boolean {
+  const retryableCodes = new Set(['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETRESET', 'ECONNREFUSED']);
+  // node-fetch errors surface via error.cause?.code or error.code
+  const code = (error as any)?.code || (error as any)?.cause?.code;
+  return Boolean(code && retryableCodes.has(String(code)));
+}
+
+async function fetchWithRetry(
+  url: string,
+  label: string,
+  init?: RequestInit
+): Promise<Response> {
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (attempt <= merklFetchConfig.maxRetries) {
+    try {
+      const response = await fetch(url, init);
+      if (response.ok) {
+        return response;
+      }
+      // Only retry on 5xx / gateway errors
+      if (response.status >= 500 && response.status < 600 && attempt < merklFetchConfig.maxRetries) {
+        const delay = Math.min(
+          merklFetchConfig.maxDelayMs,
+          merklFetchConfig.baseDelayMs * Math.pow(2, attempt)
+        ) + Math.random() * 250;
+        logger.warn(`⚠️ ${label} HTTP ${response.status}, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${merklFetchConfig.maxRetries})`);
+        await sleep(delay);
+        attempt++;
+        continue;
+      }
+      // Non-retryable HTTP error
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableError(error) || attempt >= merklFetchConfig.maxRetries) {
+        throw error;
+      }
+      const delay = Math.min(
+        merklFetchConfig.maxDelayMs,
+        merklFetchConfig.baseDelayMs * Math.pow(2, attempt)
+      ) + Math.random() * 250;
+      logger.warn(`⚠️ ${label} network error (${(error as Error).message}), retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${merklFetchConfig.maxRetries})`);
+      await sleep(delay);
+      attempt++;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
 
 export interface MerklCampaignBreakdown {
   campaignApr: number;
@@ -23,9 +81,9 @@ export interface MerklCampaignBreakdown {
  * 一个 opportunity 包含一个链接和多个 breakdowns
  */
 export interface MerklOpportunityGroup {
-  opportunityLink: string; // Opportunity 链接
+  link: string; // Opportunity 链接
   name?: string; // Opportunity 名称
-  description?: string; // Opportunity 描述
+  message?: string; // Opportunity 描述
   breakdowns: MerklCampaignBreakdown[]; // 该 opportunity 的所有 breakdowns
 }
 
@@ -75,9 +133,9 @@ export interface MerklOpportunityData {
   hold: MerklCampaignBreakdown[];
   marketName: string;
   chainId: number;
-  opportunityLink?: string; // Merkl opportunity 详情页链接
+  opportunityLink?: string; // Merkl opportunity 详情页链接（内部使用，最终会转换为 link）
   name?: string; // Opportunity 名称
-  description?: string; // Opportunity 描述
+  description?: string; // Opportunity 描述（内部使用，最终会转换为 message）
 }
 
 /**
@@ -87,21 +145,24 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
   try {
     logger.info('🔄 Fetching Merkl opportunities for Aave and Tydro...');
     
-    // 并发获取 aave 和 tydro 的数据
+    // 并发获取 aave 和 tydro 的数据（带重试）
     const [aaveResponse, tydroResponse] = await Promise.all([
-      fetch('https://api.merkl.xyz/v4/opportunities?mainProtocolId=aave'),
-      fetch('https://api.merkl.xyz/v4/opportunities?mainProtocolId=tydro')
+      fetchWithRetry('https://api.merkl.xyz/v4/opportunities?mainProtocolId=aave', 'Merkl opportunities (aave)'),
+      fetchWithRetry('https://api.merkl.xyz/v4/opportunities?mainProtocolId=tydro', 'Merkl opportunities (tydro)').catch((error) => {
+        logger.warn('⚠️ Failed to fetch Tydro opportunities after retries:', error);
+        return null as unknown as Response;
+      })
     ]);
     
     if (!aaveResponse.ok) {
       throw new Error(`HTTP error! status: ${aaveResponse.status}`);
     }
-    if (!tydroResponse.ok) {
+    if (!tydroResponse || !tydroResponse.ok) {
       logger.warn(`⚠️ Failed to fetch Tydro opportunities: HTTP ${tydroResponse.status}`);
     }
     
     const aaveOpportunities = await aaveResponse.json() as MerklOpportunity[];
-    const tydroOpportunities = tydroResponse.ok 
+    const tydroOpportunities = tydroResponse && tydroResponse.ok 
       ? (await tydroResponse.json() as MerklOpportunity[])
       : [];
     
@@ -122,7 +183,10 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
  */
 export async function fetchMerklCampaignDetails(campaignId: string): Promise<MerklCampaignDetails | null> {
   try {
-    const response = await fetch(`https://api.merkl.xyz/v4/campaigns/${campaignId}`);
+    const response = await fetchWithRetry(
+      `https://api.merkl.xyz/v4/campaigns/${campaignId}`,
+      `Merkl campaign ${campaignId}`
+    );
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);

@@ -109,7 +109,7 @@ Response format includes: `data`, `lastUpdated`, `isStale`, `updateInProgress`
 ## Configuration & Environment
 
 ### Environment Variables
-Configure in `backend/.env` (copy from `backend/env.example`):
+Configure in repo root `.env` (single source of truth):
 - `PORT` - Server port (default: 3001)
 - `NODE_ENV` - Environment mode (development/production)
 - `FRONTEND_URL` - CORS allowed origins (comma-separated, production only)
