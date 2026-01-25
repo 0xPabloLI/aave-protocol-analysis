@@ -74,15 +74,35 @@ export function startUpdateScheduler(): void {
       await dataService.refreshCache();
       const lastUpdated = dataService.getLastUpdated();
 
+      // 检查是否有新更新已启动（通过状态检查）
+      // 如果有新更新，不更新状态，避免用旧数据覆盖新更新的状态
+      const currentStatusAfterCompletion = getUpdateStatus();
+      if (currentStatusAfterCompletion.status === 'updating') {
+        console.log('⚠️  Scheduled update completed but newer update has started, skipping status update to avoid overwriting');
+        return;
+      }
+
       if (timeoutOccurred) {
         console.log('⚠️  Scheduled update completed after timeout, cache refreshed');
         // 如果超时但最终成功，更新状态为成功
+        // 再次检查状态（可能在 refreshCache 期间有新更新）
+        const finalStatus = getUpdateStatus();
+        if (finalStatus.status === 'updating') {
+          console.log('⚠️  Scheduled update completed but newer update started during cache refresh, skipping status update');
+          return;
+        }
         setUpdateStatus({
           status: 'idle',
           lastUpdated: lastUpdated?.toISOString() || null,
           lastSuccessfulUpdate: lastUpdated?.toISOString() || null,
         });
       } else {
+        // 再次检查状态（可能在 refreshCache 期间有新更新）
+        const finalStatus = getUpdateStatus();
+        if (finalStatus.status === 'updating') {
+          console.log('⚠️  Scheduled update completed but newer update started during cache refresh, skipping status update');
+          return;
+        }
         setUpdateStatus({
           status: 'idle',
           lastUpdated: lastUpdated?.toISOString() || null,
@@ -98,7 +118,13 @@ export function startUpdateScheduler(): void {
       }
       
       console.error('❌ Scheduled update failed:', error);
+      
+      // 检查是否有新更新已启动
       const errorStatus = getUpdateStatus();
+      if (errorStatus.status === 'updating') {
+        console.log('⚠️  Scheduled update failed but newer update has started, skipping status update to avoid overwriting');
+        return;
+      }
       
       const errorMessage = timeoutOccurred
         ? `Update timeout after ${UPDATE_TIMEOUT_MS / 1000}s and then failed: ${error instanceof Error ? error.message : String(error)}`
