@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { fetchAaveMarketsData } from '../../../dist/index.js';
 import { dataService } from './dataService.js';
 import { setUpdateStatus, getUpdateStatus } from '../controllers/marketsController.js';
-import { UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
+import { UPDATE_TIMEOUT_MS, withTimeout } from '../utils/timeout.js';
 
 /**
  * 启动定时更新任务
@@ -39,34 +39,17 @@ export function startUpdateScheduler(): void {
       lastSuccessfulUpdate: currentStatus.lastSuccessfulUpdate,
     });
 
-    // 启动更新 promise 并跟踪它
+    // 启动更新 promise 并使用 withTimeout 防止永久挂起
     const originalUpdatePromise = fetchAaveMarketsData();
-    let timeoutOccurred = false;
-    let timeoutId: NodeJS.Timeout | null = null;
     
     try {
-      // 设置超时检测（只标记，不取消 promise）
-      timeoutId = setTimeout(() => {
-        timeoutOccurred = true;
-        console.warn(`⏰ Scheduled update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, but operation continues in background...`);
-      }, UPDATE_TIMEOUT_MS);
-      
-      // 等待原始 promise 完成（无论是否超时）
-      await originalUpdatePromise;
-      
-      // 清理超时定时器
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
+      // 使用 withTimeout 确保不会永久挂起
+      // 如果超时，会抛出错误而不是无限等待
+      await withTimeout(originalUpdatePromise, UPDATE_TIMEOUT_MS);
       
       // 更新成功后刷新缓存
       await dataService.refreshCache();
       const lastUpdated = dataService.getLastUpdated();
-
-      if (timeoutOccurred) {
-        console.log('⚠️  Scheduled update completed after timeout');
-      }
 
       setUpdateStatus({
         status: 'idle',
@@ -76,18 +59,10 @@ export function startUpdateScheduler(): void {
 
       console.log('✅ Scheduled update completed successfully');
     } catch (error) {
-      // 清理超时定时器
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-      
       console.error('❌ Scheduled update failed:', error);
       const errorStatus = getUpdateStatus();
       
-      const errorMessage = timeoutOccurred
-        ? `Update timeout after ${UPDATE_TIMEOUT_MS / 1000}s and then failed: ${error instanceof Error ? error.message : String(error)}`
-        : (error instanceof Error ? error.message : String(error));
+      const errorMessage = error instanceof Error ? error.message : String(error);
       
       setUpdateStatus({
         status: 'error',

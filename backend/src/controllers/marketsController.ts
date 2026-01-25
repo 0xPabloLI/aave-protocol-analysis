@@ -9,18 +9,20 @@ import { withTimeout, UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
  * 使用锁机制防止并发更新
  */
 async function checkAndUpdateDataIfStale(): Promise<void> {
-  const isStale = dataService.isStale();
+  let isStale = dataService.isStale();
   let currentStatus = getUpdateStatus();
 
   // 检查是否有卡住的更新（运行时间超过最大允许时间）
-  // 注意：即使超时，我们也不清除 activeUpdatePromise，而是等待它完成
-  // 这样可以防止并发更新，因为后续的检查会等待这个 promise 完成
+  // 如果更新超过最大时间，清除锁以允许新更新启动
+  // 这样可以防止永久锁定，即使原始 promise 永远不会解析
   if (activeUpdatePromise && updateStartTime !== null) {
     const elapsed = Date.now() - updateStartTime;
     if (elapsed >= MAX_UPDATE_TIME_MS) {
-      console.warn(`⚠️  Active update has been running for ${elapsed}ms (max: ${MAX_UPDATE_TIME_MS}ms), marking as timed out but waiting for completion...`);
-      // 不清除 activeUpdatePromise，让后续检查等待它完成
-      // 只更新状态为错误，但保持 activeUpdatePromise 以便后续等待
+      console.warn(`⚠️  Active update has been running for ${elapsed}ms (max: ${MAX_UPDATE_TIME_MS}ms), clearing lock to allow new updates...`);
+      // 清除锁，允许新更新启动（原始 promise 仍在后台运行，但不阻塞新更新）
+      activeUpdatePromise = null;
+      updateStartTime = null;
+      // 更新状态为错误
       setUpdateStatus({
         status: 'error',
         lastUpdated: currentStatus.lastUpdated,
