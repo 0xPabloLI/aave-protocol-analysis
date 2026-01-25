@@ -50,7 +50,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
     currentStatus = getUpdateStatus();
     isStale = dataService.isStale(); // 重新检查数据是否过期
     // 如果等待后仍有活动更新或数据不再过期，直接返回
-    if (activeUpdatePromise || !isStale) {
+    if (activeUpdatePromise !== null || !isStale) {
       return;
     }
     // 继续执行，检查是否需要触发新更新
@@ -80,93 +80,109 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
     let timeoutOccurred = false;
     let timeoutId: NodeJS.Timeout | null = null;
     
-    const updatePromise = (async () => {
-      try {
-        // 设置超时检测（只标记，不取消 promise）
-        timeoutId = setTimeout(() => {
-          timeoutOccurred = true;
-          console.warn(`⏰ Update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, but operation continues in background...`);
-        }, UPDATE_TIMEOUT_MS);
-        
-        // 等待原始 promise 完成（无论是否超时）
-        await originalUpdatePromise;
-        
-        // 清理超时定时器
-        if (timeoutId !== null) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        
-        // 检查是否有新更新已启动（通过生成计数器检测）
-        // 如果有新更新，不更新状态，避免用旧数据覆盖新更新的状态
-        if (updateGeneration !== currentGeneration) {
-          console.log('⚠️  Update completed but newer update has started, skipping status update to avoid overwriting');
-          return;
-        }
-        
-        // 更新成功后刷新缓存
-        await dataService.refreshCache();
-        const lastUpdated = dataService.getLastUpdated();
+    // 创建更新 promise，使用立即执行函数来正确捕获 promise 引用
+    const updatePromise = (() => {
+      // 创建一个变量来存储 promise 引用，用于 finally 块中的比较
+      let promiseRef: Promise<void> | null = null;
+      
+      const promise = (async () => {
+        try {
+          // 设置超时检测（只标记，不取消 promise）
+          timeoutId = setTimeout(() => {
+            timeoutOccurred = true;
+            console.warn(`⏰ Update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, but operation continues in background...`);
+          }, UPDATE_TIMEOUT_MS);
+          
+          // 等待原始 promise 完成（无论是否超时）
+          await originalUpdatePromise;
+          
+          // 清理超时定时器
+          if (timeoutId !== null) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          
+          // 检查是否有新更新已启动（通过生成计数器检测）
+          // 如果有新更新，不更新状态，避免用旧数据覆盖新更新的状态
+          if (updateGeneration !== currentGeneration) {
+            console.log('⚠️  Update completed but newer update has started, skipping status update to avoid overwriting');
+            return;
+          }
+          
+          // 更新成功后刷新缓存
+          await dataService.refreshCache();
+          const lastUpdated = dataService.getLastUpdated();
 
-        if (timeoutOccurred) {
-          console.log('⚠️  Update completed after timeout');
+          if (timeoutOccurred) {
+            console.log('⚠️  Update completed after timeout');
+          }
+          
+          // 再次检查生成号（可能在 refreshCache 期间有新更新）
+          if (updateGeneration !== currentGeneration) {
+            console.log('⚠️  Update completed but newer update started during cache refresh, skipping status update');
+            return;
+          }
+          
+          setUpdateStatus({
+            status: 'idle',
+            lastUpdated: lastUpdated?.toISOString() || null,
+            lastSuccessfulUpdate: lastUpdated?.toISOString() || null,
+          });
+          console.log('✅ Automatic update completed successfully');
+        } catch (error) {
+          // 清理超时定时器
+          if (timeoutId !== null) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          
+          // 检查是否有新更新已启动
+          if (updateGeneration !== currentGeneration) {
+            console.log('⚠️  Update failed but newer update has started, skipping status update to avoid overwriting');
+            return;
+          }
+          
+          console.error('❌ Automatic update failed:', error);
+          const errorStatus = getUpdateStatus();
+          
+          const errorMessage = timeoutOccurred
+            ? `Update timeout after ${UPDATE_TIMEOUT_MS / 1000}s and then failed: ${error instanceof Error ? error.message : String(error)}`
+            : (error instanceof Error ? error.message : String(error));
+          
+          setUpdateStatus({
+            status: 'error',
+            lastUpdated: errorStatus.lastUpdated,
+            lastSuccessfulUpdate: errorStatus.lastSuccessfulUpdate,
+            error: errorMessage,
+          });
+          // 更新失败时继续使用缓存数据
+          console.log('⚠️  Continuing with cached data after update failure');
+        } finally {
+          // 清理超时定时器（确保清理）
+          if (timeoutId !== null) {
+            clearTimeout(timeoutId);
+          }
+          // 清除跟踪：如果 activeUpdatePromise 仍然指向当前 promise，则清除它
+          // 这样可以防止已完成的旧 promise 阻塞后续检查
+          // 即使有新更新启动（updateGeneration 改变），如果 activeUpdatePromise 仍然指向当前 promise，
+          // 说明新更新还没有设置它的 promise，或者已经被其他逻辑清除，此时应该清除当前 promise
+          // 注意：在 finally 块中直接使用 promiseRef，此时它已经被赋值为当前 promise
+          if (activeUpdatePromise === promiseRef) {
+            activeUpdatePromise = null;
+            updateStartTime = null;
+          }
         }
-        
-        // 再次检查生成号（可能在 refreshCache 期间有新更新）
-        if (updateGeneration !== currentGeneration) {
-          console.log('⚠️  Update completed but newer update started during cache refresh, skipping status update');
-          return;
-        }
-        
-        setUpdateStatus({
-          status: 'idle',
-          lastUpdated: lastUpdated?.toISOString() || null,
-          lastSuccessfulUpdate: lastUpdated?.toISOString() || null,
-        });
-        console.log('✅ Automatic update completed successfully');
-      } catch (error) {
-        // 清理超时定时器
-        if (timeoutId !== null) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        
-        // 检查是否有新更新已启动
-        if (updateGeneration !== currentGeneration) {
-          console.log('⚠️  Update failed but newer update has started, skipping status update to avoid overwriting');
-          return;
-        }
-        
-        console.error('❌ Automatic update failed:', error);
-        const errorStatus = getUpdateStatus();
-        
-        const errorMessage = timeoutOccurred
-          ? `Update timeout after ${UPDATE_TIMEOUT_MS / 1000}s and then failed: ${error instanceof Error ? error.message : String(error)}`
-          : (error instanceof Error ? error.message : String(error));
-        
-        setUpdateStatus({
-          status: 'error',
-          lastUpdated: errorStatus.lastUpdated,
-          lastSuccessfulUpdate: errorStatus.lastSuccessfulUpdate,
-          error: errorMessage,
-        });
-        // 更新失败时继续使用缓存数据
-        console.log('⚠️  Continuing with cached data after update failure');
-      } finally {
-        // 清理超时定时器（确保清理）
-        if (timeoutId !== null) {
-          clearTimeout(timeoutId);
-        }
-        // 只有在当前更新仍然活跃时才清除跟踪
-        // 如果已经有新更新（updateGeneration 改变），说明锁已经被新更新持有
-        if (updateGeneration === currentGeneration) {
-          activeUpdatePromise = null;
-          updateStartTime = null;
-        }
-      }
+      })();
+      
+      // 存储 promise 引用到闭包变量中，用于 finally 块中的比较
+      promiseRef = promise;
+      return promise;
     })();
 
     // 跟踪活动更新
+    // 重要：在设置新 promise 之前，如果存在旧的 promise 引用，先清除它
+    // 这样可以防止旧 promise（即使已完成）阻塞后续检查
+    // 新更新启动时，应该立即替换旧的 promise 引用
     activeUpdatePromise = updatePromise;
     updateStartTime = Date.now();
     

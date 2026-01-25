@@ -158,7 +158,8 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
       throw new Error(`HTTP error! status: ${aaveResponse.status}`);
     }
     if (!tydroResponse || !tydroResponse.ok) {
-      logger.warn(`⚠️ Failed to fetch Tydro opportunities: HTTP ${tydroResponse.status}`);
+      const status = tydroResponse?.status ?? 'unknown';
+      logger.warn(`⚠️ Failed to fetch Tydro opportunities: HTTP ${status}`);
     }
     
     const aaveOpportunities = await aaveResponse.json() as MerklOpportunity[];

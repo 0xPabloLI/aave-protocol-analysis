@@ -8,12 +8,28 @@ import type { MeritCampaignInfo } from './merit-api.js';
  * 如果原始 Promise 在指定时间内没有完成，会 reject 一个 TimeoutError
  */
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
+  let timeoutId: NodeJS.Timeout | null = null;
+  
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${errorMessage} (timeout after ${timeoutMs}ms)`));
+    }, timeoutMs);
+  });
+  
   return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`${errorMessage} (timeout after ${timeoutMs}ms)`));
-      }, timeoutMs);
+    promise.finally(() => {
+      // 清理超时定时器，防止在 promise 完成后仍然触发超时
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    }),
+    timeoutPromise.finally(() => {
+      // 如果超时发生，也清理定时器（虽然已经触发，但为了完整性）
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
     }),
   ]);
 }
@@ -31,15 +47,33 @@ function sleep(ms: number): Promise<void> {
  * 用于中断等待，完全事件驱动，无需定期检查
  */
 function createWorkerDisabledPromise(): Promise<void> {
-  return new Promise((resolve) => {
+  let resolverIndex = -1;
+  
+  const promise = new Promise<void>((resolve) => {
     // 如果已经被禁用，立即 resolve
     if (Date.now() < workerDisabledUntil) {
       resolve();
       return;
     }
     // 否则保存 resolver 到数组，等待 workerDisabledUntil 被设置时调用所有 resolver
+    resolverIndex = workerDisabledResolvers.length;
     workerDisabledResolvers.push(resolve);
   });
+  
+  // 当 promise 完成时（无论成功还是失败），从数组中移除 resolver
+  // 这样可以防止 resolver 泄漏（如果 Promise.race 因为其他原因完成）
+  promise.finally(() => {
+    if (resolverIndex !== -1 && resolverIndex < workerDisabledResolvers.length) {
+      // 检查索引是否仍然有效，并且对应的 resolver 是否仍然存在
+      // 如果 triggerWorkerDisabledResolvers 已经清空了数组，这里不需要做任何事
+      const resolver = workerDisabledResolvers[resolverIndex];
+      if (resolver !== undefined) {
+        workerDisabledResolvers.splice(resolverIndex, 1);
+      }
+    }
+  });
+  
+  return promise;
 }
 
 /**

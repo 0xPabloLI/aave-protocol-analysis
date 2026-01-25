@@ -463,6 +463,15 @@ export class BrowserPool {
     let requestTimedOut = false;
 
     try {
+      // 验证 action 是否有效（在创建 page 之前验证，避免浪费资源）
+      const validActions = ['extractCampaignInfo', 'extractSelfAuth', 'extractDynamicInfo'];
+      if (!validActions.includes(action)) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: `Unknown action: ${action}. Valid actions are: ${validActions.join(', ')}`,
+        }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+
       // 设置超时保护：如果请求超过指定时间，强制抛出超时错误
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => {
@@ -497,8 +506,6 @@ export class BrowserPool {
               extractSelfAuth(page),
             ]);
             extractResult = { campaignInfo, selfAuthDescription };
-          } else {
-            throw new Error(`Unknown action: ${action}`);
           }
 
           this.lastUsedAt = Date.now();
@@ -528,6 +535,10 @@ export class BrowserPool {
       this.totalErrors++;
       const errorMessage = error instanceof Error ? error.message : String(error);
       
+      // 检查是否是未知 action 错误，返回 400 而不是 500
+      const isUnknownAction = errorMessage.includes('Unknown action');
+      const statusCode = isUnknownAction ? 400 : 500;
+      
       // 如果是超时错误，记录更详细的信息
       if (requestTimedOut) {
         const elapsed = Date.now() - requestStartTime;
@@ -539,7 +550,7 @@ export class BrowserPool {
         success: false,
         error: errorMessage,
         timedOut: requestTimedOut,
-      }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      }), { status: statusCode, headers: { 'Content-Type': 'application/json' } });
     } finally {
       // ============================================
       // 请求完成的判断标准：
