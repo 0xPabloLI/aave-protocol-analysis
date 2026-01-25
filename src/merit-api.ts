@@ -10,6 +10,7 @@ import {
   extractMeritDynamicInfoWithWorker,
   extractSelfAuthenticationDescriptionWithCloudflare,
 } from './cloudflare-browser.js';
+import { meritKeyAliases } from './config.js';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 
@@ -670,8 +671,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       // 如果没有 nonSelf，跳过
       if (!nonSelfInfo) continue;
       
-      // message 已经包含了 Self authentication（如果在 fetchAllMeritTimeRanges 中获取到了）
-      // 直接使用 timeRanges 中的 message，它已经包含了 Self authentication
+      // message 已经包含了 Self Authentication（如果在 fetchAllMeritTimeRanges 中获取到了）
+      // 直接使用 timeRanges 中的 message，它已经包含了 Self Authentication
       const finalMessage = message || [];
       
       const { supplyTokens, borrowTokens, chainKey } = nonSelfInfo;
@@ -819,7 +820,6 @@ export async function fetchAllMeritTimeRanges(
   } = {}
 ): Promise<Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }>> {
   const { maxConcurrent = 1, cachedTimeRanges = {} } = options;
-  await loadMeritKeyAliases();
   
   // 从缓存开始，只更新需要更新的部分
   const timeRanges: Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }> = { ...cachedTimeRanges };
@@ -852,12 +852,8 @@ export async function fetchAllMeritTimeRanges(
   const canonicalMap = new Map<string, string>();
   const canonicalToAliases = new Map<string, Set<string>>();
 
-  // Known redirect aliases (fast-path, avoids extra request just to detect redirect)
-  const knownRedirectAliases: Record<string, string> = {
-    'sonic-supply-usdce': 'sonic-supply-usdc',
-  };
-
-  const getCanonicalKey = (k: string) => discoveredRedirectAliases.get(k) ?? knownRedirectAliases[k] ?? k;
+  // Use aliases from config file
+  const getCanonicalKey = (k: string) => discoveredRedirectAliases.get(k) ?? meritKeyAliases[k] ?? k;
 
   const updateChecks = await Promise.all(
     allKeysToCheck.map(async (key) => {
@@ -872,7 +868,14 @@ export async function fetchAllMeritTimeRanges(
       const needsUpdateByCompleteness = !completeness.isComplete;
 
       const { needsUpdate: needsUpdateByEndState, reasons: endStateReasons } = await evaluateTimeRangeUpdate(cached, canonicalKey);
-      const needsUpdate = needsUpdateByEndState || needsUpdateByCompleteness;
+      // 如果缺少 self-auth，即使 campaign 还在进行中，也需要更新
+      // 这确保当 API 中新增了 self- 前缀的 key 时，能够获取到 self-auth 数据
+      const needsUpdateForSelfAuth = hasSelfAuth && completeness.missing.includes('self-auth');
+      const needsUpdate = needsUpdateByEndState || needsUpdateByCompleteness || needsUpdateForSelfAuth;
+      
+      if (needsUpdateForSelfAuth && !needsUpdateByEndState && !needsUpdateByCompleteness) {
+        logger.info(`🔄 Force update for ${canonicalKey}: missing self-auth data (campaign still active, API has self-${canonicalKey})`);
+      }
 
       return {
         key,
@@ -924,8 +927,8 @@ export async function fetchAllMeritTimeRanges(
   logger.info(`   • ${keysToFetch.length} campaigns need update (ended or new)`);
   logger.info(`   • ${keysToSkip.length} campaigns using cached data (still active)`);
   logger.info(`   • ${skippedCount} campaigns skipped (null/self-/short keys)`);
-  if (knownRedirectAliases && Object.keys(knownRedirectAliases).length > 0) {
-    logger.info(`🔁 Known redirect alias map active (${Object.keys(knownRedirectAliases).length} entries)`);
+  if (meritKeyAliases && Object.keys(meritKeyAliases).length > 0) {
+    logger.info(`🔁 Known redirect alias map active (${Object.keys(meritKeyAliases).length} entries)`);
   }
   if (keysToFetch.length > 0) {
     logger.info('🧾 Merit campaigns to fetch (index -> key):');
@@ -1146,7 +1149,7 @@ function getPageSemaphore(): Semaphore {
   if (!pageSemaphore) {
     const concurrency = Number(process.env.PUPPETEER_PAGE_CONCURRENCY ?? DEFAULT_PAGE_CONCURRENCY);
     pageSemaphore = createSemaphore(concurrency);
-    logger.info(`📊 Created page semaphore with concurrency=${concurrency}`);
+    logger.info(`📊 Created local Puppeteer page semaphore with concurrency=${concurrency} (controls browser.newPage() calls)`);
   }
   return pageSemaphore;
 }
@@ -1186,57 +1189,14 @@ export async function closeBrowser(): Promise<void> {
  * name 和 date 在 SSR HTML 中就有，不需要 JavaScript 渲染
  * 这样可以减少性能消耗，避免不必要的 Puppeteer 调用
  */
-const MERIT_KEY_ALIASES_PATH = join(DATA_DIR, 'merit-key-aliases.json');
+// Runtime-discovered redirect aliases (in-memory only, not persisted)
+// New redirects discovered at runtime are logged but not saved to file
+// Known stable redirects should be added to meritKeyAliases in config.ts
 const discoveredRedirectAliases = new Map<string, string>();
-let loadedRedirectAliases = false;
-let persistAliasesTimer: NodeJS.Timeout | null = null;
 
-async function loadMeritKeyAliases(): Promise<void> {
-  if (loadedRedirectAliases) return;
-  loadedRedirectAliases = true;
-  try {
-    const raw = await readFile(MERIT_KEY_ALIASES_PATH, 'utf-8');
-    const parsed = JSON.parse(raw) as Record<string, string>;
-    for (const [from, to] of Object.entries(parsed || {})) {
-      if (typeof from === 'string' && typeof to === 'string' && from && to && from !== to) {
-        discoveredRedirectAliases.set(from, to);
-      }
-    }
-    const count = Object.keys(parsed || {}).length;
-    if (count > 0) {
-      logger.info(`🔁 Loaded ${count} Merit key aliases from ${MERIT_KEY_ALIASES_PATH}`);
-    }
-  } catch {
-    // file not found / invalid json -> ignore
-  }
-}
-
-async function persistMeritKeyAliasesSoon(): Promise<void> {
-  if (persistAliasesTimer) return;
-  persistAliasesTimer = setTimeout(async () => {
-    persistAliasesTimer = null;
-    await flushMeritKeyAliases();
-  }, 500);
-}
-
+// Export empty function for backward compatibility (no-op since we don't persist aliases anymore)
 export async function flushMeritKeyAliases(): Promise<void> {
-  if (persistAliasesTimer) {
-    clearTimeout(persistAliasesTimer);
-    persistAliasesTimer = null;
-  }
-  try {
-    await mkdir(DATA_DIR, { recursive: true });
-    const obj: Record<string, string> = {};
-    for (const [from, to] of discoveredRedirectAliases.entries()) {
-      obj[from] = to;
-    }
-    if (Object.keys(obj).length > 0) {
-      await writeFile(MERIT_KEY_ALIASES_PATH, JSON.stringify(obj, null, 2), 'utf-8');
-      logger.info(`💾 Persisted ${Object.keys(obj).length} Merit key aliases to ${MERIT_KEY_ALIASES_PATH}`);
-    }
-  } catch (e) {
-    logger.warn(`⚠️ Failed to persist Merit key aliases to ${MERIT_KEY_ALIASES_PATH}:`, e);
-  }
+  // No-op: aliases are now static configuration, not persisted to file
 }
 
 async function fetchMeritPageHtmlStatic(key: string): Promise<{ html: string; finalKey: string } | null> {
@@ -1262,8 +1222,7 @@ async function fetchMeritPageHtmlStatic(key: string): Promise<{ html: string; fi
       const wasNew = !discoveredRedirectAliases.has(key);
       discoveredRedirectAliases.set(key, finalKey);
       if (wasNew) {
-        logger.info(`🔁 Discovered redirect alias: ${key} -> ${finalKey}`);
-        await persistMeritKeyAliasesSoon();
+        logger.info(`🔁 Discovered redirect alias: ${key} -> ${finalKey} (runtime only, add to meritKeyAliases in config.ts if stable)`);
       }
     }
 
@@ -1289,7 +1248,9 @@ async function extractCampaignInfoWithBrowser(key: string): Promise<MeritCampaig
   // Fallback: local Puppeteer (keep for reliability)
   // PRODUCTION-GRADE: Use semaphore for concurrency control
   const semaphore = getPageSemaphore();
+  logger.debug(`📊 [Puppeteer Semaphore] Acquiring semaphore for campaign info extraction (key: ${key})`);
   const release = await semaphore.acquire();
+  logger.debug(`📊 [Puppeteer Semaphore] Acquired semaphore for campaign info extraction (key: ${key})`);
   
   let page: Page | null = null;
   
@@ -1437,13 +1398,26 @@ async function extractMeritDynamicInfoWithBrowser(
   const allowLocalPuppeteerFallback = process.env.MERIT_ALLOW_LOCAL_PUPPETEER !== 'false';
 
   // Cloudflare Workers Browser Rendering primary (single navigation on worker side)
-  const workerResult = await extractMeritDynamicInfoWithWorker(key);
-  if (workerResult) {
-    return {
-      campaignInfo: needCampaignInfo ? workerResult.campaignInfo : [],
-      selfAuthDescription: needSelfAuth ? workerResult.selfAuthDescription : null,
-      source: 'worker',
-    };
+  // 使用 try-catch 捕获超时错误，快速 fallback 到 puppeteer
+  let workerResult: MeritDynamicInfo | null = null;
+  try {
+    workerResult = await extractMeritDynamicInfoWithWorker(key);
+    if (workerResult) {
+      return {
+        campaignInfo: needCampaignInfo ? workerResult.campaignInfo : [],
+        selfAuthDescription: needSelfAuth ? workerResult.selfAuthDescription : null,
+        source: 'worker',
+      };
+    }
+  } catch (error) {
+    // Worker 超时或失败，立即 fallback 到 puppeteer，不阻塞进程
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (errorMsg.includes('timeout')) {
+      logger.warn(`⏱️ Cloudflare Worker timeout for ${key}, falling back to puppeteer: ${errorMsg}`);
+    } else {
+      logger.warn(`⚠️ Cloudflare Worker failed for ${key}, falling back to puppeteer: ${errorMsg}`);
+    }
+    // 继续执行 fallback 逻辑
   }
 
   if (!allowLocalPuppeteerFallback) {
@@ -1453,7 +1427,9 @@ async function extractMeritDynamicInfoWithBrowser(
   // Fallback: local Puppeteer (single navigation locally)
   // PRODUCTION-GRADE: Use semaphore for concurrency control
   const semaphore = getPageSemaphore();
+  logger.debug(`📊 [Puppeteer Semaphore] Acquiring semaphore for dynamic info extraction (key: ${key})`);
   const release = await semaphore.acquire();
+  logger.debug(`📊 [Puppeteer Semaphore] Acquired semaphore for dynamic info extraction (key: ${key})`);
   
   let page: Page | null = null;
   
@@ -1461,6 +1437,17 @@ async function extractMeritDynamicInfoWithBrowser(
     const url = `https://apps.aavechan.com/merit/${key}`;
     const browser = await getBrowser();
     page = await browser.newPage();
+
+    // 修复 tsx 编译引入 __name 的问题
+    // tsx 会在编译时添加 __name 辅助函数，但在浏览器环境中不存在
+    // 在页面加载前注入 __name 定义
+    await page.evaluateOnNewDocument(() => {
+      // @ts-ignore
+      if (typeof globalThis.__name === 'undefined') {
+        // @ts-ignore
+        globalThis.__name = (func: any) => func;
+      }
+    });
 
     try {
       await page.setViewport({ width: 1920, height: 1080 });
@@ -1543,84 +1530,163 @@ async function extractMeritDynamicInfoWithBrowser(
         })(),
         (async () => {
           if (!needSelfAuth) return null;
-          return await page.evaluate(() => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const doc = (globalThis as any).document;
-            if (!doc) return null;
+          logger.info(`🔍 [Puppeteer Fallback] Starting self-auth extraction for ${key}`);
+          let result: string | null = null;
+          try {
+            // 使用箭头函数避免 TypeScript 编译引入 __name 等辅助变量
+            // 这样可以避免编译后的代码在浏览器环境中不可用
+            // @ts-ignore - page.evaluate 中的代码在浏览器环境中执行，DOM API 可用
+            result = await page.evaluate(() => {
+              // @ts-ignore
+              const doc = globalThis.document;
+              if (!doc) return null;
 
-            function norm(s: any) {
-              return String(s || '').replace(/\s+/g, ' ').trim();
-            }
+              // 使用箭头函数避免 TypeScript 编译引入 __name 等辅助变量
+              // @ts-ignore
+              const norm = (s) => {
+                return String(s || '').replace(/\s+/g, ' ').trim();
+              };
 
-            function hasSelfAuth(s: any) {
-              const t = String(s || '').toLowerCase();
-              return t.includes('self') && (t.includes('authentication') || t.includes('verify') || t.includes('proof'));
-            }
+              // @ts-ignore
+              const hasSelfAuth = (s) => {
+                const t = String(s || '').toLowerCase();
+                return t.includes('self') && (t.includes('authentication') || t.includes('verify') || t.includes('proof'));
+              };
 
-            function scoreEl(el: any) {
-              const text = norm(el?.textContent);
-              if (!text || !hasSelfAuth(text)) return -1;
-              let score = 0;
-              if (text.length >= 60 && text.length <= 900) score += 3;
-              if (text.toLowerCase().includes('supply')) score += 1;
-              if (text.toLowerCase().includes('borrow')) score += 1;
+              // @ts-ignore
+              const scoreEl = (el) => {
+                const text = norm(el ? el.textContent : null);
+                if (!text || !hasSelfAuth(text)) return -1;
+                let score = 0;
+                if (text.length >= 60 && text.length <= 900) score += 3;
+                if (text.toLowerCase().includes('supply')) score += 1;
+                if (text.toLowerCase().includes('borrow')) score += 1;
+                try {
+                  // @ts-ignore
+                  const cs = globalThis.getComputedStyle(el);
+                  const bg = cs ? cs.backgroundColor : '';
+                  if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') score += 2;
+                  const border = cs ? cs.borderColor : '';
+                  if (border && border !== 'rgba(0, 0, 0, 0)' && border !== 'transparent') score += 1;
+                } catch {}
+                if (text.length > 900) score -= 3;
+                return score;
+              };
+
               try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const cs = (globalThis as any).getComputedStyle(el);
-                const bg = cs?.backgroundColor || '';
-                if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') score += 2;
-                const border = cs?.borderColor || '';
-                if (border && border !== 'rgba(0, 0, 0, 0)' && border !== 'transparent') score += 1;
+                const candidates = doc.querySelectorAll('section,article,aside,div,p,li');
+
+                let best = null;
+                let bestScore = -1;
+                for (let i = 0; i < candidates.length; i++) {
+                  const el = candidates[i];
+                  const s = scoreEl(el);
+                  if (s > bestScore) {
+                    bestScore = s;
+                    best = el;
+                  }
+                }
+
+                if (best) {
+                  let container = best;
+                  let foundValid = false;
+                  for (let i = 0; i < 4; i++) {
+                    const t = norm(container ? container.textContent : null);
+                    if (t && t.length >= 60 && t.length <= 900 && hasSelfAuth(t)) {
+                      foundValid = true;
+                      break;
+                    }
+                    container = container ? container.parentElement : null;
+                    if (!container) break;
+                  }
+                  if (foundValid && container) {
+                    const finalText = norm(container.textContent);
+                    if (finalText && hasSelfAuth(finalText) && finalText.length <= 1200) {
+                      return finalText.length > 950 ? finalText.slice(0, 950) : finalText;
+                    }
+                  }
+                  // 如果向上查找失败，尝试使用 best 元素本身的文本（放宽长度限制）
+                  const bestText = norm(best.textContent);
+                  if (bestText && hasSelfAuth(bestText) && bestText.length >= 60 && bestText.length <= 1200) {
+                    return bestText.length > 950 ? bestText.slice(0, 950) : bestText;
+                  }
+                }
               } catch {}
-              if (text.length > 900) score -= 3;
-              return score;
-            }
 
+              // text-based fallback
+              const allElements = doc.querySelectorAll('*');
+              for (let i = 0; i < allElements.length; i++) {
+                const element = allElements[i];
+                if (!element) continue;
+                const text = norm(element.textContent || '');
+                if (hasSelfAuth(text) && text.length > 60 && text.length < 1000) {
+                  return text;
+                }
+              }
+
+              return null;
+            }) as string | null;
+          } catch (evalError) {
+            logger.error(`❌ [Puppeteer Fallback] Error in page.evaluate for ${key}:`, evalError);
+            result = null;
+          }
+          
+          if (result) {
+            logger.info(`✅ [Puppeteer Fallback] Self-auth extracted for ${key}: ${result.substring(0, 100)}...`);
+          } else {
+            logger.warn(`⚠️ [Puppeteer Fallback] No self-auth found for ${key}`);
+            // 尝试获取页面文本内容用于调试
             try {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const candidates = doc.querySelectorAll('section,article,aside,div,p,li') as any;
-
-              let best: any = null;
-              let bestScore = -1;
-              for (let i = 0; i < candidates.length; i++) {
-                const el = candidates[i];
-                const s = scoreEl(el);
-                if (s > bestScore) {
-                  bestScore = s;
-                  best = el;
+              // 获取页面文本用于调试
+              // @ts-ignore - page.evaluate 中的代码在浏览器环境中执行
+              const pageText = await page.evaluate(() => {
+                // @ts-ignore
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const doc = (globalThis as any).document;
+                const body = doc ? doc.body : null;
+                const innerText = body ? body.innerText : '';
+                return innerText ? innerText.substring(0, 1000) : '';
+              }) as string;
+              // 检查页面文本中是否包含 self-auth 相关关键词
+              const hasSelfAuthInText = /self.*(auth|verify|proof)/i.test(pageText);
+              logger.info(`🔍 [Puppeteer Fallback] Page text sample (${pageText.length} chars, has self-auth keywords: ${hasSelfAuthInText}): ${pageText.substring(0, 200)}...`);
+              
+              // 尝试查找所有包含 self 的文本
+              // @ts-ignore - page.evaluate 中的代码在浏览器环境中执行
+              const selfTexts = await page.evaluate(() => {
+                // @ts-ignore
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const doc = (globalThis as any).document;
+                const results = [];
+                const body = doc ? doc.body : null;
+                const allText = body ? body.innerText : '';
+                const lines = allText ? allText.split('\n') : [];
+                for (let i = 0; i < lines.length; i++) {
+                  const line = lines[i];
+                  const lower = line.toLowerCase();
+                  if (lower.includes('self') && (lower.includes('auth') || lower.includes('verify') || lower.includes('proof'))) {
+                    results.push(line.trim().substring(0, 200));
+                  }
                 }
-              }
-
-              if (best) {
-                let container: any = best;
-                for (let i = 0; i < 4; i++) {
-                  const t = norm(container?.textContent);
-                  if (t.length >= 60 && t.length <= 900 && hasSelfAuth(t)) break;
-                  container = container?.parentElement;
-                  if (!container) break;
+                return results;
+              }) as string[];
+              if (selfTexts.length > 0) {
+                logger.info(`🔍 [Puppeteer Fallback] Found ${selfTexts.length} potential self-auth texts:`, selfTexts);
+                // 如果找到了 self-auth 文本，但提取函数返回 null，说明提取逻辑有问题
+                // 尝试使用找到的第一个文本作为结果
+                if (!result && selfTexts.length > 0) {
+                  result = selfTexts[0];
+                  logger.info(`✅ [Puppeteer Fallback] Using first found self-auth text for ${key}: ${result.substring(0, 100)}...`);
                 }
-                const finalText = norm(container?.textContent);
-                if (finalText && hasSelfAuth(finalText) && finalText.length <= 1200) {
-                  return finalText.length > 950 ? finalText.slice(0, 950) : finalText;
-                }
+              } else {
+                logger.warn(`⚠️ [Puppeteer Fallback] No self-auth texts found in page content for ${key}`);
               }
-            } catch {}
-
-            // text-based fallback
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const allElements = doc.querySelectorAll('*') as any;
-            for (let i = 0; i < allElements.length; i++) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const element = allElements[i] as any;
-              if (!element) continue;
-              const text = norm(element.textContent || '');
-              if (hasSelfAuth(text) && text.length > 60 && text.length < 1000) {
-                return text;
-              }
+            } catch (debugError) {
+              logger.warn(`⚠️ [Puppeteer Fallback] Failed to get debug info: ${debugError}`);
             }
-
-            return null;
-          });
+          }
+          
+          return result;
         })(),
       ]);
 
@@ -1940,7 +2006,7 @@ function extractCampaignName(html: string): string | undefined {
 }
 
 /**
- * 使用 browser rendering 提取 Self authentication 描述
+ * 使用 browser rendering 提取 Self Authentication 描述
  * 基于位置提取：根据截图，Self 认证描述出现在一个浅绿色框中
  * 不依赖精确文本匹配，而是基于 DOM 结构位置
  * 需要使用 browser rendering 因为内容可能需要 JavaScript 渲染
@@ -1955,7 +2021,9 @@ export async function extractSelfAuthenticationDescriptionWithBrowser(key: strin
   // Fallback: local Puppeteer (keep for reliability)
   // PRODUCTION-GRADE: Use semaphore for concurrency control
   const semaphore = getPageSemaphore();
+  logger.debug(`📊 [Puppeteer Semaphore] Acquiring semaphore for self-auth extraction (key: ${key})`);
   const release = await semaphore.acquire();
+  logger.debug(`📊 [Puppeteer Semaphore] Acquired semaphore for self-auth extraction (key: ${key})`);
   
   let page: Page | null = null;
   
@@ -1965,6 +2033,17 @@ export async function extractSelfAuthenticationDescriptionWithBrowser(key: strin
     
     const browser = await getBrowser();
     page = await browser.newPage();
+    
+    // 修复 tsx 编译引入 __name 的问题
+    // tsx 会在编译时添加 __name 辅助函数，但在浏览器环境中不存在
+    // 在页面加载前注入 __name 定义
+    await page.evaluateOnNewDocument(() => {
+      // @ts-ignore
+      if (typeof globalThis.__name === 'undefined') {
+        // @ts-ignore
+        globalThis.__name = (func: any) => func;
+      }
+    });
     
     try {
       // 设置视口和 User-Agent
@@ -1983,7 +2062,7 @@ export async function extractSelfAuthenticationDescriptionWithBrowser(key: strin
       await new Promise(resolve => setTimeout(resolve, 1000));
       logger.info(`🔍 [Self Auth] Page loaded, starting extraction...`);
       
-      // 在浏览器中提取 Self authentication 描述
+      // 在浏览器中提取 Self Authentication 描述
       // 基于页面布局定位：根据截图，Self 认证描述出现在一个浅绿色信息框中
       // 优先使用 CSS 选择器、DOM 结构和样式来定位，而不是文本内容
       // @ts-ignore - page.evaluate 中的代码在浏览器环境中执行，DOM API 可用
@@ -1993,21 +2072,22 @@ export async function extractSelfAuthenticationDescriptionWithBrowser(key: strin
         if (!doc) return null;
 
         // Shared helpers for all strategies (do NOT rely on aave.self.xyz)
-        function norm(s: any) {
+        // 使用箭头函数避免 TypeScript 编译引入 __name 等辅助变量
+        const norm = (s: any) => {
           return String(s || '').replace(/\s+/g, ' ').trim();
-        }
+        };
 
-        function hasSelfAuth(s: any) {
+        const hasSelfAuth = (s: any) => {
           const t = String(s || '').toLowerCase();
           return t.includes('self') && (t.includes('authentication') || t.includes('verify') || t.includes('proof'));
-        }
+        };
         
         // 方法1: 不依赖链接，基于 Self + authentication 语义 + 布局（更鲁棒）
-        // 用户要求：即使没有完整的 aave.self.xyz，也要能识别 Self authentication 相关文案
+        // 用户要求：即使没有完整的 aave.self.xyz，也要能识别 Self Authentication 相关文案
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const candidates = doc.querySelectorAll('section,article,aside,div,p,li') as any;
-          function scoreEl(el: any) {
+          const scoreEl = (el: any) => {
             const text = norm(el?.textContent);
             if (!text || !hasSelfAuth(text)) return -1;
             let score = 0;
@@ -2076,7 +2156,7 @@ export async function extractSelfAuthenticationDescriptionWithBrowser(key: strin
               const computedStyle = (globalThis as any).getComputedStyle(element);
               const bgColor = computedStyle.backgroundColor;
               
-              // 检查 Self authentication 语义（不依赖链接）
+              // 检查 Self Authentication 语义（不依赖链接）
               const text = norm(element.textContent || '');
               if (hasSelfAuth(text) && text.length > 50 && text.length < 1000) {
                 return text;
@@ -2389,11 +2469,18 @@ export async function fetchMeritTimeRange(
     if (needDynamicSelfAuth && dynamic.selfAuthDescription) {
       message = [
         ...(message || []),
-        { action: 'Self authentication', description: dynamic.selfAuthDescription },
+        { action: 'Self Authentication', description: dynamic.selfAuthDescription },
       ];
       selfAuthStrategy = `self-auth:p2:dynamic:${dynamic.source}`;
+      logger.info(`✅ Self Authentication description extracted for ${key} (source: ${dynamic.source})`);
     } else if (needDynamicSelfAuth && !dynamic.selfAuthDescription) {
-      logger.warn(`⚠️ Self authentication description missing for ${key} (dynamic extraction returned empty)`);
+      logger.warn(`⚠️ Self Authentication description missing for ${key} (dynamic extraction returned empty, source: ${dynamic.source})`);
+      // 记录更详细的错误信息，帮助诊断问题
+      if (dynamic.source === 'puppeteer') {
+        logger.warn(`   → Puppeteer fallback may have failed. Check if page loaded correctly.`);
+      } else if (dynamic.source === 'worker') {
+        logger.warn(`   → Worker extraction may have failed or timed out.`);
+      }
     }
   }
     

@@ -5,6 +5,7 @@ export interface Env {
   BROWSER_CONCURRENCY?: string;
   BROWSER_MAX_IDLE_MS?: string;
   BROWSER_MIN_LAUNCH_INTERVAL_MS?: string;
+  BROWSER_REQUEST_TIMEOUT_MS?: string; // 请求超时时间（毫秒），默认 60 秒
 }
 
 interface RequestBody {
@@ -56,6 +57,11 @@ function sleep(ms: number): Promise<void> {
 
 function isRateLimitError(error: unknown): boolean {
   if (error instanceof Error) {
+    // 检查错误代码
+    if ((error as any).code === 429) {
+      return true;
+    }
+    // 检查错误消息
     const message = error.message.toLowerCase();
     return (
       message.includes('429') ||
@@ -88,12 +94,22 @@ export class BrowserPool {
   private semaphore: Semaphore;
   // Track launch timestamps for sliding window rate limiting (per-minute limit)
   private launchHistory: number[] = [];
+  // Track how many requests are currently using the SAME browser instance
+  // Note: This counts REQUESTS, not browser instances or pages
+  // - Each request creates its own page (session) from the same browser instance
+  // - browserRefCount tracks how many requests are sharing the same browser instance
+  // - When browserRefCount === 0, it means no requests are using the browser, so we can close it
+  private browserRefCount = 0;
 
   private readonly defaultConcurrency = 2;
   private readonly defaultMaxIdleMs = 600000;
   private readonly defaultMinLaunchIntervalMs = 60000;
   // Cloudflare Free Plan: 3 new browser instances per minute (sliding window)
   private readonly maxLaunchesPerMinute = 3;
+  // 请求超时时间（毫秒），防止请求卡死导致 browserRefCount 永远不减少
+  // 注意：这个超时应该小于 Node.js 应用层的超时（30秒），以便 Worker 能先返回错误
+  // 如果 Worker 超时时间大于应用层超时，应用层会先超时，看不到 Worker 返回的 429 错误
+  private readonly defaultRequestTimeoutMs = 25000; // 25 秒（小于应用层的 30 秒）
 
   private totalRequests = 0;
   private totalLaunches = 0;
@@ -200,6 +216,15 @@ export class BrowserPool {
         const oldestLaunch = Math.min(...this.launchHistory);
         const waitMs = Math.max(0, oldestLaunch + 60000 - now + 1000); // +1s safety margin
         if (waitMs > 0) {
+          // 如果等待时间会超过请求超时时间，立即返回 429 错误，而不是等待
+          // 这样可以确保 Node.js 应用层能看到 429 错误，而不是超时
+          const requestTimeoutMs = Number(this.env.BROWSER_REQUEST_TIMEOUT_MS ?? this.defaultRequestTimeoutMs);
+          if (waitMs > requestTimeoutMs * 0.8) { // 如果等待时间超过超时时间的 80%，立即返回错误
+            const error = new Error(`Rate limit exceeded: ${this.launchHistory.length} launches in last minute (limit: ${this.maxLaunchesPerMinute}). Would need to wait ${Math.round(waitMs / 1000)}s, but request timeout is ${Math.round(requestTimeoutMs / 1000)}s`);
+            (error as any).code = 429;
+            throw error;
+          }
+          
           console.log(`[browser-pool] ⏸️ RATE LIMIT PROTECTION: ${this.launchHistory.length} launches in last minute (limit: ${this.maxLaunchesPerMinute})`);
           console.log(`[browser-pool]    • Oldest launch: ${new Date(oldestLaunch).toISOString()}`);
           console.log(`[browser-pool]    • Waiting ${Math.round(waitMs / 1000)}s until oldest launch is >60s old`);
@@ -216,6 +241,14 @@ export class BrowserPool {
       const minIntervalMs = Number(this.env.BROWSER_MIN_LAUNCH_INTERVAL_MS ?? this.defaultMinLaunchIntervalMs);
       const intervalWaitMs = Math.max(0, this.lastLaunchAt + minIntervalMs - Date.now());
       if (intervalWaitMs > 0) {
+        // 如果等待时间会超过请求超时时间，立即返回错误，而不是等待
+        const requestTimeoutMs = Number(this.env.BROWSER_REQUEST_TIMEOUT_MS ?? this.defaultRequestTimeoutMs);
+        if (intervalWaitMs > requestTimeoutMs * 0.8) {
+          const error = new Error(`Minimum interval not met: need to wait ${Math.round(intervalWaitMs / 1000)}s, but request timeout is ${Math.round(requestTimeoutMs / 1000)}s`);
+          (error as any).code = 429;
+          throw error;
+        }
+        
         console.log(`[browser-pool] ⏸️ MIN INTERVAL WAIT: ${Math.round(intervalWaitMs / 1000)}s (minInterval: ${minIntervalMs}ms)`);
         await sleep(intervalWaitMs);
       }
@@ -225,9 +258,10 @@ export class BrowserPool {
       console.log(`[browser-pool]    • Current launches in last minute: ${this.launchHistory.length}`);
       
       const launchAttemptTime = Date.now();
-      const browser = await puppeteer.launch(this.env.MY_BROWSER, {
-        keep_alive: 600000, // 10 minutes (max allowed)
-      } as any);
+      // 不使用 keep_alive，使用默认的 60 秒空闲超时
+      // 这样可以避免占用 10 分钟/天的配额
+      // 如果需要更长的空闲时间，可以通过 scheduleIdleClose() 配置 BROWSER_MAX_IDLE_MS
+      const browser = await puppeteer.launch(this.env.MY_BROWSER);
       
       // CRITICAL: Only update timestamps and history if launch succeeded
       this.lastLaunchAt = launchAttemptTime;
@@ -260,10 +294,15 @@ export class BrowserPool {
 
     if (this.browser) {
       try {
+        console.log(`[browser-pool] 🔒 Closing browser instance...`);
         await this.browser.close();
+        console.log(`[browser-pool] ✅ Browser closed successfully`);
+      } catch (error) {
+        console.log(`[browser-pool] ⚠️ Error closing browser: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
         this.browser = null;
         this.lastUsedAt = 0;
+        this.browserRefCount = 0; // 重置引用计数
       }
     }
   }
@@ -409,58 +448,153 @@ export class BrowserPool {
     }
 
     const release = await this.semaphore.acquire();
+    // 增加 browser 引用计数
+    // 注意：browserRefCount 跟踪的是有多少个 REQUEST 正在使用同一个 browser instance
+    // - 每个 request 会创建自己的 page（session），但共享同一个 browser instance
+    // - browserRefCount 不是计算 browser instance 的数量（this.browser 只有一个）
+    // - browserRefCount 是计算同一个 browser instance 里面的不同 request
+    this.browserRefCount++;
     let page: any = null;
+    
+    // 设置请求超时，防止请求卡死导致 browserRefCount 永远不减少
+    const requestTimeoutMs = Number(this.env.BROWSER_REQUEST_TIMEOUT_MS ?? this.defaultRequestTimeoutMs);
+    const requestStartTime = Date.now();
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let requestTimedOut = false;
 
     try {
-      page = await browser.newPage();
-      await page.setViewport({ width: 1920, height: 1080 });
-      await page.setUserAgent(
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      );
+      // 设置超时保护：如果请求超过指定时间，强制抛出超时错误
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          requestTimedOut = true;
+          const elapsed = Date.now() - requestStartTime;
+          reject(new Error(`Request timeout after ${elapsed}ms (limit: ${requestTimeoutMs}ms)`));
+        }, requestTimeoutMs);
+      });
+      
+      // 使用 Promise.race 确保超时后能立即中断
+      const result = await Promise.race([
+        (async () => {
+          page = await browser.newPage();
+          await page.setViewport({ width: 1920, height: 1080 });
+          await page.setUserAgent(
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          );
 
-      const url = `https://apps.aavechan.com/merit/${key}`;
-      await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-      await page.waitForSelector('body', { timeout: 10000 });
-      await sleep(1000);
+          const url = `https://apps.aavechan.com/merit/${key}`;
+          await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+          await page.waitForSelector('body', { timeout: 10000 });
+          await sleep(1000);
 
-      let result: any;
-      if (action === 'extractCampaignInfo') {
-        result = await extractCampaignInfo(page);
-      } else if (action === 'extractSelfAuth') {
-        result = await extractSelfAuth(page);
-      } else if (action === 'extractDynamicInfo') {
-        const [campaignInfo, selfAuthDescription] = await Promise.all([
-          extractCampaignInfo(page),
-          extractSelfAuth(page),
-        ]);
-        result = { campaignInfo, selfAuthDescription };
-      } else {
-        return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
+          let extractResult: any;
+          if (action === 'extractCampaignInfo') {
+            extractResult = await extractCampaignInfo(page);
+          } else if (action === 'extractSelfAuth') {
+            extractResult = await extractSelfAuth(page);
+          } else if (action === 'extractDynamicInfo') {
+            const [campaignInfo, selfAuthDescription] = await Promise.all([
+              extractCampaignInfo(page),
+              extractSelfAuth(page),
+            ]);
+            extractResult = { campaignInfo, selfAuthDescription };
+          } else {
+            throw new Error(`Unknown action: ${action}`);
+          }
 
-      this.lastUsedAt = Date.now();
-      this.scheduleIdleClose();
+          this.lastUsedAt = Date.now();
+          // 取消超时定时器（请求成功完成）
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          
+          return extractResult;
+        })(),
+        timeoutPromise,
+      ]);
+      
+      // 不再使用 scheduleIdleClose()，因为用户只有一个 worker，不需要复用 browser
+      // 每次请求完成后，如果所有请求都完成了，就关闭 browser
       return new Response(JSON.stringify({ success: true, result }), {
         headers: { 'Content-Type': 'application/json' },
       });
     } catch (error) {
+      // 取消超时定时器（如果还在运行）
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      
       this.totalErrors++;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // 如果是超时错误，记录更详细的信息
+      if (requestTimedOut) {
+        const elapsed = Date.now() - requestStartTime;
+        console.log(`[browser-pool] ⏱️ Request ${requestId} TIMED OUT after ${elapsed}ms (limit: ${requestTimeoutMs}ms)`);
+        console.log(`[browser-pool] ⚠️ This request will be cleaned up in finally block to prevent browserRefCount leak`);
+      }
+      
       return new Response(JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
+        timedOut: requestTimedOut,
       }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     } finally {
+      // ============================================
+      // 请求完成的判断标准：
+      // 1. 所有异步操作完成（extractCampaignInfo, extractSelfAuth 等）
+      // 2. HTTP 响应已返回（return new Response）
+      // 3. 请求超时（timeout）
+      // 4. 无论成功、失败还是超时，finally 块都会执行
+      // ============================================
+      
+      // 确保超时定时器被清除
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      
+      // 先关闭 page（释放页面资源）
+      // 注意：即使请求超时，也要关闭 page，防止资源泄漏
       if (page) {
         try {
           await page.close();
-        } catch {
-          // ignore
+          console.log(`[browser-pool] ✅ Page closed for request ${requestId}${requestTimedOut ? ' (timed out)' : ''}`);
+        } catch (error) {
+          console.log(`[browser-pool] ⚠️ Error closing page: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
+      
+      // 减少 browser 引用计数
+      // 注意：无论请求成功还是失败，都要减少计数
+      // 这表示"这个请求已经完成，不再使用 browser instance"
+      // browserRefCount 跟踪的是有多少个 REQUEST 正在使用同一个 browser instance
+      // 不是计算 browser instance 的数量，而是计算同一个 browser instance 里面的不同 request
+      this.browserRefCount--;
+      console.log(`[browser-pool] 📊 Request ${requestId} completed, browserRefCount=${this.browserRefCount} (requests using same browser instance)`);
+      
+      // 释放 semaphore（允许下一个请求开始）
       release();
+      
+      // 如果所有请求都完成了（引用计数为 0），关闭 browser
+      // 判断标准：
+      // 1. browserRefCount === 0：没有其他请求正在使用这个 browser instance
+      //    - browserRefCount 跟踪的是有多少个 REQUEST 正在使用同一个 browser instance
+      //    - 不是计算 browser instance 的数量，而是计算同一个 browser instance 里面的不同 request
+      // 2. this.browser === browser：确保 browser 还是同一个实例（避免关闭其他请求创建的 browser）
+      if (this.browserRefCount === 0 && this.browser === browser) {
+        try {
+          console.log(`[browser-pool] 🔒 All requests completed (refCount=0), closing browser...`);
+          await this.closeBrowser();
+        } catch (error) {
+          console.log(`[browser-pool] ⚠️ Error closing browser: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      } else if (this.browserRefCount > 0) {
+        console.log(`[browser-pool] ℹ️ Request ${requestId} completed, but browser still in use (refCount=${this.browserRefCount})`);
+      } else if (this.browser !== browser) {
+        console.log(`[browser-pool] ℹ️ Request ${requestId} completed, but browser instance changed (new browser created by another request)`);
+      }
     }
   }
 }
@@ -528,16 +662,17 @@ async function extractSelfAuth(page: any): Promise<string | null> {
     const doc = (globalThis as any).document;
     if (!doc) return null;
 
-    function norm(s: any) {
+    // 使用箭头函数避免 TypeScript 编译引入 __name 等辅助变量
+    const norm = (s: any) => {
       return String(s || '').replace(/\s+/g, ' ').trim();
-    }
+    };
 
-    function hasSelfAuth(s: any) {
+    const hasSelfAuth = (s: any) => {
       const t = String(s || '').toLowerCase();
       return t.includes('self') && (t.includes('authentication') || t.includes('verify') || t.includes('proof'));
-    }
+    };
 
-    function scoreEl(el: any) {
+    const scoreEl = (el: any) => {
       const text = norm(el?.textContent);
       if (!text || !hasSelfAuth(text)) return -1;
       let score = 0;

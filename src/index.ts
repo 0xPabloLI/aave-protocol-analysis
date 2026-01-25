@@ -716,14 +716,105 @@ async function fetchAaveMarkets(): Promise<void> {
     const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
     logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
 
-    // 获取 Merit APR 数据（已包含索引和时间范围）
-    const meritData = await fetchMeritData();
+    // 并发获取 Merit、Merkl 和 Brevis 数据（它们之间没有依赖关系）
+    // 注意：程序是定期触发的，设置超时避免某个任务卡住导致所有数据被卡住
+    // 超时时间设置较长（10分钟），因为大多数时候数据有缓存，等一等没关系
+    logger.info('🚀 Starting incentive data fetching concurrently (Merit, Merkl, Brevis running simultaneously)...');
     
-    // 获取 Merkl 数据（内部会保存原始数据文件）
-    const merklData = await processMerklData();
+    // 同时启动三个任务（并发执行）
+    const meritPromise = fetchMeritData().catch((error) => {
+      logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+      return {} as MeritDataIndex;
+    });
+    const merklPromise = processMerklData().catch((error) => {
+      logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+      return {} as MerklDataIndex;
+    });
+    const brevisPromise = fetchBrevisAprs(baseDataset).catch((error) => {
+      logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+      return {} as BrevisDataIndex;
+    });
     
-    // 获取 Brevis APR 数据（使用 baseDataset 匹配 campaign）
-    const brevisData = await fetchBrevisAprs(baseDataset);
+    // 设置超时时间（10分钟），避免某个任务卡住导致所有数据被卡住
+    // 超时时间较长，因为大多数时候数据有缓存，网络问题等一等没关系
+    const INCENTIVE_DATA_TIMEOUT_MS = 10 * 60 * 1000; // 10 分钟
+    
+    // 创建一个包装函数，用于在超时后提取已完成的结果
+    const getCompletedResults = async (): Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex }> => {
+      // 等待所有任务完成或超时
+      const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
+      
+      const meritData: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
+      const merklData: MerklDataIndex = results[1].status === 'fulfilled' ? results[1].value : {};
+      const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
+      
+      if (results[0].status === 'rejected') {
+        logger.warn(`⚠️ Merit data fetching was rejected, using empty data`);
+      }
+      if (results[1].status === 'rejected') {
+        logger.warn(`⚠️ Merkl data fetching was rejected, using empty data`);
+      }
+      if (results[2].status === 'rejected') {
+        logger.warn(`⚠️ Brevis data fetching was rejected, using empty data`);
+      }
+      
+      return { merit: meritData, merkl: merklData, brevis: brevisData };
+    };
+    
+    // 创建超时 Promise
+    const timeoutPromise = new Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex }>((resolve) => {
+      setTimeout(async () => {
+        logger.warn(`⏱️ Incentive data fetching timeout after ${INCENTIVE_DATA_TIMEOUT_MS / 1000}s, extracting completed results...`);
+        
+        // 超时后，检查哪些任务已完成，使用已完成的结果
+        const results = await Promise.allSettled([
+          Promise.race([meritPromise, Promise.resolve({} as MeritDataIndex)]),
+          Promise.race([merklPromise, Promise.resolve({} as MerklDataIndex)]),
+          Promise.race([brevisPromise, Promise.resolve({} as BrevisDataIndex)]),
+        ]);
+        
+        // 使用一个很短的超时（100ms）来检查每个 Promise 是否已完成
+        // 如果已完成，获取结果；如果还在 pending，使用空对象
+        const checkCompleted = async <T>(promise: Promise<T>, defaultValue: T): Promise<{ completed: boolean; value: T }> => {
+          try {
+            const result = await Promise.race([
+              promise.then(value => ({ completed: true, value })),
+              new Promise<{ completed: false; value: T }>(resolve => 
+                setTimeout(() => resolve({ completed: false, value: defaultValue }), 100)
+              ),
+            ]);
+            return result;
+          } catch {
+            return { completed: false, value: defaultValue };
+          }
+        };
+        
+        const [meritCheck, merklCheck, brevisCheck] = await Promise.all([
+          checkCompleted(meritPromise, {} as MeritDataIndex),
+          checkCompleted(merklPromise, {} as MerklDataIndex),
+          checkCompleted(brevisPromise, {} as BrevisDataIndex),
+        ]);
+        
+        const meritData: MeritDataIndex = meritCheck.completed ? meritCheck.value : {};
+        const merklData: MerklDataIndex = merklCheck.completed ? merklCheck.value : {};
+        const brevisData: BrevisDataIndex = brevisCheck.completed ? brevisCheck.value : {};
+        
+        logger.warn(`   • Merit: ${meritCheck.completed ? 'completed' : 'timeout/empty'}`);
+        logger.warn(`   • Merkl: ${merklCheck.completed ? 'completed' : 'timeout/empty'}`);
+        logger.warn(`   • Brevis: ${brevisCheck.completed ? 'completed' : 'timeout/empty'}`);
+        logger.warn(`   • Using available results, unfinished tasks continue in background`);
+        
+        resolve({ merit: meritData, merkl: merklData, brevis: brevisData });
+      }, INCENTIVE_DATA_TIMEOUT_MS);
+    });
+    
+    // 使用 Promise.race，取先完成的（任务完成或超时）
+    const { merit: meritData, merkl: merklData, brevis: brevisData } = await Promise.race([
+      getCompletedResults(),
+      timeoutPromise,
+    ]);
+    
+    logger.info('✅ Using available incentive data (some tasks may still be running in background)');
     
     // 第二步：将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
     logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
