@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { fetchAaveMarketsData } from '../../../dist/index.js';
 import { dataService } from './dataService.js';
 import { setUpdateStatus, getUpdateStatus } from '../controllers/marketsController.js';
-import { withTimeout, UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
+import { UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
 
 /**
  * 启动定时更新任务
@@ -13,9 +13,9 @@ export function startUpdateScheduler(): void {
   console.log('📅 Starting update scheduler (every 1 minute) as backup mechanism');
 
   // 每 1 分钟执行一次
-  // node-cron 3.0.3 需要 6 位 cron 表达式（包含秒字段）
-  // 使用 '0 */1 * * * *' 表示每分钟的第0秒执行
-  cron.schedule('0 */1 * * * *', async () => {
+  // node-cron 3.0.3 支持 6 位 cron 表达式（包含秒字段）
+  // 使用 '0 * * * * *' 表示每分钟的第0秒执行（等价于 5 位表达式的 '*/1 * * * *'）
+  cron.schedule('0 * * * * *', async () => {
     const currentStatus = getUpdateStatus();
 
     // 如果正在更新中，跳过本次更新
@@ -39,13 +39,34 @@ export function startUpdateScheduler(): void {
       lastSuccessfulUpdate: currentStatus.lastSuccessfulUpdate,
     });
 
+    // 启动更新 promise 并跟踪它
+    const originalUpdatePromise = fetchAaveMarketsData();
+    let timeoutOccurred = false;
+    let timeoutId: NodeJS.Timeout | null = null;
+    
     try {
-      // 使用超时保护，避免因 Cloudflare 重试等导致的长时间阻塞
-      await withTimeout(fetchAaveMarketsData(), UPDATE_TIMEOUT_MS);
-
+      // 设置超时检测（只标记，不取消 promise）
+      timeoutId = setTimeout(() => {
+        timeoutOccurred = true;
+        console.warn(`⏰ Scheduled update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, but operation continues in background...`);
+      }, UPDATE_TIMEOUT_MS);
+      
+      // 等待原始 promise 完成（无论是否超时）
+      await originalUpdatePromise;
+      
+      // 清理超时定时器
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      
       // 更新成功后刷新缓存
       await dataService.refreshCache();
       const lastUpdated = dataService.getLastUpdated();
+
+      if (timeoutOccurred) {
+        console.log('⚠️  Scheduled update completed after timeout');
+      }
 
       setUpdateStatus({
         status: 'idle',
@@ -55,20 +76,24 @@ export function startUpdateScheduler(): void {
 
       console.log('✅ Scheduled update completed successfully');
     } catch (error) {
+      // 清理超时定时器
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      
       console.error('❌ Scheduled update failed:', error);
       const errorStatus = getUpdateStatus();
       
-      // 如果是超时错误，特别标记
-      const isTimeout = error instanceof Error && error.message.includes('timeout');
-      if (isTimeout) {
-        console.warn(`⏰ Update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, resetting status to allow next scheduled update`);
-      }
+      const errorMessage = timeoutOccurred
+        ? `Update timeout after ${UPDATE_TIMEOUT_MS / 1000}s and then failed: ${error instanceof Error ? error.message : String(error)}`
+        : (error instanceof Error ? error.message : String(error));
       
       setUpdateStatus({
         status: 'error',
         lastUpdated: errorStatus.lastUpdated,
         lastSuccessfulUpdate: errorStatus.lastSuccessfulUpdate,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
       });
     }
   });

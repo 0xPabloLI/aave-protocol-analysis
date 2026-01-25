@@ -5,17 +5,6 @@
 export const UPDATE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
 /**
- * 创建一个超时 Promise
- */
-export function createTimeoutPromise(timeoutMs: number): Promise<never> {
-  return new Promise((_, reject) => {
-    setTimeout(() => {
-      reject(new Error(`Update timeout after ${timeoutMs / 1000}s`));
-    }, timeoutMs);
-  });
-}
-
-/**
  * 为异步操作添加超时保护
  * @param promise 要执行的异步操作
  * @param timeoutMs 超时时间（毫秒）
@@ -25,8 +14,26 @@ export async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number = UPDATE_TIMEOUT_MS
 ): Promise<T> {
-  return Promise.race([
-    promise,
-    createTimeoutPromise(timeoutMs),
-  ]);
+  let timeoutId: NodeJS.Timeout | null = null;
+  
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`Update timeout after ${timeoutMs / 1000}s`));
+    }, timeoutMs);
+  });
+  
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    // 如果主 promise 先完成，清理超时定时器，防止资源泄漏
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+    return result;
+  } catch (error) {
+    // 如果超时发生，清理定时器（虽然已经触发，但为了完整性）
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+    throw error;
+  }
 }

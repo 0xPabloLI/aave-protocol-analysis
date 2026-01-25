@@ -46,8 +46,42 @@ fi
 echo ""
 
 # Connect to the server with explicit SSH agent forwarding and run commands
-# Note: Using EOF (not 'EOF') so that $DOPPLER_TOKEN from local shell is expanded
-ssh -A -t "$TARGET_HOST" << EOF
+# Security Note: Base64 encoding is NOT encryption - it's easily reversible.
+# The real security comes from:
+# 1. SSH connection encryption (protects data in transit)
+# 2. Base64 encoding only prevents token from appearing in plain text in:
+#    - Script files (heredoc content)
+#    - Command history (if script is saved)
+#    - Simple log scanning
+# However, anyone with access to the SSH session or process list can still decode it.
+# For production, consider using SSH environment variable passing or a more secure method.
+DOPPLER_TOKEN_B64=""
+if [ -n "$DOPPLER_TOKEN" ]; then
+  # Encode token to base64 (NOT encryption, just encoding to avoid plain text in script)
+  DOPPLER_TOKEN_B64=$(echo -n "$DOPPLER_TOKEN" | base64)
+fi
+
+# Use 'EOF' (quoted) to prevent variable expansion in the heredoc
+# DOPPLER_TOKEN_B64 will be passed as a command-line argument, not embedded in the script
+ssh -A -t "$TARGET_HOST" bash -s "$DOPPLER_TOKEN_B64" << 'REMOTE_SCRIPT'
+  # Decode DOPPLER_TOKEN from base64 if provided
+  # The encoded token is passed as the first command-line argument ($1)
+  # Note: Base64 is easily reversible - this is NOT encryption, just encoding
+  if [ -n "$1" ] && [ "$1" != "" ]; then
+    # base64 -d works on Linux (most common on servers)
+    # base64 -D works on macOS, but we're deploying to Linux servers
+    if command -v base64 > /dev/null 2>&1; then
+      export DOPPLER_TOKEN=$(echo -n "$1" | base64 -d 2>/dev/null || echo -n "$1" | base64 -D 2>/dev/null)
+      if [ -n "$DOPPLER_TOKEN" ]; then
+        echo "✅ DOPPLER_TOKEN decoded and exported in remote shell environment (will be available to PM2)"
+      else
+        echo "⚠️  Failed to decode DOPPLER_TOKEN, continuing without it"
+      fi
+    else
+      echo "⚠️  base64 command not found, cannot decode DOPPLER_TOKEN"
+    fi
+  fi
+  
   echo "Connected to remote server..."
   
   # --- Node.js/NVM logic: always ensure node is available at the start ---
@@ -293,10 +327,15 @@ ssh -A -t "$TARGET_HOST" << EOF
   # Note: we intentionally do NOT rely on a server-side .env file.
   # Secrets should be provided via Secret Manager (e.g. Doppler) using DOPPLER_TOKEN in the server environment.
   
+  # DOPPLER_TOKEN is already exported in the remote shell environment (decoded from base64)
+  # This ensures PM2 can access it when evaluating ecosystem.config.cjs and starting processes
+  # Security: Token was passed as base64-encoded command argument, not in plain text
+  
   # Check if the backend app is running
   if pm2 list | grep -q "aave-backend" && pm2 show aave-backend | grep -q "online"; then
     echo "Aave backend is running. Reloading with PM2..."
     # Reload from root directory where ecosystem.config.cjs is located
+    # DOPPLER_TOKEN is now in the environment, so PM2 will pass it to the process
     pm2 reload ecosystem.config.cjs --only aave-backend --update-env
     echo "--- PM2 Status after reload aave-backend ---"
     pm2 status
@@ -304,6 +343,7 @@ ssh -A -t "$TARGET_HOST" << EOF
   else
     echo "Aave backend is not running. Starting with PM2..."
     # Start from root directory where ecosystem.config.cjs is located
+    # DOPPLER_TOKEN is now in the environment, so PM2 will pass it to the process
     pm2 start ecosystem.config.cjs --only aave-backend --env production --update-env
     echo "--- PM2 Status after start aave-backend ---"
     pm2 status
@@ -390,6 +430,6 @@ ssh -A -t "$TARGET_HOST" << EOF
   echo "PM2 Status:"
   pm2 status
   echo ""
-EOF
+REMOTE_SCRIPT
 
 echo "Deployment script execution finished."

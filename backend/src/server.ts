@@ -14,7 +14,22 @@ const app = express();
 // 2. 仓库根目录 .env 文件中的 PORT（统一配置位置）
 // 3. 默认值 3001
 // 注意：PM2 启动时，PM2配置文件env > PM2读取的.env文件 > 系统环境变量
-const PORT = process.env.PORT || 3001;
+// 注意：PORT=0 是有效值（表示使用任意可用端口），不应被替换为默认值
+// 有效端口范围：0（OS选择）或 1-65535
+const PORT: number = (() => {
+  if (!process.env.PORT) return 3001;
+  const parsed = Number.parseInt(process.env.PORT, 10);
+  if (Number.isNaN(parsed)) {
+    console.warn(`⚠️  Invalid PORT value "${process.env.PORT}", using default 3001`);
+    return 3001;
+  }
+  // 验证端口范围：0（OS选择）或 1-65535
+  if (parsed !== 0 && (parsed < 1 || parsed > 65535)) {
+    console.warn(`⚠️  PORT value ${parsed} is out of valid range (0 or 1-65535), using default 3001`);
+    return 3001;
+  }
+  return parsed;
+})();
 
 // Middleware
 app.use(corsMiddleware);

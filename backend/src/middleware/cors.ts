@@ -15,31 +15,68 @@ const DEV_ENV_PATTERNS = [
   '103.151.172.89', // 用户服务器 IP
 ];
 
+/**
+ * 规范化 origin URL，提取协议、主机和端口
+ * 返回格式：protocol://host:port（如果端口是默认端口则省略）
+ */
+function normalizeOrigin(origin: string): string | null {
+  try {
+    const url = new URL(origin);
+    const protocol = url.protocol; // 包含 ':'，如 "https:"
+    const hostname = url.hostname;
+    const port = url.port;
+    
+    // 构建规范化后的 origin
+    // protocol 已经包含 ':'，所以使用 protocol + '//' 得到 "https://"
+    if (port && port !== '') {
+      // 非默认端口：包含端口号
+      return `${protocol}//${hostname}:${port}`;
+    }
+    // 默认端口（http:80 或 https:443）：不包含端口号
+    return `${protocol}//${hostname}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 检查 origin 是否匹配允许的 origin
+ * 使用精确匹配（协议、主机、端口）而不是前缀匹配，防止子域名绕过攻击
+ */
+function isOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (!normalizedOrigin) return false;
+  
+  return allowedOrigins.some(allowed => {
+    const normalizedAllowed = normalizeOrigin(allowed);
+    if (!normalizedAllowed) return false;
+    
+    // 精确匹配协议、主机和端口
+    return normalizedOrigin === normalizedAllowed;
+  });
+}
+
 const corsOptions = process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL
   ? {
       origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
         // 允许没有 origin 的请求（如移动应用、Postman 等）
         if (!origin) return callback(null, true);
         
-        // 检查是否在 FRONTEND_URL 白名单中
+        // 检查是否在 FRONTEND_URL 白名单中（使用精确匹配防止子域名绕过）
         const allowedOrigins = process.env.FRONTEND_URL!.split(',').map(url => url.trim());
-        if (allowedOrigins.some(allowed => origin.startsWith(allowed))) {
+        if (isOriginAllowed(origin, allowedOrigins)) {
           return callback(null, true);
         }
         
         // 检查是否在额外的开发环境白名单中（ALLOWED_DEV_ORIGINS）
         if (process.env.ALLOWED_DEV_ORIGINS) {
           const devOrigins = process.env.ALLOWED_DEV_ORIGINS.split(',').map(url => url.trim());
-          if (devOrigins.some(allowed => origin.startsWith(allowed))) {
+          if (isOriginAllowed(origin, devOrigins)) {
             return callback(null, true);
           }
         }
         
-        // 检查是否是常见的开发/测试环境
-        if (DEV_ENV_PATTERNS.some(pattern => origin.includes(pattern))) {
-          return callback(null, true);
-        }
-        
+        // 生产环境：不检查 DEV_ENV_PATTERNS，严格遵循白名单
         // 都不匹配，拒绝请求
         callback(null, false);
       },
@@ -48,7 +85,13 @@ const corsOptions = process.env.NODE_ENV === 'production' && process.env.FRONTEN
       allowedHeaders: ['Content-Type', 'Authorization'],
     }
   : {
-      origin: true, // 开发环境允许所有来源
+      origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+        // 开发环境：允许所有来源，包括开发/测试环境
+        if (!origin) return callback(null, true);
+        
+        // 开发环境允许所有来源，包括 DEV_ENV_PATTERNS
+        callback(null, true);
+      },
       credentials: true,
       methods: ['GET', 'POST', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],

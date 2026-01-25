@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { logger } from '../logger.js';
+import { coingeckoFetchConfig } from '../../../src/config.js';
 
 const CG_ENDPOINT = 'https://api.coingecko.com/api/v3/coins/markets';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -11,6 +12,10 @@ interface CoinGeckoCoin {
 
 let cachedResponse: { data: { uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[] }; fetchedAt: number } | null =
   null;
+// 跟踪正在进行的 fetch，防止并发请求触发重复的 API 调用
+let inFlightFetch: Promise<{ uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[] }> | null = null;
+// 跟踪最后一次 API 请求的时间，用于 rate limit 控制（Free tier: 30 次/分钟 = 每 2 秒一次）
+let lastApiRequestTime: number = 0;
 
 const getHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { accept: 'application/json' };
@@ -21,50 +26,206 @@ const getHeaders = (): Record<string, string> => {
   return headers;
 };
 
-const fetchCategoryPage = async (url: string): Promise<CoinGeckoCoin[]> => {
-  const response = await fetch(url, { method: 'GET', headers: getHeaders() });
-  if (!response.ok) {
-    throw new Error(`CoinGecko request failed: ${response.status} ${response.statusText}`);
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableError(error: unknown): boolean {
+  const retryableCodes = new Set(['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETRESET', 'ECONNREFUSED']);
+  const code = (error as any)?.code || (error as any)?.cause?.code;
+  return Boolean(code && retryableCodes.has(String(code)));
+}
+
+/**
+ * 获取 Retry-After 等待时间（毫秒）
+ * 优先使用响应头中的 Retry-After，否则使用配置的最小等待时间
+ */
+function getRetryAfterMs(response: globalThis.Response): number {
+  const retryAfter = response.headers.get('Retry-After');
+  if (retryAfter) {
+    const seconds = Number.parseInt(retryAfter, 10);
+    if (!Number.isNaN(seconds) && seconds > 0) {
+      return seconds * 1000;
+    }
   }
-  return response.json();
+  // 如果没有 Retry-After header，使用配置的最小等待时间
+  return coingeckoFetchConfig.rateLimitMinWaitSeconds * 1000;
+}
+
+/**
+ * 带重试机制的 CoinGecko API 请求
+ * 处理 429 (Rate Limit) 和 5xx 错误，使用指数退避
+ */
+async function fetchCategoryPageWithRetry(
+  url: string,
+  label: string
+): Promise<CoinGeckoCoin[]> {
+  let attempt = 0;
+  let lastError: unknown;
+  const headers = getHeaders();
+
+  while (attempt <= coingeckoFetchConfig.maxRetries) {
+    try {
+      const response = await fetch(url, { method: 'GET', headers });
+
+      if (response.ok) {
+        // 必须 await JSON 解析，以便解析错误能被 try-catch 捕获并触发重试
+        return await response.json();
+      }
+
+      // 处理 429 Rate Limit 错误
+      if (response.status === 429) {
+        if (attempt < coingeckoFetchConfig.maxRetries) {
+          const waitMs = getRetryAfterMs(response);
+          logger.warn(
+            `⚠️ CoinGecko ${label} rate limited (429), waiting ${Math.round(waitMs / 1000)}s before retry (attempt ${attempt + 1}/${coingeckoFetchConfig.maxRetries})`
+          );
+          await sleep(waitMs);
+          attempt++;
+          continue;
+        }
+        // 最后一次重试也失败，抛出错误
+        throw new Error(`CoinGecko rate limit exceeded after ${coingeckoFetchConfig.maxRetries} retries`);
+      }
+
+      // 处理 5xx 服务器错误（可重试）
+      if (response.status >= 500 && response.status < 600 && attempt < coingeckoFetchConfig.maxRetries) {
+        const delay = Math.min(
+          coingeckoFetchConfig.maxDelayMs,
+          coingeckoFetchConfig.baseDelayMs * Math.pow(2, attempt)
+        ) + Math.random() * 250; // 添加随机抖动避免雷群效应
+        logger.warn(
+          `⚠️ CoinGecko ${label} HTTP ${response.status}, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${coingeckoFetchConfig.maxRetries})`
+        );
+        await sleep(delay);
+        attempt++;
+        continue;
+      }
+
+      // 其他 HTTP 错误（4xx 等）不重试
+      throw new Error(`CoinGecko request failed: ${response.status} ${response.statusText}`);
+    } catch (error) {
+      lastError = error;
+
+      // 如果是网络错误且可重试
+      if (isRetryableError(error) && attempt < coingeckoFetchConfig.maxRetries) {
+        const delay = Math.min(
+          coingeckoFetchConfig.maxDelayMs,
+          coingeckoFetchConfig.baseDelayMs * Math.pow(2, attempt)
+        ) + Math.random() * 250;
+        logger.warn(
+          `⚠️ CoinGecko ${label} network error (${(error as Error).message}), retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${coingeckoFetchConfig.maxRetries})`
+        );
+        await sleep(delay);
+        attempt++;
+        continue;
+      }
+
+      // 不可重试的错误或已达到最大重试次数
+      throw error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+// 保持向后兼容的简单函数（内部使用重试版本）
+const fetchCategoryPage = async (url: string): Promise<CoinGeckoCoin[]> => {
+  return fetchCategoryPageWithRetry(url, 'fetchCategoryPage');
 };
 
 export const getCoingeckoCategories = async (req: Request, res: Response) => {
   try {
+    // 检查缓存是否有效
     if (cachedResponse && Date.now() - cachedResponse.fetchedAt < CACHE_TTL_MS) {
       return res.status(200).json(cachedResponse.data);
     }
 
-    const [dataStable1, dataStable2, dataEth1, dataEth2, dataEth3] = await Promise.all([
-      fetchCategoryPage(`${CG_ENDPOINT}?vs_currency=usd&category=stablecoins&per_page=250&page=1`),
-      fetchCategoryPage(`${CG_ENDPOINT}?vs_currency=usd&category=stablecoins&per_page=250&page=2`),
-      fetchCategoryPage(`${CG_ENDPOINT}?vs_currency=usd&category=liquid-staked-eth&per_page=250&page=1`),
-      fetchCategoryPage(`${CG_ENDPOINT}?vs_currency=usd&category=ether-fi-ecosystem&per_page=250&page=1`),
-      fetchCategoryPage(`${CG_ENDPOINT}?vs_currency=usd&category=liquid-staking-tokens&per_page=250&page=1`),
-    ]);
+    // 如果有正在进行的 fetch，等待它完成而不是启动新的请求
+    if (inFlightFetch) {
+      const data = await inFlightFetch;
+      return res.status(200).json(data);
+    }
 
-    const combinedStable = [...dataStable1, ...dataStable2];
-    const stableSymbols = combinedStable
-      .map((coin) => coin.symbol?.toUpperCase())
-      .filter((symbol): symbol is string => Boolean(symbol));
+    // 启动新的 fetch 并跟踪它
+    // 重要：先创建 promise 并保存到局部变量，再赋值给模块级变量
+    // 这样可以避免竞态条件：如果 promise 快速完成，finally 块会清除模块级变量，
+    // 但我们可以安全地 await 局部变量引用
+    const fetchPromise = (async () => {
+      try {
+        // Free tier rate limit: 30 次/分钟 = 每 2 秒一次
+        // 为了安全，在请求之间添加间隔，确保不会超过 rate limit
+        // 使用串行请求而不是并发，在请求之间添加间隔（略大于 2 秒，留有余量）
+        const minIntervalMs = coingeckoFetchConfig.minRequestIntervalMs;
+        
+        const now = Date.now();
+        const timeSinceLastRequest = now - lastApiRequestTime;
+        if (timeSinceLastRequest < minIntervalMs) {
+          const waitMs = minIntervalMs - timeSinceLastRequest;
+          logger.debug(`⏳ CoinGecko rate limit: waiting ${waitMs}ms before next request`);
+          await sleep(waitMs);
+        }
+        
+        // 串行发送请求，在请求之间添加间隔
+        // 这样可以确保不会超过 30 次/分钟的限制（5 个请求 × 2.5 秒 = 12.5 秒，远低于 60 秒）
+        lastApiRequestTime = Date.now();
+        const dataStable1 = await fetchCategoryPageWithRetry(`${CG_ENDPOINT}?vs_currency=usd&category=stablecoins&per_page=250&page=1`, 'stablecoins-page-1');
+        
+        await sleep(minIntervalMs);
+        lastApiRequestTime = Date.now();
+        const dataStable2 = await fetchCategoryPageWithRetry(`${CG_ENDPOINT}?vs_currency=usd&category=stablecoins&per_page=250&page=2`, 'stablecoins-page-2');
+        
+        await sleep(minIntervalMs);
+        lastApiRequestTime = Date.now();
+        const dataEth1 = await fetchCategoryPageWithRetry(`${CG_ENDPOINT}?vs_currency=usd&category=liquid-staked-eth&per_page=250&page=1`, 'liquid-staked-eth');
+        
+        await sleep(minIntervalMs);
+        lastApiRequestTime = Date.now();
+        const dataEth2 = await fetchCategoryPageWithRetry(`${CG_ENDPOINT}?vs_currency=usd&category=ether-fi-ecosystem&per_page=250&page=1`, 'ether-fi-ecosystem');
+        
+        await sleep(minIntervalMs);
+        lastApiRequestTime = Date.now();
+        const dataEth3 = await fetchCategoryPageWithRetry(`${CG_ENDPOINT}?vs_currency=usd&category=liquid-staking-tokens&per_page=250&page=1`, 'liquid-staking-tokens');
 
-    const uniqueSymbolsStablecoins = Array.from(new Set(stableSymbols));
+        const combinedStable = [...dataStable1, ...dataStable2];
+        const stableSymbols = combinedStable
+          .map((coin) => coin.symbol?.toUpperCase())
+          .filter((symbol): symbol is string => Boolean(symbol));
 
-    const filteredEth3 = dataEth3.filter((coin) => coin.symbol?.toUpperCase().includes('ETH'));
-    const combinedEth = [...dataEth1, ...dataEth2, ...filteredEth3];
-    const ethSymbols = combinedEth
-      .map((coin) => coin.symbol?.toUpperCase())
-      .filter((symbol): symbol is string => Boolean(symbol));
+        const uniqueSymbolsStablecoins = Array.from(new Set(stableSymbols)).sort();
 
-    const uniqueSymbolsEth = Array.from(new Set([...ethSymbols, 'WETH']));
+        const filteredEth3 = dataEth3.filter((coin) => (coin.symbol?.toUpperCase() ?? '').includes('ETH'));
+        const combinedEth = [...dataEth1, ...dataEth2, ...filteredEth3];
+        const ethSymbols = combinedEth
+          .map((coin) => coin.symbol?.toUpperCase())
+          .filter((symbol): symbol is string => Boolean(symbol));
 
-    cachedResponse = {
-      data: { uniqueSymbolsStablecoins, uniqueSymbolsEth },
-      fetchedAt: Date.now(),
-    };
+        const uniqueSymbolsEth = Array.from(new Set([...ethSymbols, 'WETH'])).sort();
 
-    return res.status(200).json(cachedResponse.data);
+        const result = { uniqueSymbolsStablecoins, uniqueSymbolsEth };
+
+        // 更新缓存
+        cachedResponse = {
+          data: result,
+          fetchedAt: Date.now(),
+        };
+
+        return result;
+      } finally {
+        // 清除 in-flight 跟踪，允许下次 fetch
+        inFlightFetch = null;
+      }
+    })();
+    
+    // 将 promise 赋值给模块级变量（用于其他并发请求的等待）
+    inFlightFetch = fetchPromise;
+
+    // 使用局部变量引用 await，避免竞态条件
+    const data = await fetchPromise;
+    return res.status(200).json(data);
   } catch (error) {
+    // 如果出错，清除 in-flight 跟踪，允许重试
+    inFlightFetch = null;
     logger.error('Coingecko categories proxy error:', error);
     return res.status(500).json({ error: 'Internal server error', details: String(error) });
   }

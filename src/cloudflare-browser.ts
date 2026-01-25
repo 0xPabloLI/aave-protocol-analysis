@@ -470,7 +470,7 @@ async function extractMeritDynamicInfoWithWorkerInternal(key: string): Promise<M
 
           // 先记录 429 错误到 log（在等待之前）
           logger.warn(`🚨 Cloudflare Worker 429 RATE LIMITED for ${key}:`);
-          logger.warn(`   • 原始错误消息 (Raw error response): ${errorText ? trimErrorSnippet(errorText) : 'No error text'}`);
+          logger.warn(`   • Raw error response: ${errorText ? trimErrorSnippet(errorText) : 'No error text'}`);
           logger.warn(`   • Retry-After header: ${retryAfter}s (实际等待: ${retryAfter > 0 ? `${retryAfter}s` : `${Math.round(waitMs / 1000)}s (使用默认间隔)`})`);
           if (WORKER_DYNAMIC_FAIL_FAST) {
             logger.warn(`   • Fail-fast enabled: 立即返回 null，fallback 到 puppeteer（不等待 ${Math.round(waitMs / 1000)}s）`);
