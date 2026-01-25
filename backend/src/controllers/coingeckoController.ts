@@ -144,15 +144,17 @@ export const getCoingeckoCategories = async (req: Request, res: Response) => {
     // 如果有正在进行的 fetch，等待它完成而不是启动新的请求
     if (inFlightFetch) {
       const data = await inFlightFetch;
-      return res.status(200).json(data);
+      return res.status(200).json(cachedResponse?.data || data);
     }
 
     // 启动新的 fetch 并跟踪它
-    // 重要：先创建 promise 并保存到局部变量，再赋值给模块级变量
-    // 这样可以避免竞态条件：如果 promise 快速完成，finally 块会清除模块级变量，
-    // 但我们可以安全地 await 局部变量引用
-    const fetchPromise = (async () => {
-      try {
+    // 使用原子检查并设置模式防止竞态条件：
+    // 1. 创建 promise 工厂函数（不立即执行）
+    // 2. 原子检查并设置 inFlightFetch
+    // 3. 只有赢得竞态条件的请求才执行 promise 工厂函数
+    // 这样可以确保只有一个请求会实际执行 API 调用
+    const createFetchPromise = (): Promise<{ uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[] }> => {
+      return (async () => {
         // Free tier rate limit: 30 次/分钟 = 每 2 秒一次
         // 为了安全，在请求之间添加间隔，确保不会超过 rate limit
         // 使用串行请求而不是并发，在请求之间添加间隔（略大于 2 秒，留有余量）
@@ -211,20 +213,41 @@ export const getCoingeckoCategories = async (req: Request, res: Response) => {
         };
 
         return result;
+      })();
+    };
+    
+    // 原子检查并设置：如果 inFlightFetch 仍为 null，设置它；否则另一个请求已经设置了
+    // 关键：只有在赢得竞态条件后才创建并执行 promise，避免重复的 API 调用
+    if (inFlightFetch === null) {
+      // 我们赢得了竞态条件，创建并执行 promise
+      const fetchPromise = createFetchPromise();
+      inFlightFetch = fetchPromise;
+      
+      try {
+        // 使用局部变量引用 await，避免竞态条件
+        // 重要：在 await 完成后再清除 inFlightFetch，防止并发请求在 finally 执行后、
+        // await 完成前创建重复的 fetch
+        const data = await fetchPromise;
+        return res.status(200).json(data);
       } finally {
         // 清除 in-flight 跟踪，允许下次 fetch
-        inFlightFetch = null;
+        // 必须在 await 完成后清除，而不是在 promise 的 finally 中清除
+        // 这样可以确保所有等待此 promise 的并发请求都能正确检测到 in-flight 状态
+        // 只有当 inFlightFetch 仍然是我们的 promise 时才清除（防止清除其他请求设置的）
+        if (inFlightFetch === fetchPromise) {
+          inFlightFetch = null;
+        }
       }
-    })();
-    
-    // 将 promise 赋值给模块级变量（用于其他并发请求的等待）
-    inFlightFetch = fetchPromise;
-
-    // 使用局部变量引用 await，避免竞态条件
-    const data = await fetchPromise;
-    return res.status(200).json(data);
+    } else {
+      // 另一个请求在我们检查期间设置了 inFlightFetch
+      // 等待那个请求的 promise 完成
+      const data = await inFlightFetch;
+      return res.status(200).json(cachedResponse?.data || data);
+    }
   } catch (error) {
     // 如果出错，清除 in-flight 跟踪，允许重试
+    // 注意：如果错误发生在 await fetchPromise 之后，finally 块已经清除了 inFlightFetch
+    // 但为了安全，这里也清除一次（即使可能已经是 null）
     inFlightFetch = null;
     logger.error('Coingecko categories proxy error:', error);
     return res.status(500).json({ error: 'Internal server error', details: String(error) });

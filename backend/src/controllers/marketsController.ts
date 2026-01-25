@@ -19,6 +19,9 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
     const elapsed = Date.now() - updateStartTime;
     if (elapsed >= MAX_UPDATE_TIME_MS) {
       console.warn(`⚠️  Active update has been running for ${elapsed}ms (max: ${MAX_UPDATE_TIME_MS}ms), clearing lock to allow new updates...`);
+      // 增加生成计数器，标记当前更新已过期
+      // 这样当原始 promise 完成时，可以检测到已经有新更新启动
+      updateGeneration++;
       // 清除锁，允许新更新启动（原始 promise 仍在后台运行，但不阻塞新更新）
       activeUpdatePromise = null;
       updateStartTime = null;
@@ -72,6 +75,8 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
     // 创建更新 Promise 并立即跟踪它
     // 关键：即使超时，也要等待原始 promise 完成，保持状态为 'updating' 直到完成
     const originalUpdatePromise = fetchAaveMarketsData();
+    // 捕获当前更新生成号，用于检测是否有新更新启动
+    const currentGeneration = updateGeneration;
     let timeoutOccurred = false;
     let timeoutId: NodeJS.Timeout | null = null;
     
@@ -92,12 +97,25 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
           timeoutId = null;
         }
         
+        // 检查是否有新更新已启动（通过生成计数器检测）
+        // 如果有新更新，不更新状态，避免用旧数据覆盖新更新的状态
+        if (updateGeneration !== currentGeneration) {
+          console.log('⚠️  Update completed but newer update has started, skipping status update to avoid overwriting');
+          return;
+        }
+        
         // 更新成功后刷新缓存
         await dataService.refreshCache();
         const lastUpdated = dataService.getLastUpdated();
 
         if (timeoutOccurred) {
           console.log('⚠️  Update completed after timeout');
+        }
+        
+        // 再次检查生成号（可能在 refreshCache 期间有新更新）
+        if (updateGeneration !== currentGeneration) {
+          console.log('⚠️  Update completed but newer update started during cache refresh, skipping status update');
+          return;
         }
         
         setUpdateStatus({
@@ -111,6 +129,12 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
         if (timeoutId !== null) {
           clearTimeout(timeoutId);
           timeoutId = null;
+        }
+        
+        // 检查是否有新更新已启动
+        if (updateGeneration !== currentGeneration) {
+          console.log('⚠️  Update failed but newer update has started, skipping status update to avoid overwriting');
+          return;
         }
         
         console.error('❌ Automatic update failed:', error);
@@ -133,9 +157,12 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
         if (timeoutId !== null) {
           clearTimeout(timeoutId);
         }
-        // 清除活动更新跟踪
-        activeUpdatePromise = null;
-        updateStartTime = null;
+        // 只有在当前更新仍然活跃时才清除跟踪
+        // 如果已经有新更新（updateGeneration 改变），说明锁已经被新更新持有
+        if (updateGeneration === currentGeneration) {
+          activeUpdatePromise = null;
+          updateStartTime = null;
+        }
       }
     })();
 
@@ -303,6 +330,8 @@ let updateStatus: UpdateStatus = {
 // 跟踪当前正在执行的更新 Promise，防止并发更新
 let activeUpdatePromise: Promise<void> | null = null;
 let updateStartTime: number | null = null;
+// 更新生成计数器，用于防止超时的更新覆盖新更新的状态
+let updateGeneration: number = 0;
 // 最大允许的更新时间（超时时间的 2 倍，用于强制重置卡住的更新）
 const MAX_UPDATE_TIME_MS = UPDATE_TIMEOUT_MS * 2;
 

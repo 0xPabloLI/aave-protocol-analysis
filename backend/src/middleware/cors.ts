@@ -18,6 +18,7 @@ const DEV_ENV_PATTERNS = [
 /**
  * 规范化 origin URL，提取协议、主机和端口
  * 返回格式：protocol://host:port（如果端口是默认端口则省略）
+ * 重要：默认端口（80 for http, 443 for https）会被移除，确保语义等价性
  */
 function normalizeOrigin(origin: string): string | null {
   try {
@@ -26,13 +27,17 @@ function normalizeOrigin(origin: string): string | null {
     const hostname = url.hostname;
     const port = url.port;
     
-    // 构建规范化后的 origin
-    // protocol 已经包含 ':'，所以使用 protocol + '//' 得到 "https://"
-    if (port && port !== '') {
+    // 确定默认端口
+    const isHttps = protocol === 'https:';
+    const defaultPort = isHttps ? '443' : '80';
+    
+    // 如果端口是默认端口，移除它以确保语义等价性
+    // 例如：https://example.com:443 和 https://example.com 应该被视为相同
+    if (port && port !== '' && port !== defaultPort) {
       // 非默认端口：包含端口号
       return `${protocol}//${hostname}:${port}`;
     }
-    // 默认端口（http:80 或 https:443）：不包含端口号
+    // 默认端口或没有端口：不包含端口号
     return `${protocol}//${hostname}`;
   } catch {
     return null;
