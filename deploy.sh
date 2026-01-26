@@ -111,6 +111,102 @@ ssh -A -t "$TARGET_HOST" bash -s "$DOPPLER_TOKEN_B64" << 'REMOTE_SCRIPT'
   echo "Now using Node.js v$CURRENT_NODE_VERSION (required: v$REQUIRED_NODE_VERSION)"
   # --- End Node.js/NVM logic ---
   
+  # Install essential system tools (git, curl, build tools)
+  echo "Installing essential system tools..."
+  if command -v apt-get &> /dev/null; then
+    sudo apt-get update -qq
+    sudo apt-get install -y \
+      git \
+      curl \
+      build-essential \
+      ca-certificates || {
+      echo "⚠️  Some essential tools failed to install, but continuing..."
+    }
+    echo "✅ Essential tools installed"
+  elif command -v yum &> /dev/null; then
+    sudo yum install -y \
+      git \
+      curl \
+      gcc \
+      gcc-c++ \
+      make \
+      ca-certificates || {
+      echo "⚠️  Some essential tools failed to install, but continuing..."
+    }
+    echo "✅ Essential tools installed"
+  fi
+  
+  # Install system dependencies for Puppeteer (Chrome/Chromium)
+  echo "Installing system dependencies for Puppeteer..."
+  if command -v apt-get &> /dev/null; then
+    # Ubuntu/Debian
+    sudo apt-get install -y \
+      fonts-liberation \
+      libappindicator3-1 \
+      libasound2 \
+      libatk-bridge2.0-0 \
+      libatk1.0-0 \
+      libc6 \
+      libcairo2 \
+      libcups2 \
+      libdbus-1-3 \
+      libexpat1 \
+      libfontconfig1 \
+      libgbm1 \
+      libgcc1 \
+      libglib2.0-0 \
+      libgtk-3-0 \
+      libnspr4 \
+      libnss3 \
+      libpango-1.0-0 \
+      libpangocairo-1.0-0 \
+      libstdc++6 \
+      libx11-6 \
+      libx11-xcb1 \
+      libxcb1 \
+      libxcomposite1 \
+      libxcursor1 \
+      libxdamage1 \
+      libxext6 \
+      libxfixes3 \
+      libxi6 \
+      libxrandr2 \
+      libxrender1 \
+      libxss1 \
+      libxtst6 \
+      lsb-release \
+      wget \
+      xdg-utils || {
+      echo "⚠️  Some system dependencies failed to install, but continuing..."
+    }
+    echo "✅ Puppeteer dependencies installed"
+  elif command -v yum &> /dev/null; then
+    # CentOS/RHEL
+    sudo yum install -y \
+      alsa-lib \
+      atk \
+      cups-libs \
+      gtk3 \
+      ipa-gothic-fonts \
+      libXcomposite \
+      libXcursor \
+      libXdamage \
+      libXext \
+      libXi \
+      libXrandr \
+      libXScrnSaver \
+      libXtst \
+      pango \
+      xorg-x11-fonts-100dpi \
+      xorg-x11-fonts-75dpi \
+      xorg-x11-utils || {
+      echo "⚠️  Some system dependencies failed to install, but continuing..."
+    }
+    echo "✅ System dependencies installed"
+  else
+    echo "⚠️  Unsupported package manager. Please install Puppeteer dependencies manually."
+  fi
+  
   # Check if pm2 is installed, if not install it
   if ! command -v pm2 &> /dev/null; then
     echo "PM2 not found. Installing PM2..."
@@ -364,10 +460,21 @@ ssh -A -t "$TARGET_HOST" bash -s "$DOPPLER_TOKEN_B64" << 'REMOTE_SCRIPT'
   
   # Configure logrotate settings
   echo "Setting PM2 logrotate configuration..."
-  pm2 set pm2-logrotate:max_size 50M pm2-logrotate:retain 2 pm2-logrotate:compress false pm2-logrotate:rotateInterval ""
+  # PM2 logrotate manages stdout/stderr logs from PM2 processes
+  # - max_size: 50M - rotate when log file reaches 50MB
+  # - retain: 7 - keep 7 rotated log files (total ~350MB)
+  # - compress: false - don't compress (faster, but uses more disk space)
+  # - rotateInterval: "" - rotate based on size only (not time-based)
+  pm2 set pm2-logrotate:max_size 50M pm2-logrotate:retain 7 pm2-logrotate:compress false pm2-logrotate:rotateInterval ""
   echo "--- PM2 Status after set logrotate config ---"
   pm2 status
   echo "---------------------------------------------"
+  echo ""
+  echo "📋 Log Management Summary:"
+  echo "  • PM2 logs (stdout/stderr): ~/.pm2/logs/ - auto-rotated by pm2-logrotate (50MB max, 7 files retained)"
+  echo "  • Winston logs (application): backend/logs/ - auto-rotated by Winston (5MB max, 5 files retained per log type)"
+  echo "  • Total log retention: ~400MB (PM2) + ~50MB (Winston) = ~450MB maximum"
+  echo ""
   
   # Save PM2 process list
   echo "Saving PM2 process list..."

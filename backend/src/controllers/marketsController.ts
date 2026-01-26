@@ -3,6 +3,7 @@ import { dataService } from '../services/dataService.js';
 import { fetchAaveMarketsData } from '../../../dist/index.js';
 import { MarketsResponse, MarketWithSpread, UpdateStatus } from '../types/index.js';
 import { withTimeout, UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
+import { logger } from '../logger.js';
 
 /**
  * 检查数据新鲜度并在需要时自动更新
@@ -18,7 +19,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
   if (activeUpdatePromise && updateStartTime !== null) {
     const elapsed = Date.now() - updateStartTime;
     if (elapsed >= MAX_UPDATE_TIME_MS) {
-      console.warn(`⚠️  Active update has been running for ${elapsed}ms (max: ${MAX_UPDATE_TIME_MS}ms), clearing lock to allow new updates...`);
+      logger.warn(`⚠️  Active update has been running for ${elapsed}ms (max: ${MAX_UPDATE_TIME_MS}ms), clearing lock to allow new updates...`);
       // 增加生成计数器，标记当前更新已过期
       // 这样当原始 promise 完成时，可以检测到已经有新更新启动
       updateGeneration++;
@@ -39,7 +40,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 
   // 如果有正在进行的更新，等待它完成
   if (activeUpdatePromise) {
-    console.log('⏳ Update already in progress, waiting for completion...');
+    logger.info('⏳ Update already in progress, waiting for completion...');
     try {
       await activeUpdatePromise;
     } catch {
@@ -62,7 +63,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
   if (isStale && !activeUpdatePromise && currentStatus.status !== 'updating') {
     // 获取调用栈信息，帮助追踪更新来源
     const stack = new Error().stack?.split('\n').slice(2, 5).join(' -> ') || 'unknown';
-    console.log(`🔄 Data is stale, triggering automatic update... [triggered by: ${stack}]`);
+    logger.info(`🔄 Data is stale, triggering automatic update... [triggered by: ${stack}]`);
 
     // 设置更新状态（作为锁）
     setUpdateStatus({
@@ -73,7 +74,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
     
     // 刷新状态快照，确保后续检查使用最新状态
     currentStatus = getUpdateStatus();
-    console.log(`📝 Update status set to 'updating' at ${new Date().toISOString()}, generation=${updateGeneration}`);
+    logger.info(`📝 Update status set to 'updating' at ${new Date().toISOString()}, generation=${updateGeneration}`);
 
     // 创建更新 Promise 并立即跟踪它
     // 关键：即使超时，也要等待原始 promise 完成，保持状态为 'updating' 直到完成
@@ -90,16 +91,16 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
       
       const promise = (async () => {
         try {
-          console.log(`📊 Starting fetchAaveMarketsData() at ${new Date().toISOString()}, generation=${currentGeneration}`);
+          logger.info(`📊 Starting fetchAaveMarketsData() at ${new Date().toISOString()}, generation=${currentGeneration}`);
           // 设置超时检测（只标记，不取消 promise）
           timeoutId = setTimeout(() => {
             timeoutOccurred = true;
-            console.warn(`⏰ Update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, but operation continues in background... [generation=${currentGeneration}]`);
+            logger.warn(`⏰ Update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, but operation continues in background... [generation=${currentGeneration}]`);
           }, UPDATE_TIMEOUT_MS);
           
           // 等待原始 promise 完成（无论是否超时）
           await originalUpdatePromise;
-          console.log(`✅ fetchAaveMarketsData() completed at ${new Date().toISOString()}, generation=${currentGeneration}`);
+          logger.info(`✅ fetchAaveMarketsData() completed at ${new Date().toISOString()}, generation=${currentGeneration}`);
           
           // 清理超时定时器
           if (timeoutId !== null) {
@@ -110,7 +111,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
           // 检查是否有新更新已启动（通过生成计数器检测）
           // 如果有新更新，不更新状态，避免用旧数据覆盖新更新的状态
           if (updateGeneration !== currentGeneration) {
-            console.log('⚠️  Update completed but newer update has started, skipping status update to avoid overwriting');
+            logger.warn('⚠️  Update completed but newer update has started, skipping status update to avoid overwriting');
             return;
           }
           
@@ -119,12 +120,12 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
           const lastUpdated = dataService.getLastUpdated();
 
           if (timeoutOccurred) {
-            console.log('⚠️  Update completed after timeout');
+            logger.warn('⚠️  Update completed after timeout');
           }
           
           // 再次检查生成号（可能在 refreshCache 期间有新更新）
           if (updateGeneration !== currentGeneration) {
-            console.log('⚠️  Update completed but newer update started during cache refresh, skipping status update');
+            logger.warn('⚠️  Update completed but newer update started during cache refresh, skipping status update');
             return;
           }
           
@@ -133,7 +134,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
             lastUpdated: lastUpdated?.toISOString() || null,
             lastSuccessfulUpdate: lastUpdated?.toISOString() || null,
           });
-          console.log('✅ Automatic update completed successfully');
+          logger.info('✅ Automatic update completed successfully');
         } catch (error) {
           // 清理超时定时器
           if (timeoutId !== null) {
@@ -143,11 +144,11 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
           
           // 检查是否有新更新已启动
           if (updateGeneration !== currentGeneration) {
-            console.log('⚠️  Update failed but newer update has started, skipping status update to avoid overwriting');
+            logger.warn('⚠️  Update failed but newer update has started, skipping status update to avoid overwriting');
             return;
           }
           
-          console.error('❌ Automatic update failed:', error);
+          logger.error('❌ Automatic update failed:', error);
           const errorStatus = getUpdateStatus();
           
           const errorMessage = timeoutOccurred
@@ -161,7 +162,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
             error: errorMessage,
           });
           // 更新失败时继续使用缓存数据
-          console.log('⚠️  Continuing with cached data after update failure');
+          logger.warn('⚠️  Continuing with cached data after update failure');
         } finally {
           // 清理超时定时器（确保清理）
           if (timeoutId !== null) {
@@ -173,11 +174,11 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
           // 说明新更新还没有设置它的 promise，或者已经被其他逻辑清除，此时应该清除当前 promise
           // 注意：在 finally 块中直接使用 promiseRef，此时它已经被赋值为当前 promise
           if (activeUpdatePromise === promiseRef) {
-            console.log(`🧹 Clearing activeUpdatePromise at ${new Date().toISOString()}, generation=${currentGeneration}, currentGeneration=${updateGeneration}`);
+            logger.info(`🧹 Clearing activeUpdatePromise at ${new Date().toISOString()}, generation=${currentGeneration}, currentGeneration=${updateGeneration}`);
             activeUpdatePromise = null;
             updateStartTime = null;
           } else {
-            console.log(`⚠️  activeUpdatePromise was already cleared or replaced (generation=${currentGeneration}, currentGeneration=${updateGeneration})`);
+            logger.warn(`⚠️  activeUpdatePromise was already cleared or replaced (generation=${currentGeneration}, currentGeneration=${updateGeneration})`);
           }
         }
       })();
@@ -193,7 +194,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
     // 新更新启动时，应该立即替换旧的 promise 引用
     activeUpdatePromise = updatePromise;
     updateStartTime = Date.now();
-    console.log(`🚀 Update promise started at ${new Date().toISOString()}, generation=${updateGeneration}, timeout=${UPDATE_TIMEOUT_MS / 1000}s`);
+    logger.info(`🚀 Update promise started at ${new Date().toISOString()}, generation=${updateGeneration}, timeout=${UPDATE_TIMEOUT_MS / 1000}s`);
     
     // 不等待 promise 完成，让调用者可以继续
     // 但通过 activeUpdatePromise 跟踪，防止并发
@@ -204,7 +205,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
     // 使用最新的状态检查，而不是可能过时的 currentStatus
     const elapsed = updateStartTime ? Date.now() - updateStartTime : 0;
     const hasActivePromise = activeUpdatePromise !== null;
-    console.log(`⏳ Update already in progress (status='updating', hasActivePromise=${hasActivePromise}, elapsed=${Math.round(elapsed / 1000)}s, generation=${updateGeneration}), waiting...`);
+    logger.info(`⏳ Update already in progress (status='updating', hasActivePromise=${hasActivePromise}, elapsed=${Math.round(elapsed / 1000)}s, generation=${updateGeneration}), waiting...`);
     // 如果已经有更新在进行，等待一小段时间让更新完成
     // 这样可以避免返回过期数据
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -250,7 +251,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 
     res.json(response);
   } catch (error) {
-    console.error('Error getting markets:', error);
+    logger.error('Error getting markets:', error);
     res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : String(error),
@@ -283,7 +284,7 @@ export async function getStats(req: Request, res: Response): Promise<void> {
       chains: Array.from(chains).sort(),
     });
   } catch (error) {
-    console.error('Error getting stats:', error);
+    logger.error('Error getting stats:', error);
     res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : String(error),
@@ -305,7 +306,7 @@ export async function getChains(req: Request, res: Response): Promise<void> {
     const chains = new Set(data.map(item => item.chainName));
     res.json(Array.from(chains).sort());
   } catch (error) {
-    console.error('Error getting chains:', error);
+    logger.error('Error getting chains:', error);
     res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : String(error),
@@ -339,7 +340,7 @@ export async function getMarketsList(req: Request, res: Response): Promise<void>
     const markets = Array.from(marketsMap.values());
     res.json(markets);
   } catch (error) {
-    console.error('Error getting markets list:', error);
+    logger.error('Error getting markets list:', error);
     res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : String(error),

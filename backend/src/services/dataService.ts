@@ -2,6 +2,7 @@ import { readFile, stat } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { MarketWithSpread } from '../types/index.js';
+import { logger } from '../logger.js';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
 const DATA_FILE_PATH = join(DATA_DIR, 'aave-formatted-data.json');
@@ -52,7 +53,7 @@ class DataService {
     } catch (error) {
       if (error instanceof Error && (error as any).code === 'ENOENT') {
         // 文件不存在，返回空数组
-        console.warn(`Data file not found: ${DATA_FILE_PATH}`);
+        logger.warn(`Data file not found: ${DATA_FILE_PATH}`);
         return [];
       }
       throw error;

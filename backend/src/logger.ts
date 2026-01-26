@@ -44,30 +44,39 @@ const consoleFormat = winston.format.combine(
 );
 
 // 创建 logger 实例
+// 在生产环境中，禁用 Console transport 以避免与 PM2 日志重复
+// PM2 会捕获 stdout/stderr，而 winston 的 Console transport 也会输出到 stdout
+// 为了避免重复，生产环境只使用文件输出，开发环境保留 Console 输出
+const transports: winston.transport[] = [
+  // 错误日志文件（只记录 error 级别）
+  new winston.transports.File({
+    filename: join(LOGS_DIR, 'error.log'),
+    level: 'error',
+    maxsize: 5242880, // 5MB
+    maxFiles: 5, // 保留5个文件，自动轮转
+  }),
+  // 所有日志文件
+  new winston.transports.File({
+    filename: join(LOGS_DIR, 'combined.log'),
+    maxsize: 5242880, // 5MB
+    maxFiles: 5, // 保留5个文件，自动轮转
+  }),
+];
+
+// 只在开发环境启用 Console 输出，避免与 PM2 日志重复
+if (process.env.NODE_ENV !== 'production') {
+  transports.push(
+    new winston.transports.Console({
+      format: consoleFormat,
+    })
+  );
+}
+
 export const logger = winston.createLogger({
   level: 'info',
   format: logFormat,
   defaultMeta: { service: 'aave-backend' },
-  transports: [
-    // 错误日志文件（只记录 error 级别）
-    new winston.transports.File({
-      filename: join(LOGS_DIR, 'error.log'),
-      level: 'error',
-      maxsize: 5242880, // 5MB
-      maxFiles: 5, // 保留5个文件，自动轮转
-    }),
-    // 所有日志文件
-    new winston.transports.File({
-      filename: join(LOGS_DIR, 'combined.log'),
-      maxsize: 5242880, // 5MB
-      maxFiles: 5, // 保留5个文件，自动轮转
-    }),
-    // 控制台输出（生产环境可以移除，因为PM2会捕获）
-    new winston.transports.Console({
-      format: consoleFormat,
-      // 生产环境下，控制台输出会被PM2捕获，可以保留用于调试
-    }),
-  ],
+  transports,
 });
 
 // 如果是开发环境，设置为 debug 级别

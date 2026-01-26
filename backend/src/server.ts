@@ -20,12 +20,12 @@ const PORT: number = (() => {
   if (!process.env.PORT) return 3001;
   const parsed = Number.parseInt(process.env.PORT, 10);
   if (Number.isNaN(parsed)) {
-    console.warn(`⚠️  Invalid PORT value "${process.env.PORT}", using default 3001`);
+    logger.warn(`⚠️  Invalid PORT value "${process.env.PORT}", using default 3001`);
     return 3001;
   }
   // 验证端口范围：0（OS选择）或 1-65535
   if (parsed !== 0 && (parsed < 1 || parsed > 65535)) {
-    console.warn(`⚠️  PORT value ${parsed} is out of valid range (0 or 1-65535), using default 3001`);
+    logger.warn(`⚠️  PORT value ${parsed} is out of valid range (0 or 1-65535), using default 3001`);
     return 3001;
   }
   return parsed;

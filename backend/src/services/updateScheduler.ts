@@ -3,6 +3,7 @@ import { fetchAaveMarketsData } from '../../../dist/index.js';
 import { dataService } from './dataService.js';
 import { setUpdateStatus, getUpdateStatus } from '../controllers/marketsController.js';
 import { UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
+import { logger } from '../logger.js';
 
 // 跟踪定时任务启动的更新时间，用于检测卡住的更新
 let scheduledUpdateStartTime: number | null = null;
@@ -17,7 +18,7 @@ const MAX_UPDATE_TIME_MS = UPDATE_TIMEOUT_MS * 2;
  * 注意：此定时任务作为后备机制，主要的数据更新由 API 请求自动触发
  */
 export function startUpdateScheduler(): void {
-  console.log('📅 Starting update scheduler (every 1 minute) as backup mechanism');
+  logger.info('📅 Starting update scheduler (every 1 minute) as backup mechanism');
 
   // 每 1 分钟执行一次
   // node-cron 3.0.3 支持 6 位 cron 表达式（包含秒字段）
@@ -30,7 +31,7 @@ export function startUpdateScheduler(): void {
     if (currentStatus.status === 'updating' && scheduledUpdateStartTime !== null) {
       const elapsed = Date.now() - scheduledUpdateStartTime;
       if (elapsed >= MAX_UPDATE_TIME_MS) {
-        console.warn(`⚠️  Scheduled update has been running for ${elapsed}ms (max: ${MAX_UPDATE_TIME_MS}ms), resetting status to allow new updates...`);
+        logger.warn(`⚠️  Scheduled update has been running for ${elapsed}ms (max: ${MAX_UPDATE_TIME_MS}ms), resetting status to allow new updates...`);
         // 重置状态为错误，允许新更新启动
         setUpdateStatus({
           status: 'error',
@@ -42,7 +43,7 @@ export function startUpdateScheduler(): void {
         // 继续执行，检查是否需要触发新更新
       } else {
         // 如果正在更新中且未超时，跳过本次更新
-        console.log('⏭️  Update in progress, skipping scheduled update');
+        logger.info('⏭️  Update in progress, skipping scheduled update');
         return;
       }
     } else if (currentStatus.status === 'updating') {
@@ -50,25 +51,25 @@ export function startUpdateScheduler(): void {
       // 这种情况下，我们仍然跳过，让 API 触发的更新完成
       const detailedStatus = getUpdateStatus();
       const elapsed = scheduledUpdateStartTime ? Date.now() - scheduledUpdateStartTime : 'unknown';
-      console.log(`⏭️  Update in progress (triggered by API), skipping scheduled update [status=${detailedStatus.status}, elapsed=${elapsed}ms, error=${detailedStatus.error || 'none'}, lastUpdated=${detailedStatus.lastUpdated || 'never'}]`);
+      logger.info(`⏭️  Update in progress (triggered by API), skipping scheduled update [status=${detailedStatus.status}, elapsed=${elapsed}ms, error=${detailedStatus.error || 'none'}, lastUpdated=${detailedStatus.lastUpdated || 'never'}]`);
       return;
     }
 
     // 检查数据是否过期
     const isStale = dataService.isStale();
     if (!isStale) {
-      console.log('✅ Data is fresh, skipping scheduled update');
+      logger.info('✅ Data is fresh, skipping scheduled update');
       return;
     }
 
-    console.log('🔄 Starting scheduled data update (backup mechanism)...');
+    logger.info('🔄 Starting scheduled data update (backup mechanism)...');
 
     // 记录更新开始时间，用于检测卡住的更新
     scheduledUpdateStartTime = Date.now();
     // 生成新的更新 ID，用于检测是否有新更新启动
     currentScheduledUpdateId++;
     const thisUpdateId = currentScheduledUpdateId;
-    console.log(`📝 Scheduled update started: id=${thisUpdateId}, time=${new Date().toISOString()}`);
+    logger.info(`📝 Scheduled update started: id=${thisUpdateId}, time=${new Date().toISOString()}`);
 
     setUpdateStatus({
       status: 'updating',
@@ -86,7 +87,7 @@ export function startUpdateScheduler(): void {
       // 设置超时检测（只标记，不取消 promise）
       timeoutId = setTimeout(() => {
         timeoutOccurred = true;
-        console.warn(`⏰ Scheduled update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, but operation continues in background...`);
+        logger.warn(`⏰ Scheduled update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, but operation continues in background...`);
         // 超时后设置状态为错误，但继续等待 promise 完成
         const currentStatus = getUpdateStatus();
         setUpdateStatus({
@@ -114,12 +115,12 @@ export function startUpdateScheduler(): void {
       // 检查是否有新更新已启动（通过更新 ID 检查）
       // 如果有新更新，不更新状态，避免用旧数据覆盖新更新的状态
       if (currentScheduledUpdateId !== thisUpdateId) {
-        console.log(`⚠️  Scheduled update id=${thisUpdateId} completed but newer update id=${currentScheduledUpdateId} has started, skipping status update`);
+        logger.warn(`⚠️  Scheduled update id=${thisUpdateId} completed but newer update id=${currentScheduledUpdateId} has started, skipping status update`);
         return;
       }
 
       if (timeoutOccurred) {
-        console.log(`⚠️  Scheduled update id=${thisUpdateId} completed after timeout, cache refreshed`);
+        logger.warn(`⚠️  Scheduled update id=${thisUpdateId} completed after timeout, cache refreshed`);
       }
       
       // 设置状态为 idle
@@ -129,7 +130,7 @@ export function startUpdateScheduler(): void {
         lastSuccessfulUpdate: lastUpdated?.toISOString() || null,
       });
       scheduledUpdateStartTime = null;
-      console.log(`✅ Scheduled update id=${thisUpdateId} completed successfully, status set to idle`);
+      logger.info(`✅ Scheduled update id=${thisUpdateId} completed successfully, status set to idle`);
     } catch (error) {
       // 清理超时定时器
       if (timeoutId !== null) {
@@ -137,11 +138,11 @@ export function startUpdateScheduler(): void {
         timeoutId = null;
       }
       
-      console.error(`❌ Scheduled update id=${thisUpdateId} failed:`, error);
+      logger.error(`❌ Scheduled update id=${thisUpdateId} failed:`, error);
       
       // 检查是否有新更新已启动（通过更新 ID 检查）
       if (currentScheduledUpdateId !== thisUpdateId) {
-        console.log(`⚠️  Scheduled update id=${thisUpdateId} failed but newer update id=${currentScheduledUpdateId} has started, skipping status update`);
+        logger.warn(`⚠️  Scheduled update id=${thisUpdateId} failed but newer update id=${currentScheduledUpdateId} has started, skipping status update`);
         return;
       }
       
@@ -157,7 +158,7 @@ export function startUpdateScheduler(): void {
         error: errorMessage,
       });
       scheduledUpdateStartTime = null;
-      console.log(`📝 Scheduled update id=${thisUpdateId} failed, status set to error`);
+      logger.info(`📝 Scheduled update id=${thisUpdateId} failed, status set to error`);
     }
   });
 }
