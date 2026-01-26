@@ -428,22 +428,54 @@ ssh -A -t "$TARGET_HOST" bash -s "$DOPPLER_TOKEN_B64" << 'REMOTE_SCRIPT'
   # Security: Token was passed as base64-encoded command argument, not in plain text
   
   # Check if the backend app is running
+  # IMPORTANT: PM2 --update-env has known reliability issues
+  # We use a more reliable approach: delete and restart with environment variable explicitly set
   if pm2 list | grep -q "aave-backend" && pm2 show aave-backend | grep -q "online"; then
-    echo "Aave backend is running. Reloading with PM2..."
-    # Reload from root directory where ecosystem.config.cjs is located
-    # DOPPLER_TOKEN is now in the environment, so PM2 will pass it to the process
-    pm2 reload ecosystem.config.cjs --only aave-backend --update-env
-    echo "--- PM2 Status after reload aave-backend ---"
+    echo "Aave backend is running. Restarting with PM2 (using delete+start for reliable env var injection)..."
+    # Delete the process first to ensure clean restart
+    pm2 delete aave-backend || true
+    # Start with DOPPLER_TOKEN explicitly in the environment
+    # DOPPLER_TOKEN is already exported in the current shell from the decoded base64 value
+    DOPPLER_TOKEN="$DOPPLER_TOKEN" pm2 start ecosystem.config.cjs --only aave-backend --env production --update-env
+    echo "--- PM2 Status after restart aave-backend ---"
     pm2 status
     echo "----------------------------------------------"
   else
     echo "Aave backend is not running. Starting with PM2..."
-    # Start from root directory where ecosystem.config.cjs is located
-    # DOPPLER_TOKEN is now in the environment, so PM2 will pass it to the process
-    pm2 start ecosystem.config.cjs --only aave-backend --env production --update-env
+    # Start with DOPPLER_TOKEN explicitly in the environment
+    # DOPPLER_TOKEN is already exported in the current shell from the decoded base64 value
+    DOPPLER_TOKEN="$DOPPLER_TOKEN" pm2 start ecosystem.config.cjs --only aave-backend --env production --update-env
     echo "--- PM2 Status after start aave-backend ---"
     pm2 status
     echo "---------------------------------------------"
+  fi
+  
+  # Verify DOPPLER_TOKEN is available in PM2 process
+  echo "Verifying DOPPLER_TOKEN in PM2 process..."
+  sleep 1  # Give PM2 a moment to update
+  if pm2 jlist 2>/dev/null | jq -r '.[] | select(.name=="aave-backend") | .pm2_env.env.DOPPLER_TOKEN // empty' | grep -q .; then
+    echo "✅ DOPPLER_TOKEN is present in PM2 process environment"
+  else
+    echo "⚠️  WARNING: DOPPLER_TOKEN not found in PM2 process environment"
+    echo "   💡 Attempting alternative method: using pm2 set..."
+    if [ -n "$DOPPLER_TOKEN" ]; then
+      # Use pm2 set as fallback method
+      pm2 set pm2:env DOPPLER_TOKEN "$DOPPLER_TOKEN" 2>/dev/null || true
+      pm2 restart aave-backend --update-env
+      sleep 1
+      if pm2 jlist 2>/dev/null | jq -r '.[] | select(.name=="aave-backend") | .pm2_env.env.DOPPLER_TOKEN // empty' | grep -q .; then
+        echo "✅ DOPPLER_TOKEN successfully set using pm2 set method"
+      else
+        echo "❌ Failed to set DOPPLER_TOKEN in PM2 process"
+        echo "   💡 Manual intervention required:"
+        echo "      export DOPPLER_TOKEN='your-token-here'"
+        echo "      pm2 delete aave-backend"
+        echo "      pm2 start ecosystem.config.cjs --only aave-backend --env production --update-env"
+      fi
+    else
+      echo "❌ DOPPLER_TOKEN is not set in current shell environment"
+      echo "   💡 This will cause Doppler secrets fetch to fail"
+    fi
   fi
   
   # Configure PM2 log rotation
