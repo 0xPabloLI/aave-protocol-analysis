@@ -48,20 +48,27 @@ else
     # 如果没有 timeout 命令，使用后台进程方式
     node dist/index.js &
     PID=$!
+    EXIT_CODE=0
+    TIMED_OUT=false
     # 等待最多15分钟（900秒）
     for i in {1..900}; do
         if ! kill -0 $PID 2>/dev/null; then
-            # 进程已结束
+            # 进程已结束，获取退出状态
             wait $PID
+            EXIT_CODE=$?
             break
         fi
         sleep 1
     done
     # 如果进程还在运行，说明超时了，杀掉它
     if kill -0 $PID 2>/dev/null; then
+        TIMED_OUT=true
         echo "⚠️  数据获取超时（15分钟），终止进程并继续部署..."
         kill $PID 2>/dev/null || true
         wait $PID 2>/dev/null || true
+    elif [ $EXIT_CODE -ne 0 ]; then
+        # 进程以非零退出码结束，打印警告（与 timeout 分支行为一致）
+        echo "⚠️  数据获取失败（退出码: $EXIT_CODE），但继续部署..."
     fi
 fi
 
