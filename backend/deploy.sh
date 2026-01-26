@@ -40,7 +40,30 @@ echo "📊 获取初始数据..."
 if [ ! -d "data" ]; then
     mkdir -p data
 fi
-node dist/index.js || echo "⚠️  数据获取失败，但继续部署..."
+# 添加超时保护（15分钟），避免卡住导致部署失败
+# 使用 timeout 命令（如果可用），否则使用后台进程 + sleep + kill
+if command -v timeout &> /dev/null; then
+    timeout 900 node dist/index.js || echo "⚠️  数据获取失败或超时（15分钟），但继续部署..."
+else
+    # 如果没有 timeout 命令，使用后台进程方式
+    node dist/index.js &
+    PID=$!
+    # 等待最多15分钟（900秒）
+    for i in {1..900}; do
+        if ! kill -0 $PID 2>/dev/null; then
+            # 进程已结束
+            wait $PID
+            break
+        fi
+        sleep 1
+    done
+    # 如果进程还在运行，说明超时了，杀掉它
+    if kill -0 $PID 2>/dev/null; then
+        echo "⚠️  数据获取超时（15分钟），终止进程并继续部署..."
+        kill $PID 2>/dev/null || true
+        wait $PID 2>/dev/null || true
+    fi
+fi
 
 # 安装后端依赖
 echo "📦 安装后端依赖..."

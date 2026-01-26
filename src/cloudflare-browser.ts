@@ -174,11 +174,16 @@ export async function getWorkerSessionStats(): Promise<{
   }
 
   try {
-    const response = await fetch(CLOUDFLARE_WORKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'debugSessions' }),
-    });
+    // 添加超时保护（30秒），避免卡住
+    const response = await withTimeout(
+      fetch(CLOUDFLARE_WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'debugSessions' }),
+      }),
+      30000, // 30秒超时
+      'getWorkerSessionStats'
+    );
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
@@ -228,11 +233,16 @@ export async function closeBrowserInstances(): Promise<{
   logger.info('🔌 Closing existing Cloudflare browser instances to release quota...');
 
   try {
-    const response = await fetch(CLOUDFLARE_WORKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'closeBrowserInstances' }),
-    });
+    // 添加超时保护（60秒），避免卡住
+    const response = await withTimeout(
+      fetch(CLOUDFLARE_WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'closeBrowserInstances' }),
+      }),
+      60000, // 60秒超时（关闭浏览器可能需要更长时间）
+      'closeBrowserInstances'
+    );
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
@@ -284,15 +294,20 @@ export async function checkAndReportSessionStatus(): Promise<void> {
     return;
   }
 
-  logger.info(`📊 Cloudflare Browser Session Status:`);
-  logger.info(`   • Current sessions: ${stats.sessions} (Cloudflare limit: 3 concurrent)`);
-  if (stats.sessionIds && stats.sessionIds.length > 0) {
-    logger.info(`   • Session IDs: ${stats.sessionIds.join(', ')}`);
-  }
-  logger.info(`   • Worker uptime: ${stats.uptimeSeconds}s`);
-  logger.info(`   • Total launches: ${stats.totalLaunches}`);
-  logger.info(`   • Total reuses: ${stats.totalReuses}`);
-  logger.info(`   • Total disconnects: ${stats.totalDisconnects}`);
+  // 将所有状态信息合并到一个日志调用中，确保完整输出
+  const statusInfo = [
+    `📊 Cloudflare Browser Session Status:`,
+    `   • Current sessions: ${stats.sessions ?? 0} (Cloudflare limit: 3 concurrent)`,
+    stats.sessionIds && stats.sessionIds.length > 0 
+      ? `   • Session IDs: ${stats.sessionIds.join(', ')}`
+      : null,
+    `   • Worker uptime: ${stats.uptimeSeconds ?? 0}s`,
+    `   • Total launches: ${stats.totalLaunches ?? 0}`,
+    `   • Total reuses: ${stats.totalReuses ?? 0}`,
+    `   • Total disconnects: ${stats.totalDisconnects ?? 0}`,
+  ].filter(Boolean).join('\n');
+  
+  logger.info(statusInfo);
 
   // 如果有 3 个或更多 session，发出警告
   if (stats.sessions && stats.sessions >= 3) {

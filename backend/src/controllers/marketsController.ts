@@ -60,7 +60,9 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
   // 使用最新的状态快照（可能在上面被重置后更新）
   // 重要：在创建更新前再次检查 activeUpdatePromise，防止竞态条件
   if (isStale && !activeUpdatePromise && currentStatus.status !== 'updating') {
-    console.log('🔄 Data is stale, triggering automatic update...');
+    // 获取调用栈信息，帮助追踪更新来源
+    const stack = new Error().stack?.split('\n').slice(2, 5).join(' -> ') || 'unknown';
+    console.log(`🔄 Data is stale, triggering automatic update... [triggered by: ${stack}]`);
 
     // 设置更新状态（作为锁）
     setUpdateStatus({
@@ -71,6 +73,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
     
     // 刷新状态快照，确保后续检查使用最新状态
     currentStatus = getUpdateStatus();
+    console.log(`📝 Update status set to 'updating' at ${new Date().toISOString()}, generation=${updateGeneration}`);
 
     // 创建更新 Promise 并立即跟踪它
     // 关键：即使超时，也要等待原始 promise 完成，保持状态为 'updating' 直到完成
@@ -87,14 +90,16 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
       
       const promise = (async () => {
         try {
+          console.log(`📊 Starting fetchAaveMarketsData() at ${new Date().toISOString()}, generation=${currentGeneration}`);
           // 设置超时检测（只标记，不取消 promise）
           timeoutId = setTimeout(() => {
             timeoutOccurred = true;
-            console.warn(`⏰ Update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, but operation continues in background...`);
+            console.warn(`⏰ Update timed out after ${UPDATE_TIMEOUT_MS / 1000}s, but operation continues in background... [generation=${currentGeneration}]`);
           }, UPDATE_TIMEOUT_MS);
           
           // 等待原始 promise 完成（无论是否超时）
           await originalUpdatePromise;
+          console.log(`✅ fetchAaveMarketsData() completed at ${new Date().toISOString()}, generation=${currentGeneration}`);
           
           // 清理超时定时器
           if (timeoutId !== null) {
@@ -168,8 +173,11 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
           // 说明新更新还没有设置它的 promise，或者已经被其他逻辑清除，此时应该清除当前 promise
           // 注意：在 finally 块中直接使用 promiseRef，此时它已经被赋值为当前 promise
           if (activeUpdatePromise === promiseRef) {
+            console.log(`🧹 Clearing activeUpdatePromise at ${new Date().toISOString()}, generation=${currentGeneration}, currentGeneration=${updateGeneration}`);
             activeUpdatePromise = null;
             updateStartTime = null;
+          } else {
+            console.log(`⚠️  activeUpdatePromise was already cleared or replaced (generation=${currentGeneration}, currentGeneration=${updateGeneration})`);
           }
         }
       })();
@@ -185,6 +193,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
     // 新更新启动时，应该立即替换旧的 promise 引用
     activeUpdatePromise = updatePromise;
     updateStartTime = Date.now();
+    console.log(`🚀 Update promise started at ${new Date().toISOString()}, generation=${updateGeneration}, timeout=${UPDATE_TIMEOUT_MS / 1000}s`);
     
     // 不等待 promise 完成，让调用者可以继续
     // 但通过 activeUpdatePromise 跟踪，防止并发
@@ -193,7 +202,9 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
     });
   } else if (getUpdateStatus().status === 'updating') {
     // 使用最新的状态检查，而不是可能过时的 currentStatus
-    console.log('⏳ Update already in progress, waiting...');
+    const elapsed = updateStartTime ? Date.now() - updateStartTime : 0;
+    const hasActivePromise = activeUpdatePromise !== null;
+    console.log(`⏳ Update already in progress (status='updating', hasActivePromise=${hasActivePromise}, elapsed=${Math.round(elapsed / 1000)}s, generation=${updateGeneration}), waiting...`);
     // 如果已经有更新在进行，等待一小段时间让更新完成
     // 这样可以避免返回过期数据
     await new Promise(resolve => setTimeout(resolve, 1000));

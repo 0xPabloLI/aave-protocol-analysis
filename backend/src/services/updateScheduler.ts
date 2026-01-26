@@ -4,6 +4,13 @@ import { dataService } from './dataService.js';
 import { setUpdateStatus, getUpdateStatus } from '../controllers/marketsController.js';
 import { UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
 
+// 跟踪定时任务启动的更新时间，用于检测卡住的更新
+let scheduledUpdateStartTime: number | null = null;
+// 当前更新的唯一 ID，用于检测是否有新更新启动
+let currentScheduledUpdateId: number = 0;
+// 最大允许的更新时间（超时时间的 2 倍，用于强制重置卡住的更新）
+const MAX_UPDATE_TIME_MS = UPDATE_TIMEOUT_MS * 2;
+
 /**
  * 启动定时更新任务
  * 每 1 分钟执行一次数据更新
@@ -18,9 +25,32 @@ export function startUpdateScheduler(): void {
   cron.schedule('0 * * * * *', async () => {
     const currentStatus = getUpdateStatus();
 
-    // 如果正在更新中，跳过本次更新
-    if (currentStatus.status === 'updating') {
-      console.log('⏭️  Update in progress, skipping scheduled update');
+    // 检查是否有卡住的更新（运行时间超过最大允许时间）
+    // 如果更新超过最大时间，重置状态以允许新更新启动
+    if (currentStatus.status === 'updating' && scheduledUpdateStartTime !== null) {
+      const elapsed = Date.now() - scheduledUpdateStartTime;
+      if (elapsed >= MAX_UPDATE_TIME_MS) {
+        console.warn(`⚠️  Scheduled update has been running for ${elapsed}ms (max: ${MAX_UPDATE_TIME_MS}ms), resetting status to allow new updates...`);
+        // 重置状态为错误，允许新更新启动
+        setUpdateStatus({
+          status: 'error',
+          lastUpdated: currentStatus.lastUpdated,
+          lastSuccessfulUpdate: currentStatus.lastSuccessfulUpdate,
+          error: 'Scheduled update exceeded maximum time limit',
+        });
+        scheduledUpdateStartTime = null;
+        // 继续执行，检查是否需要触发新更新
+      } else {
+        // 如果正在更新中且未超时，跳过本次更新
+        console.log('⏭️  Update in progress, skipping scheduled update');
+        return;
+      }
+    } else if (currentStatus.status === 'updating') {
+      // 如果状态是 'updating' 但没有跟踪开始时间，可能是由 API 请求触发的更新
+      // 这种情况下，我们仍然跳过，让 API 触发的更新完成
+      const detailedStatus = getUpdateStatus();
+      const elapsed = scheduledUpdateStartTime ? Date.now() - scheduledUpdateStartTime : 'unknown';
+      console.log(`⏭️  Update in progress (triggered by API), skipping scheduled update [status=${detailedStatus.status}, elapsed=${elapsed}ms, error=${detailedStatus.error || 'none'}, lastUpdated=${detailedStatus.lastUpdated || 'never'}]`);
       return;
     }
 
@@ -32,6 +62,13 @@ export function startUpdateScheduler(): void {
     }
 
     console.log('🔄 Starting scheduled data update (backup mechanism)...');
+
+    // 记录更新开始时间，用于检测卡住的更新
+    scheduledUpdateStartTime = Date.now();
+    // 生成新的更新 ID，用于检测是否有新更新启动
+    currentScheduledUpdateId++;
+    const thisUpdateId = currentScheduledUpdateId;
+    console.log(`📝 Scheduled update started: id=${thisUpdateId}, time=${new Date().toISOString()}`);
 
     setUpdateStatus({
       status: 'updating',
@@ -74,42 +111,25 @@ export function startUpdateScheduler(): void {
       await dataService.refreshCache();
       const lastUpdated = dataService.getLastUpdated();
 
-      // 检查是否有新更新已启动（通过状态检查）
+      // 检查是否有新更新已启动（通过更新 ID 检查）
       // 如果有新更新，不更新状态，避免用旧数据覆盖新更新的状态
-      const currentStatusAfterCompletion = getUpdateStatus();
-      if (currentStatusAfterCompletion.status === 'updating') {
-        console.log('⚠️  Scheduled update completed but newer update has started, skipping status update to avoid overwriting');
+      if (currentScheduledUpdateId !== thisUpdateId) {
+        console.log(`⚠️  Scheduled update id=${thisUpdateId} completed but newer update id=${currentScheduledUpdateId} has started, skipping status update`);
         return;
       }
 
       if (timeoutOccurred) {
-        console.log('⚠️  Scheduled update completed after timeout, cache refreshed');
-        // 如果超时但最终成功，更新状态为成功
-        // 再次检查状态（可能在 refreshCache 期间有新更新）
-        const finalStatus = getUpdateStatus();
-        if (finalStatus.status === 'updating') {
-          console.log('⚠️  Scheduled update completed but newer update started during cache refresh, skipping status update');
-          return;
-        }
-        setUpdateStatus({
-          status: 'idle',
-          lastUpdated: lastUpdated?.toISOString() || null,
-          lastSuccessfulUpdate: lastUpdated?.toISOString() || null,
-        });
-      } else {
-        // 再次检查状态（可能在 refreshCache 期间有新更新）
-        const finalStatus = getUpdateStatus();
-        if (finalStatus.status === 'updating') {
-          console.log('⚠️  Scheduled update completed but newer update started during cache refresh, skipping status update');
-          return;
-        }
-        setUpdateStatus({
-          status: 'idle',
-          lastUpdated: lastUpdated?.toISOString() || null,
-          lastSuccessfulUpdate: lastUpdated?.toISOString() || null,
-        });
-        console.log('✅ Scheduled update completed successfully');
+        console.log(`⚠️  Scheduled update id=${thisUpdateId} completed after timeout, cache refreshed`);
       }
+      
+      // 设置状态为 idle
+      setUpdateStatus({
+        status: 'idle',
+        lastUpdated: lastUpdated?.toISOString() || null,
+        lastSuccessfulUpdate: lastUpdated?.toISOString() || null,
+      });
+      scheduledUpdateStartTime = null;
+      console.log(`✅ Scheduled update id=${thisUpdateId} completed successfully, status set to idle`);
     } catch (error) {
       // 清理超时定时器
       if (timeoutId !== null) {
@@ -117,12 +137,11 @@ export function startUpdateScheduler(): void {
         timeoutId = null;
       }
       
-      console.error('❌ Scheduled update failed:', error);
+      console.error(`❌ Scheduled update id=${thisUpdateId} failed:`, error);
       
-      // 检查是否有新更新已启动
-      const errorStatus = getUpdateStatus();
-      if (errorStatus.status === 'updating') {
-        console.log('⚠️  Scheduled update failed but newer update has started, skipping status update to avoid overwriting');
+      // 检查是否有新更新已启动（通过更新 ID 检查）
+      if (currentScheduledUpdateId !== thisUpdateId) {
+        console.log(`⚠️  Scheduled update id=${thisUpdateId} failed but newer update id=${currentScheduledUpdateId} has started, skipping status update`);
         return;
       }
       
@@ -130,12 +149,15 @@ export function startUpdateScheduler(): void {
         ? `Update timeout after ${UPDATE_TIMEOUT_MS / 1000}s and then failed: ${error instanceof Error ? error.message : String(error)}`
         : (error instanceof Error ? error.message : String(error));
       
+      const currentStatusForError = getUpdateStatus();
       setUpdateStatus({
         status: 'error',
-        lastUpdated: errorStatus.lastUpdated,
-        lastSuccessfulUpdate: errorStatus.lastSuccessfulUpdate,
+        lastUpdated: currentStatusForError.lastUpdated,
+        lastSuccessfulUpdate: currentStatusForError.lastSuccessfulUpdate,
         error: errorMessage,
       });
+      scheduledUpdateStartTime = null;
+      console.log(`📝 Scheduled update id=${thisUpdateId} failed, status set to error`);
     }
   });
 }
