@@ -54,8 +54,8 @@ else
     for i in {1..900}; do
         if ! kill -0 $PID 2>/dev/null; then
             # 进程已结束，获取退出状态
-            wait $PID
-            EXIT_CODE=$?
+            # 使用 || 防止 set -e 导致脚本退出（与 timeout 分支行为一致）
+            wait $PID || EXIT_CODE=$?
             break
         fi
         sleep 1
