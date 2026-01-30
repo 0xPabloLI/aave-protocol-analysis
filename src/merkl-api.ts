@@ -6,9 +6,6 @@ import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { merklFetchConfig } from './config.js';
 
-// 配置参数：Tydro points 到 USD 的转换率（1 point = 1 USD）
-export const TYDRO_POINT_TO_USD_RATE = 1;
-
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 
 function sleep(ms: number): Promise<void> {
@@ -351,23 +348,14 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
         const tvl = Number(opp.tvl) || 0;
         const pointsPerThousandUsd = tvl > 0 ? (dailyPoints / tvl) * 1000 : 0;
         
-        // 根据配置参数计算 APR（用于显示，但 breakdown 中主要存储 points）
-        // 公式：pointsPerThousandUsd = 每 1000 USD 每天获得的 points
-        // 如果 1 point = TYDRO_POINT_TO_USD_RATE USD，则：
-        // 每 1000 USD 每天获得的价值 = pointsPerThousandUsd * TYDRO_POINT_TO_USD_RATE USD
-        // 每天的收益率 = (pointsPerThousandUsd * TYDRO_POINT_TO_USD_RATE) / 1000
-        // 年化 APR（百分比）= ((pointsPerThousandUsd * TYDRO_POINT_TO_USD_RATE) / 1000) * 365 * 100
-        // 简化：年化 APR（百分比）= pointsPerThousandUsd * TYDRO_POINT_TO_USD_RATE * 36.5
-        const annualAprPercent = pointsPerThousandUsd * TYDRO_POINT_TO_USD_RATE * 36.5;
-        
         // 对于 tydro，我们需要从 campaign details 获取时间信息，如果没有则使用默认值
         const campaignDetails = rewardsBreakdown.campaignId 
           ? campaignDetailsCache.get(rewardsBreakdown.campaignId)
           : null;
         
-        // Tydro 的 breakdown 中存储 points 信息，而不是 APR
+        // Tydro 的 breakdown 中存储 points 信息，APR 由前端计算
         breakdowns.push({
-          campaignApr: annualAprPercent, // 仍然计算 APR 用于兼容性，但主要信息是 points
+          campaignApr: 0,
           campaignStartedAt: campaignDetails?.startedAt || '',
           campaignEndedAt: campaignDetails?.endedAt || '',
           campaignId: rewardsBreakdown.campaignId || opp.id,
@@ -375,7 +363,7 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
           dailyPoints: dailyPoints // 存储每日 points
         });
         
-        logger.info(`   📊 Tydro opportunity ${opp.id}: ${dailyPoints} daily points, TVL: ${tvl}, Points/1000USD: ${pointsPerThousandUsd.toFixed(4)}, APR: ${annualAprPercent.toFixed(2)}%`);
+        logger.info(`   📊 Tydro opportunity ${opp.id}: ${dailyPoints} daily points, TVL: ${tvl}, Points/1000USD: ${pointsPerThousandUsd.toFixed(4)}`);
       }
     } else {
       // Aave 协议：使用原有的处理逻辑

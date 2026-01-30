@@ -4,16 +4,36 @@ import { coingeckoFetchConfig } from '../config.js';
 
 const CG_ENDPOINT = 'https://api.coingecko.com/api/v3/coins/markets';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const FDV_CACHE_TTL_MS = 10 * 60 * 1000;
+const FDV_COINS = [
+  { id: 'crypto-com-chain' },
+  { id: 'okb' },
+  { id: 'mantle' },
+  { id: 'bitget-token' },
+  { id: 'binancecoin' },
+] as const;
 
 interface CoinGeckoCoin {
   id: string;
   symbol: string;
 }
 
+interface CoinGeckoMarket {
+  id: string;
+  symbol: string;
+  name: string;
+  fully_diluted_valuation: number | null;
+}
+
 let cachedResponse: { data: { uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[] }; fetchedAt: number } | null =
   null;
+let cachedFdvResponse: {
+  data: { items: { id: string; symbol: string | null; name: string | null; fdvUsd: number | null }[]; fetchedAt: string };
+  fetchedAt: number;
+} | null = null;
 // 跟踪正在进行的 fetch，防止并发请求触发重复的 API 调用
 let inFlightFetch: Promise<{ uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[] }> | null = null;
+let inFlightFdvFetch: Promise<{ items: { id: string; symbol: string | null; name: string | null; fdvUsd: number | null }[]; fetchedAt: string }> | null = null;
 // 跟踪最后一次 API 请求的时间，用于 rate limit 控制（Free tier: 30 次/分钟 = 每 2 秒一次）
 let lastApiRequestTime: number = 0;
 
@@ -56,10 +76,10 @@ function getRetryAfterMs(response: globalThis.Response): number {
  * 带重试机制的 CoinGecko API 请求
  * 处理 429 (Rate Limit) 和 5xx 错误，使用指数退避
  */
-async function fetchCategoryPageWithRetry(
+async function fetchJsonWithRetry<T>(
   url: string,
   label: string
-): Promise<CoinGeckoCoin[]> {
+): Promise<T> {
   let attempt = 0;
   let lastError: unknown;
   const headers = getHeaders();
@@ -131,7 +151,11 @@ async function fetchCategoryPageWithRetry(
 
 // 保持向后兼容的简单函数（内部使用重试版本）
 const fetchCategoryPage = async (url: string): Promise<CoinGeckoCoin[]> => {
-  return fetchCategoryPageWithRetry(url, 'fetchCategoryPage');
+  return fetchJsonWithRetry<CoinGeckoCoin[]>(url, 'fetchCategoryPage');
+};
+
+const fetchMarkets = async (url: string, label: string): Promise<CoinGeckoMarket[]> => {
+  return fetchJsonWithRetry<CoinGeckoMarket[]>(url, label);
 };
 
 export const getCoingeckoCategories = async (req: Request, res: Response) => {
@@ -257,6 +281,75 @@ export const getCoingeckoCategories = async (req: Request, res: Response) => {
     // 如果出错，promise 的 finally 块会负责清除 inFlightFetch
     // 这里不需要手动清除，因为 promise.finally() 已经设置了清理逻辑
     logger.error('Coingecko categories proxy error:', error);
+    return res.status(500).json({ error: 'Internal server error', details: String(error) });
+  }
+};
+
+export const getCoingeckoFdv = async (req: Request, res: Response) => {
+  try {
+    if (cachedFdvResponse && Date.now() - cachedFdvResponse.fetchedAt < FDV_CACHE_TTL_MS) {
+      const hasNullFdv = cachedFdvResponse.data.items.some((item) => item.fdvUsd === null);
+      if (!hasNullFdv) {
+        logger.debug('✅ CoinGecko FDV cache hit');
+        return res.status(200).json(cachedFdvResponse.data);
+      }
+      logger.warn('⚠️ CoinGecko FDV cache has null values, forcing refresh');
+    }
+
+    const createFetchPromise = (): Promise<{ items: { id: string; symbol: string | null; name: string | null; fdvUsd: number | null }[]; fetchedAt: string }> => {
+      return (async () => {
+        const minIntervalMs = coingeckoFetchConfig.minRequestIntervalMs;
+        const now = Date.now();
+        const timeSinceLastRequest = now - lastApiRequestTime;
+        if (timeSinceLastRequest < minIntervalMs) {
+          const waitMs = minIntervalMs - timeSinceLastRequest;
+          logger.debug(`⏳ CoinGecko rate limit: waiting ${waitMs}ms before next request`);
+          await sleep(waitMs);
+        }
+
+        lastApiRequestTime = Date.now();
+        const idsParam = encodeURIComponent(FDV_COINS.map((coin) => coin.id).join(','));
+        const url = `${CG_ENDPOINT}?vs_currency=usd&ids=${idsParam}&per_page=250&page=1`;
+        const markets = await fetchMarkets(url, 'fdv-coins');
+
+        const marketById = new Map(markets.map((coin) => [coin.id, coin]));
+        const items = FDV_COINS.map(({ id }) => {
+          const coin = marketById.get(id);
+          return {
+            id,
+            symbol: coin?.symbol?.toUpperCase() ?? null,
+            name: coin?.name ?? null,
+            fdvUsd: coin?.fully_diluted_valuation ?? null,
+          };
+        });
+
+        const result = { items, fetchedAt: new Date().toISOString() };
+        cachedFdvResponse = { data: result, fetchedAt: Date.now() };
+        logger.info(
+          `✅ CoinGecko FDV refreshed (${FDV_COINS.length} coins) at ${result.fetchedAt}`
+        );
+        return result;
+      })();
+    };
+
+    if (inFlightFdvFetch === null) {
+      const fetchPromise = createFetchPromise();
+      inFlightFdvFetch = fetchPromise;
+      fetchPromise.finally(() => {
+        if (inFlightFdvFetch === fetchPromise) {
+          inFlightFdvFetch = null;
+        }
+      });
+
+      const data = await fetchPromise;
+      return res.status(200).json(data);
+    }
+
+    const currentFetch = inFlightFdvFetch;
+    const data = await currentFetch;
+    return res.status(200).json(cachedFdvResponse?.data || data);
+  } catch (error) {
+    logger.error('Coingecko fdv proxy error:', error);
     return res.status(500).json({ error: 'Internal server error', details: String(error) });
   }
 };
