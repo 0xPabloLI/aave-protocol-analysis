@@ -150,8 +150,8 @@ async function fetchJsonWithRetry<T>(
 }
 
 // 保持向后兼容的简单函数（内部使用重试版本）
-const fetchCategoryPage = async (url: string): Promise<CoinGeckoCoin[]> => {
-  return fetchJsonWithRetry<CoinGeckoCoin[]>(url, 'fetchCategoryPage');
+const fetchCategoryPageWithRetry = async (url: string, label: string): Promise<CoinGeckoCoin[]> => {
+  return fetchJsonWithRetry<CoinGeckoCoin[]>(url, label);
 };
 
 const fetchMarkets = async (url: string, label: string): Promise<CoinGeckoMarket[]> => {
