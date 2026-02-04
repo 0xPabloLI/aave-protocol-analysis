@@ -69,23 +69,6 @@ interface FormattedReserveData {
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 
-/**
- * Converts APR to APY using monthly compounding
- * Assumes users claim rewards once per month and reinvest them
- * Formula: APY = (1 + APR/12)^12 - 1
- *
- * This function is used to align incentive calculations with other protocol APYs
- * throughout the app, providing more accurate representations of compound returns.
- *
- * @param apr - Annual Percentage Rate as a decimal (e.g., 0.05 for 5%)
- * @returns APY as a decimal
- */
-export const convertAprToApy = (apr: number): number => {
-  const monthlyRate = apr / 12;
-  const apy = Math.pow(1 + monthlyRate, 12) - 1;
-  return apy;
-};
-
 // 从 baseDataset 构建链-代币索引：chainNameLower -> Set<tokenSymbolLower>
 function buildChainTokenIndex(baseDataset: FormattedReserveData[]): Record<string, Set<string>> {
   const index: Record<string, Set<string>> = {};
@@ -685,10 +668,6 @@ async function fetchAaveMarketData(): Promise<MarketData> {
 }
 
 async function fetchAaveMarkets(): Promise<void> {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:638',message:'fetchAaveMarkets started',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B'})}).catch(()=>{});
-  // #endregion
-
   // 🧹 启动时检查并清理 Cloudflare browser sessions
   // 这是为了避免之前程序异常退出后残留的 session 占用配额
   logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
@@ -861,14 +840,7 @@ async function fetchAaveMarkets(): Promise<void> {
     if (marketData.errors.length > 0) {
       logger.warn(`❌ Failed chains: ${marketData.errors.length}`);
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:704',message:'fetchAaveMarkets completed successfully',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B'})}).catch(()=>{});
-    // #endregion
-    
   } catch (error) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:708',message:'fetchAaveMarkets error in catch',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     logger.error('💥 Unexpected error:', error);
     
     const networkInfo = getAllAaveV3Networks();
@@ -916,34 +888,17 @@ const isMainModule = !mainScript.includes('server') &&
 if (isMainModule) {
   // 执行主函数（仅当作为独立脚本运行时）
   fetchAaveMarkets().catch(error => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:740',message:'fetchAaveMarkets error caught',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
   logger.error('❌ Failed to fetch Aave markets:', error);
   process.exit(1);
 }).then(async () => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:747',message:'fetchAaveMarkets success - entering finally',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-  // #endregion
   // 关闭 Puppeteer 浏览器实例并 flush aliases
   const { closeBrowser, flushMeritKeyAliases } = await import('./merit-api.js');
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:750',message:'before closeBrowser call',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
   await flushMeritKeyAliases().catch(() => {});
   await closeBrowser().catch((err) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:753',message:'closeBrowser error',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
+    logger.warn('⚠️ Error when closing browser:', err);
   });
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:757',message:'after closeBrowser - before process.exit',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,B'})}).catch(()=>{});
-  // #endregion
   process.exit(0);
 }).catch(async (error) => {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/index.ts:760',message:'then block error',data:{error:error instanceof Error ? error.message : String(error)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-  // #endregion
   const { closeBrowser, flushMeritKeyAliases } = await import('./merit-api.js');
   await flushMeritKeyAliases().catch(() => {});
   await closeBrowser().catch(() => {});

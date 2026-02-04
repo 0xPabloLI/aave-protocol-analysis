@@ -177,7 +177,7 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
 /**
  * 获取 Merkl campaign 详情
  * In https://api.merkl.xyz/v4/opportunities?mainProtocolId=aave api, onChainCampaignId = Campaign ID in webpage, campaignId = Database ID in web page. 
- * https://api.merkl.xyz/v4/campaigns/${campaignId} use the second one as input parameter, but in response, their campaignId equals to the first one
+ * https://api.merkl.xyz/v4/campaigns/${campaignId} use the second one Database ID as input parameter, but in response, their campaignId equals to the first one onChainCampaignId
  */
 export async function fetchMerklCampaignDetails(campaignId: string): Promise<MerklCampaignDetails | null> {
   try {
@@ -341,29 +341,35 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
     const breakdowns: MerklCampaignBreakdown[] = [];
     
     if (isTydro) {
-      // Tydro 协议特殊处理：计算 points/1000USD，在 breakdown 中存储 points 信息
-      const rewardsBreakdown = opp.rewardsRecord.breakdowns[0];
-      if (rewardsBreakdown && rewardsBreakdown.value !== undefined) {
+      // Tydro 协议特殊处理：逐条 breakdown 记录 points 信息（APR 由前端计算）
+      const tvl = Number(opp.tvl) || 0;
+
+      for (const rewardsBreakdown of opp.rewardsRecord.breakdowns) {
+        if (rewardsBreakdown.value === undefined) {
+          continue;
+        }
+
         const dailyPoints = Number(rewardsBreakdown.value);
-        const tvl = Number(opp.tvl) || 0;
         const pointsPerThousandUsd = tvl > 0 ? (dailyPoints / tvl) * 1000 : 0;
-        
+
         // 对于 tydro，我们需要从 campaign details 获取时间信息，如果没有则使用默认值
-        const campaignDetails = rewardsBreakdown.campaignId 
+        const campaignDetails = rewardsBreakdown.campaignId
           ? campaignDetailsCache.get(rewardsBreakdown.campaignId)
           : null;
-        
-        // Tydro 的 breakdown 中存储 points 信息，APR 由前端计算
+
         breakdowns.push({
           campaignApr: 0,
           campaignStartedAt: campaignDetails?.startedAt || '',
           campaignEndedAt: campaignDetails?.endedAt || '',
           campaignId: rewardsBreakdown.campaignId || opp.id,
-          pointsPerThousandUsd: pointsPerThousandUsd, // 存储 points/1000USD
-          dailyPoints: dailyPoints // 存储每日 points
+          pointsPerThousandUsd: pointsPerThousandUsd,
+          dailyPoints: dailyPoints
         });
-        
-        logger.info(`   📊 Tydro opportunity ${opp.id}: ${dailyPoints} daily points, TVL: ${tvl}, Points/1000USD: ${pointsPerThousandUsd.toFixed(4)}`);
+      }
+
+      if (breakdowns.length > 0) {
+        const totalDailyPoints = breakdowns.reduce((sum, b) => sum + (b.dailyPoints || 0), 0);
+        logger.info(`   📊 Tydro opportunity ${opp.id}: ${breakdowns.length} breakdown(s), total daily points: ${totalDailyPoints}, TVL: ${tvl}`);
       }
     } else {
       // Aave 协议：使用原有的处理逻辑
@@ -379,12 +385,27 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
         }
       }
     }
-    
+
+    // 过滤掉已过期的 campaign，只保留当前进行中和未来的 campaign
+    const filteredBreakdowns = filterExpiredCampaigns(breakdowns);
+
+    // 记录过滤情况
+    if (breakdowns.length > filteredBreakdowns.length) {
+      const expiredCount = breakdowns.length - filteredBreakdowns.length;
+      logger.info(`   🗑️ Filtered out ${expiredCount} expired campaign(s) for opportunity ${opp.id}`);
+    }
+
+    // 如果过滤后没有有效的 campaign，跳过这个 opportunity
+    if (filteredBreakdowns.length === 0) {
+      logger.info(`   ⏭️ Skipping opportunity ${opp.id}: all campaigns expired`);
+      continue;
+    }
+
     // 创建 opportunity 数据对象，根据 action 直接设置对应数组
     const opportunityData: MerklOpportunityData = {
-      supply: opp.action === 'LEND' ? breakdowns : [],
-      borrow: opp.action === 'BORROW' ? breakdowns : [],
-      hold: opp.action === 'HOLD' ? breakdowns : [],
+      supply: opp.action === 'LEND' ? filteredBreakdowns : [],
+      borrow: opp.action === 'BORROW' ? filteredBreakdowns : [],
+      hold: opp.action === 'HOLD' ? filteredBreakdowns : [],
       marketName,
       chainId: opp.chainId,
       ...(opportunityLink && { opportunityLink }),
@@ -426,19 +447,21 @@ export async function processMerklData(): Promise<Record<string, MerklOpportunit
 }
 
 /**
- * 计算当前时间范围内活跃的 campaign APR 总和
+ * 过滤掉已过期的 campaign，保留当前进行中和未来的 campaign
+ * - 过滤掉：campaignEndedAt < 当前时间（已过期）
+ * - 保留：campaignEndedAt >= 当前时间（进行中或未来）
  */
-export function calculateActiveCampaignApr(breakdowns: MerklCampaignBreakdown[]): number {
+export function filterExpiredCampaigns(breakdowns: MerklCampaignBreakdown[]): MerklCampaignBreakdown[] {
   const now = new Date();
-  return breakdowns.reduce((sum, breakdown) => {
-    const startTime = breakdown.campaignStartedAt ? new Date(breakdown.campaignStartedAt) : null;
-    const endTime = breakdown.campaignEndedAt ? new Date(breakdown.campaignEndedAt) : null;
-    // 只累加当前时间在开始和结束时间范围内的 campaign APR
-    if (startTime && endTime && startTime <= now && endTime >= now) {
-      return sum + breakdown.campaignApr;
+  return breakdowns.filter(breakdown => {
+    // 如果没有结束时间，保留（可能是无限期的 campaign）
+    if (!breakdown.campaignEndedAt) {
+      return true;
     }
-    return sum;
-  }, 0);
+    const endTime = new Date(breakdown.campaignEndedAt);
+    // 只保留尚未过期的 campaign（endTime >= now）
+    return endTime >= now;
+  });
 }
 
 /**
