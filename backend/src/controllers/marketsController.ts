@@ -247,6 +247,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
       lastUpdated: lastUpdated?.toISOString() || new Date().toISOString(),
       isStale,
       updateInProgress: getUpdateStatus().status === 'updating',
+      tokenPrices: dataService.getTokenPrices() || undefined,
     };
 
     res.json(response);

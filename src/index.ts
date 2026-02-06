@@ -14,6 +14,7 @@ import {
   MerklCampaignBreakdown,
   MerklOpportunityData,
   MerklOpportunityGroup,
+  TokenPricesIndex,
   processMerklData,
   findMatchingMerklOpportunities,
   formatMerklBreakdown
@@ -249,6 +250,7 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
 type MeritDataIndex = Record<string, MeritDataItem>;
 type MerklDataIndex = Record<string, MerklOpportunityData[]>;
 type BrevisDataIndex = Record<string, BrevisDataItem>;
+type MerklProcessedData = { index: MerklDataIndex; tokenPrices: TokenPricesIndex };
 
 function enrichDatasetWithIncentiveData(
   baseDataset: FormattedReserveData[],
@@ -707,7 +709,7 @@ async function fetchAaveMarkets(): Promise<void> {
     });
     const merklPromise = processMerklData().catch((error) => {
       logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-      return {} as MerklDataIndex;
+      return { index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex } as MerklProcessedData;
     });
     const brevisPromise = fetchBrevisAprs(baseDataset).catch((error) => {
       logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -719,12 +721,17 @@ async function fetchAaveMarkets(): Promise<void> {
     const INCENTIVE_DATA_TIMEOUT_MS = 10 * 60 * 1000; // 10 分钟
     
     // 创建一个包装函数，用于在超时后提取已完成的结果
-    const getCompletedResults = async (): Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex }> => {
+    const getCompletedResults = async (): Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex; tokenPrices: TokenPricesIndex }> => {
       // 等待所有任务完成或超时
       const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
       
       const meritData: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
-      const merklData: MerklDataIndex = results[1].status === 'fulfilled' ? results[1].value : {};
+      const merklResult: MerklProcessedData =
+        results[1].status === 'fulfilled'
+          ? (results[1].value as MerklProcessedData)
+          : { index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex };
+      const merklData: MerklDataIndex = merklResult.index;
+      const merklTokenPrices: TokenPricesIndex = merklResult.tokenPrices;
       const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
       
       if (results[0].status === 'rejected') {
@@ -737,18 +744,18 @@ async function fetchAaveMarkets(): Promise<void> {
         logger.warn(`⚠️ Brevis data fetching was rejected, using empty data`);
       }
       
-      return { merit: meritData, merkl: merklData, brevis: brevisData };
+      return { merit: meritData, merkl: merklData, brevis: brevisData, tokenPrices: merklTokenPrices };
     };
     
     // 创建超时 Promise
-    const timeoutPromise = new Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex }>((resolve) => {
+    const timeoutPromise = new Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex; tokenPrices: TokenPricesIndex }>((resolve) => {
       setTimeout(async () => {
         logger.warn(`⏱️ Incentive data fetching timeout after ${INCENTIVE_DATA_TIMEOUT_MS / 1000}s, extracting completed results...`);
         
         // 超时后，检查哪些任务已完成，使用已完成的结果
         const results = await Promise.allSettled([
           Promise.race([meritPromise, Promise.resolve({} as MeritDataIndex)]),
-          Promise.race([merklPromise, Promise.resolve({} as MerklDataIndex)]),
+          Promise.race([merklPromise, Promise.resolve({ index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex } as MerklProcessedData)]),
           Promise.race([brevisPromise, Promise.resolve({} as BrevisDataIndex)]),
         ]);
         
@@ -770,12 +777,13 @@ async function fetchAaveMarkets(): Promise<void> {
         
         const [meritCheck, merklCheck, brevisCheck] = await Promise.all([
           checkCompleted(meritPromise, {} as MeritDataIndex),
-          checkCompleted(merklPromise, {} as MerklDataIndex),
+          checkCompleted(merklPromise, { index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex } as MerklProcessedData),
           checkCompleted(brevisPromise, {} as BrevisDataIndex),
         ]);
         
         const meritData: MeritDataIndex = meritCheck.completed ? meritCheck.value : {};
-        const merklData: MerklDataIndex = merklCheck.completed ? merklCheck.value : {};
+        const merklData: MerklDataIndex = merklCheck.completed ? merklCheck.value.index : {};
+        const merklTokenPrices: TokenPricesIndex = merklCheck.completed ? merklCheck.value.tokenPrices : {};
         const brevisData: BrevisDataIndex = brevisCheck.completed ? brevisCheck.value : {};
         
         logger.warn(`   • Merit: ${meritCheck.completed ? 'completed' : 'timeout/empty'}`);
@@ -783,12 +791,12 @@ async function fetchAaveMarkets(): Promise<void> {
         logger.warn(`   • Brevis: ${brevisCheck.completed ? 'completed' : 'timeout/empty'}`);
         logger.warn(`   • Using available results, unfinished tasks continue in background`);
         
-        resolve({ merit: meritData, merkl: merklData, brevis: brevisData });
+        resolve({ merit: meritData, merkl: merklData, brevis: brevisData, tokenPrices: merklTokenPrices });
       }, INCENTIVE_DATA_TIMEOUT_MS);
     });
     
     // 使用 Promise.race，取先完成的（任务完成或超时）
-    const { merit: meritData, merkl: merklData, brevis: brevisData } = await Promise.race([
+    const { merit: meritData, merkl: merklData, brevis: brevisData, tokenPrices: merklTokenPrices } = await Promise.race([
       getCompletedResults(),
       timeoutPromise,
     ]);
@@ -810,6 +818,7 @@ async function fetchAaveMarkets(): Promise<void> {
         version: '1.0',
         dataCount: enrichedData.length,
       },
+      tokenPrices: merklTokenPrices,
       data: enrichedData,
     };
     // 使用自定义 replacer 函数，确保 undefined 字段被完全省略，null 也会被转换为 undefined 并省略
