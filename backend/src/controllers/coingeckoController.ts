@@ -7,6 +7,7 @@ const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const FDV_CACHE_TTL_MS = 10 * 60 * 1000;
 const FDV_COINS = [
   { id: 'crypto-com-chain' },
+  { id: 'gatechain-token' },
   { id: 'okb' },
   { id: 'mantle' },
   { id: 'bitget-token' },
