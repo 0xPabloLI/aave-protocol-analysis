@@ -89,11 +89,23 @@ export interface MarketWithSpread {
   }>;
 }
 
+export interface TokenPriceEntry {
+  chainId: number;
+  address: string;
+  symbol: string;
+  price: number;
+  updatedAt: number;
+  source: string;
+}
+
+export type TokenPricesIndex = Record<string, TokenPriceEntry>;
+
 export interface MarketsResponse {
   data: MarketWithSpread[];
   lastUpdated: string; // ISO timestamp
   isStale: boolean; // true if data is older than 1 minute
   updateInProgress: boolean; // true if update is in progress
+  tokenPrices?: TokenPricesIndex;
 }
 
 export interface UpdateStatus {

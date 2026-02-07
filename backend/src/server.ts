@@ -4,6 +4,7 @@ import { corsMiddleware } from './middleware/cors.js';
 import marketsRouter from './routes/markets.js';
 import coingeckoRouter from './routes/coingecko.js';
 import coingeckoFdvRouter from './routes/coingeckoFdv.js';
+import campaignsRouter from './routes/campaigns.js';
 import { dataService } from './services/dataService.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
 import { logger } from './logger.js';
@@ -40,6 +41,7 @@ app.use(express.json());
 app.use('/api/markets', marketsRouter);
 app.use('/api/coingecko-categories', coingeckoRouter);
 app.use('/api/coingecko-fdv', coingeckoFdvRouter);
+app.use('/api/campaigns', campaignsRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

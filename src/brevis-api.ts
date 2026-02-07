@@ -39,11 +39,6 @@ export interface BrevisCampaignInfo {
   };
 }
 
-export interface BrevisCampaignData {
-  supply: BrevisCampaignInfo[];
-  borrow: BrevisCampaignInfo[];
-}
-
 // Brevis Campaign Item（用于 FormattedReserveData）
 export interface BrevisCampaignItem {
   apr: number; // APR 百分比值
@@ -564,6 +559,13 @@ export class BrevisApiClient {
             // 因为两个接口返回的 APR 值可能不同（response.protocol.apr 可能不准确或含义不同）
             // protocol.apr 是小数形式（如 0.024 表示 2.4%），需要 * 100 转换为百分比
             const apr = (protocol?.apr || 0) * 100;
+            const endTime = config?.end || 0;
+            const now = Math.floor(Date.now() / 1000);
+
+            // 过滤掉已经结束的活动（保留进行中和未来活动）
+            if (endTime > 0 && endTime < now) {
+              continue;
+            }
 
             // 构建 campaign item
             const campaignItem: BrevisCampaignItem = {
