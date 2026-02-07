@@ -3,15 +3,29 @@ import { logger } from '../logger.js';
 import { coingeckoFetchConfig } from '../config.js';
 
 const CG_ENDPOINT = 'https://api.coingecko.com/api/v3/coins/markets';
+const CMC_QUOTES_ENDPOINT = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const FDV_CACHE_TTL_MS = 10 * 60 * 1000;
+const FDV_MONITOR_TTL_MS = 6 * 60 * 60 * 1000;
+const FDV_DIFF_ALERT_THRESHOLD_PCT = 5;
 const FDV_COINS = [
-  { id: 'crypto-com-chain' },
-  { id: 'okb' },
-  { id: 'mantle' },
-  { id: 'bitget-token' },
-  { id: 'binancecoin' },
+  { id: 'crypto-com-chain', cmcSymbol: 'CRO' },
+  { id: 'gatechain-token', cmcSymbol: 'GT' },
+  { id: 'okb', cmcSymbol: 'OKB' },
+  { id: 'mantle', cmcSymbol: 'MNT' },
+  { id: 'bitget-token', cmcSymbol: 'BGB' },
+  { id: 'binancecoin', cmcSymbol: 'BNB' },
 ] as const;
+
+type FdvSource = 'coinmarketcap' | 'coingecko_fallback';
+
+interface FdvItem {
+  id: string;
+  symbol: string | null;
+  name: string | null;
+  fdvUsd: number | null;
+  source: FdvSource;
+}
 
 interface CoinGeckoCoin {
   id: string;
@@ -25,17 +39,36 @@ interface CoinGeckoMarket {
   fully_diluted_valuation: number | null;
 }
 
+interface CoinMarketCapQuote {
+  symbol: string;
+  name: string;
+  quote?: {
+    USD?: {
+      fully_diluted_market_cap?: number | null;
+    };
+  };
+}
+
+interface CoinMarketCapQuotesResponse {
+  status?: {
+    error_code?: number;
+    error_message?: string | null;
+  };
+  data?: Record<string, CoinMarketCapQuote | CoinMarketCapQuote[]>;
+}
+
 let cachedResponse: { data: { uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[] }; fetchedAt: number } | null =
   null;
 let cachedFdvResponse: {
-  data: { items: { id: string; symbol: string | null; name: string | null; fdvUsd: number | null }[]; fetchedAt: string };
+  data: { items: FdvItem[]; fetchedAt: string };
   fetchedAt: number;
 } | null = null;
 // 跟踪正在进行的 fetch，防止并发请求触发重复的 API 调用
 let inFlightFetch: Promise<{ uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[] }> | null = null;
-let inFlightFdvFetch: Promise<{ items: { id: string; symbol: string | null; name: string | null; fdvUsd: number | null }[]; fetchedAt: string }> | null = null;
+let inFlightFdvFetch: Promise<{ items: FdvItem[]; fetchedAt: string }> | null = null;
 // 跟踪最后一次 API 请求的时间，用于 rate limit 控制（Free tier: 30 次/分钟 = 每 2 秒一次）
 let lastApiRequestTime: number = 0;
+let lastFdvMonitorCheckTime = 0;
 
 const getHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { accept: 'application/json' };
@@ -44,6 +77,17 @@ const getHeaders = (): Record<string, string> => {
     headers['x-cg-demo-api-key'] = apiKey;
   }
   return headers;
+};
+
+const getCoinMarketCapHeaders = (): Record<string, string> => {
+  const apiKey = process.env.COINMARKETCAP_API_KEY;
+  if (!apiKey) {
+    throw new Error('COINMARKETCAP_API_KEY is missing');
+  }
+  return {
+    Accept: 'application/json',
+    'X-CMC_PRO_API_KEY': apiKey,
+  };
 };
 
 function sleep(ms: number): Promise<void> {
@@ -157,6 +201,103 @@ const fetchCategoryPageWithRetry = async (url: string, label: string): Promise<C
 const fetchMarkets = async (url: string, label: string): Promise<CoinGeckoMarket[]> => {
   return fetchJsonWithRetry<CoinGeckoMarket[]>(url, label);
 };
+
+async function waitForCoingeckoRateLimit(): Promise<void> {
+  const minIntervalMs = coingeckoFetchConfig.minRequestIntervalMs;
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastApiRequestTime;
+  if (timeSinceLastRequest < minIntervalMs) {
+    const waitMs = minIntervalMs - timeSinceLastRequest;
+    logger.debug(`⏳ CoinGecko rate limit: waiting ${waitMs}ms before next request`);
+    await sleep(waitMs);
+  }
+  lastApiRequestTime = Date.now();
+}
+
+async function fetchCoingeckoFdvItems(source: FdvSource): Promise<FdvItem[]> {
+  await waitForCoingeckoRateLimit();
+  const idsParam = encodeURIComponent(FDV_COINS.map((coin) => coin.id).join(','));
+  const url = `${CG_ENDPOINT}?vs_currency=usd&ids=${idsParam}&per_page=250&page=1`;
+  const markets = await fetchMarkets(url, 'fdv-coins');
+  const marketById = new Map(markets.map((coin) => [coin.id, coin]));
+
+  return FDV_COINS.map(({ id }) => {
+    const coin = marketById.get(id);
+    return {
+      id,
+      symbol: coin?.symbol?.toUpperCase() ?? null,
+      name: coin?.name ?? null,
+      fdvUsd: coin?.fully_diluted_valuation ?? null,
+      source,
+    };
+  });
+}
+
+function normalizeCmcQuote(quote: CoinMarketCapQuote | CoinMarketCapQuote[] | undefined): CoinMarketCapQuote | null {
+  if (!quote) {
+    return null;
+  }
+  if (Array.isArray(quote)) {
+    return quote[0] ?? null;
+  }
+  return quote;
+}
+
+async function fetchCoinMarketCapFdvItems(): Promise<FdvItem[]> {
+  const symbols = FDV_COINS.map((coin) => coin.cmcSymbol).join(',');
+  const url = `${CMC_QUOTES_ENDPOINT}?symbol=${encodeURIComponent(symbols)}&convert=USD`;
+  const response = await fetch(url, { method: 'GET', headers: getCoinMarketCapHeaders() });
+  if (!response.ok) {
+    throw new Error(`CoinMarketCap request failed: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = (await response.json()) as CoinMarketCapQuotesResponse;
+  if ((payload.status?.error_code ?? 0) !== 0) {
+    throw new Error(`CoinMarketCap API error: ${payload.status?.error_message ?? 'unknown error'}`);
+  }
+
+  const data = payload.data ?? {};
+  return FDV_COINS.map(({ id, cmcSymbol }) => {
+    const quote = normalizeCmcQuote(data[cmcSymbol]);
+    return {
+      id,
+      symbol: quote?.symbol ?? null,
+      name: quote?.name ?? null,
+      fdvUsd: quote?.quote?.USD?.fully_diluted_market_cap ?? null,
+      source: 'coinmarketcap' as const,
+    };
+  });
+}
+
+function monitorFdvParity(cmcItems: FdvItem[]): void {
+  const now = Date.now();
+  if (now - lastFdvMonitorCheckTime < FDV_MONITOR_TTL_MS) {
+    return;
+  }
+  lastFdvMonitorCheckTime = now;
+
+  // Non-blocking parity check: one CoinGecko request every 6 hours.
+  void (async () => {
+    try {
+      const cgItems = await fetchCoingeckoFdvItems('coingecko_fallback');
+      const cgById = new Map(cgItems.map((item) => [item.id, item]));
+      for (const cmcItem of cmcItems) {
+        const cgItem = cgById.get(cmcItem.id);
+        if (!cgItem || cgItem.fdvUsd === null || cgItem.fdvUsd === 0 || cmcItem.fdvUsd === null) {
+          continue;
+        }
+        const diffPct = ((cmcItem.fdvUsd - cgItem.fdvUsd) / cgItem.fdvUsd) * 100;
+        if (Math.abs(diffPct) >= FDV_DIFF_ALERT_THRESHOLD_PCT) {
+          logger.warn(
+            `⚠️ FDV parity alert for ${cmcItem.id}: CMC=${cmcItem.fdvUsd}, CoinGecko=${cgItem.fdvUsd}, diff=${diffPct.toFixed(2)}%`
+          );
+        }
+      }
+    } catch (error) {
+      logger.warn('FDV parity monitor skipped due to CoinGecko error:', error);
+    }
+  })();
+}
 
 export const getCoingeckoCategories = async (req: Request, res: Response) => {
   try {
@@ -290,44 +431,28 @@ export const getCoingeckoFdv = async (req: Request, res: Response) => {
     if (cachedFdvResponse && Date.now() - cachedFdvResponse.fetchedAt < FDV_CACHE_TTL_MS) {
       const hasNullFdv = cachedFdvResponse.data.items.some((item) => item.fdvUsd === null);
       if (!hasNullFdv) {
-        logger.debug('✅ CoinGecko FDV cache hit');
+        logger.debug('✅ FDV cache hit');
         return res.status(200).json(cachedFdvResponse.data);
       }
-      logger.warn('⚠️ CoinGecko FDV cache has null values, forcing refresh');
+      logger.warn('⚠️ FDV cache has null values, forcing refresh');
     }
 
-    const createFetchPromise = (): Promise<{ items: { id: string; symbol: string | null; name: string | null; fdvUsd: number | null }[]; fetchedAt: string }> => {
+    const createFetchPromise = (): Promise<{ items: FdvItem[]; fetchedAt: string }> => {
       return (async () => {
-        const minIntervalMs = coingeckoFetchConfig.minRequestIntervalMs;
-        const now = Date.now();
-        const timeSinceLastRequest = now - lastApiRequestTime;
-        if (timeSinceLastRequest < minIntervalMs) {
-          const waitMs = minIntervalMs - timeSinceLastRequest;
-          logger.debug(`⏳ CoinGecko rate limit: waiting ${waitMs}ms before next request`);
-          await sleep(waitMs);
+        let items: FdvItem[];
+        try {
+          items = await fetchCoinMarketCapFdvItems();
+          logger.info(`✅ FDV refreshed via CoinMarketCap (${FDV_COINS.length} coins)`);
+          monitorFdvParity(items);
+        } catch (cmcError) {
+          logger.warn(`⚠️ CoinMarketCap FDV fetch failed, falling back to CoinGecko: ${String(cmcError)}`);
+          items = await fetchCoingeckoFdvItems('coingecko_fallback');
+          logger.info(`✅ FDV refreshed via CoinGecko fallback (${FDV_COINS.length} coins)`);
         }
-
-        lastApiRequestTime = Date.now();
-        const idsParam = encodeURIComponent(FDV_COINS.map((coin) => coin.id).join(','));
-        const url = `${CG_ENDPOINT}?vs_currency=usd&ids=${idsParam}&per_page=250&page=1`;
-        const markets = await fetchMarkets(url, 'fdv-coins');
-
-        const marketById = new Map(markets.map((coin) => [coin.id, coin]));
-        const items = FDV_COINS.map(({ id }) => {
-          const coin = marketById.get(id);
-          return {
-            id,
-            symbol: coin?.symbol?.toUpperCase() ?? null,
-            name: coin?.name ?? null,
-            fdvUsd: coin?.fully_diluted_valuation ?? null,
-          };
-        });
 
         const result = { items, fetchedAt: new Date().toISOString() };
         cachedFdvResponse = { data: result, fetchedAt: Date.now() };
-        logger.info(
-          `✅ CoinGecko FDV refreshed (${FDV_COINS.length} coins) at ${result.fetchedAt}`
-        );
+        logger.info(`✅ FDV cache updated at ${result.fetchedAt}`);
         return result;
       })();
     };
@@ -349,7 +474,7 @@ export const getCoingeckoFdv = async (req: Request, res: Response) => {
     const data = await currentFetch;
     return res.status(200).json(cachedFdvResponse?.data || data);
   } catch (error) {
-    logger.error('Coingecko fdv proxy error:', error);
+    logger.error('FDV proxy error:', error);
     return res.status(500).json({ error: 'Internal server error', details: String(error) });
   }
 };

@@ -9,6 +9,7 @@ import {
   extractCampaignInfoWithWorker,
   extractMeritDynamicInfoWithWorker,
   extractSelfAuthenticationDescriptionWithCloudflare,
+  type MeritDynamicInfo,
 } from './cloudflare-browser.js';
 import { meritKeyAliases } from './config.js';
 
@@ -321,6 +322,48 @@ async function evaluateTimeRangeUpdate(
   // 如果到这里，说明有缓存数据但无法判断状态，为了安全起见，需要更新
   reasons.push('unknown-state');
   return { needsUpdate: true, reasons };
+}
+
+function parseMeritEndDate(endDateRaw?: string): Date | null {
+  if (!endDateRaw || endDateRaw.trim() === '') {
+    return null;
+  }
+  const parsed = new Date(endDateRaw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+async function isMeritCampaignExpired(
+  chainKey: string,
+  endDateRaw: string | undefined,
+  endBlockRaw: string | undefined,
+  currentBlockCache: Map<string, number | null>
+): Promise<boolean> {
+  const now = new Date();
+  const parsedEndDate = parseMeritEndDate(endDateRaw);
+  if (parsedEndDate) {
+    return parsedEndDate < now;
+  }
+
+  if (!endBlockRaw) {
+    return false;
+  }
+
+  const endBlock = parseInt(endBlockRaw, 10);
+  if (Number.isNaN(endBlock)) {
+    return false;
+  }
+
+  if (!currentBlockCache.has(chainKey)) {
+    const currentBlock = await getCurrentBlockNumber(chainKey);
+    currentBlockCache.set(chainKey, currentBlock);
+  }
+
+  const currentBlock = currentBlockCache.get(chainKey);
+  if (currentBlock === null || currentBlock === undefined) {
+    return false;
+  }
+
+  return currentBlock >= endBlock;
 }
 
 /**
@@ -645,6 +688,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     });
 
     // 第二遍遍历：处理每个 baseKey，合并 self 和非 self
+    const currentBlockCache = new Map<string, number | null>();
+    let expiredCampaignsFiltered = 0;
     for (const [baseKey, group] of baseKeyMap.entries()) {
       const nonSelfInfo = group.nonSelf;
       const selfInfo = group.self;
@@ -676,6 +721,15 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       const finalMessage = message || [];
       
       const { supplyTokens, borrowTokens, chainKey } = nonSelfInfo;
+
+      // 过滤掉历史 campaign，只保留进行中和未来的 campaign
+      const isExpired = await isMeritCampaignExpired(chainKey, endDate, endBlock, currentBlockCache);
+      if (isExpired) {
+        expiredCampaignsFiltered++;
+        logger.info(`   🗑️ Filtered expired Merit campaign ${baseKey} (endDate: ${endDate || 'N/A'}, endBlock: ${endBlock || 'N/A'})`);
+        continue;
+      }
+
       const borrowTargets = borrowTokens.filter(t => t !== 'multiple');
       const supplyTargets = supplyTokens.filter(t => t !== 'multiple');
       const hasBorrowTokens = borrowTargets.length > 0;
@@ -783,6 +837,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
           incentives.meritSupplys.push(entry);
         }
       }
+    }
+
+    if (expiredCampaignsFiltered > 0) {
+      logger.info(`🗑️ Filtered out ${expiredCampaignsFiltered} expired Merit campaign(s)`);
     }
 
     logger.info(`✅ Indexed Merit data for ${Object.keys(meritData).length} chain-token combinations`);
@@ -1159,13 +1217,7 @@ function getPageSemaphore(): Semaphore {
  * PRODUCTION-GRADE: 使用 browser.close() 而不是 disconnect()
  */
 export async function closeBrowser(): Promise<void> {
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/merit-api.ts:614',message:'closeBrowser called',data:{hasInstance:!!browserInstance},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
   if (browserInstance) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/merit-api.ts:617',message:'closing browser instance',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     try {
       await browserInstance.close();
       logger.info('✅ Browser instance closed');
@@ -1174,13 +1226,6 @@ export async function closeBrowser(): Promise<void> {
     } finally {
       browserInstance = null;
     }
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/merit-api.ts:620',message:'browser instance closed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-  } else {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/e44d6b35-b855-47a4-be25-c451781709dd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'src/merit-api.ts:623',message:'no browser instance to close',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
   }
 }
 
@@ -1382,12 +1427,6 @@ async function extractCampaignInfoWithBrowser(key: string): Promise<MeritCampaig
     logger.warn(`⚠️ extractCampaignInfoWithBrowser failed for ${key}:`, error);
     return [];
   }
-}
-
-interface MeritDynamicInfo {
-  campaignInfo: MeritCampaignInfo[];
-  selfAuthDescription: string | null;
-  source: 'worker' | 'puppeteer';
 }
 
 async function extractMeritDynamicInfoWithBrowser(

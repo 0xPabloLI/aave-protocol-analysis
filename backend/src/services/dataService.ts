@@ -1,7 +1,7 @@
 import { readFile, stat } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { MarketWithSpread } from '../types/index.js';
+import { MarketWithSpread, TokenPricesIndex } from '../types/index.js';
 import { logger } from '../logger.js';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
@@ -13,6 +13,7 @@ class DataService {
   private lastCacheUpdate: Date | null = null;
   private fileMtime: Date | null = null;
   private dataTimestamp: Date | null = null; // 从数据文件中读取的时间戳
+  private tokenPrices: TokenPricesIndex | null = null;
 
   /**
    * 从文件读取数据并加载到内存缓存
@@ -27,6 +28,11 @@ class DataService {
       if (parsed._metadata && parsed.data) {
         // 新格式：包含元数据
         data = parsed.data;
+        if (parsed.tokenPrices) {
+          this.tokenPrices = parsed.tokenPrices as TokenPricesIndex;
+        } else {
+          this.tokenPrices = null;
+        }
         // 从元数据中读取时间戳
         if (parsed._metadata.timestamp) {
           this.dataTimestamp = new Date(parsed._metadata.timestamp);
@@ -35,6 +41,7 @@ class DataService {
         // 旧格式：直接是数组（向后兼容）
         data = parsed;
         this.dataTimestamp = null;
+        this.tokenPrices = null;
       } else {
         throw new Error('Invalid data file format');
       }
@@ -106,6 +113,11 @@ class DataService {
     this.lastCacheUpdate = null;
     this.fileMtime = null;
     this.dataTimestamp = null;
+    this.tokenPrices = null;
+  }
+
+  getTokenPrices(): TokenPricesIndex | null {
+    return this.tokenPrices;
   }
 }
 
