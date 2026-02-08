@@ -16,6 +16,7 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
+    "deploy": "./deploy.sh",
     "mcp:context7": "node .cursor/context7-server.js"
   },
   "dependencies": {
