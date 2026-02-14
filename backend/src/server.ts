@@ -51,7 +51,7 @@ app.get('/health', (req, res) => {
     environment: {
       nodeEnv: process.env.NODE_ENV || 'development',
       port: PORT,
-      corsMode: process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL 
+      corsMode: ['production', 'staging'].includes(process.env.NODE_ENV || '') && process.env.FRONTEND_URL 
         ? 'whitelist' 
         : 'allow-all',
       frontendUrl: process.env.FRONTEND_URL || 'not set',
