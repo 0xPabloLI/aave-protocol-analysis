@@ -877,7 +877,8 @@ async function fetchAaveMarkets(): Promise<void> {
   }
 }
 
-// 导出主函数,以便其他模块可以调用
+// 导出主函数,以便其他模块可以调用（backend 通过 dist 引用）
+// ts-prune-ignore-next
 export async function fetchAaveMarketsData(): Promise<void> {
   return fetchAaveMarkets();
 }

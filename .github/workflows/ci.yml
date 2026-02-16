@@ -1,0 +1,23 @@
+# CI: build + unused exports check (ts-prune)
+# 与根目录 package.json 的 "ci" 脚本保持一致
+# 触发：任意分支 push / 任意 PR
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-prune:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: CI (root + backend)
+        run: npm run ci

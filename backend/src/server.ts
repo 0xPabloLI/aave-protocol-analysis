@@ -82,4 +82,5 @@ dataService.loadData()
     });
   });
 
+// ts-prune-ignore-next
 export default app;

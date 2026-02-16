@@ -105,17 +105,6 @@ class DataService {
     return age > STALE_THRESHOLD_MS;
   }
 
-  /**
-   * 清除缓存（用于测试或特殊情况）
-   */
-  clearCache(): void {
-    this.cache = null;
-    this.lastCacheUpdate = null;
-    this.fileMtime = null;
-    this.dataTimestamp = null;
-    this.tokenPrices = null;
-  }
-
   getTokenPrices(): TokenPricesIndex | null {
     return this.tokenPrices;
   }

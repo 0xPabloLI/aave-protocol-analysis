@@ -2,7 +2,6 @@ import { logger } from '../logger.js';
 
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const SECONDS_PER_DAY = 86400;
-const APR_DENOMINATOR = 365;
 const MIN_REMAINING_DAYS = 0.0001;
 
 const CACHE_TTL_MS = (() => {
@@ -36,13 +35,6 @@ export interface MerklForecastState {
   startTimestamp: number;
   endTimestamp: number;
   expectedByNow: number;
-}
-
-export interface ForecastAtTvlResult {
-  dailyRewards: number;
-  apr: number;
-  capBinding: boolean;
-  regime: 'APR_CAPPED' | 'BUDGET_LIMITED';
 }
 
 const forecastCache = new Map<string, ForecastCacheEntry>();
@@ -366,28 +358,4 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
 
   inFlight.set(campaignId, request);
   return request;
-};
-
-export const forecastWithTvl = (state: MerklForecastState, hypotheticalTVL: number): ForecastAtTvlResult => {
-  const safeTvl = Number.isFinite(hypotheticalTVL) ? Math.max(hypotheticalTVL, 0) : 0;
-  if (safeTvl <= 0) {
-    return {
-      dailyRewards: 0,
-      apr: 0,
-      capBinding: true,
-      regime: 'APR_CAPPED',
-    };
-  }
-
-  const capDaily = (safeTvl * state.maxAPR) / APR_DENOMINATOR;
-  const dailyRewards = Math.min(state.desiredDaily, capDaily);
-  const apr = (dailyRewards * APR_DENOMINATOR) / safeTvl;
-  const capBinding = capDaily < state.desiredDaily;
-
-  return {
-    dailyRewards,
-    apr,
-    capBinding,
-    regime: capBinding ? 'APR_CAPPED' : 'BUDGET_LIMITED',
-  };
 };
