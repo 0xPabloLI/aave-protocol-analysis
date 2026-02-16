@@ -12,13 +12,13 @@ test('normalizeCampaignType maps max-apr, dutch and fix types', () => {
     normalizeCampaignType('MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'),
     'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   );
-  assert.equal(normalizeCampaignType('MAX_APR'), 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
+  assert.equal(normalizeCampaignType('MAX_APR'), 'UNSUPPORTED');
   assert.equal(normalizeCampaignType('DUTCH_AUCTION'), 'DUTCH_AUCTION');
   assert.equal(
     normalizeCampaignType('FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'),
     'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   );
-  assert.equal(normalizeCampaignType('FIX_APR'), 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
+  assert.equal(normalizeCampaignType('FIX_APR'), 'UNSUPPORTED');
 });
 
 test('resolveCampaignType uses opportunity hint first, then campaign fields', () => {
@@ -44,8 +44,9 @@ test('resolveCampaignType uses opportunity hint first, then campaign fields', ()
         },
       },
     }),
-    'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+    'UNSUPPORTED'
   );
+  assert.equal(resolveCampaignType('UNKNOWN', { distributionType: 'MAX_APR' }), 'UNSUPPORTED');
 });
 
 test('buildForecastState supports DUTCH_AUCTION without maxAPR cap', () => {

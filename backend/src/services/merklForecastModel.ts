@@ -64,13 +64,13 @@ export const normalizeCampaignType = (value: unknown): CampaignForecastType => {
   const normalized = value.trim().toUpperCase();
   if (!normalized) return 'UNKNOWN';
 
-  if (normalized.includes('MAX_APR') || normalized.includes('MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
+  if (normalized.includes('MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
     return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
   }
   if (normalized.includes('DUTCH_AUCTION')) {
     return 'DUTCH_AUCTION';
   }
-  if (normalized.includes('FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE') || normalized.includes('FIX_APR')) {
+  if (normalized.includes('FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
     return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
   }
   return 'UNSUPPORTED';
