@@ -1,8 +1,14 @@
 import { logger } from '../logger.js';
+import {
+  buildForecastState,
+  normalizeCampaignType,
+  resolveCampaignType,
+  type CampaignForecastType,
+  type MerklForecastState,
+} from './merklForecastModel.js';
 
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const SECONDS_PER_DAY = 86400;
-const MIN_REMAINING_DAYS = 0.0001;
 
 const CACHE_TTL_MS = (() => {
   const raw = process.env.MERKL_FORECAST_CACHE_TTL_MS;
@@ -16,30 +22,20 @@ interface ForecastCacheEntry {
   expiresAt: number;
 }
 
-interface CampaignTvlCacheEntry {
-  data: Map<string, number>;
-  expiresAt: number;
+interface CampaignOpportunityMeta {
+  tvl: number;
+  campaignTypeHint: CampaignForecastType;
+  distributionTypeRaw: string | null;
 }
 
-export interface MerklForecastState {
-  campaignId: string;
-  totalBudget: number;
-  desiredDaily: number;
-  remainingBudget: number;
-  remainingDays: number;
-  maxAPR: number;
-  computedUntil: number | null;
-  asOf: number;
-  distributedSoFar: number;
-  latestTvl: number;
-  startTimestamp: number;
-  endTimestamp: number;
-  expectedByNow: number;
+interface CampaignOpportunityCacheEntry {
+  data: Map<string, CampaignOpportunityMeta>;
+  expiresAt: number;
 }
 
 const forecastCache = new Map<string, ForecastCacheEntry>();
 const inFlight = new Map<string, Promise<MerklForecastState>>();
-let campaignTvlCache: CampaignTvlCacheEntry | null = null;
+let campaignOpportunityCache: CampaignOpportunityCacheEntry | null = null;
 
 const toNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -163,23 +159,6 @@ const estimateDistributedSoFar = (
   return Math.max(distributed, 0);
 };
 
-const isCappedCampaign = (campaign: unknown): boolean => {
-  const candidates = [
-    getAtPath(campaign, ['distributionMethod']),
-    getAtPath(campaign, ['params', 'distributionMethod']),
-    getAtPath(campaign, ['params', 'distributionMethodParameters', 'distributionMethod']),
-    getAtPath(campaign, ['params', 'distributionMethodParameters', 'distributionType']),
-    getAtPath(campaign, ['params', 'distributionMethodParameters', 'distributionSettings', 'type']),
-    getAtPath(campaign, ['distributionType']),
-  ];
-
-  return candidates.some((value) => {
-    if (typeof value !== 'string') return false;
-    const normalized = value.toUpperCase();
-    return normalized.includes('MAX_APR') || normalized.includes('MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
-  });
-};
-
 const fetchJson = async (url: string): Promise<unknown> => {
   const response = await fetch(url, {
     method: 'GET',
@@ -193,10 +172,22 @@ const fetchJson = async (url: string): Promise<unknown> => {
   return response.json() as Promise<unknown>;
 };
 
-const getCampaignTvlMap = async (): Promise<Map<string, number>> => {
+const typePriority = (type: CampaignForecastType): number => {
+  if (
+    type === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
+    type === 'DUTCH_AUCTION' ||
+    type === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  ) {
+    return 3;
+  }
+  if (type === 'UNSUPPORTED') return 2;
+  return 1;
+};
+
+const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOpportunityMeta>> => {
   const now = Date.now();
-  if (campaignTvlCache && campaignTvlCache.expiresAt > now) {
-    return campaignTvlCache.data;
+  if (campaignOpportunityCache && campaignOpportunityCache.expiresAt > now) {
+    return campaignOpportunityCache.data;
   }
 
   const [aaveOpps, tydroOpps] = await Promise.all([
@@ -209,30 +200,57 @@ const getCampaignTvlMap = async (): Promise<Map<string, number>> => {
     ...(Array.isArray(tydroOpps) ? tydroOpps : []),
   ];
 
-  const map = new Map<string, number>();
+  const map = new Map<string, CampaignOpportunityMeta>();
   allOpps.forEach((opp) => {
     const status = getAtPath(opp, ['status']);
     if (status !== 'LIVE') return;
     const tvl = toNumber(getAtPath(opp, ['tvl']));
     if (tvl === null || tvl < 0) return;
+    const oppDistributionTypeRaw = getAtPath(opp, ['distributionType']);
     const breakdowns = getAtPath(opp, ['rewardsRecord', 'breakdowns']);
     if (!Array.isArray(breakdowns)) return;
-    breakdowns.forEach((b) => {
-      const campaignId = getAtPath(b, ['campaignId']);
-      if (typeof campaignId === 'string' && campaignId) {
-        map.set(campaignId, tvl);
+
+    breakdowns.forEach((breakdown) => {
+      const campaignId = getAtPath(breakdown, ['campaignId']);
+      if (typeof campaignId !== 'string' || !campaignId) return;
+
+      const breakdownDistributionTypeRaw =
+        getAtPath(breakdown, ['distributionType']) ?? getAtPath(breakdown, ['distributionMethod']);
+      const rawType =
+        (typeof breakdownDistributionTypeRaw === 'string' && breakdownDistributionTypeRaw) ||
+        (typeof oppDistributionTypeRaw === 'string' && oppDistributionTypeRaw) ||
+        null;
+      const hintType = normalizeCampaignType(rawType);
+
+      const previous = map.get(campaignId);
+      if (!previous) {
+        map.set(campaignId, {
+          tvl,
+          campaignTypeHint: hintType,
+          distributionTypeRaw: rawType,
+        });
+        return;
       }
+
+      map.set(campaignId, {
+        tvl: previous.tvl > 0 ? previous.tvl : tvl,
+        campaignTypeHint:
+          typePriority(hintType) > typePriority(previous.campaignTypeHint)
+            ? hintType
+            : previous.campaignTypeHint,
+        distributionTypeRaw: previous.distributionTypeRaw ?? rawType,
+      });
     });
   });
 
-  campaignTvlCache = {
+  campaignOpportunityCache = {
     data: map,
     expiresAt: now + CACHE_TTL_MS,
   };
   return map;
 };
 
-const extractNormalizedTotalBudget = (campaign: unknown, campaignId: string): number => {
+export const extractNormalizedTotalBudget = (campaign: unknown, campaignId: string): number => {
   const amountRaw = getAtPath(campaign, ['amount']);
   const amount = toNumber(amountRaw);
   if (amount === null) {
@@ -243,73 +261,18 @@ const extractNormalizedTotalBudget = (campaign: unknown, campaignId: string): nu
     toNumber(getAtPath(campaign, ['rewardToken', 'decimals'])) ??
     toNumber(getAtPath(campaign, ['params', 'decimalsRewardToken']));
 
+  let rewardAmount = amount;
   if (decimals !== null && decimals >= 0) {
     if (typeof amountRaw === 'string' && !amountRaw.includes('.')) {
-      return amount / Math.pow(10, decimals);
+      rewardAmount = amount / Math.pow(10, decimals);
     }
   }
 
-  return amount;
-};
-
-const buildForecastState = (
-  campaignId: string,
-  campaign: unknown,
-  metrics: unknown,
-  opportunity: unknown | null,
-  campaignTvlFromOpportunityIndex: number | null
-): MerklForecastState => {
-  const maxAPR = extractMaxApr(campaign);
-  if (maxAPR === null) {
-    throw new Error(`Missing max APR for campaign ${campaignId}`);
+  const rewardTokenPrice = toNumber(getAtPath(campaign, ['rewardToken', 'price']));
+  if (rewardTokenPrice !== null && rewardTokenPrice > 0) {
+    return rewardAmount * rewardTokenPrice;
   }
-
-  const totalBudget = extractNormalizedTotalBudget(campaign, campaignId);
-
-  if (!isCappedCampaign(campaign)) {
-    throw new Error(`Campaign ${campaignId} is not MAX_APR capped`);
-  }
-
-  const endTs = toNumber(getAtPath(campaign, ['endTimestamp']));
-  if (endTs === null) {
-    throw new Error(`Missing end timestamp for campaign ${campaignId}`);
-  }
-  const startTs = toNumber(getAtPath(campaign, ['startTimestamp']));
-  if (startTs === null) {
-    throw new Error(`Missing start timestamp for campaign ${campaignId}`);
-  }
-
-  const nowTs = Math.floor(Date.now() / 1000);
-  const dailyRewardsRecords = extractDailyRewardsRecords(metrics);
-  const distributedSoFar = Math.min(
-    estimateDistributedSoFar(dailyRewardsRecords, startTs, endTs, nowTs),
-    totalBudget
-  );
-  const remainingBudget = Math.max(totalBudget - distributedSoFar, 0);
-  const remainingDays = Math.max((endTs - nowTs) / SECONDS_PER_DAY, MIN_REMAINING_DAYS);
-  const desiredDaily = remainingBudget / remainingDays;
-  const duration = Math.max(endTs - startTs, 1);
-  const elapsed = Math.min(Math.max(nowTs - startTs, 0), duration);
-  const expectedByNow = totalBudget * (elapsed / duration);
-
-  return {
-    campaignId,
-    totalBudget,
-    desiredDaily,
-    remainingBudget,
-    remainingDays,
-    maxAPR,
-    computedUntil: extractComputedUntil(campaign),
-    asOf: nowTs,
-    distributedSoFar,
-    latestTvl:
-      campaignTvlFromOpportunityIndex ??
-      toNumber(getAtPath(opportunity, ['tvl'])) ??
-      extractLatestTvl(metrics),
-    startTimestamp: startTs,
-    endTimestamp: endTs,
-    expectedByNow,
-  };
+  return rewardAmount;
 };
 
 export const getMerklForecastState = async (campaignId: string): Promise<MerklForecastState> => {
@@ -326,23 +289,64 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
 
   const request = (async () => {
     try {
-      const [campaign, metrics, campaignTvlMap] = await Promise.all([
+      const campaignOpportunityMetaMap = await getCampaignOpportunityMetaMap();
+      const campaignOpportunityMeta = campaignOpportunityMetaMap.get(campaignId) ?? null;
+
+      if (campaignOpportunityMeta?.campaignTypeHint === 'UNSUPPORTED') {
+        throw new Error(
+          `Campaign ${campaignId} has unsupported distribution type ${campaignOpportunityMeta.distributionTypeRaw ?? 'UNKNOWN'}`
+        );
+      }
+
+      const [campaign, metrics] = await Promise.all([
         fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}`),
         fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`),
-        getCampaignTvlMap(),
       ]);
-      const opportunityId = getAtPath(campaign, ['opportunityId']);
-      const opportunity =
-        typeof opportunityId === 'string' && opportunityId
-          ? await fetchJson(`${MERKL_BASE_URL}/opportunities/${opportunityId}`).catch(() => null)
-          : null;
-      const state = buildForecastState(
-        campaignId,
-        campaign,
-        metrics,
-        opportunity,
-        campaignTvlMap.get(campaignId) ?? null
+
+      const campaignType = resolveCampaignType(
+        campaignOpportunityMeta?.campaignTypeHint ?? 'UNKNOWN',
+        campaign
       );
+      if (campaignType === 'UNSUPPORTED' || campaignType === 'UNKNOWN') {
+        throw new Error(`Campaign ${campaignId} has unsupported distribution type`);
+      }
+
+      const startTs = toNumber(getAtPath(campaign, ['startTimestamp']));
+      if (startTs === null) {
+        throw new Error(`Missing start timestamp for campaign ${campaignId}`);
+      }
+      const endTs = toNumber(getAtPath(campaign, ['endTimestamp']));
+      if (endTs === null) {
+        throw new Error(`Missing end timestamp for campaign ${campaignId}`);
+      }
+
+      const totalBudget = extractNormalizedTotalBudget(campaign, campaignId);
+      const nowTs = Math.floor(Date.now() / 1000);
+      const dailyRewardsRecords = extractDailyRewardsRecords(metrics);
+      const distributedSoFar = Math.min(
+        estimateDistributedSoFar(dailyRewardsRecords, startTs, endTs, nowTs),
+        totalBudget
+      );
+      const maxAPR =
+        campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
+        campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+          ? extractMaxApr(campaign)
+          : null;
+      const latestTvl = campaignOpportunityMeta?.tvl ?? extractLatestTvl(metrics);
+
+      const state = buildForecastState({
+        campaignId,
+        campaignType,
+        totalBudget,
+        maxAPR,
+        startTimestamp: startTs,
+        endTimestamp: endTs,
+        nowTimestamp: nowTs,
+        distributedSoFar,
+        latestTvl,
+        computedUntil: extractComputedUntil(campaign),
+      });
+
       forecastCache.set(campaignId, {
         data: state,
         expiresAt: Date.now() + CACHE_TTL_MS,

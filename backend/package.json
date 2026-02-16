@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsx src/server.ts",
+    "dev:watch": "tsx watch src/server.ts",
     "prune": "ts-prune 2>&1 | (grep -v '(used in module)' | grep -q . && exit 1 || exit 0)"
   },
   "dependencies": {

@@ -15,6 +15,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
+    "dev:watch": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "ci": "npm ci && npm run build && npm run prune && cd backend && npm ci && npm run build && npm run prune",
     "deploy": "./deploy.sh",

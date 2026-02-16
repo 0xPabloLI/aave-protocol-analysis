@@ -43,6 +43,7 @@ export interface MarketWithSpread {
       campaignStartedAt: string;
       campaignEndedAt: string;
       campaignId: string;
+      distributionType?: string;
       pointsPerThousandUsd?: number;
       dailyPoints?: number;
     }>;
@@ -56,6 +57,7 @@ export interface MarketWithSpread {
       campaignStartedAt: string;
       campaignEndedAt: string;
       campaignId: string;
+      distributionType?: string;
       pointsPerThousandUsd?: number;
       dailyPoints?: number;
     }>;
@@ -69,6 +71,7 @@ export interface MarketWithSpread {
       campaignStartedAt: string;
       campaignEndedAt: string;
       campaignId: string;
+      distributionType?: string;
       pointsPerThousandUsd?: number;
       dailyPoints?: number;
     }>;

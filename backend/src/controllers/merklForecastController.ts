@@ -5,8 +5,10 @@ import type { MarketWithSpread } from '../types/index.js';
 
 const toResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>) => ({
   campaignId: state.campaignId,
+  campaignType: state.campaignType,
   totalBudget: state.totalBudget,
-  desiredDaily: state.desiredDaily,
+  plannedDaily: state.plannedDaily,
+  requiredDaily: state.requiredDaily,
   remainingBudget: state.remainingBudget,
   remainingDays: state.remainingDays,
   maxAPR: state.maxAPR,
@@ -21,7 +23,8 @@ const toResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>
 
 const inferErrorStatus = (error: unknown): number => {
   const message = error instanceof Error ? error.message : String(error);
-  if (/not MAX_APR capped/i.test(message)) return 422;
+  if (/unsupported distribution type/i.test(message)) return 422;
+  if (/Missing max APR/i.test(message)) return 422;
   if (/Missing .*campaign/i.test(message) || /Missing .*timestamp/i.test(message)) return 422;
   if (/Merkl API 404/i.test(message)) return 404;
   return 500;

@@ -69,6 +69,7 @@ export interface MerklCampaignBreakdown {
   campaignStartedAt: string;
   campaignEndedAt: string;
   campaignId: string;
+  distributionType?: string;
   pointsPerThousandUsd?: number; // Tydro 协议的 points/1000USD 值
   dailyPoints?: number; // Tydro 协议的每日 points
 }
@@ -97,6 +98,7 @@ export interface MerklOpportunity {
   explorerAddress?: string; // 用于索引的地址
   identifier?: string; // 用于构建 Merkl opportunity 链接的标识符
   type?: string; // opportunity 类型，用于构建链接（如 MULTILOG_DUTCH, EULER 等）
+  distributionType?: string;
   status?: string; // "LIVE" or other statuses
   tvl?: number; // TVL 值，用于计算 points/1000USD
   protocol?: {
@@ -113,6 +115,8 @@ export interface MerklOpportunity {
   rewardsRecord: {
     breakdowns: Array<{
       campaignId: string; // 实际使用的字段
+      distributionType?: string;
+      distributionMethod?: string;
       value?: number; // points 值，用于 tydro 协议
       token?: {
         address?: string;
@@ -447,6 +451,8 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
           campaignStartedAt: campaignDetails?.startedAt || '',
           campaignEndedAt: campaignDetails?.endedAt || '',
           campaignId: rewardsBreakdown.campaignId || opp.id,
+          distributionType:
+            rewardsBreakdown.distributionType || rewardsBreakdown.distributionMethod || opp.distributionType,
           pointsPerThousandUsd: pointsPerThousandUsd,
           dailyPoints: dailyPoints
         });
@@ -465,7 +471,9 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
             campaignApr: campaignDetails.apr,
             campaignStartedAt: campaignDetails.startedAt,
             campaignEndedAt: campaignDetails.endedAt,
-            campaignId: rewardBreakdown.campaignId
+            campaignId: rewardBreakdown.campaignId,
+            distributionType:
+              rewardBreakdown.distributionType || rewardBreakdown.distributionMethod || opp.distributionType
           });
         }
       }
