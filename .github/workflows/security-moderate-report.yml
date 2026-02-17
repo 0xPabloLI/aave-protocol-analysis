@@ -1,0 +1,99 @@
+name: Security Moderate Report
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build moderate audit summary
+        id: summary
+        run: |
+          npm audit --omit=dev --json > audit-report.json || true
+          node <<'NODE'
+          const fs = require('fs');
+          const report = JSON.parse(fs.readFileSync('audit-report.json', 'utf8'));
+          const vulnerabilities = report.vulnerabilities || {};
+          const moderate = Object.entries(vulnerabilities)
+            .filter(([, detail]) => detail && detail.severity === 'moderate')
+            .map(([name, detail]) => {
+              const via = Array.isArray(detail.via)
+                ? detail.via.find((item) => item && typeof item === 'object' && item.title)
+                : null;
+              return {
+                name,
+                range: detail.range || 'unknown',
+                title: via?.title || 'Moderate severity advisory',
+                url: via?.url || '',
+              };
+            });
+          const now = new Date().toISOString();
+          let markdown = `## Moderate dependency vulnerabilities\\n\\nGenerated at: ${now}\\n\\n`;
+          if (moderate.length === 0) {
+            markdown += 'No moderate vulnerabilities found in runtime dependencies.\\n';
+          } else {
+            markdown += `Found **${moderate.length}** moderate vulnerabilities.\\n\\n`;
+            markdown += '| Package | Affected Range | Advisory |\\n';
+            markdown += '| --- | --- | --- |\\n';
+            for (const item of moderate) {
+              const advisory = item.url ? `[${item.title}](${item.url})` : item.title;
+              markdown += `| ${item.name} | ${item.range} | ${advisory} |\\n`;
+            }
+          }
+          fs.writeFileSync('moderate-report.md', markdown);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `count=${moderate.length}\\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `report_path=moderate-report.md\\n`);
+          NODE
+
+      - name: Create or update tracking issue
+        if: steps.summary.outputs.count != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const title = 'Security audit: moderate vulnerabilities (tracking)';
+            const body = fs.readFileSync('${{ steps.summary.outputs.report_path }}', 'utf8');
+            const { owner, repo } = context.repo;
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find((issue) => issue.title === title);
+
+            if (existing) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+              });
+            }
