@@ -5,6 +5,7 @@ import {
   type CampaignForecastType,
   type MerklForecastState,
 } from './merklForecastModel.js';
+import { fetchMerklOpportunities } from './merklOpportunityClient.js';
 
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const SECONDS_PER_DAY = 86400;
@@ -177,20 +178,14 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
     return campaignOpportunityCache.data;
   }
 
-  const [aaveOpps, tydroOpps] = await Promise.all([
-    fetchJson(`${MERKL_BASE_URL}/opportunities?mainProtocolId=aave`).catch(() => []),
-    fetchJson(`${MERKL_BASE_URL}/opportunities?mainProtocolId=tydro`).catch(() => []),
-  ]);
-
-  const allOpps = [
-    ...(Array.isArray(aaveOpps) ? aaveOpps : []),
-    ...(Array.isArray(tydroOpps) ? tydroOpps : []),
-  ];
+  const allOpps = await fetchMerklOpportunities({
+    mainProtocolId: 'aave,tydro',
+    status: 'LIVE',
+    itemsPerPage: 100,
+  });
 
   const map = new Map<string, CampaignOpportunityMeta>();
   allOpps.forEach((opp) => {
-    const status = getAtPath(opp, ['status']);
-    if (status !== 'LIVE') return;
     const tvl = toNumber(getAtPath(opp, ['tvl']));
     if (tvl === null || tvl < 0) return;
     const oppDistributionTypeRaw = getAtPath(opp, ['distributionType']);

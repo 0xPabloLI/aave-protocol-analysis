@@ -280,6 +280,72 @@ interface MarketsResponse {
 
 ---
 
+### 5. 获取单个 Merkl Forecast State
+
+**端点**: `GET /api/campaigns/:campaignId/forecast-state`
+
+**描述**: 返回指定 campaign 的预测状态（支持 `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE`、`DUTCH_AUCTION`、`FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE`）。
+
+**响应字段**:
+
+```json
+{
+  "campaignId": "5444122873012762234",
+  "campaignType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+  "plannedDaily": 3947.6,
+  "requiredDaily": 4123.4,
+  "aprCap": 0.032,
+  "totalBudget": 67306.4,
+  "distributedSoFar": 42111.23,
+  "latestTvl": 45123678.12,
+  "endTimestamp": 1770274800
+}
+```
+
+**状态码**:
+- `200`: 成功
+- `404`: campaign 不存在
+- `422`: campaign 类型不支持或字段缺失
+- `500`: 服务端错误
+
+---
+
+### 6. 批量获取 Merkl Forecast States
+
+**端点**: `GET /api/campaigns/forecast-states`
+
+**请求参数**:
+- `ids` (可选): 逗号分隔 campaignId 列表；省略时默认返回当前 markets 中全部 campaign 的状态。
+
+**响应格式**:
+
+```json
+{
+  "requested": 23,
+  "items": [],
+  "errors": []
+}
+```
+
+其中：
+- `items` 为成功计算的 campaign 状态数组（字段同单个接口）。
+- `errors` 为失败项数组：`{ campaignId, status, message }`。
+
+**状态码**:
+- `200`: 成功（部分失败也返回 200，失败体现在 `errors`）
+- `400`: `ids` 过多（最多 100）
+- `500`: 服务端错误
+
+---
+
+## Merkl TVL 与分发进度口径
+
+- Forecast 的 `latestTvl` 优先取 Merkl opportunities 的 `tvl`。
+- 如果 opportunities 中没有可用 TVL，则回退到 `/v4/campaigns/{id}/metrics` 的 `tvlRecords`，并取**最新时间戳**对应的 `total`。
+- `distributedSoFar` 使用 metrics 的 `dailyRewardsRecords` 做时间积分估算（按时间段累积 daily rate）。
+
+以上均来自 Merkl API，不从 Aave SDK 直接读取 campaign 级 TVL。
+
 ### 5. 健康检查
 
 **端点**: `GET /health`

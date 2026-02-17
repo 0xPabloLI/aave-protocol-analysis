@@ -7,6 +7,8 @@ import { logger } from './logger.js';
 import { merklFetchConfig } from './config.js';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
+const MERKL_MAX_ITEMS_PER_PAGE = 100;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -185,33 +187,47 @@ export type TokenPricesIndex = Record<string, TokenPriceEntry>;
  */
 export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
   try {
-    logger.info('🔄 Fetching Merkl opportunities for Aave and Tydro...');
-    
-    // 并发获取 aave 和 tydro 的数据（带重试）
-    const [aaveResponse, tydroResponse] = await Promise.all([
-      fetchWithRetry('https://api.merkl.xyz/v4/opportunities?mainProtocolId=aave', 'Merkl opportunities (aave)'),
-      fetchWithRetry('https://api.merkl.xyz/v4/opportunities?mainProtocolId=tydro', 'Merkl opportunities (tydro)').catch((error) => {
-        logger.warn('⚠️ Failed to fetch Tydro opportunities after retries:', error);
-        return null as unknown as Response;
-      })
-    ]);
-    
-    if (!aaveResponse.ok) {
-      throw new Error(`HTTP error! status: ${aaveResponse.status}`);
+    logger.info('🔄 Fetching Merkl opportunities for Aave + Tydro (LIVE, paginated)...');
+
+    const baseQuery = new URLSearchParams({
+      mainProtocolId: 'aave,tydro',
+      status: 'LIVE',
+      items: String(MERKL_MAX_ITEMS_PER_PAGE),
+    });
+
+    const countResponse = await fetchWithRetry(
+      `${MERKL_BASE_URL}/opportunities/count?${baseQuery.toString()}`,
+      'Merkl opportunities count (aave,tydro,live)'
+    ).catch(() => null as unknown as Response);
+
+    let totalCount: number | null = null;
+    if (countResponse && countResponse.ok) {
+      const rawCount = await countResponse.json();
+      const parsed = typeof rawCount === 'number' ? rawCount : Number(rawCount);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        totalCount = Math.floor(parsed);
+      }
     }
-    if (!tydroResponse || !tydroResponse.ok) {
-      const status = tydroResponse?.status ?? 'unknown';
-      logger.warn(`⚠️ Failed to fetch Tydro opportunities: HTTP ${status}`);
-    }
-    
-    const aaveOpportunities = await aaveResponse.json() as MerklOpportunity[];
-    const tydroOpportunities = tydroResponse && tydroResponse.ok 
-      ? (await tydroResponse.json() as MerklOpportunity[])
-      : [];
-    
-    const allOpportunities = [...aaveOpportunities, ...tydroOpportunities];
-    logger.info(`✅ Found ${aaveOpportunities.length} Aave opportunities and ${tydroOpportunities.length} Tydro opportunities (total: ${allOpportunities.length})`);
-    
+
+    const totalPages = totalCount === null ? 1 : Math.max(Math.ceil(totalCount / MERKL_MAX_ITEMS_PER_PAGE), 1);
+    const pageRequests = Array.from({ length: totalPages }, (_, page) => {
+      const pageQuery = new URLSearchParams(baseQuery);
+      pageQuery.set('page', String(page));
+      const url = `${MERKL_BASE_URL}/opportunities?${pageQuery.toString()}`;
+      return fetchWithRetry(url, `Merkl opportunities page ${page}`)
+        .then(async (response) => {
+          if (!response.ok) return [] as MerklOpportunity[];
+          const payload = (await response.json()) as unknown;
+          return Array.isArray(payload) ? (payload as MerklOpportunity[]) : [];
+        })
+        .catch(() => [] as MerklOpportunity[]);
+    });
+
+    const pages = await Promise.all(pageRequests);
+    const allOpportunities = pages.flat();
+    logger.info(
+      `✅ Fetched ${allOpportunities.length} live opportunities from Merkl (count=${totalCount ?? 'unknown'}, pages=${totalPages})`
+    );
     return allOpportunities;
   } catch (error) {
     logger.error('❌ Error fetching Merkl opportunities:', error);

@@ -127,10 +127,16 @@ The backend API server runs on `http://localhost:3001` by default. Available end
 - `GET /api/markets/stats` - Get statistics (total pools, chains, tokens)
 - `GET /api/markets/chains` - Get list of supported chains
 - `GET /api/markets/list` - Get list of markets
+- `GET /api/campaigns/:campaignId/forecast-state` - Get one Merkl campaign forecast state
+- `GET /api/campaigns/forecast-states` - Get batch Merkl campaign forecast states (all by default, or by `ids=...`)
 
 **Data Freshness Mechanism**: All endpoints automatically check data freshness (1-minute window). If data is stale, the system automatically triggers an update and waits for completion before returning results. This ensures users always receive up-to-date information without manual refresh.
 
 For detailed information about the data freshness mechanism, see [backend/DATA-FRESHNESS-MECHANISM.md](backend/DATA-FRESHNESS-MECHANISM.md).
+
+### Merkl opportunities ingest note
+
+Merkl opportunities are paginated upstream (default 20, max 100 per page). The service fetches paginated `LIVE` opportunities for `mainProtocolId=aave,tydro` when building campaign forecast mappings, to avoid missing campaigns beyond page 1.
 
 ## Output Files
 
