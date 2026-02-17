@@ -49,7 +49,9 @@ jobs:
         run: npm ci
 
       - name: Attempt dependency remediation
-        run: npm audit fix --omit=dev || true
+        run: |
+          npm audit fix --omit=dev || true
+          npm --prefix backend audit fix --omit=dev || true
 
       - name: Validate build after remediation
         id: verify
@@ -92,8 +94,8 @@ jobs:
 
             Actions performed:
             - `npm audit fix --omit=dev`
+            - `npm --prefix backend audit fix --omit=dev`
             - `npm run build`
             - `npm --prefix backend run build`
-
-            Please review before merge.
+          labels: ci-auto-remediation,dependencies
           base: ${{ steps.branch.outputs.name }}

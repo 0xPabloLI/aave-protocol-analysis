@@ -1,6 +1,6 @@
 # CI + Security Automation Flow
 
-This repository now has three related workflows:
+This repository now has four related workflows:
 
 1. `CI` (`.github/workflows/ci.yml`)
    - Triggered by `push` and `pull_request`
@@ -17,12 +17,22 @@ This repository now has three related workflows:
 
 3. `CI Auto Remediation` (`.github/workflows/ci-auto-remediation.yml`)
    - Triggered when `CI` fails on `push` (or manually)
-   - Attempts automatic dependency remediation:
-     - `npm audit fix --omit=dev`
-   - Validates by running:
-     - `npm run build`
-     - `npm --prefix backend run build`
-   - If changes exist and validation passes, opens a bot PR to the same branch
+  - Attempts automatic dependency remediation:
+    - `npm audit fix --omit=dev`
+    - `npm --prefix backend audit fix --omit=dev`
+  - Validates by running:
+    - `npm run build`
+    - `npm --prefix backend run build`
+  - If changes exist and validation passes, opens a bot PR to the same branch
+
+4. `Auto Approve Remediation PR` (`.github/workflows/auto-approve-remediation-pr.yml`)
+   - Triggered on remediation PR updates (`pull_request_target`)
+   - Applies policy checks:
+     - only dependency manifest/lock files may change
+   - If policy passes:
+     - bot submits an approval review
+     - auto-merge is enabled (squash)
+   - Result: remediation PR can merge automatically after required checks pass
 
 ## How to use
 
@@ -31,6 +41,7 @@ This repository now has three related workflows:
   - If High/Critical vulnerabilities appear, `CI` fails and blocks merge
 - Auto-fix flow:
   - Failed `CI` on push -> `CI Auto Remediation` tries to fix -> opens PR if safe
+  - `Auto Approve Remediation PR` auto-approves that PR and enables auto-merge
 - Moderate tracking flow:
   - Weekly scheduled run updates the single tracking issue
 
