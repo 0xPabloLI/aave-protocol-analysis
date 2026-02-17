@@ -64,20 +64,26 @@ export const fetchMerklOpportunities = async (
   options: FetchMerklOpportunitiesOptions = {}
 ): Promise<unknown[]> => {
   const items = clampItemsPerPage(options.itemsPerPage);
-  const baseQuery: Record<string, QueryPrimitive | undefined> = {
+  const pageQueryBase: Record<string, QueryPrimitive | undefined> = {
     mainProtocolId: options.mainProtocolId,
     status: options.status,
     campaigns: options.campaigns,
     distributionTypes: options.distributionTypes,
     items,
   };
+  const countQueryBase: Record<string, QueryPrimitive | undefined> = {
+    mainProtocolId: options.mainProtocolId,
+    status: options.status,
+    distributionTypes: options.distributionTypes,
+    items,
+  };
 
-  const totalCount = await fetchCount(baseQuery);
+  const totalCount = await fetchCount(countQueryBase);
   if (totalCount !== null) {
     const totalPages = Math.max(Math.ceil(totalCount / items), 1);
     const pageRequests = Array.from({ length: totalPages }, (_, page) => {
       const pageQuery = buildQuery({
-        ...baseQuery,
+        ...pageQueryBase,
         page,
       });
       const url = `${MERKL_BASE_URL}/opportunities?${pageQuery}`;
@@ -92,7 +98,7 @@ export const fetchMerklOpportunities = async (
   const aggregated: unknown[] = [];
   for (let page = 0; ; page += 1) {
     const pageQuery = buildQuery({
-      ...baseQuery,
+      ...pageQueryBase,
       page,
     });
     const url = `${MERKL_BASE_URL}/opportunities?${pageQuery}`;

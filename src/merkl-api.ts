@@ -131,6 +131,16 @@ export interface MerklOpportunity {
       // API 可能返回其他字段，但处理逻辑中未使用
     }>;
   };
+  campaigns?: MerklEmbeddedCampaign[];
+}
+
+interface MerklEmbeddedCampaign {
+  id?: string;
+  campaignId?: string;
+  startTimestamp?: string | number | bigint;
+  endTimestamp?: string | number | bigint;
+  apr?: number;
+  params?: any;
 }
 
 export interface MerklCampaignDetails {
@@ -156,6 +166,21 @@ export function isCampaignWhitelistOnly(campaign: any): boolean {
 
   return composedCampaigns.some((entry: any) => hasEntries(entry?.campaignParameters?.whitelist));
 }
+
+const toIsoFromUnixLike = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  const numeric =
+    typeof value === 'bigint'
+      ? Number(value)
+      : typeof value === 'string'
+        ? Number(value)
+        : typeof value === 'number'
+          ? value
+          : NaN;
+  if (!Number.isFinite(numeric) || numeric <= 0) return '';
+  const ms = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+  return new Date(ms).toISOString();
+};
 
 // Merkl 数据结构：每个 opportunity 存储一次
 export interface MerklOpportunityData {
@@ -192,11 +217,17 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
     const baseQuery = new URLSearchParams({
       mainProtocolId: 'aave,tydro',
       status: 'LIVE',
+      campaigns: 'true',
+      items: String(MERKL_MAX_ITEMS_PER_PAGE),
+    });
+    const countQuery = new URLSearchParams({
+      mainProtocolId: 'aave,tydro',
+      status: 'LIVE',
       items: String(MERKL_MAX_ITEMS_PER_PAGE),
     });
 
     const countResponse = await fetchWithRetry(
-      `${MERKL_BASE_URL}/opportunities/count?${baseQuery.toString()}`,
+      `${MERKL_BASE_URL}/opportunities/count?${countQuery.toString()}`,
       'Merkl opportunities count (aave,tydro,live)'
     ).catch(() => null as unknown as Response);
 
@@ -421,31 +452,46 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   const aaveCount = liveOpportunities.length - tydroCount;
   logger.info(`Processing ${liveOpportunities.length} live opportunities (${aaveCount} Aave, ${tydroCount} Tydro)`);
   
-  // 优化：收集所有唯一的 campaignId，批量并发请求
-  const uniqueCampaignIds = new Set<string>();
+  const campaignDetailsCache = new Map<string, MerklCampaignDetails | null>();
   for (const opp of liveOpportunities) {
-    if (opp.rewardsRecord?.breakdowns) {
-      for (const breakdown of opp.rewardsRecord.breakdowns) {
-        if (breakdown.campaignId) {
-          uniqueCampaignIds.add(breakdown.campaignId);
-        }
+    if (!Array.isArray(opp.campaigns)) continue;
+    opp.campaigns.forEach((campaign) => {
+      const id = String(campaign.id || '').trim();
+      if (!id) return;
+      if (campaignDetailsCache.has(id)) return;
+      campaignDetailsCache.set(id, {
+        startedAt: toIsoFromUnixLike(campaign.startTimestamp),
+        endedAt: toIsoFromUnixLike(campaign.endTimestamp),
+        id,
+        apr: Number(campaign.apr || 0),
+        whitelistOnly: isCampaignWhitelistOnly(campaign),
+      });
+    });
+  }
+
+  // 补拉少量未在 opportunities.campaigns 出现的 campaign（兼容上游数据缺口）
+  const missingCampaignIds = new Set<string>();
+  for (const opp of liveOpportunities) {
+    if (!opp.rewardsRecord?.breakdowns) continue;
+    for (const breakdown of opp.rewardsRecord.breakdowns) {
+      const id = String(breakdown.campaignId || '').trim();
+      if (!id) continue;
+      if (!campaignDetailsCache.has(id)) {
+        missingCampaignIds.add(id);
       }
     }
   }
-  
-  logger.info(`📦 Fetching ${uniqueCampaignIds.size} unique campaign details concurrently...`);
-  
-  // 并发请求所有 campaign details，使用缓存避免重复请求
-  const campaignDetailsCache = new Map<string, MerklCampaignDetails | null>();
-  const campaignPromises = Array.from(uniqueCampaignIds).map(async (campaignId) => {
-    const details = await fetchMerklCampaignDetails(campaignId);
-    campaignDetailsCache.set(campaignId, details);
-    return { campaignId, details };
-  });
-  
-  // 等待所有请求完成（并发执行）
-  await Promise.all(campaignPromises);
-  logger.info(`✅ Fetched ${campaignDetailsCache.size} campaign details`);
+
+  if (missingCampaignIds.size > 0) {
+    logger.info(`📦 Fetching ${missingCampaignIds.size} missing campaign details (fallback)...`);
+    const campaignPromises = Array.from(missingCampaignIds).map(async (campaignId) => {
+      const details = await fetchMerklCampaignDetails(campaignId);
+      campaignDetailsCache.set(campaignId, details);
+      return { campaignId, details };
+    });
+    await Promise.all(campaignPromises);
+  }
+  logger.info(`✅ Campaign details cache ready: ${campaignDetailsCache.size} items`);
   
   // 处理所有 live opportunities（现在可以快速从缓存中获取数据）
   for (const opp of liveOpportunities) {
