@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { fetchMerklOpportunities } from '../src/services/merklOpportunityClient.js';
 
-test('fetchMerklOpportunities paginates by count endpoint and merges pages', async () => {
+test('fetchMerklOpportunities paginates by short-page termination and merges pages', async () => {
   const calls: string[] = [];
   const originalFetch = globalThis.fetch;
 
