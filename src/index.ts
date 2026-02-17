@@ -1,7 +1,7 @@
 import './env.js';
 import { writeFile, mkdir } from 'fs/promises';
-import { chainId, AaveClient } from "@aave/client";
-import { markets } from "@aave/client/actions";
+import { chainId, AaveClient, ChainsFilter } from "@aave/client";
+import { markets, chains } from "@aave/client/actions";
 import * as addressBook from "@bgd-labs/aave-address-book";
 
 // 创建 Aave 客户端实例
@@ -90,7 +90,7 @@ function buildChainTokenIndex(baseDataset: FormattedReserveData[]): Record<strin
   return index;
 }
 
-function getAllAaveV3Networks(): NetworkInfo[] {
+function getAllAaveV3NetworksFromAddressBook(): NetworkInfo[] {
   // 获取所有 AaveV3 网络（排除测试网）
   const aaveV3Networks = Object.keys(addressBook).filter(key => 
     key.startsWith('AaveV3') && 
@@ -108,6 +108,62 @@ function getAllAaveV3Networks(): NetworkInfo[] {
   }).filter(info => info.chainId); // 只保留有chainId的网络
 
   return networkInfo;
+}
+
+function extractChainsResult(result: unknown): Array<{ chainId: number; name?: string }> {
+  if (result && typeof result === 'object' && 'isErr' in result && typeof (result as any).isErr === 'function') {
+    if ((result as any).isErr()) {
+      const errorInfo = (result as any).error;
+      throw new Error(errorInfo?.message || 'Failed to fetch chains from Aave API');
+    }
+    return ((result as any).value || []) as Array<{ chainId: number; name?: string }>;
+  }
+
+  if (Array.isArray(result)) {
+    return result as Array<{ chainId: number; name?: string }>;
+  }
+
+  if (result && typeof result === 'object' && 'value' in (result as any) && Array.isArray((result as any).value)) {
+    return (result as any).value as Array<{ chainId: number; name?: string }>;
+  }
+
+  throw new Error('Unexpected chains response format from Aave API');
+}
+
+async function getAllAaveV3Networks(): Promise<NetworkInfo[]> {
+  const fallback = getAllAaveV3NetworksFromAddressBook();
+  const addressBookPoolByChainId = new Map<number, string>();
+  fallback.forEach((entry) => {
+    addressBookPoolByChainId.set(entry.chainId, entry.poolAddress);
+  });
+
+  try {
+    const result = await chains(client, ChainsFilter.MAINNET_ONLY);
+    const apiChains = extractChainsResult(result);
+
+    const networkInfo: NetworkInfo[] = apiChains
+      .map((chain) => {
+        const id = Number(chain.chainId);
+        if (!Number.isFinite(id) || id <= 0) return null;
+        const chainName = typeof chain.name === 'string' && chain.name.trim() ? chain.name.trim() : `Chain${id}`;
+        return {
+          name: `AaveV3${chainName.replace(/\s+/g, '')}`,
+          chainId: id,
+          poolAddress: addressBookPoolByChainId.get(id) || '',
+        } as NetworkInfo;
+      })
+      .filter((entry): entry is NetworkInfo => entry !== null);
+
+    if (networkInfo.length === 0) {
+      throw new Error('Aave API returned empty mainnet chain list');
+    }
+
+    logger.info(`✅ Loaded ${networkInfo.length} chains from Aave API (MAINNET_ONLY)`);
+    return networkInfo;
+  } catch (error) {
+    logger.warn(`⚠️ Failed to fetch chains from Aave API, falling back to address-book: ${error instanceof Error ? error.message : String(error)}`);
+    return fallback;
+  }
 }
 
 
@@ -539,7 +595,7 @@ async function fetchAaveMarketData(): Promise<MarketData> {
   logger.info('🔄 Fetching Aave markets data from all networks...');
   
   // 获取所有 AaveV3 网络信息
-  const networkInfo = getAllAaveV3Networks();
+  const networkInfo = await getAllAaveV3Networks();
   const chainIds = [...new Set(networkInfo.map(info => info.chainId))]; // 去重
   
   logger.info(`🌐 Found ${networkInfo.length} AaveV3 networks across ${chainIds.length} unique chains`);
@@ -852,7 +908,7 @@ async function fetchAaveMarkets(): Promise<void> {
   } catch (error) {
     logger.error('💥 Unexpected error:', error);
     
-    const networkInfo = getAllAaveV3Networks();
+    const networkInfo = await getAllAaveV3Networks();
     const chainIds = [...new Set(networkInfo.map(info => info.chainId))];
     
     // 即使出错也保存错误信息到文件

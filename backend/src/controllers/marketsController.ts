@@ -241,13 +241,26 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 
     const lastUpdated = dataService.getLastUpdated();
     const isStale = dataService.isStale();
+    const rawTokenPrices = dataService.getTokenPrices();
+    const tokenPrices = rawTokenPrices
+      ? Object.fromEntries(
+          Object.entries(rawTokenPrices).map(([key, entry]) => [
+            key,
+            {
+              price: entry.price,
+              updatedAt: entry.updatedAt,
+              source: entry.source,
+            },
+          ])
+        )
+      : undefined;
 
     const response: MarketsResponse = {
       data: filteredData,
       lastUpdated: lastUpdated?.toISOString() || new Date().toISOString(),
       isStale,
       updateInProgress: getUpdateStatus().status === 'updating',
-      tokenPrices: dataService.getTokenPrices() || undefined,
+      tokenPrices,
     };
 
     res.json(response);

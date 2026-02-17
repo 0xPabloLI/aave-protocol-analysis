@@ -43,6 +43,7 @@ export interface MarketWithSpread {
       campaignStartedAt: string;
       campaignEndedAt: string;
       campaignId: string;
+      whitelistOnly?: boolean;
       distributionType?: string;
       pointsPerThousandUsd?: number;
       dailyPoints?: number;
@@ -57,6 +58,7 @@ export interface MarketWithSpread {
       campaignStartedAt: string;
       campaignEndedAt: string;
       campaignId: string;
+      whitelistOnly?: boolean;
       distributionType?: string;
       pointsPerThousandUsd?: number;
       dailyPoints?: number;
@@ -71,6 +73,7 @@ export interface MarketWithSpread {
       campaignStartedAt: string;
       campaignEndedAt: string;
       campaignId: string;
+      whitelistOnly?: boolean;
       distributionType?: string;
       pointsPerThousandUsd?: number;
       dailyPoints?: number;
@@ -93,9 +96,6 @@ export interface MarketWithSpread {
 }
 
 export interface TokenPriceEntry {
-  chainId: number;
-  address: string;
-  symbol: string;
   price: number;
   updatedAt: number;
   source: string;

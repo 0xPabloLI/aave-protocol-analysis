@@ -2,7 +2,6 @@ import { logger } from '../logger.js';
 import {
   buildForecastState,
   normalizeCampaignType,
-  resolveCampaignType,
   type CampaignForecastType,
   type MerklForecastState,
 } from './merklForecastModel.js';
@@ -172,18 +171,6 @@ const fetchJson = async (url: string): Promise<unknown> => {
   return response.json() as Promise<unknown>;
 };
 
-const typePriority = (type: CampaignForecastType): number => {
-  if (
-    type === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
-    type === 'DUTCH_AUCTION' ||
-    type === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  ) {
-    return 3;
-  }
-  if (type === 'UNSUPPORTED') return 2;
-  return 1;
-};
-
 const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOpportunityMeta>> => {
   const now = Date.now();
   if (campaignOpportunityCache && campaignOpportunityCache.expiresAt > now) {
@@ -221,6 +208,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
         (typeof oppDistributionTypeRaw === 'string' && oppDistributionTypeRaw) ||
         null;
       const hintType = normalizeCampaignType(rawType);
+      if (!hintType) return;
 
       const previous = map.get(campaignId);
       if (!previous) {
@@ -234,10 +222,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
 
       map.set(campaignId, {
         tvl: previous.tvl > 0 ? previous.tvl : tvl,
-        campaignTypeHint:
-          typePriority(hintType) > typePriority(previous.campaignTypeHint)
-            ? hintType
-            : previous.campaignTypeHint,
+        campaignTypeHint: previous.campaignTypeHint,
         distributionTypeRaw: previous.distributionTypeRaw ?? rawType,
       });
     });
@@ -292,9 +277,9 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
       const campaignOpportunityMetaMap = await getCampaignOpportunityMetaMap();
       const campaignOpportunityMeta = campaignOpportunityMetaMap.get(campaignId) ?? null;
 
-      if (campaignOpportunityMeta?.campaignTypeHint === 'UNSUPPORTED') {
+      if (!campaignOpportunityMeta) {
         throw new Error(
-          `Campaign ${campaignId} has unsupported distribution type ${campaignOpportunityMeta.distributionTypeRaw ?? 'UNKNOWN'}`
+          `Campaign ${campaignId} has unsupported or missing distribution type in opportunities`
         );
       }
 
@@ -303,13 +288,7 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`),
       ]);
 
-      const campaignType = resolveCampaignType(
-        campaignOpportunityMeta?.campaignTypeHint ?? 'UNKNOWN',
-        campaign
-      );
-      if (campaignType === 'UNSUPPORTED' || campaignType === 'UNKNOWN') {
-        throw new Error(`Campaign ${campaignId} has unsupported distribution type`);
-      }
+      const campaignType = campaignOpportunityMeta.campaignTypeHint;
 
       const startTs = toNumber(getAtPath(campaign, ['startTimestamp']));
       if (startTs === null) {
@@ -327,7 +306,7 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         estimateDistributedSoFar(dailyRewardsRecords, startTs, endTs, nowTs),
         totalBudget
       );
-      const maxAPR =
+      const aprCap =
         campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
         campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
           ? extractMaxApr(campaign)
@@ -338,7 +317,7 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         campaignId,
         campaignType,
         totalBudget,
-        maxAPR,
+        aprCap,
         startTimestamp: startTs,
         endTimestamp: endTs,
         nowTimestamp: nowTs,

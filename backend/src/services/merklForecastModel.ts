@@ -4,15 +4,13 @@ const MIN_REMAINING_DAYS = 0.0001;
 export type CampaignForecastType =
   | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   | 'DUTCH_AUCTION'
-  | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  | 'UNSUPPORTED'
-  | 'UNKNOWN';
+  | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
 
 export interface BuildForecastStateInput {
   campaignId: string;
   campaignType: CampaignForecastType;
   totalBudget: number;
-  maxAPR: number | null;
+  aprCap: number | null;
   startTimestamp: number;
   endTimestamp: number;
   nowTimestamp: number;
@@ -23,7 +21,7 @@ export interface BuildForecastStateInput {
 
 export interface MerklForecastState {
   campaignId: string;
-  campaignType: Exclude<CampaignForecastType, 'UNSUPPORTED' | 'UNKNOWN'>;
+  campaignType: CampaignForecastType;
   totalBudget: number;
   // Fixed baseline daily budget over the full campaign window.
   plannedDaily: number;
@@ -31,7 +29,7 @@ export interface MerklForecastState {
   requiredDaily: number;
   remainingBudget: number;
   remainingDays: number;
-  maxAPR: number | null;
+  aprCap: number | null;
   computedUntil: number | null;
   asOf: number;
   distributedSoFar: number;
@@ -50,19 +48,10 @@ const safeNumber = (value: unknown, fallback = 0): number => {
   return fallback;
 };
 
-const getAtPath = (obj: unknown, path: string[]): unknown => {
-  let current: unknown = obj;
-  for (const key of path) {
-    if (!current || typeof current !== 'object') return undefined;
-    current = (current as Record<string, unknown>)[key];
-  }
-  return current;
-};
-
-export const normalizeCampaignType = (value: unknown): CampaignForecastType => {
-  if (typeof value !== 'string') return 'UNKNOWN';
+export const normalizeCampaignType = (value: unknown): CampaignForecastType | null => {
+  if (typeof value !== 'string') return null;
   const normalized = value.trim().toUpperCase();
-  if (!normalized) return 'UNKNOWN';
+  if (!normalized) return null;
 
   if (normalized.includes('MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
     return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
@@ -73,44 +62,7 @@ export const normalizeCampaignType = (value: unknown): CampaignForecastType => {
   if (normalized.includes('FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
     return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
   }
-  return 'UNSUPPORTED';
-};
-
-export const resolveCampaignType = (
-  opportunityHint: CampaignForecastType,
-  campaign: unknown
-): CampaignForecastType => {
-  if (
-    opportunityHint === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
-    opportunityHint === 'DUTCH_AUCTION' ||
-    opportunityHint === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  ) {
-    return opportunityHint;
-  }
-
-  const candidates = [
-    getAtPath(campaign, ['distributionType']),
-    getAtPath(campaign, ['distributionMethod']),
-    getAtPath(campaign, ['params', 'distributionMethod']),
-    getAtPath(campaign, ['params', 'distributionMethodParameters', 'distributionMethod']),
-    getAtPath(campaign, ['params', 'distributionMethodParameters', 'distributionType']),
-    getAtPath(campaign, ['params', 'distributionMethodParameters', 'distributionSettings', 'type']),
-  ];
-
-  let unsupportedSeen = opportunityHint === 'UNSUPPORTED';
-  for (const candidate of candidates) {
-    const type = normalizeCampaignType(candidate);
-    if (
-      type === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
-      type === 'DUTCH_AUCTION' ||
-      type === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-    ) {
-      return type;
-    }
-    if (type === 'UNSUPPORTED') unsupportedSeen = true;
-  }
-
-  return unsupportedSeen ? 'UNSUPPORTED' : 'UNKNOWN';
+  return null;
 };
 
 export const buildForecastState = (input: BuildForecastStateInput): MerklForecastState => {
@@ -121,31 +73,23 @@ export const buildForecastState = (input: BuildForecastStateInput): MerklForecas
   const distributedSoFar = Math.min(Math.max(safeNumber(input.distributedSoFar), 0), totalBudget);
   const latestTvl = Math.max(safeNumber(input.latestTvl), 0);
 
-  if (
-    input.campaignType !== 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' &&
-    input.campaignType !== 'DUTCH_AUCTION' &&
-    input.campaignType !== 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  ) {
-    throw new Error(`Campaign ${input.campaignId} has unsupported distribution type`);
-  }
-
-  const rawMaxApr =
+  const rawAprCap =
     input.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
     input.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-      ? safeNumber(input.maxAPR, NaN)
+      ? safeNumber(input.aprCap, NaN)
       : null;
   if (
     input.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
     input.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   ) {
-    if (rawMaxApr === null || !Number.isFinite(rawMaxApr) || rawMaxApr <= 0) {
-      throw new Error(`Missing max APR for campaign ${input.campaignId}`);
+    if (rawAprCap === null || !Number.isFinite(rawAprCap) || rawAprCap <= 0) {
+      throw new Error(`Missing APR cap for campaign ${input.campaignId}`);
     }
   }
-  const maxAPR =
+  const aprCap =
     input.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
     input.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-      ? rawMaxApr
+      ? rawAprCap
       : null;
 
   const remainingBudget = Math.max(totalBudget - distributedSoFar, 0);
@@ -168,7 +112,7 @@ export const buildForecastState = (input: BuildForecastStateInput): MerklForecas
     requiredDaily,
     remainingBudget,
     remainingDays,
-    maxAPR,
+    aprCap,
     computedUntil: input.computedUntil,
     asOf: nowTs,
     distributedSoFar,

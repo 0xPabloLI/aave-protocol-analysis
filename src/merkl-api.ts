@@ -69,6 +69,7 @@ export interface MerklCampaignBreakdown {
   campaignStartedAt: string;
   campaignEndedAt: string;
   campaignId: string;
+  whitelistOnly?: boolean;
   distributionType?: string;
   pointsPerThousandUsd?: number; // Tydro 协议的 points/1000USD 值
   dailyPoints?: number; // Tydro 协议的每日 points
@@ -135,6 +136,23 @@ export interface MerklCampaignDetails {
   endedAt: string;
   id: string;
   apr: number;
+  whitelistOnly: boolean;
+}
+
+const hasEntries = (value: unknown): boolean => {
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0;
+  return Boolean(value);
+};
+
+export function isCampaignWhitelistOnly(campaign: any): boolean {
+  const topLevelWhitelist = hasEntries(campaign?.params?.whitelist);
+  if (topLevelWhitelist) return true;
+
+  const composedCampaigns = campaign?.params?.composedCampaigns;
+  if (!Array.isArray(composedCampaigns)) return false;
+
+  return composedCampaigns.some((entry: any) => hasEntries(entry?.campaignParameters?.whitelist));
 }
 
 // Merkl 数据结构：每个 opportunity 存储一次
@@ -231,7 +249,8 @@ export async function fetchMerklCampaignDetails(campaignId: string): Promise<Mer
       startedAt,
       endedAt,
       id: campaignId,
-      apr: campaign.apr || 0
+      apr: campaign.apr || 0,
+      whitelistOnly: isCampaignWhitelistOnly(campaign),
     };
   } catch (error) {
     logger.error(`❌ Error fetching campaign ${campaignId}:`, error);
@@ -451,6 +470,7 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
           campaignStartedAt: campaignDetails?.startedAt || '',
           campaignEndedAt: campaignDetails?.endedAt || '',
           campaignId: rewardsBreakdown.campaignId || opp.id,
+          whitelistOnly: campaignDetails?.whitelistOnly || false,
           distributionType:
             rewardsBreakdown.distributionType || rewardsBreakdown.distributionMethod || opp.distributionType,
           pointsPerThousandUsd: pointsPerThousandUsd,
@@ -472,6 +492,7 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
             campaignStartedAt: campaignDetails.startedAt,
             campaignEndedAt: campaignDetails.endedAt,
             campaignId: rewardBreakdown.campaignId,
+            whitelistOnly: campaignDetails.whitelistOnly,
             distributionType:
               rewardBreakdown.distributionType || rewardBreakdown.distributionMethod || opp.distributionType
           });
