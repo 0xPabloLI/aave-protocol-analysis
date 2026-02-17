@@ -26,6 +26,7 @@ interface CampaignOpportunityMeta {
   tvl: number;
   campaignTypeHint: CampaignForecastType;
   distributionTypeRaw: string | null;
+  campaignSnapshot: unknown | null;
 }
 
 interface CampaignOpportunityCacheEntry {
@@ -181,6 +182,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
   const allOpps = await fetchMerklOpportunities({
     mainProtocolId: 'aave,tydro',
     status: 'LIVE',
+    campaigns: true,
     itemsPerPage: 100,
   });
 
@@ -191,10 +193,20 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
     const oppDistributionTypeRaw = getAtPath(opp, ['distributionType']);
     const breakdowns = getAtPath(opp, ['rewardsRecord', 'breakdowns']);
     if (!Array.isArray(breakdowns)) return;
+    const oppCampaignsRaw = getAtPath(opp, ['campaigns']);
+    const oppCampaigns = Array.isArray(oppCampaignsRaw) ? oppCampaignsRaw : [];
+    const campaignSnapshotById = new Map<string, unknown>();
+    oppCampaigns.forEach((campaign) => {
+      const id = getAtPath(campaign, ['id']);
+      if (typeof id === 'string' && id) {
+        campaignSnapshotById.set(id, campaign);
+      }
+    });
 
     breakdowns.forEach((breakdown) => {
       const campaignId = getAtPath(breakdown, ['campaignId']);
       if (typeof campaignId !== 'string' || !campaignId) return;
+      const campaignSnapshot = campaignSnapshotById.get(campaignId) ?? null;
 
       const breakdownDistributionTypeRaw =
         getAtPath(breakdown, ['distributionType']) ?? getAtPath(breakdown, ['distributionMethod']);
@@ -211,6 +223,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
           tvl,
           campaignTypeHint: hintType,
           distributionTypeRaw: rawType,
+          campaignSnapshot,
         });
         return;
       }
@@ -219,6 +232,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
         tvl: previous.tvl > 0 ? previous.tvl : tvl,
         campaignTypeHint: previous.campaignTypeHint,
         distributionTypeRaw: previous.distributionTypeRaw ?? rawType,
+        campaignSnapshot: previous.campaignSnapshot ?? campaignSnapshot,
       });
     });
   });
@@ -278,10 +292,11 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         );
       }
 
-      const [campaign, metrics] = await Promise.all([
-        fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}`),
-        fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`),
-      ]);
+      const campaignPromise = campaignOpportunityMeta.campaignSnapshot
+        ? Promise.resolve(campaignOpportunityMeta.campaignSnapshot)
+        : fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}`);
+      const metricsPromise = fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`);
+      const [campaign, metrics] = await Promise.all([campaignPromise, metricsPromise]);
 
       const campaignType = campaignOpportunityMeta.campaignTypeHint;
 
