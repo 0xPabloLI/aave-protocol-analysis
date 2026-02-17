@@ -73,19 +73,35 @@ export const fetchMerklOpportunities = async (
   };
 
   const totalCount = await fetchCount(baseQuery);
-  const totalPages = totalCount === null ? 1 : Math.max(Math.ceil(totalCount / items), 1);
+  if (totalCount !== null) {
+    const totalPages = Math.max(Math.ceil(totalCount / items), 1);
+    const pageRequests = Array.from({ length: totalPages }, (_, page) => {
+      const pageQuery = buildQuery({
+        ...baseQuery,
+        page,
+      });
+      const url = `${MERKL_BASE_URL}/opportunities?${pageQuery}`;
+      return fetchJson(url)
+        .then((payload) => (Array.isArray(payload) ? payload : []))
+        .catch(() => []);
+    });
+    const pages = await Promise.all(pageRequests);
+    return pages.flat();
+  }
 
-  const pageRequests = Array.from({ length: totalPages }, (_, page) => {
+  const aggregated: unknown[] = [];
+  for (let page = 0; ; page += 1) {
     const pageQuery = buildQuery({
       ...baseQuery,
       page,
     });
     const url = `${MERKL_BASE_URL}/opportunities?${pageQuery}`;
-    return fetchJson(url)
-      .then((payload) => (Array.isArray(payload) ? payload : []))
-      .catch(() => []);
-  });
-
-  const pages = await Promise.all(pageRequests);
-  return pages.flat();
+    const payload = await fetchJson(url).catch(() => []);
+    const itemsInPage = Array.isArray(payload) ? payload : [];
+    aggregated.push(...itemsInPage);
+    if (itemsInPage.length < items) {
+      break;
+    }
+  }
+  return aggregated;
 };

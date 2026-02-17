@@ -91,6 +91,8 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 - `GET /api/markets/stats` - 获取统计信息
 - `GET /api/markets/chains` - 获取链列表
 - `GET /api/markets/list` - 获取市场列表
+- `GET /api/campaigns/:campaignId/forecast-state` - 获取单个 Merkl forecast state
+- `GET /api/campaigns/forecast-states` - 批量获取 Merkl forecast states
 
 ### 路由层 (`routes/markets.ts`)
 
@@ -170,4 +172,3 @@ await new Promise(resolve => setTimeout(resolve, 1000)); // 等待时间
 - 保留了 `updateStatus` 状态管理
 - 保留了定时任务作为后备机制
 - 数据格式完全兼容
-

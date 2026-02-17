@@ -46,27 +46,41 @@ test('fetchMerklOpportunities paginates by count endpoint and merges pages', asy
   }
 });
 
-test('fetchMerklOpportunities falls back to first page when count endpoint fails', async () => {
+test('fetchMerklOpportunities keeps paging when count endpoint fails until page is short', async () => {
+  const calls: string[] = [];
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
+    calls.push(url);
     if (url.includes('/opportunities/count?')) {
       return new Response('error', { status: 500 });
     }
 
-    return new Response(JSON.stringify([{ id: 'only' }]), { status: 200 });
+    if (url.includes('page=0')) {
+      return new Response(JSON.stringify([{ id: 'a' }, { id: 'b' }]), { status: 200 });
+    }
+
+    if (url.includes('page=1')) {
+      return new Response(JSON.stringify([{ id: 'c' }]), { status: 200 });
+    }
+
+    return new Response(JSON.stringify([]), { status: 200 });
   }) as typeof fetch;
 
   try {
     const result = await fetchMerklOpportunities({
       mainProtocolId: 'aave,tydro',
       status: 'LIVE',
-      itemsPerPage: 100,
+      itemsPerPage: 2,
     });
 
-    assert.equal(result.length, 1);
-    assert.equal((result[0] as any).id, 'only');
+    assert.equal(result.length, 3);
+    assert.deepEqual(
+      result.map((item: any) => item.id),
+      ['a', 'b', 'c']
+    );
+    assert.equal(calls.some((url) => url.includes('page=1')), true);
   } finally {
     globalThis.fetch = originalFetch;
   }

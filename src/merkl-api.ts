@@ -209,25 +209,40 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
       }
     }
 
-    const totalPages = totalCount === null ? 1 : Math.max(Math.ceil(totalCount / MERKL_MAX_ITEMS_PER_PAGE), 1);
-    const pageRequests = Array.from({ length: totalPages }, (_, page) => {
-      const pageQuery = new URLSearchParams(baseQuery);
-      pageQuery.set('page', String(page));
-      const url = `${MERKL_BASE_URL}/opportunities?${pageQuery.toString()}`;
-      return fetchWithRetry(url, `Merkl opportunities page ${page}`)
-        .then(async (response) => {
-          if (!response.ok) return [] as MerklOpportunity[];
-          const payload = (await response.json()) as unknown;
-          return Array.isArray(payload) ? (payload as MerklOpportunity[]) : [];
-        })
-        .catch(() => [] as MerklOpportunity[]);
-    });
+    let allOpportunities: MerklOpportunity[] = [];
+    if (totalCount !== null) {
+      const totalPages = Math.max(Math.ceil(totalCount / MERKL_MAX_ITEMS_PER_PAGE), 1);
+      const pageRequests = Array.from({ length: totalPages }, (_, page) => {
+        const pageQuery = new URLSearchParams(baseQuery);
+        pageQuery.set('page', String(page));
+        const url = `${MERKL_BASE_URL}/opportunities?${pageQuery.toString()}`;
+        return fetchWithRetry(url, `Merkl opportunities page ${page}`)
+          .then(async (response) => {
+            if (!response.ok) return [] as MerklOpportunity[];
+            const payload = (await response.json()) as unknown;
+            return Array.isArray(payload) ? (payload as MerklOpportunity[]) : [];
+          })
+          .catch(() => [] as MerklOpportunity[]);
+      });
 
-    const pages = await Promise.all(pageRequests);
-    const allOpportunities = pages.flat();
-    logger.info(
-      `✅ Fetched ${allOpportunities.length} live opportunities from Merkl (count=${totalCount ?? 'unknown'}, pages=${totalPages})`
-    );
+      const pages = await Promise.all(pageRequests);
+      allOpportunities = pages.flat();
+    } else {
+      for (let page = 0; ; page += 1) {
+        const pageQuery = new URLSearchParams(baseQuery);
+        pageQuery.set('page', String(page));
+        const url = `${MERKL_BASE_URL}/opportunities?${pageQuery.toString()}`;
+        const response = await fetchWithRetry(url, `Merkl opportunities page ${page}`).catch(() => null as unknown as Response);
+        if (!response || !response.ok) break;
+        const payload = (await response.json()) as unknown;
+        const items = Array.isArray(payload) ? (payload as MerklOpportunity[]) : [];
+        allOpportunities.push(...items);
+        if (items.length < MERKL_MAX_ITEMS_PER_PAGE) {
+          break;
+        }
+      }
+    }
+    logger.info(`✅ Fetched ${allOpportunities.length} live opportunities from Merkl (count=${totalCount ?? 'unknown'})`);
     return allOpportunities;
   } catch (error) {
     logger.error('❌ Error fetching Merkl opportunities:', error);
@@ -399,18 +414,12 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   const opportunities = await fetchMerklOpportunities();
   const merklData: Record<string, MerklOpportunityData[]> = {};
   logger.info('🔍 Processing Merkl opportunities...');
-  
-  // 过滤出 status 为 "LIVE" 的 opportunities
-  const liveOpportunities = opportunities.filter(opp => opp.status === 'LIVE');
+  // fetchMerklOpportunities 已在 API 层过滤 status=LIVE
+  const liveOpportunities = opportunities;
   const tokenPrices = extractTokenPrices(liveOpportunities);
   const tydroCount = liveOpportunities.filter(opp => opp.protocol?.id === 'tydro').length;
   const aaveCount = liveOpportunities.length - tydroCount;
-  logger.info(`Processing ${liveOpportunities.length} live opportunities (${aaveCount} Aave, ${tydroCount} Tydro, filtered from ${opportunities.length} total)`);
-  
-  if (liveOpportunities.length < opportunities.length) {
-    const filteredCount = opportunities.length - liveOpportunities.length;
-    logger.info(`⚠️ Filtered out ${filteredCount} non-live opportunities`);
-  }
+  logger.info(`Processing ${liveOpportunities.length} live opportunities (${aaveCount} Aave, ${tydroCount} Tydro)`);
   
   // 优化：收集所有唯一的 campaignId，批量并发请求
   const uniqueCampaignIds = new Set<string>();
