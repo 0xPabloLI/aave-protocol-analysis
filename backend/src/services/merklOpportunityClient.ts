@@ -34,24 +34,6 @@ const fetchJson = async (url: string): Promise<unknown> => {
   return response.json() as Promise<unknown>;
 };
 
-const fetchCount = async (query: Record<string, QueryPrimitive | undefined>): Promise<number | null> => {
-  const countQuery = buildQuery(query);
-  const url = `${MERKL_BASE_URL}/opportunities/count${countQuery ? `?${countQuery}` : ''}`;
-  try {
-    const value = await fetchJson(url);
-    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-      return Math.floor(value);
-    }
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed) && parsed >= 0) return Math.floor(parsed);
-    }
-    return null;
-  } catch {
-    return null;
-  }
-};
-
 export interface FetchMerklOpportunitiesOptions {
   mainProtocolId?: string;
   status?: string;
@@ -71,30 +53,6 @@ export const fetchMerklOpportunities = async (
     distributionTypes: options.distributionTypes,
     items,
   };
-  const countQueryBase: Record<string, QueryPrimitive | undefined> = {
-    mainProtocolId: options.mainProtocolId,
-    status: options.status,
-    distributionTypes: options.distributionTypes,
-    items,
-  };
-
-  const totalCount = await fetchCount(countQueryBase);
-  if (totalCount !== null) {
-    const totalPages = Math.max(Math.ceil(totalCount / items), 1);
-    const pageRequests = Array.from({ length: totalPages }, (_, page) => {
-      const pageQuery = buildQuery({
-        ...pageQueryBase,
-        page,
-      });
-      const url = `${MERKL_BASE_URL}/opportunities?${pageQuery}`;
-      return fetchJson(url)
-        .then((payload) => (Array.isArray(payload) ? payload : []))
-        .catch(() => []);
-    });
-    const pages = await Promise.all(pageRequests);
-    return pages.flat();
-  }
-
   const aggregated: unknown[] = [];
   for (let page = 0; ; page += 1) {
     const pageQuery = buildQuery({
@@ -102,7 +60,8 @@ export const fetchMerklOpportunities = async (
       page,
     });
     const url = `${MERKL_BASE_URL}/opportunities?${pageQuery}`;
-    const payload = await fetchJson(url).catch(() => []);
+    const payload = await fetchJson(url).catch(() => null);
+    if (!Array.isArray(payload)) break;
     const itemsInPage = Array.isArray(payload) ? payload : [];
     aggregated.push(...itemsInPage);
     if (itemsInPage.length < items) {

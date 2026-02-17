@@ -220,60 +220,21 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
       campaigns: 'true',
       items: String(MERKL_MAX_ITEMS_PER_PAGE),
     });
-    const countQuery = new URLSearchParams({
-      mainProtocolId: 'aave,tydro',
-      status: 'LIVE',
-      items: String(MERKL_MAX_ITEMS_PER_PAGE),
-    });
-
-    const countResponse = await fetchWithRetry(
-      `${MERKL_BASE_URL}/opportunities/count?${countQuery.toString()}`,
-      'Merkl opportunities count (aave,tydro,live)'
-    ).catch(() => null as unknown as Response);
-
-    let totalCount: number | null = null;
-    if (countResponse && countResponse.ok) {
-      const rawCount = await countResponse.json();
-      const parsed = typeof rawCount === 'number' ? rawCount : Number(rawCount);
-      if (Number.isFinite(parsed) && parsed >= 0) {
-        totalCount = Math.floor(parsed);
+    const allOpportunities: MerklOpportunity[] = [];
+    for (let page = 0; ; page += 1) {
+      const pageQuery = new URLSearchParams(baseQuery);
+      pageQuery.set('page', String(page));
+      const url = `${MERKL_BASE_URL}/opportunities?${pageQuery.toString()}`;
+      const response = await fetchWithRetry(url, `Merkl opportunities page ${page}`).catch(() => null as unknown as Response);
+      if (!response || !response.ok) break;
+      const payload = (await response.json()) as unknown;
+      const items = Array.isArray(payload) ? (payload as MerklOpportunity[]) : [];
+      allOpportunities.push(...items);
+      if (items.length < MERKL_MAX_ITEMS_PER_PAGE) {
+        break;
       }
     }
-
-    let allOpportunities: MerklOpportunity[] = [];
-    if (totalCount !== null) {
-      const totalPages = Math.max(Math.ceil(totalCount / MERKL_MAX_ITEMS_PER_PAGE), 1);
-      const pageRequests = Array.from({ length: totalPages }, (_, page) => {
-        const pageQuery = new URLSearchParams(baseQuery);
-        pageQuery.set('page', String(page));
-        const url = `${MERKL_BASE_URL}/opportunities?${pageQuery.toString()}`;
-        return fetchWithRetry(url, `Merkl opportunities page ${page}`)
-          .then(async (response) => {
-            if (!response.ok) return [] as MerklOpportunity[];
-            const payload = (await response.json()) as unknown;
-            return Array.isArray(payload) ? (payload as MerklOpportunity[]) : [];
-          })
-          .catch(() => [] as MerklOpportunity[]);
-      });
-
-      const pages = await Promise.all(pageRequests);
-      allOpportunities = pages.flat();
-    } else {
-      for (let page = 0; ; page += 1) {
-        const pageQuery = new URLSearchParams(baseQuery);
-        pageQuery.set('page', String(page));
-        const url = `${MERKL_BASE_URL}/opportunities?${pageQuery.toString()}`;
-        const response = await fetchWithRetry(url, `Merkl opportunities page ${page}`).catch(() => null as unknown as Response);
-        if (!response || !response.ok) break;
-        const payload = (await response.json()) as unknown;
-        const items = Array.isArray(payload) ? (payload as MerklOpportunity[]) : [];
-        allOpportunities.push(...items);
-        if (items.length < MERKL_MAX_ITEMS_PER_PAGE) {
-          break;
-        }
-      }
-    }
-    logger.info(`✅ Fetched ${allOpportunities.length} live opportunities from Merkl (count=${totalCount ?? 'unknown'})`);
+    logger.info(`✅ Fetched ${allOpportunities.length} live opportunities from Merkl`);
     return allOpportunities;
   } catch (error) {
     logger.error('❌ Error fetching Merkl opportunities:', error);

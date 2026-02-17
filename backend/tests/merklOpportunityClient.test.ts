@@ -11,10 +11,6 @@ test('fetchMerklOpportunities paginates by count endpoint and merges pages', asy
     const url = String(input);
     calls.push(url);
 
-    if (url.includes('/opportunities/count?')) {
-      return new Response('3', { status: 200 });
-    }
-
     if (url.includes('/opportunities?') && url.includes('page=0')) {
       return new Response(JSON.stringify([{ id: 'a' }, { id: 'b' }]), { status: 200 });
     }
@@ -38,7 +34,7 @@ test('fetchMerklOpportunities paginates by count endpoint and merges pages', asy
       result.map((item: any) => item.id),
       ['a', 'b', 'c']
     );
-    assert.equal(calls.some((url) => url.includes('/opportunities/count?')), true);
+    assert.equal(calls.some((url) => url.includes('/opportunities/count?')), false);
     assert.equal(calls.some((url) => url.includes('page=0')), true);
     assert.equal(calls.some((url) => url.includes('page=1')), true);
   } finally {
@@ -46,16 +42,13 @@ test('fetchMerklOpportunities paginates by count endpoint and merges pages', asy
   }
 });
 
-test('fetchMerklOpportunities keeps paging when count endpoint fails until page is short', async () => {
+test('fetchMerklOpportunities keeps paging until page is short', async () => {
   const calls: string[] = [];
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input);
     calls.push(url);
-    if (url.includes('/opportunities/count?')) {
-      return new Response('error', { status: 500 });
-    }
 
     if (url.includes('page=0')) {
       return new Response(JSON.stringify([{ id: 'a' }, { id: 'b' }]), { status: 200 });
