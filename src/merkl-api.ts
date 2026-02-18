@@ -5,10 +5,9 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { merklFetchConfig } from './config.js';
+import { fetchMerklOpportunitiesShortPage } from '@aave/merkl-shared';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
-const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
-const MERKL_MAX_ITEMS_PER_PAGE = 100;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -212,28 +211,15 @@ export type TokenPricesIndex = Record<string, TokenPriceEntry>;
  */
 export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
   try {
-    logger.info('🔄 Fetching Merkl opportunities for Aave + Tydro (LIVE, paginated)...');
-
-    const baseQuery = new URLSearchParams({
+    logger.info('🔄 Fetching Merkl opportunities for Aave + Tydro (LIVE, campaigns=true, short-page pagination)...');
+    const allOpportunities = (await fetchMerklOpportunitiesShortPage({
+      baseUrl: 'https://api.merkl.xyz/v4',
       mainProtocolId: 'aave,tydro',
       status: 'LIVE',
-      campaigns: 'true',
-      items: String(MERKL_MAX_ITEMS_PER_PAGE),
-    });
-    const allOpportunities: MerklOpportunity[] = [];
-    for (let page = 0; ; page += 1) {
-      const pageQuery = new URLSearchParams(baseQuery);
-      pageQuery.set('page', String(page));
-      const url = `${MERKL_BASE_URL}/opportunities?${pageQuery.toString()}`;
-      const response = await fetchWithRetry(url, `Merkl opportunities page ${page}`).catch(() => null as unknown as Response);
-      if (!response || !response.ok) break;
-      const payload = (await response.json()) as unknown;
-      const items = Array.isArray(payload) ? (payload as MerklOpportunity[]) : [];
-      allOpportunities.push(...items);
-      if (items.length < MERKL_MAX_ITEMS_PER_PAGE) {
-        break;
-      }
-    }
+      campaigns: true,
+      itemsPerPage: 100,
+      fetchImpl: fetch as unknown as typeof globalThis.fetch,
+    })) as MerklOpportunity[];
     logger.info(`✅ Fetched ${allOpportunities.length} live opportunities from Merkl`);
     return allOpportunities;
   } catch (error) {

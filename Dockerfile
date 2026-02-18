@@ -5,6 +5,7 @@ WORKDIR /app
 
 # Install root dependencies (including devDependencies for TypeScript compilation)
 COPY package*.json ./
+COPY packages/ ./packages/
 RUN npm ci
 
 # Copy root source and build
@@ -48,6 +49,7 @@ WORKDIR /app
 
 # Install production-only dependencies for root
 COPY package*.json ./
+COPY packages/ ./packages/
 RUN npm ci --omit=dev
 
 # Install production-only dependencies for backend
