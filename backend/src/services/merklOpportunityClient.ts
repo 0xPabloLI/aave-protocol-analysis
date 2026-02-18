@@ -1,4 +1,4 @@
-import { fetchMerklOpportunitiesShortPage } from '@aave/merkl-shared';
+import { fetchMerklOpportunitiesShortPage } from '@internal/merkl-shared';
 
 export interface FetchMerklOpportunitiesOptions {
   mainProtocolId?: string;

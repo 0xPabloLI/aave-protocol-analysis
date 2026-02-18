@@ -5,7 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { merklFetchConfig } from './config.js';
-import { fetchMerklOpportunitiesShortPage } from '@aave/merkl-shared';
+import { fetchMerklOpportunitiesShortPage } from '@internal/merkl-shared';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 

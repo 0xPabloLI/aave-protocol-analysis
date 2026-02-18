@@ -52,28 +52,6 @@ const collectCampaignIdsFromMarkets = (markets: MarketWithSpread[]): string[] =>
   return Array.from(ids);
 };
 
-export const getCampaignForecastState = async (req: Request, res: Response): Promise<void> => {
-  const campaignId = req.params.campaignId;
-
-  if (!campaignId) {
-    res.status(400).json({
-      error: 'Bad request',
-      message: 'campaignId is required',
-    });
-    return;
-  }
-
-  try {
-    const state = await getMerklForecastState(campaignId);
-    res.json(toResponseItem(state));
-  } catch (error) {
-    res.status(inferErrorStatus(error)).json({
-      error: 'Unprocessable campaign',
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-};
-
 export const getCampaignForecastStates = async (req: Request, res: Response): Promise<void> => {
   const idsRaw = typeof req.query.ids === 'string' ? req.query.ids : '';
   const idsFromQuery = idsRaw

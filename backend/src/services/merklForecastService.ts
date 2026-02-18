@@ -12,9 +12,9 @@ const SECONDS_PER_DAY = 86400;
 
 const CACHE_TTL_MS = (() => {
   const raw = process.env.MERKL_FORECAST_CACHE_TTL_MS;
-  if (!raw) return 3 * 60 * 1000;
+  if (!raw) return 1 * 60 * 1000;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3 * 60 * 1000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1 * 60 * 1000;
 })();
 
 interface ForecastCacheEntry {
