@@ -8,6 +8,17 @@ export interface FetchMerklOpportunitiesShortPageOptions {
   fetchImpl?: typeof fetch;
 }
 
+export interface FetchMerklOpportunitiesSnapshotOptions extends FetchMerklOpportunitiesShortPageOptions {
+  ttlMs?: number;
+  forceRefresh?: boolean;
+}
+
 export declare const fetchMerklOpportunitiesShortPage: (
   options: FetchMerklOpportunitiesShortPageOptions
 ) => Promise<unknown[]>;
+
+export declare const fetchMerklOpportunitiesSnapshot: (
+  options: FetchMerklOpportunitiesSnapshotOptions
+) => Promise<unknown[]>;
+
+export declare const __resetMerklOpportunitiesSnapshotCacheForTests: () => void;

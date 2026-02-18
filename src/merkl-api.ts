@@ -5,9 +5,15 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { merklFetchConfig } from './config.js';
-import { fetchMerklOpportunitiesShortPage } from '@internal/merkl-shared';
+import { fetchMerklOpportunitiesSnapshot } from '@internal/merkl-shared';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+const OPPORTUNITIES_CACHE_TTL_MS = (() => {
+  const raw = process.env.MERKL_OPPORTUNITIES_CACHE_TTL_MS;
+  if (!raw) return 1 * 60 * 1000;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1 * 60 * 1000;
+})();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -212,12 +218,13 @@ export type TokenPricesIndex = Record<string, TokenPriceEntry>;
 export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
   try {
     logger.info('🔄 Fetching Merkl opportunities for Aave + Tydro (LIVE, campaigns=true, short-page pagination)...');
-    const allOpportunities = (await fetchMerklOpportunitiesShortPage({
+    const allOpportunities = (await fetchMerklOpportunitiesSnapshot({
       baseUrl: 'https://api.merkl.xyz/v4',
       mainProtocolId: 'aave,tydro',
       status: 'LIVE',
       campaigns: true,
       itemsPerPage: 100,
+      ttlMs: OPPORTUNITIES_CACHE_TTL_MS,
       fetchImpl: fetch as unknown as typeof globalThis.fetch,
     })) as MerklOpportunity[];
     logger.info(`✅ Fetched ${allOpportunities.length} live opportunities from Merkl`);

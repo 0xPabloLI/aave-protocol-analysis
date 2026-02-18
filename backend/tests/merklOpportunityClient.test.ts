@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { fetchMerklOpportunities } from '../src/services/merklOpportunityClient.js';
+import { __resetMerklOpportunitiesSnapshotCacheForTests } from '@internal/merkl-shared';
+
+test.afterEach(() => {
+  __resetMerklOpportunitiesSnapshotCacheForTests();
+});
 
 test('fetchMerklOpportunities paginates by short-page termination and merges pages', async () => {
   const calls: string[] = [];

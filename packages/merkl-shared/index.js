@@ -1,5 +1,8 @@
 const DEFAULT_ITEMS_PER_PAGE = 100;
 const MAX_ITEMS_PER_PAGE = 100;
+const DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS = 60 * 1000;
+
+const opportunitiesSnapshotCache = new Map();
 
 const clampItemsPerPage = (value) => {
   if (!Number.isFinite(value)) return DEFAULT_ITEMS_PER_PAGE;
@@ -64,4 +67,88 @@ export const fetchMerklOpportunitiesShortPage = async ({
     }
   }
   return aggregated;
+};
+
+const buildSnapshotCacheKey = ({
+  baseUrl,
+  mainProtocolId,
+  status,
+  campaigns,
+  distributionTypes,
+  itemsPerPage,
+}) =>
+  JSON.stringify({
+    baseUrl,
+    mainProtocolId: mainProtocolId ?? null,
+    status: status ?? null,
+    campaigns: campaigns ?? null,
+    distributionTypes: distributionTypes ?? null,
+    itemsPerPage: clampItemsPerPage(itemsPerPage),
+  });
+
+export const fetchMerklOpportunitiesSnapshot = async ({
+  baseUrl = 'https://api.merkl.xyz/v4',
+  mainProtocolId,
+  status,
+  campaigns,
+  distributionTypes,
+  itemsPerPage,
+  fetchImpl = fetch,
+  ttlMs = DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS,
+  forceRefresh = false,
+}) => {
+  const cacheKey = buildSnapshotCacheKey({
+    baseUrl,
+    mainProtocolId,
+    status,
+    campaigns,
+    distributionTypes,
+    itemsPerPage,
+  });
+  const now = Date.now();
+  const cached = opportunitiesSnapshotCache.get(cacheKey);
+
+  if (!forceRefresh && cached && cached.expiresAt > now && Array.isArray(cached.data)) {
+    return cached.data;
+  }
+  if (!forceRefresh && cached?.inFlight) {
+    return cached.inFlight;
+  }
+
+  const request = fetchMerklOpportunitiesShortPage({
+    baseUrl,
+    mainProtocolId,
+    status,
+    campaigns,
+    distributionTypes,
+    itemsPerPage,
+    fetchImpl,
+  })
+    .then((result) => {
+      opportunitiesSnapshotCache.set(cacheKey, {
+        data: result,
+        expiresAt: Date.now() + Math.max(0, ttlMs),
+      });
+      return result;
+    })
+    .catch((error) => {
+      const current = opportunitiesSnapshotCache.get(cacheKey);
+      if (current) {
+        delete current.inFlight;
+        opportunitiesSnapshotCache.set(cacheKey, current);
+      }
+      throw error;
+    });
+
+  opportunitiesSnapshotCache.set(cacheKey, {
+    data: cached?.data,
+    expiresAt: cached?.expiresAt ?? 0,
+    inFlight: request,
+  });
+
+  return request;
+};
+
+export const __resetMerklOpportunitiesSnapshotCacheForTests = () => {
+  opportunitiesSnapshotCache.clear();
 };
