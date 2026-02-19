@@ -13,6 +13,17 @@ export interface FetchMerklOpportunitiesSnapshotOptions extends FetchMerklOpport
   forceRefresh?: boolean;
 }
 
+export interface DefaultAaveTydroOpportunitiesQuery {
+  mainProtocolId: string;
+  status: string;
+  campaigns: boolean;
+  itemsPerPage: number;
+}
+
+export declare const DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY: DefaultAaveTydroOpportunitiesQuery;
+
+export declare const resolveCacheTtlMs: (raw: unknown, fallbackMs?: number) => number;
+
 export declare const fetchMerklOpportunitiesShortPage: (
   options: FetchMerklOpportunitiesShortPageOptions
 ) => Promise<unknown[]>;

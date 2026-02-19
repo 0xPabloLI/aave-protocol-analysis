@@ -245,12 +245,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
     return campaignOpportunityCache.data;
   }
 
-  const allOpps = await fetchMerklOpportunities({
-    mainProtocolId: 'aave,tydro',
-    status: 'LIVE',
-    campaigns: true,
-    itemsPerPage: 100,
-  });
+  const allOpps = await fetchMerklOpportunities();
 
   const map = new Map<string, CampaignOpportunityMeta>();
   allOpps.forEach((opp) => {

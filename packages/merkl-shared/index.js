@@ -4,6 +4,31 @@ const DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS = 60 * 1000;
 
 const opportunitiesSnapshotCache = new Map();
 
+export const DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY = Object.freeze({
+  mainProtocolId: 'aave,tydro',
+  status: 'LIVE',
+  campaigns: true,
+  itemsPerPage: DEFAULT_ITEMS_PER_PAGE,
+});
+
+export const resolveCacheTtlMs = (
+  raw,
+  fallbackMs = DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS
+) => {
+  const parsedFallback = Number.parseInt(String(fallbackMs), 10);
+  const safeFallback =
+    Number.isFinite(parsedFallback) && parsedFallback > 0
+      ? parsedFallback
+      : DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS;
+
+  if (raw === undefined || raw === null || raw === '') {
+    return safeFallback;
+  }
+
+  const parsed = Number.parseInt(String(raw), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : safeFallback;
+};
+
 const clampItemsPerPage = (value) => {
   if (!Number.isFinite(value)) return DEFAULT_ITEMS_PER_PAGE;
   const rounded = Math.floor(value);
