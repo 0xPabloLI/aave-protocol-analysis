@@ -6,7 +6,6 @@ import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { merklFetchConfig } from './config.js';
 import {
-  DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY,
   fetchMerklOpportunitiesSnapshot,
   resolveCacheTtlMs,
 } from '@internal/merkl-shared';
@@ -222,7 +221,6 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
     logger.info('🔄 Fetching Merkl opportunities for Aave + Tydro (LIVE, campaigns=true, short-page pagination)...');
     const allOpportunities = (await fetchMerklOpportunitiesSnapshot({
       baseUrl: 'https://api.merkl.xyz/v4',
-      ...DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY,
       ttlMs: OPPORTUNITIES_CACHE_TTL_MS,
       fetchImpl: fetch as unknown as typeof globalThis.fetch,
     })) as MerklOpportunity[];

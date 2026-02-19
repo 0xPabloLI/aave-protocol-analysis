@@ -1,5 +1,4 @@
 import {
-  DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY,
   fetchMerklOpportunitiesSnapshot,
   resolveCacheTtlMs,
 } from '@internal/merkl-shared';
@@ -23,12 +22,11 @@ export const fetchMerklOpportunities = async (
 ): Promise<unknown[]> =>
   fetchMerklOpportunitiesSnapshot({
     baseUrl: 'https://api.merkl.xyz/v4',
-    mainProtocolId:
-      options.mainProtocolId ?? DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY.mainProtocolId,
-    status: options.status ?? DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY.status,
-    campaigns: options.campaigns ?? DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY.campaigns,
+    mainProtocolId: options.mainProtocolId,
+    status: options.status,
+    campaigns: options.campaigns,
     distributionTypes: options.distributionTypes,
-    itemsPerPage: options.itemsPerPage ?? DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY.itemsPerPage,
+    itemsPerPage: options.itemsPerPage,
     ttlMs: OPPORTUNITIES_CACHE_TTL_MS,
     forceRefresh: options.forceRefresh,
     fetchImpl: fetch,

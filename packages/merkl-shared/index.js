@@ -29,6 +29,22 @@ export const resolveCacheTtlMs = (
   return Number.isFinite(parsed) && parsed > 0 ? parsed : safeFallback;
 };
 
+const withDefaultAaveTydroQuery = ({
+  mainProtocolId,
+  status,
+  campaigns,
+  itemsPerPage,
+  ...rest
+}) => ({
+  ...rest,
+  mainProtocolId:
+    mainProtocolId ?? DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY.mainProtocolId,
+  status: status ?? DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY.status,
+  campaigns: campaigns ?? DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY.campaigns,
+  itemsPerPage:
+    itemsPerPage ?? DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY.itemsPerPage,
+});
+
 const clampItemsPerPage = (value) => {
   if (!Number.isFinite(value)) return DEFAULT_ITEMS_PER_PAGE;
   const rounded = Math.floor(value);
@@ -68,12 +84,19 @@ export const fetchMerklOpportunitiesShortPage = async ({
   itemsPerPage,
   fetchImpl = fetch,
 }) => {
-  const items = clampItemsPerPage(itemsPerPage);
-  const baseQuery = {
+  const normalized = withDefaultAaveTydroQuery({
     mainProtocolId,
     status,
     campaigns,
+    itemsPerPage,
     distributionTypes,
+  });
+  const items = clampItemsPerPage(normalized.itemsPerPage);
+  const baseQuery = {
+    mainProtocolId: normalized.mainProtocolId,
+    status: normalized.status,
+    campaigns: normalized.campaigns,
+    distributionTypes: normalized.distributionTypes,
     items,
   };
 
@@ -101,15 +124,24 @@ const buildSnapshotCacheKey = ({
   campaigns,
   distributionTypes,
   itemsPerPage,
-}) =>
-  JSON.stringify({
-    baseUrl,
-    mainProtocolId: mainProtocolId ?? null,
-    status: status ?? null,
-    campaigns: campaigns ?? null,
-    distributionTypes: distributionTypes ?? null,
-    itemsPerPage: clampItemsPerPage(itemsPerPage),
+}) => {
+  const normalized = withDefaultAaveTydroQuery({
+    mainProtocolId,
+    status,
+    campaigns,
+    itemsPerPage,
+    distributionTypes,
   });
+
+  return JSON.stringify({
+    baseUrl,
+    mainProtocolId: normalized.mainProtocolId ?? null,
+    status: normalized.status ?? null,
+    campaigns: normalized.campaigns ?? null,
+    distributionTypes: normalized.distributionTypes ?? null,
+    itemsPerPage: clampItemsPerPage(normalized.itemsPerPage),
+  });
+};
 
 export const fetchMerklOpportunitiesSnapshot = async ({
   baseUrl = 'https://api.merkl.xyz/v4',
