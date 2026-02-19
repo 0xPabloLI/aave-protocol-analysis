@@ -143,8 +143,6 @@ Data files include `_metadata.timestamp` (written by fetcher). Backend prioritiz
 ```
 GET /health                    # Health check with environment info
 GET /api/markets               # All market data (no query params)
-GET /api/markets/stats         # Statistics (pool/chain/token counts)
-GET /api/markets/chains        # List of chain names
 GET /api/markets/list          # Market-chain combinations
 GET /api/coingecko-categories  # CoinGecko category data
 GET /api/coingecko-fdv         # CoinGecko FDV data

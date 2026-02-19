@@ -88,10 +88,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 所有数据读取端点都会自动调用此函数：
 
 - `GET /api/markets` - 获取市场数据
-- `GET /api/markets/stats` - 获取统计信息
-- `GET /api/markets/chains` - 获取链列表
 - `GET /api/markets/list` - 获取市场列表
-- `GET /api/campaigns/:campaignId/forecast-state` - 获取单个 Merkl forecast state
 - `GET /api/campaigns/forecast-states` - 批量获取 Merkl forecast states
 
 ### 路由层 (`routes/markets.ts`)

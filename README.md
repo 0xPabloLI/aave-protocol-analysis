@@ -124,10 +124,7 @@ The backend API server runs on `http://localhost:3001` by default. Available end
 - `GET /health` - Health check endpoint
 - `GET /api/markets` - Get all market data (no query parameters, all sorting and filtering handled client-side)
   - Response includes: `data`, `lastUpdated`, `isStale`, `updateInProgress`
-- `GET /api/markets/stats` - Get statistics (total pools, chains, tokens)
-- `GET /api/markets/chains` - Get list of supported chains
 - `GET /api/markets/list` - Get list of markets
-- `GET /api/campaigns/:campaignId/forecast-state` - Get one Merkl campaign forecast state
 - `GET /api/campaigns/forecast-states` - Get batch Merkl campaign forecast states (all by default, or by `ids=...`)
 
 **Data Freshness Mechanism**: All endpoints automatically check data freshness (1-minute window). If data is stale, the system automatically triggers an update and waits for completion before returning results. This ensures users always receive up-to-date information without manual refresh.

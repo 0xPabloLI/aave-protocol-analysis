@@ -274,28 +274,6 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 }
 
 /**
- * GET /api/chains
- * 获取所有链列表
- * 自动检查数据新鲜度，如果超过1分钟则触发更新
- */
-export async function getChains(req: Request, res: Response): Promise<void> {
-  try {
-    // 检查数据新鲜度并自动更新
-    await checkAndUpdateDataIfStale();
-
-    const data = await dataService.getData();
-    const chains = new Set(data.map(item => item.chainName));
-    res.json(Array.from(chains).sort());
-  } catch (error) {
-    logger.error('Error getting chains:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-/**
  * GET /api/markets/list
  * 获取所有市场列表（用于前端过滤器）
  * 自动检查数据新鲜度，如果超过1分钟则触发更新

@@ -206,52 +206,7 @@ interface MarketsResponse {
 
 ---
 
-### 2. 获取统计信息
-
-**端点**: `GET /api/markets/stats`
-
-**描述**: 获取市场数据的统计信息，包括总池数、链数、代币数等。
-
-**请求参数**: 无
-
-**响应格式**:
-
-```json
-{
-  "totalPools": 231,
-  "totalChains": 15,
-  "totalTokens": 45,
-  "chains": ["Arbitrum", "Avalanche", "Base", ...]
-}
-```
-
-**状态码**:
-- `200`: 成功
-- `500`: 服务器错误
-
----
-
-### 3. 获取所有链列表
-
-**端点**: `GET /api/markets/chains`
-
-**描述**: 获取所有支持的链名称列表（已排序）。
-
-**请求参数**: 无
-
-**响应格式**:
-
-```json
-["Arbitrum", "Avalanche", "Base", "Celo", ...]
-```
-
-**状态码**:
-- `200`: 成功
-- `500`: 服务器错误
-
----
-
-### 4. 获取市场列表
+### 2. 获取市场列表
 
 **端点**: `GET /api/markets/list`
 
@@ -280,37 +235,7 @@ interface MarketsResponse {
 
 ---
 
-### 5. 获取单个 Merkl Forecast State
-
-**端点**: `GET /api/campaigns/:campaignId/forecast-state`
-
-**描述**: 返回指定 campaign 的预测状态（支持 `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE`、`DUTCH_AUCTION`、`FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE`）。
-
-**响应字段**:
-
-```json
-{
-  "campaignId": "5444122873012762234",
-  "campaignType": "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-  "plannedDaily": 3947.6,
-  "requiredDaily": 4123.4,
-  "aprCap": 0.032,
-  "totalBudget": 67306.4,
-  "distributedSoFar": 42111.23,
-  "latestTvl": 45123678.12,
-  "endTimestamp": 1770274800
-}
-```
-
-**状态码**:
-- `200`: 成功
-- `404`: campaign 不存在
-- `422`: campaign 类型不支持或字段缺失
-- `500`: 服务端错误
-
----
-
-### 6. 批量获取 Merkl Forecast States
+### 3. 批量获取 Merkl Forecast States
 
 **端点**: `GET /api/campaigns/forecast-states`
 
@@ -346,7 +271,7 @@ interface MarketsResponse {
 
 以上均来自 Merkl API，不从 Aave SDK 直接读取 campaign 级 TVL。
 
-### 5. 健康检查
+### 4. 健康检查
 
 **端点**: `GET /health`
 
@@ -522,12 +447,6 @@ console.log(data.isStale); // 是否过期
 ```bash
 # 获取所有市场数据
 curl http://localhost:3001/api/markets
-
-# 获取统计信息
-curl http://localhost:3001/api/markets/stats
-
-# 获取链列表
-curl http://localhost:3001/api/markets/chains
 
 # 获取市场列表
 curl http://localhost:3001/api/markets/list

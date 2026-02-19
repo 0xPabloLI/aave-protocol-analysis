@@ -150,10 +150,7 @@ curl http://localhost:3001/health
 
 - `GET /health` - 健康检查
 - `GET /api/markets` - 获取市场数据（自动检查数据新鲜度）
-- `GET /api/markets/stats` - 获取统计信息（自动检查数据新鲜度）
-- `GET /api/markets/chains` - 获取链列表（自动检查数据新鲜度）
 - `GET /api/markets/list` - 获取市场列表（自动检查数据新鲜度）
-- `GET /api/campaigns/:campaignId/forecast-state` - 获取单个 Merkl forecast state
 - `GET /api/campaigns/forecast-states` - 批量获取 Merkl forecast states（不传 ids 时返回全部）
 
 ## 日志

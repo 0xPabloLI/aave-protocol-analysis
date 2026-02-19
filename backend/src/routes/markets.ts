@@ -1,14 +1,12 @@
 import { Router } from 'express';
 import {
   getMarkets,
-  getChains,
   getMarketsList,
 } from '../controllers/marketsController.js';
 
 const router = Router();
 
 router.get('/', getMarkets);
-router.get('/chains', getChains);
 router.get('/list', getMarketsList);
 
 // 移除专用的 /refresh 端点
