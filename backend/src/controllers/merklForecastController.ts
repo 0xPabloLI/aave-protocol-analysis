@@ -17,6 +17,7 @@ const toResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>
 
 const inferErrorStatus = (error: unknown): number => {
   const message = error instanceof Error ? error.message : String(error);
+  if (/Metrics unavailable/i.test(message)) return 409;
   if (/unsupported distribution type/i.test(message)) return 422;
   if (/Missing APR cap/i.test(message)) return 422;
   if (/Missing .*campaign/i.test(message) || /Missing .*timestamp/i.test(message)) return 422;

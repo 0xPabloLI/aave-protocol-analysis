@@ -375,6 +375,9 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
       const totalBudget = extractNormalizedTotalBudget(campaign, campaignId);
       const nowTs = Math.floor(Date.now() / 1000);
       const dailyRewardsRecords = extractDailyRewardsRecords(metrics);
+      if (dailyRewardsRecords.length === 0) {
+        throw new Error(`Metrics unavailable for campaign ${campaignId}; forecast disabled`);
+      }
       const distributedSoFar = Math.min(
         estimateDistributedSoFar(dailyRewardsRecords, startTs, endTs, nowTs),
         totalBudget
