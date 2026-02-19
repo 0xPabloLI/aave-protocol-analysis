@@ -26,7 +26,7 @@ interface CampaignOpportunityMeta {
   tvl: number;
   campaignTypeHint: CampaignForecastType;
   distributionTypeRaw: string | null;
-  campaignSnapshot: unknown | null;
+  campaignSnapshot: CampaignSnapshotLite | null;
 }
 
 interface CampaignOpportunityCacheEntry {
@@ -37,6 +37,28 @@ interface CampaignOpportunityCacheEntry {
 const forecastCache = new Map<string, ForecastCacheEntry>();
 const inFlight = new Map<string, Promise<MerklForecastState>>();
 let campaignOpportunityCache: CampaignOpportunityCacheEntry | null = null;
+
+interface CampaignSnapshotLite {
+  id: string;
+  amount?: unknown;
+  startTimestamp?: unknown;
+  endTimestamp?: unknown;
+  campaignStatus?: {
+    computedUntil?: unknown;
+  };
+  rewardToken?: {
+    price?: unknown;
+    decimals?: unknown;
+  };
+  params?: {
+    decimalsRewardToken?: unknown;
+    distributionMethodParameters?: {
+      distributionSettings?: {
+        apr?: unknown;
+      };
+    };
+  };
+}
 
 const toNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -86,6 +108,50 @@ const extractComputedUntil = (campaign: unknown): number | null => {
   const value = toNumber(getAtPath(campaign, ['campaignStatus', 'computedUntil']));
   return value !== null ? value : null;
 };
+
+const buildCampaignSnapshotLite = (campaign: unknown): CampaignSnapshotLite | null => {
+  const id = getAtPath(campaign, ['id']);
+  if (typeof id !== 'string' || !id) return null;
+
+  const amount = getAtPath(campaign, ['amount']);
+  const startTimestamp = getAtPath(campaign, ['startTimestamp']);
+  const endTimestamp = getAtPath(campaign, ['endTimestamp']);
+  const computedUntil = getAtPath(campaign, ['campaignStatus', 'computedUntil']);
+  const rewardTokenPrice = getAtPath(campaign, ['rewardToken', 'price']);
+  const rewardTokenDecimals = getAtPath(campaign, ['rewardToken', 'decimals']);
+  const apr = getAtPath(campaign, ['params', 'distributionMethodParameters', 'distributionSettings', 'apr']);
+  const decimalsRewardToken = getAtPath(campaign, ['params', 'decimalsRewardToken']);
+
+  const snapshot: CampaignSnapshotLite = { id };
+
+  if (amount !== undefined) snapshot.amount = amount;
+  if (startTimestamp !== undefined) snapshot.startTimestamp = startTimestamp;
+  if (endTimestamp !== undefined) snapshot.endTimestamp = endTimestamp;
+  if (computedUntil !== undefined) {
+    snapshot.campaignStatus = { computedUntil };
+  }
+  if (rewardTokenPrice !== undefined || rewardTokenDecimals !== undefined) {
+    snapshot.rewardToken = {
+      ...(rewardTokenPrice !== undefined ? { price: rewardTokenPrice } : {}),
+      ...(rewardTokenDecimals !== undefined ? { decimals: rewardTokenDecimals } : {}),
+    };
+  }
+  if (apr !== undefined || decimalsRewardToken !== undefined) {
+    snapshot.params = {
+      ...(decimalsRewardToken !== undefined ? { decimalsRewardToken } : {}),
+      ...(apr !== undefined
+        ? { distributionMethodParameters: { distributionSettings: { apr } } }
+        : {}),
+    };
+  }
+
+  return snapshot;
+};
+
+const canComputeForecastFromSnapshot = (campaign: CampaignSnapshotLite): boolean =>
+  toNumber(campaign.amount) !== null &&
+  toNumber(campaign.startTimestamp) !== null &&
+  toNumber(campaign.endTimestamp) !== null;
 
 const extractLatestTvl = (metrics: unknown): number => {
   const tvl = getAtPath(metrics, ['tvlRecords']);
@@ -195,11 +261,11 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
     if (!Array.isArray(breakdowns)) return;
     const oppCampaignsRaw = getAtPath(opp, ['campaigns']);
     const oppCampaigns = Array.isArray(oppCampaignsRaw) ? oppCampaignsRaw : [];
-    const campaignSnapshotById = new Map<string, unknown>();
+    const campaignSnapshotById = new Map<string, CampaignSnapshotLite>();
     oppCampaigns.forEach((campaign) => {
-      const id = getAtPath(campaign, ['id']);
-      if (typeof id === 'string' && id) {
-        campaignSnapshotById.set(id, campaign);
+      const snapshotLite = buildCampaignSnapshotLite(campaign);
+      if (snapshotLite) {
+        campaignSnapshotById.set(snapshotLite.id, snapshotLite);
       }
     });
 
@@ -292,7 +358,9 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         );
       }
 
-      const campaignPromise = campaignOpportunityMeta.campaignSnapshot
+      const campaignPromise =
+        campaignOpportunityMeta.campaignSnapshot &&
+        canComputeForecastFromSnapshot(campaignOpportunityMeta.campaignSnapshot)
         ? Promise.resolve(campaignOpportunityMeta.campaignSnapshot)
         : fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}`);
       const metricsPromise = fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`);
