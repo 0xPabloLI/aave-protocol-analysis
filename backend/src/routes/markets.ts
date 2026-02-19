@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import {
   getMarkets,
-  getStats,
   getChains,
   getMarketsList,
 } from '../controllers/marketsController.js';
@@ -9,7 +8,6 @@ import {
 const router = Router();
 
 router.get('/', getMarkets);
-router.get('/stats', getStats);
 router.get('/chains', getChains);
 router.get('/list', getMarketsList);
 

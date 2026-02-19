@@ -274,39 +274,6 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 }
 
 /**
- * GET /api/markets/stats
- * 获取统计信息
- * 自动检查数据新鲜度，如果超过1分钟则触发更新
- */
-export async function getStats(req: Request, res: Response): Promise<void> {
-  try {
-    // 检查数据新鲜度并自动更新
-    await checkAndUpdateDataIfStale();
-
-    const data = await dataService.getData();
-
-    // 统计链数
-    const chains = new Set(data.map(item => item.chainName));
-
-    // 统计代币数
-    const tokens = new Set(data.map(item => item.tokenSymbol));
-
-    res.json({
-      totalPools: data.length,
-      totalChains: chains.size,
-      totalTokens: tokens.size,
-      chains: Array.from(chains).sort(),
-    });
-  } catch (error) {
-    logger.error('Error getting stats:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-/**
  * GET /api/chains
  * 获取所有链列表
  * 自动检查数据新鲜度，如果超过1分钟则触发更新
