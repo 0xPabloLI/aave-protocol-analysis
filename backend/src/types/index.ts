@@ -23,6 +23,12 @@ export interface MarketWithSpread {
     startBlock?: string;
     endBlock?: string;
     requiredBorrowTokens?: string[];
+    estimatedDailyRewardUsd?: number;
+    estimatedImpliedTvlUsd?: number;
+    estimatedRoundIntervalDays?: number;
+    estimatedRoundCampaignId?: string;
+    estimatedRoundOpportunityId?: string;
+    estimatedRoundAsOf?: number;
   }>;
   meritBorrows?: Array<{
     apr: number;
@@ -33,6 +39,12 @@ export interface MarketWithSpread {
     startBlock?: string;
     endBlock?: string;
     requiredSupplyTokens?: string[];
+    estimatedDailyRewardUsd?: number;
+    estimatedImpliedTvlUsd?: number;
+    estimatedRoundIntervalDays?: number;
+    estimatedRoundCampaignId?: string;
+    estimatedRoundOpportunityId?: string;
+    estimatedRoundAsOf?: number;
   }>;
   merklSupplys?: Array<{
     link: string;

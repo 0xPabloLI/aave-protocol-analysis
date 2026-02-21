@@ -14,6 +14,10 @@ import {
 import { meritKeyAliases } from './config.js';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
+const MERIT_ROUND_ESTIMATE_CACHE_TTL_MS = 15 * 60 * 1000;
+const MERIT_ROUND_ESTIMATE_MAX_PAGES = 12;
+const SECONDS_PER_DAY = 86400;
 
 export interface MeritAPRResponse {
   previousAPR: any;
@@ -41,6 +45,12 @@ export interface MeritAprEntry {
   message?: MeritCampaignInfo[]; // Campaign 信息数组（从 Campaign info 弹窗表格中提取，可能有多条 action 和 description）
   requiredBorrowTokens?: string[]; // 需要 borrow 的 token 列表（用于 supply with borrow requirement）
   requiredSupplyTokens?: string[]; // 需要 supply 的 token 列表（用于 borrow with supply requirement）
+  estimatedDailyRewardUsd?: number; // 通过最近一轮 Merkl JSON_AIRDROP 估算
+  estimatedImpliedTvlUsd?: number; // 由 estimatedDailyRewardUsd 和当前 APR 反推
+  estimatedRoundIntervalDays?: number; // 最近两轮间隔（天）
+  estimatedRoundCampaignId?: string; // 最近一轮 campaign id
+  estimatedRoundOpportunityId?: string; // 最近一轮 opportunity id
+  estimatedRoundAsOf?: number; // 估算时间（unix seconds）
 }
 
 // Merit 数据项结构（简化：只保留 supply 和 borrow）
@@ -48,6 +58,267 @@ export interface MeritDataItem {
   meritSupplys: MeritAprEntry[];
   meritBorrows: MeritAprEntry[];
 }
+
+type MeritAction = 'supply' | 'borrow';
+
+interface MerklAirdropRound {
+  campaignId: string;
+  opportunityId: string;
+  startTimestamp: number;
+  endTimestamp: number;
+  amountUsd: number;
+}
+
+interface MeritRoundEstimateBase {
+  estimatedDailyRewardUsd: number;
+  estimatedRoundIntervalDays: number;
+  estimatedRoundCampaignId: string;
+  estimatedRoundOpportunityId: string;
+  estimatedRoundAsOf: number;
+}
+
+let meritRoundEstimateCache:
+  | {
+      expiresAt: number;
+      map: Map<string, MeritRoundEstimateBase>;
+    }
+  | null = null;
+
+const CHAIN_KEY_TO_CHAIN_ID: Record<string, number> = {
+  ethereum: 1,
+  'ethereum-prime': 1,
+  'ethereum-horizon': 1,
+  'ethereum-etherfi': 1,
+  optimism: 10,
+  polygon: 137,
+  arbitrum: 42161,
+  base: 8453,
+  avalanche: 43114,
+  gnosis: 100,
+  bnb: 56,
+  scroll: 534352,
+  zksync: 324,
+  linea: 59144,
+  sonic: 146,
+  celo: 42220,
+};
+
+const normalizeTokenSymbolForMatching = (token: string): string => {
+  const raw = token
+    .toLowerCase()
+    .replace(/₮/g, 't')
+    .replace(/[^a-z0-9]/g, '');
+  if (!raw) return raw;
+
+  const aliasMap: Record<string, string> = {
+    usdte: 'usdt',
+    usdt0: 'usdt',
+    usdc0: 'usdc',
+  };
+  return aliasMap[raw] ?? raw;
+};
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+const buildMeritRoundKey = (chainId: number, action: MeritAction, token: string): string =>
+  `${chainId}:${action}:${normalizeTokenSymbolForMatching(token)}`;
+
+const extractActionTokenPairs = (text: string): Array<{ action: MeritAction; token: string }> => {
+  const pairs: Array<{ action: MeritAction; token: string }> = [];
+  const seen = new Set<string>();
+  const normalizedText = text.toLowerCase();
+  const patterns = [
+    /(supply|borrow)\s+([a-z0-9₮.$-]+)/gi,
+    /(supply|borrow)-([a-z0-9₮.$-]+)/gi,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of normalizedText.matchAll(pattern)) {
+      const action = match[1] as MeritAction;
+      const tokenRaw = match[2];
+      if (!tokenRaw || tokenRaw === 'multiple') continue;
+      const token = normalizeTokenSymbolForMatching(tokenRaw);
+      if (!token) continue;
+      const key = `${action}:${token}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pairs.push({ action, token });
+    }
+  }
+
+  return pairs;
+};
+
+const extractAirdropAmountUsd = (campaign: any): number | null => {
+  const rawAmount = campaign?.amount;
+  const amount = toFiniteNumber(rawAmount);
+  if (amount === null || amount <= 0) return null;
+
+  const decimals =
+    toFiniteNumber(campaign?.rewardToken?.decimals) ??
+    toFiniteNumber(campaign?.params?.decimalsRewardToken) ??
+    0;
+  const price = toFiniteNumber(campaign?.rewardToken?.price);
+  if (price === null || price <= 0) return null;
+
+  let normalizedAmount = amount;
+  if (typeof rawAmount === 'string' && !rawAmount.includes('.')) {
+    normalizedAmount = amount / Math.pow(10, Math.max(decimals, 0));
+  }
+  if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) return null;
+
+  const amountUsd = normalizedAmount * price;
+  return Number.isFinite(amountUsd) && amountUsd > 0 ? amountUsd : null;
+};
+
+const fetchMeritRoundEstimates = async (): Promise<Map<string, MeritRoundEstimateBase>> => {
+  const now = Date.now();
+  if (meritRoundEstimateCache && meritRoundEstimateCache.expiresAt > now) {
+    return meritRoundEstimateCache.map;
+  }
+
+  const roundsByKey = new Map<string, MerklAirdropRound[]>();
+
+  for (let page = 0; page < MERIT_ROUND_ESTIMATE_MAX_PAGES; page += 1) {
+    const params = new URLSearchParams({
+      status: 'PAST',
+      type: 'JSON_AIRDROP',
+      campaigns: 'true',
+      items: '100',
+      page: String(page),
+    });
+    const response = await fetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error(`Merkl opportunities failed (${response.status})`);
+    }
+    const payload = (await response.json()) as any;
+    if (!Array.isArray(payload)) break;
+
+    for (const opportunity of payload) {
+      const opportunityId = String(opportunity?.id ?? '');
+      if (!opportunityId) continue;
+
+      const chainId = toFiniteNumber(opportunity?.chainId);
+      if (chainId === null || chainId <= 0) continue;
+
+      const campaigns = Array.isArray(opportunity?.campaigns) ? opportunity.campaigns : [];
+      if (campaigns.length === 0) continue;
+
+      for (const campaign of campaigns) {
+        const creatorId = campaign?.creator?.creatorId;
+        const creatorTags = Array.isArray(campaign?.creator?.tags) ? campaign.creator.tags : [];
+        if (creatorId !== 'aave' && !creatorTags.includes('aave')) continue;
+
+        const amountUsd = extractAirdropAmountUsd(campaign);
+        if (amountUsd === null) continue;
+
+        const startTimestamp = toFiniteNumber(campaign?.startTimestamp);
+        const endTimestamp = toFiniteNumber(campaign?.endTimestamp);
+        if (startTimestamp === null || endTimestamp === null || endTimestamp <= startTimestamp) continue;
+
+        const campaignId = String(campaign?.id ?? '');
+        if (!campaignId) continue;
+
+        const textSources = [
+          opportunity?.name,
+          campaign?.params?.url,
+        ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+        const pairs = textSources.flatMap((text) => extractActionTokenPairs(text));
+        if (pairs.length === 0) continue;
+
+        pairs.forEach(({ action, token }) => {
+          const key = buildMeritRoundKey(chainId, action, token);
+          if (!roundsByKey.has(key)) {
+            roundsByKey.set(key, []);
+          }
+          roundsByKey.get(key)!.push({
+            campaignId,
+            opportunityId,
+            startTimestamp,
+            endTimestamp,
+            amountUsd,
+          });
+        });
+      }
+    }
+
+    if (payload.length < 100) break;
+  }
+
+  const estimateMap = new Map<string, MeritRoundEstimateBase>();
+  const asOf = Math.floor(Date.now() / 1000);
+
+  roundsByKey.forEach((rounds, key) => {
+    const sorted = [...rounds].sort((a, b) => b.startTimestamp - a.startTimestamp);
+    const latest = sorted[0];
+    if (!latest) return;
+
+    const previous = sorted.find((round) => round.startTimestamp < latest.startTimestamp);
+    const intervalDaysFromPrevious = previous
+      ? (latest.startTimestamp - previous.startTimestamp) / SECONDS_PER_DAY
+      : null;
+    const fallbackDays = (latest.endTimestamp - latest.startTimestamp) / SECONDS_PER_DAY;
+    const intervalDaysRaw =
+      intervalDaysFromPrevious && intervalDaysFromPrevious > 0
+        ? intervalDaysFromPrevious
+        : fallbackDays;
+    if (!Number.isFinite(intervalDaysRaw) || intervalDaysRaw <= 0) return;
+
+    const estimatedDailyRewardUsd = latest.amountUsd / intervalDaysRaw;
+    if (!Number.isFinite(estimatedDailyRewardUsd) || estimatedDailyRewardUsd <= 0) return;
+
+    estimateMap.set(key, {
+      estimatedDailyRewardUsd,
+      estimatedRoundIntervalDays: intervalDaysRaw,
+      estimatedRoundCampaignId: latest.campaignId,
+      estimatedRoundOpportunityId: latest.opportunityId,
+      estimatedRoundAsOf: asOf,
+    });
+  });
+
+  meritRoundEstimateCache = {
+    expiresAt: now + MERIT_ROUND_ESTIMATE_CACHE_TTL_MS,
+    map: estimateMap,
+  };
+
+  return estimateMap;
+};
+
+const getMeritEstimateForEntry = (
+  estimates: Map<string, MeritRoundEstimateBase>,
+  chainKey: string,
+  action: MeritAction,
+  token: string,
+  aprPercent: number
+): Partial<MeritAprEntry> | undefined => {
+  if (!Number.isFinite(aprPercent) || aprPercent <= 0) return undefined;
+  const chainId = CHAIN_KEY_TO_CHAIN_ID[chainKey.toLowerCase()];
+  if (!chainId) return undefined;
+
+  const estimate = estimates.get(buildMeritRoundKey(chainId, action, token));
+  if (!estimate) return undefined;
+
+  const aprDecimal = aprPercent / 100;
+  const estimatedImpliedTvlUsd = estimate.estimatedDailyRewardUsd * 365 / aprDecimal;
+  if (!Number.isFinite(estimatedImpliedTvlUsd) || estimatedImpliedTvlUsd <= 0) return undefined;
+
+  return {
+    estimatedDailyRewardUsd: estimate.estimatedDailyRewardUsd,
+    estimatedImpliedTvlUsd,
+    estimatedRoundIntervalDays: estimate.estimatedRoundIntervalDays,
+    estimatedRoundCampaignId: estimate.estimatedRoundCampaignId,
+    estimatedRoundOpportunityId: estimate.estimatedRoundOpportunityId,
+    estimatedRoundAsOf: estimate.estimatedRoundAsOf,
+  };
+};
 
 /**
  * 解析链名，处理特殊情况如 ethereum-prime
@@ -690,6 +961,14 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     // 第二遍遍历：处理每个 baseKey，合并 self 和非 self
     const currentBlockCache = new Map<string, number | null>();
     let expiredCampaignsFiltered = 0;
+    const meritRoundEstimates = await fetchMeritRoundEstimates().catch((error) => {
+      logger.warn(
+        `⚠️ Failed to fetch Merkl-based merit round estimates: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      return new Map<string, MeritRoundEstimateBase>();
+    });
     for (const [baseKey, group] of baseKeyMap.entries()) {
       const nonSelfInfo = group.nonSelf;
       const selfInfo = group.self;
@@ -744,6 +1023,13 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
 
           if (supplyTokens.length > 0) {
             // borrow with supply requirement
+            const estimate = getMeritEstimateForEntry(
+              meritRoundEstimates,
+              chainKey,
+              'borrow',
+              bt,
+              aprValue!
+            );
             const entry: MeritAprEntry = {
               apr: aprValue!,
               selfApr: selfAprValue,
@@ -754,11 +1040,19 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               startBlock,
               endBlock,
               ...(name && { name }),
-              ...(finalMessage.length > 0 && { message: finalMessage })
+              ...(finalMessage.length > 0 && { message: finalMessage }),
+              ...(estimate ?? {})
             };
             incentives.meritBorrows.push(entry);
           } else {
             // 简单 borrow
+            const estimate = getMeritEstimateForEntry(
+              meritRoundEstimates,
+              chainKey,
+              'borrow',
+              bt,
+              aprValue!
+            );
             const entry: MeritAprEntry = {
               apr: aprValue!,
               selfApr: selfAprValue,
@@ -768,7 +1062,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               startBlock,
               endBlock,
               ...(name && { name }),
-              ...(finalMessage.length > 0 && { message: finalMessage })
+              ...(finalMessage.length > 0 && { message: finalMessage }),
+              ...(estimate ?? {})
             };
             incentives.meritBorrows.push(entry);
           }
@@ -779,6 +1074,13 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             const supplyIndexKey = `${chainKey.toLowerCase()}-${st.toLowerCase()}`;
             const supplyIncentives = createIndexEntry(supplyIndexKey);
             // supply with borrow requirement
+            const estimate = getMeritEstimateForEntry(
+              meritRoundEstimates,
+              chainKey,
+              'supply',
+              st,
+              aprValue!
+            );
             const entry: MeritAprEntry = {
               apr: aprValue!,
               selfApr: selfAprValue,
@@ -789,7 +1091,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               startBlock,
               endBlock,
               ...(name && { name }),
-              ...(finalMessage.length > 0 && { message: finalMessage })
+              ...(finalMessage.length > 0 && { message: finalMessage }),
+              ...(estimate ?? {})
             };
             supplyIncentives.meritSupplys.push(entry);
           }
@@ -802,6 +1105,13 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
           const indexKey = `${chainKey.toLowerCase()}-${st.toLowerCase()}`;
           const incentives = createIndexEntry(indexKey);
           // supply with borrow requirement (multiple)
+          const estimate = getMeritEstimateForEntry(
+            meritRoundEstimates,
+            chainKey,
+            'supply',
+            st,
+            aprValue!
+          );
           const entry: MeritAprEntry = {
             apr: aprValue!,
             selfApr: selfAprValue,
@@ -812,7 +1122,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             startBlock,
             endBlock,
             ...(name && { name }),
-            ...(finalMessage.length > 0 && { message: finalMessage })
+            ...(finalMessage.length > 0 && { message: finalMessage }),
+            ...(estimate ?? {})
           };
           incentives.meritSupplys.push(entry);
           }
@@ -823,6 +1134,13 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         for (const st of supplyTargets) {
           const indexKey = `${chainKey.toLowerCase()}-${st.toLowerCase()}`;
           const incentives = createIndexEntry(indexKey);
+          const estimate = getMeritEstimateForEntry(
+            meritRoundEstimates,
+            chainKey,
+            'supply',
+            st,
+            aprValue!
+          );
           const entry: MeritAprEntry = {
             apr: aprValue!,
             selfApr: selfAprValue,
@@ -832,7 +1150,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             startBlock,
             endBlock,
             ...(name && { name }),
-            ...(finalMessage.length > 0 && { message: finalMessage })
+            ...(finalMessage.length > 0 && { message: finalMessage }),
+            ...(estimate ?? {})
           };
           incentives.meritSupplys.push(entry);
         }
