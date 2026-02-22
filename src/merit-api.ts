@@ -65,13 +65,12 @@ interface MerklAirdropRound {
   campaignId: string;
   opportunityId: string;
   startTimestamp: number;
-  endTimestamp: number;
   amountUsd: number;
 }
 
 interface MeritRoundEstimateBase {
-  estimatedDailyRewardUsd: number;
-  estimatedRoundIntervalDays: number;
+  latestAmountUsd: number;
+  latestRoundDurationDays: number;
   estimatedRoundCampaignId: string;
   estimatedRoundOpportunityId: string;
   estimatedRoundAsOf: number;
@@ -191,6 +190,7 @@ const fetchMeritRoundEstimates = async (): Promise<Map<string, MeritRoundEstimat
       status: 'PAST',
       type: 'JSON_AIRDROP',
       campaigns: 'true',
+      order: 'desc',
       items: '100',
       page: String(page),
     });
@@ -243,7 +243,6 @@ const fetchMeritRoundEstimates = async (): Promise<Map<string, MeritRoundEstimat
             campaignId,
             opportunityId,
             startTimestamp,
-            endTimestamp,
             amountUsd,
           });
         });
@@ -261,23 +260,9 @@ const fetchMeritRoundEstimates = async (): Promise<Map<string, MeritRoundEstimat
     const latest = sorted[0];
     if (!latest) return;
 
-    const previous = sorted.find((round) => round.startTimestamp < latest.startTimestamp);
-    const intervalDaysFromPrevious = previous
-      ? (latest.startTimestamp - previous.startTimestamp) / SECONDS_PER_DAY
-      : null;
-    const fallbackDays = (latest.endTimestamp - latest.startTimestamp) / SECONDS_PER_DAY;
-    const intervalDaysRaw =
-      intervalDaysFromPrevious && intervalDaysFromPrevious > 0
-        ? intervalDaysFromPrevious
-        : fallbackDays;
-    if (!Number.isFinite(intervalDaysRaw) || intervalDaysRaw <= 0) return;
-
-    const estimatedDailyRewardUsd = latest.amountUsd / intervalDaysRaw;
-    if (!Number.isFinite(estimatedDailyRewardUsd) || estimatedDailyRewardUsd <= 0) return;
-
     estimateMap.set(key, {
-      estimatedDailyRewardUsd,
-      estimatedRoundIntervalDays: intervalDaysRaw,
+      latestAmountUsd: latest.amountUsd,
+      latestRoundDurationDays: 1,
       estimatedRoundCampaignId: latest.campaignId,
       estimatedRoundOpportunityId: latest.opportunityId,
       estimatedRoundAsOf: asOf,
@@ -297,7 +282,9 @@ const getMeritEstimateForEntry = (
   chainKey: string,
   action: MeritAction,
   token: string,
-  aprPercent: number
+  aprPercent: number,
+  meritStartDate: string,
+  meritEndDate: string
 ): Partial<MeritAprEntry> | undefined => {
   if (!Number.isFinite(aprPercent) || aprPercent <= 0) return undefined;
   const chainId = CHAIN_KEY_TO_CHAIN_ID[chainKey.toLowerCase()];
@@ -306,14 +293,25 @@ const getMeritEstimateForEntry = (
   const estimate = estimates.get(buildMeritRoundKey(chainId, action, token));
   if (!estimate) return undefined;
 
+  const startTimestampMs = Date.parse(meritStartDate);
+  const endTimestampMs = Date.parse(meritEndDate);
+  const cycleDaysRaw =
+    Number.isFinite(startTimestampMs) && Number.isFinite(endTimestampMs) && endTimestampMs > startTimestampMs
+      ? (endTimestampMs - startTimestampMs) / 1000 / SECONDS_PER_DAY
+      : estimate.latestRoundDurationDays;
+  if (!Number.isFinite(cycleDaysRaw) || cycleDaysRaw <= 0) return undefined;
+
+  const estimatedDailyRewardUsd = estimate.latestAmountUsd / cycleDaysRaw;
+  if (!Number.isFinite(estimatedDailyRewardUsd) || estimatedDailyRewardUsd <= 0) return undefined;
+
   const aprDecimal = aprPercent / 100;
-  const estimatedImpliedTvlUsd = estimate.estimatedDailyRewardUsd * 365 / aprDecimal;
+  const estimatedImpliedTvlUsd = estimatedDailyRewardUsd * 365 / aprDecimal;
   if (!Number.isFinite(estimatedImpliedTvlUsd) || estimatedImpliedTvlUsd <= 0) return undefined;
 
   return {
-    estimatedDailyRewardUsd: estimate.estimatedDailyRewardUsd,
+    estimatedDailyRewardUsd,
     estimatedImpliedTvlUsd,
-    estimatedRoundIntervalDays: estimate.estimatedRoundIntervalDays,
+    estimatedRoundIntervalDays: cycleDaysRaw,
     estimatedRoundCampaignId: estimate.estimatedRoundCampaignId,
     estimatedRoundOpportunityId: estimate.estimatedRoundOpportunityId,
     estimatedRoundAsOf: estimate.estimatedRoundAsOf,
@@ -1028,7 +1026,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               chainKey,
               'borrow',
               bt,
-              aprValue!
+              aprValue!,
+              startDate,
+              endDate
             );
             const entry: MeritAprEntry = {
               apr: aprValue!,
@@ -1051,7 +1051,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               chainKey,
               'borrow',
               bt,
-              aprValue!
+              aprValue!,
+              startDate,
+              endDate
             );
             const entry: MeritAprEntry = {
               apr: aprValue!,
@@ -1079,7 +1081,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               chainKey,
               'supply',
               st,
-              aprValue!
+              aprValue!,
+              startDate,
+              endDate
             );
             const entry: MeritAprEntry = {
               apr: aprValue!,
@@ -1110,7 +1114,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             chainKey,
             'supply',
             st,
-            aprValue!
+            aprValue!,
+            startDate,
+            endDate
           );
           const entry: MeritAprEntry = {
             apr: aprValue!,
@@ -1139,7 +1145,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             chainKey,
             'supply',
             st,
-            aprValue!
+            aprValue!,
+            startDate,
+            endDate
           );
           const entry: MeritAprEntry = {
             apr: aprValue!,
