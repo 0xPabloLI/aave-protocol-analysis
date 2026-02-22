@@ -61,13 +61,6 @@ export interface MeritDataItem {
 
 type MeritAction = 'supply' | 'borrow';
 
-interface MerklAirdropRound {
-  campaignId: string;
-  opportunityId: string;
-  startTimestamp: number;
-  amountUsd: number;
-}
-
 interface MeritRoundEstimateBase {
   latestAmountUsd: number;
   latestRoundDurationDays: number;
@@ -177,13 +170,18 @@ const extractAirdropAmountUsd = (campaign: any): number | null => {
   return Number.isFinite(amountUsd) && amountUsd > 0 ? amountUsd : null;
 };
 
-const fetchMeritRoundEstimates = async (): Promise<Map<string, MeritRoundEstimateBase>> => {
+const fetchMeritRoundEstimates = async (
+  targetKeys?: Set<string>
+): Promise<Map<string, MeritRoundEstimateBase>> => {
   const now = Date.now();
   if (meritRoundEstimateCache && meritRoundEstimateCache.expiresAt > now) {
     return meritRoundEstimateCache.map;
   }
 
-  const roundsByKey = new Map<string, MerklAirdropRound[]>();
+  const estimateMap = new Map<string, MeritRoundEstimateBase>();
+  const asOf = Math.floor(Date.now() / 1000);
+  const targets = targetKeys && targetKeys.size > 0 ? new Set(targetKeys) : null;
+  const unresolvedTargets = targets ? new Set(targets) : null;
 
   for (let page = 0; page < MERIT_ROUND_ESTIMATE_MAX_PAGES; page += 1) {
     const params = new URLSearchParams({
@@ -226,48 +224,41 @@ const fetchMeritRoundEstimates = async (): Promise<Map<string, MeritRoundEstimat
         const campaignId = String(campaign?.id ?? '');
         if (!campaignId) continue;
 
-        const textSources = [
+        const textSources = Array.from(
+          new Set(
+            [
           opportunity?.name,
           campaign?.params?.url,
-        ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+            ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+          )
+        );
 
         const pairs = textSources.flatMap((text) => extractActionTokenPairs(text));
         if (pairs.length === 0) continue;
 
         pairs.forEach(({ action, token }) => {
           const key = buildMeritRoundKey(chainId, action, token);
-          if (!roundsByKey.has(key)) {
-            roundsByKey.set(key, []);
-          }
-          roundsByKey.get(key)!.push({
-            campaignId,
-            opportunityId,
-            startTimestamp,
-            amountUsd,
+          if (targets && !targets.has(key)) return;
+          if (estimateMap.has(key)) return;
+
+          estimateMap.set(key, {
+            latestAmountUsd: amountUsd,
+            latestRoundDurationDays: 1,
+            estimatedRoundCampaignId: campaignId,
+            estimatedRoundOpportunityId: opportunityId,
+            estimatedRoundAsOf: asOf,
           });
+
+          if (unresolvedTargets?.has(key)) {
+            unresolvedTargets.delete(key);
+          }
         });
       }
     }
 
     if (payload.length < 100) break;
+    if (unresolvedTargets && unresolvedTargets.size === 0) break;
   }
-
-  const estimateMap = new Map<string, MeritRoundEstimateBase>();
-  const asOf = Math.floor(Date.now() / 1000);
-
-  roundsByKey.forEach((rounds, key) => {
-    const sorted = [...rounds].sort((a, b) => b.startTimestamp - a.startTimestamp);
-    const latest = sorted[0];
-    if (!latest) return;
-
-    estimateMap.set(key, {
-      latestAmountUsd: latest.amountUsd,
-      latestRoundDurationDays: 1,
-      estimatedRoundCampaignId: latest.campaignId,
-      estimatedRoundOpportunityId: latest.opportunityId,
-      estimatedRoundAsOf: asOf,
-    });
-  });
 
   meritRoundEstimateCache = {
     expiresAt: now + MERIT_ROUND_ESTIMATE_CACHE_TTL_MS,
@@ -959,7 +950,26 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     // 第二遍遍历：处理每个 baseKey，合并 self 和非 self
     const currentBlockCache = new Map<string, number | null>();
     let expiredCampaignsFiltered = 0;
-    const meritRoundEstimates = await fetchMeritRoundEstimates().catch((error) => {
+    const collectTargetMeritRoundKeys = (): Set<string> => {
+      const targetKeys = new Set<string>();
+      keyInfos.forEach(({ chainKey, supplyTokens, borrowTokens }) => {
+        const chainId = CHAIN_KEY_TO_CHAIN_ID[chainKey.toLowerCase()];
+        if (!chainId) return;
+
+        supplyTokens.forEach((token) => {
+          if (!token || token === 'multiple') return;
+          targetKeys.add(buildMeritRoundKey(chainId, 'supply', token));
+        });
+        borrowTokens.forEach((token) => {
+          if (!token || token === 'multiple') return;
+          targetKeys.add(buildMeritRoundKey(chainId, 'borrow', token));
+        });
+      });
+      return targetKeys;
+    };
+
+    const targetMeritRoundKeys = collectTargetMeritRoundKeys();
+    const meritRoundEstimates = await fetchMeritRoundEstimates(targetMeritRoundKeys).catch((error) => {
       logger.warn(
         `⚠️ Failed to fetch Merkl-based merit round estimates: ${
           error instanceof Error ? error.message : String(error)
