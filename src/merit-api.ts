@@ -15,8 +15,8 @@ import { meritKeyAliases } from './config.js';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
-const MERIT_ROUND_ESTIMATE_CACHE_TTL_MS = 15 * 60 * 1000;
 const MERIT_ROUND_ESTIMATE_MAX_PAGES = 12;
+const MERIT_ROUND_POST_END_REFRESH_MS = 24 * 60 * 60 * 1000;
 const SECONDS_PER_DAY = 86400;
 
 export interface MeritAPRResponse {
@@ -45,12 +45,9 @@ export interface MeritAprEntry {
   message?: MeritCampaignInfo[]; // Campaign 信息数组（从 Campaign info 弹窗表格中提取，可能有多条 action 和 description）
   requiredBorrowTokens?: string[]; // 需要 borrow 的 token 列表（用于 supply with borrow requirement）
   requiredSupplyTokens?: string[]; // 需要 supply 的 token 列表（用于 borrow with supply requirement）
-  estimatedDailyRewardUsd?: number; // 通过最近一轮 Merkl JSON_AIRDROP 估算
-  estimatedImpliedTvlUsd?: number; // 由 estimatedDailyRewardUsd 和当前 APR 反推
-  estimatedRoundIntervalDays?: number; // 最近两轮间隔（天）
-  estimatedRoundCampaignId?: string; // 最近一轮 campaign id
-  estimatedRoundOpportunityId?: string; // 最近一轮 opportunity id
-  estimatedRoundAsOf?: number; // 估算时间（unix seconds）
+  lastRoundRewardUsd?: number; // 最近一轮 Merkl JSON_AIRDROP 总奖励（USD）
+  estimatedDailyRewardUsd?: number; // 由 lastRoundRewardUsd / 当前 Merit 周期天数估算
+  lastRoundRewardAsOf?: number; // last round 快照时间（unix seconds）
 }
 
 // Merit 数据项结构（简化：只保留 supply 和 borrow）
@@ -63,17 +60,22 @@ type MeritAction = 'supply' | 'borrow';
 
 interface MeritRoundEstimateBase {
   latestAmountUsd: number;
-  latestRoundDurationDays: number;
-  estimatedRoundCampaignId: string;
-  estimatedRoundOpportunityId: string;
-  estimatedRoundAsOf: number;
+  latestCampaignId: string;
+  latestAsOf: number;
+}
+
+interface MeritRoundEstimateTarget {
+  cycleEndTsMs: number | null;
+}
+
+interface MeritRoundEstimateCacheEntry {
+  estimate: MeritRoundEstimateBase;
+  lastCheckedAtMs: number;
+  freezeUntilCycleEndTsMs: number | null;
 }
 
 let meritRoundEstimateCache:
-  | {
-      expiresAt: number;
-      map: Map<string, MeritRoundEstimateBase>;
-    }
+  | Map<string, MeritRoundEstimateCacheEntry>
   | null = null;
 
 const CHAIN_KEY_TO_CHAIN_ID: Record<string, number> = {
@@ -116,6 +118,13 @@ const toFiniteNumber = (value: unknown): number | null => {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
   }
+  return null;
+};
+
+const parseMeritEndDateToMs = (value: string | undefined): number | null => {
+  if (!value) return null;
+  const ts = Date.parse(value);
+  if (Number.isFinite(ts)) return ts;
   return null;
 };
 
@@ -170,18 +179,57 @@ const extractAirdropAmountUsd = (campaign: any): number | null => {
   return Number.isFinite(amountUsd) && amountUsd > 0 ? amountUsd : null;
 };
 
-const fetchMeritRoundEstimates = async (
-  targetKeys?: Set<string>
-): Promise<Map<string, MeritRoundEstimateBase>> => {
-  const now = Date.now();
-  if (meritRoundEstimateCache && meritRoundEstimateCache.expiresAt > now) {
-    return meritRoundEstimateCache.map;
+const shouldRefreshMeritRoundEstimate = (
+  target: MeritRoundEstimateTarget,
+  cacheEntry: MeritRoundEstimateCacheEntry | undefined,
+  nowMs: number
+): boolean => {
+  if (!cacheEntry) return true;
+
+  const cycleEndTsMs = target.cycleEndTsMs;
+  if (cycleEndTsMs !== null && nowMs < cycleEndTsMs) {
+    return false;
   }
 
-  const estimateMap = new Map<string, MeritRoundEstimateBase>();
-  const asOf = Math.floor(Date.now() / 1000);
-  const targets = targetKeys && targetKeys.size > 0 ? new Set(targetKeys) : null;
-  const unresolvedTargets = targets ? new Set(targets) : null;
+  if (
+    cacheEntry.freezeUntilCycleEndTsMs !== null &&
+    nowMs < cacheEntry.freezeUntilCycleEndTsMs
+  ) {
+    return false;
+  }
+
+  return nowMs - cacheEntry.lastCheckedAtMs >= MERIT_ROUND_POST_END_REFRESH_MS;
+};
+
+const fetchMeritRoundEstimates = async (
+  targets?: Map<string, MeritRoundEstimateTarget>
+): Promise<Map<string, MeritRoundEstimateBase>> => {
+  const nowMs = Date.now();
+  const cache = meritRoundEstimateCache ?? new Map<string, MeritRoundEstimateCacheEntry>();
+  if (!meritRoundEstimateCache) {
+    meritRoundEstimateCache = cache;
+  }
+
+  const targetEntries = targets && targets.size > 0 ? Array.from(targets.entries()) : [];
+  const keysToFetch = new Set<string>(
+    targetEntries
+      .filter(([key, target]) => shouldRefreshMeritRoundEstimate(target, cache.get(key), nowMs))
+      .map(([key]) => key)
+  );
+
+  // If every target key is still in freeze / pre-end window, return cached estimates directly.
+  if (targetEntries.length > 0 && keysToFetch.size === 0) {
+    const cachedResult = new Map<string, MeritRoundEstimateBase>();
+    targetEntries.forEach(([key]) => {
+      const cached = cache.get(key);
+      if (cached) cachedResult.set(key, cached.estimate);
+    });
+    return cachedResult;
+  }
+
+  const fetchedEstimates = new Map<string, MeritRoundEstimateBase>();
+  const asOf = Math.floor(nowMs / 1000);
+  const unresolvedTargets = keysToFetch.size > 0 ? new Set(keysToFetch) : null;
 
   for (let page = 0; page < MERIT_ROUND_ESTIMATE_MAX_PAGES; page += 1) {
     const params = new URLSearchParams({
@@ -239,14 +287,13 @@ const fetchMeritRoundEstimates = async (
         pairs.forEach(({ action, token }) => {
           const key = buildMeritRoundKey(chainId, action, token);
           if (targets && !targets.has(key)) return;
-          if (estimateMap.has(key)) return;
+          if (keysToFetch.size > 0 && !keysToFetch.has(key)) return;
+          if (fetchedEstimates.has(key)) return;
 
-          estimateMap.set(key, {
+          fetchedEstimates.set(key, {
             latestAmountUsd: amountUsd,
-            latestRoundDurationDays: 1,
-            estimatedRoundCampaignId: campaignId,
-            estimatedRoundOpportunityId: opportunityId,
-            estimatedRoundAsOf: asOf,
+            latestCampaignId: campaignId,
+            latestAsOf: asOf,
           });
 
           if (unresolvedTargets?.has(key)) {
@@ -260,12 +307,53 @@ const fetchMeritRoundEstimates = async (
     if (unresolvedTargets && unresolvedTargets.size === 0) break;
   }
 
-  meritRoundEstimateCache = {
-    expiresAt: now + MERIT_ROUND_ESTIMATE_CACHE_TTL_MS,
-    map: estimateMap,
-  };
+  // Update per-key cache entries (fetched keys and untouched keys keep latest known estimate).
+  targetEntries.forEach(([key, target]) => {
+    const previous = cache.get(key);
+    const fetched = fetchedEstimates.get(key);
 
-  return estimateMap;
+    if (!fetched) {
+      if (previous && keysToFetch.has(key)) {
+        cache.set(key, {
+          ...previous,
+          lastCheckedAtMs: nowMs,
+        });
+      }
+      return;
+    }
+
+    let freezeUntilCycleEndTsMs: number | null = previous?.freezeUntilCycleEndTsMs ?? null;
+    if (
+      previous &&
+      previous.estimate.latestCampaignId !== fetched.latestCampaignId &&
+      target.cycleEndTsMs !== null &&
+      nowMs < target.cycleEndTsMs
+    ) {
+      // New round detected: freeze refresh until the current Merit cycle ends.
+      freezeUntilCycleEndTsMs = target.cycleEndTsMs;
+    }
+    if (target.cycleEndTsMs !== null && nowMs >= target.cycleEndTsMs) {
+      freezeUntilCycleEndTsMs = null;
+    }
+
+    cache.set(key, {
+      estimate: fetched,
+      lastCheckedAtMs: nowMs,
+      freezeUntilCycleEndTsMs,
+    });
+  });
+
+  const result = new Map<string, MeritRoundEstimateBase>();
+  if (targetEntries.length > 0) {
+    targetEntries.forEach(([key]) => {
+      const cached = cache.get(key);
+      if (cached) result.set(key, cached.estimate);
+    });
+    return result;
+  }
+
+  // fallback: no targets provided, return freshly fetched set
+  return fetchedEstimates;
 };
 
 const getMeritEstimateForEntry = (
@@ -273,11 +361,9 @@ const getMeritEstimateForEntry = (
   chainKey: string,
   action: MeritAction,
   token: string,
-  aprPercent: number,
   meritStartDate: string,
   meritEndDate: string
 ): Partial<MeritAprEntry> | undefined => {
-  if (!Number.isFinite(aprPercent) || aprPercent <= 0) return undefined;
   const chainId = CHAIN_KEY_TO_CHAIN_ID[chainKey.toLowerCase()];
   if (!chainId) return undefined;
 
@@ -289,23 +375,16 @@ const getMeritEstimateForEntry = (
   const cycleDaysRaw =
     Number.isFinite(startTimestampMs) && Number.isFinite(endTimestampMs) && endTimestampMs > startTimestampMs
       ? (endTimestampMs - startTimestampMs) / 1000 / SECONDS_PER_DAY
-      : estimate.latestRoundDurationDays;
+      : 0;
   if (!Number.isFinite(cycleDaysRaw) || cycleDaysRaw <= 0) return undefined;
 
   const estimatedDailyRewardUsd = estimate.latestAmountUsd / cycleDaysRaw;
   if (!Number.isFinite(estimatedDailyRewardUsd) || estimatedDailyRewardUsd <= 0) return undefined;
 
-  const aprDecimal = aprPercent / 100;
-  const estimatedImpliedTvlUsd = estimatedDailyRewardUsd * 365 / aprDecimal;
-  if (!Number.isFinite(estimatedImpliedTvlUsd) || estimatedImpliedTvlUsd <= 0) return undefined;
-
   return {
+    lastRoundRewardUsd: estimate.latestAmountUsd,
     estimatedDailyRewardUsd,
-    estimatedImpliedTvlUsd,
-    estimatedRoundIntervalDays: cycleDaysRaw,
-    estimatedRoundCampaignId: estimate.estimatedRoundCampaignId,
-    estimatedRoundOpportunityId: estimate.estimatedRoundOpportunityId,
-    estimatedRoundAsOf: estimate.estimatedRoundAsOf,
+    lastRoundRewardAsOf: estimate.latestAsOf,
   };
 };
 
@@ -884,7 +963,6 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       chainKey: string;
     }
     
-    const keyInfos: KeyInfo[] = [];
     const baseKeyMap = new Map<string, { nonSelf?: KeyInfo; self?: KeyInfo }>();
     
     // 第一遍遍历：收集所有 key 信息
@@ -931,7 +1009,6 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
 
       if (supplyTokens.length > 0 || borrowTokens.length > 0) {
         const info: KeyInfo = { key, value, isSelf: isSelfFormat, supplyTokens, borrowTokens, chainKey };
-        keyInfos.push(info);
         
         // 按 baseKey 分组（baseKey 就是去掉 self- 前缀的 key）
         const baseKey = actualKey;
@@ -950,26 +1027,36 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     // 第二遍遍历：处理每个 baseKey，合并 self 和非 self
     const currentBlockCache = new Map<string, number | null>();
     let expiredCampaignsFiltered = 0;
-    const collectTargetMeritRoundKeys = (): Set<string> => {
-      const targetKeys = new Set<string>();
-      keyInfos.forEach(({ chainKey, supplyTokens, borrowTokens }) => {
-        const chainId = CHAIN_KEY_TO_CHAIN_ID[chainKey.toLowerCase()];
-        if (!chainId) return;
+    const collectTargetMeritRoundTargets = (): Map<string, MeritRoundEstimateTarget> => {
+      const targets = new Map<string, MeritRoundEstimateTarget>();
+      for (const [baseKey, group] of baseKeyMap.entries()) {
+        const nonSelfInfo = group.nonSelf;
+        const selfInfo = group.self;
+        const keyForTimeRange = nonSelfInfo?.key || selfInfo?.key || baseKey;
+        const { endDate } = getLinkAndTimeRange(keyForTimeRange);
+        const cycleEndTsMs = parseMeritEndDateToMs(endDate);
 
-        supplyTokens.forEach((token) => {
+        const candidate = nonSelfInfo ?? selfInfo;
+        if (!candidate) continue;
+        const chainId = CHAIN_KEY_TO_CHAIN_ID[candidate.chainKey.toLowerCase()];
+        if (!chainId) continue;
+
+        candidate.supplyTokens.forEach((token) => {
           if (!token || token === 'multiple') return;
-          targetKeys.add(buildMeritRoundKey(chainId, 'supply', token));
+          const key = buildMeritRoundKey(chainId, 'supply', token);
+          targets.set(key, { cycleEndTsMs });
         });
-        borrowTokens.forEach((token) => {
+        candidate.borrowTokens.forEach((token) => {
           if (!token || token === 'multiple') return;
-          targetKeys.add(buildMeritRoundKey(chainId, 'borrow', token));
+          const key = buildMeritRoundKey(chainId, 'borrow', token);
+          targets.set(key, { cycleEndTsMs });
         });
-      });
-      return targetKeys;
+      }
+      return targets;
     };
 
-    const targetMeritRoundKeys = collectTargetMeritRoundKeys();
-    const meritRoundEstimates = await fetchMeritRoundEstimates(targetMeritRoundKeys).catch((error) => {
+    const targetMeritRoundTargets = collectTargetMeritRoundTargets();
+    const meritRoundEstimates = await fetchMeritRoundEstimates(targetMeritRoundTargets).catch((error) => {
       logger.warn(
         `⚠️ Failed to fetch Merkl-based merit round estimates: ${
           error instanceof Error ? error.message : String(error)
@@ -1036,7 +1123,6 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               chainKey,
               'borrow',
               bt,
-              aprValue!,
               startDate,
               endDate
             );
@@ -1061,7 +1147,6 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               chainKey,
               'borrow',
               bt,
-              aprValue!,
               startDate,
               endDate
             );
@@ -1091,7 +1176,6 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               chainKey,
               'supply',
               st,
-              aprValue!,
               startDate,
               endDate
             );
@@ -1124,7 +1208,6 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             chainKey,
             'supply',
             st,
-            aprValue!,
             startDate,
             endDate
           );
@@ -1155,7 +1238,6 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             chainKey,
             'supply',
             st,
-            aprValue!,
             startDate,
             endDate
           );
