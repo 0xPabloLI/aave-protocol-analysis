@@ -74,6 +74,15 @@ let meritRoundEstimateCache:
   | Map<string, MeritRoundEstimateCacheEntry>
   | null = null;
 
+const toIsoOrNull = (value: number | null | undefined): string | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  try {
+    return new Date(value).toISOString();
+  } catch {
+    return null;
+  }
+};
+
 const CHAIN_KEY_TO_CHAIN_ID: Record<string, number> = {
   ethereum: 1,
   'ethereum-prime': 1,
@@ -365,6 +374,61 @@ const getMeritEstimateForEntry = (
   return {
     lastRoundRewardUsd: estimate.latestAmountUsd,
   };
+};
+
+const serializeMeritRoundEstimateTargets = (
+  targets: Map<string, MeritRoundEstimateTarget>
+): Record<string, { cycleEndTsMs: number | null; cycleEndIso: string | null }> => {
+  const serialized: Record<string, { cycleEndTsMs: number | null; cycleEndIso: string | null }> = {};
+  for (const [key, target] of targets.entries()) {
+    serialized[key] = {
+      cycleEndTsMs: target.cycleEndTsMs,
+      cycleEndIso: toIsoOrNull(target.cycleEndTsMs),
+    };
+  }
+  return serialized;
+};
+
+const serializeMeritRoundEstimates = (
+  estimates: Map<string, MeritRoundEstimateBase>
+): Record<string, { lastRoundRewardUsd: number; lastRoundCampaignId: string }> => {
+  const serialized: Record<string, { lastRoundRewardUsd: number; lastRoundCampaignId: string }> = {};
+  for (const [key, estimate] of estimates.entries()) {
+    serialized[key] = {
+      lastRoundRewardUsd: estimate.latestAmountUsd,
+      lastRoundCampaignId: estimate.latestCampaignId,
+    };
+  }
+  return serialized;
+};
+
+const serializeMeritRoundEstimateCache = () => {
+  if (!meritRoundEstimateCache) return {};
+
+  const serialized: Record<
+    string,
+    {
+      lastRoundRewardUsd: number;
+      lastRoundCampaignId: string;
+      lastCheckedAtMs: number;
+      lastCheckedAtIso: string | null;
+      freezeUntilCycleEndTsMs: number | null;
+      freezeUntilCycleEndIso: string | null;
+    }
+  > = {};
+
+  for (const [key, entry] of meritRoundEstimateCache.entries()) {
+    serialized[key] = {
+      lastRoundRewardUsd: entry.estimate.latestAmountUsd,
+      lastRoundCampaignId: entry.estimate.latestCampaignId,
+      lastCheckedAtMs: entry.lastCheckedAtMs,
+      lastCheckedAtIso: toIsoOrNull(entry.lastCheckedAtMs),
+      freezeUntilCycleEndTsMs: entry.freezeUntilCycleEndTsMs,
+      freezeUntilCycleEndIso: toIsoOrNull(entry.freezeUntilCycleEndTsMs),
+    };
+  }
+
+  return serialized;
 };
 
 /**
@@ -1235,6 +1299,32 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     
     // 保存 Merit 原始数据
     await mkdir(DATA_DIR, { recursive: true });
+    const meritMerklRawDataPath = join(DATA_DIR, 'merit-merkl-raw-data.json');
+    await writeFile(
+      meritMerklRawDataPath,
+      JSON.stringify(
+        {
+          timestamp: new Date().toISOString(),
+          source: {
+            endpoint: `${MERKL_BASE_URL}/opportunities`,
+            status: 'PAST',
+            type: 'JSON_AIRDROP',
+            campaigns: true,
+            order: 'desc',
+            items: 100,
+            maxPages: MERIT_ROUND_ESTIMATE_MAX_PAGES,
+          },
+          targets: serializeMeritRoundEstimateTargets(targetMeritRoundTargets),
+          lastRoundRewards: serializeMeritRoundEstimates(meritRoundEstimates),
+          cacheState: serializeMeritRoundEstimateCache(),
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+    logger.info(`💾 Merit Merkl raw data saved to ${meritMerklRawDataPath}`);
+
     const meritRawDataPath = join(DATA_DIR, 'merit-raw-data.json');
     await writeFile(meritRawDataPath, JSON.stringify({
       timestamp: new Date().toISOString(),
