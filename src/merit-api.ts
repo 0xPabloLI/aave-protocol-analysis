@@ -70,9 +70,17 @@ interface MeritRoundEstimateCacheEntry {
   freezeUntilCycleEndTsMs: number | null;
 }
 
+interface MeritRoundEstimateFetchMeta {
+  requestTemplateUrl: string;
+  firstPageUrl: string;
+  pagesScanned: number;
+  hitCacheOnly: boolean;
+}
+
 let meritRoundEstimateCache:
   | Map<string, MeritRoundEstimateCacheEntry>
   | null = null;
+let meritRoundEstimateLastFetchMeta: MeritRoundEstimateFetchMeta | null = null;
 
 const toIsoOrNull = (value: number | null | undefined): string | null => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
@@ -210,6 +218,17 @@ const fetchMeritRoundEstimates = async (
   targets?: Map<string, MeritRoundEstimateTarget>
 ): Promise<Map<string, MeritRoundEstimateBase>> => {
   const nowMs = Date.now();
+  const paramsTemplate = new URLSearchParams({
+    status: 'PAST',
+    type: 'JSON_AIRDROP',
+    campaigns: 'true',
+    order: 'desc',
+    items: '100',
+    page: '{page}',
+  });
+  const requestTemplateUrl = `${MERKL_BASE_URL}/opportunities?${paramsTemplate.toString()}`;
+  const firstPageUrl = requestTemplateUrl.replace('page=%7Bpage%7D', 'page=0');
+  let pagesScanned = 0;
   const cache = meritRoundEstimateCache ?? new Map<string, MeritRoundEstimateCacheEntry>();
   if (!meritRoundEstimateCache) {
     meritRoundEstimateCache = cache;
@@ -224,6 +243,12 @@ const fetchMeritRoundEstimates = async (
 
   // If every target key is still in freeze / pre-end window, return cached estimates directly.
   if (targetEntries.length > 0 && keysToFetch.size === 0) {
+    meritRoundEstimateLastFetchMeta = {
+      requestTemplateUrl,
+      firstPageUrl,
+      pagesScanned: 0,
+      hitCacheOnly: true,
+    };
     const cachedResult = new Map<string, MeritRoundEstimateBase>();
     targetEntries.forEach(([key]) => {
       const cached = cache.get(key);
@@ -250,6 +275,7 @@ const fetchMeritRoundEstimates = async (
     }
     const payload = (await response.json()) as any;
     if (!Array.isArray(payload)) break;
+    pagesScanned += 1;
 
     for (const opportunity of payload) {
       const opportunityId = String(opportunity?.id ?? '');
@@ -347,6 +373,12 @@ const fetchMeritRoundEstimates = async (
   });
 
   const result = new Map<string, MeritRoundEstimateBase>();
+  meritRoundEstimateLastFetchMeta = {
+    requestTemplateUrl,
+    firstPageUrl,
+    pagesScanned,
+    hitCacheOnly: false,
+  };
   if (targetEntries.length > 0) {
     targetEntries.forEach(([key]) => {
       const cached = cache.get(key);
@@ -1313,6 +1345,14 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             order: 'desc',
             items: 100,
             maxPages: MERIT_ROUND_ESTIMATE_MAX_PAGES,
+            requestTemplateUrl:
+              meritRoundEstimateLastFetchMeta?.requestTemplateUrl ??
+              `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page={page}`,
+            firstPageUrl:
+              meritRoundEstimateLastFetchMeta?.firstPageUrl ??
+              `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page=0`,
+            pagesScanned: meritRoundEstimateLastFetchMeta?.pagesScanned ?? 0,
+            hitCacheOnly: meritRoundEstimateLastFetchMeta?.hitCacheOnly ?? false,
           },
           targets: serializeMeritRoundEstimateTargets(targetMeritRoundTargets),
           lastRoundRewards: serializeMeritRoundEstimates(meritRoundEstimates),
