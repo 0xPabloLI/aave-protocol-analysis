@@ -17,7 +17,6 @@ const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const MERIT_ROUND_ESTIMATE_MAX_PAGES = 12;
 const MERIT_ROUND_POST_END_REFRESH_MS = 24 * 60 * 60 * 1000;
-const SECONDS_PER_DAY = 86400;
 
 export interface MeritAPRResponse {
   previousAPR: any;
@@ -46,8 +45,6 @@ export interface MeritAprEntry {
   requiredBorrowTokens?: string[]; // 需要 borrow 的 token 列表（用于 supply with borrow requirement）
   requiredSupplyTokens?: string[]; // 需要 supply 的 token 列表（用于 borrow with supply requirement）
   lastRoundRewardUsd?: number; // 最近一轮 Merkl JSON_AIRDROP 总奖励（USD）
-  estimatedDailyRewardUsd?: number; // 由 lastRoundRewardUsd / 当前 Merit 周期天数估算
-  lastRoundRewardAsOf?: number; // last round 快照时间（unix seconds）
 }
 
 // Merit 数据项结构（简化：只保留 supply 和 borrow）
@@ -61,7 +58,6 @@ type MeritAction = 'supply' | 'borrow';
 interface MeritRoundEstimateBase {
   latestAmountUsd: number;
   latestCampaignId: string;
-  latestAsOf: number;
 }
 
 interface MeritRoundEstimateTarget {
@@ -228,7 +224,6 @@ const fetchMeritRoundEstimates = async (
   }
 
   const fetchedEstimates = new Map<string, MeritRoundEstimateBase>();
-  const asOf = Math.floor(nowMs / 1000);
   const unresolvedTargets = keysToFetch.size > 0 ? new Set(keysToFetch) : null;
 
   for (let page = 0; page < MERIT_ROUND_ESTIMATE_MAX_PAGES; page += 1) {
@@ -293,7 +288,6 @@ const fetchMeritRoundEstimates = async (
           fetchedEstimates.set(key, {
             latestAmountUsd: amountUsd,
             latestCampaignId: campaignId,
-            latestAsOf: asOf,
           });
 
           if (unresolvedTargets?.has(key)) {
@@ -360,9 +354,7 @@ const getMeritEstimateForEntry = (
   estimates: Map<string, MeritRoundEstimateBase>,
   chainKey: string,
   action: MeritAction,
-  token: string,
-  meritStartDate: string,
-  meritEndDate: string
+  token: string
 ): Partial<MeritAprEntry> | undefined => {
   const chainId = CHAIN_KEY_TO_CHAIN_ID[chainKey.toLowerCase()];
   if (!chainId) return undefined;
@@ -370,21 +362,8 @@ const getMeritEstimateForEntry = (
   const estimate = estimates.get(buildMeritRoundKey(chainId, action, token));
   if (!estimate) return undefined;
 
-  const startTimestampMs = Date.parse(meritStartDate);
-  const endTimestampMs = Date.parse(meritEndDate);
-  const cycleDaysRaw =
-    Number.isFinite(startTimestampMs) && Number.isFinite(endTimestampMs) && endTimestampMs > startTimestampMs
-      ? (endTimestampMs - startTimestampMs) / 1000 / SECONDS_PER_DAY
-      : 0;
-  if (!Number.isFinite(cycleDaysRaw) || cycleDaysRaw <= 0) return undefined;
-
-  const estimatedDailyRewardUsd = estimate.latestAmountUsd / cycleDaysRaw;
-  if (!Number.isFinite(estimatedDailyRewardUsd) || estimatedDailyRewardUsd <= 0) return undefined;
-
   return {
     lastRoundRewardUsd: estimate.latestAmountUsd,
-    estimatedDailyRewardUsd,
-    lastRoundRewardAsOf: estimate.latestAsOf,
   };
 };
 
@@ -1122,9 +1101,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               meritRoundEstimates,
               chainKey,
               'borrow',
-              bt,
-              startDate,
-              endDate
+              bt
             );
             const entry: MeritAprEntry = {
               apr: aprValue!,
@@ -1146,9 +1123,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               meritRoundEstimates,
               chainKey,
               'borrow',
-              bt,
-              startDate,
-              endDate
+              bt
             );
             const entry: MeritAprEntry = {
               apr: aprValue!,
@@ -1175,9 +1150,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               meritRoundEstimates,
               chainKey,
               'supply',
-              st,
-              startDate,
-              endDate
+              st
             );
             const entry: MeritAprEntry = {
               apr: aprValue!,
@@ -1207,9 +1180,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             meritRoundEstimates,
             chainKey,
             'supply',
-            st,
-            startDate,
-            endDate
+            st
           );
           const entry: MeritAprEntry = {
             apr: aprValue!,
@@ -1237,9 +1208,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             meritRoundEstimates,
             chainKey,
             'supply',
-            st,
-            startDate,
-            endDate
+            st
           );
           const entry: MeritAprEntry = {
             apr: aprValue!,
