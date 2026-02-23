@@ -67,7 +67,6 @@ interface MeritRoundEstimateTarget {
 interface MeritRoundEstimateCacheEntry {
   estimate: MeritRoundEstimateBase;
   lastCheckedAtMs: number;
-  freezeUntilCycleEndTsMs: number | null;
 }
 
 interface MeritRoundEstimateFetchMeta {
@@ -201,13 +200,6 @@ const shouldRefreshMeritRoundEstimate = (
 
   const cycleEndTsMs = target.cycleEndTsMs;
   if (cycleEndTsMs !== null && nowMs < cycleEndTsMs) {
-    return false;
-  }
-
-  if (
-    cacheEntry.freezeUntilCycleEndTsMs !== null &&
-    nowMs < cacheEntry.freezeUntilCycleEndTsMs
-  ) {
     return false;
   }
 
@@ -351,24 +343,9 @@ const fetchMeritRoundEstimates = async (
       return;
     }
 
-    let freezeUntilCycleEndTsMs: number | null = previous?.freezeUntilCycleEndTsMs ?? null;
-    if (
-      previous &&
-      previous.estimate.latestCampaignId !== fetched.latestCampaignId &&
-      target.cycleEndTsMs !== null &&
-      nowMs < target.cycleEndTsMs
-    ) {
-      // New round detected: freeze refresh until the current Merit cycle ends.
-      freezeUntilCycleEndTsMs = target.cycleEndTsMs;
-    }
-    if (target.cycleEndTsMs !== null && nowMs >= target.cycleEndTsMs) {
-      freezeUntilCycleEndTsMs = null;
-    }
-
     cache.set(key, {
       estimate: fetched,
       lastCheckedAtMs: nowMs,
-      freezeUntilCycleEndTsMs,
     });
   });
 
@@ -444,8 +421,6 @@ const serializeMeritRoundEstimateCache = () => {
       lastRoundCampaignId: string;
       lastCheckedAtMs: number;
       lastCheckedAtIso: string | null;
-      freezeUntilCycleEndTsMs: number | null;
-      freezeUntilCycleEndIso: string | null;
     }
   > = {};
 
@@ -455,8 +430,6 @@ const serializeMeritRoundEstimateCache = () => {
       lastRoundCampaignId: entry.estimate.latestCampaignId,
       lastCheckedAtMs: entry.lastCheckedAtMs,
       lastCheckedAtIso: toIsoOrNull(entry.lastCheckedAtMs),
-      freezeUntilCycleEndTsMs: entry.freezeUntilCycleEndTsMs,
-      freezeUntilCycleEndIso: toIsoOrNull(entry.freezeUntilCycleEndTsMs),
     };
   }
 
