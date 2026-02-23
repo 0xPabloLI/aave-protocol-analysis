@@ -192,16 +192,11 @@ const extractAirdropAmountUsd = (campaign: any): number | null => {
 };
 
 const shouldRefreshMeritRoundEstimate = (
-  target: MeritRoundEstimateTarget,
+  _target: MeritRoundEstimateTarget,
   cacheEntry: MeritRoundEstimateCacheEntry | undefined,
   nowMs: number
 ): boolean => {
   if (!cacheEntry) return true;
-
-  const cycleEndTsMs = target.cycleEndTsMs;
-  if (cycleEndTsMs !== null && nowMs < cycleEndTsMs) {
-    return false;
-  }
 
   return nowMs - cacheEntry.lastCheckedAtMs >= MERIT_ROUND_POST_END_REFRESH_MS;
 };
