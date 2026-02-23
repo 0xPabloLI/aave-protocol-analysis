@@ -1,3 +1,6 @@
+import { readFile } from 'fs/promises';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { logger } from '../logger.js';
 import {
   buildForecastState,
@@ -9,6 +12,9 @@ import { fetchMerklOpportunities } from './merklOpportunityClient.js';
 
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const SECONDS_PER_DAY = 86400;
+const MERKL_RAW_FILE_MAX_AGE_MS = 120 * 1000;
+const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
+const MERKL_RAW_DATA_PATH = join(DATA_DIR, 'merkl-raw-data.json');
 
 const CACHE_TTL_MS = (() => {
   const raw = process.env.MERKL_FORECAST_CACHE_TTL_MS;
@@ -58,6 +64,12 @@ interface CampaignSnapshotLite {
       };
     };
   };
+}
+
+interface MerklRawDataFile {
+  timestamp?: unknown;
+  liveOpportunities?: unknown;
+  rawOpportunities?: unknown;
 }
 
 const toNumber = (value: unknown): number | null => {
@@ -239,14 +251,32 @@ const fetchJson = async (url: string): Promise<unknown> => {
   return response.json() as Promise<unknown>;
 };
 
-const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOpportunityMeta>> => {
-  const now = Date.now();
-  if (campaignOpportunityCache && campaignOpportunityCache.expiresAt > now) {
-    return campaignOpportunityCache.data;
+const getFreshMerklOpportunitiesFromRawFile = async (): Promise<unknown[] | null> => {
+  try {
+    const fileContent = await readFile(MERKL_RAW_DATA_PATH, 'utf-8');
+    const parsed = JSON.parse(fileContent) as MerklRawDataFile;
+    const tsRaw = parsed?.timestamp;
+    const tsMs = typeof tsRaw === 'string' ? Date.parse(tsRaw) : NaN;
+    if (!Number.isFinite(tsMs)) return null;
+
+    const ageMs = Date.now() - tsMs;
+    if (ageMs > MERKL_RAW_FILE_MAX_AGE_MS) {
+      return null;
+    }
+
+    const live = Array.isArray(parsed?.liveOpportunities) ? parsed.liveOpportunities : null;
+    if (live) return live as unknown[];
+    const raw = Array.isArray(parsed?.rawOpportunities) ? parsed.rawOpportunities : null;
+    if (raw) return raw as unknown[];
+    return null;
+  } catch {
+    return null;
   }
+};
 
-  const allOpps = await fetchMerklOpportunities();
-
+const buildCampaignOpportunityMetaMapFromOpportunities = (
+  allOpps: unknown[]
+): Map<string, CampaignOpportunityMeta> => {
   const map = new Map<string, CampaignOpportunityMeta>();
   allOpps.forEach((opp) => {
     const tvl = toNumber(getAtPath(opp, ['tvl']));
@@ -297,6 +327,22 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
       });
     });
   });
+  return map;
+};
+
+const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOpportunityMeta>> => {
+  const now = Date.now();
+  if (campaignOpportunityCache && campaignOpportunityCache.expiresAt > now) {
+    return campaignOpportunityCache.data;
+  }
+
+  const fileOpps = await getFreshMerklOpportunitiesFromRawFile();
+  const allOpps = fileOpps ?? (await fetchMerklOpportunities());
+  if (fileOpps) {
+    logger.info('📦 Merkl forecast using fresh merkl-raw-data.json opportunities snapshot');
+  }
+
+  const map = buildCampaignOpportunityMetaMapFromOpportunities(allOpps);
 
   campaignOpportunityCache = {
     data: map,
