@@ -213,6 +213,145 @@ export interface TokenPriceEntry {
 
 export type TokenPricesIndex = Record<string, TokenPriceEntry>;
 
+type ForecastCampaignTypeLite =
+  | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  | 'DUTCH_AUCTION'
+  | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+
+interface CampaignSnapshotLiteForForecastFile {
+  id: string;
+  amount?: unknown;
+  startTimestamp?: unknown;
+  endTimestamp?: unknown;
+  campaignStatus?: {
+    computedUntil?: unknown;
+  };
+  rewardToken?: {
+    price?: unknown;
+    decimals?: unknown;
+  };
+  params?: {
+    decimalsRewardToken?: unknown;
+    distributionMethodParameters?: {
+      distributionSettings?: {
+        apr?: unknown;
+      };
+    };
+  };
+}
+
+interface ForecastCampaignMetaLite {
+  tvl: number;
+  campaignTypeHint: ForecastCampaignTypeLite;
+  distributionTypeRaw: string | null;
+  campaignSnapshot: CampaignSnapshotLiteForForecastFile | null;
+}
+
+const normalizeForecastCampaignTypeLite = (value: unknown): ForecastCampaignTypeLite | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toUpperCase();
+  if (!normalized) return null;
+  if (normalized.includes('MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
+    return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+  }
+  if (normalized.includes('DUTCH_AUCTION')) {
+    return 'DUTCH_AUCTION';
+  }
+  if (normalized.includes('FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
+    return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+  }
+  return null;
+};
+
+const buildCampaignSnapshotLiteForForecastFile = (campaign: any): CampaignSnapshotLiteForForecastFile | null => {
+  const id = typeof campaign?.id === 'string' ? campaign.id : String(campaign?.id || '').trim();
+  if (!id) return null;
+
+  const snapshot: CampaignSnapshotLiteForForecastFile = { id };
+  if (campaign?.amount !== undefined) snapshot.amount = campaign.amount;
+  if (campaign?.startTimestamp !== undefined) snapshot.startTimestamp = campaign.startTimestamp;
+  if (campaign?.endTimestamp !== undefined) snapshot.endTimestamp = campaign.endTimestamp;
+  if (campaign?.campaignStatus?.computedUntil !== undefined) {
+    snapshot.campaignStatus = { computedUntil: campaign.campaignStatus.computedUntil };
+  }
+  if (campaign?.rewardToken) {
+    const rewardToken: CampaignSnapshotLiteForForecastFile['rewardToken'] = {};
+    if (campaign.rewardToken.price !== undefined) rewardToken.price = campaign.rewardToken.price;
+    if (campaign.rewardToken.decimals !== undefined) rewardToken.decimals = campaign.rewardToken.decimals;
+    if (Object.keys(rewardToken).length > 0) snapshot.rewardToken = rewardToken;
+  }
+  if (campaign?.params) {
+    const params: CampaignSnapshotLiteForForecastFile['params'] = {};
+    if (campaign.params.decimalsRewardToken !== undefined) {
+      params.decimalsRewardToken = campaign.params.decimalsRewardToken;
+    }
+    const apr = campaign.params?.distributionMethodParameters?.distributionSettings?.apr;
+    if (apr !== undefined) {
+      params.distributionMethodParameters = { distributionSettings: { apr } };
+    }
+    if (Object.keys(params).length > 0) snapshot.params = params;
+  }
+  return snapshot;
+};
+
+const buildForecastCampaignMetaLiteMap = (
+  opportunities: MerklOpportunity[]
+): Record<string, ForecastCampaignMetaLite> => {
+  const result: Record<string, ForecastCampaignMetaLite> = {};
+
+  for (const opp of opportunities) {
+    const tvl = Number(opp?.tvl);
+    if (!Number.isFinite(tvl) || tvl < 0) continue;
+
+    const breakdowns = opp?.rewardsRecord?.breakdowns;
+    if (!Array.isArray(breakdowns) || breakdowns.length === 0) continue;
+
+    const campaignSnapshotById = new Map<string, CampaignSnapshotLiteForForecastFile>();
+    if (Array.isArray(opp.campaigns)) {
+      for (const campaign of opp.campaigns) {
+        const snapshot = buildCampaignSnapshotLiteForForecastFile(campaign);
+        if (snapshot) campaignSnapshotById.set(snapshot.id, snapshot);
+      }
+    }
+
+    for (const breakdown of breakdowns) {
+      const campaignId = String(breakdown?.campaignId || '').trim();
+      if (!campaignId) continue;
+
+      const rawType =
+        (typeof breakdown?.distributionType === 'string' && breakdown.distributionType) ||
+        (typeof breakdown?.distributionMethod === 'string' && breakdown.distributionMethod) ||
+        (typeof opp?.distributionType === 'string' && opp.distributionType) ||
+        null;
+
+      const campaignTypeHint = normalizeForecastCampaignTypeLite(rawType);
+      if (!campaignTypeHint) continue;
+
+      const existing = result[campaignId];
+      const campaignSnapshot = campaignSnapshotById.get(campaignId) ?? null;
+
+      if (!existing) {
+        result[campaignId] = {
+          tvl,
+          campaignTypeHint,
+          distributionTypeRaw: rawType,
+          campaignSnapshot,
+        };
+        continue;
+      }
+
+      result[campaignId] = {
+        tvl: existing.tvl > 0 ? existing.tvl : tvl,
+        campaignTypeHint: existing.campaignTypeHint,
+        distributionTypeRaw: existing.distributionTypeRaw ?? rawType,
+        campaignSnapshot: existing.campaignSnapshot ?? campaignSnapshot,
+      };
+    }
+  }
+
+  return result;
+};
+
 /**
  * 获取 Merkl opportunities（使用 mainProtocolId 参数，返回 Aave 和 Tydro 相关的数据）
  */
@@ -563,6 +702,7 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   
   // 从索引中提取所有 opportunities 用于保存
   const processedData = Object.values(merklData).flat();
+  const forecastCampaignMetaLite = buildForecastCampaignMetaLiteMap(liveOpportunities);
   
   logger.info(`✅ Processed ${processedData.length} Merkl opportunities`);
   logger.info(`📊 Created index with ${Object.keys(merklData).length} token keys`);
@@ -579,6 +719,21 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
     index: merklData
   }, null, 2), 'utf-8');
   logger.info(`💾 Merkl raw data saved to ${merklRawDataPath}`);
+
+  const merklForecastLitePath = join(DATA_DIR, 'merkl-opportunity-meta-lite.json');
+  await writeFile(
+    merklForecastLitePath,
+    JSON.stringify(
+      {
+        timestamp: new Date().toISOString(),
+        campaigns: forecastCampaignMetaLite,
+      },
+      null,
+      2
+    ),
+    'utf-8'
+  );
+  logger.info(`💾 Merkl forecast lite data saved to ${merklForecastLitePath}`);
   
   return { index: merklData, tokenPrices };
 }
