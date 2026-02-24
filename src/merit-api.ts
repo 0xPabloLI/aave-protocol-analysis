@@ -22,6 +22,7 @@ const MERIT_ROUND_ESTIMATE_MAX_PAGES = 12;
 const MERIT_ROUND_POST_END_REFRESH_MS = 24 * 60 * 60 * 1000;
 const MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS = 10 * 60 * 1000;
 const MERIT_TIMERANGES_CACHE_PATH = join(RUNTIME_DATA_DIR, 'merit-timeranges-cache.json');
+const MERIT_ROUND_CREATOR_ALLOWLIST = new Set(['aave', 'masiv']);
 
 export interface MeritAPRResponse {
   previousAPR: any;
@@ -214,6 +215,19 @@ const extractAirdropAmountUsd = (campaign: any): number | null => {
   return Number.isFinite(amountUsd) && amountUsd > 0 ? amountUsd : null;
 };
 
+const isAllowedMeritRoundCreator = (campaign: any): boolean => {
+  const creatorIdRaw = campaign?.creator?.creatorId;
+  const creatorId = typeof creatorIdRaw === 'string' ? creatorIdRaw.trim().toLowerCase() : '';
+  const creatorTagsRaw = Array.isArray(campaign?.creator?.tags) ? campaign.creator.tags : [];
+  const creatorTags = creatorTagsRaw
+    .map((tag: unknown) => (typeof tag === 'string' ? tag.trim().toLowerCase() : ''))
+    .filter(Boolean);
+
+  if (creatorId && MERIT_ROUND_CREATOR_ALLOWLIST.has(creatorId)) return true;
+  if (creatorTags.some((tag: string) => MERIT_ROUND_CREATOR_ALLOWLIST.has(tag))) return true;
+  return false;
+};
+
 const shouldRefreshMeritRoundEstimate = (
   _target: MeritRoundEstimateTarget,
   cacheEntry: MeritRoundEstimateCacheEntry | undefined,
@@ -321,9 +335,7 @@ const fetchMeritRoundEstimates = async (
       if (campaigns.length === 0) continue;
 
       for (const campaign of campaigns) {
-        const creatorId = campaign?.creator?.creatorId;
-        const creatorTags = Array.isArray(campaign?.creator?.tags) ? campaign.creator.tags : [];
-        if (creatorId !== 'aave' && !creatorTags.includes('aave')) continue;
+        if (!isAllowedMeritRoundCreator(campaign)) continue;
 
         const amountUsd = extractAirdropAmountUsd(campaign);
         if (amountUsd === null) continue;
