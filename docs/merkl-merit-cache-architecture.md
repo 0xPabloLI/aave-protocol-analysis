@@ -156,7 +156,8 @@ Map<string, {
 - `message` (including self-auth hints)
 
 Without cached `timeRanges`, the code would re-crawl campaign pages on every refresh.  
-Now it reads `data/merit-timeranges-cache.json` first (smaller file), then falls back to `data/merit-raw-data.json` for compatibility.
+Now it uses a module-level in-memory cache first (process lifetime), then reads `data/runtime/merit-timeranges-cache.json`, then falls back to `data/debug/merit-raw-data.json` for compatibility.
+This cache is intentionally event-driven (new key / refetch path / process restart) rather than TTL-driven.
 
 ## 5) Refresh Cadence vs Freshness (Important Pattern)
 
