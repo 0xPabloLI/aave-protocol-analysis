@@ -64,6 +64,8 @@ type MeritAction = 'supply' | 'borrow';
 interface MeritRoundEstimateBase {
   latestAmountUsd: number;
   latestCampaignId: string;
+  latestCampaignStartTimestamp?: number | null;
+  latestCampaignEndTimestamp?: number | null;
   latestOpportunityId?: string;
   latestOpportunityLink?: string | null;
   latestOpportunityName?: string | null;
@@ -71,12 +73,32 @@ interface MeritRoundEstimateBase {
   latestOpportunityType?: string | null;
   latestOpportunityChainId?: number | null;
   latestOpportunityChainName?: string | null;
+  latestOpportunityLastCampaignCreatedAt?: number | null;
   matchedAction?: MeritAction;
   matchedToken?: string;
   matchedCreatorId?: string | null;
   matchedCreatorTags?: string[];
   matchedFromSource?: string | null;
 }
+
+const isNewerMeritRoundEstimate = (
+  candidate: MeritRoundEstimateBase,
+  current: MeritRoundEstimateBase
+): boolean => {
+  const candidateEnd = candidate.latestCampaignEndTimestamp ?? 0;
+  const currentEnd = current.latestCampaignEndTimestamp ?? 0;
+  if (candidateEnd !== currentEnd) return candidateEnd > currentEnd;
+
+  const candidateStart = candidate.latestCampaignStartTimestamp ?? 0;
+  const currentStart = current.latestCampaignStartTimestamp ?? 0;
+  if (candidateStart !== currentStart) return candidateStart > currentStart;
+
+  const candidateCreated = candidate.latestOpportunityLastCampaignCreatedAt ?? 0;
+  const currentCreated = current.latestOpportunityLastCampaignCreatedAt ?? 0;
+  if (candidateCreated !== currentCreated) return candidateCreated > currentCreated;
+
+  return false;
+};
 
 interface MeritRoundEstimateTarget {
   cycleEndTsMs: number | null;
@@ -406,6 +428,7 @@ const fetchMeritRoundEstimates = async (
         const opportunityType = typeof opportunity?.type === 'string' ? opportunity.type : null;
         const opportunityIdentifier =
           typeof opportunity?.identifier === 'string' ? opportunity.identifier : null;
+        const opportunityLastCampaignCreatedAt = toFiniteNumber(opportunity?.lastCampaignCreatedAt);
 
         for (const textSource of textSources) {
           const pairs = extractActionTokenPairs(textSource.text);
@@ -415,11 +438,11 @@ const fetchMeritRoundEstimates = async (
             const key = buildMeritRoundKey(chainId, action, token);
             if (targets && !targets.has(key)) continue;
             if (keysToFetch.size > 0 && !keysToFetch.has(key)) continue;
-            if (fetchedEstimates.has(key)) continue;
-
-            fetchedEstimates.set(key, {
+            const nextEstimate: MeritRoundEstimateBase = {
               latestAmountUsd: amountUsd,
               latestCampaignId: campaignId,
+              latestCampaignStartTimestamp: startTimestamp,
+              latestCampaignEndTimestamp: endTimestamp,
               latestOpportunityId: opportunityId,
               latestOpportunityLink: buildMerklOpportunityAppLink(opportunity),
               latestOpportunityName: typeof opportunity?.name === 'string' ? opportunity.name : null,
@@ -427,12 +450,17 @@ const fetchMeritRoundEstimates = async (
               latestOpportunityType: opportunityType,
               latestOpportunityChainId: chainId,
               latestOpportunityChainName: opportunityChainName,
+              latestOpportunityLastCampaignCreatedAt: opportunityLastCampaignCreatedAt,
               matchedAction: action,
               matchedToken: token,
               matchedCreatorId: creatorId,
               matchedCreatorTags: creatorTags,
               matchedFromSource: textSource.source,
-            });
+            };
+            const existing = fetchedEstimates.get(key);
+            if (existing && !isNewerMeritRoundEstimate(nextEstimate, existing)) continue;
+
+            fetchedEstimates.set(key, nextEstimate);
 
             if (unresolvedTargets?.has(key)) {
               unresolvedTargets.delete(key);
@@ -443,7 +471,9 @@ const fetchMeritRoundEstimates = async (
     }
 
     if (payload.length < 100) break;
-    if (unresolvedTargets && unresolvedTargets.size === 0) break;
+    // Do not exit early when all targets have a match:
+    // Merkl PAST ordering is not reliably "latest round first" for these JSON_AIRDROP entries.
+    // We keep scanning (bounded by maxPages) and let timestamp comparison choose the newest match.
   }
 
   if (pagesScanned > 0) {
@@ -529,6 +559,8 @@ const serializeMeritRoundEstimates = (
     {
       lastRoundRewardUsd: number;
       lastRoundCampaignId: string;
+      lastRoundCampaignStartTimestamp: number | null;
+      lastRoundCampaignEndTimestamp: number | null;
       lastRoundOpportunityId: string | null;
       lastRoundOpportunityLink: string | null;
       lastRoundOpportunityName: string | null;
@@ -536,6 +568,7 @@ const serializeMeritRoundEstimates = (
       lastRoundOpportunityType: string | null;
       lastRoundOpportunityChainId: number | null;
       lastRoundOpportunityChainName: string | null;
+      lastRoundOpportunityLastCampaignCreatedAt: number | null;
       matchedAction: MeritAction | null;
       matchedToken: string | null;
       matchedCreatorId: string | null;
@@ -547,6 +580,8 @@ const serializeMeritRoundEstimates = (
     serialized[key] = {
       lastRoundRewardUsd: estimate.latestAmountUsd,
       lastRoundCampaignId: estimate.latestCampaignId,
+      lastRoundCampaignStartTimestamp: estimate.latestCampaignStartTimestamp ?? null,
+      lastRoundCampaignEndTimestamp: estimate.latestCampaignEndTimestamp ?? null,
       lastRoundOpportunityId: estimate.latestOpportunityId ?? null,
       lastRoundOpportunityLink: estimate.latestOpportunityLink ?? null,
       lastRoundOpportunityName: estimate.latestOpportunityName ?? null,
@@ -554,6 +589,7 @@ const serializeMeritRoundEstimates = (
       lastRoundOpportunityType: estimate.latestOpportunityType ?? null,
       lastRoundOpportunityChainId: estimate.latestOpportunityChainId ?? null,
       lastRoundOpportunityChainName: estimate.latestOpportunityChainName ?? null,
+      lastRoundOpportunityLastCampaignCreatedAt: estimate.latestOpportunityLastCampaignCreatedAt ?? null,
       matchedAction: estimate.matchedAction ?? null,
       matchedToken: estimate.matchedToken ?? null,
       matchedCreatorId: estimate.matchedCreatorId ?? null,
@@ -572,6 +608,8 @@ const serializeMeritRoundEstimateCache = () => {
     {
       lastRoundRewardUsd: number | null;
       lastRoundCampaignId: string | null;
+      lastRoundCampaignStartTimestamp: number | null;
+      lastRoundCampaignEndTimestamp: number | null;
       lastRoundOpportunityId: string | null;
       lastRoundOpportunityLink: string | null;
       lastRoundOpportunityName: string | null;
@@ -579,6 +617,7 @@ const serializeMeritRoundEstimateCache = () => {
       lastRoundOpportunityType: string | null;
       lastRoundOpportunityChainId: number | null;
       lastRoundOpportunityChainName: string | null;
+      lastRoundOpportunityLastCampaignCreatedAt: number | null;
       matchedAction: MeritAction | null;
       matchedToken: string | null;
       matchedCreatorId: string | null;
@@ -594,6 +633,8 @@ const serializeMeritRoundEstimateCache = () => {
     serialized[key] = {
       lastRoundRewardUsd: entry.estimate?.latestAmountUsd ?? null,
       lastRoundCampaignId: entry.estimate?.latestCampaignId ?? null,
+      lastRoundCampaignStartTimestamp: entry.estimate?.latestCampaignStartTimestamp ?? null,
+      lastRoundCampaignEndTimestamp: entry.estimate?.latestCampaignEndTimestamp ?? null,
       lastRoundOpportunityId: entry.estimate?.latestOpportunityId ?? null,
       lastRoundOpportunityLink: entry.estimate?.latestOpportunityLink ?? null,
       lastRoundOpportunityName: entry.estimate?.latestOpportunityName ?? null,
@@ -601,6 +642,7 @@ const serializeMeritRoundEstimateCache = () => {
       lastRoundOpportunityType: entry.estimate?.latestOpportunityType ?? null,
       lastRoundOpportunityChainId: entry.estimate?.latestOpportunityChainId ?? null,
       lastRoundOpportunityChainName: entry.estimate?.latestOpportunityChainName ?? null,
+      lastRoundOpportunityLastCampaignCreatedAt: entry.estimate?.latestOpportunityLastCampaignCreatedAt ?? null,
       matchedAction: entry.estimate?.matchedAction ?? null,
       matchedToken: entry.estimate?.matchedToken ?? null,
       matchedCreatorId: entry.estimate?.matchedCreatorId ?? null,
