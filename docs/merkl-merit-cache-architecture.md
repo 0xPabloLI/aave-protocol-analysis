@@ -139,7 +139,7 @@ It is called during `fetchMeritData()`, and then:
 
 Notes:
 - `lastCheckedAtMs` = **when we checked**, not “when data changed”
-- New keys that never produced a cached result may not have an entry yet
+- Negative cache is used for misses (`estimate = null`), so keys that were checked but not found still record `lastCheckedAtMs`
 - Key set can change across runs (new Merit incentives added, old ones removed)
 
 ## 7) Current Forecast Fallback Order (After recent refactor)
@@ -172,4 +172,3 @@ flowchart LR
 1. Keep `merkl-raw-data.json` as debug-first file; no urgent slimming required now that runtime prefers lite file.
 2. Optionally prewarm forecast caches at backend startup or scheduler tick to reduce first-request latency.
 3. If moving to multi-replica, promote shared cache/storage (e.g. Redis) before treating local files as the primary runtime source.
-
