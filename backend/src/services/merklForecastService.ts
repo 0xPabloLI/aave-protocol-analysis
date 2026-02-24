@@ -15,7 +15,6 @@ const SECONDS_PER_DAY = 86400;
 const MERKL_RAW_FILE_MAX_AGE_MS = 120 * 1000;
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
 const MERKL_OPPORTUNITY_META_LITE_PATH = join(DATA_DIR, 'merkl-opportunity-meta-lite.json');
-const MERKL_RAW_DATA_PATH = join(DATA_DIR, 'merkl-raw-data.json');
 
 const CACHE_TTL_MS = (() => {
   const raw = process.env.MERKL_FORECAST_CACHE_TTL_MS;
@@ -65,12 +64,6 @@ interface CampaignSnapshotLite {
       };
     };
   };
-}
-
-interface MerklRawDataFile {
-  timestamp?: unknown;
-  liveOpportunities?: unknown;
-  rawOpportunities?: unknown;
 }
 
 interface MerklOpportunityMetaLiteFile {
@@ -257,29 +250,6 @@ const fetchJson = async (url: string): Promise<unknown> => {
   return response.json() as Promise<unknown>;
 };
 
-const getFreshMerklOpportunitiesFromRawFile = async (): Promise<unknown[] | null> => {
-  try {
-    const fileContent = await readFile(MERKL_RAW_DATA_PATH, 'utf-8');
-    const parsed = JSON.parse(fileContent) as MerklRawDataFile;
-    const tsRaw = parsed?.timestamp;
-    const tsMs = typeof tsRaw === 'string' ? Date.parse(tsRaw) : NaN;
-    if (!Number.isFinite(tsMs)) return null;
-
-    const ageMs = Date.now() - tsMs;
-    if (ageMs > MERKL_RAW_FILE_MAX_AGE_MS) {
-      return null;
-    }
-
-    const live = Array.isArray(parsed?.liveOpportunities) ? parsed.liveOpportunities : null;
-    if (live) return live as unknown[];
-    const raw = Array.isArray(parsed?.rawOpportunities) ? parsed.rawOpportunities : null;
-    if (raw) return raw as unknown[];
-    return null;
-  } catch {
-    return null;
-  }
-};
-
 const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, CampaignOpportunityMeta> | null> => {
   try {
     const fileContent = await readFile(MERKL_OPPORTUNITY_META_LITE_PATH, 'utf-8');
@@ -392,14 +362,8 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
   if (map) {
     logger.info('📦 Merkl forecast using fresh merkl-opportunity-meta-lite.json');
   } else {
-    const fileOpps = await getFreshMerklOpportunitiesFromRawFile();
-    if (fileOpps) {
-      logger.info('📦 Merkl forecast using fresh merkl-raw-data.json opportunities snapshot');
-      map = buildCampaignOpportunityMetaMapFromOpportunities(fileOpps);
-    } else {
-      const allOpps = await fetchMerklOpportunities();
-      map = buildCampaignOpportunityMetaMapFromOpportunities(allOpps);
-    }
+    const allOpps = await fetchMerklOpportunities();
+    map = buildCampaignOpportunityMetaMapFromOpportunities(allOpps);
   }
 
   campaignOpportunityCache = {
