@@ -7,12 +7,15 @@ This is a living note for implementation and architecture practices we agreed on
 ## 1) Data Freshness & Caching
 
 - Separate **write frequency** (producer cadence) from **freshness window** (consumer tolerance).
+- Before choosing a TTL, inspect the source data's real update cadence (API docs, observed timestamps, or sampled history) instead of guessing.
+- If a cached result depends on multiple upstream sources, set TTL based on the freshest source that materially affects correctness (or split caches by source cadence).
 - Prefer a layered fallback chain:
   1. in-memory runtime cache
   2. small runtime snapshot file
   3. online cached fetcher
   4. upstream API
 - Use per-domain TTLs instead of forcing one global TTL.
+- When source cadence is unknown, start conservative and instrument timestamps so TTL can be tuned from observed intervals.
 - For expensive historical scans, use **negative cache** (record miss checks too).
 
 ## 2) File Snapshot Design
