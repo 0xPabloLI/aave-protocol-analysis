@@ -79,7 +79,8 @@ flowchart LR
   K --> G
   E --> L["Merkl /v4/campaigns/{id}/metrics"]
   G --> L
-  L --> M["build forecast state"]
+  L --> MC["metricsCache (per campaign, dynamic TTL)"]
+  MC --> M["build forecast state"]
   M --> N["write forecastCache"]
   N --> Z
 ```
@@ -140,11 +141,12 @@ flowchart TD
 - Forecast-only campaign meta index:
   - `campaignId -> { tvl, campaignTypeHint, distributionTypeRaw, campaignSnapshot }`
 - Rebuilt on demand when expired
-- TTL (current): uses forecast cache TTL config path (typically 60s)
+- TTL (current): minute-level (default 60s), configurable independently from forecast result cache
 
 ### C) `forecastCache` (`backend/src/services/merklForecastService.ts`)
 - Final forecast state cache by campaignId
 - Stores computed result returned by `/api/campaigns/forecast-states`
+- TTL (current): minute-level (default 60s), intentionally aligned with opportunity meta freshness
 
 Example shape:
 ```ts
@@ -167,9 +169,13 @@ Map<string, {
 ```
 
 ### D) `metricsCache` (`backend/src/services/merklForecastService.ts`)
-- Per-campaign cache for raw Merkl `/metrics` responses
+- Per-campaign cache for **forecast-trimmed** Merkl `/metrics` data (`dailyRewardsRecords`, `tvlRecords`, `aprRecords`)
 - TTL is derived from observed metrics record cadence (with default/min/max bounds)
 - Purpose: reduce `/metrics` request frequency while keeping `forecastCache` short-lived
+- Current defaults:
+  - default TTL: 30m
+  - empty-record TTL: 5m
+  - dynamic TTL clamp: 10m .. 6h
 
 ### E) `@internal/merkl-shared` snapshot cache (`packages/merkl-shared`)
 - Caches **raw Merkl opportunities array** (not forecast-lite)

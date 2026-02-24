@@ -18,23 +18,37 @@ const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
 const MERKL_OPPORTUNITY_META_LITE_PATH = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
 const LEGACY_MERKL_OPPORTUNITY_META_LITE_PATH = join(DATA_DIR, 'merkl-opportunity-meta-lite.json');
 
-const FORECAST_AND_OPPORTUNITY_CACHE_TTL_MS = (() => {
+const LEGACY_SHARED_FORECAST_TTL_MS = (() => {
   const raw = process.env.MERKL_FORECAST_CACHE_TTL_MS;
-  if (!raw) return 1 * 60 * 1000;
+  if (!raw) return null;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1 * 60 * 1000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+})();
+
+const FORECAST_CACHE_TTL_MS = (() => {
+  const raw = process.env.MERKL_FORECAST_RESULT_CACHE_TTL_MS;
+  if (!raw) return LEGACY_SHARED_FORECAST_TTL_MS ?? 1 * 60 * 1000;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : (LEGACY_SHARED_FORECAST_TTL_MS ?? 1 * 60 * 1000);
+})();
+
+const OPPORTUNITY_META_CACHE_TTL_MS = (() => {
+  const raw = process.env.MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS;
+  if (!raw) return LEGACY_SHARED_FORECAST_TTL_MS ?? 1 * 60 * 1000;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : (LEGACY_SHARED_FORECAST_TTL_MS ?? 1 * 60 * 1000);
 })();
 
 const METRICS_CACHE_DEFAULT_TTL_MS = (() => {
   const raw = process.env.MERKL_METRICS_CACHE_TTL_MS;
-  if (!raw) return 10 * 60 * 1000;
+  if (!raw) return 30 * 60 * 1000;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10 * 60 * 1000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30 * 60 * 1000;
 })();
 
-const METRICS_CACHE_MIN_TTL_MS = 5 * 60 * 1000;
-const METRICS_CACHE_MAX_TTL_MS = 30 * 60 * 1000;
-const METRICS_CACHE_EMPTY_TTL_MS = 2 * 60 * 1000;
+const METRICS_CACHE_MIN_TTL_MS = 10 * 60 * 1000;
+const METRICS_CACHE_MAX_TTL_MS = 6 * 60 * 60 * 1000;
+const METRICS_CACHE_EMPTY_TTL_MS = 5 * 60 * 1000;
 
 interface ForecastCacheEntry {
   data: MerklForecastState;
@@ -42,7 +56,7 @@ interface ForecastCacheEntry {
 }
 
 interface MetricsCacheEntry {
-  data: unknown;
+  data: ForecastMetricsLite;
   expiresAt: number;
   ttlMs: number;
   cadenceSeconds: number | null;
@@ -90,6 +104,12 @@ interface CampaignSnapshotLite {
 interface MerklOpportunityMetaLiteFile {
   timestamp?: unknown;
   campaigns?: unknown;
+}
+
+interface ForecastMetricsLite {
+  tvlRecords?: Array<{ timestamp?: unknown; total?: unknown }>;
+  dailyRewardsRecords?: Array<{ timestamp?: unknown; total?: unknown }>;
+  aprRecords?: Array<{ timestamp?: unknown; apr?: unknown }>;
 }
 
 const toNumber = (value: unknown): number | null => {
@@ -248,8 +268,8 @@ const deriveMetricsCacheTtlMs = (metrics: unknown): { ttlMs: number; cadenceSeco
     return { ttlMs: METRICS_CACHE_EMPTY_TTL_MS, cadenceSeconds: null };
   }
 
-  // Use a conservative fraction of observed cadence, capped to avoid overly stale metrics.
-  const candidateMs = Math.floor((cadenceSeconds * 1000) / 12);
+  // Use an aggressive fraction of observed cadence (user-approved), capped for safety.
+  const candidateMs = Math.floor((cadenceSeconds * 1000) / 4);
   const ttlMs = clamp(
     candidateMs || METRICS_CACHE_DEFAULT_TTL_MS,
     METRICS_CACHE_MIN_TTL_MS,
@@ -257,6 +277,18 @@ const deriveMetricsCacheTtlMs = (metrics: unknown): { ttlMs: number; cadenceSeco
   );
   return { ttlMs, cadenceSeconds };
 };
+
+const trimMetricsForForecast = (metrics: unknown): ForecastMetricsLite => ({
+  tvlRecords: Array.isArray(getAtPath(metrics, ['tvlRecords']))
+    ? (getAtPath(metrics, ['tvlRecords']) as Array<{ timestamp?: unknown; total?: unknown }>)
+    : [],
+  dailyRewardsRecords: Array.isArray(getAtPath(metrics, ['dailyRewardsRecords']))
+    ? (getAtPath(metrics, ['dailyRewardsRecords']) as Array<{ timestamp?: unknown; total?: unknown }>)
+    : [],
+  aprRecords: Array.isArray(getAtPath(metrics, ['aprRecords']))
+    ? (getAtPath(metrics, ['aprRecords']) as Array<{ timestamp?: unknown; apr?: unknown }>)
+    : [],
+});
 
 const estimateDistributedSoFar = (
   dailyRewardsRecords: TimeSeriesPoint[],
@@ -432,8 +464,9 @@ const getCachedOrFetchMetrics = async (campaignId: string): Promise<unknown> => 
     return cached.data;
   }
 
-  const metrics = await fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`);
-  const { ttlMs, cadenceSeconds } = deriveMetricsCacheTtlMs(metrics);
+  const rawMetrics = await fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`);
+  const { ttlMs, cadenceSeconds } = deriveMetricsCacheTtlMs(rawMetrics);
+  const metrics = trimMetricsForForecast(rawMetrics);
   metricsCache.set(campaignId, {
     data: metrics,
     expiresAt: now + ttlMs,
@@ -459,7 +492,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
 
   campaignOpportunityCache = {
     data: map,
-    expiresAt: now + FORECAST_AND_OPPORTUNITY_CACHE_TTL_MS,
+    expiresAt: now + OPPORTUNITY_META_CACHE_TTL_MS,
   };
   return map;
 };
@@ -563,7 +596,7 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
 
       forecastCache.set(campaignId, {
         data: state,
-        expiresAt: Date.now() + FORECAST_AND_OPPORTUNITY_CACHE_TTL_MS,
+        expiresAt: Date.now() + FORECAST_CACHE_TTL_MS,
       });
       return state;
     } catch (error) {
