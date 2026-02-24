@@ -169,6 +169,9 @@ NODE_ENV=development               # Environment mode
 FRONTEND_URL=https://example.com   # CORS whitelist (production only, comma-separated)
 ALLOWED_DEV_ORIGINS=...            # Dev CORS whitelist
 DOPPLER_TOKEN=...                  # Doppler secrets (production)
+MERKL_FORECAST_RESULT_CACHE_TTL_MS=60000              # Forecast result cache TTL (default 60s)
+MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS=60000    # Opportunity meta cache TTL (default 60s)
+MERKL_METRICS_CACHE_TTL_MS=1800000                    # Metrics cache default TTL (default 30m, dynamic cadence-based)
 ```
 
 **Priority**: System env vars > `.env` file > defaults
