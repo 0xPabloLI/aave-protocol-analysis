@@ -14,6 +14,37 @@ This document explains how Merkl + Merit data moves through the codebase, which 
 - `-. "fallback" .->` = fallback path only
 - `-. "uses data" .->` = data dependency (not ownership/creation)
 
+### C) Component responsibility / dependency view (no request timing)
+
+```mermaid
+flowchart LR
+  IDX["src/index.ts (orchestrator)"]
+  MERKL["src/merkl-api.ts (Merkl ingest + indexing)"]
+  MERIT["src/merit-api.ts (Merit ingest + mapping)"]
+  SHARED["@internal/merkl-shared (Merkl opportunities fetch/cache)"]
+  DFS["backend/dataService (/api/markets file cache)"]
+  FCS["backend/merklForecastService (forecast compute + caches)"]
+  MOC["backend/merklOpportunityClient (forecast Merkl opportunities fetcher)"]
+  MKLITE["data/runtime/merkl-opportunity-meta-lite.json"]
+  MARKETS["data/runtime/aave-formatted-data.json"]
+  TIMER["data/runtime/merit-timeranges-cache.json"]
+  MERKLAPI["Merkl API"]
+
+  IDX --> MERKL
+  IDX --> MERIT
+  MERKL -. "uses data" .-> SHARED
+  SHARED -. "uses data" .-> MERKLAPI
+  MERKL -- "writes" --> MKLITE
+  IDX -- "writes" --> MARKETS
+  MERIT -- "writes" --> TIMER
+
+  DFS -- "reads" --> MARKETS
+  FCS -- "reads" --> MKLITE
+  FCS -. "uses data" .-> MOC
+  MOC -. "uses data" .-> SHARED
+  FCS -. "uses data" .-> MERKLAPI
+```
+
 ### A) Producer flow (root fetcher writes runtime/debug files)
 
 ```mermaid
@@ -39,7 +70,7 @@ flowchart LR
   B -- no --> C["merklForecastService"]
   C --> D{"campaignOpportunityCache fresh?"}
   D -- yes --> E["use campaignOpportunityCache"]
-  D -- no --> F{"runtime lite fresh? (<=120s)"}
+  D -- no --> F{"runtime lite fresh? (<=60s)"}
   F -- yes --> G["build campaignOpportunityCache from lite file"]
   F -- no --> H["merklOpportunityClient"]
   H --> I["@internal/merkl-shared snapshot"]
@@ -135,7 +166,12 @@ Map<string, {
 }>
 ```
 
-### D) `@internal/merkl-shared` snapshot cache (`packages/merkl-shared`)
+### D) `metricsCache` (`backend/src/services/merklForecastService.ts`)
+- Per-campaign cache for raw Merkl `/metrics` responses
+- TTL is derived from observed metrics record cadence (with default/min/max bounds)
+- Purpose: reduce `/metrics` request frequency while keeping `forecastCache` short-lived
+
+### E) `@internal/merkl-shared` snapshot cache (`packages/merkl-shared`)
 - Caches **raw Merkl opportunities array** (not forecast-lite)
 - Keyed by query params (`mainProtocolId/status/campaigns/itemsPerPage/...`)
 - Used by root Merkl fetcher (`src/merkl-api.ts`) and backend forecast fallback (`backend/src/services/merklOpportunityClient.ts`)
@@ -149,7 +185,7 @@ Map<string, {
 }>
 ```
 
-### E) `meritRoundEstimateCache` (`src/merit-api.ts`)
+### F) `meritRoundEstimateCache` (`src/merit-api.ts`)
 - Per-key cache for Merit last-round reward estimates from Merkl JSON_AIRDROP history
 - Key format: `${chainId}:${action}:${token}` (e.g. `42220:supply:usdt`)
 - Current policy: check each key at most once per 24h
@@ -176,7 +212,7 @@ Two different concepts:
 
 Example in current code:
 - `merkl-opportunity-meta-lite.json` is written when root data refresh runs (often ~1m cadence)
-- Forecast service accepts it if file timestamp is within **120s**
+- Forecast service accepts it if file timestamp is within **60s**
 
 This decoupling makes the system tolerant to scheduler jitter and temporary delays.
 
@@ -200,7 +236,7 @@ Notes:
 flowchart LR
   A["forecast request"] --> B{"campaignOpportunityCache fresh?"}
   B -- yes --> Z["return cached meta"]
-  B -- no --> C{"merkl-opportunity-meta-lite.json fresh (<=120s)?"}
+  B -- no --> C{"merkl-opportunity-meta-lite.json fresh (<=60s)?"}
   C -- yes --> D["build campaignOpportunityCache from lite file"]
   C -- no --> E["merklOpportunityClient"]
   E --> F{"@internal/merkl-shared snapshot hit?"}

@@ -12,22 +12,40 @@ import { fetchMerklOpportunities } from './merklOpportunityClient.js';
 
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const SECONDS_PER_DAY = 86400;
-const MERKL_RAW_FILE_MAX_AGE_MS = 120 * 1000;
+const MERKL_LITE_FILE_MAX_AGE_MS = 60 * 1000;
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
 const MERKL_OPPORTUNITY_META_LITE_PATH = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
 const LEGACY_MERKL_OPPORTUNITY_META_LITE_PATH = join(DATA_DIR, 'merkl-opportunity-meta-lite.json');
 
-const CACHE_TTL_MS = (() => {
+const FORECAST_AND_OPPORTUNITY_CACHE_TTL_MS = (() => {
   const raw = process.env.MERKL_FORECAST_CACHE_TTL_MS;
   if (!raw) return 1 * 60 * 1000;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1 * 60 * 1000;
 })();
 
+const METRICS_CACHE_DEFAULT_TTL_MS = (() => {
+  const raw = process.env.MERKL_METRICS_CACHE_TTL_MS;
+  if (!raw) return 10 * 60 * 1000;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10 * 60 * 1000;
+})();
+
+const METRICS_CACHE_MIN_TTL_MS = 5 * 60 * 1000;
+const METRICS_CACHE_MAX_TTL_MS = 30 * 60 * 1000;
+const METRICS_CACHE_EMPTY_TTL_MS = 2 * 60 * 1000;
+
 interface ForecastCacheEntry {
   data: MerklForecastState;
   expiresAt: number;
+}
+
+interface MetricsCacheEntry {
+  data: unknown;
+  expiresAt: number;
+  ttlMs: number;
+  cadenceSeconds: number | null;
 }
 
 interface CampaignOpportunityMeta {
@@ -44,6 +62,7 @@ interface CampaignOpportunityCacheEntry {
 
 const forecastCache = new Map<string, ForecastCacheEntry>();
 const inFlight = new Map<string, Promise<MerklForecastState>>();
+const metricsCache = new Map<string, MetricsCacheEntry>();
 let campaignOpportunityCache: CampaignOpportunityCacheEntry | null = null;
 
 interface CampaignSnapshotLite {
@@ -86,6 +105,9 @@ type TimeSeriesPoint = {
   timestamp: number;
   total: number;
 };
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max);
 
 const getAtPath = (obj: unknown, path: string[]): unknown => {
   let current: unknown = obj;
@@ -194,6 +216,48 @@ const extractDailyRewardsRecords = (metrics: unknown): TimeSeriesPoint[] => {
     .sort((a, b) => a.timestamp - b.timestamp);
 };
 
+const extractMetricsCadenceSeconds = (metrics: unknown): number | null => {
+  const fields = ['dailyRewardsRecords', 'tvlRecords', 'aprRecords'] as const;
+  const diffs: number[] = [];
+
+  for (const field of fields) {
+    const raw = getAtPath(metrics, [field]);
+    if (!Array.isArray(raw)) continue;
+    const timestamps = raw
+      .map((entry) => toNumber(getAtPath(entry, ['timestamp'])) || 0)
+      .filter((ts) => ts > 0)
+      .sort((a, b) => a - b);
+
+    for (let i = 1; i < timestamps.length; i += 1) {
+      const diff = timestamps[i] - timestamps[i - 1];
+      if (diff > 0) diffs.push(diff);
+    }
+  }
+
+  if (diffs.length === 0) return null;
+  diffs.sort((a, b) => a - b);
+  const mid = Math.floor(diffs.length / 2);
+  const median =
+    diffs.length % 2 === 0 ? (diffs[mid - 1] + diffs[mid]) / 2 : diffs[mid];
+  return Number.isFinite(median) && median > 0 ? median : null;
+};
+
+const deriveMetricsCacheTtlMs = (metrics: unknown): { ttlMs: number; cadenceSeconds: number | null } => {
+  const cadenceSeconds = extractMetricsCadenceSeconds(metrics);
+  if (cadenceSeconds === null) {
+    return { ttlMs: METRICS_CACHE_EMPTY_TTL_MS, cadenceSeconds: null };
+  }
+
+  // Use a conservative fraction of observed cadence, capped to avoid overly stale metrics.
+  const candidateMs = Math.floor((cadenceSeconds * 1000) / 12);
+  const ttlMs = clamp(
+    candidateMs || METRICS_CACHE_DEFAULT_TTL_MS,
+    METRICS_CACHE_MIN_TTL_MS,
+    METRICS_CACHE_MAX_TTL_MS
+  );
+  return { ttlMs, cadenceSeconds };
+};
+
 const estimateDistributedSoFar = (
   dailyRewardsRecords: TimeSeriesPoint[],
   startTs: number,
@@ -266,7 +330,7 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
     const tsRaw = parsed?.timestamp;
     const tsMs = typeof tsRaw === 'string' ? Date.parse(tsRaw) : NaN;
     if (!Number.isFinite(tsMs)) return null;
-    if (Date.now() - tsMs > MERKL_RAW_FILE_MAX_AGE_MS) return null;
+    if (Date.now() - tsMs > MERKL_LITE_FILE_MAX_AGE_MS) return null;
 
     const campaigns = parsed?.campaigns;
     if (!campaigns || typeof campaigns !== 'object') return null;
@@ -361,6 +425,24 @@ const buildCampaignOpportunityMetaMapFromOpportunities = (
   return map;
 };
 
+const getCachedOrFetchMetrics = async (campaignId: string): Promise<unknown> => {
+  const now = Date.now();
+  const cached = metricsCache.get(campaignId);
+  if (cached && cached.expiresAt > now) {
+    return cached.data;
+  }
+
+  const metrics = await fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`);
+  const { ttlMs, cadenceSeconds } = deriveMetricsCacheTtlMs(metrics);
+  metricsCache.set(campaignId, {
+    data: metrics,
+    expiresAt: now + ttlMs,
+    ttlMs,
+    cadenceSeconds,
+  });
+  return metrics;
+};
+
 const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOpportunityMeta>> => {
   const now = Date.now();
   if (campaignOpportunityCache && campaignOpportunityCache.expiresAt > now) {
@@ -377,7 +459,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
 
   campaignOpportunityCache = {
     data: map,
-    expiresAt: now + CACHE_TTL_MS,
+    expiresAt: now + FORECAST_AND_OPPORTUNITY_CACHE_TTL_MS,
   };
   return map;
 };
@@ -435,7 +517,7 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         canComputeForecastFromSnapshot(campaignOpportunityMeta.campaignSnapshot)
         ? Promise.resolve(campaignOpportunityMeta.campaignSnapshot)
         : fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}`);
-      const metricsPromise = fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`);
+      const metricsPromise = getCachedOrFetchMetrics(campaignId);
       const [campaign, metrics] = await Promise.all([campaignPromise, metricsPromise]);
 
       const campaignType = campaignOpportunityMeta.campaignTypeHint;
@@ -481,7 +563,7 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
 
       forecastCache.set(campaignId, {
         data: state,
-        expiresAt: Date.now() + CACHE_TTL_MS,
+        expiresAt: Date.now() + FORECAST_AND_OPPORTUNITY_CACHE_TTL_MS,
       });
       return state;
     } catch (error) {
