@@ -56,9 +56,15 @@ This is a living note for implementation and architecture practices we agreed on
 - Keep naming-only refactors isolated from logic changes.
 - For architecture decisions that span multiple turns, update the docs in `docs/` as the durable source of truth.
 
-## 8) Pending/Watchlist
+## 8) Documentation & Workflow Enforcement
+
+- Keep root docs minimal (`README.md`, `AGENTS.md`, contribution/security entry points).
+- Move operational/reference topic docs into `docs/` by domain (`docs/backend`, `docs/deploy`, `docs/ops`, `docs/api`).
+- Use `AGENTS.md` to point contributors/agents to the living architecture and best-practices notes before cache/data-flow changes.
+- Treat code changes (atomic writes, runtime-lite snapshots, TTL/freshness split) as the strongest enforcement of agreed practices.
+
+## 9) Pending/Watchlist
 
 - Consider cache GC for obsolete Merit keys in `meritRoundEstimateCache`.
 - Consider forecast cache prewarm if first-request latency becomes noticeable.
 - Revisit local-file strategy before moving to multi-replica deployment (likely shared cache/store).
-

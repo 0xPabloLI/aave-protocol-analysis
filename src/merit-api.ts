@@ -15,10 +15,12 @@ import {
 import { meritKeyAliases } from './config.js';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
+const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const MERIT_ROUND_ESTIMATE_MAX_PAGES = 12;
 const MERIT_ROUND_POST_END_REFRESH_MS = 24 * 60 * 60 * 1000;
-const MERIT_TIMERANGES_CACHE_PATH = join(DATA_DIR, 'merit-timeranges-cache.json');
+const MERIT_TIMERANGES_CACHE_PATH = join(RUNTIME_DATA_DIR, 'merit-timeranges-cache.json');
 
 export interface MeritAPRResponse {
   previousAPR: any;
@@ -773,7 +775,8 @@ async function loadCachedTimeRanges(): Promise<Record<string, { link: string; st
 
     const candidates = [
       { path: MERIT_TIMERANGES_CACHE_PATH, label: 'merit-timeranges-cache.json' },
-      { path: join(DATA_DIR, 'merit-raw-data.json'), label: 'merit-raw-data.json' },
+      { path: join(DEBUG_DATA_DIR, 'merit-raw-data.json'), label: 'debug/merit-raw-data.json' },
+      { path: join(DATA_DIR, 'merit-raw-data.json'), label: 'merit-raw-data.json (legacy)' },
     ];
 
     for (const candidate of candidates) {
@@ -1326,8 +1329,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     logger.info(`✅ Indexed Merit data for ${Object.keys(meritData).length} chain-token combinations`);
     
     // 保存 Merit 原始数据
-    await mkdir(DATA_DIR, { recursive: true });
-    const meritMerklRawDataPath = join(DATA_DIR, 'merit-merkl-raw-data.json');
+    await mkdir(DEBUG_DATA_DIR, { recursive: true });
+    const meritMerklRawDataPath = join(DEBUG_DATA_DIR, 'merit-merkl-raw-data.json');
     await writeJsonAtomic(meritMerklRawDataPath, {
       timestamp: new Date().toISOString(),
       source: {
@@ -1359,7 +1362,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     });
     logger.info(`💾 Merit timeRanges cache saved to ${MERIT_TIMERANGES_CACHE_PATH}`);
 
-    const meritRawDataPath = join(DATA_DIR, 'merit-raw-data.json');
+    const meritRawDataPath = join(DEBUG_DATA_DIR, 'merit-raw-data.json');
     await writeJsonAtomic(meritRawDataPath, {
       timestamp: new Date().toISOString(),
       rawAPRs: data.currentAPR.actionsAPR,

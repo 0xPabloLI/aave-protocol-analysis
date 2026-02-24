@@ -14,7 +14,9 @@ const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const SECONDS_PER_DAY = 86400;
 const MERKL_RAW_FILE_MAX_AGE_MS = 120 * 1000;
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
-const MERKL_OPPORTUNITY_META_LITE_PATH = join(DATA_DIR, 'merkl-opportunity-meta-lite.json');
+const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
+const MERKL_OPPORTUNITY_META_LITE_PATH = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
+const LEGACY_MERKL_OPPORTUNITY_META_LITE_PATH = join(DATA_DIR, 'merkl-opportunity-meta-lite.json');
 
 const CACHE_TTL_MS = (() => {
   const raw = process.env.MERKL_FORECAST_CACHE_TTL_MS;
@@ -252,7 +254,14 @@ const fetchJson = async (url: string): Promise<unknown> => {
 
 const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, CampaignOpportunityMeta> | null> => {
   try {
-    const fileContent = await readFile(MERKL_OPPORTUNITY_META_LITE_PATH, 'utf-8');
+    let fileContent: string;
+    try {
+      fileContent = await readFile(MERKL_OPPORTUNITY_META_LITE_PATH, 'utf-8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+      fileContent = await readFile(LEGACY_MERKL_OPPORTUNITY_META_LITE_PATH, 'utf-8');
+      logger.warn(`📦 Merkl forecast using legacy lite snapshot path fallback: ${LEGACY_MERKL_OPPORTUNITY_META_LITE_PATH}`);
+    }
     const parsed = JSON.parse(fileContent) as MerklOpportunityMetaLiteFile;
     const tsRaw = parsed?.timestamp;
     const tsMs = typeof tsRaw === 'string' ? Date.parse(tsRaw) : NaN;

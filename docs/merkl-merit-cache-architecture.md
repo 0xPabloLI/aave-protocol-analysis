@@ -12,12 +12,12 @@ flowchart TD
   B --> C["Merit: /src/merit-api.ts"]
   B --> D["Merkl: /src/merkl-api.ts"]
   B --> E["Brevis"]
-  C --> F["data/merit-raw-data.json"]
-  C --> G["data/merit-merkl-raw-data.json"]
-  C --> H["data/merit-timeranges-cache.json"]
-  D --> I["data/merkl-raw-data.json (debug)"]
-  D --> J["data/merkl-opportunity-meta-lite.json (runtime-lite)"]
-  B --> K["data/aave-formatted-data.json"]
+  C --> F["data/debug/merit-raw-data.json"]
+  C --> G["data/debug/merit-merkl-raw-data.json"]
+  C --> H["data/runtime/merit-timeranges-cache.json"]
+  D --> I["data/debug/merkl-raw-data.json (debug)"]
+  D --> J["data/runtime/merkl-opportunity-meta-lite.json (runtime-lite)"]
+  B --> K["data/runtime/aave-formatted-data.json"]
   L["backend /api/markets"] --> M["dataService (memory cache)"]
   M --> K
   N["backend /api/campaigns/forecast-states"] --> O["merklForecastService"]
@@ -32,27 +32,27 @@ flowchart TD
 ## 2) File Responsibilities (Disk)
 
 ### Runtime-facing (program reads)
-- `data/aave-formatted-data.json`
+- `data/runtime/aave-formatted-data.json`
   - Main `/api/markets` source (via `dataService`)
-- `data/merkl-opportunity-meta-lite.json`
+- `data/runtime/merkl-opportunity-meta-lite.json`
   - Forecast service preferred file source (campaign-level lightweight meta)
-- `data/merit-timeranges-cache.json`
+- `data/runtime/merit-timeranges-cache.json`
   - Merit timeRanges/message cache for `fetchMeritData()`
 
 ### Debug / Troubleshoot (human-facing first)
-- `data/merkl-raw-data.json`
+- `data/debug/merkl-raw-data.json`
   - Full Merkl debug snapshot (raw/live opportunities + processed/index/tokenPrices)
-- `data/merit-raw-data.json`
+- `data/debug/merit-raw-data.json`
   - Merit APR raw + timeRanges + built index
-- `data/merit-merkl-raw-data.json`
+- `data/debug/merit-merkl-raw-data.json`
   - Merit last-round reward estimation debug (Merkl JSON_AIRDROP history scan)
-- `data/brevis-raw-data.json`
+- `data/debug/brevis-raw-data.json`
   - Brevis debug snapshot
 
 ## 3) In-Memory Caches (Runtime)
 
 ### A) `dataService` cache (`backend/src/services/dataService.ts`)
-- Caches parsed `aave-formatted-data.json` for `/api/markets`
+- Caches parsed `data/runtime/aave-formatted-data.json` for `/api/markets`
 - Stale threshold (current): 60s
 
 ### B) `campaignOpportunityCache` (`backend/src/services/merklForecastService.ts`)

@@ -12,6 +12,8 @@ import {
 } from '@internal/merkl-shared';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
+const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
 const OPPORTUNITIES_CACHE_TTL_MS = resolveCacheTtlMs(
   process.env.MERKL_OPPORTUNITIES_CACHE_TTL_MS,
   1 * 60 * 1000
@@ -709,8 +711,8 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   logger.info(`📊 Created index with ${Object.keys(merklData).length} token keys`);
   
   // 保存 Merkl 原始数据
-  await mkdir(DATA_DIR, { recursive: true });
-  const merklRawDataPath = join(DATA_DIR, 'merkl-raw-data.json');
+  await mkdir(DEBUG_DATA_DIR, { recursive: true });
+  const merklRawDataPath = join(DEBUG_DATA_DIR, 'merkl-raw-data.json');
   await writeJsonAtomic(merklRawDataPath, {
     timestamp: new Date().toISOString(),
     rawOpportunities: opportunities, // 保存所有原始数据（包括非 live 的）
@@ -721,7 +723,7 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   });
   logger.info(`💾 Merkl raw data saved to ${merklRawDataPath}`);
 
-  const merklForecastLitePath = join(DATA_DIR, 'merkl-opportunity-meta-lite.json');
+  const merklForecastLitePath = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
   await writeJsonAtomic(merklForecastLitePath, {
     timestamp: new Date().toISOString(),
     campaigns: forecastCampaignMetaLite,

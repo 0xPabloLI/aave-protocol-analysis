@@ -5,7 +5,9 @@ import { MarketWithSpread, TokenPricesIndex } from '../types/index.js';
 import { logger } from '../logger.js';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
-const DATA_FILE_PATH = join(DATA_DIR, 'aave-formatted-data.json');
+const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
+const DATA_FILE_PATH = join(RUNTIME_DATA_DIR, 'aave-formatted-data.json');
+const LEGACY_DATA_FILE_PATH = join(DATA_DIR, 'aave-formatted-data.json');
 const STALE_THRESHOLD_MS = 1 * 60 * 1000; // 1 minute in milliseconds
 
 class DataService {
@@ -20,7 +22,16 @@ class DataService {
    */
   async loadData(): Promise<MarketWithSpread[]> {
     try {
-      const fileContent = await readFile(DATA_FILE_PATH, 'utf-8');
+      let filePathUsed = DATA_FILE_PATH;
+      let fileContent: string;
+      try {
+        fileContent = await readFile(DATA_FILE_PATH, 'utf-8');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+        filePathUsed = LEGACY_DATA_FILE_PATH;
+        fileContent = await readFile(LEGACY_DATA_FILE_PATH, 'utf-8');
+        logger.warn(`Using legacy data file path fallback: ${LEGACY_DATA_FILE_PATH}`);
+      }
       const parsed = JSON.parse(fileContent);
       
       // 检查是否是新格式（包含 _metadata）
@@ -53,14 +64,14 @@ class DataService {
       this.lastCacheUpdate = new Date();
       
       // 获取文件修改时间（作为后备方案）
-      const fileStats = await stat(DATA_FILE_PATH);
+      const fileStats = await stat(filePathUsed);
       this.fileMtime = fileStats.mtime;
 
       return dataWithSpread;
     } catch (error) {
       if (error instanceof Error && (error as any).code === 'ENOENT') {
         // 文件不存在，返回空数组
-        logger.warn(`Data file not found: ${DATA_FILE_PATH}`);
+        logger.warn(`Data file not found: ${DATA_FILE_PATH} (or legacy ${LEGACY_DATA_FILE_PATH})`);
         return [];
       }
       throw error;

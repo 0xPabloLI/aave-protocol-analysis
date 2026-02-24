@@ -70,6 +70,9 @@ interface FormattedReserveData {
 }
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
+const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
+const EXPORT_DATA_DIR = join(DATA_DIR, 'exports');
 
 // 从 baseDataset 构建链-代币索引：chainNameLower -> Set<tokenSymbolLower>
 function buildChainTokenIndex(baseDataset: FormattedReserveData[]): Record<string, Set<string>> {
@@ -180,11 +183,12 @@ async function fetchBrevisAprs(
     const brevisIndex: BrevisDataIndex = brevisResult.index;
     
     // 输出原始 Brevis 数据（包括原始 API 响应），方便查看和调试
-    await mkdir(DATA_DIR, { recursive: true });
+    await mkdir(DEBUG_DATA_DIR, { recursive: true });
     const totalSupply = Object.values(brevisIndex).reduce((sum, item) => sum + item.brevisSupplys.length, 0);
     const totalBorrow = Object.values(brevisIndex).reduce((sum, item) => sum + item.brevisBorrows.length, 0);
     
-    await writeJsonAtomic(join(DATA_DIR, 'brevis-raw-data.json'), {
+    const brevisRawPath = join(DEBUG_DATA_DIR, 'brevis-raw-data.json');
+    await writeJsonAtomic(brevisRawPath, {
       timestamp: new Date().toISOString(),
       totalSupplyCampaigns: totalSupply,
       totalBorrowCampaigns: totalBorrow,
@@ -195,7 +199,7 @@ async function fetchBrevisAprs(
       // 处理后的索引数据
       index: brevisIndex
     });
-    logger.info(`💾 Brevis raw data saved to ${join(DATA_DIR, 'brevis-raw-data.json')}`);
+    logger.info(`💾 Brevis raw data saved to ${brevisRawPath}`);
     
     logger.info(`✅ Indexed Brevis campaign data for ${Object.keys(brevisIndex).length} chain-token combinations`);
     logger.info(`   Supply campaigns: ${totalSupply}, Borrow campaigns: ${totalBorrow}`);
@@ -713,10 +717,10 @@ async function fetchAaveMarketData(): Promise<MarketData> {
   }
 
   // 确保 data 文件夹存在
-  await mkdir(DATA_DIR, { recursive: true });
+  await mkdir(DEBUG_DATA_DIR, { recursive: true });
   
   // 保存原始数据到JSON文件
-  const outputPath = join(DATA_DIR, 'aave-all-markets-data.json');
+  const outputPath = join(DEBUG_DATA_DIR, 'aave-all-markets-data.json');
   await writeJsonAtomic(outputPath, marketData);
   
   return marketData;
@@ -864,7 +868,7 @@ async function fetchAaveMarkets(): Promise<void> {
     
     // 保存格式化的JSON数据（包含时间戳元数据）
     // 使用从 fetchAaveMarketData 返回的时间戳，而不是重新生成
-    const formattedJsonPath = join(DATA_DIR, 'aave-formatted-data.json');
+    const formattedJsonPath = join(RUNTIME_DATA_DIR, 'aave-formatted-data.json');
     const dataWithMetadata = {
       _metadata: {
         timestamp: marketData.timestamp, // 使用从 fetchAaveMarketData 返回的时间戳
@@ -886,14 +890,17 @@ async function fetchAaveMarkets(): Promise<void> {
     
     // 生成CSV格式
     const csvData = generateCSV(enrichedData);
-    const csvPath = join(DATA_DIR, 'aave-formatted-data.csv');
+    await mkdir(EXPORT_DATA_DIR, { recursive: true });
+    const csvPath = join(EXPORT_DATA_DIR, 'aave-formatted-data.csv');
     await writeFile(csvPath, csvData, 'utf-8');
     
-    const outputPath = join(DATA_DIR, 'aave-all-markets-data.json');
+    const outputPath = join(DEBUG_DATA_DIR, 'aave-all-markets-data.json');
     logger.info(`💾 Original data saved to ${outputPath}`);
     logger.info(`📊 Formatted JSON saved to ${formattedJsonPath}`);
     logger.info(`📈 CSV data saved to ${csvPath}`);
-    logger.info(`📁 File location: ${DATA_DIR}`);
+    logger.info(`📁 Runtime data dir: ${RUNTIME_DATA_DIR}`);
+    logger.info(`📁 Debug data dir: ${DEBUG_DATA_DIR}`);
+    logger.info(`📁 Export data dir: ${EXPORT_DATA_DIR}`);
     logger.info(`📈 Total markets: ${marketData.markets.length}`);
     logger.info(`🪙 Total reserves: ${enrichedData.length}`);
     logger.info(`🌐 Networks discovered: ${marketData.totalNetworks}`);
@@ -920,8 +927,8 @@ async function fetchAaveMarkets(): Promise<void> {
     
     try {
       // 确保 data 文件夹存在
-      await mkdir(DATA_DIR, { recursive: true });
-      const errorPath = join(DATA_DIR, 'aave-all-markets-error.json');
+      await mkdir(DEBUG_DATA_DIR, { recursive: true });
+      const errorPath = join(DEBUG_DATA_DIR, 'aave-all-markets-error.json');
       await writeJsonAtomic(errorPath, errorData);
       logger.info(`💾 Error data saved to ${errorPath}`);
     } catch (writeError) {
