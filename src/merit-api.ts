@@ -67,7 +67,7 @@ interface MeritRoundEstimateTarget {
 }
 
 interface MeritRoundEstimateCacheEntry {
-  estimate: MeritRoundEstimateBase;
+  estimate: MeritRoundEstimateBase | null;
   lastCheckedAtMs: number;
 }
 
@@ -241,7 +241,7 @@ const fetchMeritRoundEstimates = async (
     const cachedResult = new Map<string, MeritRoundEstimateBase>();
     targetEntries.forEach(([key]) => {
       const cached = cache.get(key);
-      if (cached) cachedResult.set(key, cached.estimate);
+      if (cached?.estimate) cachedResult.set(key, cached.estimate);
     });
     return cachedResult;
   }
@@ -325,15 +325,15 @@ const fetchMeritRoundEstimates = async (
     if (unresolvedTargets && unresolvedTargets.size === 0) break;
   }
 
-  // Update per-key cache entries (fetched keys and untouched keys keep latest known estimate).
-  targetEntries.forEach(([key, target]) => {
+  // Update per-key cache entries (including negative-cache timestamps for misses).
+  targetEntries.forEach(([key]) => {
     const previous = cache.get(key);
     const fetched = fetchedEstimates.get(key);
 
     if (!fetched) {
-      if (previous && keysToFetch.has(key)) {
+      if (keysToFetch.has(key)) {
         cache.set(key, {
-          ...previous,
+          estimate: previous?.estimate ?? null,
           lastCheckedAtMs: nowMs,
         });
       }
@@ -356,7 +356,7 @@ const fetchMeritRoundEstimates = async (
   if (targetEntries.length > 0) {
     targetEntries.forEach(([key]) => {
       const cached = cache.get(key);
-      if (cached) result.set(key, cached.estimate);
+      if (cached?.estimate) result.set(key, cached.estimate);
     });
     return result;
   }
@@ -414,19 +414,21 @@ const serializeMeritRoundEstimateCache = () => {
   const serialized: Record<
     string,
     {
-      lastRoundRewardUsd: number;
-      lastRoundCampaignId: string;
+      lastRoundRewardUsd: number | null;
+      lastRoundCampaignId: string | null;
       lastCheckedAtMs: number;
       lastCheckedAtIso: string | null;
+      miss: boolean;
     }
   > = {};
 
   for (const [key, entry] of meritRoundEstimateCache.entries()) {
     serialized[key] = {
-      lastRoundRewardUsd: entry.estimate.latestAmountUsd,
-      lastRoundCampaignId: entry.estimate.latestCampaignId,
+      lastRoundRewardUsd: entry.estimate?.latestAmountUsd ?? null,
+      lastRoundCampaignId: entry.estimate?.latestCampaignId ?? null,
       lastCheckedAtMs: entry.lastCheckedAtMs,
       lastCheckedAtIso: toIsoOrNull(entry.lastCheckedAtMs),
+      miss: entry.estimate === null,
     };
   }
 
