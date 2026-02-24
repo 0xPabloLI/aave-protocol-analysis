@@ -9,6 +9,7 @@ const client = AaveClient.create();
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+import { writeJsonAtomic } from './file-utils.js';
 import { brevisApi } from './brevis-api.js';
 import {
   MerklCampaignBreakdown,
@@ -183,21 +184,17 @@ async function fetchBrevisAprs(
     const totalSupply = Object.values(brevisIndex).reduce((sum, item) => sum + item.brevisSupplys.length, 0);
     const totalBorrow = Object.values(brevisIndex).reduce((sum, item) => sum + item.brevisBorrows.length, 0);
     
-    await writeFile(
-      join(DATA_DIR, 'brevis-raw-data.json'),
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        totalSupplyCampaigns: totalSupply,
-        totalBorrowCampaigns: totalBorrow,
-        indexedBy: 'chainId-tokenAddress',
-        // 原始 API 响应数据（用于调试和问题排查）
-        rawProtocolsList: brevisResult.rawProtocolsList,
-        rawProtocolDetails: brevisResult.rawProtocolDetails,
-        // 处理后的索引数据
-        index: brevisIndex
-      }, null, 2),
-      'utf-8'
-    );
+    await writeJsonAtomic(join(DATA_DIR, 'brevis-raw-data.json'), {
+      timestamp: new Date().toISOString(),
+      totalSupplyCampaigns: totalSupply,
+      totalBorrowCampaigns: totalBorrow,
+      indexedBy: 'chainId-tokenAddress',
+      // 原始 API 响应数据（用于调试和问题排查）
+      rawProtocolsList: brevisResult.rawProtocolsList,
+      rawProtocolDetails: brevisResult.rawProtocolDetails,
+      // 处理后的索引数据
+      index: brevisIndex
+    });
     logger.info(`💾 Brevis raw data saved to ${join(DATA_DIR, 'brevis-raw-data.json')}`);
     
     logger.info(`✅ Indexed Brevis campaign data for ${Object.keys(brevisIndex).length} chain-token combinations`);
@@ -720,7 +717,7 @@ async function fetchAaveMarketData(): Promise<MarketData> {
   
   // 保存原始数据到JSON文件
   const outputPath = join(DATA_DIR, 'aave-all-markets-data.json');
-  await writeFile(outputPath, JSON.stringify(marketData, null, 2), 'utf-8');
+  await writeJsonAtomic(outputPath, marketData);
   
   return marketData;
 }
@@ -878,14 +875,14 @@ async function fetchAaveMarkets(): Promise<void> {
       data: enrichedData,
     };
     // 使用自定义 replacer 函数，确保 undefined 字段被完全省略，null 也会被转换为 undefined 并省略
-    await writeFile(formattedJsonPath, JSON.stringify(dataWithMetadata, (key, value) => {
+    await writeJsonAtomic(formattedJsonPath, dataWithMetadata, { replacer: (key: string, value: unknown) => {
       // 将 null 转换为 undefined，这样会被省略（JSON.stringify 默认会省略 undefined）
       // 注意：JSON.stringify 默认行为：
       // - undefined: 被省略（不序列化）
       // - null: 序列化为 "null"（会出现在 JSON 中）
       // 所以我们把 null 也转换为 undefined 来省略它
       return value === null ? undefined : (value === undefined ? undefined : value);
-    }, 2), 'utf-8');
+    }});
     
     // 生成CSV格式
     const csvData = generateCSV(enrichedData);
@@ -925,7 +922,7 @@ async function fetchAaveMarkets(): Promise<void> {
       // 确保 data 文件夹存在
       await mkdir(DATA_DIR, { recursive: true });
       const errorPath = join(DATA_DIR, 'aave-all-markets-error.json');
-      await writeFile(errorPath, JSON.stringify(errorData, null, 2), 'utf-8');
+      await writeJsonAtomic(errorPath, errorData);
       logger.info(`💾 Error data saved to ${errorPath}`);
     } catch (writeError) {
       logger.error('❌ Failed to save error data:', writeError);

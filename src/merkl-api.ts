@@ -1,9 +1,10 @@
 import fetch from 'node-fetch';
 import type { RequestInit, Response } from 'node-fetch';
-import { writeFile, mkdir } from 'fs/promises';
+import { mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+import { writeJsonAtomic } from './file-utils.js';
 import { merklFetchConfig } from './config.js';
 import {
   fetchMerklOpportunitiesSnapshot,
@@ -710,29 +711,21 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   // 保存 Merkl 原始数据
   await mkdir(DATA_DIR, { recursive: true });
   const merklRawDataPath = join(DATA_DIR, 'merkl-raw-data.json');
-  await writeFile(merklRawDataPath, JSON.stringify({
+  await writeJsonAtomic(merklRawDataPath, {
     timestamp: new Date().toISOString(),
     rawOpportunities: opportunities, // 保存所有原始数据（包括非 live 的）
     liveOpportunities: liveOpportunities, // 保存过滤后的 live opportunities
     processedData,
     tokenPrices,
     index: merklData
-  }, null, 2), 'utf-8');
+  });
   logger.info(`💾 Merkl raw data saved to ${merklRawDataPath}`);
 
   const merklForecastLitePath = join(DATA_DIR, 'merkl-opportunity-meta-lite.json');
-  await writeFile(
-    merklForecastLitePath,
-    JSON.stringify(
-      {
-        timestamp: new Date().toISOString(),
-        campaigns: forecastCampaignMetaLite,
-      },
-      null,
-      2
-    ),
-    'utf-8'
-  );
+  await writeJsonAtomic(merklForecastLitePath, {
+    timestamp: new Date().toISOString(),
+    campaigns: forecastCampaignMetaLite,
+  });
   logger.info(`💾 Merkl forecast lite data saved to ${merklForecastLitePath}`);
   
   return { index: merklData, tokenPrices };

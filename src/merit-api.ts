@@ -1,10 +1,11 @@
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
 import puppeteer, { type Browser, type Page } from 'puppeteer';
-import { writeFile, mkdir, readFile } from 'fs/promises';
+import { mkdir, readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+import { writeJsonAtomic } from './file-utils.js';
 import {
   extractCampaignInfoWithWorker,
   extractMeritDynamicInfoWithWorker,
@@ -17,6 +18,7 @@ const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const MERIT_ROUND_ESTIMATE_MAX_PAGES = 12;
 const MERIT_ROUND_POST_END_REFRESH_MS = 24 * 60 * 60 * 1000;
+const MERIT_TIMERANGES_CACHE_PATH = join(DATA_DIR, 'merit-timeranges-cache.json');
 
 export interface MeritAPRResponse {
   previousAPR: any;
@@ -763,9 +765,30 @@ async function isMeritCampaignExpired(
  */
 async function loadCachedTimeRanges(): Promise<Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }>> {
   try {
-    const cachedDataPath = join(DATA_DIR, 'merit-raw-data.json');
-    const cachedData = await readFile(cachedDataPath, 'utf-8');
-    const parsed = JSON.parse(cachedData);
+    let parsed: any = null;
+    let loadedFromPath: string | null = null;
+    let loadedFromLabel: string | null = null;
+
+    const candidates = [
+      { path: MERIT_TIMERANGES_CACHE_PATH, label: 'merit-timeranges-cache.json' },
+      { path: join(DATA_DIR, 'merit-raw-data.json'), label: 'merit-raw-data.json' },
+    ];
+
+    for (const candidate of candidates) {
+      try {
+        const cachedData = await readFile(candidate.path, 'utf-8');
+        parsed = JSON.parse(cachedData);
+        loadedFromPath = candidate.path;
+        loadedFromLabel = candidate.label;
+        break;
+      } catch {
+        // Try next cache source
+      }
+    }
+
+    if (!parsed) {
+      throw new Error('No cached timeRanges source available');
+    }
     const timeRanges = parsed.timeRanges || {};
     
     // 验证缓存数据的完整性：确保每个条目都有全量数据
@@ -853,6 +876,9 @@ async function loadCachedTimeRanges(): Promise<Record<string, { link: string; st
     const filteredCount = Object.keys(timeRanges).length - Object.keys(validatedTimeRanges).length;
     if (filteredCount > 0) {
       logger.info(`📦 Filtered out ${filteredCount} incomplete cached entries (missing required fields), will refetch them`);
+    }
+    if (loadedFromPath && loadedFromLabel) {
+      logger.info(`📦 Loaded Merit timeRanges cache from ${loadedFromLabel}`);
     }
     
     return validatedTimeRanges;
@@ -1300,46 +1326,44 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     // 保存 Merit 原始数据
     await mkdir(DATA_DIR, { recursive: true });
     const meritMerklRawDataPath = join(DATA_DIR, 'merit-merkl-raw-data.json');
-    await writeFile(
-      meritMerklRawDataPath,
-      JSON.stringify(
-        {
-          timestamp: new Date().toISOString(),
-          source: {
-            endpoint: `${MERKL_BASE_URL}/opportunities`,
-            status: 'PAST',
-            type: 'JSON_AIRDROP',
-            campaigns: true,
-            order: 'desc',
-            items: 100,
-            maxPages: MERIT_ROUND_ESTIMATE_MAX_PAGES,
-            requestTemplateUrl:
-              meritRoundEstimateLastFetchMeta?.requestTemplateUrl ??
-              `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page={page}`,
-            firstPageUrl:
-              meritRoundEstimateLastFetchMeta?.firstPageUrl ??
-              `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page=0`,
-            pagesScanned: meritRoundEstimateLastFetchMeta?.pagesScanned ?? 0,
-            hitCacheOnly: meritRoundEstimateLastFetchMeta?.hitCacheOnly ?? false,
-          },
-          targets: serializeMeritRoundEstimateTargets(targetMeritRoundTargets),
-          lastRoundRewards: serializeMeritRoundEstimates(meritRoundEstimates),
-          cacheState: serializeMeritRoundEstimateCache(),
-        },
-        null,
-        2
-      ),
-      'utf-8'
-    );
+    await writeJsonAtomic(meritMerklRawDataPath, {
+      timestamp: new Date().toISOString(),
+      source: {
+        endpoint: `${MERKL_BASE_URL}/opportunities`,
+        status: 'PAST',
+        type: 'JSON_AIRDROP',
+        campaigns: true,
+        order: 'desc',
+        items: 100,
+        maxPages: MERIT_ROUND_ESTIMATE_MAX_PAGES,
+        requestTemplateUrl:
+          meritRoundEstimateLastFetchMeta?.requestTemplateUrl ??
+          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page={page}`,
+        firstPageUrl:
+          meritRoundEstimateLastFetchMeta?.firstPageUrl ??
+          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page=0`,
+        pagesScanned: meritRoundEstimateLastFetchMeta?.pagesScanned ?? 0,
+        hitCacheOnly: meritRoundEstimateLastFetchMeta?.hitCacheOnly ?? false,
+      },
+      targets: serializeMeritRoundEstimateTargets(targetMeritRoundTargets),
+      lastRoundRewards: serializeMeritRoundEstimates(meritRoundEstimates),
+      cacheState: serializeMeritRoundEstimateCache(),
+    });
     logger.info(`💾 Merit Merkl raw data saved to ${meritMerklRawDataPath}`);
 
+    await writeJsonAtomic(MERIT_TIMERANGES_CACHE_PATH, {
+      timestamp: new Date().toISOString(),
+      timeRanges,
+    });
+    logger.info(`💾 Merit timeRanges cache saved to ${MERIT_TIMERANGES_CACHE_PATH}`);
+
     const meritRawDataPath = join(DATA_DIR, 'merit-raw-data.json');
-    await writeFile(meritRawDataPath, JSON.stringify({
+    await writeJsonAtomic(meritRawDataPath, {
       timestamp: new Date().toISOString(),
       rawAPRs: data.currentAPR.actionsAPR,
       timeRanges,
       index: meritData
-    }, null, 2), 'utf-8');
+    });
     logger.info(`💾 Merit raw data saved to ${meritRawDataPath}`);
     
     return meritData;
