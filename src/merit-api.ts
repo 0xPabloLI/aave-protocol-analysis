@@ -86,7 +86,7 @@ interface MeritRoundEstimateFetchMeta {
   hitCacheOnly: boolean;
 }
 
-type MeritTimeRangeEntry = {
+type MeritCampaignMetadataEntry = {
   link: string;
   startDate: string;
   endDate: string;
@@ -101,8 +101,8 @@ let meritRoundEstimateCache:
   | null = null;
 let meritRoundEstimateLastFetchMeta: MeritRoundEstimateFetchMeta | null = null;
 let meritRoundEstimateLastGlobalScanAtMs: number | null = null;
-let meritTimeRangesMemoryCache: Record<string, MeritTimeRangeEntry> | null = null;
-let meritTimeRangesLoadedFromDisk = false;
+let meritCampaignMetadataMemoryCache: Record<string, MeritCampaignMetadataEntry> | null = null;
+let meritCampaignMetadataLoadedFromDisk = false;
 
 const toIsoOrNull = (value: number | null | undefined): string | null => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
@@ -848,16 +848,16 @@ async function isMeritCampaignExpired(
  * 
  * 如果缺少任何必填字段，说明之前爬虫出问题了，需要重新获取
  */
-function clearMeritTimeRangesMemoryCache(): void {
-  meritTimeRangesMemoryCache = null;
-  meritTimeRangesLoadedFromDisk = false;
+function clearMeritCampaignMetadataMemoryCache(): void {
+  meritCampaignMetadataMemoryCache = null;
+  meritCampaignMetadataLoadedFromDisk = false;
 }
 
-async function loadCachedTimeRanges(): Promise<Record<string, MeritTimeRangeEntry>> {
-  if (meritTimeRangesMemoryCache) {
-    return meritTimeRangesMemoryCache;
+async function loadCachedMeritCampaignMetadata(): Promise<Record<string, MeritCampaignMetadataEntry>> {
+  if (meritCampaignMetadataMemoryCache) {
+    return meritCampaignMetadataMemoryCache;
   }
-  if (meritTimeRangesLoadedFromDisk) {
+  if (meritCampaignMetadataLoadedFromDisk) {
     return {};
   }
   try {
@@ -889,7 +889,7 @@ async function loadCachedTimeRanges(): Promise<Record<string, MeritTimeRangeEntr
     const timeRanges = parsed.timeRanges || {};
     
     // 验证缓存数据的完整性：确保每个条目都有全量数据
-    const validatedTimeRanges: Record<string, MeritTimeRangeEntry> = {};
+    const validatedTimeRanges: Record<string, MeritCampaignMetadataEntry> = {};
     
     for (const [key, value] of Object.entries(timeRanges)) {
       const timeRange = value as { 
@@ -978,13 +978,13 @@ async function loadCachedTimeRanges(): Promise<Record<string, MeritTimeRangeEntr
       logger.info(`📦 Loaded Merit timeRanges cache from ${loadedFromLabel}`);
     }
     
-    meritTimeRangesMemoryCache = validatedTimeRanges;
-    meritTimeRangesLoadedFromDisk = true;
-    return meritTimeRangesMemoryCache;
+    meritCampaignMetadataMemoryCache = validatedTimeRanges;
+    meritCampaignMetadataLoadedFromDisk = true;
+    return meritCampaignMetadataMemoryCache;
   } catch (error) {
     // 文件不存在或解析失败，返回空对象（会触发所有条目重新获取）
     logger.info('📦 No cached time ranges found, will fetch all entries');
-    meritTimeRangesLoadedFromDisk = true;
+    meritCampaignMetadataLoadedFromDisk = true;
     return {};
   }
 }
@@ -1068,7 +1068,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     const meritAPRs = data.currentAPR.actionsAPR;
     
     // 加载缓存的 timeRanges 数据
-    const cachedTimeRanges = await loadCachedTimeRanges();
+    const cachedTimeRanges = await loadCachedMeritCampaignMetadata();
     logger.info(`📦 Loaded ${Object.keys(cachedTimeRanges).length} cached time ranges`);
     
     // 获取时间范围信息（只在需要时更新）
@@ -1458,8 +1458,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       timestamp: new Date().toISOString(),
       timeRanges,
     });
-    meritTimeRangesMemoryCache = timeRanges;
-    meritTimeRangesLoadedFromDisk = true;
+    meritCampaignMetadataMemoryCache = timeRanges;
+    meritCampaignMetadataLoadedFromDisk = true;
     logger.info(`💾 Merit timeRanges cache saved to ${MERIT_TIMERANGES_CACHE_PATH}`);
 
     const meritRawDataPath = join(DEBUG_DATA_DIR, 'merit-raw-data.json');
