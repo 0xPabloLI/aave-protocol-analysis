@@ -109,7 +109,6 @@ interface MerklOpportunityMetaLiteFile {
 interface ForecastMetricsLite {
   tvlRecords?: Array<{ timestamp?: unknown; total?: unknown }>;
   dailyRewardsRecords?: Array<{ timestamp?: unknown; total?: unknown }>;
-  aprRecords?: Array<{ timestamp?: unknown; apr?: unknown }>;
 }
 
 const toNumber = (value: unknown): number | null => {
@@ -237,12 +236,9 @@ const extractDailyRewardsRecords = (metrics: unknown): TimeSeriesPoint[] => {
 };
 
 const extractMetricsCadenceSeconds = (metrics: unknown): number | null => {
-  const fields = ['dailyRewardsRecords', 'tvlRecords', 'aprRecords'] as const;
   const diffs: number[] = [];
-
-  for (const field of fields) {
-    const raw = getAtPath(metrics, [field]);
-    if (!Array.isArray(raw)) continue;
+  const raw = getAtPath(metrics, ['dailyRewardsRecords']);
+  if (Array.isArray(raw)) {
     const timestamps = raw
       .map((entry) => toNumber(getAtPath(entry, ['timestamp'])) || 0)
       .filter((ts) => ts > 0)
@@ -278,17 +274,27 @@ const deriveMetricsCacheTtlMs = (metrics: unknown): { ttlMs: number; cadenceSeco
   return { ttlMs, cadenceSeconds };
 };
 
-const trimMetricsForForecast = (metrics: unknown): ForecastMetricsLite => ({
-  tvlRecords: Array.isArray(getAtPath(metrics, ['tvlRecords']))
-    ? (getAtPath(metrics, ['tvlRecords']) as Array<{ timestamp?: unknown; total?: unknown }>)
-    : [],
-  dailyRewardsRecords: Array.isArray(getAtPath(metrics, ['dailyRewardsRecords']))
-    ? (getAtPath(metrics, ['dailyRewardsRecords']) as Array<{ timestamp?: unknown; total?: unknown }>)
-    : [],
-  aprRecords: Array.isArray(getAtPath(metrics, ['aprRecords']))
-    ? (getAtPath(metrics, ['aprRecords']) as Array<{ timestamp?: unknown; apr?: unknown }>)
-    : [],
-});
+const trimMetricsForForecast = (metrics: unknown): ForecastMetricsLite => {
+  const rawTvl = getAtPath(metrics, ['tvlRecords']);
+  const tvlRecords = Array.isArray(rawTvl)
+    ? (rawTvl as Array<{ timestamp?: unknown; total?: unknown }>)
+    : [];
+  const latestTvlRecord =
+    tvlRecords.length > 0
+      ? [...tvlRecords].sort((a, b) => {
+          const ta = toNumber(getAtPath(a, ['timestamp'])) || 0;
+          const tb = toNumber(getAtPath(b, ['timestamp'])) || 0;
+          return ta - tb;
+        })[tvlRecords.length - 1]
+      : null;
+
+  return {
+    tvlRecords: latestTvlRecord ? [latestTvlRecord] : [],
+    dailyRewardsRecords: Array.isArray(getAtPath(metrics, ['dailyRewardsRecords']))
+      ? (getAtPath(metrics, ['dailyRewardsRecords']) as Array<{ timestamp?: unknown; total?: unknown }>)
+      : [],
+  };
+};
 
 const estimateDistributedSoFar = (
   dailyRewardsRecords: TimeSeriesPoint[],

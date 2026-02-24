@@ -169,10 +169,10 @@ Map<string, {
 ```
 
 ### D) `metricsCache` (`backend/src/services/merklForecastService.ts`)
-- Per-campaign cache for **forecast-trimmed** Merkl `/metrics` data (`dailyRewardsRecords`, `tvlRecords`, `aprRecords`)
+- Per-campaign cache for **forecast-trimmed** Merkl `/metrics` data (`dailyRewardsRecords`, `tvlRecords` latest-only)
 - TTL is derived from observed metrics record cadence (with default/min/max bounds)
 - Purpose: reduce `/metrics` request frequency while keeping `forecastCache` short-lived
-- `aprRecords` is kept for cadence inference (TTL derivation), even if forecast math does not directly use APR records
+- Cadence inference uses `dailyRewardsRecords` timestamps (same series used for `distributedSoFar` integration)
 - Current defaults:
   - default TTL: 30m
   - empty-record TTL: 5m
