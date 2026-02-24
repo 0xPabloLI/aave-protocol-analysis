@@ -53,6 +53,7 @@ The backend requires runtime data files before serving requests:
 ### Architecture Notes (Read Before Cache/Data-Flow Changes)
 - `docs/merkl-merit-cache-architecture.md` — current Merkl/Merit cache layers, file roles, fallback chains
 - `docs/development-best-practices.md` — implementation patterns agreed during refactors (TTL/freshness, file layering, naming)
+- If you change cache layers, file paths/layout, data-flow boundaries, or fallback chains, update both docs above in the same PR/commit set.
 
 ## Code Architecture
 

@@ -17,6 +17,7 @@ flowchart TD
   C --> H["data/runtime/merit-timeranges-cache.json"]
   D --> I["data/debug/merkl-raw-data.json (debug)"]
   D --> J["data/runtime/merkl-opportunity-meta-lite.json (runtime-lite)"]
+  D --> R["@internal/merkl-shared snapshot (memory)"]
   B --> K["data/runtime/aave-formatted-data.json"]
   L["backend /api/markets"] --> M["dataService (memory cache)"]
   M --> K
@@ -88,7 +89,7 @@ Map<string, {
 ### D) `@internal/merkl-shared` snapshot cache (`packages/merkl-shared`)
 - Caches **raw Merkl opportunities array** (not forecast-lite)
 - Keyed by query params (`mainProtocolId/status/campaigns/itemsPerPage/...`)
-- Used as online fallback optimization
+- Used by root Merkl fetcher (`src/merkl-api.ts`) and backend forecast fallback (`backend/src/services/merklOpportunityClient.ts`)
 
 Example shape:
 ```ts
