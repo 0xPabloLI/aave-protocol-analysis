@@ -136,7 +136,8 @@ This decoupling makes the system tolerant to scheduler jitter and temporary dela
 It is called during `fetchMeritData()`, and then:
 - builds target keys from current merit APR keys
 - checks each key’s `lastCheckedAtMs`
-- only queries Merkl history for keys that are due
+- if any key is due, runs one Merkl history scan and stamps all current target keys together (`lastCheckedAtMs`)
+- applies a short global scan cooldown (request coalescing / anti-stampede)
 
 Notes:
 - `lastCheckedAtMs` = **when we checked**, not “when data changed”

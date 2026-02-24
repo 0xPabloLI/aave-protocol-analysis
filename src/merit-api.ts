@@ -20,6 +20,7 @@ const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const MERIT_ROUND_ESTIMATE_MAX_PAGES = 12;
 const MERIT_ROUND_POST_END_REFRESH_MS = 24 * 60 * 60 * 1000;
+const MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS = 10 * 60 * 1000;
 const MERIT_TIMERANGES_CACHE_PATH = join(RUNTIME_DATA_DIR, 'merit-timeranges-cache.json');
 
 export interface MeritAPRResponse {
@@ -84,6 +85,7 @@ let meritRoundEstimateCache:
   | Map<string, MeritRoundEstimateCacheEntry>
   | null = null;
 let meritRoundEstimateLastFetchMeta: MeritRoundEstimateFetchMeta | null = null;
+let meritRoundEstimateLastGlobalScanAtMs: number | null = null;
 
 const toIsoOrNull = (value: number | null | undefined): string | null => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
@@ -226,13 +228,36 @@ const fetchMeritRoundEstimates = async (
   }
 
   const targetEntries = targets && targets.size > 0 ? Array.from(targets.entries()) : [];
-  const keysToFetch = new Set<string>(
+  const dueKeys = new Set<string>(
     targetEntries
       .filter(([key, target]) => shouldRefreshMeritRoundEstimate(target, cache.get(key), nowMs))
       .map(([key]) => key)
   );
+  const keysToFetch = dueKeys.size > 0
+    ? new Set<string>(targetEntries.map(([key]) => key))
+    : new Set<string>();
 
-  // If every target key is still in freeze / pre-end window, return cached estimates directly.
+  if (
+    targetEntries.length > 0 &&
+    dueKeys.size > 0 &&
+    meritRoundEstimateLastGlobalScanAtMs !== null &&
+    nowMs - meritRoundEstimateLastGlobalScanAtMs < MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS
+  ) {
+    meritRoundEstimateLastFetchMeta = {
+      requestTemplateUrl,
+      firstPageUrl,
+      pagesScanned: 0,
+      hitCacheOnly: true,
+    };
+    const cachedResult = new Map<string, MeritRoundEstimateBase>();
+    targetEntries.forEach(([key]) => {
+      const cached = cache.get(key);
+      if (cached?.estimate) cachedResult.set(key, cached.estimate);
+    });
+    return cachedResult;
+  }
+
+  // If no target key is due, return cached estimates directly.
   if (targetEntries.length > 0 && keysToFetch.size === 0) {
     meritRoundEstimateLastFetchMeta = {
       requestTemplateUrl,
@@ -327,7 +352,12 @@ const fetchMeritRoundEstimates = async (
     if (unresolvedTargets && unresolvedTargets.size === 0) break;
   }
 
+  if (pagesScanned > 0) {
+    meritRoundEstimateLastGlobalScanAtMs = nowMs;
+  }
+
   // Update per-key cache entries (including negative-cache timestamps for misses).
+  // When a scan runs, stamp all current target keys together to reduce repeated scans.
   targetEntries.forEach(([key]) => {
     const previous = cache.get(key);
     const fetched = fetchedEstimates.get(key);
@@ -1341,6 +1371,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         order: 'desc',
         items: 100,
         maxPages: MERIT_ROUND_ESTIMATE_MAX_PAGES,
+        globalCooldownMs: MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS,
         requestTemplateUrl:
           meritRoundEstimateLastFetchMeta?.requestTemplateUrl ??
           `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page={page}`,
@@ -1349,6 +1380,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
           `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page=0`,
         pagesScanned: meritRoundEstimateLastFetchMeta?.pagesScanned ?? 0,
         hitCacheOnly: meritRoundEstimateLastFetchMeta?.hitCacheOnly ?? false,
+        lastGlobalScanAtMs: meritRoundEstimateLastGlobalScanAtMs,
+        lastGlobalScanAtIso: toIsoOrNull(meritRoundEstimateLastGlobalScanAtMs),
       },
       targets: serializeMeritRoundEstimateTargets(targetMeritRoundTargets),
       lastRoundRewards: serializeMeritRoundEstimates(meritRoundEstimates),
