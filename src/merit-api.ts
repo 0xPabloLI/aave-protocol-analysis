@@ -63,6 +63,11 @@ type MeritAction = 'supply' | 'borrow';
 interface MeritRoundEstimateBase {
   latestAmountUsd: number;
   latestCampaignId: string;
+  latestOpportunityId?: string;
+  latestOpportunityLink?: string | null;
+  latestOpportunityName?: string | null;
+  matchedAction?: MeritAction;
+  matchedToken?: string;
 }
 
 interface MeritRoundEstimateTarget {
@@ -351,6 +356,14 @@ const fetchMeritRoundEstimates = async (
           fetchedEstimates.set(key, {
             latestAmountUsd: amountUsd,
             latestCampaignId: campaignId,
+            latestOpportunityId: opportunityId,
+            latestOpportunityLink:
+              (typeof opportunity?.link === 'string' && opportunity.link) ||
+              (typeof opportunity?.opportunityLink === 'string' && opportunity.opportunityLink) ||
+              null,
+            latestOpportunityName: typeof opportunity?.name === 'string' ? opportunity.name : null,
+            matchedAction: action,
+            matchedToken: token,
           });
 
           if (unresolvedTargets?.has(key)) {
@@ -442,11 +455,27 @@ const serializeMeritRoundEstimateTargets = (
 const serializeMeritRoundEstimates = (
   estimates: Map<string, MeritRoundEstimateBase>
 ): Record<string, { lastRoundRewardUsd: number; lastRoundCampaignId: string }> => {
-  const serialized: Record<string, { lastRoundRewardUsd: number; lastRoundCampaignId: string }> = {};
+  const serialized: Record<
+    string,
+    {
+      lastRoundRewardUsd: number;
+      lastRoundCampaignId: string;
+      lastRoundOpportunityId: string | null;
+      lastRoundOpportunityLink: string | null;
+      lastRoundOpportunityName: string | null;
+      matchedAction: MeritAction | null;
+      matchedToken: string | null;
+    }
+  > = {};
   for (const [key, estimate] of estimates.entries()) {
     serialized[key] = {
       lastRoundRewardUsd: estimate.latestAmountUsd,
       lastRoundCampaignId: estimate.latestCampaignId,
+      lastRoundOpportunityId: estimate.latestOpportunityId ?? null,
+      lastRoundOpportunityLink: estimate.latestOpportunityLink ?? null,
+      lastRoundOpportunityName: estimate.latestOpportunityName ?? null,
+      matchedAction: estimate.matchedAction ?? null,
+      matchedToken: estimate.matchedToken ?? null,
     };
   }
   return serialized;
@@ -460,6 +489,11 @@ const serializeMeritRoundEstimateCache = () => {
     {
       lastRoundRewardUsd: number | null;
       lastRoundCampaignId: string | null;
+      lastRoundOpportunityId: string | null;
+      lastRoundOpportunityLink: string | null;
+      lastRoundOpportunityName: string | null;
+      matchedAction: MeritAction | null;
+      matchedToken: string | null;
       lastCheckedAtMs: number;
       lastCheckedAtIso: string | null;
       miss: boolean;
@@ -470,6 +504,11 @@ const serializeMeritRoundEstimateCache = () => {
     serialized[key] = {
       lastRoundRewardUsd: entry.estimate?.latestAmountUsd ?? null,
       lastRoundCampaignId: entry.estimate?.latestCampaignId ?? null,
+      lastRoundOpportunityId: entry.estimate?.latestOpportunityId ?? null,
+      lastRoundOpportunityLink: entry.estimate?.latestOpportunityLink ?? null,
+      lastRoundOpportunityName: entry.estimate?.latestOpportunityName ?? null,
+      matchedAction: entry.estimate?.matchedAction ?? null,
+      matchedToken: entry.estimate?.matchedToken ?? null,
       lastCheckedAtMs: entry.lastCheckedAtMs,
       lastCheckedAtIso: toIsoOrNull(entry.lastCheckedAtMs),
       miss: entry.estimate === null,
