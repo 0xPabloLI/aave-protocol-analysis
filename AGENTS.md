@@ -186,7 +186,7 @@ Both use `"module": "ESNext"` with `"target": "ES2022"`.
 ```
 runtime/aave-formatted-data.json          # Primary: market data + metadata (backend reads this)
 runtime/merkl-opportunity-meta-lite.json  # Merkl forecast runtime-lite snapshot
-runtime/merit-timeranges-cache.json       # Merit timeRanges/message cache
+runtime/merit-campaign-metadata-cache.json # Merit campaign metadata cache (time/message/link)
 exports/aave-formatted-data.csv           # CSV export
 debug/aave-all-markets-data.json          # Raw Aave SDK response
 debug/aave-all-markets-error.json         # Error snapshot

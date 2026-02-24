@@ -27,7 +27,7 @@ flowchart LR
   MOC["backend/merklOpportunityClient (forecast Merkl opportunities fetcher)"]
   MKLITE["data/runtime/merkl-opportunity-meta-lite.json"]
   MARKETS["data/runtime/aave-formatted-data.json"]
-  TIMER["data/runtime/merit-timeranges-cache.json"]
+  TIMER["data/runtime/merit-campaign-metadata-cache.json"]
   MERKLAPI["Merkl API"]
 
   IDX --> MERKL
@@ -55,7 +55,7 @@ flowchart LR
   B -- "writes" --> E["data/runtime/merkl-opportunity-meta-lite.json"]
   B -- "writes" --> F["data/debug/merkl-raw-data.json"]
   A --> G["src/merit-api.ts fetchMeritData()"]
-  G -- "writes" --> H["data/runtime/merit-timeranges-cache.json"]
+  G -- "writes" --> H["data/runtime/merit-campaign-metadata-cache.json"]
   G -- "writes" --> I["data/debug/merit-raw-data.json"]
   G -- "writes" --> J["data/debug/merit-merkl-raw-data.json"]
   A -- "writes" --> K["data/runtime/aave-formatted-data.json"]
@@ -95,7 +95,7 @@ flowchart TD
   B --> E["Brevis"]
   C --> F["data/debug/merit-raw-data.json"]
   C --> G["data/debug/merit-merkl-raw-data.json"]
-  C --> H["data/runtime/merit-timeranges-cache.json"]
+  C --> H["data/runtime/merit-campaign-metadata-cache.json"]
   D --> I["data/debug/merkl-raw-data.json (debug)"]
   D --> J["data/runtime/merkl-opportunity-meta-lite.json (runtime-lite)"]
   D --> R["@internal/merkl-shared snapshot (memory)"]
@@ -118,14 +118,14 @@ flowchart TD
   - Main `/api/markets` source (via `dataService`)
 - `data/runtime/merkl-opportunity-meta-lite.json`
   - Forecast service preferred file source (campaign-level lightweight meta)
-- `data/runtime/merit-timeranges-cache.json`
-  - Merit timeRanges/message cache for `fetchMeritData()`
+- `data/runtime/merit-campaign-metadata-cache.json`
+  - Merit campaign metadata cache (time ranges/message/link) for `fetchMeritData()`
 
 ### Debug / Troubleshoot (human-facing first)
 - `data/debug/merkl-raw-data.json`
   - Full Merkl debug snapshot (raw/live opportunities + processed/index/tokenPrices)
 - `data/debug/merit-raw-data.json`
-  - Merit APR raw + timeRanges + built index
+  - Merit APR raw + campaignMetadataByKey + built index
 - `data/debug/merit-merkl-raw-data.json`
   - Merit last-round reward estimation debug (Merkl JSON_AIRDROP history scan)
 - `data/debug/brevis-raw-data.json`
@@ -207,7 +207,7 @@ Map<string, {
 - `message` (including self-auth hints)
 
 Without cached `timeRanges`, the code would re-crawl campaign pages on every refresh.  
-Now it uses a module-level in-memory cache first (process lifetime), then reads `data/runtime/merit-timeranges-cache.json`, then falls back to `data/debug/merit-raw-data.json` for compatibility.
+Now it uses a module-level in-memory cache first (process lifetime), then reads `data/runtime/merit-campaign-metadata-cache.json`, then falls back to `data/debug/merit-raw-data.json` for compatibility.
 This cache is intentionally event-driven (new key / refetch path / process restart) rather than TTL-driven.
 
 ## 5) Refresh Cadence vs Freshness (Important Pattern)

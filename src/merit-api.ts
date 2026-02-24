@@ -21,7 +21,7 @@ const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const MERIT_ROUND_ESTIMATE_MAX_PAGES = 12;
 const MERIT_ROUND_POST_END_REFRESH_MS = 24 * 60 * 60 * 1000;
 const MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS = 10 * 60 * 1000;
-const MERIT_TIMERANGES_CACHE_PATH = join(RUNTIME_DATA_DIR, 'merit-timeranges-cache.json');
+const MERIT_CAMPAIGN_METADATA_CACHE_PATH = join(RUNTIME_DATA_DIR, 'merit-campaign-metadata-cache.json');
 const MERIT_ROUND_CREATOR_ALLOWLIST = new Set(['aave', 'masiv']);
 
 export interface MeritAPRResponse {
@@ -67,8 +67,15 @@ interface MeritRoundEstimateBase {
   latestOpportunityId?: string;
   latestOpportunityLink?: string | null;
   latestOpportunityName?: string | null;
+  latestOpportunityIdentifier?: string | null;
+  latestOpportunityType?: string | null;
+  latestOpportunityChainId?: number | null;
+  latestOpportunityChainName?: string | null;
   matchedAction?: MeritAction;
   matchedToken?: string;
+  matchedCreatorId?: string | null;
+  matchedCreatorTags?: string[];
+  matchedFromSource?: string | null;
 }
 
 interface MeritRoundEstimateTarget {
@@ -146,6 +153,35 @@ const normalizeTokenSymbolForMatching = (token: string): string => {
     usdc0: 'usdc',
   };
   return aliasMap[raw] ?? raw;
+};
+
+const slugifyMerklChainName = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+const buildMerklOpportunityAppLink = (opportunity: any): string | null => {
+  const explicitLink =
+    (typeof opportunity?.link === 'string' && opportunity.link) ||
+    (typeof opportunity?.opportunityLink === 'string' && opportunity.opportunityLink) ||
+    null;
+  if (explicitLink) return explicitLink;
+
+  const identifier = typeof opportunity?.identifier === 'string' ? opportunity.identifier.trim() : '';
+  const type = typeof opportunity?.type === 'string' ? opportunity.type.trim() : '';
+  const chainName =
+    typeof opportunity?.chain?.name === 'string'
+      ? opportunity.chain.name.trim()
+      : typeof opportunity?.chainName === 'string'
+        ? opportunity.chainName.trim()
+        : '';
+
+  if (!identifier || !type || !chainName) return null;
+  const chainSlug = slugifyMerklChainName(chainName);
+  if (!chainSlug) return null;
+  return `https://app.merkl.xyz/opportunities/${chainSlug}/${encodeURIComponent(type)}/${encodeURIComponent(identifier)}`;
 };
 
 const toFiniteNumber = (value: unknown): number | null => {
@@ -347,41 +383,62 @@ const fetchMeritRoundEstimates = async (
         const campaignId = String(campaign?.id ?? '');
         if (!campaignId) continue;
 
-        const textSources = Array.from(
-          new Set(
-            [
-          opportunity?.name,
-          campaign?.params?.url,
-            ].filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-          )
+        const textSources = [
+          { source: 'opportunity.name', text: opportunity?.name },
+          { source: 'campaign.params.url', text: campaign?.params?.url },
+        ].filter(
+          (entry): entry is { source: string; text: string } =>
+            typeof entry.text === 'string' && entry.text.trim().length > 0
         );
 
-        const pairs = textSources.flatMap((text) => extractActionTokenPairs(text));
-        if (pairs.length === 0) continue;
+        const creatorIdRaw = campaign?.creator?.creatorId;
+        const creatorId =
+          typeof creatorIdRaw === 'string' && creatorIdRaw.trim().length > 0 ? creatorIdRaw.trim() : null;
+        const creatorTags = Array.isArray(campaign?.creator?.tags)
+          ? campaign.creator.tags.filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+          : [];
+        const opportunityChainName =
+          typeof opportunity?.chain?.name === 'string'
+            ? opportunity.chain.name
+            : typeof opportunity?.chainName === 'string'
+              ? opportunity.chainName
+              : null;
+        const opportunityType = typeof opportunity?.type === 'string' ? opportunity.type : null;
+        const opportunityIdentifier =
+          typeof opportunity?.identifier === 'string' ? opportunity.identifier : null;
 
-        pairs.forEach(({ action, token }) => {
-          const key = buildMeritRoundKey(chainId, action, token);
-          if (targets && !targets.has(key)) return;
-          if (keysToFetch.size > 0 && !keysToFetch.has(key)) return;
-          if (fetchedEstimates.has(key)) return;
+        for (const textSource of textSources) {
+          const pairs = extractActionTokenPairs(textSource.text);
+          if (pairs.length === 0) continue;
 
-          fetchedEstimates.set(key, {
-            latestAmountUsd: amountUsd,
-            latestCampaignId: campaignId,
-            latestOpportunityId: opportunityId,
-            latestOpportunityLink:
-              (typeof opportunity?.link === 'string' && opportunity.link) ||
-              (typeof opportunity?.opportunityLink === 'string' && opportunity.opportunityLink) ||
-              null,
-            latestOpportunityName: typeof opportunity?.name === 'string' ? opportunity.name : null,
-            matchedAction: action,
-            matchedToken: token,
-          });
+          for (const { action, token } of pairs) {
+            const key = buildMeritRoundKey(chainId, action, token);
+            if (targets && !targets.has(key)) continue;
+            if (keysToFetch.size > 0 && !keysToFetch.has(key)) continue;
+            if (fetchedEstimates.has(key)) continue;
 
-          if (unresolvedTargets?.has(key)) {
-            unresolvedTargets.delete(key);
+            fetchedEstimates.set(key, {
+              latestAmountUsd: amountUsd,
+              latestCampaignId: campaignId,
+              latestOpportunityId: opportunityId,
+              latestOpportunityLink: buildMerklOpportunityAppLink(opportunity),
+              latestOpportunityName: typeof opportunity?.name === 'string' ? opportunity.name : null,
+              latestOpportunityIdentifier: opportunityIdentifier,
+              latestOpportunityType: opportunityType,
+              latestOpportunityChainId: chainId,
+              latestOpportunityChainName: opportunityChainName,
+              matchedAction: action,
+              matchedToken: token,
+              matchedCreatorId: creatorId,
+              matchedCreatorTags: creatorTags,
+              matchedFromSource: textSource.source,
+            });
+
+            if (unresolvedTargets?.has(key)) {
+              unresolvedTargets.delete(key);
+            }
           }
-        });
+        }
       }
     }
 
@@ -475,8 +532,15 @@ const serializeMeritRoundEstimates = (
       lastRoundOpportunityId: string | null;
       lastRoundOpportunityLink: string | null;
       lastRoundOpportunityName: string | null;
+      lastRoundOpportunityIdentifier: string | null;
+      lastRoundOpportunityType: string | null;
+      lastRoundOpportunityChainId: number | null;
+      lastRoundOpportunityChainName: string | null;
       matchedAction: MeritAction | null;
       matchedToken: string | null;
+      matchedCreatorId: string | null;
+      matchedCreatorTags: string[];
+      matchedFromSource: string | null;
     }
   > = {};
   for (const [key, estimate] of estimates.entries()) {
@@ -486,8 +550,15 @@ const serializeMeritRoundEstimates = (
       lastRoundOpportunityId: estimate.latestOpportunityId ?? null,
       lastRoundOpportunityLink: estimate.latestOpportunityLink ?? null,
       lastRoundOpportunityName: estimate.latestOpportunityName ?? null,
+      lastRoundOpportunityIdentifier: estimate.latestOpportunityIdentifier ?? null,
+      lastRoundOpportunityType: estimate.latestOpportunityType ?? null,
+      lastRoundOpportunityChainId: estimate.latestOpportunityChainId ?? null,
+      lastRoundOpportunityChainName: estimate.latestOpportunityChainName ?? null,
       matchedAction: estimate.matchedAction ?? null,
       matchedToken: estimate.matchedToken ?? null,
+      matchedCreatorId: estimate.matchedCreatorId ?? null,
+      matchedCreatorTags: estimate.matchedCreatorTags ?? [],
+      matchedFromSource: estimate.matchedFromSource ?? null,
     };
   }
   return serialized;
@@ -504,8 +575,15 @@ const serializeMeritRoundEstimateCache = () => {
       lastRoundOpportunityId: string | null;
       lastRoundOpportunityLink: string | null;
       lastRoundOpportunityName: string | null;
+      lastRoundOpportunityIdentifier: string | null;
+      lastRoundOpportunityType: string | null;
+      lastRoundOpportunityChainId: number | null;
+      lastRoundOpportunityChainName: string | null;
       matchedAction: MeritAction | null;
       matchedToken: string | null;
+      matchedCreatorId: string | null;
+      matchedCreatorTags: string[];
+      matchedFromSource: string | null;
       lastCheckedAtMs: number;
       lastCheckedAtIso: string | null;
       miss: boolean;
@@ -519,8 +597,15 @@ const serializeMeritRoundEstimateCache = () => {
       lastRoundOpportunityId: entry.estimate?.latestOpportunityId ?? null,
       lastRoundOpportunityLink: entry.estimate?.latestOpportunityLink ?? null,
       lastRoundOpportunityName: entry.estimate?.latestOpportunityName ?? null,
+      lastRoundOpportunityIdentifier: entry.estimate?.latestOpportunityIdentifier ?? null,
+      lastRoundOpportunityType: entry.estimate?.latestOpportunityType ?? null,
+      lastRoundOpportunityChainId: entry.estimate?.latestOpportunityChainId ?? null,
+      lastRoundOpportunityChainName: entry.estimate?.latestOpportunityChainName ?? null,
       matchedAction: entry.estimate?.matchedAction ?? null,
       matchedToken: entry.estimate?.matchedToken ?? null,
+      matchedCreatorId: entry.estimate?.matchedCreatorId ?? null,
+      matchedCreatorTags: entry.estimate?.matchedCreatorTags ?? [],
+      matchedFromSource: entry.estimate?.matchedFromSource ?? null,
       lastCheckedAtMs: entry.lastCheckedAtMs,
       lastCheckedAtIso: toIsoOrNull(entry.lastCheckedAtMs),
       miss: entry.estimate === null,
@@ -878,7 +963,7 @@ async function loadCachedMeritCampaignMetadata(): Promise<Record<string, MeritCa
     let loadedFromLabel: string | null = null;
 
     const candidates = [
-      { path: MERIT_TIMERANGES_CACHE_PATH, label: 'merit-timeranges-cache.json' },
+      { path: MERIT_CAMPAIGN_METADATA_CACHE_PATH, label: 'merit-campaign-metadata-cache.json' },
       { path: join(DEBUG_DATA_DIR, 'merit-raw-data.json'), label: 'debug/merit-raw-data.json' },
       { path: join(DATA_DIR, 'merit-raw-data.json'), label: 'merit-raw-data.json (legacy)' },
     ];
@@ -896,9 +981,9 @@ async function loadCachedMeritCampaignMetadata(): Promise<Record<string, MeritCa
     }
 
     if (!parsed) {
-      throw new Error('No cached timeRanges source available');
+      throw new Error('No cached merit campaign metadata source available');
     }
-    const timeRanges = parsed.timeRanges || {};
+    const timeRanges = parsed.campaignMetadataByKey || {};
     
     // 验证缓存数据的完整性：确保每个条目都有全量数据
     const validatedTimeRanges: Record<string, MeritCampaignMetadataEntry> = {};
@@ -987,7 +1072,7 @@ async function loadCachedMeritCampaignMetadata(): Promise<Record<string, MeritCa
       logger.info(`📦 Filtered out ${filteredCount} incomplete cached entries (missing required fields), will refetch them`);
     }
     if (loadedFromPath && loadedFromLabel) {
-      logger.info(`📦 Loaded Merit timeRanges cache from ${loadedFromLabel}`);
+      logger.info(`📦 Loaded Merit campaign metadata cache from ${loadedFromLabel}`);
     }
     
     meritCampaignMetadataMemoryCache = validatedTimeRanges;
@@ -995,7 +1080,7 @@ async function loadCachedMeritCampaignMetadata(): Promise<Record<string, MeritCa
     return meritCampaignMetadataMemoryCache;
   } catch (error) {
     // 文件不存在或解析失败，返回空对象（会触发所有条目重新获取）
-    logger.info('📦 No cached time ranges found, will fetch all entries');
+    logger.info('📦 No cached merit campaign metadata found, will fetch all entries');
     meritCampaignMetadataLoadedFromDisk = true;
     return {};
   }
@@ -1217,7 +1302,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         const { endDate } = getLinkAndTimeRange(keyForTimeRange);
         const cycleEndTsMs = parseMeritEndDateToMs(endDate);
 
-        const candidate = nonSelfInfo ?? selfInfo;
+        const candidate = nonSelfInfo;
         if (!candidate) continue;
         const chainId = CHAIN_KEY_TO_CHAIN_ID[candidate.chainKey.toLowerCase()];
         if (!chainId) continue;
@@ -1466,19 +1551,19 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     });
     logger.info(`💾 Merit Merkl raw data saved to ${meritMerklRawDataPath}`);
 
-    await writeJsonAtomic(MERIT_TIMERANGES_CACHE_PATH, {
+    await writeJsonAtomic(MERIT_CAMPAIGN_METADATA_CACHE_PATH, {
       timestamp: new Date().toISOString(),
-      timeRanges,
+      campaignMetadataByKey: timeRanges,
     });
     meritCampaignMetadataMemoryCache = timeRanges;
     meritCampaignMetadataLoadedFromDisk = true;
-    logger.info(`💾 Merit timeRanges cache saved to ${MERIT_TIMERANGES_CACHE_PATH}`);
+    logger.info(`💾 Merit campaign metadata cache saved to ${MERIT_CAMPAIGN_METADATA_CACHE_PATH}`);
 
     const meritRawDataPath = join(DEBUG_DATA_DIR, 'merit-raw-data.json');
     await writeJsonAtomic(meritRawDataPath, {
       timestamp: new Date().toISOString(),
       rawAPRs: data.currentAPR.actionsAPR,
-      timeRanges,
+      campaignMetadataByKey: timeRanges,
       index: meritData
     });
     logger.info(`💾 Merit raw data saved to ${meritRawDataPath}`);

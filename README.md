@@ -139,7 +139,7 @@ After successful execution, files are generated under `data/` subfolders:
 
 - `data/runtime/aave-formatted-data.json` - Formatted JSON data with all incentive information (backend `/api/markets` source)
 - `data/runtime/merkl-opportunity-meta-lite.json` - Forecast runtime-lite snapshot (campaign meta)
-- `data/runtime/merit-timeranges-cache.json` - Merit time range/message cache
+- `data/runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
 - `data/debug/aave-all-markets-data.json` - Complete raw market data for all supported networks
 - `data/debug/brevis-raw-data.json` - Brevis Network raw activity/API debug snapshot
 - `data/debug/merkl-raw-data.json` - Merkl incentive debug snapshot
@@ -309,7 +309,7 @@ All log files are saved in the `logs/` directory:
 Generated data files are located under `data/`:
 - `runtime/aave-formatted-data.json` - Formatted complete data (includes all incentive information)
 - `runtime/merkl-opportunity-meta-lite.json` - Forecast campaign meta (runtime-lite)
-- `runtime/merit-timeranges-cache.json` - Merit timeRanges/message cache
+- `runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
 - `debug/aave-all-markets-data.json` - Raw market data (includes all network information)
 - `debug/brevis-raw-data.json` - Brevis raw activity data
 - `debug/merkl-raw-data.json` - Merkl raw incentive data
