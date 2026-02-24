@@ -6,6 +6,14 @@ This document explains how Merkl + Merit data moves through the codebase, which 
 
 ## 0) Two Key Flows (Most Practical View)
 
+### Arrow semantics (for the diagrams below)
+
+- `-->` = function call / control flow
+- `-- "reads" -->` = reads from file/cache
+- `-- "writes" -->` = persists to disk
+- `-. "fallback" .->` = fallback path only
+- `-. "uses data" .->` = data dependency (not ownership/creation)
+
 ### A) Producer flow (root fetcher writes runtime/debug files)
 
 ```mermaid
@@ -13,13 +21,13 @@ flowchart LR
   A["src/index.ts fetchAaveMarketsData()"] --> B["src/merkl-api.ts processMerklData()"]
   B --> C["@internal/merkl-shared snapshot (raw opportunities[])"]
   C --> D["Merkl /v4/opportunities"]
-  B --> E["data/runtime/merkl-opportunity-meta-lite.json"]
-  B --> F["data/debug/merkl-raw-data.json"]
+  B -- "writes" --> E["data/runtime/merkl-opportunity-meta-lite.json"]
+  B -- "writes" --> F["data/debug/merkl-raw-data.json"]
   A --> G["src/merit-api.ts fetchMeritData()"]
-  G --> H["data/runtime/merit-timeranges-cache.json"]
-  G --> I["data/debug/merit-raw-data.json"]
-  G --> J["data/debug/merit-merkl-raw-data.json"]
-  A --> K["data/runtime/aave-formatted-data.json"]
+  G -- "writes" --> H["data/runtime/merit-timeranges-cache.json"]
+  G -- "writes" --> I["data/debug/merit-raw-data.json"]
+  G -- "writes" --> J["data/debug/merit-merkl-raw-data.json"]
+  A -- "writes" --> K["data/runtime/aave-formatted-data.json"]
 ```
 
 ### B) Forecast request path (`/api/campaigns/forecast-states`)
@@ -35,7 +43,7 @@ flowchart LR
   F -- yes --> G["build campaignOpportunityCache from lite file"]
   F -- no --> H["merklOpportunityClient"]
   H --> I["@internal/merkl-shared snapshot"]
-  I --> J["Merkl /v4/opportunities (if snapshot miss)"]
+  I -. "fallback" .-> J["Merkl /v4/opportunities (if snapshot miss)"]
   H --> K["opportunities[]"]
   K --> G
   E --> L["Merkl /v4/campaigns/{id}/metrics"]
