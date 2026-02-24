@@ -4,6 +4,47 @@ Last updated: 2026-02-24
 
 This document explains how Merkl + Merit data moves through the codebase, which files are for debugging vs runtime, and which caches are in memory.
 
+## 0) Two Key Flows (Most Practical View)
+
+### A) Producer flow (root fetcher writes runtime/debug files)
+
+```mermaid
+flowchart LR
+  A["src/index.ts fetchAaveMarketsData()"] --> B["src/merkl-api.ts processMerklData()"]
+  B --> C["@internal/merkl-shared snapshot (raw opportunities[])"]
+  C --> D["Merkl /v4/opportunities"]
+  B --> E["data/runtime/merkl-opportunity-meta-lite.json"]
+  B --> F["data/debug/merkl-raw-data.json"]
+  A --> G["src/merit-api.ts fetchMeritData()"]
+  G --> H["data/runtime/merit-timeranges-cache.json"]
+  G --> I["data/debug/merit-raw-data.json"]
+  G --> J["data/debug/merit-merkl-raw-data.json"]
+  A --> K["data/runtime/aave-formatted-data.json"]
+```
+
+### B) Forecast request path (`/api/campaigns/forecast-states`)
+
+```mermaid
+flowchart LR
+  A["forecast request"] --> B{"forecastCache hit?"}
+  B -- yes --> Z["return cached forecast"]
+  B -- no --> C["merklForecastService"]
+  C --> D{"campaignOpportunityCache fresh?"}
+  D -- yes --> E["use campaignOpportunityCache"]
+  D -- no --> F{"runtime lite fresh? (<=120s)"}
+  F -- yes --> G["build campaignOpportunityCache from lite file"]
+  F -- no --> H["merklOpportunityClient"]
+  H --> I["@internal/merkl-shared snapshot"]
+  I --> J["Merkl /v4/opportunities (if snapshot miss)"]
+  H --> K["opportunities[]"]
+  K --> G
+  E --> L["Merkl /v4/campaigns/{id}/metrics"]
+  G --> L
+  L --> M["build forecast state"]
+  M --> N["write forecastCache"]
+  N --> Z
+```
+
 ## 1) Big Picture (Backend)
 
 ```mermaid
