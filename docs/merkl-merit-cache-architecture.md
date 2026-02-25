@@ -243,6 +243,7 @@ Notes:
 - When targets are known, scan `PAST + JSON_AIRDROP` **per target chainId** (Merit key prefix) to reduce irrelevant pages.
   - still compare timestamps (no reliance on upstream ordering)
   - record `pagesScannedByChain` in debug snapshot for optimization visibility
+- If `hitCacheOnly=true`, no Merkl history scan was executed in that run (`pagesScanned` can be `0`); clear/bypass cache before evaluating scan-query changes.
 
 ## 7) Current Forecast Fallback Order (After recent refactor)
 
