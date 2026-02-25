@@ -22,7 +22,7 @@ const MERIT_ROUND_ESTIMATE_MAX_PAGES = 12;
 const MERIT_ROUND_POST_END_REFRESH_MS = 24 * 60 * 60 * 1000;
 const MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS = 10 * 60 * 1000;
 const MERIT_CAMPAIGN_METADATA_CACHE_PATH = join(RUNTIME_DATA_DIR, 'merit-campaign-metadata-cache.json');
-const MERIT_ROUND_CREATOR_ALLOWLIST = new Set(['aave', 'masiv']);
+const MERIT_ROUND_CREATOR_ALLOWLIST = new Set(['aave']);
 
 export interface MeritAPRResponse {
   previousAPR: any;
@@ -301,6 +301,7 @@ const fetchMeritRoundEstimates = async (
 ): Promise<Map<string, MeritRoundEstimateBase>> => {
   const nowMs = Date.now();
   const paramsTemplate = new URLSearchParams({
+    mainProtocolId: 'aave',
     status: 'PAST',
     type: 'JSON_AIRDROP',
     campaigns: 'true',
@@ -367,6 +368,7 @@ const fetchMeritRoundEstimates = async (
 
   for (let page = 0; page < MERIT_ROUND_ESTIMATE_MAX_PAGES; page += 1) {
     const params = new URLSearchParams({
+      mainProtocolId: 'aave',
       status: 'PAST',
       type: 'JSON_AIRDROP',
       campaigns: 'true',
@@ -1570,6 +1572,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       source: {
         endpoint: `${MERKL_BASE_URL}/opportunities`,
         status: 'PAST',
+        mainProtocolId: 'aave',
         type: 'JSON_AIRDROP',
         campaigns: true,
         order: 'desc',
@@ -1578,10 +1581,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         globalCooldownMs: MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS,
         requestTemplateUrl:
           meritRoundEstimateLastFetchMeta?.requestTemplateUrl ??
-          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page={page}`,
+          `${MERKL_BASE_URL}/opportunities?mainProtocolId=aave&status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page={page}`,
         firstPageUrl:
           meritRoundEstimateLastFetchMeta?.firstPageUrl ??
-          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page=0`,
+          `${MERKL_BASE_URL}/opportunities?mainProtocolId=aave&status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page=0`,
         pagesScanned: meritRoundEstimateLastFetchMeta?.pagesScanned ?? 0,
         hitCacheOnly: meritRoundEstimateLastFetchMeta?.hitCacheOnly ?? false,
         lastGlobalScanAtMs: meritRoundEstimateLastGlobalScanAtMs,
