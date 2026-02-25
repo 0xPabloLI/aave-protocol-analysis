@@ -45,6 +45,7 @@ This is a living note for implementation and architecture practices we agreed on
 - Keep a shared fetch utility generic (raw response caching) and move business-specific indexing outside it.
 - Add lightweight debug metadata (request template, first page URL, pages scanned, cache hit flags) to raw snapshots for troubleshooting.
 - Do not assume upstream sort flags (`order=desc`) mean "newest by business timestamp" unless the docs explicitly guarantee the sort field; verify empirically and compare timestamps in code when correctness depends on recency.
+- When upstream lacks reliable time-based filtering, partition scans by known dimensions you control (for example target `chainId`) and record per-partition scan cost in debug output.
 
 ## 6) Frontend Data Loading
 

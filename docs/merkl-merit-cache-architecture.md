@@ -240,6 +240,9 @@ Notes:
   - empirical behavior can surface older rounds (e.g. round 4) before newer rounds (e.g. round 18)
   - matcher must compare campaign timestamps and select the newest hit per key
   - debug snapshot should record `pagesScanned` to track scan cost and optimization impact
+- When targets are known, scan `PAST + JSON_AIRDROP` **per target chainId** (Merit key prefix) to reduce irrelevant pages.
+  - still compare timestamps (no reliance on upstream ordering)
+  - record `pagesScannedByChain` in debug snapshot for optimization visibility
 
 ## 7) Current Forecast Fallback Order (After recent refactor)
 

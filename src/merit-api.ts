@@ -113,6 +113,8 @@ interface MeritRoundEstimateFetchMeta {
   requestTemplateUrl: string;
   firstPageUrl: string;
   pagesScanned: number;
+  pagesScannedByChain?: Record<string, number>;
+  chainIdsScanned?: number[];
   hitCacheOnly: boolean;
 }
 
@@ -301,6 +303,7 @@ const fetchMeritRoundEstimates = async (
 ): Promise<Map<string, MeritRoundEstimateBase>> => {
   const nowMs = Date.now();
   const paramsTemplate = new URLSearchParams({
+    chainId: '{chainId}',
     status: 'PAST',
     type: 'JSON_AIRDROP',
     campaigns: 'true',
@@ -308,7 +311,9 @@ const fetchMeritRoundEstimates = async (
     page: '{page}',
   });
   const requestTemplateUrl = `${MERKL_BASE_URL}/opportunities?${paramsTemplate.toString()}`;
-  const firstPageUrl = requestTemplateUrl.replace('page=%7Bpage%7D', 'page=0');
+  const firstPageUrl = requestTemplateUrl
+    .replace('chainId=%7BchainId%7D', 'chainId=42220')
+    .replace('page=%7Bpage%7D', 'page=0');
   let pagesScanned = 0;
   const cache = meritRoundEstimateCache ?? new Map<string, MeritRoundEstimateCacheEntry>();
   if (!meritRoundEstimateCache) {
@@ -362,25 +367,50 @@ const fetchMeritRoundEstimates = async (
   }
 
   const fetchedEstimates = new Map<string, MeritRoundEstimateBase>();
+  const baselineEstimates = new Map<string, MeritRoundEstimateBase>();
+  targetEntries.forEach(([key]) => {
+    const cached = cache.get(key)?.estimate;
+    if (cached) baselineEstimates.set(key, cached);
+  });
   const unresolvedTargets = keysToFetch.size > 0 ? new Set(keysToFetch) : null;
+  const targetChainIds = Array.from(
+    new Set(
+      targetEntries
+        .map(([key]) => {
+          const [rawChainId] = key.split(':');
+          const parsed = Number(rawChainId);
+          return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+        })
+        .filter((value): value is number => value !== null)
+    )
+  );
+  const chainIdsToScan = targetChainIds.length > 0 ? targetChainIds : [null];
+  const pagesScannedByChain: Record<string, number> = {};
 
-  for (let page = 0; page < MERIT_ROUND_ESTIMATE_MAX_PAGES; page += 1) {
-    const params = new URLSearchParams({
-      status: 'PAST',
-      type: 'JSON_AIRDROP',
-      campaigns: 'true',
-      items: '100',
-      page: String(page),
-    });
-    const response = await fetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
-    if (!response.ok) {
-      throw new Error(`Merkl opportunities failed (${response.status})`);
-    }
-    const payload = (await response.json()) as any;
-    if (!Array.isArray(payload)) break;
-    pagesScanned += 1;
+  for (const scanChainId of chainIdsToScan) {
+    const chainKey = scanChainId === null ? 'all' : String(scanChainId);
+    pagesScannedByChain[chainKey] = 0;
+    for (let page = 0; page < MERIT_ROUND_ESTIMATE_MAX_PAGES; page += 1) {
+      const params = new URLSearchParams({
+        status: 'PAST',
+        type: 'JSON_AIRDROP',
+        campaigns: 'true',
+        items: '100',
+        page: String(page),
+      });
+      if (scanChainId !== null) {
+        params.set('chainId', String(scanChainId));
+      }
+      const response = await fetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`Merkl opportunities failed (${response.status})`);
+      }
+      const payload = (await response.json()) as any;
+      if (!Array.isArray(payload)) break;
+      pagesScanned += 1;
+      pagesScannedByChain[chainKey] += 1;
 
-    for (const opportunity of payload) {
+      for (const opportunity of payload) {
       const opportunityId = String(opportunity?.id ?? '');
       if (!opportunityId) continue;
 
@@ -455,8 +485,8 @@ const fetchMeritRoundEstimates = async (
               matchedCreatorTags: creatorTags,
               matchedFromSource: textSource.source,
             };
-            const existing = fetchedEstimates.get(key);
-            if (existing && !isNewerMeritRoundEstimate(nextEstimate, existing)) continue;
+            const existingOrBaseline = fetchedEstimates.get(key) ?? baselineEstimates.get(key);
+            if (existingOrBaseline && !isNewerMeritRoundEstimate(nextEstimate, existingOrBaseline)) continue;
 
             fetchedEstimates.set(key, nextEstimate);
 
@@ -466,12 +496,13 @@ const fetchMeritRoundEstimates = async (
           }
         }
       }
-    }
+      }
 
-    if (payload.length < 100) break;
-    // Do not exit early when all targets have a match:
-    // Merkl PAST ordering is not reliably "latest round first" for these JSON_AIRDROP entries.
-    // We keep scanning (bounded by maxPages) and let timestamp comparison choose the newest match.
+      if (payload.length < 100) break;
+      // Do not exit early when all targets have a match:
+      // Merkl PAST ordering is not reliably "latest round first" for these JSON_AIRDROP entries.
+      // We keep scanning (bounded by maxPages) and let timestamp comparison choose the newest match.
+    }
   }
 
   if (pagesScanned > 0) {
@@ -505,6 +536,8 @@ const fetchMeritRoundEstimates = async (
     requestTemplateUrl,
     firstPageUrl,
     pagesScanned,
+    pagesScannedByChain,
+    chainIdsScanned: targetChainIds,
     hitCacheOnly: false,
   };
   if (targetEntries.length > 0) {
@@ -1580,6 +1613,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
           meritRoundEstimateLastFetchMeta?.firstPageUrl ??
           `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&page=0`,
         pagesScanned: meritRoundEstimateLastFetchMeta?.pagesScanned ?? 0,
+        pagesScannedByChain: meritRoundEstimateLastFetchMeta?.pagesScannedByChain ?? {},
+        chainIdsScanned: meritRoundEstimateLastFetchMeta?.chainIdsScanned ?? [],
         hitCacheOnly: meritRoundEstimateLastFetchMeta?.hitCacheOnly ?? false,
         lastGlobalScanAtMs: meritRoundEstimateLastGlobalScanAtMs,
         lastGlobalScanAtIso: toIsoOrNull(meritRoundEstimateLastGlobalScanAtMs),
