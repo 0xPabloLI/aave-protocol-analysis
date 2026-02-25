@@ -301,11 +301,9 @@ const fetchMeritRoundEstimates = async (
 ): Promise<Map<string, MeritRoundEstimateBase>> => {
   const nowMs = Date.now();
   const paramsTemplate = new URLSearchParams({
-    mainProtocolId: 'aave',
     status: 'PAST',
     type: 'JSON_AIRDROP',
     campaigns: 'true',
-    order: 'desc',
     items: '100',
     page: '{page}',
   });
@@ -368,11 +366,9 @@ const fetchMeritRoundEstimates = async (
 
   for (let page = 0; page < MERIT_ROUND_ESTIMATE_MAX_PAGES; page += 1) {
     const params = new URLSearchParams({
-      mainProtocolId: 'aave',
       status: 'PAST',
       type: 'JSON_AIRDROP',
       campaigns: 'true',
-      order: 'desc',
       items: '100',
       page: String(page),
     });
@@ -1572,19 +1568,17 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       source: {
         endpoint: `${MERKL_BASE_URL}/opportunities`,
         status: 'PAST',
-        mainProtocolId: 'aave',
         type: 'JSON_AIRDROP',
         campaigns: true,
-        order: 'desc',
         items: 100,
         maxPages: MERIT_ROUND_ESTIMATE_MAX_PAGES,
         globalCooldownMs: MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS,
         requestTemplateUrl:
           meritRoundEstimateLastFetchMeta?.requestTemplateUrl ??
-          `${MERKL_BASE_URL}/opportunities?mainProtocolId=aave&status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page={page}`,
+          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&page={page}`,
         firstPageUrl:
           meritRoundEstimateLastFetchMeta?.firstPageUrl ??
-          `${MERKL_BASE_URL}/opportunities?mainProtocolId=aave&status=PAST&type=JSON_AIRDROP&campaigns=true&order=desc&items=100&page=0`,
+          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&page=0`,
         pagesScanned: meritRoundEstimateLastFetchMeta?.pagesScanned ?? 0,
         hitCacheOnly: meritRoundEstimateLastFetchMeta?.hitCacheOnly ?? false,
         lastGlobalScanAtMs: meritRoundEstimateLastGlobalScanAtMs,

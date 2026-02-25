@@ -236,6 +236,10 @@ Notes:
 - `lastCheckedAtMs` = **when we checked**, not “when data changed”
 - Negative cache is used for misses (`estimate = null`), so keys that were checked but not found still record `lastCheckedAtMs`
 - Key set can change across runs (new Merit incentives added, old ones removed)
+- Do **not** trust `order=desc` on Merkl `PAST + JSON_AIRDROP` opportunities as “latest round first”
+  - empirical behavior can surface older rounds (e.g. round 4) before newer rounds (e.g. round 18)
+  - matcher must compare campaign timestamps and select the newest hit per key
+  - debug snapshot should record `pagesScanned` to track scan cost and optimization impact
 
 ## 7) Current Forecast Fallback Order (After recent refactor)
 
