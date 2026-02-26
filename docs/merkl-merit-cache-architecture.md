@@ -243,6 +243,8 @@ Notes:
 - When targets are known, scan `PAST + JSON_AIRDROP` **per target chainId** (Merit key prefix) to reduce irrelevant pages.
   - still compare timestamps (no reliance on upstream ordering)
   - record `pagesScannedByChain` in debug snapshot for optimization visibility
+- Use `creatorSlug=aave` for Merit round scans (empirically narrows pages while still matching current Aave/Merit JSON_AIRDROP rounds).
+- `campaignId` query on `/v4/opportunities` is not a reliable replacement for matching nested campaign IDs in this flow (can return empty even when the target campaign exists inside an opportunity payload).
 - If `hitCacheOnly=true`, no Merkl history scan was executed in that run (`pagesScanned` can be `0`); clear/bypass cache before evaluating scan-query changes.
 
 ## 7) Current Forecast Fallback Order (After recent refactor)

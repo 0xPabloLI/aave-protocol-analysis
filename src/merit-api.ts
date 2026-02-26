@@ -23,6 +23,7 @@ const MERIT_ROUND_POST_END_REFRESH_MS = 24 * 60 * 60 * 1000;
 const MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS = 10 * 60 * 1000;
 const MERIT_CAMPAIGN_METADATA_CACHE_PATH = join(RUNTIME_DATA_DIR, 'merit-campaign-metadata-cache.json');
 const MERIT_ROUND_CREATOR_ALLOWLIST = new Set(['aave']);
+const MERIT_ROUND_CREATOR_SLUG_FILTER = 'aave';
 
 export interface MeritAPRResponse {
   previousAPR: any;
@@ -397,6 +398,7 @@ const fetchMeritRoundEstimates = async (
         campaigns: 'true',
         items: '100',
         page: String(page),
+        creatorSlug: MERIT_ROUND_CREATOR_SLUG_FILTER,
       });
       if (scanChainId !== null) {
         params.set('chainId', String(scanChainId));
@@ -1608,10 +1610,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         globalCooldownMs: MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS,
         requestTemplateUrl:
           meritRoundEstimateLastFetchMeta?.requestTemplateUrl ??
-          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&page={page}`,
+          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&creatorSlug=${MERIT_ROUND_CREATOR_SLUG_FILTER}&page={page}`,
         firstPageUrl:
           meritRoundEstimateLastFetchMeta?.firstPageUrl ??
-          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&page=0`,
+          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&creatorSlug=${MERIT_ROUND_CREATOR_SLUG_FILTER}&page=0`,
         pagesScanned: meritRoundEstimateLastFetchMeta?.pagesScanned ?? 0,
         pagesScannedByChain: meritRoundEstimateLastFetchMeta?.pagesScannedByChain ?? {},
         chainIdsScanned: meritRoundEstimateLastFetchMeta?.chainIdsScanned ?? [],

@@ -47,6 +47,7 @@ This is a living note for implementation and architecture practices we agreed on
 - Do not assume upstream sort flags (`order=desc`) mean "newest by business timestamp" unless the docs explicitly guarantee the sort field; verify empirically and compare timestamps in code when correctness depends on recency (for example Merkl `PAST + JSON_AIRDROP` opportunities).
 - Scope empirical API-behavior notes to the exact endpoint + filter set tested (e.g. `PAST + JSON_AIRDROP`), and avoid over-generalizing to other statuses such as `LIVE`.
 - When upstream lacks reliable time-based filtering, partition scans by known dimensions you control (for example target `chainId`) and record per-partition scan cost in debug output.
+- Prefer empirically validated server-side filters that preserve correctness (for example `creatorSlug=aave` on Merkl `PAST + JSON_AIRDROP`) before adding more client-side scan complexity.
 - When testing upstream query/filter behavior, **bypass or clear local caches first** (or explicitly prove cache bypass in logs/debug metadata).
   - For Merit round scans, confirm `hitCacheOnly=false` before trusting scan/page metrics.
   - `pagesScanned=0` with `hitCacheOnly=true` means no upstream scan happened.
