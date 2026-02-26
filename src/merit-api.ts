@@ -1618,6 +1618,39 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         pagesScannedByChain: meritRoundEstimateLastFetchMeta?.pagesScannedByChain ?? {},
         chainIdsScanned: meritRoundEstimateLastFetchMeta?.chainIdsScanned ?? [],
         hitCacheOnly: meritRoundEstimateLastFetchMeta?.hitCacheOnly ?? false,
+        queryVariantsTested: [
+          {
+            name: 'base',
+            query: 'status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&page={page}',
+            note: 'Correct but broad; can require multiple pages for latest Celo rounds.',
+          },
+          {
+            name: 'creatorSlug',
+            query: 'status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&creatorSlug=aave&page={page}',
+            note: 'Empirically narrows scan while still matching current Merit/Aave rounds.',
+          },
+          {
+            name: 'chainId',
+            query: 'status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&chainId={chainId}&page={page}',
+            note: 'Use target Merit key chainId partitioning to reduce unrelated pages.',
+          },
+          {
+            name: 'chainId+creatorSlug',
+            query:
+              'status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&chainId={chainId}&creatorSlug=aave&page={page}',
+            note: 'Current preferred Merit round scan shape.',
+          },
+          {
+            name: 'campaignId',
+            query: 'status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&campaignId={campaignId}&page=0',
+            note: 'Not reliable for nested campaign IDs on /v4/opportunities (can return empty).',
+          },
+          {
+            name: 'order=desc',
+            query: 'status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&order=desc&page={page}',
+            note: 'Do not rely on this for latest-round ordering in PAST JSON_AIRDROP.',
+          },
+        ],
         lastGlobalScanAtMs: meritRoundEstimateLastGlobalScanAtMs,
         lastGlobalScanAtIso: toIsoOrNull(meritRoundEstimateLastGlobalScanAtMs),
       },
