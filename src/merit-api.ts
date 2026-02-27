@@ -68,7 +68,6 @@ interface MeritRoundEstimateBase {
   latestCampaignStartTimestamp?: number | null;
   latestCampaignEndTimestamp?: number | null;
   latestOpportunityId?: string;
-  latestOpportunityLink?: string | null;
   latestOpportunityName?: string | null;
   latestOpportunityIdentifier?: string | null;
   latestOpportunityType?: string | null;
@@ -180,35 +179,6 @@ const normalizeTokenSymbolForMatching = (token: string): string => {
   return aliasMap[raw] ?? raw;
 };
 
-const slugifyMerklChainName = (value: string): string =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-const buildMerklOpportunityAppLink = (opportunity: any): string | null => {
-  const explicitLink =
-    (typeof opportunity?.link === 'string' && opportunity.link) ||
-    (typeof opportunity?.opportunityLink === 'string' && opportunity.opportunityLink) ||
-    null;
-  if (explicitLink) return explicitLink;
-
-  const identifier = typeof opportunity?.identifier === 'string' ? opportunity.identifier.trim() : '';
-  const type = typeof opportunity?.type === 'string' ? opportunity.type.trim() : '';
-  const chainName =
-    typeof opportunity?.chain?.name === 'string'
-      ? opportunity.chain.name.trim()
-      : typeof opportunity?.chainName === 'string'
-        ? opportunity.chainName.trim()
-        : '';
-
-  if (!identifier || !type || !chainName) return null;
-  const chainSlug = slugifyMerklChainName(chainName);
-  if (!chainSlug) return null;
-  return `https://app.merkl.xyz/opportunities/${chainSlug}/${encodeURIComponent(type)}/${encodeURIComponent(identifier)}`;
-};
-
 const toFiniteNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -309,6 +279,7 @@ const fetchMeritRoundEstimates = async (
     type: 'JSON_AIRDROP',
     campaigns: 'true',
     items: '100',
+    creatorSlug: MERIT_ROUND_CREATOR_SLUG_FILTER,
     page: '{page}',
   });
   const requestTemplateUrl = `${MERKL_BASE_URL}/opportunities?${paramsTemplate.toString()}`;
@@ -386,6 +357,7 @@ const fetchMeritRoundEstimates = async (
   );
   const chainIdsToScan = targetChainIds.length > 0 ? targetChainIds : [null];
   const pagesScannedByChain: Record<string, number> = {};
+  let creatorSlugFallbackUsed = false;
 
   for (const scanChainId of chainIdsToScan) {
     const chainKey = scanChainId === null ? 'all' : String(scanChainId);
@@ -402,7 +374,17 @@ const fetchMeritRoundEstimates = async (
       if (scanChainId !== null) {
         params.set('chainId', String(scanChainId));
       }
-      const response = await fetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
+      let response = await fetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
+      if (!response.ok) {
+        params.delete('creatorSlug');
+        response = await fetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
+        if (response.ok && !creatorSlugFallbackUsed) {
+          creatorSlugFallbackUsed = true;
+          logger.warn(
+            `⚠️ Merkl opportunities query with creatorSlug failed once; fallback to query without creatorSlug`
+          );
+        }
+      }
       if (!response.ok) {
         throw new Error(`Merkl opportunities failed (${response.status})`);
       }
@@ -473,7 +455,6 @@ const fetchMeritRoundEstimates = async (
               latestCampaignStartTimestamp: startTimestamp,
               latestCampaignEndTimestamp: endTimestamp,
               latestOpportunityId: opportunityId,
-              latestOpportunityLink: buildMerklOpportunityAppLink(opportunity),
               latestOpportunityName: typeof opportunity?.name === 'string' ? opportunity.name : null,
               latestOpportunityIdentifier: opportunityIdentifier,
               latestOpportunityType: opportunityType,
@@ -591,7 +572,6 @@ const serializeMeritRoundEstimates = (
       lastRoundCampaignStartTimestamp: number | null;
       lastRoundCampaignEndTimestamp: number | null;
       lastRoundOpportunityId: string | null;
-      lastRoundOpportunityLink: string | null;
       lastRoundOpportunityName: string | null;
       lastRoundOpportunityIdentifier: string | null;
       lastRoundOpportunityType: string | null;
@@ -612,7 +592,6 @@ const serializeMeritRoundEstimates = (
       lastRoundCampaignStartTimestamp: estimate.latestCampaignStartTimestamp ?? null,
       lastRoundCampaignEndTimestamp: estimate.latestCampaignEndTimestamp ?? null,
       lastRoundOpportunityId: estimate.latestOpportunityId ?? null,
-      lastRoundOpportunityLink: estimate.latestOpportunityLink ?? null,
       lastRoundOpportunityName: estimate.latestOpportunityName ?? null,
       lastRoundOpportunityIdentifier: estimate.latestOpportunityIdentifier ?? null,
       lastRoundOpportunityType: estimate.latestOpportunityType ?? null,
@@ -640,7 +619,6 @@ const serializeMeritRoundEstimateCache = () => {
       lastRoundCampaignStartTimestamp: number | null;
       lastRoundCampaignEndTimestamp: number | null;
       lastRoundOpportunityId: string | null;
-      lastRoundOpportunityLink: string | null;
       lastRoundOpportunityName: string | null;
       lastRoundOpportunityIdentifier: string | null;
       lastRoundOpportunityType: string | null;
@@ -665,7 +643,6 @@ const serializeMeritRoundEstimateCache = () => {
       lastRoundCampaignStartTimestamp: entry.estimate?.latestCampaignStartTimestamp ?? null,
       lastRoundCampaignEndTimestamp: entry.estimate?.latestCampaignEndTimestamp ?? null,
       lastRoundOpportunityId: entry.estimate?.latestOpportunityId ?? null,
-      lastRoundOpportunityLink: entry.estimate?.latestOpportunityLink ?? null,
       lastRoundOpportunityName: entry.estimate?.latestOpportunityName ?? null,
       lastRoundOpportunityIdentifier: entry.estimate?.latestOpportunityIdentifier ?? null,
       lastRoundOpportunityType: entry.estimate?.latestOpportunityType ?? null,
@@ -1606,10 +1583,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         globalCooldownMs: MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS,
         requestTemplateUrl:
           meritRoundEstimateLastFetchMeta?.requestTemplateUrl ??
-          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&creatorSlug=${MERIT_ROUND_CREATOR_SLUG_FILTER}&page={page}`,
+          `${MERKL_BASE_URL}/opportunities?chainId={chainId}&status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&creatorSlug=${MERIT_ROUND_CREATOR_SLUG_FILTER}&page={page}`,
         firstPageUrl:
           meritRoundEstimateLastFetchMeta?.firstPageUrl ??
-          `${MERKL_BASE_URL}/opportunities?status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&creatorSlug=${MERIT_ROUND_CREATOR_SLUG_FILTER}&page=0`,
+          `${MERKL_BASE_URL}/opportunities?chainId=42220&status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&creatorSlug=${MERIT_ROUND_CREATOR_SLUG_FILTER}&page=0`,
         pagesScanned: meritRoundEstimateLastFetchMeta?.pagesScanned ?? 0,
         pagesScannedByChain: meritRoundEstimateLastFetchMeta?.pagesScannedByChain ?? {},
         chainIdsScanned: meritRoundEstimateLastFetchMeta?.chainIdsScanned ?? [],
