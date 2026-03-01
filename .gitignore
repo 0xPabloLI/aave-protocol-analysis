@@ -90,7 +90,8 @@ jspm_packages/
 .dynamodb/
 node_modules
 
-scripts/
+scripts/*
+!scripts/sync-aave-subgraph-deployments.mjs
 
 data/
 
