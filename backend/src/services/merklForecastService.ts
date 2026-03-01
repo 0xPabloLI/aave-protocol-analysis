@@ -2,6 +2,7 @@ import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../logger.js';
+import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import {
   buildForecastState,
   normalizeCampaignType,
@@ -12,7 +13,7 @@ import { fetchMerklOpportunities } from './merklOpportunityClient.js';
 
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
 const SECONDS_PER_DAY = 86400;
-const MERKL_LITE_FILE_MAX_AGE_MS = 60 * 1000;
+const MERKL_LITE_FILE_MAX_AGE_MS = BACKEND_CACHE_TTL_MS.merklLiteFileMaxAge;
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
 const MERKL_OPPORTUNITY_META_LITE_PATH = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
@@ -27,28 +28,32 @@ const LEGACY_SHARED_FORECAST_TTL_MS = (() => {
 
 const FORECAST_CACHE_TTL_MS = (() => {
   const raw = process.env.MERKL_FORECAST_RESULT_CACHE_TTL_MS;
-  if (!raw) return LEGACY_SHARED_FORECAST_TTL_MS ?? 1 * 60 * 1000;
+  if (!raw) return LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastResultDefault;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : (LEGACY_SHARED_FORECAST_TTL_MS ?? 1 * 60 * 1000);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : (LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastResultDefault);
 })();
 
 const OPPORTUNITY_META_CACHE_TTL_MS = (() => {
   const raw = process.env.MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS;
-  if (!raw) return LEGACY_SHARED_FORECAST_TTL_MS ?? 1 * 60 * 1000;
+  if (!raw) return LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : (LEGACY_SHARED_FORECAST_TTL_MS ?? 1 * 60 * 1000);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : (LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault);
 })();
 
 const METRICS_CACHE_DEFAULT_TTL_MS = (() => {
   const raw = process.env.MERKL_METRICS_CACHE_TTL_MS;
-  if (!raw) return 30 * 60 * 1000;
+  if (!raw) return BACKEND_CACHE_TTL_MS.merklMetricsDefault;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30 * 60 * 1000;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : BACKEND_CACHE_TTL_MS.merklMetricsDefault;
 })();
 
-const METRICS_CACHE_MIN_TTL_MS = 10 * 60 * 1000;
-const METRICS_CACHE_MAX_TTL_MS = 6 * 60 * 60 * 1000;
-const METRICS_CACHE_EMPTY_TTL_MS = 5 * 60 * 1000;
+const METRICS_CACHE_MIN_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsMin;
+const METRICS_CACHE_MAX_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsMax;
+const METRICS_CACHE_EMPTY_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsEmpty;
 
 interface ForecastCacheEntry {
   data: MerklForecastState;

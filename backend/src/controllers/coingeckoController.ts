@@ -1,12 +1,15 @@
 import type { Request, Response } from 'express';
 import { logger } from '../logger.js';
 import { coingeckoFetchConfig } from '../config.js';
+import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 
 const CG_ENDPOINT = 'https://api.coingecko.com/api/v3/coins/markets';
 const CMC_QUOTES_ENDPOINT = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest';
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const FDV_CACHE_TTL_MS = 10 * 60 * 1000;
-const FDV_MONITOR_TTL_MS = 6 * 60 * 60 * 1000;
+const COINGECKO_SLOW_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoSlowFamily;
+const COINGECKO_FAST_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoFastFamily;
+const CACHE_TTL_MS = COINGECKO_SLOW_TTL_MS;
+const FDV_CACHE_TTL_MS = COINGECKO_FAST_TTL_MS;
+const FDV_MONITOR_TTL_MS = COINGECKO_SLOW_TTL_MS;
 const FDV_DIFF_ALERT_THRESHOLD_PCT = 5;
 const FDV_COINS = [
   { id: 'crypto-com-chain', cmcSymbol: 'CRO' },

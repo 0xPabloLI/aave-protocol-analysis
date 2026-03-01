@@ -2,6 +2,7 @@ import {
   fetchMerklOpportunitiesSnapshot,
   resolveCacheTtlMs,
 } from '@internal/merkl-shared';
+import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 
 export interface FetchMerklOpportunitiesOptions {
   mainProtocolId?: string;
@@ -14,7 +15,7 @@ export interface FetchMerklOpportunitiesOptions {
 
 const OPPORTUNITIES_CACHE_TTL_MS = resolveCacheTtlMs(
   process.env.MERKL_OPPORTUNITIES_CACHE_TTL_MS,
-  1 * 60 * 1000
+  BACKEND_CACHE_TTL_MS.merklOpportunitiesDefault
 );
 
 export const fetchMerklOpportunities = async (

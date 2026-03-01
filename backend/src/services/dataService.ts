@@ -3,12 +3,12 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { MarketWithSpread, TokenPricesIndex } from '../types/index.js';
 import { logger } from '../logger.js';
+import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
 const DATA_FILE_PATH = join(RUNTIME_DATA_DIR, 'aave-formatted-data.json');
 const LEGACY_DATA_FILE_PATH = join(DATA_DIR, 'aave-formatted-data.json');
-const STALE_THRESHOLD_MS = 1 * 60 * 1000; // 1 minute in milliseconds
 
 class DataService {
   private cache: MarketWithSpread[] | null = null;
@@ -104,7 +104,7 @@ class DataService {
   }
 
   /**
-   * 检查数据是否过期（超过1分钟）
+   * 检查数据是否过期（超过缓存阈值）
    */
   isStale(): boolean {
     const lastUpdated = this.getLastUpdated();
@@ -113,7 +113,7 @@ class DataService {
     }
     const now = new Date();
     const age = now.getTime() - lastUpdated.getTime();
-    return age > STALE_THRESHOLD_MS;
+    return age > BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold;
   }
 
   getTokenPrices(): TokenPricesIndex | null {
