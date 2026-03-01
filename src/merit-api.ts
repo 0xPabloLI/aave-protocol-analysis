@@ -153,15 +153,26 @@ const CHAIN_KEY_TO_CHAIN_ID: Record<string, number> = {
   optimism: 10,
   polygon: 137,
   arbitrum: 42161,
+  arbitrum_one: 42161,
   base: 8453,
   avalanche: 43114,
   gnosis: 100,
+  xdai: 100,
   bnb: 56,
   scroll: 534352,
   zksync: 324,
   linea: 59144,
+  metis: 1088,
+  metis_andromeda: 1088,
   sonic: 146,
   celo: 42220,
+  soneium: 1868,
+  plasma: 9745,
+  ink: 57073,
+  mantle: 5000,
+  megaeth: 4326,
+  fantom: 250,
+  harmony: 1666600000,
 };
 
 const normalizeTokenSymbolForMatching = (token: string): string => {
@@ -764,6 +775,12 @@ function getRpcUrlsFromChainName(chainName: string): string[] {
     soneium: {
       publicJsonRPCUrl: ['https://soneium.drpc.org', 'https://rpc.soneium.org'],
     },
+    mantle: {
+      publicJsonRPCUrl: ['https://rpc.mantle.xyz'],
+    },
+    megaeth: {
+      publicJsonRPCUrl: ['https://mainnet.megaeth.com/rpc'],
+    },
     plasma: {
       publicJsonRPCUrl: ['https://rpc.plasma.to'],
     },
@@ -777,7 +794,9 @@ function getRpcUrlsFromChainName(chainName: string): string[] {
     'ethereum-prime': 'ethereum',
     'ethereum-horizon': 'ethereum',
     'arbitrum-one': 'arbitrum',
+    arbitrum_one: 'arbitrum',
     'xdai': 'gnosis',
+    metis_andromeda: 'metis',
     'bsc': 'bnb',
     'binance': 'bnb',
   };
