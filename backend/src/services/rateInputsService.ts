@@ -3,11 +3,11 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { UiPoolDataProvider } from '@aave/contract-helpers';
 import { AaveV3Mantle, AaveV3Metis, AaveV3Plasma } from '@bgd-labs/aave-address-book';
-import { providers } from 'ethers';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { logger } from '../logger.js';
 import type { MarketWithSpread, RateInputsResponse, ReserveRateInput } from '../types/index.js';
 import { dataService } from './dataService.js';
+import { ethProviderService } from './ethProviderService.js';
 
 const RATE_INPUTS_TTL_MS = BACKEND_CACHE_TTL_MS.realtimeFamily;
 const SUBGRAPH_TIMEOUT_MS = 15_000;
@@ -29,7 +29,7 @@ query ReservesRateInputs {
     variableRateSlope1
     variableRateSlope2
     baseVariableBorrowRate
-    optimalUsageRatio
+    optimalUtilisationRate
   }
 }
 `;
@@ -124,41 +124,6 @@ function withPromiseTimeout<T>(promise: Promise<T>, timeoutMs: number, message: 
   });
 }
 
-function parseRpcOverrides(raw: string | undefined): Record<number, string[]> {
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw) as Record<string, string | string[]>;
-    const out: Record<number, string[]> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      const chainId = Number(key);
-      if (!Number.isFinite(chainId) || chainId <= 0) continue;
-      if (typeof value === 'string' && value.trim()) {
-        out[chainId] = [value.trim()];
-        continue;
-      }
-      if (Array.isArray(value)) {
-        out[chainId] = value.map((item) => String(item).trim()).filter(Boolean);
-      }
-    }
-    return out;
-  } catch (error) {
-    logger.warn(`Invalid RATE_INPUTS_RPC_URLS JSON, ignoring override: ${error instanceof Error ? error.message : String(error)}`);
-    return {};
-  }
-}
-
-function getRpcUrlsForChain(chainId: number, fallbackUrls: string[]): string[] {
-  const envKey = `RATE_INPUTS_RPC_URL_${chainId}`;
-  const singleOverride = process.env[envKey];
-  if (singleOverride && singleOverride.trim()) return [singleOverride.trim()];
-
-  const mapOverrides = parseRpcOverrides(process.env.RATE_INPUTS_RPC_URLS);
-  const mapValue = mapOverrides[chainId];
-  if (mapValue && mapValue.length > 0) return mapValue;
-
-  return fallbackUrls;
-}
-
 function pickPreferredDeployment(
   current: SubgraphDeploymentRecord | undefined,
   candidate: SubgraphDeploymentRecord
@@ -215,7 +180,7 @@ function resolveSubgraphUrl(record: SubgraphDeploymentRecord): string | null {
   if (!template) return null;
   if (!template.includes('{apiKey}')) return template;
 
-  const apiKey = process.env.THE_GRAPH_API_KEY || process.env.SUBGRAPH_API_KEY;
+  const apiKey = process.env.THE_GRAPH_API_KEY;
   if (!apiKey) return null;
   return template.replace('{apiKey}', encodeURIComponent(apiKey));
 }
@@ -226,9 +191,7 @@ async function fetchSubgraphChain(
   tokenFilter: Set<string>
 ): Promise<ReserveRateInput[]> {
   const url = resolveSubgraphUrl(deployment);
-  if (!url) {
-    throw new Error(`subgraph url unavailable for chain ${chainId} (missing THE_GRAPH_API_KEY/SUBGRAPH_API_KEY?)`);
-  }
+  if (!url) throw new Error(`subgraph url unavailable for chain ${chainId} (missing THE_GRAPH_API_KEY?)`);
 
   for (let attempt = 0; attempt <= SUBGRAPH_MAX_RETRIES; attempt++) {
     try {
@@ -273,7 +236,9 @@ async function fetchSubgraphChain(
           variableRateSlope1: toNumericString(reserve.variableRateSlope1),
           variableRateSlope2: toNumericString(reserve.variableRateSlope2),
           baseVariableBorrowRate: toNumericString(reserve.baseVariableBorrowRate),
-          optimalUsageRate: toNumericString(reserve.optimalUsageRatio ?? reserve.optimalUsageRate),
+          optimalUsageRate: toNumericString(
+            reserve.optimalUsageRatio ?? reserve.optimalUsageRate ?? reserve.optimalUtilisationRate
+          ),
           source: 'subgraph',
           sourceDetail: deployment.queryPath || 'subgraph',
         });
@@ -289,12 +254,12 @@ async function fetchSubgraphChain(
 }
 
 async function fetchOnchainChain(config: OnchainFallbackConfig, tokenFilter: Set<string>): Promise<ReserveRateInput[]> {
-  const rpcUrls = getRpcUrlsForChain(config.chainId, config.defaultRpcUrls);
+  const rpcCandidates = ethProviderService.getProvidersForChain(config.chainId, config.defaultRpcUrls);
   let lastError: unknown = null;
 
-  for (const rpcUrl of rpcUrls) {
+  for (const candidate of rpcCandidates) {
+    const { rpcUrl, provider } = candidate;
     try {
-      const provider = new providers.StaticJsonRpcProvider(rpcUrl, config.chainId);
       const uiPoolDataProvider = new UiPoolDataProvider({
         uiPoolDataProviderAddress: config.uiPoolDataProviderAddress,
         provider,
@@ -365,9 +330,9 @@ class RateInputsService {
     const marketRows = await dataService.getData();
     const targetChains = buildTargetChainMap(marketRows);
     const deployments = await loadSubgraphDeployments();
-    const hasGraphApiKey = Boolean(process.env.THE_GRAPH_API_KEY || process.env.SUBGRAPH_API_KEY);
+    const hasGraphApiKey = Boolean(process.env.THE_GRAPH_API_KEY);
     if (!hasGraphApiKey) {
-      logger.warn('THE_GRAPH_API_KEY/SUBGRAPH_API_KEY not set: gateway subgraph chains will be skipped (legacy direct URLs still attempted).');
+      logger.warn('THE_GRAPH_API_KEY not set: gateway subgraph chains will be skipped (legacy direct URLs still attempted).');
     }
 
     const records: ReserveRateInput[] = [];

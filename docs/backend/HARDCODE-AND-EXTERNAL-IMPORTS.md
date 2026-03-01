@@ -24,8 +24,7 @@
 ## 3. Env Overrides
 
 - Subgraph API key:
-  - `THE_GRAPH_API_KEY` (preferred)
-  - `SUBGRAPH_API_KEY` (alias)
+  - `THE_GRAPH_API_KEY`
 - RPC overrides:
   - per chain: `RATE_INPUTS_RPC_URL_<chainId>`
   - map JSON: `RATE_INPUTS_RPC_URLS`
@@ -39,3 +38,5 @@
 5. If fallback chains change, update both:
    - `docs/api/native-apr-calculation.md`
    - this document
+6. Keep `@bgd-labs/aave-address-book` updated on a regular cadence (or release-triggered), otherwise new chains/addresses can drift and fallback reads may break.
+7. RPC/provider logic is centralized in `backend/src/services/ethProviderService.ts`; any new RPC policy should be changed there instead of ad-hoc in feature services.

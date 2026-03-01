@@ -117,7 +117,7 @@ Hardcode/reference policy: `docs/backend/HARDCODE-AND-EXTERNAL-IMPORTS.md`.
     totalScaledVariableDebt
     variableBorrowIndex
     reserveFactor
-    optimalUsageRatio
+    optimalUtilisationRate
     variableRateSlope1
     variableRateSlope2
     baseVariableBorrowRate
@@ -195,8 +195,7 @@ In backend API, `GET /api/rate-inputs` is served by `rateInputsService`:
 ## 1.4 Env Config
 
 - Required for gateway-based subgraph chains:
-  - `THE_GRAPH_API_KEY` (preferred)
-  - `SUBGRAPH_API_KEY` (backward-compatible alias)
+  - `THE_GRAPH_API_KEY`
 - Optional RPC overrides for on-chain fallback chains:
   - per-chain: `RATE_INPUTS_RPC_URL_<chainId>`
     - examples: `RATE_INPUTS_RPC_URL_5000`, `RATE_INPUTS_RPC_URL_9745`
