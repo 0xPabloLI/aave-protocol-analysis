@@ -5,6 +5,7 @@ import marketsRouter from './routes/markets.js';
 import coingeckoRouter from './routes/coingecko.js';
 import coingeckoFdvRouter from './routes/coingeckoFdv.js';
 import campaignsRouter from './routes/campaigns.js';
+import rateInputsRouter from './routes/rateInputs.js';
 import { dataService } from './services/dataService.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
 import { logger } from './logger.js';
@@ -42,6 +43,7 @@ app.use('/api/markets', marketsRouter);
 app.use('/api/coingecko-categories', coingeckoRouter);
 app.use('/api/coingecko-fdv', coingeckoFdvRouter);
 app.use('/api/campaigns', campaignsRouter);
+app.use('/api/rate-inputs', rateInputsRouter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

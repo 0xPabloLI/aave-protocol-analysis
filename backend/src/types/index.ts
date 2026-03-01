@@ -119,3 +119,32 @@ export interface UpdateStatus {
   lastSuccessfulUpdate: string | null;
   error?: string;
 }
+
+export type RateInputSource = 'subgraph' | 'onchain';
+
+export interface ReserveRateInput {
+  chainId: number;
+  tokenAddress: string;
+  availableLiquidity: string;
+  totalScaledVariableDebt: string;
+  variableBorrowIndex: string;
+  reserveFactor: string;
+  variableRateSlope1: string;
+  variableRateSlope2: string;
+  baseVariableBorrowRate: string;
+  optimalUsageRate: string;
+  source: RateInputSource;
+  sourceDetail: string;
+}
+
+export interface RateInputsResponse {
+  data: ReserveRateInput[];
+  lastUpdated: string;
+  isStale: boolean;
+  staleTimeMs: number;
+  sources: {
+    subgraphChains: number[];
+    onchainChains: number[];
+    subgraphMissingChains: number[];
+  };
+}
