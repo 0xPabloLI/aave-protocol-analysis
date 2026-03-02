@@ -39,17 +39,17 @@
 | Subgraph query compatibility / health probe | Automated | catch indexer/schema issues early | `.github/workflows/subgraph-rate-inputs-health.yml` (`npm run subgraphs:check-rate-inputs`) |
 | NPM dependency drift (root + backend + actions) | Automated | keep address-book/tooling updated | `.github/dependabot.yml` |
 | Dynamic fallback address resolution | Automated at runtime | avoid maintaining static fallback chain map | in `rateInputsService.ts`, no manual chain list required |
-| Chain has no `AaveV3*` export in address-book (e.g. unsupported/retired chain) | Not fully automatable | SDK itself has no fallback metadata for that chain | keep graceful degradation + document chain status; only add manual special handling if business-critical |
+| Chain has no `AaveV3*` export in address-book (current known gaps from subgraph snapshot: `250` Fantom, `1666600000` Harmony) | Not fully automatable | SDK itself has no fallback metadata for that chain | keep graceful degradation + document chain status; add manual fallback only if business-critical |
 | RPC quality (latency/quota/reliability) | Not fully automatable in code CI | runtime infra quality depends on provider SLAs | monitor production errors; override with `RATE_INPUTS_RPC_URL*` where needed |
 | Secret rotation (`THE_GRAPH_API_KEY`) | Not automated by repo CI | org-level secret governance | rotate via secret manager / platform ops process |
 
 ## 5. N8N vs GitHub Actions
 
 - For this repo’s hardcode sync/check tasks, GitHub Actions is sufficient; N8N is optional.
-- N8N still has value when you need cross-system orchestration that Actions does not naturally own:
-  - multi-repo workflows with centralized approvals/notifications.
-  - non-GitHub systems integration (Slack/Notion/Jira/Sheets/DB) as first-class workflow steps.
-  - business-time windows, escalation routing, and human-in-the-loop approval chains.
+- N8N still has value in these concrete backend hardcode-adjacent cases:
+  - detect `subgraph-rate-inputs-health` artifact failures and auto-create Jira/Linear incident with chain IDs and error class.
+  - watch `@bgd-labs/aave-address-book` releases and open coordinated PRs across multiple repos (backend + frontend) in one workflow.
+  - run scheduled key-expiry reminders for `THE_GRAPH_API_KEY` owners in Slack/Email with approval routing.
 
 ## 6. Update Rules (Do Not Skip)
 

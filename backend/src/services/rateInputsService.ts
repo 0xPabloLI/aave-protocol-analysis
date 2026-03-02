@@ -178,7 +178,7 @@ function hasRequiredRateInputFields(reserve: Record<string, unknown>): boolean {
     if (value === null || value === undefined) return false;
   }
   const optimalUsageLike =
-    reserve.optimalUsageRatio ?? reserve.optimalUsageRate ?? reserve.optimalUtilisationRate;
+    reserve.optimalUsageRatio ?? reserve.optimalUtilisationRate;
   return optimalUsageLike !== null && optimalUsageLike !== undefined;
 }
 
@@ -312,7 +312,7 @@ async function fetchSubgraphChain(
           variableRateSlope2: toNumericString(reserve.variableRateSlope2),
           baseVariableBorrowRate: toNumericString(reserve.baseVariableBorrowRate),
           optimalUsageRate: toNumericString(
-            reserve.optimalUsageRatio ?? reserve.optimalUsageRate ?? reserve.optimalUtilisationRate
+            reserve.optimalUsageRatio ?? reserve.optimalUtilisationRate
           ),
           source: 'subgraph',
           sourceDetail: deployment.queryPath || 'subgraph',
@@ -367,7 +367,7 @@ async function fetchOnchainChain(config: OnchainFallbackConfig, tokenFilter: Set
           variableRateSlope1: toNumericString(reserve.variableRateSlope1),
           variableRateSlope2: toNumericString(reserve.variableRateSlope2),
           baseVariableBorrowRate: toNumericString(reserve.baseVariableBorrowRate),
-          optimalUsageRate: toNumericString(reserve.optimalUsageRatio ?? reserve.optimalUsageRate),
+          optimalUsageRate: toNumericString(reserve.optimalUsageRatio),
           source: 'onchain',
           sourceDetail: `rpc:${rpcUrl}`,
         });
