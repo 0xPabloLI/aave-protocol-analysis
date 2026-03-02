@@ -1,7 +1,6 @@
 name: Subgraph Rate Inputs Health
 
 on:
-  workflow_dispatch:
   schedule:
     # Every day at 02:50 UTC
     - cron: "50 2 * * *"
@@ -33,4 +32,3 @@ jobs:
         with:
           name: subgraph-rate-inputs-health-report
           path: docs/api/subgraph-rate-inputs-health.snapshot.json
-
