@@ -4,6 +4,122 @@ const DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS = 60 * 1000;
 
 const opportunitiesSnapshotCache = new Map();
 
+export const AAVE_PUBLIC_RPC_URLS_BY_CHAIN_KEY = Object.freeze({
+  ethereum: Object.freeze([
+    'https://mainnet.gateway.tenderly.co',
+    'https://rpc.flashbots.net',
+    'https://eth.llamarpc.com',
+    'https://eth-mainnet.public.blastapi.io',
+    'https://ethereum-rpc.publicnode.com',
+  ]),
+  polygon: Object.freeze([
+    'https://gateway.tenderly.co/public/polygon',
+    'https://polygon-pokt.nodies.app',
+    'https://polygon-bor-rpc.publicnode.com',
+    'https://polygon-rpc.com',
+    'https://polygon-mainnet.public.blastapi.io',
+    'https://rpc-mainnet.matic.quiknode.pro',
+  ]),
+  avalanche: Object.freeze([
+    'https://api.avax.network/ext/bc/C/rpc',
+    'https://ava-mainnet.public.blastapi.io/ext/bc/C/rpc',
+    'https://rpc.ankr.com/avalanche',
+  ]),
+  arbitrum: Object.freeze([
+    'https://arb1.arbitrum.io/rpc',
+    'https://rpc.ankr.com/arbitrum',
+    'https://1rpc.io/arb',
+  ]),
+  base: Object.freeze([
+    'https://1rpc.io/base',
+    'https://base.llamarpc.com',
+    'https://base.publicnode.com',
+    'https://base-mainnet.public.blastapi.io',
+  ]),
+  optimism: Object.freeze([
+    'https://public-op-mainnet.fastnode.io',
+    'https://optimism-rpc.publicnode.com',
+  ]),
+  metis: Object.freeze(['https://andromeda.metis.io/?owner=1088']),
+  gnosis: Object.freeze(['https://gnosis-rpc.publicnode.com', 'https://rpc.gnosischain.com']),
+  bnb: Object.freeze(['https://bsc.publicnode.com', 'https://bsc-mainnet.public.blastapi.io']),
+  scroll: Object.freeze(['https://rpc.scroll.io', 'https://rpc.ankr.com/scroll']),
+  zksync: Object.freeze(['https://mainnet.era.zksync.io']),
+  linea: Object.freeze([
+    'https://1rpc.io/linea',
+    'https://linea.drpc.org',
+    'https://linea-rpc.publicnode.com',
+  ]),
+  sonic: Object.freeze([
+    'https://rpc.soniclabs.com',
+    'https://sonic.drpc.org',
+    'https://sonic-rpc.publicnode.com',
+  ]),
+  celo: Object.freeze(['https://rpc.ankr.com/celo', 'https://celo.drpc.org']),
+  soneium: Object.freeze(['https://soneium.drpc.org', 'https://rpc.soneium.org']),
+  mantle: Object.freeze(['https://rpc.mantle.xyz']),
+  megaeth: Object.freeze(['https://mainnet.megaeth.com/rpc']),
+  plasma: Object.freeze(['https://rpc.plasma.to']),
+  ink: Object.freeze(['https://ink.drpc.org']),
+});
+
+export const AAVE_CHAIN_KEY_ALIASES = Object.freeze({
+  'ethereum-etherfi': 'ethereum',
+  'ethereum-prime': 'ethereum',
+  'ethereum-horizon': 'ethereum',
+  'arbitrum-one': 'arbitrum',
+  arbitrum_one: 'arbitrum',
+  xdai: 'gnosis',
+  metis_andromeda: 'metis',
+  bsc: 'bnb',
+  binance: 'bnb',
+});
+
+export const AAVE_CHAIN_ID_TO_RPC_KEY = Object.freeze({
+  1: 'ethereum',
+  10: 'optimism',
+  56: 'bnb',
+  100: 'gnosis',
+  137: 'polygon',
+  146: 'sonic',
+  324: 'zksync',
+  1868: 'soneium',
+  42220: 'celo',
+  5000: 'mantle',
+  4326: 'megaeth',
+  8453: 'base',
+  9745: 'plasma',
+  1088: 'metis',
+  57073: 'ink',
+  59144: 'linea',
+  42161: 'arbitrum',
+  43114: 'avalanche',
+  534352: 'scroll',
+  1666600000: 'harmony',
+});
+
+const normalizeHttpUrls = (urls) =>
+  (Array.isArray(urls) ? urls : []).filter(
+    (url) => typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
+  );
+
+export const resolveAaveRpcChainKey = (chainNameOrKey) => {
+  const normalized = String(chainNameOrKey || '').trim().toLowerCase();
+  if (!normalized) return '';
+  return AAVE_CHAIN_KEY_ALIASES[normalized] ?? normalized;
+};
+
+export const getAavePublicRpcUrlsByChainName = (chainNameOrKey) => {
+  const key = resolveAaveRpcChainKey(chainNameOrKey);
+  return normalizeHttpUrls(AAVE_PUBLIC_RPC_URLS_BY_CHAIN_KEY[key] ?? []);
+};
+
+export const getAavePublicRpcUrlsByChainId = (chainId) => {
+  const key = AAVE_CHAIN_ID_TO_RPC_KEY[Number(chainId)];
+  if (!key) return [];
+  return normalizeHttpUrls(AAVE_PUBLIC_RPC_URLS_BY_CHAIN_KEY[key] ?? []);
+};
+
 export const DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY = Object.freeze({
   mainProtocolId: 'aave,tydro',
   status: 'LIVE',

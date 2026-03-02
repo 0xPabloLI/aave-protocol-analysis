@@ -9,8 +9,11 @@
   - npm package `@bgd-labs/aave-address-book`
 - Aave on-chain reserve reads:
   - npm package `@aave/contract-helpers` (`UiPoolDataProvider`)
+- Shared public RPC registry:
+  - npm package `@internal/merkl-shared`
+  - `getAavePublicRpcUrlsByChainName` / `getAavePublicRpcUrlsByChainId`
 - RPC default references:
-  - aligned with Aave interface `src/ui-config/networksConfig.ts`
+  - synchronized in shared registry (aligned with Aave interface `src/ui-config/networksConfig.ts`)
 
 ## 2. Current Backend Hardcoded Items (Rate Inputs)
 
@@ -19,6 +22,8 @@
   - `1088` Metis: subgraph first (`metisapi.0xgraph.xyz`), fallback to on-chain on failure
   - `5000` Mantle: no deployment in current subgraph snapshot
   - `9745` Plasma: no deployment in current subgraph snapshot
+  - `57073` Ink: subgraph indexer unavailable fallback path
+  - `4326` MegaETH: subgraph indexer unavailable fallback path
 - Default RPC values are provided only for fallback chains above.
 
 ## 3. Env Overrides
@@ -42,3 +47,4 @@
 6. Keep `@bgd-labs/aave-address-book` updated on a regular cadence (or release-triggered), otherwise new chains/addresses can drift and fallback reads may break.
    - GitHub Dependabot weekly updates are enabled in `.github/dependabot.yml` (root + `backend` npm ecosystems).
 7. RPC/provider logic is centralized in `backend/src/services/ethProviderService.ts`; any new RPC policy should be changed there instead of ad-hoc in feature services.
+8. Shared RPC registry is in `packages/merkl-shared`; if Merit and rate-inputs need the same chain RPC update, update shared registry first.

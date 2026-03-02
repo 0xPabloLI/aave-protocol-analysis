@@ -101,6 +101,8 @@ https://gateway.thegraph.com/api/{apiKey}/subgraphs/name/aave/{slug}
 - `5000` (Mantle): no deployment entry in current subgraph snapshot, use on-chain fallback.
 - `9745` (Plasma): no deployment entry in current subgraph snapshot, use on-chain fallback.
 - `1088` (Metis): use subgraph endpoint first (`metisapi.0xgraph.xyz`), fallback to on-chain when subgraph fails.
+- `57073` (Ink): use subgraph endpoint first, fallback to on-chain when indexer is unavailable.
+- `4326` (MegaETH): use subgraph endpoint first, fallback to on-chain when indexer is unavailable.
 
 Implementation location: `backend/src/services/rateInputsService.ts` (`ONCHAIN_FALLBACK_CHAINS`).
 Hardcode/reference policy: `docs/backend/HARDCODE-AND-EXTERNAL-IMPORTS.md`.

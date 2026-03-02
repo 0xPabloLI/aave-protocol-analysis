@@ -13,6 +13,7 @@ import {
   type MeritDynamicInfo,
 } from './cloudflare-browser.js';
 import { meritKeyAliases } from './config.js';
+import { getAavePublicRpcUrlsByChainName } from '@internal/merkl-shared';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
@@ -692,119 +693,7 @@ export function parseChainKey(parts: string[]): string {
  * 根据链名获取 RPC URL
  */
 function getRpcUrlsFromChainName(chainName: string): string[] {
-  const prodRpcConfig: Record<string, { publicJsonRPCUrl: string[] }> = {
-    ethereum: {
-      publicJsonRPCUrl: [
-        'https://mainnet.gateway.tenderly.co',
-        'https://rpc.flashbots.net',
-        'https://eth.llamarpc.com',
-        'https://eth-mainnet.public.blastapi.io',
-        'https://ethereum-rpc.publicnode.com',
-      ],
-    },
-    polygon: {
-      publicJsonRPCUrl: [
-        'https://gateway.tenderly.co/public/polygon',
-        'https://polygon-pokt.nodies.app',
-        'https://polygon-bor-rpc.publicnode.com',
-        'https://polygon-rpc.com',
-        'https://polygon-mainnet.public.blastapi.io',
-        'https://rpc-mainnet.matic.quiknode.pro',
-      ],
-    },
-    avalanche: {
-      publicJsonRPCUrl: [
-        'https://api.avax.network/ext/bc/C/rpc',
-        'https://ava-mainnet.public.blastapi.io/ext/bc/C/rpc',
-        'https://rpc.ankr.com/avalanche',
-      ],
-    },
-    arbitrum: {
-      publicJsonRPCUrl: [
-        'https://arb1.arbitrum.io/rpc',
-        'https://rpc.ankr.com/arbitrum',
-        'https://1rpc.io/arb',
-      ],
-    },
-    base: {
-      publicJsonRPCUrl: [
-        'https://1rpc.io/base',
-        'https://base.llamarpc.com',
-        'https://base.publicnode.com',
-        'https://base-mainnet.public.blastapi.io',
-      ],
-    },
-    optimism: {
-      publicJsonRPCUrl: [
-        'https://public-op-mainnet.fastnode.io',
-        'https://optimism-rpc.publicnode.com',
-      ],
-    },
-    metis: {
-      publicJsonRPCUrl: ['https://andromeda.metis.io/?owner=1088'],
-    },
-    gnosis: {
-      publicJsonRPCUrl: ['https://gnosis-rpc.publicnode.com', 'https://rpc.gnosischain.com'],
-    },
-    bnb: {
-      publicJsonRPCUrl: ['https://bsc.publicnode.com', 'wss://bsc.publicnode.com'],
-    },
-    scroll: {
-      publicJsonRPCUrl: ['https://rpc.scroll.io', 'https://rpc.ankr.com/scroll'],
-    },
-    zksync: {
-      publicJsonRPCUrl: ['https://mainnet.era.zksync.io'],
-    },
-    linea: {
-      publicJsonRPCUrl: [
-        'https://1rpc.io/linea',
-        'https://linea.drpc.org',
-        'https://linea-rpc.publicnode.com',
-      ],
-    },
-    sonic: {
-      publicJsonRPCUrl: [
-        'https://rpc.soniclabs.com',
-        'https://sonic.drpc.org',
-        'https://sonic-rpc.publicnode.com',
-      ],
-    },
-    celo: {
-      publicJsonRPCUrl: ['https://rpc.ankr.com/celo', 'https://celo.drpc.org'],
-    },
-    soneium: {
-      publicJsonRPCUrl: ['https://soneium.drpc.org', 'https://rpc.soneium.org'],
-    },
-    mantle: {
-      publicJsonRPCUrl: ['https://rpc.mantle.xyz'],
-    },
-    megaeth: {
-      publicJsonRPCUrl: ['https://mainnet.megaeth.com/rpc'],
-    },
-    plasma: {
-      publicJsonRPCUrl: ['https://rpc.plasma.to'],
-    },
-    ink: {
-      publicJsonRPCUrl: ['https://ink.drpc.org'],
-    },
-  };
-
-  const chainAliases: Record<string, string> = {
-    'ethereum-etherfi': 'ethereum',
-    'ethereum-prime': 'ethereum',
-    'ethereum-horizon': 'ethereum',
-    'arbitrum-one': 'arbitrum',
-    arbitrum_one: 'arbitrum',
-    'xdai': 'gnosis',
-    metis_andromeda: 'metis',
-    'bsc': 'bnb',
-    'binance': 'bnb',
-  };
-
-  const normalized = chainName.toLowerCase();
-  const mappedChain = chainAliases[normalized] ?? normalized;
-  const urls = prodRpcConfig[mappedChain]?.publicJsonRPCUrl ?? [];
-  return urls.filter((url) => url.startsWith('http://') || url.startsWith('https://'));
+  return getAavePublicRpcUrlsByChainName(chainName);
 }
 
 /**
