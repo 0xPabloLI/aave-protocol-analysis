@@ -234,6 +234,16 @@ function resolveSubgraphUrl(record: SubgraphDeploymentRecord): string | null {
   return template.replace('{apiKey}', encodeURIComponent(apiKey));
 }
 
+function computeMissingTokenFilter(tokenFilter: Set<string>, records: ReserveRateInput[]): Set<string> {
+  if (tokenFilter.size === 0) return new Set<string>();
+  const found = new Set(records.map((item) => item.tokenAddress));
+  const missing = new Set<string>();
+  for (const tokenAddress of tokenFilter) {
+    if (!found.has(tokenAddress)) missing.add(tokenAddress);
+  }
+  return missing;
+}
+
 async function fetchSubgraphChain(
   chainId: number,
   deployment: SubgraphDeploymentRecord,
@@ -402,28 +412,70 @@ class RateInputsService {
         const deployment = deployments.get(chainId);
         const fallbackConfig = ONCHAIN_FALLBACK_CHAINS[chainId];
         const shouldPreferOnchain = Boolean(fallbackConfig?.preferOnchain);
+        let subgraphRecords: ReserveRateInput[] = [];
+        let subgraphFailed = false;
 
         if (deployment && !shouldPreferOnchain) {
           const requiresApiKey = (deployment.queryUrlTemplate || '').includes('{apiKey}');
           if (requiresApiKey && !hasGraphApiKey) {
+            subgraphFailed = true;
+          } else {
+            try {
+              subgraphRecords = await fetchSubgraphChain(chainId, deployment, tokenFilter);
+              if (subgraphRecords.length > 0) {
+                subgraphChains.add(chainId);
+                for (const item of subgraphRecords) {
+                  const key = `${item.chainId}:${item.tokenAddress}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  records.push(item);
+                }
+              }
+            } catch (error) {
+              subgraphFailed = true;
+              logger.warn(`Subgraph fetch failed for chain ${chainId}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+          }
+
+          if (!fallbackConfig) {
             return;
           }
+
+          const missingTokenFilter = computeMissingTokenFilter(tokenFilter, subgraphRecords);
+          const needsFallback =
+            subgraphFailed ||
+            subgraphRecords.length === 0 ||
+            (tokenFilter.size > 0 && missingTokenFilter.size > 0);
+
+          if (!needsFallback) {
+            return;
+          }
+
+          if (tokenFilter.size > 0 && missingTokenFilter.size > 0) {
+            logger.warn(
+              `Subgraph returned partial rate-inputs for chain ${chainId}; missing ${missingTokenFilter.size} token(s), applying on-chain fallback.`
+            );
+          }
+
           try {
-            const subgraphRecords = await fetchSubgraphChain(chainId, deployment, tokenFilter);
-            if (subgraphRecords.length > 0) {
-              subgraphChains.add(chainId);
-              for (const item of subgraphRecords) {
+            const onchainFilter = tokenFilter.size > 0 ? missingTokenFilter : tokenFilter;
+            const onchainRecords = await fetchOnchainChain(fallbackConfig, onchainFilter);
+            if (onchainRecords.length > 0) {
+              onchainChains.add(chainId);
+              for (const item of onchainRecords) {
                 const key = `${item.chainId}:${item.tokenAddress}`;
                 if (seen.has(key)) continue;
                 seen.add(key);
                 records.push(item);
               }
-              return;
             }
           } catch (error) {
-            logger.warn(`Subgraph fetch failed for chain ${chainId}: ${error instanceof Error ? error.message : String(error)}`);
+            logger.warn(`On-chain fallback failed for chain ${chainId} (${fallbackConfig.chainName}): ${error instanceof Error ? error.message : String(error)}`);
           }
-        } else if (!deployment && fallbackConfig) {
+          return;
+        }
+
+        if (!deployment && fallbackConfig) {
           subgraphMissingChains.add(chainId);
         }
 

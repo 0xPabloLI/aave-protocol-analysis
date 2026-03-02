@@ -24,6 +24,7 @@
   - `9745` Plasma: no deployment in current subgraph snapshot
   - `57073` Ink: subgraph indexer unavailable fallback path
   - `4326` MegaETH: subgraph indexer unavailable fallback path
+  - For fallback-marked chains, if subgraph returns partial token coverage, missing tokens are补齐 via on-chain reads in the same refresh cycle.
 - Default RPC values are provided only for fallback chains above.
 
 ## 3. Env Overrides
