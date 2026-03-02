@@ -7,7 +7,6 @@ updates:
       day: monday
       time: "03:00"
       timezone: UTC
-    target-branch: main
     open-pull-requests-limit: 10
     labels:
       - dependencies
@@ -22,7 +21,6 @@ updates:
       day: monday
       time: "03:10"
       timezone: UTC
-    target-branch: main
     open-pull-requests-limit: 10
     labels:
       - dependencies
@@ -37,11 +35,9 @@ updates:
       day: monday
       time: "03:20"
       timezone: UTC
-    target-branch: main
     open-pull-requests-limit: 10
     labels:
       - dependencies
     commit-message:
       prefix: "chore"
       include: scope
-
