@@ -196,11 +196,9 @@ In backend API, `GET /api/rate-inputs` is served by `rateInputsService`:
 
 - Required for gateway-based subgraph chains:
   - `THE_GRAPH_API_KEY`
-- Optional RPC overrides for on-chain fallback chains:
-  - per-chain: `RATE_INPUTS_RPC_URL_<chainId>`
-    - examples: `RATE_INPUTS_RPC_URL_5000`, `RATE_INPUTS_RPC_URL_9745`
-  - batch JSON map: `RATE_INPUTS_RPC_URLS`
-    - example: `{"5000":"https://rpc.mantle.xyz","9745":["https://rpc.plasma.to"]}`
+- On-chain fallback RPC URLs are sourced from shared config:
+  - package: `@internal/aave-shared-config`
+  - path: `packages/aave-shared-config`
 - TTL:
   - `BACKEND_CACHE_TTL_MS.realtimeFamily`
   - rate-inputs follows the same 60s same-source bucket as other near-realtime APR snapshot data.

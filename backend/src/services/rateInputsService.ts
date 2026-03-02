@@ -52,7 +52,6 @@ interface OnchainFallbackConfig {
   chainId: number;
   chainName: string;
   reason: string;
-  preferOnchain?: boolean;
   defaultRpcUrls: string[];
   uiPoolDataProviderAddress: string;
   poolAddressesProvider: string;
@@ -425,11 +424,10 @@ class RateInputsService {
         const tokenFilter = targetChains.get(chainId) ?? new Set<string>();
         const deployment = deployments.get(chainId);
         const fallbackConfig = resolveOnchainFallbackConfig(chainId);
-        const shouldPreferOnchain = Boolean(fallbackConfig?.preferOnchain);
         let subgraphRecords: ReserveRateInput[] = [];
         let subgraphFailed = false;
 
-        if (deployment && !shouldPreferOnchain) {
+        if (deployment) {
           const requiresApiKey = (deployment.queryUrlTemplate || '').includes('{apiKey}');
           if (requiresApiKey && !hasGraphApiKey) {
             subgraphFailed = true;

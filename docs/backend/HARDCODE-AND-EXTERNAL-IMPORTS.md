@@ -28,8 +28,7 @@
 ## 3. Env Overrides
 
 - `THE_GRAPH_API_KEY`: required for gateway subgraph URLs.
-- `RATE_INPUTS_RPC_URL_<chainId>`: per-chain RPC override.
-- `RATE_INPUTS_RPC_URLS`: JSON map RPC override.
+- RPC URLs are not environment-overridden anymore; they are centralized in `@internal/aave-shared-config`.
 
 ## 4. CI Automation Coverage Matrix
 
@@ -40,7 +39,7 @@
 | NPM dependency drift (root + backend + actions) | Automated | keep address-book/tooling updated | `.github/dependabot.yml` |
 | Dynamic fallback address resolution | Automated at runtime | avoid maintaining static fallback chain map | in `rateInputsService.ts`, no manual chain list required |
 | Chain has no `AaveV3*` export in address-book (current known gaps from subgraph snapshot: `250` Fantom, `1666600000` Harmony) | Not fully automatable | SDK itself has no fallback metadata for that chain | keep graceful degradation + document chain status; add manual fallback only if business-critical |
-| RPC quality (latency/quota/reliability) | Not fully automatable in code CI | runtime infra quality depends on provider SLAs | monitor production errors; override with `RATE_INPUTS_RPC_URL*` where needed |
+| RPC quality (latency/quota/reliability) | Not fully automatable in code CI | runtime infra quality depends on provider SLAs | monitor production errors; adjust shared RPC registry (`@internal/aave-shared-config`) when needed |
 | Secret rotation (`THE_GRAPH_API_KEY`) | Not automated by repo CI | org-level secret governance | rotate via secret manager / platform ops process |
 
 ## 5. N8N vs GitHub Actions
