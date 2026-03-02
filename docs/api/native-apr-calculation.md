@@ -96,15 +96,13 @@ https://gateway.thegraph.com/api/{apiKey}/subgraphs/name/aave/{slug}
   `/Users/pabloli/Documents/protocol-subgraphs/README.md`.
 - Snapshot `source` field shows which one was used.
 
-### Fallback chains (code-marked)
+### Fallback chains (runtime-resolved)
 
-- `5000` (Mantle): no deployment entry in current subgraph snapshot, use on-chain fallback.
-- `9745` (Plasma): no deployment entry in current subgraph snapshot, use on-chain fallback.
-- `1088` (Metis): use subgraph endpoint first (`metisapi.0xgraph.xyz`), fallback to on-chain when subgraph fails.
-- `57073` (Ink): use subgraph endpoint first, fallback to on-chain when indexer is unavailable.
-- `4326` (MegaETH): use subgraph endpoint first, fallback to on-chain when indexer is unavailable.
+- Fallback is no longer a fixed hardcoded chain list.
+- Backend resolves fallback capability dynamically from `@bgd-labs/aave-address-book` (`AaveV3*` exports with `CHAIN_ID`, `UI_POOL_DATA_PROVIDER`, `POOL_ADDRESSES_PROVIDER`).
+- If subgraph fails or returns partial token coverage, backend uses on-chain reads to补齐 missing reserves when fallback config is resolvable for that chain.
 
-Implementation location: `backend/src/services/rateInputsService.ts` (`ONCHAIN_FALLBACK_CHAINS`).
+Implementation location: `backend/src/services/rateInputsService.ts` (`resolveOnchainFallbackConfig`).
 Hardcode/reference policy: `docs/backend/HARDCODE-AND-EXTERNAL-IMPORTS.md`.
 
 ### GraphQL query (per chain)

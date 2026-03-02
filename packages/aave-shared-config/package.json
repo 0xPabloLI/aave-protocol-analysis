@@ -1,5 +1,5 @@
 {
-  "name": "@internal/merkl-shared",
+  "name": "@internal/aave-shared-config",
   "version": "1.0.0",
   "private": true,
   "type": "module",

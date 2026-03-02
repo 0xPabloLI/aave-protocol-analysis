@@ -13,7 +13,7 @@ import {
   type MeritDynamicInfo,
 } from './cloudflare-browser.js';
 import { meritKeyAliases } from './config.js';
-import { getAavePublicRpcUrlsByChainName } from '@internal/merkl-shared';
+import { getAavePublicRpcUrlsByChainName } from '@internal/aave-shared-config';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');

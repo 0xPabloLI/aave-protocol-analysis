@@ -9,7 +9,7 @@ import { merklFetchConfig } from './config.js';
 import {
   fetchMerklOpportunitiesSnapshot,
   resolveCacheTtlMs,
-} from '@internal/merkl-shared';
+} from '@internal/aave-shared-config';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');

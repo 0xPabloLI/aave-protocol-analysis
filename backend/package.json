@@ -9,12 +9,12 @@
     "start": "node dist/server.js",
     "dev": "tsx src/server.ts",
     "dev:watch": "tsx watch src/server.ts",
-    "prune": "ts-prune -i '.*merkl-shared/index\\.d\\.ts' 2>&1 | (grep -v '(used in module)' | grep -q . && exit 1 || exit 0)"
+    "prune": "ts-prune -i '.*aave-shared-config/index\\.d\\.ts' 2>&1 | (grep -v '(used in module)' | grep -q . && exit 1 || exit 0)"
   },
   "dependencies": {
     "@aave/contract-helpers": "^1.37.1",
     "@bgd-labs/aave-address-book": "^4.44.22",
-    "@internal/merkl-shared": "file:../packages/merkl-shared",
+    "@internal/aave-shared-config": "file:../packages/aave-shared-config",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "ethers": "^5.8.0",

@@ -1,7 +1,7 @@
 import {
   fetchMerklOpportunitiesSnapshot,
   resolveCacheTtlMs,
-} from '@internal/merkl-shared';
+} from '@internal/aave-shared-config';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 
 export interface FetchMerklOpportunitiesOptions {

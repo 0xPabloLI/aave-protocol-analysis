@@ -2,8 +2,8 @@ import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { UiPoolDataProvider } from '@aave/contract-helpers';
-import { AaveV3InkWhitelabel, AaveV3Mantle, AaveV3MegaEth, AaveV3Metis, AaveV3Plasma } from '@bgd-labs/aave-address-book';
-import { getAavePublicRpcUrlsByChainId } from '@internal/merkl-shared';
+import * as AaveAddressBook from '@bgd-labs/aave-address-book';
+import { getAavePublicRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { logger } from '../logger.js';
 import type { MarketWithSpread, RateInputsResponse, ReserveRateInput } from '../types/index.js';
@@ -69,49 +69,68 @@ type QueryFilters = {
   asset?: string;
 };
 
-// Explicit on-chain fallback map: chains missing from subgraph snapshot or chains with incompatible legacy schema.
-const ONCHAIN_FALLBACK_CHAINS: Record<number, OnchainFallbackConfig> = {
-  1088: {
-    chainId: 1088,
-    chainName: 'metis_andromeda',
-    reason: 'Metis has a dedicated endpoint; keep on-chain fallback enabled when subgraph fetch fails.',
-    defaultRpcUrls: getAavePublicRpcUrlsByChainId(1088),
-    uiPoolDataProviderAddress: AaveV3Metis.UI_POOL_DATA_PROVIDER,
-    poolAddressesProvider: AaveV3Metis.POOL_ADDRESSES_PROVIDER,
-  },
-  5000: {
-    chainId: 5000,
-    chainName: 'mantle',
-    reason: 'No Aave deployment entry in protocol-subgraphs snapshot; use on-chain UiPoolDataProvider.',
-    defaultRpcUrls: getAavePublicRpcUrlsByChainId(5000),
-    uiPoolDataProviderAddress: AaveV3Mantle.UI_POOL_DATA_PROVIDER,
-    poolAddressesProvider: AaveV3Mantle.POOL_ADDRESSES_PROVIDER,
-  },
-  9745: {
-    chainId: 9745,
-    chainName: 'plasma',
-    reason: 'No Aave deployment entry in protocol-subgraphs snapshot; use on-chain UiPoolDataProvider.',
-    defaultRpcUrls: getAavePublicRpcUrlsByChainId(9745),
-    uiPoolDataProviderAddress: AaveV3Plasma.UI_POOL_DATA_PROVIDER,
-    poolAddressesProvider: AaveV3Plasma.POOL_ADDRESSES_PROVIDER,
-  },
-  57073: {
-    chainId: 57073,
-    chainName: 'ink',
-    reason: 'Subgraph indexer may be unavailable; on-chain fallback keeps rate-inputs available.',
-    defaultRpcUrls: getAavePublicRpcUrlsByChainId(57073),
-    uiPoolDataProviderAddress: AaveV3InkWhitelabel.UI_POOL_DATA_PROVIDER,
-    poolAddressesProvider: AaveV3InkWhitelabel.POOL_ADDRESSES_PROVIDER,
-  },
-  4326: {
-    chainId: 4326,
-    chainName: 'megaeth',
-    reason: 'Subgraph indexer may be unavailable; on-chain fallback keeps rate-inputs available.',
-    defaultRpcUrls: getAavePublicRpcUrlsByChainId(4326),
-    uiPoolDataProviderAddress: AaveV3MegaEth.UI_POOL_DATA_PROVIDER,
-    poolAddressesProvider: AaveV3MegaEth.POOL_ADDRESSES_PROVIDER,
-  },
+type AddressBookFallbackEntry = {
+  config: OnchainFallbackConfig;
+  score: number;
 };
+
+function toSnakeCase(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+}
+
+function configKeyScore(key: string): number {
+  let score = 0;
+  if (/Sepolia|Fuji/i.test(key)) score += 100;
+  if (/Lido|EtherFi/i.test(key)) score += 10;
+  if (/Whitelabel/i.test(key)) score += 5;
+  score += key.length / 1000;
+  return score;
+}
+
+function buildFallbackConfigByChainId(): Map<number, OnchainFallbackConfig> {
+  const scored = new Map<number, AddressBookFallbackEntry>();
+  for (const [key, value] of Object.entries(AaveAddressBook)) {
+    if (!key.startsWith('AaveV3')) continue;
+    if (!value || typeof value !== 'object') continue;
+    const chainIdRaw = (value as Record<string, unknown>).CHAIN_ID;
+    const uiPoolDataProviderAddress = (value as Record<string, unknown>).UI_POOL_DATA_PROVIDER;
+    const poolAddressesProvider = (value as Record<string, unknown>).POOL_ADDRESSES_PROVIDER;
+    const chainId = Number(chainIdRaw);
+    if (!Number.isFinite(chainId) || chainId <= 0) continue;
+    if (typeof uiPoolDataProviderAddress !== 'string' || typeof poolAddressesProvider !== 'string') continue;
+
+    const score = configKeyScore(key);
+    const current = scored.get(chainId);
+    if (current && current.score <= score) continue;
+
+    const chainName = toSnakeCase(key.replace(/^AaveV3/, '') || `chain_${chainId}`);
+    const config: OnchainFallbackConfig = {
+      chainId,
+      chainName,
+      reason: `Resolved from @bgd-labs/aave-address-book export ${key}.`,
+      defaultRpcUrls: getAavePublicRpcUrlsByChainId(chainId),
+      uiPoolDataProviderAddress,
+      poolAddressesProvider,
+    };
+    scored.set(chainId, { config, score });
+  }
+
+  const output = new Map<number, OnchainFallbackConfig>();
+  for (const [chainId, entry] of scored) {
+    output.set(chainId, entry.config);
+  }
+  return output;
+}
+
+const FALLBACK_CONFIG_BY_CHAIN_ID = buildFallbackConfigByChainId();
+
+function resolveOnchainFallbackConfig(chainId: number): OnchainFallbackConfig | null {
+  return FALLBACK_CONFIG_BY_CHAIN_ID.get(chainId) ?? null;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -215,11 +234,6 @@ function buildTargetChainMap(rows: MarketWithSpread[]): Map<number, Set<string>>
     const existing = chainMap.get(row.chainId) ?? new Set<string>();
     existing.add(tokenAddress);
     chainMap.set(row.chainId, existing);
-  }
-
-  // Ensure fallback chains are part of the fetch set, even if current market snapshot is sparse.
-  for (const chainId of Object.keys(ONCHAIN_FALLBACK_CHAINS).map(Number)) {
-    if (!chainMap.has(chainId)) chainMap.set(chainId, new Set<string>());
   }
   return chainMap;
 }
@@ -410,7 +424,7 @@ class RateInputsService {
       chainIds.map(async (chainId) => {
         const tokenFilter = targetChains.get(chainId) ?? new Set<string>();
         const deployment = deployments.get(chainId);
-        const fallbackConfig = ONCHAIN_FALLBACK_CHAINS[chainId];
+        const fallbackConfig = resolveOnchainFallbackConfig(chainId);
         const shouldPreferOnchain = Boolean(fallbackConfig?.preferOnchain);
         let subgraphRecords: ReserveRateInput[] = [];
         let subgraphFailed = false;

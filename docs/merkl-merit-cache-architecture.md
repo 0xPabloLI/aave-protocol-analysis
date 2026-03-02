@@ -21,7 +21,7 @@ flowchart LR
   IDX["src/index.ts (orchestrator)"]
   MERKL["src/merkl-api.ts (Merkl ingest + indexing)"]
   MERIT["src/merit-api.ts (Merit ingest + mapping)"]
-  SHARED["@internal/merkl-shared (Merkl opportunities fetch/cache)"]
+  SHARED["@internal/aave-shared-config (Merkl opportunities fetch/cache)"]
   DFS["backend/dataService (/api/markets file cache)"]
   FCS["backend/merklForecastService (forecast compute + caches)"]
   MOC["backend/merklOpportunityClient (forecast Merkl opportunities fetcher)"]
@@ -50,7 +50,7 @@ flowchart LR
 ```mermaid
 flowchart LR
   A["src/index.ts fetchAaveMarketsData()"] --> B["src/merkl-api.ts processMerklData()"]
-  B --> C["@internal/merkl-shared snapshot (raw opportunities[])"]
+  B --> C["@internal/aave-shared-config snapshot (raw opportunities[])"]
   C --> D["Merkl /v4/opportunities"]
   B -- "writes" --> E["data/runtime/merkl-opportunity-meta-lite.json"]
   B -- "writes" --> F["data/debug/merkl-raw-data.json"]
@@ -73,7 +73,7 @@ flowchart LR
   D -- no --> F{"runtime lite fresh? (<=60s)"}
   F -- yes --> G["build campaignOpportunityCache from lite file"]
   F -- no --> H["merklOpportunityClient"]
-  H --> I["@internal/merkl-shared snapshot"]
+  H --> I["@internal/aave-shared-config snapshot"]
   I -. "fallback" .-> J["Merkl /v4/opportunities (if snapshot miss)"]
   H --> K["opportunities[]"]
   K --> G
@@ -98,7 +98,7 @@ flowchart TD
   C --> H["data/runtime/merit-campaign-metadata-cache.json"]
   D --> I["data/debug/merkl-raw-data.json (debug)"]
   D --> J["data/runtime/merkl-opportunity-meta-lite.json (runtime-lite)"]
-  D --> R["@internal/merkl-shared snapshot (memory)"]
+  D --> R["@internal/aave-shared-config snapshot (memory)"]
   B --> K["data/runtime/aave-formatted-data.json"]
   L["backend /api/markets"] --> M["dataService (memory cache)"]
   M --> K
@@ -106,7 +106,7 @@ flowchart TD
   O --> P["campaignOpportunityCache (memory)"]
   O --> J
   O --> Q["merklOpportunityClient"]
-  Q --> R["@internal/merkl-shared snapshot (memory)"]
+  Q --> R["@internal/aave-shared-config snapshot (memory)"]
   R --> S["Merkl /v4/opportunities"]
   O --> T["Merkl /v4/campaigns/{id} + /metrics"]
 ```
@@ -178,7 +178,7 @@ Map<string, {
   - empty-record TTL: 5m
   - dynamic TTL clamp: 10m .. 6h
 
-### E) `@internal/merkl-shared` snapshot cache (`packages/merkl-shared`)
+### E) `@internal/aave-shared-config` snapshot cache (`packages/aave-shared-config`)
 - Caches **raw Merkl opportunities array** (not forecast-lite)
 - Keyed by query params (`mainProtocolId/status/campaigns/itemsPerPage/...`)
 - Used by root Merkl fetcher (`src/merkl-api.ts`) and backend forecast fallback (`backend/src/services/merklOpportunityClient.ts`)
@@ -256,7 +256,7 @@ flowchart LR
   B -- no --> C{"merkl-opportunity-meta-lite.json fresh (<=60s)?"}
   C -- yes --> D["build campaignOpportunityCache from lite file"]
   C -- no --> E["merklOpportunityClient"]
-  E --> F{"@internal/merkl-shared snapshot hit?"}
+  E --> F{"@internal/aave-shared-config snapshot hit?"}
   F -- yes --> G["use cached opportunities[]"]
   F -- no --> H["call Merkl /v4/opportunities"]
   G --> I["build campaignOpportunityCache"]

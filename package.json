@@ -20,14 +20,14 @@
     "ci": "npm ci && npm run build && npm run prune && cd backend && npm ci && npm run build && npm run prune",
     "deploy": "./deploy.sh",
     "mcp:context7": "node .cursor/context7-server.js",
-    "prune": "ts-prune -i '.*merkl-shared/index\\.d\\.ts' 2>&1 | (grep -v '(used in module)' | grep -q . && exit 1 || exit 0)",
+    "prune": "ts-prune -i '.*aave-shared-config/index\\.d\\.ts' 2>&1 | (grep -v '(used in module)' | grep -q . && exit 1 || exit 0)",
     "subgraphs:sync": "node scripts/sync-aave-subgraph-deployments.mjs",
     "subgraphs:check-rate-inputs": "node scripts/check-subgraph-rate-inputs-health.mjs"
   },
   "dependencies": {
     "@aave/client": "^0.6.1",
-    "@internal/merkl-shared": "file:packages/merkl-shared",
-    "@bgd-labs/aave-address-book": "^4.30.3",
+    "@internal/aave-shared-config": "file:packages/aave-shared-config",
+    "@bgd-labs/aave-address-book": "^4.44.22",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@types/puppeteer": "^5.4.7",
     "cheerio": "^1.1.2",

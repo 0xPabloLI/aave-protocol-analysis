@@ -2,6 +2,8 @@
 import { readFile, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import * as AaveAddressBook from '@bgd-labs/aave-address-book';
+import { getAavePublicRpcUrlsByChainId } from '@internal/aave-shared-config';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -11,7 +13,6 @@ const outputPath = join(repoRoot, 'docs', 'api', 'subgraph-rate-inputs-health.sn
 
 const SUBGRAPH_TIMEOUT_MS = 15_000;
 const SUBGRAPH_MAX_RETRIES = 2;
-const FALLBACK_CHAIN_IDS = new Set([1088, 5000, 9745, 57073, 4326]);
 
 const SUBGRAPH_QUERY = `
 query ReservesRateInputs {
@@ -29,6 +30,40 @@ query ReservesRateInputs {
   }
 }
 `;
+
+function configKeyScore(key) {
+  let score = 0;
+  if (/Sepolia|Fuji/i.test(key)) score += 100;
+  if (/Lido|EtherFi/i.test(key)) score += 10;
+  if (/Whitelabel/i.test(key)) score += 5;
+  score += key.length / 1000;
+  return score;
+}
+
+function buildFallbackCapableChainSet() {
+  const scored = new Map();
+  for (const [key, value] of Object.entries(AaveAddressBook)) {
+    if (!key.startsWith('AaveV3')) continue;
+    if (!value || typeof value !== 'object') continue;
+    const chainId = Number(value.CHAIN_ID);
+    if (!Number.isFinite(chainId) || chainId <= 0) continue;
+    if (typeof value.UI_POOL_DATA_PROVIDER !== 'string' || typeof value.POOL_ADDRESSES_PROVIDER !== 'string') continue;
+    const score = configKeyScore(key);
+    const current = scored.get(chainId);
+    if (!current || score < current.score) {
+      scored.set(chainId, { score, key });
+    }
+  }
+
+  const chainSet = new Set();
+  for (const chainId of scored.keys()) {
+    const rpcUrls = getAavePublicRpcUrlsByChainId(chainId);
+    if (rpcUrls.length > 0) chainSet.add(chainId);
+  }
+  return chainSet;
+}
+
+const FALLBACK_CHAIN_IDS = buildFallbackCapableChainSet();
 
 function pickPreferredDeployment(current, candidate) {
   if (!current) return candidate;
@@ -210,4 +245,3 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.stack || error.message : String(error));
   process.exit(1);
 });
-

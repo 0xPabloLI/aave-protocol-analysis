@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { fetchMerklOpportunities } from '../src/services/merklOpportunityClient.js';
-import { __resetMerklOpportunitiesSnapshotCacheForTests } from '@internal/merkl-shared';
+import { __resetMerklOpportunitiesSnapshotCacheForTests } from '@internal/aave-shared-config';
 
 test.afterEach(() => {
   __resetMerklOpportunitiesSnapshotCacheForTests();
