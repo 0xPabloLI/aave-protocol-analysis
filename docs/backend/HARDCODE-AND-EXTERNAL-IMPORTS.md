@@ -16,7 +16,7 @@
 
 - File: `backend/src/services/rateInputsService.ts`
 - Hardcoded fallback map: `ONCHAIN_FALLBACK_CHAINS`
-  - `1088` Metis: prefer on-chain (legacy subgraph schema mismatch for required fields)
+  - `1088` Metis: subgraph first (`metisapi.0xgraph.xyz`), fallback to on-chain on failure
   - `5000` Mantle: no deployment in current subgraph snapshot
   - `9745` Plasma: no deployment in current subgraph snapshot
 - Default RPC values are provided only for fallback chains above.

@@ -125,6 +125,7 @@ export type RateInputSource = 'subgraph' | 'onchain';
 export interface ReserveRateInput {
   chainId: number;
   tokenAddress: string;
+  decimals: number;
   availableLiquidity: string;
   totalScaledVariableDebt: string;
   variableBorrowIndex: string;

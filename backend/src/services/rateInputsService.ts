@@ -22,6 +22,7 @@ const SUBGRAPH_QUERY = `
 query ReservesRateInputs {
   reserves(first: 1000) {
     underlyingAsset
+    decimals
     availableLiquidity
     totalScaledVariableDebt
     variableBorrowIndex
@@ -72,8 +73,7 @@ const ONCHAIN_FALLBACK_CHAINS: Record<number, OnchainFallbackConfig> = {
   1088: {
     chainId: 1088,
     chainName: 'metis_andromeda',
-    reason: 'Legacy Metis subgraph schema differs; use on-chain UiPoolDataProvider for full rate inputs.',
-    preferOnchain: true,
+    reason: 'Metis has a dedicated endpoint; keep on-chain fallback enabled when subgraph fetch fails.',
     defaultRpcUrls: ['https://andromeda.metis.io/?owner=1088'],
     uiPoolDataProviderAddress: AaveV3Metis.UI_POOL_DATA_PROVIDER,
     poolAddressesProvider: AaveV3Metis.POOL_ADDRESSES_PROVIDER,
@@ -112,6 +112,19 @@ function toNumericString(value: unknown): string {
     return trimmed.length > 0 ? trimmed : '0';
   }
   return String(value);
+}
+
+function toReserveDecimals(value: unknown, fallback = 18): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return Math.floor(value);
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return Math.floor(parsed);
+    }
+  }
+  return fallback;
 }
 
 function withPromiseTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -229,6 +242,7 @@ async function fetchSubgraphChain(
         records.push({
           chainId,
           tokenAddress,
+          decimals: toReserveDecimals(reserve.decimals),
           availableLiquidity: toNumericString(reserve.availableLiquidity),
           totalScaledVariableDebt: toNumericString(reserve.totalScaledVariableDebt),
           variableBorrowIndex: toNumericString(reserve.variableBorrowIndex),
@@ -283,6 +297,7 @@ async function fetchOnchainChain(config: OnchainFallbackConfig, tokenFilter: Set
         records.push({
           chainId: config.chainId,
           tokenAddress,
+          decimals: toReserveDecimals(reserve.decimals),
           availableLiquidity: toNumericString(reserve.availableLiquidity),
           totalScaledVariableDebt: toNumericString(reserve.totalScaledVariableDebt),
           variableBorrowIndex: toNumericString(reserve.variableBorrowIndex),
