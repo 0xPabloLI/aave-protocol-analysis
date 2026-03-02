@@ -127,6 +127,25 @@ function toReserveDecimals(value: unknown, fallback = 18): number {
   return fallback;
 }
 
+function hasRequiredRateInputFields(reserve: Record<string, unknown>): boolean {
+  const requiredKeys = [
+    'availableLiquidity',
+    'totalScaledVariableDebt',
+    'variableBorrowIndex',
+    'reserveFactor',
+    'variableRateSlope1',
+    'variableRateSlope2',
+    'baseVariableBorrowRate',
+  ];
+  for (const key of requiredKeys) {
+    const value = reserve[key];
+    if (value === null || value === undefined) return false;
+  }
+  const optimalUsageLike =
+    reserve.optimalUsageRatio ?? reserve.optimalUsageRate ?? reserve.optimalUtilisationRate;
+  return optimalUsageLike !== null && optimalUsageLike !== undefined;
+}
+
 function withPromiseTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   let timer: NodeJS.Timeout | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -239,6 +258,7 @@ async function fetchSubgraphChain(
         if (!underlyingAsset) continue;
         const tokenAddress = normalizeAddress(underlyingAsset);
         if (tokenFilter.size > 0 && !tokenFilter.has(tokenAddress)) continue;
+        if (!hasRequiredRateInputFields(reserve)) continue;
         records.push({
           chainId,
           tokenAddress,
@@ -294,6 +314,7 @@ async function fetchOnchainChain(config: OnchainFallbackConfig, tokenFilter: Set
         if (!underlyingAsset) continue;
         const tokenAddress = normalizeAddress(underlyingAsset);
         if (tokenFilter.size > 0 && !tokenFilter.has(tokenAddress)) continue;
+        if (!hasRequiredRateInputFields(reserve)) continue;
         records.push({
           chainId: config.chainId,
           tokenAddress,

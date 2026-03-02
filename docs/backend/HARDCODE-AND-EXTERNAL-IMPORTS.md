@@ -32,6 +32,7 @@
 ## 4. Update Rules (Do Not Skip)
 
 1. Run `npm run subgraphs:sync` and check whether new chains appear/disappear.
+   - GitHub Actions also runs this automatically: `.github/workflows/subgraph-sync.yml` (scheduled + manual dispatch).
 2. If a chain is missing or schema-incompatible in subgraph, add/update `ONCHAIN_FALLBACK_CHAINS`.
 3. Keep fallback chain RPC defaults aligned with interface network config.
 4. Never add plaintext API keys in code.
