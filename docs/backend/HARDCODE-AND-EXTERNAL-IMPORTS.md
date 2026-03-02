@@ -40,4 +40,5 @@
    - `docs/api/native-apr-calculation.md`
    - this document
 6. Keep `@bgd-labs/aave-address-book` updated on a regular cadence (or release-triggered), otherwise new chains/addresses can drift and fallback reads may break.
+   - GitHub Dependabot weekly updates are enabled in `.github/dependabot.yml` (root + `backend` npm ecosystems).
 7. RPC/provider logic is centralized in `backend/src/services/ethProviderService.ts`; any new RPC policy should be changed there instead of ad-hoc in feature services.
