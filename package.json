@@ -21,7 +21,8 @@
     "deploy": "./deploy.sh",
     "mcp:context7": "node .cursor/context7-server.js",
     "prune": "ts-prune -i '.*merkl-shared/index\\.d\\.ts' 2>&1 | (grep -v '(used in module)' | grep -q . && exit 1 || exit 0)",
-    "subgraphs:sync": "node scripts/sync-aave-subgraph-deployments.mjs"
+    "subgraphs:sync": "node scripts/sync-aave-subgraph-deployments.mjs",
+    "subgraphs:check-rate-inputs": "node scripts/check-subgraph-rate-inputs-health.mjs"
   },
   "dependencies": {
     "@aave/client": "^0.6.1",
