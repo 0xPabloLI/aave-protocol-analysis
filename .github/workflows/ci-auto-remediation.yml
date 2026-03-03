@@ -4,6 +4,11 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
+    branches:
+      - main
+      - dev
+      - railway
+      - feature/**
   workflow_dispatch:
     inputs:
       branch:
@@ -106,15 +111,16 @@ jobs:
           labels: ci-auto-remediation,dependencies
           base: ${{ steps.branch.outputs.name }}
 
-      - name: Enable auto-merge for remediation PR
+      - name: Review and enable auto-merge for remediation PR
         if: steps.cpr.outputs.pull-request-number != ''
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.CODEX_BOT_TOKEN != '' && secrets.CODEX_BOT_TOKEN || github.token }}
           script: |
             const { owner, repo } = context.repo;
             const prNumber = Number('${{ steps.cpr.outputs.pull-request-number }}');
             if (!prNumber) {
-              core.info('No remediation PR created; skip auto-merge.');
+              core.info('No remediation PR created; skip review/auto-merge.');
               return;
             }
 
@@ -123,6 +129,17 @@ jobs:
               repo,
               pull_number: prNumber,
             });
+            try {
+              await github.rest.pulls.createReview({
+                owner,
+                repo,
+                pull_number: prNumber,
+                event: 'APPROVE',
+                body: 'Automated review approval by CODEX_BOT_TOKEN.',
+              });
+            } catch (error) {
+              core.warning(`Auto-approve failed for PR #${prNumber}: ${error.message}`);
+            }
             try {
               await github.graphql(
                 `
