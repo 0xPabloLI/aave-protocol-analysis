@@ -2,61 +2,40 @@
 
 ## 1. Source Of Truth
 
-- Subgraph deployment snapshot:
-  - `docs/api/aave-subgraph-deployments.snapshot.json`
-  - refreshed by `npm run subgraphs:sync`
-- On-chain protocol addresses:
-  - npm package `@bgd-labs/aave-address-book`
-- On-chain reserve reader:
-  - npm package `@aave/contract-helpers` (`UiPoolDataProvider`)
-- Shared RPC registry:
-  - npm package `@internal/aave-shared-config`
-  - path: `packages/aave-shared-config`
-  - exports: `getAavePublicRpcUrlsByChainName`, `getAavePublicRpcUrlsByChainId`
+| 主题 | 来源 | 本地使用 |
+|---|---|---|
+| Subgraph deployments | `aave/protocol-subgraphs`（由同步脚本抓取） | `docs/api/aave-subgraph-deployments.snapshot.json` |
+| On-chain addresses | `@bgd-labs/aave-address-book` | `backend/src/services/rateInputsService.ts` |
+| On-chain reserve reader | `@aave/contract-helpers` (`UiPoolDataProvider`) | `backend/src/services/rateInputsService.ts` |
+| Shared RPC registry | `@internal/aave-shared-config` | `backend/src/services/ethProviderService.ts` |
 
-## 2. Current Hardcoded/Derived Logic (Rate Inputs)
+## 2. 当前策略（Rate Inputs）
 
-- File: `backend/src/services/rateInputsService.ts`
-- Primary source: subgraph (with retry + timeout).
-- Fallback source: on-chain `UiPoolDataProvider`.
-- Fallback config is now **dynamic** (not manual chain list):
-  - resolves by `chainId` from `@bgd-labs/aave-address-book` exported `AaveV3*` configs.
-  - picks best config per chain with deterministic priority (prefer non-testnet/non-market-suffix variants).
-  - uses shared RPC defaults from `@internal/aave-shared-config`.
-- For fallback-capable chains, if subgraph returns partial token coverage, missing assets are filled from on-chain in the same refresh.
+- 主路径：subgraph（含 retry + timeout）。
+- 兜底路径：on-chain `UiPoolDataProvider`。
+- 兜底配置：动态解析 `AaveV3*` 导出（不维护静态链列表）。
+- 部分缺失补齐：subgraph 返回不完整时，仅缺失 token 走 on-chain 补齐。
 
-## 3. Env Overrides
+## 3. 环境变量
 
-- `THE_GRAPH_API_KEY`: required for gateway subgraph URLs.
-- RPC URLs are not environment-overridden anymore; they are centralized in `@internal/aave-shared-config`.
+- 仅保留：`THE_GRAPH_API_KEY`（gateway 子图访问）。
+- RPC 不支持环境变量覆写，统一来自 shared RPC registry。
 
-## 4. CI Automation Coverage Matrix
+## 4. 自动化（GitHub Actions）
 
-| Item | CI Status | Why | What To Do |
-|---|---|---|---|
-| Subgraph deployment snapshot sync | Automated | prevent stale deployment IDs/slugs | `.github/workflows/subgraph-sync.yml` (`npm run subgraphs:sync`) |
-| Subgraph query compatibility / health probe | Automated | catch indexer/schema issues early | `.github/workflows/subgraph-rate-inputs-health.yml` (`npm run subgraphs:check-rate-inputs`) |
-| NPM dependency drift (root + backend + actions) | Automated | keep address-book/tooling updated | `.github/dependabot.yml` |
-| Dynamic fallback address resolution | Automated at runtime | avoid maintaining static fallback chain map | in `rateInputsService.ts`, no manual chain list required |
-| Chain has no `AaveV3*` export in address-book (current known gaps from subgraph snapshot: `250` Fantom, `1666600000` Harmony) | Not fully automatable | SDK itself has no fallback metadata for that chain | keep graceful degradation + document chain status; add manual fallback only if business-critical |
-| RPC quality (latency/quota/reliability) | Not fully automatable in code CI | runtime infra quality depends on provider SLAs | monitor production errors; adjust shared RPC registry (`@internal/aave-shared-config`) when needed |
-| Secret rotation (`THE_GRAPH_API_KEY`) | Not automated by repo CI | org-level secret governance | rotate via secret manager / platform ops process |
+| 工作流 | 频率 | 作用 |
+|---|---|---|
+| `.github/workflows/subgraph-sync.yml` | 每天 1 次 | 同步 subgraph deployment snapshot，变更自动开 PR |
+| `.github/workflows/subgraph-rate-inputs-health.yml` | 每天 1 次 | 兼容性/健康探测，产出健康报告 |
 
-## 5. N8N vs GitHub Actions
+触发方式：
+- `schedule`（每天）
+- `repository_dispatch`（`event_type=upstream-change`，供 webhook relay 触发）
 
-- For this repo’s hardcode sync/check tasks, GitHub Actions is sufficient; N8N is optional.
-- N8N still has value in these concrete backend hardcode-adjacent cases:
-  - detect `subgraph-rate-inputs-health` artifact failures and auto-create Jira/Linear incident with chain IDs and error class.
-  - watch `@bgd-labs/aave-address-book` releases and open coordinated PRs across multiple repos (backend + frontend) in one workflow.
-  - run scheduled key-expiry reminders for `THE_GRAPH_API_KEY` owners in Slack/Email with approval routing.
+## 5. 非自动化项（保留人工）
 
-## 6. Update Rules (Do Not Skip)
-
-1. Keep `subgraph-sync` and `subgraph-rate-inputs-health` workflows green.
-2. Keep `@bgd-labs/aave-address-book` current; otherwise dynamic fallback metadata can drift.
-3. Keep shared RPC registry (`packages/aave-shared-config`) aligned with actual chain support and quality.
-4. Never commit plaintext API keys.
-5. If fallback behavior changes materially, update:
-   - `docs/api/native-apr-calculation.md`
-   - this file
-6. RPC/provider logic must stay centralized in `backend/src/services/ethProviderService.ts`.
+| 项目 | 原因 | 处理方式 |
+|---|---|---|
+| 地址簿未覆盖链（如 Fantom/Harmony） | 上游 SDK 无 fallback metadata | 维持降级 + 业务需要时人工补链 |
+| RPC 质量（配额/延迟/可用性） | 运行时基础设施问题 | 监控告警 + 更新 shared RPC 列表 |
+| key 轮换 | 组织安全策略项 | 平台/密管流程处理 |
