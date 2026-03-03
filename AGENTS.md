@@ -58,8 +58,9 @@ The backend requires runtime data files before serving requests:
 
 ### Local Git Hook Policy (Mandatory)
 - This repo uses local `pre-commit` and `pre-push` hooks to run `npm run ci:remote`.
-- If a hook fails, do not bypass it by default. Fix the root cause first (dependency/security/build) and retry commit/push.
-- Temporary bypass (`SKIP_CI_REMOTE_HOOK=1`) is emergency-only and must be followed by a real fix in the same work session.
+- If `ci:remote` fails, hooks must automatically attempt `npm run ci:auto-fix`, then rerun `ci:remote`.
+- If checks still fail after auto-fix, stop the commit/push and fix the root cause before retrying.
+- Do not bypass hooks as a normal workflow.
 - If local checks fail repeatedly, rely on CI remediation PR flow as a fallback path, then merge validated fixes back to the working branch.
 
 ## Code Architecture
