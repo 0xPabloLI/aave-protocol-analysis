@@ -5,7 +5,17 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
+      - dev
+      - railway
+      - feature/**
   pull_request:
+    branches:
+      - main
+      - dev
+      - railway
+      - feature/**
 
 permissions:
   contents: write
