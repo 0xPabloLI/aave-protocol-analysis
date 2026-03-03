@@ -18,6 +18,7 @@
     "dev:watch": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "ci": "npm ci && npm run build && npm run prune && cd backend && npm ci && npm run build && npm run prune",
+    "ci:remote": "npm run ci && npm audit --omit=dev --audit-level=high",
     "deploy": "./deploy.sh",
     "mcp:context7": "node .cursor/context7-server.js",
     "prune": "ts-prune -i '.*aave-shared-config/index\\.d\\.ts' 2>&1 | (grep -v '(used in module)' | grep -q . && exit 1 || exit 0)",
