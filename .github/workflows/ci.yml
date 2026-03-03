@@ -73,6 +73,11 @@ jobs:
           npm audit fix --omit=dev || true
           npm --prefix backend audit fix --omit=dev || true
 
+      - name: Reinstall dependencies for build verification
+        run: |
+          npm ci
+          npm --prefix backend ci
+
       - name: Validate build after remediation
         id: verify
         run: |
