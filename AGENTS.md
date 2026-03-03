@@ -56,6 +56,12 @@ The backend requires runtime data files before serving requests:
 - If you change cache layers, file paths/layout, data-flow boundaries, or fallback chains, update both docs above in the same PR/commit set.
 - When adding/changing a TTL, first verify the upstream data update cadence (docs or observed timestamps) and document the reasoning if non-obvious.
 
+### Local Git Hook Policy (Mandatory)
+- This repo uses local `pre-commit` and `pre-push` hooks to run `npm run ci:remote`.
+- If a hook fails, do not bypass it by default. Fix the root cause first (dependency/security/build) and retry commit/push.
+- Temporary bypass (`SKIP_CI_REMOTE_HOOK=1`) is emergency-only and must be followed by a real fix in the same work session.
+- If local checks fail repeatedly, rely on CI remediation PR flow as a fallback path, then merge validated fixes back to the working branch.
+
 ## Code Architecture
 
 ### Data Flow Pipeline
