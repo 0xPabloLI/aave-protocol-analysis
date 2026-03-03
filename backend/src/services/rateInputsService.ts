@@ -299,6 +299,7 @@ async function fetchSubgraphChain(
         const tokenAddress = normalizeAddress(underlyingAsset);
         if (tokenFilter.size > 0 && !tokenFilter.has(tokenAddress)) continue;
         if (!hasRequiredRateInputFields(reserve)) continue;
+        // Keep API payload focused on hypothetical-TVL inputs; liquidityRate/variableBorrowRate are intentionally omitted.
         records.push({
           chainId,
           tokenAddress,
@@ -355,6 +356,7 @@ async function fetchOnchainChain(config: OnchainFallbackConfig, tokenFilter: Set
         const tokenAddress = normalizeAddress(underlyingAsset);
         if (tokenFilter.size > 0 && !tokenFilter.has(tokenAddress)) continue;
         if (!hasRequiredRateInputFields(reserve)) continue;
+        // Keep API payload focused on hypothetical-TVL inputs; liquidityRate/variableBorrowRate are intentionally omitted.
         records.push({
           chainId: config.chainId,
           tokenAddress,
