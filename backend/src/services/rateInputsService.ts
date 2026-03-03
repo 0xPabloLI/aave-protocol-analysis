@@ -527,8 +527,21 @@ class RateInputsService {
   }
 
   async getRateInputs(filters: QueryFilters): Promise<RateInputsResponse> {
-    const mustRefresh = this.isStale();
-    const snapshot = mustRefresh ? await this.refreshSnapshot() : this.snapshot!;
+    let snapshot = this.snapshot;
+
+    // Cold start: block until we have the first snapshot.
+    if (!snapshot) {
+      snapshot = await this.refreshSnapshot();
+    } else if (this.isStale()) {
+      // Stale-while-refresh: respond from current snapshot, refresh in background.
+      void this.refreshSnapshot().catch((error) => {
+        logger.warn(
+          `Background rate-inputs refresh failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      });
+    }
 
     let filtered = snapshot.data;
     if (filters.chainId !== undefined) {
