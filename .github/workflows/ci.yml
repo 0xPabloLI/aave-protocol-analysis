@@ -7,6 +7,10 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   build-and-prune:
     runs-on: ubuntu-latest
@@ -39,3 +43,81 @@ jobs:
 
       - name: Audit runtime dependencies (High/Critical)
         run: npm audit --omit=dev --audit-level=high
+
+  auto-remediate-on-failure:
+    needs:
+      - build-and-prune
+      - security-audit
+    if: >
+      always() &&
+      github.event_name == 'push' &&
+      !startsWith(github.ref_name, 'bot/ci-auto-remediation-') &&
+      (needs.build-and-prune.result == 'failure' || needs.security-audit.result == 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Attempt dependency remediation
+        run: |
+          npm audit fix --omit=dev || true
+          npm --prefix backend audit fix --omit=dev || true
+
+      - name: Validate build after remediation
+        id: verify
+        run: |
+          set +e
+          npm run build
+          BUILD_ROOT=$?
+          npm --prefix backend run build
+          BUILD_BACKEND=$?
+          if [ "$BUILD_ROOT" -eq 0 ] && [ "$BUILD_BACKEND" -eq 0 ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Check for generated changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create remediation PR
+        if: steps.verify.outputs.ok == 'true' && steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: auto-remediate dependency issues after CI failure"
+          branch: "bot/ci-auto-remediation-${{ github.run_id }}"
+          delete-branch: true
+          title: "chore: auto remediation for CI failure (${{ github.ref_name }})"
+          body: |
+            Auto-generated remediation PR.
+
+            Trigger:
+            - Event: `${{ github.event_name }}`
+            - Source branch: `${{ github.ref_name }}`
+            - Build and prune: `${{ needs.build-and-prune.result }}`
+            - Security audit: `${{ needs.security-audit.result }}`
+
+            Actions performed:
+            - `npm audit fix --omit=dev`
+            - `npm --prefix backend audit fix --omit=dev`
+            - `npm run build`
+            - `npm --prefix backend run build`
+          labels: ci-auto-remediation,dependencies
+          base: ${{ github.ref_name }}
