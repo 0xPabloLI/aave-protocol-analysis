@@ -1,6 +1,8 @@
 name: Subgraph Sync
 
 on:
+  repository_dispatch:
+    types: [upstream-change]
   schedule:
     # Every day at 02:20 UTC
     - cron: "20 2 * * *"

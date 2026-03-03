@@ -1,6 +1,8 @@
 name: Subgraph Rate Inputs Health
 
 on:
+  repository_dispatch:
+    types: [upstream-change]
   schedule:
     # Every day at 02:50 UTC
     - cron: "50 2 * * *"
