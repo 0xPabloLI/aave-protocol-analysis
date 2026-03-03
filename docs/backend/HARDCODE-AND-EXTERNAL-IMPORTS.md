@@ -5,8 +5,8 @@
 | 主题 | 来源 | 本地使用 |
 |---|---|---|
 | Subgraph deployments | `aave/protocol-subgraphs`（由同步脚本抓取） | `docs/api/aave-subgraph-deployments.snapshot.json` |
-| On-chain addresses | `@bgd-labs/aave-address-book` | `backend/src/services/rateInputsService.ts` |
-| On-chain reserve reader | `@aave/contract-helpers` (`UiPoolDataProvider`) | `backend/src/services/rateInputsService.ts` |
+| On-chain addresses（external dependency, 非 hardcoded 常量） | `@bgd-labs/aave-address-book` | `backend/src/services/rateInputsService.ts` |
+| On-chain reserve reader（external dependency） | `@aave/contract-helpers` (`UiPoolDataProvider`) | `backend/src/services/rateInputsService.ts` |
 | Shared RPC registry | `@internal/aave-shared-config` | `backend/src/services/ethProviderService.ts` |
 
 ## 2. 当前策略（Rate Inputs）
