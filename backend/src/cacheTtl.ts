@@ -25,6 +25,7 @@ export const BACKEND_SCHEDULE_CRON = {
 export const BACKEND_CACHE_TTL_MS = {
   // Same-source near-realtime family.
   realtimeFamily: BACKEND_TIME_MS.oneMinute,
+  rateInputsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
   marketsDataStaleThreshold: BACKEND_TIME_MS.oneMinute,
   merklLiteFileMaxAge: BACKEND_TIME_MS.oneMinute,
   merklForecastResultDefault: BACKEND_TIME_MS.oneMinute,
