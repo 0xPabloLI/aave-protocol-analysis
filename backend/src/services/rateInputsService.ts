@@ -11,6 +11,7 @@ import { dataService } from './dataService.js';
 import { ethProviderService } from './ethProviderService.js';
 
 const RATE_INPUTS_TTL_MS = BACKEND_CACHE_TTL_MS.realtimeFamily;
+const RATE_INPUTS_MAX_STALE_MS = BACKEND_CACHE_TTL_MS.rateInputsServeStaleMax;
 const SUBGRAPH_TIMEOUT_MS = 15_000;
 const ONCHAIN_TIMEOUT_MS = 20_000;
 const SUBGRAPH_MAX_RETRIES = 2;
@@ -532,15 +533,21 @@ class RateInputsService {
     // Cold start: block until we have the first snapshot.
     if (!snapshot) {
       snapshot = await this.refreshSnapshot();
-    } else if (this.isStale()) {
-      // Stale-while-refresh: respond from current snapshot, refresh in background.
-      void this.refreshSnapshot().catch((error) => {
-        logger.warn(
-          `Background rate-inputs refresh failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-      });
+    } else {
+      const ageMs = Date.now() - snapshot.fetchedAt;
+      if (ageMs > RATE_INPUTS_MAX_STALE_MS) {
+        // Hard stale cap: do not serve very old snapshots.
+        snapshot = await this.refreshSnapshot();
+      } else if (ageMs > RATE_INPUTS_TTL_MS) {
+        // Soft stale window: serve current snapshot, refresh in background.
+        void this.refreshSnapshot().catch((error) => {
+          logger.warn(
+            `Background rate-inputs refresh failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        });
+      }
     }
 
     let filtered = snapshot.data;
