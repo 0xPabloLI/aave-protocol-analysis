@@ -50,6 +50,7 @@ interface SubgraphSnapshot {
 }
 
 interface OnchainFallbackConfig {
+  marketName: string;
   chainId: number;
   chainName: string;
   reason: string;
@@ -67,11 +68,19 @@ interface ServiceSnapshot {
 type QueryFilters = {
   chainId?: number;
   asset?: string;
+  marketName?: string;
 };
 
 type AddressBookFallbackEntry = {
   config: OnchainFallbackConfig;
   score: number;
+};
+
+type TargetMarket = {
+  marketName: string;
+  chainId: number;
+  marketSlug: string;
+  tokenFilter: Set<string>;
 };
 
 function toSnakeCase(value: string): string {
@@ -109,6 +118,7 @@ function buildFallbackConfigByChainId(): Map<number, OnchainFallbackConfig> {
 
     const chainName = toSnakeCase(key.replace(/^AaveV3/, '') || `chain_${chainId}`);
     const config: OnchainFallbackConfig = {
+      marketName: key,
       chainId,
       chainName,
       reason: `Resolved from @bgd-labs/aave-address-book export ${key}.`,
@@ -126,9 +136,46 @@ function buildFallbackConfigByChainId(): Map<number, OnchainFallbackConfig> {
   return output;
 }
 
-const FALLBACK_CONFIG_BY_CHAIN_ID = buildFallbackConfigByChainId();
+function buildFallbackConfigByMarketName(): Map<string, OnchainFallbackConfig> {
+  const output = new Map<string, OnchainFallbackConfig>();
+  for (const [key, value] of Object.entries(AaveAddressBook)) {
+    if (!key.startsWith('AaveV3')) continue;
+    if (!value || typeof value !== 'object') continue;
+    const chainIdRaw = (value as Record<string, unknown>).CHAIN_ID;
+    const uiPoolDataProviderAddress = (value as Record<string, unknown>).UI_POOL_DATA_PROVIDER;
+    const poolAddressesProvider = (value as Record<string, unknown>).POOL_ADDRESSES_PROVIDER;
+    const chainId = Number(chainIdRaw);
+    if (!Number.isFinite(chainId) || chainId <= 0) continue;
+    if (typeof uiPoolDataProviderAddress !== 'string' || typeof poolAddressesProvider !== 'string') continue;
 
-function resolveOnchainFallbackConfig(chainId: number): OnchainFallbackConfig | null {
+    output.set(normalizeMarketName(key), {
+      marketName: key,
+      chainId,
+      chainName: toSnakeCase(key.replace(/^AaveV3/, '') || `chain_${chainId}`),
+      reason: `Resolved from @bgd-labs/aave-address-book export ${key}.`,
+      defaultRpcUrls: getAavePublicRpcUrlsByChainId(chainId),
+      uiPoolDataProviderAddress,
+      poolAddressesProvider,
+    });
+  }
+  return output;
+}
+
+const FALLBACK_CONFIG_BY_CHAIN_ID = buildFallbackConfigByChainId();
+const FALLBACK_CONFIG_BY_MARKET_NAME = buildFallbackConfigByMarketName();
+
+function resolveOnchainFallbackConfig(marketName: string, chainId: number): OnchainFallbackConfig | null {
+  const normalizedMarketName = normalizeMarketName(marketName);
+  const exact = FALLBACK_CONFIG_BY_MARKET_NAME.get(normalizedMarketName);
+  if (exact && exact.chainId === chainId) {
+    return exact;
+  }
+
+  // Prevent using core fallback for non-core markets, which can silently mismatch rates.
+  if (inferSubgraphMarketSlug(marketName) !== 'core') {
+    return null;
+  }
+
   return FALLBACK_CONFIG_BY_CHAIN_ID.get(chainId) ?? null;
 }
 
@@ -138,6 +185,18 @@ function sleep(ms: number): Promise<void> {
 
 function normalizeAddress(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeMarketName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function inferSubgraphMarketSlug(marketName: string): string {
+  const normalized = normalizeMarketName(marketName);
+  if (normalized.includes('lido')) return 'lido';
+  if (normalized.includes('etherfi')) return 'etherfi';
+  if (normalized.includes('gho')) return 'gho';
+  return 'core';
 }
 
 function toNumericString(value: unknown): string {
@@ -197,9 +256,6 @@ function pickPreferredDeployment(
   candidate: SubgraphDeploymentRecord
 ): SubgraphDeploymentRecord {
   if (!current) return candidate;
-  const currentIsCore = current.market === 'core';
-  const candidateIsCore = candidate.market === 'core';
-  if (!currentIsCore && candidateIsCore) return candidate;
 
   const currentIsId = (current.queryPath || '').startsWith('id/');
   const candidateIsId = (candidate.queryPath || '').startsWith('id/');
@@ -208,34 +264,72 @@ function pickPreferredDeployment(
   return current;
 }
 
-async function loadSubgraphDeployments(): Promise<Map<number, SubgraphDeploymentRecord>> {
+function subgraphDeploymentKey(chainId: number, marketSlug: string): string {
+  return `${chainId}:${marketSlug}`;
+}
+
+function normalizeSubgraphMarketSlug(raw: string | null | undefined): string {
+  const normalized = String(raw || 'core').trim().toLowerCase();
+  return normalized || 'core';
+}
+
+async function loadSubgraphDeployments(): Promise<Map<string, SubgraphDeploymentRecord>> {
   try {
     const raw = await readFile(SUBGRAPH_SNAPSHOT_PATH, 'utf-8');
     const parsed = JSON.parse(raw) as SubgraphSnapshot;
     const deployments = Array.isArray(parsed.deployments) ? parsed.deployments : [];
-    const map = new Map<number, SubgraphDeploymentRecord>();
+    const map = new Map<string, SubgraphDeploymentRecord>();
     for (const deployment of deployments) {
       if (!deployment.chainId || !deployment.queryPath || !deployment.queryUrlTemplate) continue;
-      const picked = pickPreferredDeployment(map.get(deployment.chainId), deployment);
-      map.set(deployment.chainId, picked);
+      const marketSlug = normalizeSubgraphMarketSlug(deployment.market);
+      const key = subgraphDeploymentKey(deployment.chainId, marketSlug);
+      const picked = pickPreferredDeployment(map.get(key), deployment);
+      map.set(key, picked);
     }
     return map;
   } catch (error) {
     logger.warn(`Failed to load subgraph deployment snapshot (${SUBGRAPH_SNAPSHOT_PATH}): ${error instanceof Error ? error.message : String(error)}`);
-    return new Map<number, SubgraphDeploymentRecord>();
+    return new Map<string, SubgraphDeploymentRecord>();
   }
 }
 
-function buildTargetChainMap(rows: MarketWithSpread[]): Map<number, Set<string>> {
-  const chainMap = new Map<number, Set<string>>();
+function resolveSubgraphDeployment(
+  deployments: Map<string, SubgraphDeploymentRecord>,
+  chainId: number,
+  marketSlug: string
+): SubgraphDeploymentRecord | null {
+  const exact = deployments.get(subgraphDeploymentKey(chainId, marketSlug));
+  if (exact) return exact;
+  return deployments.get(subgraphDeploymentKey(chainId, 'core')) ?? null;
+}
+
+function buildTargetMarketMap(rows: MarketWithSpread[]): Map<string, TargetMarket> {
+  const marketMap = new Map<string, TargetMarket>();
   for (const row of rows) {
-    if (!row.chainId || !row.tokenAddress) continue;
+    if (!row.chainId || !row.tokenAddress || !row.marketName) continue;
     const tokenAddress = normalizeAddress(row.tokenAddress);
-    const existing = chainMap.get(row.chainId) ?? new Set<string>();
-    existing.add(tokenAddress);
-    chainMap.set(row.chainId, existing);
+    const key = normalizeMarketName(row.marketName);
+    const existing = marketMap.get(key);
+    if (!existing) {
+      marketMap.set(key, {
+        marketName: row.marketName,
+        chainId: row.chainId,
+        marketSlug: inferSubgraphMarketSlug(row.marketName),
+        tokenFilter: new Set([tokenAddress]),
+      });
+      continue;
+    }
+
+    if (existing.chainId !== row.chainId) {
+      logger.warn(
+        `Market name ${row.marketName} appeared with multiple chain IDs (${existing.chainId}, ${row.chainId}); keeping first.`
+      );
+      continue;
+    }
+
+    existing.tokenFilter.add(tokenAddress);
   }
-  return chainMap;
+  return marketMap;
 }
 
 function resolveSubgraphUrl(record: SubgraphDeploymentRecord): string | null {
@@ -259,6 +353,7 @@ function computeMissingTokenFilter(tokenFilter: Set<string>, records: ReserveRat
 }
 
 async function fetchSubgraphChain(
+  marketName: string,
   chainId: number,
   deployment: SubgraphDeploymentRecord,
   tokenFilter: Set<string>
@@ -302,6 +397,7 @@ async function fetchSubgraphChain(
         if (!hasRequiredRateInputFields(reserve)) continue;
         // Keep API payload focused on hypothetical-TVL inputs; liquidityRate/variableBorrowRate are intentionally omitted.
         records.push({
+          marketName,
           chainId,
           tokenAddress,
           decimals: toReserveDecimals(reserve.decimals),
@@ -329,7 +425,12 @@ async function fetchSubgraphChain(
   return [];
 }
 
-async function fetchOnchainChain(config: OnchainFallbackConfig, tokenFilter: Set<string>): Promise<ReserveRateInput[]> {
+async function fetchOnchainChain(
+  config: OnchainFallbackConfig,
+  tokenFilter: Set<string>,
+  marketNameOverride?: string
+): Promise<ReserveRateInput[]> {
+  const effectiveMarketName = marketNameOverride ?? config.marketName;
   const rpcCandidates = ethProviderService.getProvidersForChain(config.chainId, config.defaultRpcUrls);
   let lastError: unknown = null;
 
@@ -359,6 +460,7 @@ async function fetchOnchainChain(config: OnchainFallbackConfig, tokenFilter: Set
         if (!hasRequiredRateInputFields(reserve)) continue;
         // Keep API payload focused on hypothetical-TVL inputs; liquidityRate/variableBorrowRate are intentionally omitted.
         records.push({
+          marketName: effectiveMarketName,
           chainId: config.chainId,
           tokenAddress,
           decimals: toReserveDecimals(reserve.decimals),
@@ -376,7 +478,7 @@ async function fetchOnchainChain(config: OnchainFallbackConfig, tokenFilter: Set
       }
 
       if (records.length === 0 && tokenFilter.size > 0) {
-        logger.warn(`On-chain fetch succeeded but no reserve matched filter on chain ${config.chainId}`);
+        logger.warn(`On-chain fetch succeeded but no reserve matched filter on chain ${config.chainId} market ${effectiveMarketName}`);
       }
       return records;
     } catch (error) {
@@ -407,7 +509,7 @@ class RateInputsService {
 
   private async doRefreshSnapshot(): Promise<ServiceSnapshot> {
     const marketRows = await dataService.getData();
-    const targetChains = buildTargetChainMap(marketRows);
+    const targetMarkets = buildTargetMarketMap(marketRows);
     const deployments = await loadSubgraphDeployments();
     const hasGraphApiKey = Boolean(process.env.THE_GRAPH_API_KEY);
     if (!hasGraphApiKey) {
@@ -420,13 +522,15 @@ class RateInputsService {
     const onchainChains = new Set<number>();
     const subgraphMissingChains = new Set<number>();
 
-    const chainIds = Array.from(targetChains.keys()).sort((a, b) => a - b);
+    const targets = Array.from(targetMarkets.values()).sort(
+      (a, b) => (a.chainId - b.chainId) || a.marketName.localeCompare(b.marketName)
+    );
 
     await Promise.all(
-      chainIds.map(async (chainId) => {
-        const tokenFilter = targetChains.get(chainId) ?? new Set<string>();
-        const deployment = deployments.get(chainId);
-        const fallbackConfig = resolveOnchainFallbackConfig(chainId);
+      targets.map(async (target) => {
+        const { chainId, marketName, marketSlug, tokenFilter } = target;
+        const deployment = resolveSubgraphDeployment(deployments, chainId, marketSlug);
+        const fallbackConfig = resolveOnchainFallbackConfig(marketName, chainId);
         let subgraphRecords: ReserveRateInput[] = [];
         let subgraphFailed = false;
 
@@ -436,11 +540,11 @@ class RateInputsService {
             subgraphFailed = true;
           } else {
             try {
-              subgraphRecords = await fetchSubgraphChain(chainId, deployment, tokenFilter);
+              subgraphRecords = await fetchSubgraphChain(marketName, chainId, deployment, tokenFilter);
               if (subgraphRecords.length > 0) {
                 subgraphChains.add(chainId);
                 for (const item of subgraphRecords) {
-                  const key = `${item.chainId}:${item.tokenAddress}`;
+                  const key = `${normalizeMarketName(item.marketName)}:${item.chainId}:${item.tokenAddress}`;
                   if (seen.has(key)) continue;
                   seen.add(key);
                   records.push(item);
@@ -448,7 +552,7 @@ class RateInputsService {
               }
             } catch (error) {
               subgraphFailed = true;
-              logger.warn(`Subgraph fetch failed for chain ${chainId}: ${error instanceof Error ? error.message : String(error)}`);
+              logger.warn(`Subgraph fetch failed for chain ${chainId} market ${marketName}: ${error instanceof Error ? error.message : String(error)}`);
             }
           }
 
@@ -468,24 +572,28 @@ class RateInputsService {
 
           if (tokenFilter.size > 0 && missingTokenFilter.size > 0) {
             logger.warn(
-              `Subgraph returned partial rate-inputs for chain ${chainId}; missing ${missingTokenFilter.size} token(s), applying on-chain fallback.`
+              `Subgraph returned partial rate-inputs for chain ${chainId} market ${marketName}; missing ${missingTokenFilter.size} token(s), applying on-chain fallback.`
             );
           }
 
           try {
             const onchainFilter = tokenFilter.size > 0 ? missingTokenFilter : tokenFilter;
-            const onchainRecords = await fetchOnchainChain(fallbackConfig, onchainFilter);
+            const onchainRecords = await fetchOnchainChain(fallbackConfig, onchainFilter, marketName);
             if (onchainRecords.length > 0) {
               onchainChains.add(chainId);
               for (const item of onchainRecords) {
-                const key = `${item.chainId}:${item.tokenAddress}`;
+                const key = `${normalizeMarketName(item.marketName)}:${item.chainId}:${item.tokenAddress}`;
                 if (seen.has(key)) continue;
                 seen.add(key);
                 records.push(item);
               }
             }
           } catch (error) {
-            logger.warn(`On-chain fallback failed for chain ${chainId} (${fallbackConfig.chainName}): ${error instanceof Error ? error.message : String(error)}`);
+            logger.warn(
+              `On-chain fallback failed for chain ${chainId} market ${marketName} (${fallbackConfig.chainName}): ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            );
           }
           return;
         }
@@ -497,25 +605,34 @@ class RateInputsService {
         if (!fallbackConfig) return;
 
         try {
-          const onchainRecords = await fetchOnchainChain(fallbackConfig, tokenFilter);
+          const onchainRecords = await fetchOnchainChain(fallbackConfig, tokenFilter, marketName);
           if (onchainRecords.length > 0) {
             onchainChains.add(chainId);
             for (const item of onchainRecords) {
-              const key = `${item.chainId}:${item.tokenAddress}`;
+              const key = `${normalizeMarketName(item.marketName)}:${item.chainId}:${item.tokenAddress}`;
               if (seen.has(key)) continue;
               seen.add(key);
               records.push(item);
             }
           }
         } catch (error) {
-          logger.warn(`On-chain fallback failed for chain ${chainId} (${fallbackConfig.chainName}): ${error instanceof Error ? error.message : String(error)}`);
+          logger.warn(
+            `On-chain fallback failed for chain ${chainId} market ${marketName} (${fallbackConfig.chainName}): ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
         }
       })
     );
 
     const snapshot: ServiceSnapshot = {
       fetchedAt: Date.now(),
-      data: records.sort((a, b) => (a.chainId - b.chainId) || a.tokenAddress.localeCompare(b.tokenAddress)),
+      data: records.sort(
+        (a, b) =>
+          (a.chainId - b.chainId) ||
+          a.marketName.localeCompare(b.marketName) ||
+          a.tokenAddress.localeCompare(b.tokenAddress)
+      ),
       sources: {
         subgraphChains: Array.from(subgraphChains).sort((a, b) => a - b),
         onchainChains: Array.from(onchainChains).sort((a, b) => a - b),
@@ -557,6 +674,10 @@ class RateInputsService {
     if (filters.asset) {
       const asset = normalizeAddress(filters.asset);
       filtered = filtered.filter((item) => item.tokenAddress === asset);
+    }
+    if (filters.marketName) {
+      const marketName = normalizeMarketName(filters.marketName);
+      filtered = filtered.filter((item) => normalizeMarketName(item.marketName) === marketName);
     }
 
     const response: RateInputsResponse = {

@@ -49,10 +49,14 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm --prefix backend ci
 
       - name: Audit runtime dependencies (High/Critical)
-        run: npm audit --omit=dev --audit-level=high
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm --prefix backend audit --omit=dev --audit-level=high
 
   auto-remediate-on-failure:
     needs:

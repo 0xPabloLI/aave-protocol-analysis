@@ -123,6 +123,7 @@ export interface UpdateStatus {
 export type RateInputSource = 'subgraph' | 'onchain';
 
 export interface ReserveRateInput {
+  marketName: string;
   chainId: number;
   tokenAddress: string;
   decimals: number;

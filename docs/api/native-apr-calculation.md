@@ -152,7 +152,8 @@ Hardcode/reference policy: `docs/backend/HARDCODE-AND-EXTERNAL-IMPORTS.md`.
 - `GET /api/rate-inputs` returns normalized reserve rate input data.
 - Default behavior: one response includes all available chains.
 - Keep `?chainId=` for targeted chain fetch.
-- Keep `?chainId=&asset=` for targeted reserve fetch (fine-grained option, optional in first cut).
+- Keep `?chainId=&asset=` for targeted reserve fetch.
+- Add `?marketName=` to disambiguate same-chain same-asset multi-market cases (for example `AaveV3Ethereum` vs `AaveV3EthereumLido` on wstETH).
 
 ### Naming (two-word max, aligned with existing variables)
 
@@ -236,26 +237,30 @@ Implements:
 ### 2.2 Type updates: `src/types/aave.ts`
 
 ```ts
-export interface ReserveRateInputs {
+export interface ReserveRateInput {
+  marketName: string;
+  chainId: number;
+  tokenAddress: string;
   availableLiquidity: string;
   totalScaledVariableDebt: string;
   variableBorrowIndex: string;
   reserveFactor: string;
-  optimalUsageRatio: string;
+  optimalUsageRate: string;
   variableRateSlope1: string;
   variableRateSlope2: string;
   baseVariableBorrowRate: string;
-  liquidityRate: string;
-  variableBorrowRate: string;
   decimals: number;
+  source: 'subgraph' | 'onchain';
+  sourceDetail: string;
 }
 ```
 
 ### 2.3 Hook: `src/hooks/useReserveRateInputs.ts`
 
-- `useReserveRateInputs()` fetches `GET /api/rate-inputs`.
-- Independent from `useAaveMarkets()` with separate React Query key.
-- Returns `Map<string, ReserveRateInputs>` keyed by `chainId-tokenAddress`.
+- `useReserveRateInput()` now reads from one shared snapshot query (`GET /api/rate-inputs`) and selects by:
+  - `chainId + tokenAddress + marketName`
+- The home page prefetches this snapshot after markets load, so first tooltip open avoids cold fetch latency.
+- This fixes cross-market mismatch on duplicated assets (same chain + same token in multiple Aave markets).
 
 ---
 
@@ -269,16 +274,16 @@ export interface ReserveRateInputs {
 ### UX impact
 
 - Keep market table instantly available from `/api/markets`.
-- Lazy-load simulator data only when user opens simulator interaction.
-- To avoid "first open delay", prefetch can be triggered on row hover/focus or on viewport-near rows.
+- Warm rate-input snapshot in background right after markets load.
+- Tooltip uses prefetched snapshot first, then follows normal stale-time refetch policy.
 - Show skeleton/placeholder for simulator panel while loading.
 
 ### Performance impact
 
 - Additional query cost exists, but isolated from core page data.
 - Calculation is lightweight (`BigInt` arithmetic on small input set).
-- Chain-scoped query option (`?chainId=`) should be default for simulator fetches.
-- Reserve-scoped query (`?chainId=&asset=`) is optional; only add if chain-level payload proves too large.
+- One shared snapshot query avoids duplicate requests from multiple tooltip opens.
+- Optional filters remain available for debug/integration (`?chainId=`, `?asset=`, `?marketName=`).
 
 ### Payload measurement (external fetch)
 
@@ -307,9 +312,9 @@ Interpretation:
 
 Recommended interaction model:
 
-1. Keep simulator off by default.
-2. User expands one row (or opens simulator card) => trigger rate-input fetch.
-3. Cache result in React Query; reuse across rows in same chain.
+1. Keep simulator UI hidden until user opens tooltip/panel.
+2. Home page loads `/markets` first, then background-prefetches `/rate-inputs`.
+3. Tooltip reads `chainId + tokenAddress + marketName` from the shared snapshot.
 4. Recompute output on each input change locally (no extra backend call while typing amount).
 5. If data unavailable, show fallback message and keep default APY display intact.
 
@@ -387,9 +392,9 @@ Guideline:
 | `aave-protocol-analysis` | `backend/src/services/rateInputsService.ts` | NEW data service |
 | `aave-protocol-analysis` | `backend/src/server.ts` | Register new route |
 | `aave-protocol-analysis` | `backend/src/services/updateScheduler.ts` | Add reserve-rate-input refresh timer |
-| `aave-protocol-analysis` | `.env`, `.env.example` | Add `THEGRAPH_API_KEY` |
+| `aave-protocol-analysis` | `.env`, `.env.example` | Add `THE_GRAPH_API_KEY` |
 | `aaveapy` (worktree) | `src/lib/interestRateCalculator.ts` | NEW simulation + APY conversion |
-| `aaveapy` (worktree) | `src/types/aave.ts` | Add `ReserveRateInputs` |
+| `aaveapy` (worktree) | `src/types/aave.ts` | Add `ReserveRateInput` (with `marketName`) |
 | `aaveapy` (worktree) | `src/hooks/useReserveRateInputs.ts` | NEW fetch hook |
 | `aaveapy` (worktree) | `src/components/dashboard/PoolsTable.tsx` | Option A expandable simulator |
 | `aaveapy` (worktree) | `src/components/dashboard/SupplySimulator.tsx` | NEW option B card |
