@@ -120,7 +120,8 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 | Family | 值 | 作用范围 | 说明 |
 |---|---:|---|---|
 | `realtimeFamily` | 60s | `marketsDataStaleThreshold`、`rate-inputs`、`merklLiteFileMaxAge`、`merklForecastResultDefault`、`merklForecastOpportunityMetaDefault`、`merklOpportunitiesDefault` | 同一快照新鲜度族，统一 60 秒避免跨接口不同步。 |
-| `coingeckoFastFamily` | 10m | `coingeckoFdv` | 排序/估值可感知，但非执行关键，平衡新鲜度和配额。 |
+| `coingeckoFastFamily` | 10m | 其他 CoinGecko 快族 | 平衡新鲜度和配额。 |
+| `coingeckoFdv` | 5m | FDV 缓存 | 与 FDV 预热 cron（每 5 分钟）一致，cron 与请求路径共用同一 TTL，过期才刷新。 |
 | `coingeckoSlowFamily` | 6h | `coingeckoCategories`、`coingeckoFdvMonitor` | 低频元数据/监控，长 TTL 降低外部 API 压力。 |
 | `merklMetrics*` | 5m~6h | `merklMetricsDefault/Min/Max/Empty` | 按指标节奏做有界动态 TTL。 |
 
@@ -182,7 +183,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 ```typescript
 // backend/src/cacheTtl.ts
 BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold;
-BACKEND_CACHE_TTL_MS.coingeckoFastFamily;
+BACKEND_CACHE_TTL_MS.coingeckoFdv;
 BACKEND_CACHE_TTL_MS.coingeckoSlowFamily;
 BACKEND_TIMEOUT_MS.update;
 BACKEND_SCHEDULE_CRON.eachMinuteAtSecondZero;

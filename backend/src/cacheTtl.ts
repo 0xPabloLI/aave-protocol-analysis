@@ -20,7 +20,7 @@ export const BACKEND_FETCH_TIMING_MS = {
 // Node-cron 6-field format (includes seconds): at second 0, every minute.
 export const BACKEND_SCHEDULE_CRON = {
   eachMinuteAtSecondZero: '0 * * * * *',
-  eachTenMinutesAtSecondFive: '5 */10 * * * *',
+  eachFiveMinutesAtSecondFive: '5 */5 * * * *',
 } as const;
 
 export const BACKEND_CACHE_TTL_MS = {
@@ -37,7 +37,8 @@ export const BACKEND_CACHE_TTL_MS = {
   coingeckoSlowFamily: BACKEND_TIME_MS.sixHours,
   coingeckoFastFamily: BACKEND_TIME_MS.tenMinutes,
   coingeckoCategories: BACKEND_TIME_MS.sixHours,
-  coingeckoFdv: BACKEND_TIME_MS.tenMinutes,
+  /** FDV cache TTL; matches FDV warm cron interval (5 min) so cron and request path share same freshness rule. */
+  coingeckoFdv: BACKEND_TIME_MS.fiveMinutes,
   coingeckoFdvMonitor: BACKEND_TIME_MS.sixHours,
 
   // Merkl metrics family.

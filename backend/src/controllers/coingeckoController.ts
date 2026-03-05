@@ -6,9 +6,9 @@ import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 const CG_ENDPOINT = 'https://api.coingecko.com/api/v3/coins/markets';
 const CMC_QUOTES_ENDPOINT = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest';
 const COINGECKO_SLOW_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoSlowFamily;
-const COINGECKO_FAST_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoFastFamily;
 const CACHE_TTL_MS = COINGECKO_SLOW_TTL_MS;
-const FDV_CACHE_TTL_MS = COINGECKO_FAST_TTL_MS;
+/** Matches FDV warm cron interval (5 min); cron and request both respect this TTL. */
+const FDV_CACHE_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoFdv;
 const FDV_MONITOR_TTL_MS = COINGECKO_SLOW_TTL_MS;
 const FDV_DIFF_ALERT_THRESHOLD_PCT = 5;
 const FDV_COINS = [
@@ -436,13 +436,15 @@ function hasReusableFdvCache(): boolean {
   return !hasNullFdv;
 }
 
-async function getOrRefreshFdvData(source: 'request' | 'cron'): Promise<{ items: FdvItem[]; fetchedAt: string }> {
+async function getOrRefreshFdvData(
+  source: 'request' | 'cron'
+): Promise<{ items: FdvItem[]; fetchedAt: string }> {
   if (hasReusableFdvCache() && cachedFdvResponse) {
     logger.debug(`✅ FDV cache hit (${source})`);
     return cachedFdvResponse.data;
   }
 
-  if (cachedFdvResponse && !hasReusableFdvCache()) {
+  if (cachedFdvResponse) {
     logger.warn('⚠️ FDV cache is stale or has null values, refreshing');
   }
 
