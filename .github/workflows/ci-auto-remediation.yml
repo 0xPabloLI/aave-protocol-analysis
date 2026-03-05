@@ -6,7 +6,6 @@ on:
     types: [completed]
     branches:
       - main
-      - dev
       - railway
       - feature/**
   workflow_dispatch:
