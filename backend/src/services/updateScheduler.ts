@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { fetchAaveMarketsData } from '../../../dist/index.js';
 import { dataService } from './dataService.js';
 import { setUpdateStatus, getUpdateStatus } from '../controllers/marketsController.js';
+import { warmCoingeckoFdvCache } from '../controllers/coingeckoController.js';
 import { UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
@@ -20,6 +21,7 @@ const MAX_UPDATE_TIME_MS = UPDATE_TIMEOUT_MS * 2;
  */
 export function startUpdateScheduler(): void {
   logger.info('📅 Starting update scheduler (every 1 minute) as backup mechanism');
+  logger.info('📅 Starting FDV warm scheduler (every 10 minutes)');
 
   // 每 1 分钟执行一次
   // node-cron 3.0.3 支持 6 位 cron 表达式（包含秒字段）
@@ -160,6 +162,17 @@ export function startUpdateScheduler(): void {
       });
       scheduledUpdateStartTime = null;
       logger.info(`📝 Scheduled update id=${thisUpdateId} failed, status set to error`);
+    }
+  });
+
+  // Warm FDV cache every 10 minutes so frontend reads hot snapshots.
+  cron.schedule(BACKEND_SCHEDULE_CRON.eachTenMinutesAtSecondFive, async () => {
+    try {
+      await warmCoingeckoFdvCache();
+    } catch (error) {
+      logger.warn(
+        `FDV warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   });
 }

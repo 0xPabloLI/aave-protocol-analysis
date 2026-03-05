@@ -20,6 +20,7 @@ export const BACKEND_FETCH_TIMING_MS = {
 // Node-cron 6-field format (includes seconds): at second 0, every minute.
 export const BACKEND_SCHEDULE_CRON = {
   eachMinuteAtSecondZero: '0 * * * * *',
+  eachTenMinutesAtSecondFive: '5 */10 * * * *',
 } as const;
 
 export const BACKEND_CACHE_TTL_MS = {
