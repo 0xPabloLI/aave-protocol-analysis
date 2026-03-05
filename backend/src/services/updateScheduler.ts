@@ -21,7 +21,7 @@ const MAX_UPDATE_TIME_MS = UPDATE_TIMEOUT_MS * 2;
  */
 export function startUpdateScheduler(): void {
   logger.info('📅 Starting update scheduler (every 1 minute) as backup mechanism');
-  logger.info('📅 Starting FDV warm scheduler (every 10 minutes)');
+  logger.info('📅 Starting FDV warm scheduler (every 5 minutes)');
 
   // 每 1 分钟执行一次
   // node-cron 3.0.3 支持 6 位 cron 表达式（包含秒字段）
@@ -165,8 +165,8 @@ export function startUpdateScheduler(): void {
     }
   });
 
-  // Warm FDV cache every 10 minutes so frontend reads hot snapshots.
-  cron.schedule(BACKEND_SCHEDULE_CRON.eachTenMinutesAtSecondFive, async () => {
+  // Warm FDV cache every 5 minutes so frontend reads hot snapshots.
+  cron.schedule(BACKEND_SCHEDULE_CRON.eachFiveMinutesAtSecondFive, async () => {
     try {
       await warmCoingeckoFdvCache();
     } catch (error) {
