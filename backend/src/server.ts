@@ -45,8 +45,7 @@ app.use('/api/coingecko-fdv', coingeckoFdvRouter);
 app.use('/api/campaigns', campaignsRouter);
 app.use('/api/rate-inputs', rateInputsRouter);
 
-// Health check endpoint
-app.get('/health', (req, res) => {
+const healthHandler = (req: express.Request, res: express.Response) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
@@ -60,7 +59,13 @@ app.get('/health', (req, res) => {
       allowedDevOrigins: process.env.ALLOWED_DEV_ORIGINS || 'not set'
     }
   });
-});
+};
+
+// Health check endpoints:
+// - /health for load balancer probes
+// - /api/health for API namespace consistency
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
 
 // 启动时加载数据到缓存
 dataService.loadData()
