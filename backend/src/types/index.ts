@@ -23,6 +23,7 @@ export interface MarketWithSpread {
     startBlock?: string;
     endBlock?: string;
     requiredBorrowTokens?: string[];
+    lastRoundRewardUsd?: number;
   }>;
   meritBorrows?: Array<{
     apr: number;
@@ -33,6 +34,7 @@ export interface MarketWithSpread {
     startBlock?: string;
     endBlock?: string;
     requiredSupplyTokens?: string[];
+    lastRoundRewardUsd?: number;
   }>;
   merklSupplys?: Array<{
     link: string;
@@ -43,6 +45,8 @@ export interface MarketWithSpread {
       campaignStartedAt: string;
       campaignEndedAt: string;
       campaignId: string;
+      whitelistOnly?: boolean;
+      distributionType?: string;
       pointsPerThousandUsd?: number;
       dailyPoints?: number;
     }>;
@@ -56,6 +60,8 @@ export interface MarketWithSpread {
       campaignStartedAt: string;
       campaignEndedAt: string;
       campaignId: string;
+      whitelistOnly?: boolean;
+      distributionType?: string;
       pointsPerThousandUsd?: number;
       dailyPoints?: number;
     }>;
@@ -69,6 +75,8 @@ export interface MarketWithSpread {
       campaignStartedAt: string;
       campaignEndedAt: string;
       campaignId: string;
+      whitelistOnly?: boolean;
+      distributionType?: string;
       pointsPerThousandUsd?: number;
       dailyPoints?: number;
     }>;
@@ -90,9 +98,6 @@ export interface MarketWithSpread {
 }
 
 export interface TokenPriceEntry {
-  chainId: number;
-  address: string;
-  symbol: string;
   price: number;
   updatedAt: number;
   source: string;
@@ -113,4 +118,35 @@ export interface UpdateStatus {
   lastUpdated: string | null;
   lastSuccessfulUpdate: string | null;
   error?: string;
+}
+
+export type RateInputSource = 'subgraph' | 'onchain';
+
+export interface ReserveRateInput {
+  marketName: string;
+  chainId: number;
+  tokenAddress: string;
+  decimals: number;
+  availableLiquidity: string;
+  totalScaledVariableDebt: string;
+  variableBorrowIndex: string;
+  reserveFactor: string;
+  variableRateSlope1: string;
+  variableRateSlope2: string;
+  baseVariableBorrowRate: string;
+  optimalUsageRate: string;
+  source: RateInputSource;
+  sourceDetail: string;
+}
+
+export interface RateInputsResponse {
+  data: ReserveRateInput[];
+  lastUpdated: string;
+  isStale: boolean;
+  staleTimeMs: number;
+  sources: {
+    subgraphChains: number[];
+    onchainChains: number[];
+    subgraphMissingChains: number[];
+  };
 }

@@ -36,8 +36,7 @@
 ### 数据服务层 (`dataService.ts`)
 
 ```typescript
-// 数据新鲜度阈值：1分钟
-const STALE_THRESHOLD_MS = 1 * 60 * 1000;
+import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 
 // 检查数据是否过期
 isStale(): boolean {
@@ -46,7 +45,7 @@ isStale(): boolean {
   
   const now = new Date();
   const age = now.getTime() - lastUpdated.getTime();
-  return age > STALE_THRESHOLD_MS;
+  return age > BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold;
 }
 ```
 
@@ -88,9 +87,8 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 所有数据读取端点都会自动调用此函数：
 
 - `GET /api/markets` - 获取市场数据
-- `GET /api/markets/stats` - 获取统计信息
-- `GET /api/markets/chains` - 获取链列表
 - `GET /api/markets/list` - 获取市场列表
+- `GET /api/campaigns/forecast-states` - 批量获取 Merkl forecast states
 
 ### 路由层 (`routes/markets.ts`)
 
@@ -110,6 +108,30 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 - 每1分钟检查一次数据新鲜度
 - 如果数据已经是新鲜的（被 API 请求更新过），跳过更新
 - 只在没有 API 请求时作为兜底保障
+
+## 统一时间配置（TTL / timeout / schedule / rate-limit）
+
+统一入口：
+- `backend/src/cacheTtl.ts`
+- `backend/src/config.ts`（CoinGecko 重试/退避默认值读取共享常量）
+
+### TTL 分桶（同源优先）
+
+| Family | 值 | 作用范围 | 说明 |
+|---|---:|---|---|
+| `realtimeFamily` | 60s | `marketsDataStaleThreshold`、`rate-inputs`、`merklLiteFileMaxAge`、`merklForecastResultDefault`、`merklForecastOpportunityMetaDefault`、`merklOpportunitiesDefault` | 同一快照新鲜度族，统一 60 秒避免跨接口不同步。 |
+| `coingeckoFastFamily` | 10m | `coingeckoFdv` | 排序/估值可感知，但非执行关键，平衡新鲜度和配额。 |
+| `coingeckoSlowFamily` | 6h | `coingeckoCategories`、`coingeckoFdvMonitor` | 低频元数据/监控，长 TTL 降低外部 API 压力。 |
+| `merklMetrics*` | 5m~6h | `merklMetricsDefault/Min/Max/Empty` | 按指标节奏做有界动态 TTL。 |
+
+### 非 TTL 但已收敛的时间配置
+
+- `BACKEND_TIMEOUT_MS.update`（3 分钟）
+- `BACKEND_SCHEDULE_CRON.eachMinuteAtSecondZero`（`0 * * * * *`）
+- `coingeckoFetchConfig.maxDelayMs` 默认（60 秒）
+- `coingeckoFetchConfig.rateLimitMinWaitSeconds` 默认（60 秒）
+
+说明：上述为超时/调度/限流，不属于快照 freshness TTL，但已和 TTL 一样走统一时间常量管理。
 
 ## 工作流程
 
@@ -155,14 +177,22 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 
 ## 配置参数
 
-可以通过修改以下常量来调整行为：
+可通过以下集中配置调整行为：
 
 ```typescript
-// backend/src/services/dataService.ts
-const STALE_THRESHOLD_MS = 1 * 60 * 1000; // 数据新鲜度阈值
+// backend/src/cacheTtl.ts
+BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold;
+BACKEND_CACHE_TTL_MS.coingeckoFastFamily;
+BACKEND_CACHE_TTL_MS.coingeckoSlowFamily;
+BACKEND_TIMEOUT_MS.update;
+BACKEND_SCHEDULE_CRON.eachMinuteAtSecondZero;
+BACKEND_FETCH_TIMING_MS.coingeckoBaseDelay;
+BACKEND_FETCH_TIMING_MS.coingeckoMinRequestInterval;
 
-// backend/src/controllers/marketsController.ts
-await new Promise(resolve => setTimeout(resolve, 1000)); // 等待时间
+// backend/src/config.ts
+coingeckoFetchConfig.maxDelayMs;
+coingeckoFetchConfig.rateLimitMinWaitSeconds;
+coingeckoFetchConfig.minRequestIntervalMs;
 ```
 
 ## 向后兼容性
@@ -170,4 +200,3 @@ await new Promise(resolve => setTimeout(resolve, 1000)); // 等待时间
 - 保留了 `updateStatus` 状态管理
 - 保留了定时任务作为后备机制
 - 数据格式完全兼容
-

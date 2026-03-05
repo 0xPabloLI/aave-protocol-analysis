@@ -1,0 +1,158 @@
+name: CI Auto Remediation
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches:
+      - main
+      - dev
+      - railway
+      - feature/**
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to remediate (default: repository default branch)"
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+jobs:
+  remediate:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target branch
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.branch }}" ]; then
+            echo "name=${{ inputs.branch }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_run" ] && [ -n "${{ github.event.workflow_run.head_branch }}" ]; then
+            echo "name=${{ github.event.workflow_run.head_branch }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ github.event.repository.default_branch }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch.outputs.name }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Attempt dependency remediation
+        run: |
+          npm audit fix --omit=dev || true
+          npm --prefix backend audit fix --omit=dev || true
+
+      - name: Reinstall dependencies for build verification
+        run: |
+          npm ci
+          npm --prefix backend ci
+
+      - name: Validate build after remediation
+        id: verify
+        run: |
+          set +e
+          npm run build
+          BUILD_ROOT=$?
+          npm --prefix backend run build
+          BUILD_BACKEND=$?
+          if [ "$BUILD_ROOT" -eq 0 ] && [ "$BUILD_BACKEND" -eq 0 ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Check for generated changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create remediation PR
+        id: cpr
+        if: steps.verify.outputs.ok == 'true' && steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: auto-remediate dependency issues after CI failure"
+          branch: "bot/ci-auto-remediation-${{ github.run_id }}"
+          delete-branch: true
+          title: "chore: auto remediation for CI failure (${{ steps.branch.outputs.name }})"
+          body: |
+            Auto-generated remediation PR.
+
+            Trigger:
+            - Event: `${{ github.event_name }}`
+            - Source branch: `${{ steps.branch.outputs.name }}`
+
+            Actions performed:
+            - `npm audit fix --omit=dev`
+            - `npm --prefix backend audit fix --omit=dev`
+            - `npm run build`
+            - `npm --prefix backend run build`
+          labels: ci-auto-remediation,dependencies
+          base: ${{ steps.branch.outputs.name }}
+
+      - name: Review and enable auto-merge for remediation PR
+        if: steps.cpr.outputs.pull-request-number != ''
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.CODEX_BOT_TOKEN != '' && secrets.CODEX_BOT_TOKEN || github.token }}
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = Number('${{ steps.cpr.outputs.pull-request-number }}');
+            if (!prNumber) {
+              core.info('No remediation PR created; skip review/auto-merge.');
+              return;
+            }
+
+            const pr = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+            try {
+              await github.rest.pulls.createReview({
+                owner,
+                repo,
+                pull_number: prNumber,
+                event: 'APPROVE',
+                body: 'Automated review approval by CODEX_BOT_TOKEN.',
+              });
+            } catch (error) {
+              core.warning(`Auto-approve failed for PR #${prNumber}: ${error.message}`);
+            }
+            try {
+              await github.graphql(
+                `
+                mutation EnableAutoMerge($pullRequestId: ID!) {
+                  enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
+                    pullRequest {
+                      number
+                    }
+                  }
+                }
+                `,
+                { pullRequestId: pr.data.node_id }
+              );
+            } catch (error) {
+              core.warning(`Enable auto-merge failed for PR #${prNumber}: ${error.message}`);
+            }

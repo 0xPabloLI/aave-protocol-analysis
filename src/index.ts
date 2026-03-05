@@ -1,7 +1,7 @@
 import './env.js';
 import { writeFile, mkdir } from 'fs/promises';
-import { chainId, AaveClient } from "@aave/client";
-import { markets } from "@aave/client/actions";
+import { chainId, AaveClient, ChainsFilter } from "@aave/client";
+import { markets, chains } from "@aave/client/actions";
 import * as addressBook from "@bgd-labs/aave-address-book";
 
 // 创建 Aave 客户端实例
@@ -9,6 +9,7 @@ const client = AaveClient.create();
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+import { writeJsonAtomic } from './file-utils.js';
 import { brevisApi } from './brevis-api.js';
 import {
   MerklCampaignBreakdown,
@@ -69,6 +70,9 @@ interface FormattedReserveData {
 }
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
+const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
+const EXPORT_DATA_DIR = join(DATA_DIR, 'exports');
 
 // 从 baseDataset 构建链-代币索引：chainNameLower -> Set<tokenSymbolLower>
 function buildChainTokenIndex(baseDataset: FormattedReserveData[]): Record<string, Set<string>> {
@@ -90,7 +94,7 @@ function buildChainTokenIndex(baseDataset: FormattedReserveData[]): Record<strin
   return index;
 }
 
-function getAllAaveV3Networks(): NetworkInfo[] {
+function getAllAaveV3NetworksFromAddressBook(): NetworkInfo[] {
   // 获取所有 AaveV3 网络（排除测试网）
   const aaveV3Networks = Object.keys(addressBook).filter(key => 
     key.startsWith('AaveV3') && 
@@ -110,6 +114,62 @@ function getAllAaveV3Networks(): NetworkInfo[] {
   return networkInfo;
 }
 
+function extractChainsResult(result: unknown): Array<{ chainId: number; name?: string }> {
+  if (result && typeof result === 'object' && 'isErr' in result && typeof (result as any).isErr === 'function') {
+    if ((result as any).isErr()) {
+      const errorInfo = (result as any).error;
+      throw new Error(errorInfo?.message || 'Failed to fetch chains from Aave API');
+    }
+    return ((result as any).value || []) as Array<{ chainId: number; name?: string }>;
+  }
+
+  if (Array.isArray(result)) {
+    return result as Array<{ chainId: number; name?: string }>;
+  }
+
+  if (result && typeof result === 'object' && 'value' in (result as any) && Array.isArray((result as any).value)) {
+    return (result as any).value as Array<{ chainId: number; name?: string }>;
+  }
+
+  throw new Error('Unexpected chains response format from Aave API');
+}
+
+async function getAllAaveV3Networks(): Promise<NetworkInfo[]> {
+  const fallback = getAllAaveV3NetworksFromAddressBook();
+  const addressBookPoolByChainId = new Map<number, string>();
+  fallback.forEach((entry) => {
+    addressBookPoolByChainId.set(entry.chainId, entry.poolAddress);
+  });
+
+  try {
+    const result = await chains(client, ChainsFilter.MAINNET_ONLY);
+    const apiChains = extractChainsResult(result);
+
+    const networkInfo: NetworkInfo[] = apiChains
+      .map((chain) => {
+        const id = Number(chain.chainId);
+        if (!Number.isFinite(id) || id <= 0) return null;
+        const chainName = typeof chain.name === 'string' && chain.name.trim() ? chain.name.trim() : `Chain${id}`;
+        return {
+          name: `AaveV3${chainName.replace(/\s+/g, '')}`,
+          chainId: id,
+          poolAddress: addressBookPoolByChainId.get(id) || '',
+        } as NetworkInfo;
+      })
+      .filter((entry): entry is NetworkInfo => entry !== null);
+
+    if (networkInfo.length === 0) {
+      throw new Error('Aave API returned empty mainnet chain list');
+    }
+
+    logger.info(`✅ Loaded ${networkInfo.length} chains from Aave API (MAINNET_ONLY)`);
+    return networkInfo;
+  } catch (error) {
+    logger.warn(`⚠️ Failed to fetch chains from Aave API, falling back to address-book: ${error instanceof Error ? error.message : String(error)}`);
+    return fallback;
+  }
+}
+
 
 // Brevis APR 提取：基于 Aave 市场链/代币列表匹配 campaign 数据
 async function fetchBrevisAprs(
@@ -123,26 +183,23 @@ async function fetchBrevisAprs(
     const brevisIndex: BrevisDataIndex = brevisResult.index;
     
     // 输出原始 Brevis 数据（包括原始 API 响应），方便查看和调试
-    await mkdir(DATA_DIR, { recursive: true });
+    await mkdir(DEBUG_DATA_DIR, { recursive: true });
     const totalSupply = Object.values(brevisIndex).reduce((sum, item) => sum + item.brevisSupplys.length, 0);
     const totalBorrow = Object.values(brevisIndex).reduce((sum, item) => sum + item.brevisBorrows.length, 0);
     
-    await writeFile(
-      join(DATA_DIR, 'brevis-raw-data.json'),
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        totalSupplyCampaigns: totalSupply,
-        totalBorrowCampaigns: totalBorrow,
-        indexedBy: 'chainId-tokenAddress',
-        // 原始 API 响应数据（用于调试和问题排查）
-        rawProtocolsList: brevisResult.rawProtocolsList,
-        rawProtocolDetails: brevisResult.rawProtocolDetails,
-        // 处理后的索引数据
-        index: brevisIndex
-      }, null, 2),
-      'utf-8'
-    );
-    logger.info(`💾 Brevis raw data saved to ${join(DATA_DIR, 'brevis-raw-data.json')}`);
+    const brevisRawPath = join(DEBUG_DATA_DIR, 'brevis-raw-data.json');
+    await writeJsonAtomic(brevisRawPath, {
+      timestamp: new Date().toISOString(),
+      totalSupplyCampaigns: totalSupply,
+      totalBorrowCampaigns: totalBorrow,
+      indexedBy: 'chainId-tokenAddress',
+      // 原始 API 响应数据（用于调试和问题排查）
+      rawProtocolsList: brevisResult.rawProtocolsList,
+      rawProtocolDetails: brevisResult.rawProtocolDetails,
+      // 处理后的索引数据
+      index: brevisIndex
+    });
+    logger.info(`💾 Brevis raw data saved to ${brevisRawPath}`);
     
     logger.info(`✅ Indexed Brevis campaign data for ${Object.keys(brevisIndex).length} chain-token combinations`);
     logger.info(`   Supply campaigns: ${totalSupply}, Borrow campaigns: ${totalBorrow}`);
@@ -539,7 +596,7 @@ async function fetchAaveMarketData(): Promise<MarketData> {
   logger.info('🔄 Fetching Aave markets data from all networks...');
   
   // 获取所有 AaveV3 网络信息
-  const networkInfo = getAllAaveV3Networks();
+  const networkInfo = await getAllAaveV3Networks();
   const chainIds = [...new Set(networkInfo.map(info => info.chainId))]; // 去重
   
   logger.info(`🌐 Found ${networkInfo.length} AaveV3 networks across ${chainIds.length} unique chains`);
@@ -660,11 +717,11 @@ async function fetchAaveMarketData(): Promise<MarketData> {
   }
 
   // 确保 data 文件夹存在
-  await mkdir(DATA_DIR, { recursive: true });
+  await mkdir(DEBUG_DATA_DIR, { recursive: true });
   
   // 保存原始数据到JSON文件
-  const outputPath = join(DATA_DIR, 'aave-all-markets-data.json');
-  await writeFile(outputPath, JSON.stringify(marketData, null, 2), 'utf-8');
+  const outputPath = join(DEBUG_DATA_DIR, 'aave-all-markets-data.json');
+  await writeJsonAtomic(outputPath, marketData);
   
   return marketData;
 }
@@ -811,7 +868,7 @@ async function fetchAaveMarkets(): Promise<void> {
     
     // 保存格式化的JSON数据（包含时间戳元数据）
     // 使用从 fetchAaveMarketData 返回的时间戳，而不是重新生成
-    const formattedJsonPath = join(DATA_DIR, 'aave-formatted-data.json');
+    const formattedJsonPath = join(RUNTIME_DATA_DIR, 'aave-formatted-data.json');
     const dataWithMetadata = {
       _metadata: {
         timestamp: marketData.timestamp, // 使用从 fetchAaveMarketData 返回的时间戳
@@ -822,25 +879,28 @@ async function fetchAaveMarkets(): Promise<void> {
       data: enrichedData,
     };
     // 使用自定义 replacer 函数，确保 undefined 字段被完全省略，null 也会被转换为 undefined 并省略
-    await writeFile(formattedJsonPath, JSON.stringify(dataWithMetadata, (key, value) => {
+    await writeJsonAtomic(formattedJsonPath, dataWithMetadata, { replacer: (key: string, value: unknown) => {
       // 将 null 转换为 undefined，这样会被省略（JSON.stringify 默认会省略 undefined）
       // 注意：JSON.stringify 默认行为：
       // - undefined: 被省略（不序列化）
       // - null: 序列化为 "null"（会出现在 JSON 中）
       // 所以我们把 null 也转换为 undefined 来省略它
       return value === null ? undefined : (value === undefined ? undefined : value);
-    }, 2), 'utf-8');
+    }});
     
     // 生成CSV格式
     const csvData = generateCSV(enrichedData);
-    const csvPath = join(DATA_DIR, 'aave-formatted-data.csv');
+    await mkdir(EXPORT_DATA_DIR, { recursive: true });
+    const csvPath = join(EXPORT_DATA_DIR, 'aave-formatted-data.csv');
     await writeFile(csvPath, csvData, 'utf-8');
     
-    const outputPath = join(DATA_DIR, 'aave-all-markets-data.json');
+    const outputPath = join(DEBUG_DATA_DIR, 'aave-all-markets-data.json');
     logger.info(`💾 Original data saved to ${outputPath}`);
     logger.info(`📊 Formatted JSON saved to ${formattedJsonPath}`);
     logger.info(`📈 CSV data saved to ${csvPath}`);
-    logger.info(`📁 File location: ${DATA_DIR}`);
+    logger.info(`📁 Runtime data dir: ${RUNTIME_DATA_DIR}`);
+    logger.info(`📁 Debug data dir: ${DEBUG_DATA_DIR}`);
+    logger.info(`📁 Export data dir: ${EXPORT_DATA_DIR}`);
     logger.info(`📈 Total markets: ${marketData.markets.length}`);
     logger.info(`🪙 Total reserves: ${enrichedData.length}`);
     logger.info(`🌐 Networks discovered: ${marketData.totalNetworks}`);
@@ -852,7 +912,7 @@ async function fetchAaveMarkets(): Promise<void> {
   } catch (error) {
     logger.error('💥 Unexpected error:', error);
     
-    const networkInfo = getAllAaveV3Networks();
+    const networkInfo = await getAllAaveV3Networks();
     const chainIds = [...new Set(networkInfo.map(info => info.chainId))];
     
     // 即使出错也保存错误信息到文件
@@ -867,9 +927,9 @@ async function fetchAaveMarkets(): Promise<void> {
     
     try {
       // 确保 data 文件夹存在
-      await mkdir(DATA_DIR, { recursive: true });
-      const errorPath = join(DATA_DIR, 'aave-all-markets-error.json');
-      await writeFile(errorPath, JSON.stringify(errorData, null, 2), 'utf-8');
+      await mkdir(DEBUG_DATA_DIR, { recursive: true });
+      const errorPath = join(DEBUG_DATA_DIR, 'aave-all-markets-error.json');
+      await writeJsonAtomic(errorPath, errorData);
       logger.info(`💾 Error data saved to ${errorPath}`);
     } catch (writeError) {
       logger.error('❌ Failed to save error data:', writeError);
@@ -877,7 +937,8 @@ async function fetchAaveMarkets(): Promise<void> {
   }
 }
 
-// 导出主函数,以便其他模块可以调用
+// 导出主函数,以便其他模块可以调用（backend 通过 dist 引用）
+// ts-prune-ignore-next
 export async function fetchAaveMarketsData(): Promise<void> {
   return fetchAaveMarkets();
 }

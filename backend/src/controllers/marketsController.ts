@@ -241,73 +241,31 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 
     const lastUpdated = dataService.getLastUpdated();
     const isStale = dataService.isStale();
+    const rawTokenPrices = dataService.getTokenPrices();
+    const tokenPrices = rawTokenPrices
+      ? Object.fromEntries(
+          Object.entries(rawTokenPrices).map(([key, entry]) => [
+            key,
+            {
+              price: entry.price,
+              updatedAt: entry.updatedAt,
+              source: entry.source,
+            },
+          ])
+        )
+      : undefined;
 
     const response: MarketsResponse = {
       data: filteredData,
       lastUpdated: lastUpdated?.toISOString() || new Date().toISOString(),
       isStale,
       updateInProgress: getUpdateStatus().status === 'updating',
-      tokenPrices: dataService.getTokenPrices() || undefined,
+      tokenPrices,
     };
 
     res.json(response);
   } catch (error) {
     logger.error('Error getting markets:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-/**
- * GET /api/markets/stats
- * 获取统计信息
- * 自动检查数据新鲜度，如果超过1分钟则触发更新
- */
-export async function getStats(req: Request, res: Response): Promise<void> {
-  try {
-    // 检查数据新鲜度并自动更新
-    await checkAndUpdateDataIfStale();
-
-    const data = await dataService.getData();
-
-    // 统计链数
-    const chains = new Set(data.map(item => item.chainName));
-
-    // 统计代币数
-    const tokens = new Set(data.map(item => item.tokenSymbol));
-
-    res.json({
-      totalPools: data.length,
-      totalChains: chains.size,
-      totalTokens: tokens.size,
-      chains: Array.from(chains).sort(),
-    });
-  } catch (error) {
-    logger.error('Error getting stats:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-/**
- * GET /api/chains
- * 获取所有链列表
- * 自动检查数据新鲜度，如果超过1分钟则触发更新
- */
-export async function getChains(req: Request, res: Response): Promise<void> {
-  try {
-    // 检查数据新鲜度并自动更新
-    await checkAndUpdateDataIfStale();
-
-    const data = await dataService.getData();
-    const chains = new Set(data.map(item => item.chainName));
-    res.json(Array.from(chains).sort());
-  } catch (error) {
-    logger.error('Error getting chains:', error);
     res.status(500).json({
       error: 'Internal server error',
       message: error instanceof Error ? error.message : String(error),

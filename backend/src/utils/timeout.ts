@@ -1,8 +1,10 @@
+import { BACKEND_TIMEOUT_MS } from '../cacheTtl.js';
+
 /**
  * 更新超时时间：3 分钟（180000ms）
  * 如果更新超过这个时间，会被取消并重置状态，避免因 Cloudflare 重试等导致的长时间阻塞
  */
-export const UPDATE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
+export const UPDATE_TIMEOUT_MS = BACKEND_TIMEOUT_MS.update;
 
 /**
  * 为异步操作添加超时保护

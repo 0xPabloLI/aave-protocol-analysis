@@ -4,6 +4,7 @@ import { dataService } from './dataService.js';
 import { setUpdateStatus, getUpdateStatus } from '../controllers/marketsController.js';
 import { UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
 import { logger } from '../logger.js';
+import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
 // 跟踪定时任务启动的更新时间，用于检测卡住的更新
 let scheduledUpdateStartTime: number | null = null;
@@ -22,8 +23,8 @@ export function startUpdateScheduler(): void {
 
   // 每 1 分钟执行一次
   // node-cron 3.0.3 支持 6 位 cron 表达式（包含秒字段）
-  // 使用 '0 * * * * *' 表示每分钟的第0秒执行（等价于 5 位表达式的 '*/1 * * * *'）
-  cron.schedule('0 * * * * *', async () => {
+  // 使用 6 位 cron 表达式，表示每分钟的第 0 秒执行（等价于 5 位表达式的 '*/1 * * * *'）
+  cron.schedule(BACKEND_SCHEDULE_CRON.eachMinuteAtSecondZero, async () => {
     const currentStatus = getUpdateStatus();
 
     // 检查是否有卡住的更新（运行时间超过最大允许时间）

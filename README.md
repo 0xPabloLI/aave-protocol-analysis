@@ -50,11 +50,9 @@ aave/
 │   │   └── middleware/   # Express middleware
 │   └── package.json      # Backend dependencies
 ├── data/                 # Output data folder (git ignored)
-│   ├── aave-all-markets-data.json      # Raw market data
-│   ├── aave-formatted-data.json        # Formatted JSON data
-│   ├── aave-formatted-data.csv         # CSV format data
-│   ├── brevis-raw-data.json            # Brevis raw data (includes raw API responses)
-│   └── merkl-raw-data.json             # Merkl raw data
+│   ├── runtime/          # Runtime-consumed snapshots
+│   ├── debug/            # Debug/troubleshoot snapshots
+│   └── exports/          # CSV and export files
 ├── logs/                 # Log files folder (git ignored)
 │   ├── combined.log      # All logs
 │   └── error.log         # Error logs only
@@ -93,7 +91,7 @@ npm run build
 npm start
 \`\`\`
 
-After successful execution, data files will be saved in the `data/` directory.
+After successful execution, data files will be saved under `data/runtime`, `data/debug`, and `data/exports`.
 
 ### Run the Backend API Server
 
@@ -124,23 +122,28 @@ The backend API server runs on `http://localhost:3001` by default. Available end
 - `GET /health` - Health check endpoint
 - `GET /api/markets` - Get all market data (no query parameters, all sorting and filtering handled client-side)
   - Response includes: `data`, `lastUpdated`, `isStale`, `updateInProgress`
-- `GET /api/markets/stats` - Get statistics (total pools, chains, tokens)
-- `GET /api/markets/chains` - Get list of supported chains
 - `GET /api/markets/list` - Get list of markets
+- `GET /api/campaigns/forecast-states` - Get batch Merkl campaign forecast states (all by default, or by `ids=...`)
 
 **Data Freshness Mechanism**: All endpoints automatically check data freshness (1-minute window). If data is stale, the system automatically triggers an update and waits for completion before returning results. This ensures users always receive up-to-date information without manual refresh.
 
-For detailed information about the data freshness mechanism, see [backend/DATA-FRESHNESS-MECHANISM.md](backend/DATA-FRESHNESS-MECHANISM.md).
+For detailed information about the data freshness mechanism, see [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
+
+### Merkl opportunities ingest note
+
+Merkl opportunities are paginated upstream (default 20, max 100 per page). The service fetches paginated `LIVE` opportunities for `mainProtocolId=aave,tydro` when building campaign forecast mappings, to avoid missing campaigns beyond page 1.
 
 ## Output Files
 
-After successful execution, the following files will be generated in the `data/` folder:
+After successful execution, files are generated under `data/` subfolders:
 
-- `aave-all-markets-data.json` - Complete market data for all supported networks
-- `aave-formatted-data.json` - Formatted JSON data with all incentive information
-- `aave-formatted-data.csv` - CSV format data for easy viewing in Excel
-- `brevis-raw-activities.json` - Brevis Network Linea Surge raw activity data
-- `merkl-raw-data.json` - Merkl incentive campaign raw data
+- `data/runtime/aave-formatted-data.json` - Formatted JSON data with all incentive information (backend `/api/markets` source)
+- `data/runtime/merkl-opportunity-meta-lite.json` - Forecast runtime-lite snapshot (campaign meta)
+- `data/runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
+- `data/debug/aave-all-markets-data.json` - Complete raw market data for all supported networks
+- `data/debug/brevis-raw-data.json` - Brevis Network raw activity/API debug snapshot
+- `data/debug/merkl-raw-data.json` - Merkl incentive debug snapshot
+- `data/exports/aave-formatted-data.csv` - CSV export for spreadsheet use
 
 ## Data Fields
 
@@ -303,12 +306,14 @@ All log files are saved in the `logs/` directory:
 
 ### Data File Descriptions
 
-Generated data files are located in the `data/` directory:
-- `aave-all-markets-data.json` - Raw market data (includes all network information)
-- `aave-formatted-data.json` - Formatted complete data (includes all incentive information)
-- `aave-formatted-data.csv` - CSV format data (for easy Excel analysis)
-- `brevis-raw-activities.json` - Brevis raw activity data
-- `merkl-raw-data.json` - Merkl raw incentive data
+Generated data files are located under `data/`:
+- `runtime/aave-formatted-data.json` - Formatted complete data (includes all incentive information)
+- `runtime/merkl-opportunity-meta-lite.json` - Forecast campaign meta (runtime-lite)
+- `runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
+- `debug/aave-all-markets-data.json` - Raw market data (includes all network information)
+- `debug/brevis-raw-data.json` - Brevis raw activity data
+- `debug/merkl-raw-data.json` - Merkl raw incentive data
+- `exports/aave-formatted-data.csv` - CSV format data (for easy Excel analysis)
 
 ## Contributing
 

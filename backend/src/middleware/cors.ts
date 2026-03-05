@@ -61,7 +61,8 @@ function isOriginAllowed(origin: string, allowedOrigins: string[]): boolean {
   });
 }
 
-const corsOptions = process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL
+const isRestrictedEnv = ['production', 'staging'].includes(process.env.NODE_ENV || '');
+const corsOptions = isRestrictedEnv && process.env.FRONTEND_URL
   ? {
       origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
         // 允许没有 origin 的请求（如移动应用、Postman 等）
