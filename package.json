@@ -30,7 +30,7 @@
     "@aave/client": "^0.6.1",
     "@internal/aave-shared-config": "file:packages/aave-shared-config",
     "@bgd-labs/aave-address-book": "^4.44.22",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@types/puppeteer": "^5.4.7",
     "cheerio": "^1.1.2",
     "node-fetch": "^3.3.2",
