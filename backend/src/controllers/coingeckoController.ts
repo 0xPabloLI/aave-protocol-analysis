@@ -429,53 +429,65 @@ export const getCoingeckoCategories = async (req: Request, res: Response) => {
   }
 };
 
+function hasReusableFdvCache(): boolean {
+  if (!cachedFdvResponse) return false;
+  if (Date.now() - cachedFdvResponse.fetchedAt >= FDV_CACHE_TTL_MS) return false;
+  const hasNullFdv = cachedFdvResponse.data.items.some((item) => item.fdvUsd === null);
+  return !hasNullFdv;
+}
+
+async function getOrRefreshFdvData(source: 'request' | 'cron'): Promise<{ items: FdvItem[]; fetchedAt: string }> {
+  if (hasReusableFdvCache() && cachedFdvResponse) {
+    logger.debug(`✅ FDV cache hit (${source})`);
+    return cachedFdvResponse.data;
+  }
+
+  if (cachedFdvResponse && !hasReusableFdvCache()) {
+    logger.warn('⚠️ FDV cache is stale or has null values, refreshing');
+  }
+
+  if (inFlightFdvFetch !== null) {
+    const data = await inFlightFdvFetch;
+    return cachedFdvResponse?.data || data;
+  }
+
+  const fetchPromise: Promise<{ items: FdvItem[]; fetchedAt: string }> = (async () => {
+    let items: FdvItem[];
+    try {
+      items = await fetchCoinMarketCapFdvItems();
+      logger.info(`✅ FDV refreshed via CoinMarketCap (${FDV_COINS.length} coins)`);
+      monitorFdvParity(items);
+    } catch (cmcError) {
+      logger.warn(`⚠️ CoinMarketCap FDV fetch failed, falling back to CoinGecko: ${String(cmcError)}`);
+      items = await fetchCoingeckoFdvItems('coingecko_fallback');
+      logger.info(`✅ FDV refreshed via CoinGecko fallback (${FDV_COINS.length} coins)`);
+    }
+
+    const result = { items, fetchedAt: new Date().toISOString() };
+    cachedFdvResponse = { data: result, fetchedAt: Date.now() };
+    logger.info(`✅ FDV cache updated at ${result.fetchedAt}`);
+    return result;
+  })();
+
+  inFlightFdvFetch = fetchPromise;
+  fetchPromise.finally(() => {
+    if (inFlightFdvFetch === fetchPromise) {
+      inFlightFdvFetch = null;
+    }
+  });
+
+  const data = await fetchPromise;
+  return cachedFdvResponse?.data || data;
+}
+
+export async function warmCoingeckoFdvCache(): Promise<void> {
+  await getOrRefreshFdvData('cron');
+}
+
 export const getCoingeckoFdv = async (req: Request, res: Response) => {
   try {
-    if (cachedFdvResponse && Date.now() - cachedFdvResponse.fetchedAt < FDV_CACHE_TTL_MS) {
-      const hasNullFdv = cachedFdvResponse.data.items.some((item) => item.fdvUsd === null);
-      if (!hasNullFdv) {
-        logger.debug('✅ FDV cache hit');
-        return res.status(200).json(cachedFdvResponse.data);
-      }
-      logger.warn('⚠️ FDV cache has null values, forcing refresh');
-    }
-
-    const createFetchPromise = (): Promise<{ items: FdvItem[]; fetchedAt: string }> => {
-      return (async () => {
-        let items: FdvItem[];
-        try {
-          items = await fetchCoinMarketCapFdvItems();
-          logger.info(`✅ FDV refreshed via CoinMarketCap (${FDV_COINS.length} coins)`);
-          monitorFdvParity(items);
-        } catch (cmcError) {
-          logger.warn(`⚠️ CoinMarketCap FDV fetch failed, falling back to CoinGecko: ${String(cmcError)}`);
-          items = await fetchCoingeckoFdvItems('coingecko_fallback');
-          logger.info(`✅ FDV refreshed via CoinGecko fallback (${FDV_COINS.length} coins)`);
-        }
-
-        const result = { items, fetchedAt: new Date().toISOString() };
-        cachedFdvResponse = { data: result, fetchedAt: Date.now() };
-        logger.info(`✅ FDV cache updated at ${result.fetchedAt}`);
-        return result;
-      })();
-    };
-
-    if (inFlightFdvFetch === null) {
-      const fetchPromise = createFetchPromise();
-      inFlightFdvFetch = fetchPromise;
-      fetchPromise.finally(() => {
-        if (inFlightFdvFetch === fetchPromise) {
-          inFlightFdvFetch = null;
-        }
-      });
-
-      const data = await fetchPromise;
-      return res.status(200).json(data);
-    }
-
-    const currentFetch = inFlightFdvFetch;
-    const data = await currentFetch;
-    return res.status(200).json(cachedFdvResponse?.data || data);
+    const data = await getOrRefreshFdvData('request');
+    return res.status(200).json(data);
   } catch (error) {
     logger.error('FDV proxy error:', error);
     return res.status(500).json({ error: 'Internal server error', details: String(error) });
