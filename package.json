@@ -48,7 +48,7 @@
     "@types/cheerio": "^0.22.35",
     "@types/node": "^20.19.27",
     "ts-prune": "^0.10.3",
-    "tsx": "^4.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.0.0"
   }
 }
