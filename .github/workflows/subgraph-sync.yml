@@ -35,7 +35,7 @@ jobs:
         run: npm run subgraphs:sync
 
       - name: Create PR when snapshot changed
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore(subgraph): sync deployment snapshot"
           title: "chore(subgraph): sync deployment snapshot"
