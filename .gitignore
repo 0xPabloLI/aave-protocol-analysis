@@ -90,9 +90,12 @@ jspm_packages/
 .dynamodb/
 node_modules
 
-scripts/
+scripts/*
+!scripts/sync-aave-subgraph-deployments.mjs
+!scripts/check-subgraph-rate-inputs-health.mjs
 
 data/
+docs/api/subgraph-rate-inputs-health.snapshot.json
 
 # Cloudflare Workers
 workers/.wrangler/

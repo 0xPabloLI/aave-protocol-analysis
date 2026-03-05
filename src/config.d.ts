@@ -10,12 +10,5 @@ export declare const merklFetchConfig: {
     baseDelayMs: number;
     maxDelayMs: number;
 };
-export declare const coingeckoFetchConfig: {
-    maxRetries: number;
-    baseDelayMs: number;
-    maxDelayMs: number;
-    rateLimitMinWaitSeconds: number;
-    minRequestIntervalMs: number;
-};
 export declare const meritKeyAliases: Record<string, string>;
 //# sourceMappingURL=config.d.ts.map

@@ -1,3 +1,5 @@
+import { BACKEND_FETCH_TIMING_MS, BACKEND_TIME_MS, BACKEND_TIME_SECONDS } from './cacheTtl.js';
+
 type NumberEnvOptions = {
   defaultValue: number;
   min?: number;
@@ -27,24 +29,24 @@ export const coingeckoFetchConfig = {
     min: 0,
   }),
   baseDelayMs: readNumberEnv('COINGECKO_FETCH_BASE_DELAY_MS', {
-    defaultValue: 2000, // 2秒，用于指数退避的起始延迟
+    defaultValue: BACKEND_FETCH_TIMING_MS.coingeckoBaseDelay, // 2秒，用于指数退避的起始延迟
     min: 0,
   }),
   maxDelayMs: readNumberEnv('COINGECKO_FETCH_MAX_DELAY_MS', {
-    defaultValue: 60000, // 60秒，指数退避的最大延迟
+    defaultValue: BACKEND_TIME_MS.oneMinute, // 60秒，指数退避的最大延迟
     min: 0,
   }),
   // 429 错误的最小等待时间（秒），如果 Retry-After header 不存在或更小，使用此值
   // 设置为 60 秒，因为 rate limit 是按分钟计算的（Free tier: 30 次/分钟）
   // 等待 60 秒可以确保下一个时间窗口开始时重试
   rateLimitMinWaitSeconds: readNumberEnv('COINGECKO_RATE_LIMIT_MIN_WAIT_SECONDS', {
-    defaultValue: 60, // Free tier: ~30 calls/minute，等待 60 秒确保进入新的时间窗口
+    defaultValue: BACKEND_TIME_SECONDS.oneMinute, // Free tier: ~30 calls/minute，等待 60 秒确保进入新的时间窗口
     min: 0,
   }),
   // 请求之间的最小间隔（毫秒），用于防止超过 rate limit
   // Free tier: 30 次/分钟 = 每 2 秒一次，设置为 2.5 秒留有余量
   minRequestIntervalMs: readNumberEnv('COINGECKO_MIN_REQUEST_INTERVAL_MS', {
-    defaultValue: 2500, // 2.5 秒，确保不超过 30 次/分钟的限制
-    min: 1000, // 最少 1 秒
+    defaultValue: BACKEND_FETCH_TIMING_MS.coingeckoMinRequestInterval, // 2.5 秒，确保不超过 30 次/分钟的限制
+    min: BACKEND_FETCH_TIMING_MS.coingeckoMinRequestIntervalFloor, // 最少 1 秒
   }),
 };

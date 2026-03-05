@@ -83,5 +83,3 @@ export const logger = winston.createLogger({
 if (process.env.NODE_ENV === 'development') {
   logger.level = 'debug';
 }
-
-export default logger;

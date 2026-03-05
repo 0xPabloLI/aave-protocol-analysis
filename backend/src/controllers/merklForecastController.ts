@@ -5,23 +5,21 @@ import type { MarketWithSpread } from '../types/index.js';
 
 const toResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>) => ({
   campaignId: state.campaignId,
+  campaignType: state.campaignType,
+  plannedDaily: state.plannedDaily,
+  requiredDaily: state.requiredDaily,
+  aprCap: state.aprCap,
   totalBudget: state.totalBudget,
-  desiredDaily: state.desiredDaily,
-  remainingBudget: state.remainingBudget,
-  remainingDays: state.remainingDays,
-  maxAPR: state.maxAPR,
-  computedUntil: state.computedUntil,
-  asOf: state.asOf,
   distributedSoFar: state.distributedSoFar,
   latestTvl: state.latestTvl,
-  startTimestamp: state.startTimestamp,
   endTimestamp: state.endTimestamp,
-  expectedByNow: state.expectedByNow,
 });
 
 const inferErrorStatus = (error: unknown): number => {
   const message = error instanceof Error ? error.message : String(error);
-  if (/not MAX_APR capped/i.test(message)) return 422;
+  if (/Metrics unavailable/i.test(message)) return 409;
+  if (/unsupported distribution type/i.test(message)) return 422;
+  if (/Missing APR cap/i.test(message)) return 422;
   if (/Missing .*campaign/i.test(message) || /Missing .*timestamp/i.test(message)) return 422;
   if (/Merkl API 404/i.test(message)) return 404;
   return 500;
@@ -53,28 +51,6 @@ const collectCampaignIdsFromMarkets = (markets: MarketWithSpread[]): string[] =>
   });
 
   return Array.from(ids);
-};
-
-export const getCampaignForecastState = async (req: Request, res: Response): Promise<void> => {
-  const campaignId = req.params.campaignId;
-
-  if (!campaignId) {
-    res.status(400).json({
-      error: 'Bad request',
-      message: 'campaignId is required',
-    });
-    return;
-  }
-
-  try {
-    const state = await getMerklForecastState(campaignId);
-    res.json(toResponseItem(state));
-  } catch (error) {
-    res.status(inferErrorStatus(error)).json({
-      error: 'Unprocessable campaign',
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
 };
 
 export const getCampaignForecastStates = async (req: Request, res: Response): Promise<void> => {

@@ -6,7 +6,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 Two-service TypeScript codebase that fetches and serves Aave V3 market data across 17+ chains, 20+ markets, and 229+ token reserves. Integrates incentive data from Merit, Merkl, and Brevis protocols.
 
-**Architecture**: Data Fetcher (root `src/`) → JSON files (`data/`) → Backend API (`backend/`) → REST clients
+**Architecture**: Data Fetcher (root `src/`) → JSON snapshots (`data/runtime` + `data/debug`) → Backend API (`backend/`) → REST clients
 
 ## Development Commands
 
@@ -45,27 +45,40 @@ pm2 stop aave-backend    # Stop service
 ```
 
 ### Data Workflow
-The backend requires data files before serving requests:
+The backend requires runtime data files before serving requests:
 1. Run data fetcher: `npm run dev` (root directory)
-2. Verify output in `data/aave-formatted-data.json`
+2. Verify output in `data/runtime/aave-formatted-data.json`
 3. Start backend: `cd backend && npm run dev`
+
+### Architecture Notes (Read Before Cache/Data-Flow Changes)
+- `docs/merkl-merit-cache-architecture.md` — current Merkl/Merit cache layers, file roles, fallback chains
+- `docs/development-best-practices.md` — implementation patterns agreed during refactors (TTL/freshness, file layering, naming)
+- If you change cache layers, file paths/layout, data-flow boundaries, or fallback chains, update both docs above in the same PR/commit set.
+- When adding/changing a TTL, first verify the upstream data update cadence (docs or observed timestamps) and document the reasoning if non-obvious.
+
+### Local Git Hook Policy (Mandatory)
+- This repo uses local `pre-commit` and `pre-push` hooks to run `npm run ci:remote`.
+- If `ci:remote` fails, hooks must automatically attempt `npm run ci:auto-fix`, then rerun `ci:remote`.
+- If checks still fail after auto-fix, stop the commit/push and fix the root cause before retrying.
+- Do not bypass hooks as a normal workflow.
+- If local checks fail repeatedly, rely on CI remediation PR flow as a fallback path, then merge validated fixes back to the working branch.
 
 ## Code Architecture
 
 ### Data Flow Pipeline
 
 ```
-External APIs → Data Fetcher (src/index.ts) → JSON Files (data/) → Backend API (backend/) → REST Clients
+External APIs → Data Fetcher (src/index.ts) → JSON Snapshots (data/runtime + data/debug) → Backend API (backend/) → REST Clients
      ↓                                              ↓                         ↓
-[Aave SDK, Merit,                    [aave-formatted-data.json,    [In-memory cache with
+[Aave SDK, Merit,                    [runtime + debug snapshots,   [In-memory cache with
  Merkl, Brevis APIs]                  metadata timestamp]            auto-refresh mechanism]
 ```
 
 **Key Architectural Concepts**:
 
-1. **Separation of Concerns**: Data fetching and API serving are completely decoupled. Backend never calls external APIs—it only reads cached files.
+1. **Separation of Concerns**: Data fetching and API serving are mostly decoupled. `/api/markets` reads runtime files, while Merkl forecast endpoints may call Merkl APIs as a fallback when runtime snapshots are missing/stale.
 
-2. **Automatic Data Freshness**: Backend implements a sophisticated staleness detection system (1-minute threshold) with automatic refresh and concurrency control. See `backend/DATA-FRESHNESS-MECHANISM.md` for flow details.
+2. **Automatic Data Freshness**: Backend implements staleness detection (1-minute threshold) with automatic refresh and concurrency control. See `docs/backend/data-freshness-mechanism.md` for flow details.
 
 3. **Concurrency Safety**: Uses `updateStatus` state machine (`idle` → `updating` → `idle`/`error`) with promise tracking (`activeUpdatePromise`) to prevent duplicate concurrent updates.
 
@@ -143,8 +156,6 @@ Data files include `_metadata.timestamp` (written by fetcher). Backend prioritiz
 ```
 GET /health                    # Health check with environment info
 GET /api/markets               # All market data (no query params)
-GET /api/markets/stats         # Statistics (pool/chain/token counts)
-GET /api/markets/chains        # List of chain names
 GET /api/markets/list          # Market-chain combinations
 GET /api/coingecko-categories  # CoinGecko category data
 GET /api/coingecko-fdv         # CoinGecko FDV data
@@ -165,6 +176,9 @@ NODE_ENV=development               # Environment mode
 FRONTEND_URL=https://example.com   # CORS whitelist (production only, comma-separated)
 ALLOWED_DEV_ORIGINS=...            # Dev CORS whitelist
 DOPPLER_TOKEN=...                  # Doppler secrets (production)
+MERKL_FORECAST_RESULT_CACHE_TTL_MS=60000              # Forecast result cache TTL (default 60s)
+MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS=60000    # Opportunity meta cache TTL (default 60s)
+MERKL_METRICS_CACHE_TTL_MS=1800000                    # Metrics cache default TTL (default 30m, dynamic cadence-based)
 ```
 
 **Priority**: System env vars > `.env` file > defaults
@@ -177,11 +191,16 @@ Both use `"module": "ESNext"` with `"target": "ES2022"`.
 
 ### Data Files (`data/`, gitignored)
 ```
-aave-formatted-data.json     # Primary: market data + metadata (backend reads this)
-aave-formatted-data.csv      # CSV export
-aave-all-markets-data.json   # Raw Aave SDK response
-brevis-raw-data.json         # Brevis raw data with API responses
-merkl-raw-data.json          # Merkl raw data
+runtime/aave-formatted-data.json          # Primary: market data + metadata (backend reads this)
+runtime/merkl-opportunity-meta-lite.json  # Merkl forecast runtime-lite snapshot
+runtime/merit-campaign-metadata-cache.json # Merit campaign metadata cache (time/message/link)
+exports/aave-formatted-data.csv           # CSV export
+debug/aave-all-markets-data.json          # Raw Aave SDK response
+debug/aave-all-markets-error.json         # Error snapshot
+debug/brevis-raw-data.json                # Brevis raw data with API responses
+debug/merkl-raw-data.json                 # Merkl raw data (debug)
+debug/merit-raw-data.json                 # Merit raw data (debug)
+debug/merit-merkl-raw-data.json           # Merit↔Merkl round estimation debug
 ```
 
 ### Logging
@@ -208,8 +227,8 @@ Automatically excluded: `isFrozen === true` or `isPaused === true`
 Uses `@bgd-labs/aave-address-book` to auto-discover AaveV3 networks. Excludes test networks (Sepolia, Fuji).
 
 ### Backend Cache Architecture
-- **Never** calls external APIs directly
-- Only reads from `data/aave-formatted-data.json` generated by root fetcher
+- `/api/markets` reads from `data/runtime/aave-formatted-data.json` generated by root fetcher
+- Merkl forecast endpoints prefer runtime-lite snapshots and can fall back to Merkl online APIs
 - Cache loaded on startup; refreshed automatically when stale
 
 ### Update Timeout Protection

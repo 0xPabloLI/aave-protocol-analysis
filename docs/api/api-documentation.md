@@ -206,52 +206,7 @@ interface MarketsResponse {
 
 ---
 
-### 2. 获取统计信息
-
-**端点**: `GET /api/markets/stats`
-
-**描述**: 获取市场数据的统计信息，包括总池数、链数、代币数等。
-
-**请求参数**: 无
-
-**响应格式**:
-
-```json
-{
-  "totalPools": 231,
-  "totalChains": 15,
-  "totalTokens": 45,
-  "chains": ["Arbitrum", "Avalanche", "Base", ...]
-}
-```
-
-**状态码**:
-- `200`: 成功
-- `500`: 服务器错误
-
----
-
-### 3. 获取所有链列表
-
-**端点**: `GET /api/markets/chains`
-
-**描述**: 获取所有支持的链名称列表（已排序）。
-
-**请求参数**: 无
-
-**响应格式**:
-
-```json
-["Arbitrum", "Avalanche", "Base", "Celo", ...]
-```
-
-**状态码**:
-- `200`: 成功
-- `500`: 服务器错误
-
----
-
-### 4. 获取市场列表
+### 2. 获取市场列表
 
 **端点**: `GET /api/markets/list`
 
@@ -280,7 +235,43 @@ interface MarketsResponse {
 
 ---
 
-### 5. 健康检查
+### 3. 批量获取 Merkl Forecast States
+
+**端点**: `GET /api/campaigns/forecast-states`
+
+**请求参数**:
+- `ids` (可选): 逗号分隔 campaignId 列表；省略时默认返回当前 markets 中全部 campaign 的状态。
+
+**响应格式**:
+
+```json
+{
+  "requested": 23,
+  "items": [],
+  "errors": []
+}
+```
+
+其中：
+- `items` 为成功计算的 campaign 状态数组（字段同单个接口）。
+- `errors` 为失败项数组：`{ campaignId, status, message }`。
+
+**状态码**:
+- `200`: 成功（部分失败也返回 200，失败体现在 `errors`）
+- `400`: `ids` 过多（最多 100）
+- `500`: 服务端错误
+
+---
+
+## Merkl TVL 与分发进度口径
+
+- Forecast 的 `latestTvl` 优先取 Merkl opportunities 的 `tvl`。
+- 如果 opportunities 中没有可用 TVL，则回退到 `/v4/campaigns/{id}/metrics` 的 `tvlRecords`，并取**最新时间戳**对应的 `total`。
+- `distributedSoFar` 使用 metrics 的 `dailyRewardsRecords` 做时间积分估算（按时间段累积 daily rate）。
+
+以上均来自 Merkl API，不从 Aave SDK 直接读取 campaign 级 TVL。
+
+### 4. 健康检查
 
 **端点**: `GET /health`
 
@@ -456,12 +447,6 @@ console.log(data.isStale); // 是否过期
 ```bash
 # 获取所有市场数据
 curl http://localhost:3001/api/markets
-
-# 获取统计信息
-curl http://localhost:3001/api/markets/stats
-
-# 获取链列表
-curl http://localhost:3001/api/markets/chains
 
 # 获取市场列表
 curl http://localhost:3001/api/markets/list

@@ -1,12 +1,23 @@
 import fetch from 'node-fetch';
 import type { RequestInit, Response } from 'node-fetch';
-import { writeFile, mkdir } from 'fs/promises';
+import { mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+import { writeJsonAtomic } from './file-utils.js';
 import { merklFetchConfig } from './config.js';
+import {
+  fetchMerklOpportunitiesSnapshot,
+  resolveCacheTtlMs,
+} from '@internal/aave-shared-config';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
+const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
+const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
+const OPPORTUNITIES_CACHE_TTL_MS = resolveCacheTtlMs(
+  process.env.MERKL_OPPORTUNITIES_CACHE_TTL_MS,
+  1 * 60 * 1000
+);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -69,6 +80,8 @@ export interface MerklCampaignBreakdown {
   campaignStartedAt: string;
   campaignEndedAt: string;
   campaignId: string;
+  whitelistOnly?: boolean;
+  distributionType?: string;
   pointsPerThousandUsd?: number; // Tydro 协议的 points/1000USD 值
   dailyPoints?: number; // Tydro 协议的每日 points
 }
@@ -97,6 +110,7 @@ export interface MerklOpportunity {
   explorerAddress?: string; // 用于索引的地址
   identifier?: string; // 用于构建 Merkl opportunity 链接的标识符
   type?: string; // opportunity 类型，用于构建链接（如 MULTILOG_DUTCH, EULER 等）
+  distributionType?: string;
   status?: string; // "LIVE" or other statuses
   tvl?: number; // TVL 值，用于计算 points/1000USD
   protocol?: {
@@ -113,6 +127,8 @@ export interface MerklOpportunity {
   rewardsRecord: {
     breakdowns: Array<{
       campaignId: string; // 实际使用的字段
+      distributionType?: string;
+      distributionMethod?: string;
       value?: number; // points 值，用于 tydro 协议
       token?: {
         address?: string;
@@ -124,6 +140,16 @@ export interface MerklOpportunity {
       // API 可能返回其他字段，但处理逻辑中未使用
     }>;
   };
+  campaigns?: MerklEmbeddedCampaign[];
+}
+
+interface MerklEmbeddedCampaign {
+  id?: string;
+  campaignId?: string;
+  startTimestamp?: string | number | bigint;
+  endTimestamp?: string | number | bigint;
+  apr?: number;
+  params?: any;
 }
 
 export interface MerklCampaignDetails {
@@ -131,7 +157,39 @@ export interface MerklCampaignDetails {
   endedAt: string;
   id: string;
   apr: number;
+  whitelistOnly: boolean;
 }
+
+const hasEntries = (value: unknown): boolean => {
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0;
+  return Boolean(value);
+};
+
+export function isCampaignWhitelistOnly(campaign: any): boolean {
+  const topLevelWhitelist = hasEntries(campaign?.params?.whitelist);
+  if (topLevelWhitelist) return true;
+
+  const composedCampaigns = campaign?.params?.composedCampaigns;
+  if (!Array.isArray(composedCampaigns)) return false;
+
+  return composedCampaigns.some((entry: any) => hasEntries(entry?.campaignParameters?.whitelist));
+}
+
+const toIsoFromUnixLike = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  const numeric =
+    typeof value === 'bigint'
+      ? Number(value)
+      : typeof value === 'string'
+        ? Number(value)
+        : typeof value === 'number'
+          ? value
+          : NaN;
+  if (!Number.isFinite(numeric) || numeric <= 0) return '';
+  const ms = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+  return new Date(ms).toISOString();
+};
 
 // Merkl 数据结构：每个 opportunity 存储一次
 export interface MerklOpportunityData {
@@ -158,38 +216,157 @@ export interface TokenPriceEntry {
 
 export type TokenPricesIndex = Record<string, TokenPriceEntry>;
 
+type ForecastCampaignTypeLite =
+  | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  | 'DUTCH_AUCTION'
+  | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+
+interface CampaignSnapshotLiteForForecastFile {
+  id: string;
+  amount?: unknown;
+  startTimestamp?: unknown;
+  endTimestamp?: unknown;
+  campaignStatus?: {
+    computedUntil?: unknown;
+  };
+  rewardToken?: {
+    price?: unknown;
+    decimals?: unknown;
+  };
+  params?: {
+    decimalsRewardToken?: unknown;
+    distributionMethodParameters?: {
+      distributionSettings?: {
+        apr?: unknown;
+      };
+    };
+  };
+}
+
+interface ForecastCampaignMetaLite {
+  tvl: number;
+  campaignTypeHint: ForecastCampaignTypeLite;
+  distributionTypeRaw: string | null;
+  campaignSnapshot: CampaignSnapshotLiteForForecastFile | null;
+}
+
+const normalizeForecastCampaignTypeLite = (value: unknown): ForecastCampaignTypeLite | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toUpperCase();
+  if (!normalized) return null;
+  if (normalized.includes('MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
+    return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+  }
+  if (normalized.includes('DUTCH_AUCTION')) {
+    return 'DUTCH_AUCTION';
+  }
+  if (normalized.includes('FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
+    return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+  }
+  return null;
+};
+
+const buildCampaignSnapshotLiteForForecastFile = (campaign: any): CampaignSnapshotLiteForForecastFile | null => {
+  const id = typeof campaign?.id === 'string' ? campaign.id : String(campaign?.id || '').trim();
+  if (!id) return null;
+
+  const snapshot: CampaignSnapshotLiteForForecastFile = { id };
+  if (campaign?.amount !== undefined) snapshot.amount = campaign.amount;
+  if (campaign?.startTimestamp !== undefined) snapshot.startTimestamp = campaign.startTimestamp;
+  if (campaign?.endTimestamp !== undefined) snapshot.endTimestamp = campaign.endTimestamp;
+  if (campaign?.campaignStatus?.computedUntil !== undefined) {
+    snapshot.campaignStatus = { computedUntil: campaign.campaignStatus.computedUntil };
+  }
+  if (campaign?.rewardToken) {
+    const rewardToken: CampaignSnapshotLiteForForecastFile['rewardToken'] = {};
+    if (campaign.rewardToken.price !== undefined) rewardToken.price = campaign.rewardToken.price;
+    if (campaign.rewardToken.decimals !== undefined) rewardToken.decimals = campaign.rewardToken.decimals;
+    if (Object.keys(rewardToken).length > 0) snapshot.rewardToken = rewardToken;
+  }
+  if (campaign?.params) {
+    const params: CampaignSnapshotLiteForForecastFile['params'] = {};
+    if (campaign.params.decimalsRewardToken !== undefined) {
+      params.decimalsRewardToken = campaign.params.decimalsRewardToken;
+    }
+    const apr = campaign.params?.distributionMethodParameters?.distributionSettings?.apr;
+    if (apr !== undefined) {
+      params.distributionMethodParameters = { distributionSettings: { apr } };
+    }
+    if (Object.keys(params).length > 0) snapshot.params = params;
+  }
+  return snapshot;
+};
+
+const buildForecastCampaignMetaLiteMap = (
+  opportunities: MerklOpportunity[]
+): Record<string, ForecastCampaignMetaLite> => {
+  const result: Record<string, ForecastCampaignMetaLite> = {};
+
+  for (const opp of opportunities) {
+    const tvl = Number(opp?.tvl);
+    if (!Number.isFinite(tvl) || tvl < 0) continue;
+
+    const breakdowns = opp?.rewardsRecord?.breakdowns;
+    if (!Array.isArray(breakdowns) || breakdowns.length === 0) continue;
+
+    const campaignSnapshotById = new Map<string, CampaignSnapshotLiteForForecastFile>();
+    if (Array.isArray(opp.campaigns)) {
+      for (const campaign of opp.campaigns) {
+        const snapshot = buildCampaignSnapshotLiteForForecastFile(campaign);
+        if (snapshot) campaignSnapshotById.set(snapshot.id, snapshot);
+      }
+    }
+
+    for (const breakdown of breakdowns) {
+      const campaignId = String(breakdown?.campaignId || '').trim();
+      if (!campaignId) continue;
+
+      const rawType =
+        (typeof breakdown?.distributionType === 'string' && breakdown.distributionType) ||
+        (typeof breakdown?.distributionMethod === 'string' && breakdown.distributionMethod) ||
+        (typeof opp?.distributionType === 'string' && opp.distributionType) ||
+        null;
+
+      const campaignTypeHint = normalizeForecastCampaignTypeLite(rawType);
+      if (!campaignTypeHint) continue;
+
+      const existing = result[campaignId];
+      const campaignSnapshot = campaignSnapshotById.get(campaignId) ?? null;
+
+      if (!existing) {
+        result[campaignId] = {
+          tvl,
+          campaignTypeHint,
+          distributionTypeRaw: rawType,
+          campaignSnapshot,
+        };
+        continue;
+      }
+
+      result[campaignId] = {
+        tvl: existing.tvl > 0 ? existing.tvl : tvl,
+        campaignTypeHint: existing.campaignTypeHint,
+        distributionTypeRaw: existing.distributionTypeRaw ?? rawType,
+        campaignSnapshot: existing.campaignSnapshot ?? campaignSnapshot,
+      };
+    }
+  }
+
+  return result;
+};
+
 /**
  * 获取 Merkl opportunities（使用 mainProtocolId 参数，返回 Aave 和 Tydro 相关的数据）
  */
 export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
   try {
-    logger.info('🔄 Fetching Merkl opportunities for Aave and Tydro...');
-    
-    // 并发获取 aave 和 tydro 的数据（带重试）
-    const [aaveResponse, tydroResponse] = await Promise.all([
-      fetchWithRetry('https://api.merkl.xyz/v4/opportunities?mainProtocolId=aave', 'Merkl opportunities (aave)'),
-      fetchWithRetry('https://api.merkl.xyz/v4/opportunities?mainProtocolId=tydro', 'Merkl opportunities (tydro)').catch((error) => {
-        logger.warn('⚠️ Failed to fetch Tydro opportunities after retries:', error);
-        return null as unknown as Response;
-      })
-    ]);
-    
-    if (!aaveResponse.ok) {
-      throw new Error(`HTTP error! status: ${aaveResponse.status}`);
-    }
-    if (!tydroResponse || !tydroResponse.ok) {
-      const status = tydroResponse?.status ?? 'unknown';
-      logger.warn(`⚠️ Failed to fetch Tydro opportunities: HTTP ${status}`);
-    }
-    
-    const aaveOpportunities = await aaveResponse.json() as MerklOpportunity[];
-    const tydroOpportunities = tydroResponse && tydroResponse.ok 
-      ? (await tydroResponse.json() as MerklOpportunity[])
-      : [];
-    
-    const allOpportunities = [...aaveOpportunities, ...tydroOpportunities];
-    logger.info(`✅ Found ${aaveOpportunities.length} Aave opportunities and ${tydroOpportunities.length} Tydro opportunities (total: ${allOpportunities.length})`);
-    
+    logger.info('🔄 Fetching Merkl opportunities for Aave + Tydro (LIVE, campaigns=true, short-page pagination)...');
+    const allOpportunities = (await fetchMerklOpportunitiesSnapshot({
+      baseUrl: 'https://api.merkl.xyz/v4',
+      ttlMs: OPPORTUNITIES_CACHE_TTL_MS,
+      fetchImpl: fetch as unknown as typeof globalThis.fetch,
+    })) as MerklOpportunity[];
+    logger.info(`✅ Fetched ${allOpportunities.length} live opportunities from Merkl`);
     return allOpportunities;
   } catch (error) {
     logger.error('❌ Error fetching Merkl opportunities:', error);
@@ -227,7 +404,8 @@ export async function fetchMerklCampaignDetails(campaignId: string): Promise<Mer
       startedAt,
       endedAt,
       id: campaignId,
-      apr: campaign.apr || 0
+      apr: campaign.apr || 0,
+      whitelistOnly: isCampaignWhitelistOnly(campaign),
     };
   } catch (error) {
     logger.error(`❌ Error fetching campaign ${campaignId}:`, error);
@@ -360,44 +538,53 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   const opportunities = await fetchMerklOpportunities();
   const merklData: Record<string, MerklOpportunityData[]> = {};
   logger.info('🔍 Processing Merkl opportunities...');
-  
-  // 过滤出 status 为 "LIVE" 的 opportunities
-  const liveOpportunities = opportunities.filter(opp => opp.status === 'LIVE');
+  // fetchMerklOpportunities 已在 API 层过滤 status=LIVE
+  const liveOpportunities = opportunities;
   const tokenPrices = extractTokenPrices(liveOpportunities);
   const tydroCount = liveOpportunities.filter(opp => opp.protocol?.id === 'tydro').length;
   const aaveCount = liveOpportunities.length - tydroCount;
-  logger.info(`Processing ${liveOpportunities.length} live opportunities (${aaveCount} Aave, ${tydroCount} Tydro, filtered from ${opportunities.length} total)`);
+  logger.info(`Processing ${liveOpportunities.length} live opportunities (${aaveCount} Aave, ${tydroCount} Tydro)`);
   
-  if (liveOpportunities.length < opportunities.length) {
-    const filteredCount = opportunities.length - liveOpportunities.length;
-    logger.info(`⚠️ Filtered out ${filteredCount} non-live opportunities`);
-  }
-  
-  // 优化：收集所有唯一的 campaignId，批量并发请求
-  const uniqueCampaignIds = new Set<string>();
+  const campaignDetailsCache = new Map<string, MerklCampaignDetails | null>();
   for (const opp of liveOpportunities) {
-    if (opp.rewardsRecord?.breakdowns) {
-      for (const breakdown of opp.rewardsRecord.breakdowns) {
-        if (breakdown.campaignId) {
-          uniqueCampaignIds.add(breakdown.campaignId);
-        }
+    if (!Array.isArray(opp.campaigns)) continue;
+    opp.campaigns.forEach((campaign) => {
+      const id = String(campaign.id || '').trim();
+      if (!id) return;
+      if (campaignDetailsCache.has(id)) return;
+      campaignDetailsCache.set(id, {
+        startedAt: toIsoFromUnixLike(campaign.startTimestamp),
+        endedAt: toIsoFromUnixLike(campaign.endTimestamp),
+        id,
+        apr: Number(campaign.apr || 0),
+        whitelistOnly: isCampaignWhitelistOnly(campaign),
+      });
+    });
+  }
+
+  // 补拉少量未在 opportunities.campaigns 出现的 campaign（兼容上游数据缺口）
+  const missingCampaignIds = new Set<string>();
+  for (const opp of liveOpportunities) {
+    if (!opp.rewardsRecord?.breakdowns) continue;
+    for (const breakdown of opp.rewardsRecord.breakdowns) {
+      const id = String(breakdown.campaignId || '').trim();
+      if (!id) continue;
+      if (!campaignDetailsCache.has(id)) {
+        missingCampaignIds.add(id);
       }
     }
   }
-  
-  logger.info(`📦 Fetching ${uniqueCampaignIds.size} unique campaign details concurrently...`);
-  
-  // 并发请求所有 campaign details，使用缓存避免重复请求
-  const campaignDetailsCache = new Map<string, MerklCampaignDetails | null>();
-  const campaignPromises = Array.from(uniqueCampaignIds).map(async (campaignId) => {
-    const details = await fetchMerklCampaignDetails(campaignId);
-    campaignDetailsCache.set(campaignId, details);
-    return { campaignId, details };
-  });
-  
-  // 等待所有请求完成（并发执行）
-  await Promise.all(campaignPromises);
-  logger.info(`✅ Fetched ${campaignDetailsCache.size} campaign details`);
+
+  if (missingCampaignIds.size > 0) {
+    logger.info(`📦 Fetching ${missingCampaignIds.size} missing campaign details (fallback)...`);
+    const campaignPromises = Array.from(missingCampaignIds).map(async (campaignId) => {
+      const details = await fetchMerklCampaignDetails(campaignId);
+      campaignDetailsCache.set(campaignId, details);
+      return { campaignId, details };
+    });
+    await Promise.all(campaignPromises);
+  }
+  logger.info(`✅ Campaign details cache ready: ${campaignDetailsCache.size} items`);
   
   // 处理所有 live opportunities（现在可以快速从缓存中获取数据）
   for (const opp of liveOpportunities) {
@@ -447,6 +634,9 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
           campaignStartedAt: campaignDetails?.startedAt || '',
           campaignEndedAt: campaignDetails?.endedAt || '',
           campaignId: rewardsBreakdown.campaignId || opp.id,
+          whitelistOnly: campaignDetails?.whitelistOnly || false,
+          distributionType:
+            rewardsBreakdown.distributionType || rewardsBreakdown.distributionMethod || opp.distributionType,
           pointsPerThousandUsd: pointsPerThousandUsd,
           dailyPoints: dailyPoints
         });
@@ -465,7 +655,10 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
             campaignApr: campaignDetails.apr,
             campaignStartedAt: campaignDetails.startedAt,
             campaignEndedAt: campaignDetails.endedAt,
-            campaignId: rewardBreakdown.campaignId
+            campaignId: rewardBreakdown.campaignId,
+            whitelistOnly: campaignDetails.whitelistOnly,
+            distributionType:
+              rewardBreakdown.distributionType || rewardBreakdown.distributionMethod || opp.distributionType
           });
         }
       }
@@ -512,22 +705,30 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   
   // 从索引中提取所有 opportunities 用于保存
   const processedData = Object.values(merklData).flat();
+  const forecastCampaignMetaLite = buildForecastCampaignMetaLiteMap(liveOpportunities);
   
   logger.info(`✅ Processed ${processedData.length} Merkl opportunities`);
   logger.info(`📊 Created index with ${Object.keys(merklData).length} token keys`);
   
   // 保存 Merkl 原始数据
-  await mkdir(DATA_DIR, { recursive: true });
-  const merklRawDataPath = join(DATA_DIR, 'merkl-raw-data.json');
-  await writeFile(merklRawDataPath, JSON.stringify({
+  await mkdir(DEBUG_DATA_DIR, { recursive: true });
+  const merklRawDataPath = join(DEBUG_DATA_DIR, 'merkl-raw-data.json');
+  await writeJsonAtomic(merklRawDataPath, {
     timestamp: new Date().toISOString(),
     rawOpportunities: opportunities, // 保存所有原始数据（包括非 live 的）
     liveOpportunities: liveOpportunities, // 保存过滤后的 live opportunities
     processedData,
     tokenPrices,
     index: merklData
-  }, null, 2), 'utf-8');
+  });
   logger.info(`💾 Merkl raw data saved to ${merklRawDataPath}`);
+
+  const merklForecastLitePath = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
+  await writeJsonAtomic(merklForecastLitePath, {
+    timestamp: new Date().toISOString(),
+    campaigns: forecastCampaignMetaLite,
+  });
+  logger.info(`💾 Merkl forecast lite data saved to ${merklForecastLitePath}`);
   
   return { index: merklData, tokenPrices };
 }
