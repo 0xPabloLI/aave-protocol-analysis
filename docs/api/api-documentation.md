@@ -117,7 +117,7 @@ interface MerklCampaignBreakdown {
 
 **端点**: `GET /api/markets`
 
-**描述**: 获取所有市场数据，包含完整的激励信息。如果数据超过 1 分钟未更新，会自动触发后台更新。
+**描述**: 获取所有市场数据，包含完整的激励信息。如果数据超过 1 分钟未更新，会自动触发后台更新。前端若需要 market filter 列表，应从 `data` 中按 `{ marketName, chainName }` 去重推导。
 
 **请求参数**: 无
 
@@ -140,6 +140,8 @@ interface MarketsResponse {
 **Token 价格（tokenPrices）**：仅在此接口 **`GET /api/markets`** 的响应根级别返回。key 为 `chainId:tokenAddress`（小写），用于与储备数据中的 `chainId` + `tokenAddress` 对应。数据**仅来自 Merkl**（机会中的 `tokens` 与奖励 breakdown 中的 `token`），因此**不覆盖所有 reserve 的底层代币**，只包含在 Merkl 中出现的代币；无数据时该字段不出现。
 
 **若需覆盖所有 reserve 的主币价格**：当前**现成接口中没有任何一个**返回「所有储备代币」的价格列表。`/api/coingecko-fdv` 仅返回固定少数币种（如 BNB、CRO、OKB 等）的 FDV，不是按 reserve 的 token 列表。若要覆盖全部，需要：(1) 在数据源侧新增价格来源（如 CoinGecko/CMC 按合约地址批量查价，或链上 oracle），并写入 fetcher 输出与 `tokenPrices`；或 (2) 前端/调用方自行对接外部价格 API，用 `data` 中的 `chainId` + `tokenAddress` 作为 key 去查价。
+
+**市场筛选列表**：本接口就是唯一权威快照。若 UI 需要 market 列表，请从 `data` 中去重，不要再引入额外的市场列表接口，否则会产生第二条快照路径并增加前后端缓存失配风险。
 
 **响应示例**:
 
