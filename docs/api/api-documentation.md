@@ -7,11 +7,16 @@
 ## 基础信息
 
 - **服务地址**: `http://localhost:3001` (开发环境)
-- **API 基础路径**: 
-  - `/api/markets` - 市场数据相关接口
-  - `/api/coingecko-categories` - CoinGecko 分类数据接口
+- **API 基础路径**:
+  - `/api/markets` - 市场数据
+  - `/api/coingecko-categories` - CoinGecko 分类数据
+  - `/api/coingecko-fdv` - CoinGecko FDV 数据
+  - `/api/campaigns` - Merkl 活动预测（含 `/forecast-states`）
+  - `/api/rate-inputs` - 利率输入/储备参数
+  - `/health`、`/api/health` - 健康检查
 - **数据格式**: JSON
 - **字符编码**: UTF-8
+- **端点总数**: **7 个**（7 条 URL；若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 6 个逻辑端点）
 
 ## 数据模型
 
@@ -124,8 +129,17 @@ interface MarketsResponse {
   lastUpdated: string;                  // 最后更新时间（ISO 8601）
   isStale: boolean;                     // 数据是否过期（超过 1 分钟）
   updateInProgress: boolean;           // 是否正在更新中
+  tokenPrices?: Record<string, {       // 代币价格索引（仅 GET /api/markets 返回，来自 Merkl）
+    price: number;
+    updatedAt: number;                 // Unix 毫秒时间戳
+    source: string;                    // 如 "opportunity" | "reward"
+  }>;
 }
 ```
+
+**Token 价格（tokenPrices）**：仅在此接口 **`GET /api/markets`** 的响应根级别返回。key 为 `chainId:tokenAddress`（小写），用于与储备数据中的 `chainId` + `tokenAddress` 对应。数据**仅来自 Merkl**（机会中的 `tokens` 与奖励 breakdown 中的 `token`），因此**不覆盖所有 reserve 的底层代币**，只包含在 Merkl 中出现的代币；无数据时该字段不出现。
+
+**若需覆盖所有 reserve 的主币价格**：当前**现成接口中没有任何一个**返回「所有储备代币」的价格列表。`/api/coingecko-fdv` 仅返回固定少数币种（如 BNB、CRO、OKB 等）的 FDV，不是按 reserve 的 token 列表。若要覆盖全部，需要：(1) 在数据源侧新增价格来源（如 CoinGecko/CMC 按合约地址批量查价，或链上 oracle），并写入 fetcher 输出与 `tokenPrices`；或 (2) 前端/调用方自行对接外部价格 API，用 `data` 中的 `chainId` + `tokenAddress` 作为 key 去查价。
 
 **响应示例**:
 
@@ -191,7 +205,14 @@ interface MarketsResponse {
   ],
   "lastUpdated": "2026-01-13T11:00:06.895Z",
   "isStale": false,
-  "updateInProgress": false
+  "updateInProgress": false,
+  "tokenPrices": {
+    "42161:0xda10009cbd5d07dd0cecc66161fc93d7c9000da1": {
+      "price": 1.001,
+      "updatedAt": 1736762400000,
+      "source": "opportunity"
+    }
+  }
 }
 ```
 
@@ -206,36 +227,7 @@ interface MarketsResponse {
 
 ---
 
-### 2. 获取市场列表
-
-**端点**: `GET /api/markets/list`
-
-**描述**: 获取所有市场列表（用于前端过滤器），返回去重后的市场-链组合。
-
-**请求参数**: 无
-
-**响应格式**:
-
-```json
-[
-  {
-    "marketName": "AaveV3Arbitrum",
-    "chainName": "Arbitrum"
-  },
-  {
-    "marketName": "AaveV3Avalanche",
-    "chainName": "Avalanche"
-  }
-]
-```
-
-**状态码**:
-- `200`: 成功
-- `500`: 服务器错误
-
----
-
-### 3. 批量获取 Merkl Forecast States
+### 2. 批量获取 Merkl Forecast States
 
 **端点**: `GET /api/campaigns/forecast-states`
 
@@ -271,11 +263,11 @@ interface MarketsResponse {
 
 以上均来自 Merkl API，不从 Aave SDK 直接读取 campaign 级 TVL。
 
-### 4. 健康检查
+### 3. 健康检查
 
-**端点**: `GET /health`
+**端点**: `GET /health` 或 `GET /api/health`
 
-**描述**: 检查服务健康状态，返回服务状态和环境配置信息。
+**描述**: 检查服务健康状态，返回服务状态和环境配置信息。两路径使用同一处理逻辑。
 
 **请求参数**: 无
 
@@ -310,7 +302,42 @@ interface MarketsResponse {
 
 ---
 
-### 6. 获取 CoinGecko 分类数据
+### 4. 获取 CoinGecko FDV 数据
+
+**端点**: `GET /api/coingecko-fdv`
+
+**描述**: 获取指定代币的完全稀释估值（FDV）。优先使用 CoinMarketCap API，失败时回退到 CoinGecko。缓存 TTL 与 FDV 预热 cron 一致（默认 5 分钟）。
+
+**请求参数**: 无
+
+**响应格式**:
+
+```json
+{
+  "items": [
+    {
+      "id": "binancecoin",
+      "symbol": "bnb",
+      "name": "BNB",
+      "fdvUsd": 123456789012,
+      "source": "coinmarketcap"
+    }
+  ],
+  "fetchedAt": "2026-03-09T12:00:00.000Z"
+}
+```
+
+- `items`: FDV 条目数组（id、symbol、name、fdvUsd、source）
+- `fetchedAt`: 数据获取时间（ISO 8601）
+- `source`: `"coinmarketcap"` 或 `"coingecko_fallback"`
+
+**状态码**: `200` 成功，`500` 服务端错误
+
+**注意**: 需配置 `COINMARKETCAP_API_KEY` 使用 CoinMarketCap；否则仅使用 CoinGecko 回退。
+
+---
+
+### 5. 获取 CoinGecko 分类数据
 
 **端点**: `GET /api/coingecko-categories`
 
@@ -341,6 +368,51 @@ interface MarketsResponse {
   - 以太坊相关：`liquid-staked-eth`、`ether-fi-ecosystem`、`liquid-staking-tokens` 分类
 - 响应数据缓存 6 小时，减少对 CoinGecko API 的请求
 - 如果设置了 `COINGECKO_API_KEY` 环境变量，会使用 API Key 进行认证
+
+---
+
+### 6. 获取利率输入（储备参数）
+
+**端点**: `GET /api/rate-inputs`
+
+**描述**: 获取储备利率计算所需参数（流动性、债务、利率曲线等），用于客户端或第三方计算 APY。数据来自 Aave 子图或链上，具有独立 TTL（与市场数据同族，默认 60 秒），不触发市场数据刷新。
+
+**请求参数**（均为可选）:
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `chainId` | 正整数 | 按链 ID 过滤 |
+| `asset` | 字符串 | 按底层资产地址（小写）过滤 |
+| `marketName` | 字符串 | 按市场名称过滤 |
+
+**响应格式**:
+
+```json
+{
+  "data": [
+    {
+      "chainId": 1,
+      "marketName": "AaveV3Ethereum",
+      "underlyingAsset": "0x...",
+      "decimals": 18,
+      "availableLiquidity": "...",
+      "totalScaledVariableDebt": "...",
+      "variableBorrowIndex": "...",
+      "reserveFactor": "...",
+      "variableRateSlope1": "...",
+      "variableRateSlope2": "...",
+      "baseVariableBorrowRate": "...",
+      "optimalUtilisationRate": "..."
+    }
+  ],
+  "lastUpdated": "2026-03-09T12:00:00.000Z",
+  "isStale": false,
+  "staleTimeMs": 60000,
+  "sources": { ... }
+}
+```
+
+**状态码**: `200` 成功，`400` 参数无效（如 `chainId` 非正整数），`500` 服务端错误
 
 ---
 
@@ -398,6 +470,13 @@ interface MarketsResponse {
 - **Merit APR**: 来自 `https://apps.aavechan.com/api/merit/aprs`
 - **Merkl APR**: 来自 `https://api.merkl.xyz/v4/opportunities`
 - **Brevis APR**: 来自 Brevis Network Linea Surge API
+- **Token 价格（tokenPrices）**: 仅来自 Merkl（见上文），**本仓库未从 Aave SDK 读取或使用任何 reserve 价格字段**
+
+**Aave SDK（@aave/client）与 token price**：本项目中 `createBaseDatasetFromMarkets` 仅使用 SDK 返回的 `reserve.underlyingToken`（symbol、address、name）、`supplyInfo`、`borrowInfo`、`incentives` 等，**未读取任何与价格相关的字段**。SDK 的 market/supplyReserves 是否包含每 reserve 的 USD 价格需查看官方类型或实际响应；若需确认，可跑一次 fetcher 后查看 `data/debug/aave-all-markets-data.json` 中任意 `market.supplyReserves[].*` 是否含有 price 相关字段。
+
+**data 文件夹中的价格**：
+- **`data/runtime/aave-formatted-data.json`**：根级别有 **`tokenPrices`** 字段（与 `data`、`_metadata` 并列），即当前 API 返回的同一套 Merkl 来源价格；key 为 `chainId:tokenAddress`（小写）。
+- **`data/debug/aave-all-markets-data.json`**：为 Aave SDK 的原始响应（`markets`、`timestamp` 等）；若 SDK 返回了 reserve 级价格，会原样出现在该文件内，本仓库未对其做解析或写入 runtime。
 
 ### 数据更新机制
 
@@ -448,21 +527,26 @@ console.log(data.isStale); // 是否过期
 # 获取所有市场数据
 curl http://localhost:3001/api/markets
 
-# 获取市场列表
-curl http://localhost:3001/api/markets/list
-
 # 健康检查
 curl http://localhost:3001/health
 
 # 获取 CoinGecko 分类数据
 curl http://localhost:3001/api/coingecko-categories
+
+# 获取 CoinGecko FDV 数据
+curl http://localhost:3001/api/coingecko-fdv
+
+# 获取利率输入（可选过滤：chainId, asset, marketName）
+curl "http://localhost:3001/api/rate-inputs?chainId=1"
 ```
 
 ## 版本信息
 
-- **API 版本**: 2.1
-- **文档更新时间**: 2026-01-13
-- **最后更新**: 
+- **API 版本**: 2.2
+- **文档更新时间**: 2026-03-09
+- **最后更新**:
+  - 补充端点：`GET /api/health`、`GET /api/coingecko-fdv`、`GET /api/rate-inputs`
+  - 基础路径说明更新为完整 API 列表
   - 重构 Merit 数据结构：统一为 `meritSupplys` 和 `meritBorrows` 数组，每个条目包含完整的活动信息（apr, selfApr, link, startDate, endDate, startBlock, endBlock）
   - 统一命名：所有激励字段使用复数形式（meritSupplys, meritBorrows, merklSupplys, merklBorrows, merklHolds）
   - 数据类型优化：APY/APR 值统一为 `number` 类型（百分比数值），不再使用字符串

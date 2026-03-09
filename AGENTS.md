@@ -151,20 +151,23 @@ if (isStale && !activeUpdatePromise && status !== 'updating') {
 #### 5. Metadata-Based Timestamps
 Data files include `_metadata.timestamp` (written by fetcher). Backend prioritizes this over file mtime, ensuring accurate staleness detection even if file is copied/touched.
 
-### API Endpoints (All Auto-Check Freshness)
+### API Endpoints
+
+**共 7 个端点**（完整列表与详细说明见 `docs/api/api-documentation.md`）。Token 价格仅由 **`GET /api/markets`** 在响应根级别 `tokenPrices` 字段返回。
 
 ```
-GET /health                    # Health check with environment info
-GET /api/markets               # All market data (no query params)
-GET /api/markets/list          # Market-chain combinations
-GET /api/coingecko-categories  # CoinGecko category data
-GET /api/coingecko-fdv         # CoinGecko FDV data
-GET /api/campaigns             # Merkl forecast campaigns
+GET /health                        # Health check with environment info
+GET /api/health                    # Same handler as /health (API namespace)
+GET /api/markets                   # All market data + tokenPrices (no query params)
+GET /api/coingecko-categories      # CoinGecko category data (stablecoins, ETH-related)
+GET /api/coingecko-fdv             # CoinGecko FDV data (CMC primary, CG fallback)
+GET /api/campaigns/forecast-states # Merkl campaign forecast states (optional ids=...)
+GET /api/rate-inputs               # Reserve rate inputs (optional chainId, asset, marketName)
 ```
 
-**Response Format**: `{ data, lastUpdated, isStale, updateInProgress }`
-
-Every endpoint calls `checkAndUpdateDataIfStale()` before responding. If data is stale, update is triggered automatically (with timeout protection and concurrency control).
+**Markets 数据新鲜度**（仅以下端点会触发 `checkAndUpdateDataIfStale()`）:
+- `GET /api/markets` — 响应含 `{ data, lastUpdated, isStale, updateInProgress }`；若数据超过 1 分钟未更新会自动触发刷新并受并发控制。
+- 其他端点（coingecko、campaigns、rate-inputs）使用各自缓存/TTL，不触发市场数据刷新。
 
 ## Configuration
 
