@@ -82,13 +82,16 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 }
 ```
 
-#### 应用到所有 API 端点
+#### 调用此函数的端点
 
-所有数据读取端点都会自动调用此函数：
+仅以下**市场数据**相关端点会调用 `checkAndUpdateDataIfStale()`，并在数据过期时触发刷新：
 
 - `GET /api/markets` - 获取市场数据
-- `GET /api/markets/list` - 获取市场列表
-- `GET /api/campaigns/forecast-states` - 批量获取 Merkl forecast states
+
+其他端点使用各自的新鲜度策略，不触发市场数据刷新：
+- `GET /api/campaigns/forecast-states` - 使用市场缓存数据与 Merkl 服务，不调用本函数
+- `GET /api/coingecko-categories` / `GET /api/coingecko-fdv` - 自有 TTL 与缓存
+- `GET /api/rate-inputs` - 自有 TTL（与市场数据同族），不触发市场刷新
 
 ### 路由层 (`routes/markets.ts`)
 

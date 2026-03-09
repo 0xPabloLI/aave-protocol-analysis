@@ -117,17 +117,21 @@ The server uses environment variables for configuration (see `backend/env.exampl
 
 ### API Endpoints
 
-The backend API server runs on `http://localhost:3001` by default. Available endpoints:
+The backend API server runs on `http://localhost:3001` by default. **7 endpoints** in total:
 
-- `GET /health` - Health check endpoint
-- `GET /api/markets` - Get all market data (no query parameters, all sorting and filtering handled client-side)
-  - Response includes: `data`, `lastUpdated`, `isStale`, `updateInProgress`
-- `GET /api/markets/list` - Get list of markets
-- `GET /api/campaigns/forecast-states` - Get batch Merkl campaign forecast states (all by default, or by `ids=...`)
+| Method & Path | Description |
+|--------------|-------------|
+| `GET /health` | Health check with environment info |
+| `GET /api/health` | Same as `/health` (API namespace) |
+| `GET /api/markets` | All market data; includes `data`, `lastUpdated`, `isStale`, `updateInProgress`, **`tokenPrices`** (token prices only here) |
+| `GET /api/coingecko-categories` | CoinGecko categories (stablecoins, ETH-related) |
+| `GET /api/coingecko-fdv` | FDV data (CoinMarketCap primary, CoinGecko fallback) |
+| `GET /api/campaigns/forecast-states` | Merkl campaign forecast states (optional `ids=...`) |
+| `GET /api/rate-inputs` | Reserve rate inputs (optional `chainId`, `asset`, `marketName`) |
 
-**Data Freshness Mechanism**: All endpoints automatically check data freshness (1-minute window). If data is stale, the system automatically triggers an update and waits for completion before returning results. This ensures users always receive up-to-date information without manual refresh.
+**Data freshness**: Only `GET /api/markets` triggers automatic market data refresh when stale (1-minute window). Other endpoints use their own cache/TTL. See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
 
-For detailed information about the data freshness mechanism, see [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
+**Full API reference** (request/response formats, status codes): [docs/api/api-documentation.md](docs/api/api-documentation.md).
 
 ### Merkl opportunities ingest note
 
@@ -147,7 +151,7 @@ After successful execution, files are generated under `data/` subfolders:
 
 ## Data Fields
 
-The formatted output data contains the following fields:
+The formatted output data contains the following fields. For the full current schema (including all incentive structures and optional fields), see [docs/api/api-documentation.md](docs/api/api-documentation.md).
 
 ### Basic Fields
 - `marketName` - Market name (e.g., AaveV3Ethereum)

@@ -273,40 +273,6 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
   }
 }
 
-/**
- * GET /api/markets/list
- * 获取所有市场列表（用于前端过滤器）
- * 自动检查数据新鲜度，如果超过1分钟则触发更新
- */
-export async function getMarketsList(req: Request, res: Response): Promise<void> {
-  try {
-    // 检查数据新鲜度并自动更新
-    await checkAndUpdateDataIfStale();
-
-    const data = await dataService.getData();
-    const marketsMap = new Map<string, { marketName: string; chainName: string }>();
-
-    data.forEach(item => {
-      const key = `${item.marketName}-${item.chainName}`;
-      if (!marketsMap.has(key)) {
-        marketsMap.set(key, {
-          marketName: item.marketName,
-          chainName: item.chainName,
-        });
-      }
-    });
-
-    const markets = Array.from(marketsMap.values());
-    res.json(markets);
-  } catch (error) {
-    logger.error('Error getting markets list:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
 // 更新状态管理
 let updateStatus: UpdateStatus = {
   status: 'idle',
