@@ -88,6 +88,8 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 
 - `GET /api/markets` - 获取市场数据
 
+前端若需要市场筛选列表，应从 `GET /api/markets` 的 `data` 中去重推导 `{ marketName, chainName }`，而不是再读取第二个市场列表快照。
+
 其他端点使用各自的新鲜度策略，不触发市场数据刷新：
 - `GET /api/campaigns/forecast-states` - 使用市场缓存数据与 Merkl 服务，不调用本函数
 - `GET /api/coingecko-categories` / `GET /api/coingecko-fdv` - 自有 TTL 与缓存

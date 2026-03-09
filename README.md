@@ -131,6 +131,8 @@ The backend API server runs on `http://localhost:3001` by default. **7 endpoints
 
 **Data freshness**: Only `GET /api/markets` triggers automatic market data refresh when stale (1-minute window). Other endpoints use their own cache/TTL. See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
 
+**Filter market derivation**: Clients should derive unique `{ marketName, chainName }` filter options from `GET /api/markets` response data. The backend no longer exposes a separate market-list endpoint for that UI concern.
+
 **Full API reference** (request/response formats, status codes): [docs/api/api-documentation.md](docs/api/api-documentation.md).
 
 ### Merkl opportunities ingest note
