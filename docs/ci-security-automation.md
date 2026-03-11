@@ -1,6 +1,8 @@
 # CI + Security Automation Flow
 
-This repository now has four related workflows:
+**Local hooks**: This repo uses `pre-commit` and `pre-push` hooks that run `npm run ci:remote`. On failure, hooks attempt `npm run ci:auto-fix` then re-run `ci:remote`. See [AGENTS.md](../AGENTS.md#local-git-hook-policy-mandatory).
+
+**GitHub Actions** — this repository has four related workflows:
 
 1. `CI` (`.github/workflows/ci.yml`)
    - Triggered by `push` and `pull_request`

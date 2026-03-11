@@ -169,10 +169,9 @@ Short alternatives if renaming is needed later:
 
 ### Storage
 
-- File: `data/runtime/rate-inputs.json`
-- Name rationale: this dataset is reserve-level rate formula inputs, not "strategy" metadata.
-
-> Note: data originates from The Graph and is normalized before write.
+- **Current implementation**: in-memory cache only (no persistent rate-inputs file). Data is fetched from subgraph (primary) and on-chain `UiPoolDataProvider` (fallback) on demand, with TTL aligned to `realtimeFamily` (see `backend/src/cacheTtl.ts`).
+- **Optional future path** (if persisting): `data/runtime/rate-inputs.json` — reserve-level rate formula inputs, not "strategy" metadata.
+- Data originates from The Graph (and on-chain fallback) and is normalized before serving.
 
 ---
 

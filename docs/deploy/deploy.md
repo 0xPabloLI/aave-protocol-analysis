@@ -108,27 +108,25 @@ npm start
 
 ## 环境变量
 
-**重要：统一在仓库根目录 `.env` 文件中配置环境变量（只维护这一份）。**
+**重要：统一在仓库根目录 `.env` 文件中配置环境变量（只维护这一份）。** 生产环境可使用 Doppler（`DOPPLER_TOKEN`）或 Railway 等注入变量；优先级：系统环境变量 > `.env` > 默认值。
 
-可以通过环境变量配置服务：
+常用变量：
 
-- `PORT`: 服务器端口（默认: 3001）
-- `NODE_ENV`: 运行环境（production/development）
+- `PORT` - 服务端口（默认 3001）
+- `NODE_ENV` - 运行环境（development / production）
+- `FRONTEND_URL` - 生产环境 CORS 白名单（逗号分隔）
+- `ALLOWED_DEV_ORIGINS` - 开发环境 CORS 白名单（可选）
+- `COINMARKETCAP_API_KEY` - FDV 优先使用 CoinMarketCap 时必填
+- `COINGECKO_API_KEY` - CoinGecko 认证（可选，可提高配额）
+- `DOPPLER_TOKEN` - 生产环境从 Doppler 拉取密钥时使用
 
-示例：
-
-```bash
-# 在仓库根目录 .env 文件中设置
-PORT=3001
-NODE_ENV=production
-```
-
-将需要的变量写入仓库根目录 `.env`（并确保不要提交到 Git）。
+Merkl 预测相关（可选，有默认值）：`MERKL_FORECAST_RESULT_CACHE_TTL_MS`、`MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS`、`MERKL_METRICS_CACHE_TTL_MS`。详见 [AGENTS.md](../../AGENTS.md#configuration)。
 
 ## 数据更新
 
-后端服务会自动每 1 分钟更新一次主市场数据。所有 API 端点都会自动检查数据新鲜度，如果数据过期（>1分钟），会自动触发更新。  
-另外，FDV 缓存会由后端定时任务每 10 分钟预热一次（同时保留请求触发刷新兜底）。
+- **市场数据**：仅 `GET /api/markets` 会触发市场数据新鲜度检查；若数据超过 1 分钟未更新，该请求会触发自动刷新（带并发控制）。后端另有每分钟定时任务作为兜底。
+- **其他端点**：`/api/coingecko-*`、`/api/campaigns/forecast-states`、`/api/rate-inputs` 使用各自缓存/TTL，不触发市场数据刷新。
+- **FDV**：FDV 缓存由后端定时任务每 **5 分钟**预热一次，请求路径与 cron 共用同一 TTL（5 分钟），过期时请求也可触发刷新。
 
 ## 健康检查
 
@@ -138,20 +136,32 @@ NODE_ENV=production
 curl http://localhost:3001/health
 ```
 
-应该返回：
+应该返回（示例）：
 
 ```json
 {
   "status": "ok",
-  "timestamp": "2024-01-01T00:00:00.000Z"
+  "timestamp": "2026-03-11T12:00:00.000Z",
+  "environment": {
+    "nodeEnv": "development",
+    "port": 3001,
+    "corsMode": "allow-all",
+    "frontendUrl": "not set",
+    "allowedDevOrigins": "not set"
+  }
 }
 ```
 
 ## API 端点
 
-- `GET /health` - 健康检查
-- `GET /api/markets` - 获取市场数据（自动检查数据新鲜度）
-- `GET /api/campaigns/forecast-states` - 批量获取 Merkl forecast states（不传 ids 时返回全部）
+共 7 个端点，完整说明见 [docs/api/api-documentation.md](../api/api-documentation.md)：
+
+- `GET /health`、`GET /api/health` - 健康检查（含环境信息）
+- `GET /api/markets` - 市场数据（含 `tokenPrices`；**仅此端点**会触发市场数据新鲜度检查与自动刷新）
+- `GET /api/coingecko-categories` - CoinGecko 分类（稳定币、ETH 相关）
+- `GET /api/coingecko-fdv` - FDV 数据（CoinMarketCap 优先，CoinGecko 回退）
+- `GET /api/campaigns/forecast-states` - Merkl 活动预测状态（可选 `ids=...`）
+- `GET /api/rate-inputs` - 储备利率输入（可选 `chainId`、`asset`、`marketName`）
 
 ## 日志
 
@@ -177,7 +187,7 @@ curl http://localhost:3001/health
 
 2. 检查数据文件是否存在：
    ```bash
-   ls -la data/aave-formatted-data.json
+   ls -la data/runtime/aave-formatted-data.json
    ```
 
 3. 查看日志：

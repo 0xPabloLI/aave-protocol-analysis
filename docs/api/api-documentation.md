@@ -482,11 +482,10 @@ interface MarketsResponse {
 
 ### 数据更新机制
 
-- 所有 API 端点会自动检查数据新鲜度
-- 如果数据超过 1 分钟未更新，会自动触发后台更新
-- 使用锁机制防止并发更新
-- 更新过程中，API 会立即返回当前缓存数据
-- 响应中的 `isStale` 和 `updateInProgress` 字段可用于判断数据状态
+- **仅 `GET /api/markets`** 会触发市场数据新鲜度检查：若数据超过 1 分钟未更新，该请求会触发后台刷新（带并发锁），其他端点不触发市场数据刷新。
+- 其他端点（`/api/coingecko-*`、`/api/campaigns/forecast-states`、`/api/rate-inputs`）使用各自缓存与 TTL。
+- 使用锁机制防止并发更新；更新进行中时，请求会等待约 1 秒再返回。
+- 响应中的 `isStale` 和 `updateInProgress` 仅对 `/api/markets` 有意义，可用于判断市场数据状态。
 
 ## 错误处理
 
@@ -545,7 +544,7 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
 ## 版本信息
 
 - **API 版本**: 2.2
-- **文档更新时间**: 2026-03-09
+- **文档更新时间**: 2026-03-11
 - **最后更新**:
   - 补充端点：`GET /api/health`、`GET /api/coingecko-fdv`、`GET /api/rate-inputs`
   - 基础路径说明更新为完整 API 列表
@@ -558,6 +557,7 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
   - Brevis 数据结构重构：从单个 `brevisSupplyApr`/`brevisBorrowApr` 字段改为 `brevisSupplys`/`brevisBorrows` 数组，支持多个活动
   - 新增 CoinGecko 分类接口：`/api/coingecko-categories` 提供稳定币和以太坊相关代币分类
   - 健康检查接口增强：返回详细的环境配置信息
+  - **2026-03-11**：明确仅 `GET /api/markets` 触发市场数据新鲜度检查与自动刷新；其他端点使用各自缓存/TTL
 
 ## 注意事项
 

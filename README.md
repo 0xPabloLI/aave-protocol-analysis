@@ -110,10 +110,11 @@ npm run build
 npm start
 \`\`\`
 
-The server uses environment variables for configuration (see `backend/env.example`). Key settings:
+The server uses environment variables for configuration (see [AGENTS.md](AGENTS.md#configuration) for full list). Key settings:
 - `PORT` - Server port (default: 3001)
 - `NODE_ENV` - Environment (development/production)
 - `FRONTEND_URL` - CORS allowed origins for production (comma-separated)
+- Configure in repo root `.env`; production may use Doppler or Railway for secrets.
 
 ### API Endpoints
 
@@ -149,6 +150,8 @@ After successful execution, files are generated under `data/` subfolders:
 - `data/debug/aave-all-markets-data.json` - Complete raw market data for all supported networks
 - `data/debug/brevis-raw-data.json` - Brevis Network raw activity/API debug snapshot
 - `data/debug/merkl-raw-data.json` - Merkl incentive debug snapshot
+- `data/debug/merit-raw-data.json` - Merit raw data
+- `data/debug/merit-merkl-raw-data.json` - Merit↔Merkl round estimation debug
 - `data/exports/aave-formatted-data.csv` - CSV export for spreadsheet use
 
 ## Data Fields
@@ -312,14 +315,16 @@ All log files are saved in the `logs/` directory:
 
 ### Data File Descriptions
 
-Generated data files are located under `data/`:
-- `runtime/aave-formatted-data.json` - Formatted complete data (includes all incentive information)
-- `runtime/merkl-opportunity-meta-lite.json` - Forecast campaign meta (runtime-lite)
-- `runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
-- `debug/aave-all-markets-data.json` - Raw market data (includes all network information)
-- `debug/brevis-raw-data.json` - Brevis raw activity data
-- `debug/merkl-raw-data.json` - Merkl raw incentive data
-- `exports/aave-formatted-data.csv` - CSV format data (for easy Excel analysis)
+Generated data files are located under `data/` (paths relative to repo root):
+- `data/runtime/aave-formatted-data.json` - Formatted complete data (backend `/api/markets` source; includes all incentive information)
+- `data/runtime/merkl-opportunity-meta-lite.json` - Forecast campaign meta (runtime-lite)
+- `data/runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
+- `data/debug/aave-all-markets-data.json` - Raw Aave SDK market data
+- `data/debug/brevis-raw-data.json` - Brevis raw activity data
+- `data/debug/merkl-raw-data.json` - Merkl raw incentive data
+- `data/debug/merit-raw-data.json` - Merit raw data
+- `data/debug/merit-merkl-raw-data.json` - Merit↔Merkl round estimation debug
+- `data/exports/aave-formatted-data.csv` - CSV export (for spreadsheet use)
 
 ## Contributing
 
