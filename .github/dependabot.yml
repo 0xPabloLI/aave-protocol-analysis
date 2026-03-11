@@ -13,6 +13,14 @@ updates:
     commit-message:
       prefix: "chore"
       include: scope
+    groups:
+      patch-minor:
+        update-types:
+          - "patch"
+          - "minor"
+      major:
+        update-types:
+          - "major"
 
   - package-ecosystem: npm
     directory: "/backend"
@@ -27,6 +35,14 @@ updates:
     commit-message:
       prefix: "chore"
       include: scope
+    groups:
+      patch-minor:
+        update-types:
+          - "patch"
+          - "minor"
+      major:
+        update-types:
+          - "major"
 
   - package-ecosystem: github-actions
     directory: "/"
@@ -41,3 +57,7 @@ updates:
     commit-message:
       prefix: "chore"
       include: scope
+    groups:
+      actions-all:
+        patterns:
+          - "*"
