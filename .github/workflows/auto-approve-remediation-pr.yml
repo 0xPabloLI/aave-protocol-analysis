@@ -85,30 +85,33 @@ jobs:
               body: `${policyLabel}: automated review passed policy checks.`,
             });
 
-            try {
-              await github.graphql(
-                `
-                mutation EnableAutoMerge($pullRequestId: ID!) {
-                  enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
-                    pullRequest {
-                      number
+            // Retry enableAutoMerge — CI checks may still be pending ("unstable status")
+            const maxAttempts = 5;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              try {
+                await github.graphql(
+                  `
+                  mutation EnableAutoMerge($pullRequestId: ID!) {
+                    enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
+                      pullRequest { number }
                     }
                   }
+                  `,
+                  { pullRequestId: context.payload.pull_request.node_id }
+                );
+                core.info(`Auto-merge enabled on attempt ${attempt}`);
+                break;
+              } catch (error) {
+                if (attempt === maxAttempts) {
+                  core.warning(`Enable auto-merge failed after ${maxAttempts} attempts: ${error.message}`);
+                } else {
+                  core.info(`Attempt ${attempt} failed (${error.message}), retrying in 30s...`);
+                  await new Promise(r => setTimeout(r, 30000));
                 }
-                `,
-                { pullRequestId: context.payload.pull_request.node_id }
-              );
-            } catch (error) {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body: `Auto-approval succeeded, but enabling auto-merge failed: ${error.message}`,
-              });
-              throw error;
+              }
             }
 
-  # Job 2: Dependabot PRs — auto-merge patch & minor, skip major
+  # Job 2: Dependabot PRs — auto-merge patch/minor + GitHub Actions major
   approve-dependabot-pr:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
@@ -119,49 +122,61 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Auto-approve and merge patch/minor updates
+      - name: Auto-approve and merge safe updates
         if: >
           steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+          steps.metadata.outputs.package-ecosystem == 'github_actions'
         uses: actions/github-script@v7
         with:
           script: |
             const { owner, repo } = context.repo;
             const prNumber = context.payload.pull_request.number;
+            const ecosystem = '${{ steps.metadata.outputs.package-ecosystem }}';
+            const updateType = '${{ steps.metadata.outputs.update-type }}';
+
+            const label = ecosystem === 'github_actions'
+              ? `GitHub Actions update (${updateType})`
+              : `Dependabot ${updateType.replace('version-update:semver-', '')} update`;
 
             await github.rest.pulls.createReview({
               owner,
               repo,
               pull_number: prNumber,
               event: 'APPROVE',
-              body: 'Dependabot patch/minor update: auto-approved.',
+              body: `${label}: auto-approved.`,
             });
 
-            try {
-              await github.graphql(
-                `
-                mutation EnableAutoMerge($pullRequestId: ID!) {
-                  enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
-                    pullRequest {
-                      number
+            // Retry enableAutoMerge — CI checks may still be pending
+            const maxAttempts = 5;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              try {
+                await github.graphql(
+                  `
+                  mutation EnableAutoMerge($pullRequestId: ID!) {
+                    enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
+                      pullRequest { number }
                     }
                   }
+                  `,
+                  { pullRequestId: context.payload.pull_request.node_id }
+                );
+                core.info(`Auto-merge enabled on attempt ${attempt}`);
+                break;
+              } catch (error) {
+                if (attempt === maxAttempts) {
+                  core.warning(`Enable auto-merge failed after ${maxAttempts} attempts: ${error.message}`);
+                } else {
+                  core.info(`Attempt ${attempt} failed (${error.message}), retrying in 30s...`);
+                  await new Promise(r => setTimeout(r, 30000));
                 }
-                `,
-                { pullRequestId: context.payload.pull_request.node_id }
-              );
-            } catch (error) {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body: `Auto-approval succeeded, but enabling auto-merge failed: ${error.message}`,
-              });
-              throw error;
+              }
             }
 
-      - name: Comment on major updates
-        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+      - name: Comment on major npm updates
+        if: >
+          steps.metadata.outputs.update-type == 'version-update:semver-major' &&
+          steps.metadata.outputs.package-ecosystem != 'github_actions'
         uses: actions/github-script@v7
         with:
           script: |
