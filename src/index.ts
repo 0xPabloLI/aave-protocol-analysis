@@ -69,6 +69,98 @@ interface FormattedReserveData {
   brevisBorrows?: BrevisCampaignItem[];
 }
 
+type RuntimeTokenPricesIndex = Record<string, { price: number }>;
+interface RuntimeReserveData {
+  marketName: string;
+  chainName: string;
+  chainId: number;
+  tokenName: string;
+  tokenSymbol: string;
+  tokenAddress: string;
+  aTokenAddress?: string;
+  vTokenAddress?: string;
+  supplyApy?: number;
+  borrowApy?: number;
+  supplyIncentives?: number[];
+  borrowIncentives?: number[];
+  meritSupplys?: MeritAprEntry[];
+  meritBorrows?: MeritAprEntry[];
+  merklSupplys?: MerklOpportunityGroup[];
+  merklBorrows?: MerklOpportunityGroup[];
+  merklHolds?: MerklOpportunityGroup[];
+  brevisSupplys?: BrevisCampaignItem[];
+  brevisBorrows?: BrevisCampaignItem[];
+}
+
+function pruneMeritEntryForRuntime(entry: MeritAprEntry): MeritAprEntry {
+  return {
+    apr: entry.apr,
+    ...(entry.selfApr !== undefined ? { selfApr: entry.selfApr } : {}),
+    link: entry.link,
+    ...(entry.name ? { name: entry.name } : {}),
+    ...(entry.message ? { message: entry.message } : {}),
+    startDate: entry.startDate,
+    endDate: entry.endDate,
+    ...(entry.lastRoundRewardUsd !== undefined ? { lastRoundRewardUsd: entry.lastRoundRewardUsd } : {}),
+  };
+}
+
+function pruneMerklBreakdownForRuntime(breakdown: MerklCampaignBreakdown): MerklCampaignBreakdown {
+  return {
+    campaignApr: breakdown.campaignApr,
+    campaignStartedAt: breakdown.campaignStartedAt,
+    campaignEndedAt: breakdown.campaignEndedAt,
+    campaignId: breakdown.campaignId,
+    ...(breakdown.whitelistOnly !== undefined ? { whitelistOnly: breakdown.whitelistOnly } : {}),
+    ...(breakdown.pointsPerThousandUsd !== undefined
+      ? { pointsPerThousandUsd: breakdown.pointsPerThousandUsd }
+      : {}),
+  };
+}
+
+function pruneMerklGroupForRuntime(group: MerklOpportunityGroup): MerklOpportunityGroup {
+  return {
+    link: group.link,
+    ...(group.name ? { name: group.name } : {}),
+    ...(group.message ? { message: group.message } : {}),
+    breakdowns: (group.breakdowns ?? []).map(pruneMerklBreakdownForRuntime),
+  };
+}
+
+function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData {
+  return {
+    marketName: item.marketName,
+    chainName: item.chainName,
+    chainId: item.chainId,
+    tokenName: item.tokenName,
+    tokenSymbol: item.tokenSymbol,
+    tokenAddress: item.tokenAddress,
+    ...(item.aTokenAddress ? { aTokenAddress: item.aTokenAddress } : {}),
+    ...(item.vTokenAddress ? { vTokenAddress: item.vTokenAddress } : {}),
+    ...(item.supplyApy !== undefined ? { supplyApy: item.supplyApy } : {}),
+    ...(item.borrowApy !== undefined ? { borrowApy: item.borrowApy } : {}),
+    ...(item.supplyIncentives && item.supplyIncentives.length > 0 ? { supplyIncentives: item.supplyIncentives } : {}),
+    ...(item.borrowIncentives && item.borrowIncentives.length > 0 ? { borrowIncentives: item.borrowIncentives } : {}),
+    ...(item.meritSupplys && item.meritSupplys.length > 0
+      ? { meritSupplys: item.meritSupplys.map(pruneMeritEntryForRuntime) }
+      : {}),
+    ...(item.meritBorrows && item.meritBorrows.length > 0
+      ? { meritBorrows: item.meritBorrows.map(pruneMeritEntryForRuntime) }
+      : {}),
+    ...(item.merklSupplys && item.merklSupplys.length > 0
+      ? { merklSupplys: item.merklSupplys.map(pruneMerklGroupForRuntime) }
+      : {}),
+    ...(item.merklBorrows && item.merklBorrows.length > 0
+      ? { merklBorrows: item.merklBorrows.map(pruneMerklGroupForRuntime) }
+      : {}),
+    ...(item.merklHolds && item.merklHolds.length > 0
+      ? { merklHolds: item.merklHolds.map(pruneMerklGroupForRuntime) }
+      : {}),
+    ...(item.brevisSupplys && item.brevisSupplys.length > 0 ? { brevisSupplys: item.brevisSupplys } : {}),
+    ...(item.brevisBorrows && item.brevisBorrows.length > 0 ? { brevisBorrows: item.brevisBorrows } : {}),
+  };
+}
+
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
 const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
@@ -866,28 +958,40 @@ async function fetchAaveMarkets(): Promise<void> {
     
     logger.info(`🎯 Final dataset contains ${enrichedData.length} token combinations`);
     
-    // 保存格式化的JSON数据（包含时间戳元数据）
-    // 使用从 fetchAaveMarketData 返回的时间戳，而不是重新生成
+    // 保存格式化 JSON 数据（runtime 最小可用 + debug 全量）
     const formattedJsonPath = join(RUNTIME_DATA_DIR, 'aave-formatted-data.json');
-    const dataWithMetadata = {
+    const debugFormattedJsonPath = join(DEBUG_DATA_DIR, 'aave-formatted-data.full.json');
+    const runtimeTokenPrices: RuntimeTokenPricesIndex = Object.fromEntries(
+      Object.entries(merklTokenPrices)
+        .filter(([, v]) => typeof v?.price === 'number')
+        .map(([k, v]) => [k, { price: v!.price }])
+    );
+    const runtimeData = enrichedData.map(pruneReserveForRuntime);
+    const runtimePayload = {
       _metadata: {
-        timestamp: marketData.timestamp, // 使用从 fetchAaveMarketData 返回的时间戳
-        version: '1.0',
+        timestamp: marketData.timestamp,
+        version: '2.0-runtime-minimal',
+        dataCount: runtimeData.length,
+        profile: 'runtime-minimal',
+      },
+      tokenPrices: runtimeTokenPrices,
+      data: runtimeData,
+    };
+    const debugPayload = {
+      _metadata: {
+        timestamp: marketData.timestamp,
+        version: '2.0-debug-full',
         dataCount: enrichedData.length,
+        profile: 'debug-full',
       },
       tokenPrices: merklTokenPrices,
       data: enrichedData,
     };
-    // 使用自定义 replacer 函数，确保 undefined 字段被完全省略，null 也会被转换为 undefined 并省略
-    await writeJsonAtomic(formattedJsonPath, dataWithMetadata, { replacer: (key: string, value: unknown) => {
-      // 将 null 转换为 undefined，这样会被省略（JSON.stringify 默认会省略 undefined）
-      // 注意：JSON.stringify 默认行为：
-      // - undefined: 被省略（不序列化）
-      // - null: 序列化为 "null"（会出现在 JSON 中）
-      // 所以我们把 null 也转换为 undefined 来省略它
-      return value === null ? undefined : (value === undefined ? undefined : value);
-    }});
-    
+    await writeJsonAtomic(formattedJsonPath, runtimePayload, { replacer: (key: string, value: unknown) =>
+      value === null ? undefined : (value === undefined ? undefined : value),
+    });
+    await writeJsonAtomic(debugFormattedJsonPath, debugPayload);
+
     // 生成CSV格式
     const csvData = generateCSV(enrichedData);
     await mkdir(EXPORT_DATA_DIR, { recursive: true });
@@ -896,7 +1000,8 @@ async function fetchAaveMarkets(): Promise<void> {
     
     const outputPath = join(DEBUG_DATA_DIR, 'aave-all-markets-data.json');
     logger.info(`💾 Original data saved to ${outputPath}`);
-    logger.info(`📊 Formatted JSON saved to ${formattedJsonPath}`);
+    logger.info(`📊 Runtime minimal JSON saved to ${formattedJsonPath}`);
+    logger.info(`🧪 Debug full JSON saved to ${debugFormattedJsonPath}`);
     logger.info(`📈 CSV data saved to ${csvPath}`);
     logger.info(`📁 Runtime data dir: ${RUNTIME_DATA_DIR}`);
     logger.info(`📁 Debug data dir: ${DEBUG_DATA_DIR}`);
