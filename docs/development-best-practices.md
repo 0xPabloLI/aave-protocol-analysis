@@ -78,3 +78,17 @@ This is a living note for implementation and architecture practices we agreed on
 - Consider cache GC for obsolete Merit keys in `meritRoundEstimateCache`.
 - Consider forecast cache prewarm if first-request latency becomes noticeable.
 - Revisit local-file strategy before moving to multi-replica deployment (likely shared cache/store).
+
+## 10) HTTP Cache Layering (Frontend staleTime + ETag + Cloudflare)
+
+- Do not force one cache policy across all APIs.
+- For user decision-critical APIs (markets, rate-inputs, forecast-states), prefer:
+  - `Cache-Control: no-cache, must-revalidate`
+  - `ETag` enabled
+  - reasoning: frontend `staleTime` controls check interval; each check revalidates freshness while unchanged payloads return `304`.
+- For slower side-data APIs (coingecko categories/fdv), prefer TTL-based headers with `s-maxage`.
+- Keep Cloudflare rules aligned with endpoint classes:
+  - bypass cache for realtime paths
+  - edge-cache only side-data paths
+- Detailed implementation/playbook lives in:
+  - `docs/deploy/cloudflare-api-cache-playbook.md`
