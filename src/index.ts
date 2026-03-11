@@ -1,5 +1,5 @@
 import './env.js';
-import { writeFile, mkdir } from 'fs/promises';
+import { readFile, writeFile, mkdir } from 'fs/promises';
 import { chainId, AaveClient, ChainsFilter } from "@aave/client";
 import { markets, chains } from "@aave/client/actions";
 import * as addressBook from "@bgd-labs/aave-address-book";
@@ -45,6 +45,65 @@ interface MarketData {
   networkInfo: NetworkInfo[];
   markets: any[];
   errors: string[];
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof value === 'bigint') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof value === 'object') {
+    // Common Aave client pattern: DecimalValue { value: string }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const maybeValue = (value as any).value;
+    if (typeof maybeValue === 'string' || typeof maybeValue === 'number' || typeof maybeValue === 'bigint') {
+      return toFiniteNumber(maybeValue);
+    }
+  }
+  return null;
+}
+
+function extractAaveTokenPrices(markets: any[]): TokenPricesIndex {
+  const tokenPrices: TokenPricesIndex = {};
+
+  const addReservePrice = (reserve: any, chainIdValue: number): void => {
+    const address: string | undefined = reserve?.underlyingToken?.address;
+    if (!address) return;
+    const usdPerToken =
+      toFiniteNumber(reserve?.size?.usdPerToken) ??
+      toFiniteNumber(reserve?.usdExchangeRate) ??
+      null;
+    if (usdPerToken === null || usdPerToken <= 0) return;
+    const symbol: string = reserve?.underlyingToken?.symbol || 'Unknown';
+    const key = `${chainIdValue}:${address.toLowerCase()}`;
+    if (!tokenPrices[key]) {
+      tokenPrices[key] = {
+        chainId: chainIdValue,
+        address,
+        symbol,
+        price: usdPerToken,
+        source: 'aave',
+      };
+    }
+  };
+
+  markets.forEach((market) => {
+    const chainIdValue: number = market?.chain?.chainId || 0;
+    if (!chainIdValue) return;
+    if (Array.isArray(market?.supplyReserves)) {
+      market.supplyReserves.forEach((reserve: any) => addReservePrice(reserve, chainIdValue));
+    }
+    if (Array.isArray(market?.borrowReserves)) {
+      market.borrowReserves.forEach((reserve: any) => addReservePrice(reserve, chainIdValue));
+    }
+  });
+  return tokenPrices;
 }
 
 interface FormattedReserveData {
@@ -845,6 +904,7 @@ async function fetchAaveMarkets(): Promise<void> {
     logger.info('📊 Creating base dataset from Aave markets...');
     const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
     logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
+    const aaveTokenPrices = extractAaveTokenPrices(marketData.markets);
 
     // 并发获取 Merit、Merkl 和 Brevis 数据（它们之间没有依赖关系）
     // 注意：程序是定期触发的，设置超时避免某个任务卡住导致所有数据被卡住
@@ -961,8 +1021,30 @@ async function fetchAaveMarkets(): Promise<void> {
     // 保存格式化 JSON 数据（runtime 最小可用 + debug 全量）
     const formattedJsonPath = join(RUNTIME_DATA_DIR, 'aave-formatted-data.json');
     const debugFormattedJsonPath = join(DEBUG_DATA_DIR, 'aave-formatted-data.full.json');
+    // Carry over previous token prices only if the previous file is recent (within TTL), to avoid keeping stale prices for tokens that no longer appear.
+    // TTL = 3× backend marketsDataStaleThreshold (1 min) so carry-over aligns with normal update cadence.
+    const TOKEN_PRICE_CARRYOVER_MAX_AGE_MS = 3 * 60 * 1000; // 3 min
+    let previousTokenPrices: Record<string, { price: number }> = {};
+    try {
+      const raw = await readFile(formattedJsonPath, 'utf-8');
+      const parsed = JSON.parse(raw) as { _metadata?: { timestamp?: string }; tokenPrices?: Record<string, { price: number }> };
+      if (parsed?.tokenPrices && typeof parsed.tokenPrices === 'object' && parsed._metadata?.timestamp) {
+        const prevTs = Date.parse(parsed._metadata.timestamp);
+        if (Number.isFinite(prevTs) && Date.now() - prevTs <= TOKEN_PRICE_CARRYOVER_MAX_AGE_MS) {
+          previousTokenPrices = parsed.tokenPrices;
+        }
+      }
+    } catch {
+      // file missing or invalid — start fresh
+    }
+    // Merge: previous (only if recent) < Merkl < Aave (primary, overwrites for same key).
+    const mergedTokenPrices: TokenPricesIndex = {
+      ...(previousTokenPrices as TokenPricesIndex),
+      ...merklTokenPrices,
+      ...aaveTokenPrices,
+    };
     const runtimeTokenPrices: RuntimeTokenPricesIndex = Object.fromEntries(
-      Object.entries(merklTokenPrices)
+      Object.entries(mergedTokenPrices)
         .filter(([, v]) => typeof v?.price === 'number')
         .map(([k, v]) => [k, { price: v!.price }])
     );
@@ -984,11 +1066,14 @@ async function fetchAaveMarkets(): Promise<void> {
         dataCount: enrichedData.length,
         profile: 'debug-full',
       },
-      tokenPrices: merklTokenPrices,
+      tokenPrices: mergedTokenPrices,
       data: enrichedData,
     };
-    await writeJsonAtomic(formattedJsonPath, runtimePayload, { replacer: (key: string, value: unknown) =>
-      value === null ? undefined : (value === undefined ? undefined : value),
+    // Runtime: minimal JSON (no pretty-print) and omit null/undefined for smaller file.
+    await writeJsonAtomic(formattedJsonPath, runtimePayload, {
+      replacer: (key: string, value: unknown) =>
+        value === null ? undefined : (value === undefined ? undefined : value),
+      space: 0,
     });
     await writeJsonAtomic(debugFormattedJsonPath, debugPayload);
 

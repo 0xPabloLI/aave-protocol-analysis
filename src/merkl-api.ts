@@ -203,14 +203,14 @@ export interface MerklOpportunityData {
   description?: string; // Opportunity 描述（内部使用，最终会转换为 message）
 }
 
-export type TokenPriceSource = 'opportunity' | 'reward';
+export type TokenPriceSource = 'aave' | 'opportunity' | 'reward';
 
 export interface TokenPriceEntry {
   chainId: number;
   address: string;
   symbol: string;
   price: number;
-  updatedAt: number;
+  updatedAt?: number; // optional: not sent to frontend; used only internally by Merkl source
   source: TokenPriceSource;
 }
 
@@ -501,6 +501,7 @@ const addTokenPrice = (
   }
 
   const sourcePriority: Record<TokenPriceSource, number> = {
+    aave: 0,
     opportunity: 1,
     reward: 2,
   };
@@ -727,7 +728,7 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   await writeJsonAtomic(merklForecastLitePath, {
     timestamp: new Date().toISOString(),
     campaigns: forecastCampaignMetaLite,
-  });
+  }, { space: 0 });
   logger.info(`💾 Merkl forecast lite data saved to ${merklForecastLitePath}`);
   
   return { index: merklData, tokenPrices };

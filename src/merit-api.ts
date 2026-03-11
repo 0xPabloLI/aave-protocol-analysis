@@ -1513,7 +1513,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     await writeJsonAtomic(MERIT_CAMPAIGN_METADATA_CACHE_PATH, {
       timestamp: new Date().toISOString(),
       campaignMetadataByKey: timeRanges,
-    });
+    }, { space: 0 });
     meritCampaignMetadataMemoryCache = timeRanges;
     meritCampaignMetadataLoadedFromDisk = true;
     logger.info(`💾 Merit campaign metadata cache saved to ${MERIT_CAMPAIGN_METADATA_CACHE_PATH}`);
