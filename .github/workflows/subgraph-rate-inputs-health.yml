@@ -34,7 +34,7 @@ jobs:
 
       - name: Upload probe report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: subgraph-rate-inputs-health-report
           path: docs/api/subgraph-rate-inputs-health.snapshot.json
