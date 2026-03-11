@@ -1,6 +1,8 @@
 import './env.js';
 import express from 'express';
+import compression from 'compression';
 import { corsMiddleware } from './middleware/cors.js';
+import { apiCacheHeadersMiddleware } from './middleware/cacheHeaders.js';
 import marketsRouter from './routes/markets.js';
 import coingeckoRouter from './routes/coingecko.js';
 import coingeckoFdvRouter from './routes/coingeckoFdv.js';
@@ -11,6 +13,7 @@ import { startUpdateScheduler } from './services/updateScheduler.js';
 import { logger } from './logger.js';
 
 const app = express();
+app.set('etag', 'weak');
 // 端口配置：优先读取环境变量，默认 3001
 // 环境变量读取优先级（使用 dotenv 后）：
 // 1. 系统环境变量 PORT（最高优先级，会覆盖 .env 文件）
@@ -37,6 +40,13 @@ const PORT: number = (() => {
 // Middleware
 app.use(corsMiddleware);
 app.use(express.json());
+app.use(
+  compression({
+    // Keep tiny payloads uncompressed to avoid needless CPU overhead.
+    threshold: 1024,
+  })
+);
+app.use(apiCacheHeadersMiddleware);
 
 // Routes
 app.use('/api/markets', marketsRouter);
