@@ -1,4 +1,4 @@
-name: Auto Approve Remediation PR
+name: Auto Approve Bot PRs
 
 on:
   pull_request_target:
@@ -9,10 +9,14 @@ permissions:
   pull-requests: write
 
 jobs:
-  approve-and-enable-automerge:
+  # Job 1: github-actions[bot] PRs (ci-remediation, subgraph-sync)
+  approve-github-actions-pr:
     if: >
-      startsWith(github.event.pull_request.head.ref, 'bot/ci-auto-remediation-') &&
-      github.event.pull_request.user.login == 'github-actions[bot]'
+      github.event.pull_request.user.login == 'github-actions[bot]' &&
+      (
+        startsWith(github.event.pull_request.head.ref, 'bot/ci-auto-remediation-') ||
+        startsWith(github.event.pull_request.head.ref, 'bot/subgraph-sync-')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Policy-check changed files, approve, and enable auto-merge
@@ -21,6 +25,7 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const prNumber = context.payload.pull_request.number;
+            const branch = context.payload.pull_request.head.ref;
 
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner,
@@ -29,12 +34,27 @@ jobs:
               per_page: 100,
             });
 
-            const allowed = new Set([
-              'package.json',
-              'package-lock.json',
-              'backend/package.json',
-              'backend/package-lock.json',
-            ]);
+            // Define allowed files per bot PR type
+            let allowed;
+            let policyLabel;
+
+            if (branch.startsWith('bot/ci-auto-remediation-')) {
+              allowed = new Set([
+                'package.json',
+                'package-lock.json',
+                'backend/package.json',
+                'backend/package-lock.json',
+              ]);
+              policyLabel = 'CI auto-remediation';
+            } else if (branch.startsWith('bot/subgraph-sync-')) {
+              allowed = new Set([
+                'docs/api/aave-subgraph-deployments.snapshot.json',
+              ]);
+              policyLabel = 'Subgraph sync';
+            } else {
+              core.setFailed(`Unknown bot branch pattern: ${branch}`);
+              return;
+            }
 
             const disallowed = files
               .map((file) => file.filename)
@@ -46,14 +66,14 @@ jobs:
                 repo,
                 issue_number: prNumber,
                 body: [
-                  'Auto-remediation PR contains disallowed file changes.',
+                  `${policyLabel} PR contains disallowed file changes.`,
                   '',
                   ...disallowed.map((name) => `- \`${name}\``),
                   '',
                   'Skipping auto-approval and auto-merge.',
                 ].join('\n'),
               });
-              core.setFailed('Disallowed files found in remediation PR');
+              core.setFailed('Disallowed files found in bot PR');
               return;
             }
 
@@ -62,7 +82,7 @@ jobs:
               repo,
               pull_number: prNumber,
               event: 'APPROVE',
-              body: 'Automated dependency remediation review passed policy checks.',
+              body: `${policyLabel}: automated review passed policy checks.`,
             });
 
             try {
@@ -87,3 +107,77 @@ jobs:
               });
               throw error;
             }
+
+  # Job 2: Dependabot PRs — auto-merge patch & minor, skip major
+  approve-dependabot-pr:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Auto-approve and merge patch/minor updates
+        if: >
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.pull_request.number;
+
+            await github.rest.pulls.createReview({
+              owner,
+              repo,
+              pull_number: prNumber,
+              event: 'APPROVE',
+              body: 'Dependabot patch/minor update: auto-approved.',
+            });
+
+            try {
+              await github.graphql(
+                `
+                mutation EnableAutoMerge($pullRequestId: ID!) {
+                  enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
+                    pullRequest {
+                      number
+                    }
+                  }
+                }
+                `,
+                { pullRequestId: context.payload.pull_request.node_id }
+              );
+            } catch (error) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: `Auto-approval succeeded, but enabling auto-merge failed: ${error.message}`,
+              });
+              throw error;
+            }
+
+      - name: Comment on major updates
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.pull_request.number;
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body: [
+                '⚠️ **Major version bump detected** — skipping auto-merge.',
+                '',
+                `- Package: \`${{ steps.metadata.outputs.dependency-names }}\``,
+                `- Update: \`${{ steps.metadata.outputs.previous-version }}\` → \`${{ steps.metadata.outputs.new-version }}\``,
+                '',
+                'Please review manually for breaking changes.',
+              ].join('\n'),
+            });
