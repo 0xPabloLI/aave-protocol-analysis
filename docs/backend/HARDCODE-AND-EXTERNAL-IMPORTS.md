@@ -4,7 +4,7 @@
 
 | 主题 | 来源 | 本地使用 |
 |---|---|---|
-| Subgraph deployments | `aave/protocol-subgraphs`（由同步脚本抓取） | `docs/api/aave-subgraph-deployments.snapshot.json` |
+| Subgraph deployments | `aave/protocol-subgraphs`（由同步脚本抓取；官方文档索引可参考 [Context7](https://context7.com/aave/protocol-subgraphs)） | `docs/api/aave-subgraph-deployments.snapshot.json` |
 | On-chain addresses（external dependency, 非 hardcoded 常量） | `@bgd-labs/aave-address-book` | `backend/src/services/rateInputsService.ts` |
 | On-chain reserve reader（external dependency） | `@aave/contract-helpers` (`UiPoolDataProvider`) | `backend/src/services/rateInputsService.ts` |
 | Shared RPC registry | `@internal/aave-shared-config` | `backend/src/services/ethProviderService.ts` |
@@ -25,7 +25,7 @@
 
 | 工作流 | 频率 | 作用 |
 |---|---|---|
-| `.github/workflows/subgraph-sync.yml` | 每天 1 次 | 同步 subgraph deployment snapshot，变更自动开 PR |
+| `.github/workflows/subgraph-sync.yml` | 每天 1 次（02:20 UTC） | 从 aave/protocol-subgraphs README 同步 deployment snapshot（含各链 subgraph deployment id），变更自动开 PR |
 | `.github/workflows/subgraph-rate-inputs-health.yml` | 每天 1 次 | 兼容性/健康探测，产出健康报告 |
 
 触发方式：

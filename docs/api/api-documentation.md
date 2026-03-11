@@ -129,17 +129,18 @@ interface MarketsResponse {
   lastUpdated: string;                  // 最后更新时间（ISO 8601）
   isStale: boolean;                     // 数据是否过期（超过 1 分钟）
   updateInProgress: boolean;           // 是否正在更新中
-  tokenPrices?: Record<string, {       // 代币价格索引（仅 GET /api/markets 返回，来自 Merkl）
+  tokenPrices?: Record<string, {       // 代币价格索引（仅 GET /api/markets 返回，仅含 price + source）
     price: number;
-    updatedAt: number;                 // Unix 毫秒时间戳
-    source: string;                    // 如 "opportunity" | "reward"
+    source: string;                    // 如 "aave" | "opportunity" | "reward"
   }>;
 }
 ```
 
-**Token 价格（tokenPrices）**：仅在此接口 **`GET /api/markets`** 的响应根级别返回。key 为 `chainId:tokenAddress`（小写），用于与储备数据中的 `chainId` + `tokenAddress` 对应。数据**仅来自 Merkl**（机会中的 `tokens` 与奖励 breakdown 中的 `token`），因此**不覆盖所有 reserve 的底层代币**，只包含在 Merkl 中出现的代币；无数据时该字段不出现。
+**Token 价格（tokenPrices）**：仅在此接口 **`GET /api/markets`** 的响应根级别返回。key 为 `chainId:tokenAddress`（小写），用于与储备数据中的 `chainId` + `tokenAddress` 对应。
 
-**若需覆盖所有 reserve 的主币价格**：当前**现成接口中没有任何一个**返回「所有储备代币」的价格列表。`/api/coingecko-fdv` 仅返回固定少数币种（如 BNB、CRO、OKB 等）的 FDV，不是按 reserve 的 token 列表。若要覆盖全部，需要：(1) 在数据源侧新增价格来源（如 CoinGecko/CMC 按合约地址批量查价，或链上 oracle），并写入 fetcher 输出与 `tokenPrices`；或 (2) 前端/调用方自行对接外部价格 API，用 `data` 中的 `chainId` + `tokenAddress` 作为 key 去查价。
+- **覆盖范围**：包含 **所有 reserve 的 underlying token** 的 USD 价格（来源 `aave`）。Merkl 价格（来源 `opportunity` / `reward`）仅作为补充：当某个 token 在 Aave 价格索引中不存在时（例如部分 reward token），才会出现在 `tokenPrices` 中。
+- **来源字段**：`aave` 来源的价格来自 Aave markets 数据里的 `reserve.size.usdPerToken`（若缺失则回退 `reserve.usdExchangeRate`）。
+- **缺省行为**：极少数 token 若本轮 Aave/Merkl 均未返回价格，则会沿用上一轮文件中该 token 的价格**仅当**上一轮文件的 `_metadata.timestamp` 在 3 倍正常更新周期内（3× backend stale 阈值，即 3 分钟）；超过则不沿用，避免长期保留已不再出现的 token 的过期价格。
 
 **市场筛选列表**：本接口就是唯一权威快照。若 UI 需要 market 列表，请从 `data` 中去重，不要再引入额外的市场列表接口，否则会产生第二条快照路径并增加前后端缓存失配风险。
 
@@ -211,7 +212,6 @@ interface MarketsResponse {
   "tokenPrices": {
     "42161:0xda10009cbd5d07dd0cecc66161fc93d7c9000da1": {
       "price": 1.001,
-      "updatedAt": 1736762400000,
       "source": "opportunity"
     }
   }
@@ -472,13 +472,13 @@ interface MarketsResponse {
 - **Merit APR**: 来自 `https://apps.aavechan.com/api/merit/aprs`
 - **Merkl APR**: 来自 `https://api.merkl.xyz/v4/opportunities`
 - **Brevis APR**: 来自 Brevis Network Linea Surge API
-- **Token 价格（tokenPrices）**: 仅来自 Merkl（见上文），**本仓库未从 Aave SDK 读取或使用任何 reserve 价格字段**
+- **Token 价格（tokenPrices）**: 来自 Aave markets 数据（`reserve.size.usdPerToken` / `reserve.usdExchangeRate`）为主；Merkl 仅补充 Aave 中不存在的 token。上一轮价格仅在上一轮文件不超过 3× 正常更新周期（3 分钟）时沿用（见上文）。
 
-**Aave SDK（@aave/client）与 token price**：本项目中 `createBaseDatasetFromMarkets` 仅使用 SDK 返回的 `reserve.underlyingToken`（symbol、address、name）、`supplyInfo`、`borrowInfo`、`incentives` 等，**未读取任何与价格相关的字段**。SDK 的 market/supplyReserves 是否包含每 reserve 的 USD 价格需查看官方类型或实际响应；若需确认，可跑一次 fetcher 后查看 `data/debug/aave-all-markets-data.json` 中任意 `market.supplyReserves[].*` 是否含有 price 相关字段。
+**Aave SDK（@aave/client）与 token price**：本项目从 SDK 返回的 reserve 里读取 USD 价格（优先 `reserve.size.usdPerToken`，缺失时回退 `reserve.usdExchangeRate`），覆盖所有 reserve underlying token；Merkl 仅补充不在 Aave 中的 token（如部分 reward token），合并时 Aave 覆盖同 key 的 Merkl。
 
 **data 文件夹中的价格**：
-- **`data/runtime/aave-formatted-data.json`**：根级别有 **`tokenPrices`** 字段（与 `data`、`_metadata` 并列），即当前 API 返回的同一套 Merkl 来源价格；key 为 `chainId:tokenAddress`（小写）。
-- **`data/debug/aave-all-markets-data.json`**：为 Aave SDK 的原始响应（`markets`、`timestamp` 等）；若 SDK 返回了 reserve 级价格，会原样出现在该文件内，本仓库未对其做解析或写入 runtime。
+- **`data/runtime/aave-formatted-data.json`**：根级别有 **`tokenPrices`** 字段（与 `data`、`_metadata` 并列），即当前 API 返回的同一套价格索引；key 为 `chainId:tokenAddress`（小写）。运行时 JSON（含本文件及 `merkl-opportunity-meta-lite.json`、`merit-campaign-metadata-cache.json`）均使用无缩进（`space: 0`）以减小体积。
+- **`data/debug/aave-all-markets-data.json`**：为 Aave SDK 的原始响应（`markets`、`timestamp` 等），其中包含 reserve 的 `usdPerToken` / `usdExchangeRate` 等价格字段（如果上游返回）。
 
 ### 数据更新机制
 
