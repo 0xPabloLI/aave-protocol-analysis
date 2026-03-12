@@ -61,7 +61,7 @@ interface OnchainFallbackConfig {
 
 interface ServiceSnapshot {
   fetchedAt: number;
-  data: ReserveRateInput[];
+  data: ReserveRateInputInternal[];
   sources: RateInputsResponse['sources'];
 }
 
@@ -82,6 +82,18 @@ type TargetMarket = {
   marketSlug: string;
   tokenFilter: Set<string>;
 };
+
+type RateInputSource = 'subgraph' | 'onchain';
+
+type ReserveRateInputInternal = ReserveRateInput & {
+  source: RateInputSource;
+  sourceDetail: string;
+};
+
+function simplifyErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
 
 function toSnakeCase(value: string): string {
   return value
@@ -200,11 +212,11 @@ function inferSubgraphMarketSlug(marketName: string): string {
 }
 
 function toNumericString(value: unknown): string {
-  if (value === null || value === undefined) return '0';
+  if (value === null || value === undefined) return '';
   if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '0';
   if (typeof value === 'string') {
     const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : '0';
+    return trimmed;
   }
   return String(value);
 }
@@ -233,12 +245,10 @@ function hasRequiredRateInputFields(reserve: Record<string, unknown>): boolean {
     'baseVariableBorrowRate',
   ];
   for (const key of requiredKeys) {
-    const value = reserve[key];
-    if (value === null || value === undefined) return false;
+    if (!Object.hasOwn(reserve, key)) return false;
   }
-  const optimalUsageLike =
-    reserve.optimalUsageRatio ?? reserve.optimalUtilisationRate;
-  return optimalUsageLike !== null && optimalUsageLike !== undefined;
+  // Accept empty/null values, but field key must exist in response.
+  return Object.hasOwn(reserve, 'optimalUsageRatio') || Object.hasOwn(reserve, 'optimalUtilisationRate');
 }
 
 function withPromiseTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -342,7 +352,7 @@ function resolveSubgraphUrl(record: SubgraphDeploymentRecord): string | null {
   return template.replace('{apiKey}', encodeURIComponent(apiKey));
 }
 
-function computeMissingTokenFilter(tokenFilter: Set<string>, records: ReserveRateInput[]): Set<string> {
+function computeMissingTokenFilter(tokenFilter: Set<string>, records: ReserveRateInputInternal[]): Set<string> {
   if (tokenFilter.size === 0) return new Set<string>();
   const found = new Set(records.map((item) => item.tokenAddress));
   const missing = new Set<string>();
@@ -357,7 +367,7 @@ async function fetchSubgraphChain(
   chainId: number,
   deployment: SubgraphDeploymentRecord,
   tokenFilter: Set<string>
-): Promise<ReserveRateInput[]> {
+): Promise<ReserveRateInputInternal[]> {
   const url = resolveSubgraphUrl(deployment);
   if (!url) throw new Error(`subgraph url unavailable for chain ${chainId} (missing THE_GRAPH_API_KEY?)`);
 
@@ -388,7 +398,7 @@ async function fetchSubgraphChain(
       }
 
       const reserves = payload.data?.reserves ?? [];
-      const records: ReserveRateInput[] = [];
+      const records: ReserveRateInputInternal[] = [];
       for (const reserve of reserves) {
         const underlyingAsset = String(reserve.underlyingAsset || '').trim();
         if (!underlyingAsset) continue;
@@ -429,7 +439,7 @@ async function fetchOnchainChain(
   config: OnchainFallbackConfig,
   tokenFilter: Set<string>,
   marketNameOverride?: string
-): Promise<ReserveRateInput[]> {
+): Promise<ReserveRateInputInternal[]> {
   const effectiveMarketName = marketNameOverride ?? config.marketName;
   const rpcCandidates = ethProviderService.getProvidersForChain(config.chainId, config.defaultRpcUrls);
   let lastError: unknown = null;
@@ -451,7 +461,7 @@ async function fetchOnchainChain(
       );
       const reserves = (humanized as unknown as { reservesData?: Array<Record<string, unknown>> }).reservesData ?? [];
 
-      const records: ReserveRateInput[] = [];
+      const records: ReserveRateInputInternal[] = [];
       for (const reserve of reserves) {
         const underlyingAsset = String(reserve.underlyingAsset || '').trim();
         if (!underlyingAsset) continue;
@@ -480,10 +490,13 @@ async function fetchOnchainChain(
       if (records.length === 0 && tokenFilter.size > 0) {
         logger.warn(`On-chain fetch succeeded but no reserve matched filter on chain ${config.chainId} market ${effectiveMarketName}`);
       }
+      ethProviderService.reportProviderSuccess(config.chainId, rpcUrl);
       return records;
     } catch (error) {
       lastError = error;
-      logger.warn(`On-chain fallback failed for chain ${config.chainId} via ${rpcUrl}: ${error instanceof Error ? error.message : String(error)}`);
+      const message = simplifyErrorMessage(error);
+      ethProviderService.reportProviderFailure(config.chainId, rpcUrl, message);
+      logger.warn(`On-chain fallback failed for chain ${config.chainId} via ${rpcUrl}: ${message}`);
     }
   }
 
@@ -516,7 +529,7 @@ class RateInputsService {
       logger.warn('THE_GRAPH_API_KEY not set: gateway subgraph chains will be skipped (legacy direct URLs still attempted).');
     }
 
-    const records: ReserveRateInput[] = [];
+    const records: ReserveRateInputInternal[] = [];
     const seen = new Set<string>();
     const subgraphChains = new Set<number>();
     const onchainChains = new Set<number>();
@@ -531,7 +544,7 @@ class RateInputsService {
         const { chainId, marketName, marketSlug, tokenFilter } = target;
         const deployment = resolveSubgraphDeployment(deployments, chainId, marketSlug);
         const fallbackConfig = resolveOnchainFallbackConfig(marketName, chainId);
-        let subgraphRecords: ReserveRateInput[] = [];
+        let subgraphRecords: ReserveRateInputInternal[] = [];
         let subgraphFailed = false;
 
         if (deployment) {
@@ -637,6 +650,7 @@ class RateInputsService {
         subgraphChains: Array.from(subgraphChains).sort((a, b) => a - b),
         onchainChains: Array.from(onchainChains).sort((a, b) => a - b),
         subgraphMissingChains: Array.from(subgraphMissingChains).sort((a, b) => a - b),
+        unhealthyRpcEndpoints: ethProviderService.getUnhealthyEndpoints(),
       },
     };
 
@@ -680,8 +694,10 @@ class RateInputsService {
       filtered = filtered.filter((item) => normalizeMarketName(item.marketName) === marketName);
     }
 
+    const publicData: ReserveRateInput[] = filtered.map(({ source: _source, sourceDetail: _sourceDetail, ...item }) => item);
+
     const response: RateInputsResponse = {
-      data: filtered,
+      data: publicData,
       lastUpdated: new Date(snapshot.fetchedAt).toISOString(),
       isStale: Date.now() - snapshot.fetchedAt > RATE_INPUTS_TTL_MS,
       staleTimeMs: RATE_INPUTS_TTL_MS,
@@ -692,6 +708,9 @@ class RateInputsService {
               subgraphChains: snapshot.sources.subgraphChains.filter((chainId) => chainId === filters.chainId),
               onchainChains: snapshot.sources.onchainChains.filter((chainId) => chainId === filters.chainId),
               subgraphMissingChains: snapshot.sources.subgraphMissingChains.filter((chainId) => chainId === filters.chainId),
+              unhealthyRpcEndpoints: snapshot.sources.unhealthyRpcEndpoints.filter(
+                (item) => item.chainId === filters.chainId
+              ),
             },
     };
 
@@ -700,3 +719,7 @@ class RateInputsService {
 }
 
 export const rateInputsService = new RateInputsService();
+
+export async function warmRateInputsCache(): Promise<void> {
+  await rateInputsService.getRateInputs({});
+}

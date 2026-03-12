@@ -11,7 +11,7 @@
   - `/api/markets` - 市场数据
   - `/api/coingecko-categories` - CoinGecko 分类数据
   - `/api/coingecko-fdv` - CoinGecko FDV 数据
-  - `/api/campaigns` - Merkl 活动预测（含 `/forecast-states`）
+  - `/api/campaigns/forecast-states` - Merkl 活动预测状态（批量）
   - `/api/rate-inputs` - 利率输入/储备参数
   - `/health`、`/api/health` - 健康检查
 - **数据格式**: JSON
@@ -117,7 +117,7 @@ interface MerklCampaignBreakdown {
 
 **端点**: `GET /api/markets`
 
-**描述**: 获取所有市场数据，包含完整的激励信息。如果数据超过 1 分钟未更新，会自动触发后台更新。前端若需要 market filter 列表，应从 `data` 中按 `{ marketName, chainName }` 去重推导。
+**描述**: 获取 markets 快照（`markets-v2`），返回 `snapshot + reserves`。其中 `reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `tvlUsd` / `utilizationPct` 以支持前端展示。如果数据超过 1 分钟未更新，会自动触发后台更新。若更新持续失败且快照陈旧时间超过硬上限（默认 5 分钟），接口会返回 `503`，避免长期返回过旧数据。
 
 **请求参数**: 无
 
@@ -125,107 +125,86 @@ interface MerklCampaignBreakdown {
 
 ```typescript
 interface MarketsResponse {
-  data: MarketWithSpread[];            // 市场数据数组
-  lastUpdated: string;                  // 最后更新时间（ISO 8601）
-  isStale: boolean;                     // 数据是否过期（超过 1 分钟）
-  updateInProgress: boolean;           // 是否正在更新中
-  tokenPrices?: Record<string, {       // 代币价格索引（仅 GET /api/markets 返回，仅含 price + source）
-    price: number;
-    source: string;                    // 如 "aave" | "opportunity" | "reward"
-  }>;
+  snapshot: {
+    lastUpdated: string;               // 最后更新时间（ISO 8601）
+    version: 'markets-v2';
+  };
+  reserves: MarketWithSpread[];        // 保留原全量字段 + 新增展示字段
 }
 ```
 
-**Token 价格（tokenPrices）**：仅在此接口 **`GET /api/markets`** 的响应根级别返回。key 为 `chainId:tokenAddress`（小写），用于与储备数据中的 `chainId` + `tokenAddress` 对应。
+**Token 价格返回策略**：
 
-- **覆盖范围**：包含 **所有 reserve 的 underlying token** 的 USD 价格（来源 `aave`）。Merkl 价格（来源 `opportunity` / `reward`）仅作为补充：当某个 token 在 Aave 价格索引中不存在时（例如部分 reward token），才会出现在 `tokenPrices` 中。
+- 每条 `reserves` 记录新增 `tokenPrice`（优先用于前端渲染，避免额外 join）
+- Merkl reward token 价格当前**不在 `/api/markets` 输出**
+- 若 reward token 恰好是某个 reserve 的 `aTokenAddress`，其价格按 underlying token 对待，不单独输出
 - **来源字段**：`aave` 来源的价格来自 Aave markets 数据里的 `reserve.size.usdPerToken`（若缺失则回退 `reserve.usdExchangeRate`）。
 - **缺省行为**：极少数 token 若本轮 Aave/Merkl 均未返回价格，则会沿用上一轮文件中该 token 的价格**仅当**上一轮文件的 `_metadata.timestamp` 在 3 倍正常更新周期内（3× backend stale 阈值，即 3 分钟）；超过则不沿用，避免长期保留已不再出现的 token 的过期价格。
 
-**市场筛选列表**：本接口就是唯一权威快照。若 UI 需要 market 列表，请从 `data` 中去重，不要再引入额外的市场列表接口，否则会产生第二条快照路径并增加前后端缓存失配风险。
+**市场筛选列表**：请从 `reserves` 中按 `{ marketName, chainName }` 去重推导，不要再引入额外市场列表接口。
 
 **响应示例**:
 
 ```json
 {
-  "data": [
+  "snapshot": {
+    "lastUpdated": "2026-01-13T11:00:06.895Z",
+    "version": "markets-v2"
+  },
+  "reserves": [
     {
-      "marketName": "AaveV3Arbitrum",
-      "chainName": "Arbitrum",
-      "chainId": 42161,
-      "tokenName": "Dai Stablecoin",
-      "tokenSymbol": "DAI",
-      "tokenAddress": "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
-      "aTokenAddress": "0x82E64f49Ed5EC1bC6e43DAD4FC8Af9bb3A2312EE",
-      "vTokenAddress": "0x8619d80FB0141ba7F184CbF22fd724116D9f7ffC",
-      "supplyApy": 2.07,
-      "borrowApy": 3.97,
-      "supplyIncentives": [0.5, 1.2],
-      "borrowIncentives": [0.3],
-      "meritSupplys": [
-        {
-          "apr": 5.2,
-          "selfApr": 2.1,
-          "link": "https://apps.aavechan.com/merit/arbitrum-supply-dai",
-          "startDate": "Thu Jan 01 2026",
-          "endDate": "Thu Jan 15 2026"
-        }
-      ],
-      "meritBorrows": [
-        {
-          "apr": 3.5,
-          "link": "https://apps.aavechan.com/merit/arbitrum-borrow-dai",
-          "startDate": "Thu Jan 01 2026",
-          "endDate": "Thu Jan 15 2026",
-          "requiredSupplyTokens": ["USDC"]
-        }
-      ],
-      "merklSupplys": [
-        {
-          "link": "https://app.merkl.xyz/opportunities/arbitrum/MULTILOG_DUTCH/0xe0b9e069b0cb46329e7d37e87e635a84ea772fcf",
-          "name": "MultiLog Dutch Auction",
-          "breakdowns": [
-            {
-              "campaignApr": 0.329,
-              "campaignStartedAt": "2026-01-07T13:00:00.000Z",
-              "campaignEndedAt": "2026-01-21T13:00:00.000Z",
-              "campaignId": "9692233454321271392"
-            }
-          ]
-        }
-      ],
-      "merklBorrows": [],
-      "brevisSupplys": [
-        {
-          "apr": 1.5,
-          "link": "https://brevis.network/linea-surge",
-          "startDate": "Thu Jan 01 2026",
-          "endDate": "Thu Jan 31 2026",
-          "name": "Linea Surge Supply"
-        }
-      ]
+      "reserveId": "AaveV3Ethereum:1:0xbe9895146f7af43049ca1c1ae358b0541ea49704",
+      "marketName": "AaveV3Ethereum",
+      "chainName": "Ethereum",
+      "chainId": 1,
+      "tokenName": "Coinbase Wrapped Staked ETH",
+      "tokenSymbol": "cbETH",
+      "tokenAddress": "0xBe9895146f7AF43049ca1c1AE358B0541Ea49704",
+      "aTokenAddress": "0x977b6fc5dE62598B08C85AC8Cf2b745874E8b78c",
+      "vTokenAddress": "0x0c91bcA95b5FE69164cE583A2ec9429A569798Ed",
+      "supplyApy": 0.183795381577371,
+      "tokenPrice": 3942.52,
+      "tvlUsd": 1083255123.44,
+      "utilizationPct": 61.08
     }
-  ],
-  "lastUpdated": "2026-01-13T11:00:06.895Z",
-  "isStale": false,
-  "updateInProgress": false,
-  "tokenPrices": {
-    "42161:0xda10009cbd5d07dd0cecc66161fc93d7c9000da1": {
-      "price": 1.001,
-      "source": "opportunity"
-    }
-  }
+  ]
 }
 ```
 
 **状态码**:
 - `200`: 成功
+- `503`: 数据快照超过硬过期上限（默认 5 分钟），服务拒绝返回过旧数据（`errorCode = "MARKETS_SNAPSHOT_HARD_STALE"`）
 - `500`: 服务器错误
 
 **注意事项**:
 - 所有排序和过滤逻辑应在客户端处理
-- 如果数据过期，会自动触发后台更新，但响应会立即返回当前缓存数据
-- 响应中的 `updateInProgress` 字段表示是否有更新正在进行
+- 如果数据过期，会自动触发后台更新；在硬过期上限内可继续返回缓存
+- 一旦快照年龄超过硬过期上限（默认 5 分钟），将返回 `503`（不再无限返回旧缓存）
+- `tokenPrice` 已直接放在 `reserves` 行内，前端无需再做额外 price join
+
+---
+
+### `/api/markets` 最终字段契约（前端）
+
+当前前端仅需依赖以下稳定字段：
+
+- `snapshot.lastUpdated`
+- `reserves[].reserveId`
+- `reserves[].marketName`
+- `reserves[].chainName`
+- `reserves[].chainId`
+- `reserves[].tokenName`
+- `reserves[].tokenSymbol`
+- `reserves[].tokenAddress`
+- `reserves[].tokenPrice`
+- `reserves[].tvlUsd`
+- `reserves[].utilizationPct`
+- 以及原有激励字段（`supplyIncentives` / `borrowIncentives` / `merit*` / `merkl*` / `brevis*`）
+
+不再依赖：
+
+- 根级 `tokenPrices`
+- 行内 `tokenPriceKey`
 
 ---
 
@@ -235,6 +214,29 @@ interface MarketsResponse {
 
 **请求参数**:
 - `ids` (可选): 逗号分隔 campaignId 列表；省略时默认返回当前 markets 中全部 campaign 的状态。
+
+**`ids` 获取方式**:
+- 方式 1（推荐）：先请求 `GET /api/markets`，从 `reserves[].merklSupplys[]/merklBorrows[]/merklHolds[]` 的 `breakdowns[].campaignId` 提取并去重。
+- 方式 2：直接使用你已知的 campaignId（例如来自业务配置或历史记录），按逗号拼接传入 `ids`。
+
+示例（从 `/api/markets` 自动提取 ids）：
+
+```bash
+IDS=$(curl -s "http://localhost:3001/api/markets" | jq -r '
+  .reserves[]
+  | (.merklSupplys // []) + (.merklBorrows // []) + (.merklHolds // [])
+  | .[]
+  | (.breakdowns // [])[].campaignId
+' | sort -u | paste -sd, -)
+
+curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=${IDS}" | jq
+```
+
+示例（手动指定 ids）：
+
+```bash
+curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campaignB,campaignC" | jq
+```
 
 **响应格式**:
 
@@ -472,12 +474,12 @@ interface MarketsResponse {
 - **Merit APR**: 来自 `https://apps.aavechan.com/api/merit/aprs`
 - **Merkl APR**: 来自 `https://api.merkl.xyz/v4/opportunities`
 - **Brevis APR**: 来自 Brevis Network Linea Surge API
-- **Token 价格（tokenPrices）**: 来自 Aave markets 数据（`reserve.size.usdPerToken` / `reserve.usdExchangeRate`）为主；Merkl 仅补充 Aave 中不存在的 token。上一轮价格仅在上一轮文件不超过 3× 正常更新周期（3 分钟）时沿用（见上文）。
+- **Token 价格（/api/markets）**: 当前仅在 `reserves[].tokenPrice` 行内返回，不再输出 Merkl reward token 的单独价格补充。
 
-**Aave SDK（@aave/client）与 token price**：本项目从 SDK 返回的 reserve 里读取 USD 价格（优先 `reserve.size.usdPerToken`，缺失时回退 `reserve.usdExchangeRate`），覆盖所有 reserve underlying token；Merkl 仅补充不在 Aave 中的 token（如部分 reward token），合并时 Aave 覆盖同 key 的 Merkl。
+**Aave SDK（@aave/client）与 token price**：本项目从 SDK 返回的 reserve 里读取 USD 价格（优先 `reserve.size.usdPerToken`，缺失时回退 `reserve.usdExchangeRate`），用于 `reserves[].tokenPrice`。
 
 **data 文件夹中的价格**：
-- **`data/runtime/aave-formatted-data.json`**：根级别有 **`tokenPrices`** 字段（与 `data`、`_metadata` 并列），即当前 API 返回的同一套价格索引；key 为 `chainId:tokenAddress`（小写）。运行时 JSON（含本文件及 `merkl-opportunity-meta-lite.json`、`merit-campaign-metadata-cache.json`）均使用无缩进（`space: 0`）以减小体积。
+- **`data/runtime/aave-formatted-data.json`**：当前以 `data + _metadata` 为主，不再依赖根级 token price 补充索引供 `/api/markets` 使用。
 - **`data/debug/aave-all-markets-data.json`**：为 Aave SDK 的原始响应（`markets`、`timestamp` 等），其中包含 reserve 的 `usdPerToken` / `usdExchangeRate` 等价格字段（如果上游返回）。
 
 ### 数据更新机制
@@ -485,7 +487,7 @@ interface MarketsResponse {
 - **仅 `GET /api/markets`** 会触发市场数据新鲜度检查：若数据超过 1 分钟未更新，该请求会触发后台刷新（带并发锁），其他端点不触发市场数据刷新。
 - 其他端点（`/api/coingecko-*`、`/api/campaigns/forecast-states`、`/api/rate-inputs`）使用各自缓存与 TTL。
 - 使用锁机制防止并发更新；更新进行中时，请求会等待约 1 秒再返回。
-- 响应中的 `isStale` 和 `updateInProgress` 仅对 `/api/markets` 有意义，可用于判断市场数据状态。
+- `/api/markets` 返回 `snapshot + reserves`；`isStale` / `updateInProgress` 不在该接口响应中。
 
 ## 错误处理
 
@@ -517,9 +519,9 @@ interface MarketsResponse {
 // 获取所有市场数据
 const response = await fetch('http://localhost:3001/api/markets');
 const data = await response.json();
-console.log(data.data); // 市场数据数组
-console.log(data.lastUpdated); // 最后更新时间
-console.log(data.isStale); // 是否过期
+console.log(data.snapshot.lastUpdated); // 最后更新时间
+console.log(data.reserves.length); // reserve 数量
+console.log(data.reserves[0]?.tokenPrice); // 行内 token 价格
 ```
 
 ### cURL
@@ -543,7 +545,7 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
 
 ## 版本信息
 
-- **API 版本**: 2.2
+- **API 版本**: 3.0
 - **文档更新时间**: 2026-03-11
 - **最后更新**:
   - 补充端点：`GET /api/health`、`GET /api/coingecko-fdv`、`GET /api/rate-inputs`
@@ -558,6 +560,9 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
   - 新增 CoinGecko 分类接口：`/api/coingecko-categories` 提供稳定币和以太坊相关代币分类
   - 健康检查接口增强：返回详细的环境配置信息
   - **2026-03-11**：明确仅 `GET /api/markets` 触发市场数据新鲜度检查与自动刷新；其他端点使用各自缓存/TTL
+  - **2026-03-11（breaking）**：`GET /api/markets` 响应结构切换为 `snapshot + reserves`（`markets-v2`）
+  - **2026-03-11**：`reserves` 保留原全量字段，并新增 `tokenPrice`、`tvlUsd`、`utilizationPct`
+  - **2026-03-11**：Merkl reward token 价格先不在 `/api/markets` 输出；若 reward token 为某 reserve 的 aToken，也不单独输出
 
 ## 注意事项
 
@@ -569,18 +574,10 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
    - `null` 和 `undefined` 在 JSON 中都不会出现（通过 replacer 函数处理）
    - 空数组会被转换为 `undefined` 并省略
    - 数值 `0` 是有效值，会保留在 JSON 中
-4. **Merit 数据结构**:
-   - `meritSupplys` 和 `meritBorrows` 是数组，可能包含多个激励活动
-   - 每个条目都包含完整的活动信息（链接、时间范围等）
-   - 如果活动有 self 版本，会在同一条目中通过 `selfApr` 字段表示
-5. **Merkl 数据结构**:
-   - 不再提供 APR 总和字段，所有数据都在 `merklSupplys`、`merklBorrows`、`merklHolds` 数组中
-   - 每个 opportunity 包含 `link`、可选的 `name` 和 `message` 字段，以及多个 `breakdowns`（活动详情）
-6. **Brevis 数据结构**:
-   - 已从单个 APR 字段改为数组结构：`brevisSupplys` 和 `brevisBorrows`
-   - 每个条目包含完整的活动信息：`apr`、`link`、`startDate`、`endDate`、`name`
-   - 支持多个 Brevis 活动同时存在
-7. **数据新鲜度**: 建议根据 `isStale` 和 `lastUpdated` 字段判断数据是否可用
-8. **更新机制**: 数据更新是异步的，更新过程中会返回缓存数据
-9. **过滤逻辑**: 所有排序和过滤应在客户端完成，API 不提供查询参数
-10. **CoinGecko 分类数据**: `/api/coingecko-categories` 接口提供稳定币和以太坊相关代币的分类信息，数据缓存 6 小时
+4. **`/api/markets` 字段变化（breaking）**:
+   - 结构：`snapshot + reserves`
+   - `reserves` 中保留原全量字段，并新增 `tokenPrice`、`tvlUsd`、`utilizationPct`、`reserveId`
+5. **数据新鲜度**: 建议根据 `snapshot.lastUpdated` 字段判断数据是否可用
+6. **更新机制**: 数据更新是异步的，更新过程中会返回缓存数据
+7. **过滤逻辑**: 所有排序和过滤应在客户端完成，API 不提供查询参数
+8. **CoinGecko 分类数据**: `/api/coingecko-categories` 接口提供稳定币和以太坊相关代币的分类信息，数据缓存 6 小时

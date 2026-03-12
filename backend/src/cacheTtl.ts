@@ -19,8 +19,11 @@ export const BACKEND_FETCH_TIMING_MS = {
 
 // Node-cron 6-field format (includes seconds): at second 0, every minute.
 export const BACKEND_SCHEDULE_CRON = {
-  eachMinuteAtSecondZero: '0 * * * * *',
-  eachFiveMinutesAtSecondFive: '5 */5 * * * *',
+  marketsBackupEveryMinuteAtSecond0: '0 * * * * *',
+  coingeckoFdvWarmEveryFiveMinutesAtSecond5: '5 */5 * * * *',
+  coingeckoCategoriesWarmEverySixHoursAtSecond10: '10 0 */6 * * *',
+  rateInputsWarmEveryMinuteAtSecond20: '20 * * * * *',
+  campaignForecastWarmEveryHourAtSecond30: '30 0 * * * *',
 } as const;
 
 export const BACKEND_CACHE_TTL_MS = {
@@ -28,6 +31,7 @@ export const BACKEND_CACHE_TTL_MS = {
   realtimeFamily: BACKEND_TIME_MS.oneMinute,
   rateInputsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
   marketsDataStaleThreshold: BACKEND_TIME_MS.oneMinute,
+  marketsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
   merklLiteFileMaxAge: BACKEND_TIME_MS.oneMinute,
   merklForecastResultDefault: BACKEND_TIME_MS.oneMinute,
   merklForecastOpportunityMetaDefault: BACKEND_TIME_MS.oneMinute,

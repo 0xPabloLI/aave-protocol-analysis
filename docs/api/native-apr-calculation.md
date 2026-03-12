@@ -249,8 +249,6 @@ export interface ReserveRateInput {
   variableRateSlope2: string;
   baseVariableBorrowRate: string;
   decimals: number;
-  source: 'subgraph' | 'onchain';
-  sourceDetail: string;
 }
 ```
 
@@ -375,7 +373,7 @@ Guideline:
 | Rate-input data bloat `/api/markets` | Keep separate endpoint: `/api/rate-inputs` |
 | Subgraph latency affects market API | Independent pipeline/timer + `Promise.allSettled` |
 | Extra fields per pool | Fetch/use rate inputs only when simulator is used |
-| Token prices | Keep existing `tokenPrices` behavior unchanged |
+| Token prices | Use `/api/markets` row-level `reserves[].tokenPrice` only |
 | All-chain vs chain endpoint overhead | Keep both `/api/rate-inputs` and `/api/rate-inputs?chainId=` but serve from one shared cache snapshot (filter at read time, no duplicate upstream fetch) |
 
 ---

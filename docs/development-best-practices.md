@@ -1,6 +1,6 @@
 # Development Best Practices (Living Notes)
 
-Last updated: 2026-02-24
+Last updated: 2026-03-12
 
 This is a living note for implementation and architecture practices we agreed on while iterating Merkl/Merit forecasting.
 
@@ -17,6 +17,7 @@ This is a living note for implementation and architecture practices we agreed on
 - Use per-domain TTLs instead of forcing one global TTL.
 - When source cadence is unknown, start conservative and instrument timestamps so TTL can be tuned from observed intervals.
 - For expensive historical scans, use **negative cache** (record miss checks too).
+- For user-decision APIs, add a **hard stale cap** beyond soft TTL (for example `/api/markets` > 5 minutes returns `503`) to avoid silently serving indefinitely stale snapshots.
 
 ## 2) File Snapshot Design
 
