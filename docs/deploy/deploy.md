@@ -157,7 +157,7 @@ curl http://localhost:3001/health
 共 7 个端点，完整说明见 [docs/api/api-documentation.md](../api/api-documentation.md)：
 
 - `GET /health`、`GET /api/health` - 健康检查（含环境信息）
-- `GET /api/markets` - 市场数据（含 `tokenPrices`；**仅此端点**会触发市场数据新鲜度检查与自动刷新）
+- `GET /api/markets` - 市场数据（`markets-v2`：`snapshot + reserves`；**仅此端点**会触发市场数据新鲜度检查与自动刷新）
 - `GET /api/coingecko-categories` - CoinGecko 分类（稳定币、ETH 相关）
 - `GET /api/coingecko-fdv` - FDV 数据（CoinMarketCap 优先，CoinGecko 回退）
 - `GET /api/campaigns/forecast-states` - Merkl 活动预测状态（可选 `ids=...`）

@@ -6,11 +6,11 @@ const opportunitiesSnapshotCache = new Map();
 
 export const AAVE_PUBLIC_RPC_URLS_BY_CHAIN_KEY = Object.freeze({
   ethereum: Object.freeze([
-    'https://mainnet.gateway.tenderly.co',
-    'https://rpc.flashbots.net',
-    'https://eth.llamarpc.com',
-    'https://eth-mainnet.public.blastapi.io',
     'https://ethereum-rpc.publicnode.com',
+    'https://eth-mainnet.public.blastapi.io',
+    'https://rpc.ankr.com/eth',
+    'https://eth.drpc.org',
+    'https://cloudflare-eth.com',
   ]),
   polygon: Object.freeze([
     'https://gateway.tenderly.co/public/polygon',

@@ -123,7 +123,7 @@ flowchart TD
 
 ### Debug / Troubleshoot (human-facing first)
 - `data/debug/merkl-raw-data.json`
-  - Full Merkl debug snapshot (raw/live opportunities + processed/index/tokenPrices)
+  - Full Merkl debug snapshot (raw/live opportunities + processed/index)
 - `data/debug/merit-raw-data.json`
   - Merit APR raw + campaignMetadataByKey + built index
 - `data/debug/merit-merkl-raw-data.json`

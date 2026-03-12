@@ -2,7 +2,9 @@ import cron from 'node-cron';
 import { fetchAaveMarketsData } from '../../../dist/index.js';
 import { dataService } from './dataService.js';
 import { setUpdateStatus, getUpdateStatus } from '../controllers/marketsController.js';
-import { warmCoingeckoFdvCache } from '../controllers/coingeckoController.js';
+import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from '../controllers/coingeckoController.js';
+import { warmCampaignForecastStatesCache } from '../controllers/merklForecastController.js';
+import { warmRateInputsCache } from './rateInputsService.js';
 import { UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
@@ -17,16 +19,19 @@ const MAX_UPDATE_TIME_MS = UPDATE_TIMEOUT_MS * 2;
 /**
  * 启动定时更新任务
  * 每 1 分钟执行一次数据更新
- * 注意：此定时任务作为后备机制，主要的数据更新由 API 请求自动触发
+ * 这是主要的数据同步机制，后端定期拉取最新数据，前端请求时直接使用已同步的数据
  */
 export function startUpdateScheduler(): void {
-  logger.info('📅 Starting update scheduler (every 1 minute) as backup mechanism');
+  logger.info('📅 Starting update scheduler (every 1 minute)');
+  logger.info('📅 Starting rate-inputs warm scheduler (every 1 minute)');
+  logger.info('📅 Starting campaign forecast warm scheduler (every 1 hour)');
+  logger.info('📅 Starting categories warm scheduler (every 6 hours)');
   logger.info('📅 Starting FDV warm scheduler (every 5 minutes)');
 
   // 每 1 分钟执行一次
   // node-cron 3.0.3 支持 6 位 cron 表达式（包含秒字段）
   // 使用 6 位 cron 表达式，表示每分钟的第 0 秒执行（等价于 5 位表达式的 '*/1 * * * *'）
-  cron.schedule(BACKEND_SCHEDULE_CRON.eachMinuteAtSecondZero, async () => {
+  cron.schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
     const currentStatus = getUpdateStatus();
 
     // 检查是否有卡住的更新（运行时间超过最大允许时间）
@@ -65,7 +70,7 @@ export function startUpdateScheduler(): void {
       return;
     }
 
-    logger.info('🔄 Starting scheduled data update (backup mechanism)...');
+    logger.info('🔄 Starting scheduled data update...');
 
     // 记录更新开始时间，用于检测卡住的更新
     scheduledUpdateStartTime = Date.now();
@@ -166,12 +171,48 @@ export function startUpdateScheduler(): void {
   });
 
   // Warm FDV cache every 5 minutes so frontend reads hot snapshots.
-  cron.schedule(BACKEND_SCHEDULE_CRON.eachFiveMinutesAtSecondFive, async () => {
+  cron.schedule(BACKEND_SCHEDULE_CRON.coingeckoFdvWarmEveryFiveMinutesAtSecond5, async () => {
     try {
       await warmCoingeckoFdvCache();
     } catch (error) {
       logger.warn(
         `FDV warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  });
+
+  // Warm rate-inputs cache every minute to keep core snapshot hot.
+  cron.schedule(BACKEND_SCHEDULE_CRON.rateInputsWarmEveryMinuteAtSecond20, async () => {
+    try {
+      await warmRateInputsCache();
+    } catch (error) {
+      logger.warn(
+        `Rate-inputs warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  });
+
+  // Warm campaign forecast cache every hour with market-derived campaign IDs.
+  cron.schedule(BACKEND_SCHEDULE_CRON.campaignForecastWarmEveryHourAtSecond30, async () => {
+    try {
+      const summary = await warmCampaignForecastStatesCache();
+      logger.info(
+        `✅ Campaign forecast warm scheduler finished: requested=${summary.requested}, fulfilled=${summary.fulfilled}, failed=${summary.failed}`
+      );
+    } catch (error) {
+      logger.warn(
+        `Campaign forecast warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  });
+
+  // Warm categories cache every 6 hours to reduce cold-start risk after failures.
+  cron.schedule(BACKEND_SCHEDULE_CRON.coingeckoCategoriesWarmEverySixHoursAtSecond10, async () => {
+    try {
+      await warmCoingeckoCategoriesCache();
+    } catch (error) {
+      logger.warn(
+        `Categories warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   });

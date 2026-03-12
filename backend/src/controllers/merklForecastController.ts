@@ -96,3 +96,22 @@ export const getCampaignForecastStates = async (req: Request, res: Response): Pr
     errors,
   });
 };
+
+export async function warmCampaignForecastStatesCache(): Promise<{
+  requested: number;
+  fulfilled: number;
+  failed: number;
+}> {
+  const campaignIds = collectCampaignIdsFromMarkets(await dataService.getData());
+  const dedupedCampaignIds = Array.from(new Set(campaignIds));
+  if (dedupedCampaignIds.length === 0) {
+    return { requested: 0, fulfilled: 0, failed: 0 };
+  }
+
+  const results = await Promise.allSettled(
+    dedupedCampaignIds.map((campaignId) => getMerklForecastState(campaignId))
+  );
+  const fulfilled = results.filter((result) => result.status === 'fulfilled').length;
+  const failed = results.length - fulfilled;
+  return { requested: dedupedCampaignIds.length, fulfilled, failed };
+}

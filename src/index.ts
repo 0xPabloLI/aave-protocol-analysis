@@ -1,5 +1,5 @@
 import './env.js';
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir } from 'fs/promises';
 import { chainId, AaveClient, ChainsFilter } from "@aave/client";
 import { markets, chains } from "@aave/client/actions";
 import * as addressBook from "@bgd-labs/aave-address-book";
@@ -15,7 +15,6 @@ import {
   MerklCampaignBreakdown,
   MerklOpportunityData,
   MerklOpportunityGroup,
-  TokenPricesIndex,
   processMerklData,
   findMatchingMerklOpportunities,
   formatMerklBreakdown
@@ -69,50 +68,17 @@ function toFiniteNumber(value: unknown): number | null {
   return null;
 }
 
-function extractAaveTokenPrices(markets: any[]): TokenPricesIndex {
-  const tokenPrices: TokenPricesIndex = {};
-
-  const addReservePrice = (reserve: any, chainIdValue: number): void => {
-    const address: string | undefined = reserve?.underlyingToken?.address;
-    if (!address) return;
-    const usdPerToken =
-      toFiniteNumber(reserve?.size?.usdPerToken) ??
-      toFiniteNumber(reserve?.usdExchangeRate) ??
-      null;
-    if (usdPerToken === null || usdPerToken <= 0) return;
-    const symbol: string = reserve?.underlyingToken?.symbol || 'Unknown';
-    const key = `${chainIdValue}:${address.toLowerCase()}`;
-    if (!tokenPrices[key]) {
-      tokenPrices[key] = {
-        chainId: chainIdValue,
-        address,
-        symbol,
-        price: usdPerToken,
-        source: 'aave',
-      };
-    }
-  };
-
-  markets.forEach((market) => {
-    const chainIdValue: number = market?.chain?.chainId || 0;
-    if (!chainIdValue) return;
-    if (Array.isArray(market?.supplyReserves)) {
-      market.supplyReserves.forEach((reserve: any) => addReservePrice(reserve, chainIdValue));
-    }
-    if (Array.isArray(market?.borrowReserves)) {
-      market.borrowReserves.forEach((reserve: any) => addReservePrice(reserve, chainIdValue));
-    }
-  });
-  return tokenPrices;
-}
-
 interface FormattedReserveData {
+  reserveId: string;
   marketName: string;
   chainName: string;
   chainId: number;
   tokenName: string;
   tokenSymbol: string;
   tokenAddress: string; // underlying token address
+  tokenPrice?: number;
+  tvlUsd?: number;
+  utilizationPct?: number;
   aTokenAddress: string | null; // aToken address
   vTokenAddress: string | null; // variableDebtToken address
   supplyApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
@@ -128,14 +94,17 @@ interface FormattedReserveData {
   brevisBorrows?: BrevisCampaignItem[];
 }
 
-type RuntimeTokenPricesIndex = Record<string, { price: number }>;
 interface RuntimeReserveData {
+  reserveId: string;
   marketName: string;
   chainName: string;
   chainId: number;
   tokenName: string;
   tokenSymbol: string;
   tokenAddress: string;
+  tokenPrice?: number;
+  tvlUsd?: number;
+  utilizationPct?: number;
   aTokenAddress?: string;
   vTokenAddress?: string;
   supplyApy?: number;
@@ -188,12 +157,16 @@ function pruneMerklGroupForRuntime(group: MerklOpportunityGroup): MerklOpportuni
 
 function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData {
   return {
+    reserveId: item.reserveId,
     marketName: item.marketName,
     chainName: item.chainName,
     chainId: item.chainId,
     tokenName: item.tokenName,
     tokenSymbol: item.tokenSymbol,
     tokenAddress: item.tokenAddress,
+    ...(item.tokenPrice !== undefined ? { tokenPrice: item.tokenPrice } : {}),
+    ...(item.tvlUsd !== undefined ? { tvlUsd: item.tvlUsd } : {}),
+    ...(item.utilizationPct !== undefined ? { utilizationPct: item.utilizationPct } : {}),
     ...(item.aTokenAddress ? { aTokenAddress: item.aTokenAddress } : {}),
     ...(item.vTokenAddress ? { vTokenAddress: item.vTokenAddress } : {}),
     ...(item.supplyApy !== undefined ? { supplyApy: item.supplyApy } : {}),
@@ -382,6 +355,16 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
 
         const tokenSymbol = reserve.underlyingToken?.symbol || 'Unknown';
         const tokenAddress = reserve.underlyingToken?.address || '';
+        const tokenAddressLower = tokenAddress.toLowerCase();
+        const reserveId = `${marketName}:${chainId}:${tokenAddressLower}`;
+        const tokenPrice =
+          toFiniteNumber(reserve?.size?.usdPerToken) ??
+          toFiniteNumber(reserve?.usdExchangeRate) ??
+          undefined;
+        const tvlUsd = toFiniteNumber(reserve?.size?.usd) ?? undefined;
+        const utilizationRaw = toFiniteNumber(reserve?.borrowInfo?.utilizationRate?.value);
+        const utilizationPct =
+          utilizationRaw !== null && utilizationRaw >= 0 ? utilizationRaw * 100 : undefined;
         const aTokenAddress = reserve.aToken?.address ?? null;
         const vTokenAddress = reserve.vToken?.address ?? null;
         
@@ -432,12 +415,16 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         // 创建完整的结构化数据，包含所有激励字段
         // 空值初始化为 undefined，以便在 JSON 序列化时省略
         baseDataset.push({
+          reserveId,
           marketName,
           chainName,
           chainId,
           tokenName: reserve.underlyingToken?.name || 'Unknown',
           tokenSymbol,
           tokenAddress,
+          tokenPrice,
+          tvlUsd,
+          utilizationPct,
           aTokenAddress,
           vTokenAddress,
           supplyApy,
@@ -458,7 +445,7 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
 type MeritDataIndex = Record<string, MeritDataItem>;
 type MerklDataIndex = Record<string, MerklOpportunityData[]>;
 type BrevisDataIndex = Record<string, BrevisDataItem>;
-type MerklProcessedData = { index: MerklDataIndex; tokenPrices: TokenPricesIndex };
+type MerklProcessedData = { index: MerklDataIndex };
 
 function enrichDatasetWithIncentiveData(
   baseDataset: FormattedReserveData[],
@@ -904,7 +891,6 @@ async function fetchAaveMarkets(): Promise<void> {
     logger.info('📊 Creating base dataset from Aave markets...');
     const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
     logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
-    const aaveTokenPrices = extractAaveTokenPrices(marketData.markets);
 
     // 并发获取 Merit、Merkl 和 Brevis 数据（它们之间没有依赖关系）
     // 注意：程序是定期触发的，设置超时避免某个任务卡住导致所有数据被卡住
@@ -918,7 +904,7 @@ async function fetchAaveMarkets(): Promise<void> {
     });
     const merklPromise = processMerklData().catch((error) => {
       logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-      return { index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex } as MerklProcessedData;
+      return { index: {} as MerklDataIndex } as MerklProcessedData;
     });
     const brevisPromise = fetchBrevisAprs(baseDataset).catch((error) => {
       logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -930,7 +916,7 @@ async function fetchAaveMarkets(): Promise<void> {
     const INCENTIVE_DATA_TIMEOUT_MS = 10 * 60 * 1000; // 10 分钟
     
     // 创建一个包装函数，用于在超时后提取已完成的结果
-    const getCompletedResults = async (): Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex; tokenPrices: TokenPricesIndex }> => {
+    const getCompletedResults = async (): Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex }> => {
       // 等待所有任务完成或超时
       const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
       
@@ -938,9 +924,8 @@ async function fetchAaveMarkets(): Promise<void> {
       const merklResult: MerklProcessedData =
         results[1].status === 'fulfilled'
           ? (results[1].value as MerklProcessedData)
-          : { index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex };
+          : { index: {} as MerklDataIndex };
       const merklData: MerklDataIndex = merklResult.index;
-      const merklTokenPrices: TokenPricesIndex = merklResult.tokenPrices;
       const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
       
       if (results[0].status === 'rejected') {
@@ -953,18 +938,18 @@ async function fetchAaveMarkets(): Promise<void> {
         logger.warn(`⚠️ Brevis data fetching was rejected, using empty data`);
       }
       
-      return { merit: meritData, merkl: merklData, brevis: brevisData, tokenPrices: merklTokenPrices };
+      return { merit: meritData, merkl: merklData, brevis: brevisData };
     };
     
     // 创建超时 Promise
-    const timeoutPromise = new Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex; tokenPrices: TokenPricesIndex }>((resolve) => {
+    const timeoutPromise = new Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex }>((resolve) => {
       setTimeout(async () => {
         logger.warn(`⏱️ Incentive data fetching timeout after ${INCENTIVE_DATA_TIMEOUT_MS / 1000}s, extracting completed results...`);
         
         // 超时后，检查哪些任务已完成，使用已完成的结果
         const results = await Promise.allSettled([
           Promise.race([meritPromise, Promise.resolve({} as MeritDataIndex)]),
-          Promise.race([merklPromise, Promise.resolve({ index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex } as MerklProcessedData)]),
+          Promise.race([merklPromise, Promise.resolve({ index: {} as MerklDataIndex } as MerklProcessedData)]),
           Promise.race([brevisPromise, Promise.resolve({} as BrevisDataIndex)]),
         ]);
         
@@ -986,13 +971,12 @@ async function fetchAaveMarkets(): Promise<void> {
         
         const [meritCheck, merklCheck, brevisCheck] = await Promise.all([
           checkCompleted(meritPromise, {} as MeritDataIndex),
-          checkCompleted(merklPromise, { index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex } as MerklProcessedData),
+          checkCompleted(merklPromise, { index: {} as MerklDataIndex } as MerklProcessedData),
           checkCompleted(brevisPromise, {} as BrevisDataIndex),
         ]);
         
         const meritData: MeritDataIndex = meritCheck.completed ? meritCheck.value : {};
         const merklData: MerklDataIndex = merklCheck.completed ? merklCheck.value.index : {};
-        const merklTokenPrices: TokenPricesIndex = merklCheck.completed ? merklCheck.value.tokenPrices : {};
         const brevisData: BrevisDataIndex = brevisCheck.completed ? brevisCheck.value : {};
         
         logger.warn(`   • Merit: ${meritCheck.completed ? 'completed' : 'timeout/empty'}`);
@@ -1000,12 +984,12 @@ async function fetchAaveMarkets(): Promise<void> {
         logger.warn(`   • Brevis: ${brevisCheck.completed ? 'completed' : 'timeout/empty'}`);
         logger.warn(`   • Using available results, unfinished tasks continue in background`);
         
-        resolve({ merit: meritData, merkl: merklData, brevis: brevisData, tokenPrices: merklTokenPrices });
+        resolve({ merit: meritData, merkl: merklData, brevis: brevisData });
       }, INCENTIVE_DATA_TIMEOUT_MS);
     });
     
     // 使用 Promise.race，取先完成的（任务完成或超时）
-    const { merit: meritData, merkl: merklData, brevis: brevisData, tokenPrices: merklTokenPrices } = await Promise.race([
+    const { merit: meritData, merkl: merklData, brevis: brevisData } = await Promise.race([
       getCompletedResults(),
       timeoutPromise,
     ]);
@@ -1021,33 +1005,6 @@ async function fetchAaveMarkets(): Promise<void> {
     // 保存格式化 JSON 数据（runtime 最小可用 + debug 全量）
     const formattedJsonPath = join(RUNTIME_DATA_DIR, 'aave-formatted-data.json');
     const debugFormattedJsonPath = join(DEBUG_DATA_DIR, 'aave-formatted-data.full.json');
-    // Carry over previous token prices only if the previous file is recent (within TTL), to avoid keeping stale prices for tokens that no longer appear.
-    // TTL = 3× backend marketsDataStaleThreshold (1 min) so carry-over aligns with normal update cadence.
-    const TOKEN_PRICE_CARRYOVER_MAX_AGE_MS = 3 * 60 * 1000; // 3 min
-    let previousTokenPrices: Record<string, { price: number }> = {};
-    try {
-      const raw = await readFile(formattedJsonPath, 'utf-8');
-      const parsed = JSON.parse(raw) as { _metadata?: { timestamp?: string }; tokenPrices?: Record<string, { price: number }> };
-      if (parsed?.tokenPrices && typeof parsed.tokenPrices === 'object' && parsed._metadata?.timestamp) {
-        const prevTs = Date.parse(parsed._metadata.timestamp);
-        if (Number.isFinite(prevTs) && Date.now() - prevTs <= TOKEN_PRICE_CARRYOVER_MAX_AGE_MS) {
-          previousTokenPrices = parsed.tokenPrices;
-        }
-      }
-    } catch {
-      // file missing or invalid — start fresh
-    }
-    // Merge: previous (only if recent) < Merkl < Aave (primary, overwrites for same key).
-    const mergedTokenPrices: TokenPricesIndex = {
-      ...(previousTokenPrices as TokenPricesIndex),
-      ...merklTokenPrices,
-      ...aaveTokenPrices,
-    };
-    const runtimeTokenPrices: RuntimeTokenPricesIndex = Object.fromEntries(
-      Object.entries(mergedTokenPrices)
-        .filter(([, v]) => typeof v?.price === 'number')
-        .map(([k, v]) => [k, { price: v!.price }])
-    );
     const runtimeData = enrichedData.map(pruneReserveForRuntime);
     const runtimePayload = {
       _metadata: {
@@ -1056,7 +1013,6 @@ async function fetchAaveMarkets(): Promise<void> {
         dataCount: runtimeData.length,
         profile: 'runtime-minimal',
       },
-      tokenPrices: runtimeTokenPrices,
       data: runtimeData,
     };
     const debugPayload = {
@@ -1066,7 +1022,6 @@ async function fetchAaveMarkets(): Promise<void> {
         dataCount: enrichedData.length,
         profile: 'debug-full',
       },
-      tokenPrices: mergedTokenPrices,
       data: enrichedData,
     };
     // Runtime: minimal JSON (no pretty-print) and omit null/undefined for smaller file.

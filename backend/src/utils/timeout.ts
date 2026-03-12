@@ -7,35 +7,6 @@ import { BACKEND_TIMEOUT_MS } from '../cacheTtl.js';
 export const UPDATE_TIMEOUT_MS = BACKEND_TIMEOUT_MS.update;
 
 /**
- * 为异步操作添加超时保护
- * @param promise 要执行的异步操作
- * @param timeoutMs 超时时间（毫秒）
- * @returns Promise，如果超时会 reject
+ * 为更新逻辑提供统一的超时阈值，具体的超时处理逻辑在调用方实现
  */
-export async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number = UPDATE_TIMEOUT_MS
-): Promise<T> {
-  let timeoutId: NodeJS.Timeout | null = null;
-  
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error(`Update timeout after ${timeoutMs / 1000}s`));
-    }, timeoutMs);
-  });
-  
-  try {
-    const result = await Promise.race([promise, timeoutPromise]);
-    // 如果主 promise 先完成，清理超时定时器，防止资源泄漏
-    if (timeoutId !== null) {
-      clearTimeout(timeoutId);
-    }
-    return result;
-  } catch (error) {
-    // 如果超时发生，清理定时器（虽然已经触发，但为了完整性）
-    if (timeoutId !== null) {
-      clearTimeout(timeoutId);
-    }
-    throw error;
-  }
-}
+// 目前由 `marketsController` 和 `updateScheduler` 中的调用方各自实现超时逻辑。

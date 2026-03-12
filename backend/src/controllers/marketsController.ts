@@ -1,12 +1,21 @@
 import { Request, Response } from 'express';
 import { dataService } from '../services/dataService.js';
 import { fetchAaveMarketsData } from '../../../dist/index.js';
-import { MarketsResponse, MarketWithSpread, UpdateStatus } from '../types/index.js';
-import { withTimeout, UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
+import { MarketsResponse, UpdateStatus } from '../types/index.js';
+import { UPDATE_TIMEOUT_MS } from '../utils/timeout.js';
 import { logger } from '../logger.js';
+import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
+
+const MARKETS_HARD_STALE_MAX_MS = BACKEND_CACHE_TTL_MS.marketsServeStaleMax;
+
+function getSnapshotAgeMs(lastUpdated: Date | null): number | null {
+  if (!lastUpdated) return null;
+  return Date.now() - lastUpdated.getTime();
+}
 
 /**
- * 检查数据新鲜度并在需要时自动更新
+ * 检查数据新鲜度并在需要时自动更新（兜底机制）
+ * 正常情况下数据由 updateScheduler 定期同步，此处仅在 scheduler 未及时更新时触发
  * 使用锁机制防止并发更新
  */
 async function checkAndUpdateDataIfStale(): Promise<void> {
@@ -63,7 +72,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
   if (isStale && !activeUpdatePromise && currentStatus.status !== 'updating') {
     // 获取调用栈信息，帮助追踪更新来源
     const stack = new Error().stack?.split('\n').slice(2, 5).join(' -> ') || 'unknown';
-    logger.info(`🔄 Data is stale, triggering automatic update... [triggered by: ${stack}]`);
+    logger.info(`🔄 Data is stale (scheduler may have missed), triggering fallback update... [triggered by: ${stack}]`);
 
     // 设置更新状态（作为锁）
     setUpdateStatus({
@@ -134,7 +143,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
             lastUpdated: lastUpdated?.toISOString() || null,
             lastSuccessfulUpdate: lastUpdated?.toISOString() || null,
           });
-          logger.info('✅ Automatic update completed successfully');
+          logger.info('✅ Fallback update completed successfully');
         } catch (error) {
           // 清理超时定时器
           if (timeoutId !== null) {
@@ -148,7 +157,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
             return;
           }
           
-          logger.error('❌ Automatic update failed:', error);
+          logger.error('❌ Fallback update failed:', error);
           const errorStatus = getUpdateStatus();
           
           const errorMessage = timeoutOccurred
@@ -162,7 +171,7 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
             error: errorMessage,
           });
           // 更新失败时继续使用缓存数据
-          logger.warn('⚠️  Continuing with cached data after update failure');
+          logger.warn('⚠️  Continuing with cached data after fallback update failure');
         } finally {
           // 清理超时定时器（确保清理）
           if (timeoutId !== null) {
@@ -226,6 +235,28 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 
     // 获取数据（可能是刚更新的，也可能是缓存的）
     const data = await dataService.getData();
+    const lastUpdated = dataService.getLastUpdated();
+    const snapshotAgeMs = getSnapshotAgeMs(lastUpdated);
+
+    // Hard stale guard: do not keep serving very old snapshots indefinitely.
+    if (snapshotAgeMs === null || snapshotAgeMs > MARKETS_HARD_STALE_MAX_MS) {
+      const currentStatus = getUpdateStatus();
+      logger.warn(
+        `❌ Refusing to serve hard-stale markets snapshot (ageMs=${
+          snapshotAgeMs ?? 'unknown'
+        }, max=${MARKETS_HARD_STALE_MAX_MS}, status=${currentStatus.status})`
+      );
+      res.status(503).json({
+        errorCode: 'MARKETS_SNAPSHOT_HARD_STALE',
+        error: 'Service unavailable',
+        message:
+          'Markets snapshot is too old and cannot be served safely. Please retry shortly.',
+        lastSuccessfulUpdate: currentStatus.lastSuccessfulUpdate,
+        snapshotAgeMs,
+        maxAllowedStaleMs: MARKETS_HARD_STALE_MAX_MS,
+      });
+      return;
+    }
 
     // 过滤无效条目（缺少必需字段）
     const filteredData = data.filter((item) => {
@@ -239,21 +270,14 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
       );
     });
 
-    const lastUpdated = dataService.getLastUpdated();
-    const rawTokenPrices = dataService.getTokenPrices();
-    const tokenPrices = rawTokenPrices
-      ? Object.fromEntries(
-          Object.entries(rawTokenPrices).map(([key, entry]) => [
-            key,
-            { price: entry.price },
-          ])
-        )
-      : undefined;
+    const dataWithTokenPrice = filteredData;
 
     const response: MarketsResponse = {
-      data: filteredData,
-      lastUpdated: lastUpdated?.toISOString() || new Date().toISOString(),
-      tokenPrices,
+      snapshot: {
+        lastUpdated: lastUpdated?.toISOString() || new Date().toISOString(),
+        version: 'markets-v2',
+      },
+      reserves: dataWithTokenPrice,
     };
 
     res.json(response);

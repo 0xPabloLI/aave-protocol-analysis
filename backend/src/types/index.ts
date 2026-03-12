@@ -2,18 +2,22 @@
 // 注意：这个文件需要从主项目的 src/index.ts 中导出类型
 
 export interface MarketWithSpread {
+  reserveId: string;
   marketName: string;
   chainName: string;
   chainId: number;
   tokenName: string;
   tokenSymbol: string;
   tokenAddress: string;
-  aTokenAddress: string | null;
-  vTokenAddress: string | null;
-  supplyApy: number | null;
-  borrowApy: number | null;
-  supplyIncentives: number[];
-  borrowIncentives: number[];
+  tokenPrice?: number;
+  tvlUsd?: number;
+  utilizationPct?: number;
+  aTokenAddress?: string | null;
+  vTokenAddress?: string | null;
+  supplyApy?: number | null;
+  borrowApy?: number | null;
+  supplyIncentives?: number[];
+  borrowIncentives?: number[];
   meritSupplys?: Array<{
     apr: number;
     selfApr?: number;
@@ -89,16 +93,12 @@ export interface MarketWithSpread {
   }>;
 }
 
-export interface TokenPriceEntry {
-  price: number;
-}
-
-export type TokenPricesIndex = Record<string, TokenPriceEntry>;
-
 export interface MarketsResponse {
-  data: MarketWithSpread[];
-  lastUpdated: string; // ISO timestamp
-  tokenPrices?: TokenPricesIndex;
+  snapshot: {
+    lastUpdated: string; // ISO timestamp
+    version: 'markets-v2';
+  };
+  reserves: MarketWithSpread[];
 }
 
 export interface UpdateStatus {
@@ -107,8 +107,6 @@ export interface UpdateStatus {
   lastSuccessfulUpdate: string | null;
   error?: string;
 }
-
-export type RateInputSource = 'subgraph' | 'onchain';
 
 export interface ReserveRateInput {
   marketName: string;
@@ -123,8 +121,6 @@ export interface ReserveRateInput {
   variableRateSlope2: string;
   baseVariableBorrowRate: string;
   optimalUsageRate: string;
-  source: RateInputSource;
-  sourceDetail: string;
 }
 
 export interface RateInputsResponse {
@@ -136,5 +132,11 @@ export interface RateInputsResponse {
     subgraphChains: number[];
     onchainChains: number[];
     subgraphMissingChains: number[];
+    unhealthyRpcEndpoints: Array<{
+      chainId: number;
+      rpcUrl: string;
+      lastError: string;
+      suppressedUntil: string;
+    }>;
   };
 }

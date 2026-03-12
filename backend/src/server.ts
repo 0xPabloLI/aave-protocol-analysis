@@ -10,6 +10,7 @@ import campaignsRouter from './routes/campaigns.js';
 import rateInputsRouter from './routes/rateInputs.js';
 import { dataService } from './services/dataService.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
+import { warmCoingeckoCategoriesCache } from './controllers/coingeckoController.js';
 import { logger } from './logger.js';
 
 const app = express();
@@ -84,6 +85,17 @@ dataService.loadData()
     
     // 启动定时更新任务
     startUpdateScheduler();
+
+    // 启动时预热 coingecko categories，避免首个请求冷启动
+    return warmCoingeckoCategoriesCache()
+      .then(() => {
+        logger.info('✅ Coingecko categories cache warmed on startup');
+      })
+      .catch((error) => {
+        logger.warn('⚠️  Failed to warm coingecko categories on startup:', error);
+      });
+  })
+  .finally(() => {
     
     // 启动服务器
     app.listen(PORT, () => {
@@ -92,11 +104,7 @@ dataService.loadData()
   })
   .catch((error) => {
     logger.error('❌ Failed to load data:', error);
-    // 即使加载失败也启动服务器（可能是首次运行，数据文件不存在）
-    app.listen(PORT, () => {
-      logger.warn('⚠️  Data file not found. Please run data fetch script first.');
-      logger.info(`🚀 Server running on http://localhost:${PORT}`);
-    });
+    logger.warn('⚠️  Data file not found. Please run data fetch script first.');
   });
 
 // ts-prune-ignore-next

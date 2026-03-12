@@ -153,12 +153,12 @@ Data files include `_metadata.timestamp` (written by fetcher). Backend prioritiz
 
 ### API Endpoints
 
-**共 7 个端点**（完整列表与详细说明见 `docs/api/api-documentation.md`）。Token 价格仅由 **`GET /api/markets`** 在响应根级别 `tokenPrices` 字段返回。
+**共 7 个端点**（完整列表与详细说明见 `docs/api/api-documentation.md`）。`GET /api/markets` 使用 `markets-v2` 结构：根级 `snapshot + reserves`；价格主字段在 `reserves[].tokenPrice`。
 
 ```
 GET /health                        # Health check with environment info
 GET /api/health                    # Same handler as /health (API namespace)
-GET /api/markets                   # All market data + tokenPrices (no query params)
+GET /api/markets                   # markets-v2 snapshot + full reserves (no query params)
 GET /api/coingecko-categories      # CoinGecko category data (stablecoins, ETH-related)
 GET /api/coingecko-fdv             # CoinGecko FDV data (CMC primary, CG fallback)
 GET /api/campaigns/forecast-states # Merkl campaign forecast states (optional ids=...)
@@ -166,7 +166,7 @@ GET /api/rate-inputs               # Reserve rate inputs (optional chainId, asse
 ```
 
 **Markets 数据新鲜度**（仅以下端点会触发 `checkAndUpdateDataIfStale()`）:
-- `GET /api/markets` — 响应含 `{ data, lastUpdated, isStale, updateInProgress }`；若数据超过 1 分钟未更新会自动触发刷新并受并发控制。
+- `GET /api/markets` — 响应含 `{ snapshot, reserves }`；若数据超过 1 分钟未更新会自动触发刷新并受并发控制。
 - 其他端点（coingecko、campaigns、rate-inputs）使用各自缓存/TTL，不触发市场数据刷新。
 
 ## Configuration
@@ -218,6 +218,8 @@ Each incentive API uses different identifiers:
 - **Merit**: `chainId-tokenAddress` (e.g., `"1-0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"`)
 - **Merkl**: Chain name + symbol case-insensitive (e.g., `ethereum` + `USDC`)
 - **Brevis**: `chainId-tokenAddress` index
+- **Token price delivery**: keep full reserve rows in `reserves` and attach `tokenPrice` inline.
+- **Reward token rule**: Merkl reward token prices are not output in `/api/markets` for now; if a reward token is an Aave `aToken`, do not emit a separate price entry.
 
 ### Frozen/Paused Reserves
 Automatically excluded: `isFrozen === true` or `isPaused === true`
@@ -268,6 +270,7 @@ Be careful with the concurrency control mechanism. The `activeUpdatePromise` and
 Update both:
 1. Root fetcher output format in `src/index.ts`
 2. Backend type definitions in `backend/src/types/index.ts`
+3. Keep existing reserve-level incentive fields unless explicitly removed by product/API contract decision.
 
 ### Environment Variable Priority
 In production with Doppler:
