@@ -49,6 +49,13 @@ app.use(
 );
 app.use(apiCacheHeadersMiddleware);
 
+// Avoid noisy 404s for automatic browser favicon requests.
+// We intentionally return 204 No Content with a cache header instead of serving an icon file.
+app.get('/favicon.ico', (req, res) => {
+  res.status(204).setHeader('Cache-Control', 'public, max-age=86400');
+  res.end();
+});
+
 // Routes
 app.use('/api/markets', marketsRouter);
 app.use('/api/coingecko-categories', coingeckoRouter);
