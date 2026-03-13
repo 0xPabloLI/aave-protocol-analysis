@@ -10,11 +10,13 @@ export interface MarketWithSpread {
   tokenSymbol: string;
   tokenAddress: string;
   tokenPrice?: number;
-  marketSizeUsd?: number;
+  reserveSizeUsd?: number;
   utilizationPct?: number;
   aTokenAddress?: string | null;
   vTokenAddress?: string | null;
   supplyApy?: number | null;
+  supplyDisabled?: boolean;
+  supplyCapUsd?: number;
   borrowApy?: number | null;
   borrowDisabled?: boolean;
   supplyIncentives?: number[];
@@ -115,6 +117,8 @@ export interface ReserveRateInput {
   chainId: number;
   tokenAddress: string;
   decimals: number;
+  // reserve deficit (raw token units)
+  deficit: string;
   availableLiquidity: string;
   totalScaledVariableDebt: string;
   variableBorrowIndex: string;

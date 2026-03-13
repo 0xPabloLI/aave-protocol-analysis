@@ -28,6 +28,7 @@
 ```typescript
 interface FormattedReserveData {
   // 基础信息
+  reserveId: string;                     // 储备 ID（唯一标识符）
   marketName: string;                    // 市场名称，如 "AaveV3Arbitrum"
   chainName: string;                     // 链名称，如 "Arbitrum"
   chainId: number;                       // 链 ID，如 42161
@@ -37,14 +38,21 @@ interface FormattedReserveData {
   aTokenAddress: string | null;          // aToken 地址
   vTokenAddress: string | null;          // variableDebtToken 地址
   
-  // 基础 APY
-  supplyApy?: number;                    // Supply APY（百分比数值，如 2.07 表示 2.07%），如果为 undefined 则在 JSON 中不出现
-  borrowApy?: number;                    // Borrow APY（百分比数值，如 3.97 表示 3.97%），即使借贷被禁用也会返回真实值
+  // 价格与规模（单位已说明）
+  tokenPrice?: number;                   // 【单位: USD】每个 token 的美元价格
+  reserveSizeUsd?: number;                // 【单位: USD】市场总供应量（TVL = total supply），美元计价
+  utilizationPct?: number;               // 【单位: 百分比 0-100】资金利用率，如 45.5 表示 45.5%
+  
+  // 基础 APY 与禁用状态（单位: 百分比）
+  supplyApy?: number;                    // 【单位: 百分比】Supply APY，如 2.07 表示 2.07%
+  supplyDisabled?: boolean;              // 供应是否被禁用（仅当 true 时出现），原因：isFrozen、isPaused 或 supplyCap=1
+  supplyCapUsd?: number;                 // 【单位: USD】供应上限金额
+  borrowApy?: number;                    // 【单位: 百分比】Borrow APY，如 3.97 表示 3.97%（即使禁用也返回真实值）
   borrowDisabled?: boolean;              // 借贷是否被禁用（仅当 true 时出现），原因：borrowingState=DISABLED 或 borrowCap=1
   
-  // 协议激励（来自 Aave 协议）
-  supplyIncentives?: number[];           // Protocol supply incentives（百分比数值数组），如果为空数组则在 JSON 中不出现
-  borrowIncentives?: number[];           // Protocol borrow incentives（百分比数值数组），如果为空数组则在 JSON 中不出现
+  // 协议激励（来自 Aave 协议，单位: 百分比）
+  supplyIncentives?: number[];           // 【单位: 百分比数组】Protocol supply incentives
+  borrowIncentives?: number[];           // 【单位: 百分比数组】Protocol borrow incentives
   
   // Merit APR 激励（可选字段，仅在存在数据时出现）
   meritSupplys?: Array<{
@@ -119,7 +127,7 @@ interface MerklCampaignBreakdown {
 
 **端点**: `GET /api/markets`
 
-**描述**: 获取 markets 快照（`markets-v2`），返回 `snapshot + reserves`。其中 `reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `marketSizeUsd` / `utilizationPct` 以支持前端展示。如果数据超过 1 分钟未更新，会自动触发后台更新。若更新持续失败且快照陈旧时间超过硬上限（默认 5 分钟），接口会返回 `503`，避免长期返回过旧数据。
+**描述**: 获取 markets 快照（`markets-v2`），返回 `snapshot + reserves`。其中 `reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `reserveSizeUsd` / `utilizationPct` 以支持前端展示。如果数据超过 1 分钟未更新，会自动触发后台更新。若更新持续失败且快照陈旧时间超过硬上限（默认 5 分钟），接口会返回 `503`，避免长期返回过旧数据。
 
 **请求参数**: 无
 
@@ -167,7 +175,7 @@ interface MarketsResponse {
       "vTokenAddress": "0x0c91bcA95b5FE69164cE583A2ec9429A569798Ed",
       "supplyApy": 0.183795381577371,
       "tokenPrice": 3942.52,
-      "marketSizeUsd": 1083255123.44,
+      "reserveSizeUsd": 1083255123.44,
       "utilizationPct": 61.08
     }
   ]
@@ -200,7 +208,7 @@ interface MarketsResponse {
 - `reserves[].tokenSymbol`
 - `reserves[].tokenAddress`
 - `reserves[].tokenPrice`
-- `reserves[].marketSizeUsd`
+- `reserves[].reserveSizeUsd`
 - `reserves[].utilizationPct`
 - 以及原有激励字段（`supplyIncentives` / `borrowIncentives` / `merit*` / `merkl*` / `brevis*`）
 
@@ -405,23 +413,54 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
     {
       "chainId": 1,
       "marketName": "AaveV3Ethereum",
-      "underlyingAsset": "0x...",
+      "tokenAddress": "0x...",
       "decimals": 18,
-      "availableLiquidity": "...",
-      "totalScaledVariableDebt": "...",
-      "variableBorrowIndex": "...",
-      "reserveFactor": "...",
-      "variableRateSlope1": "...",
-      "variableRateSlope2": "...",
-      "baseVariableBorrowRate": "...",
-      "optimalUtilisationRate": "..."
+      "deficit": "0",
+      "availableLiquidity": "4512942554869044630386380",
+      "totalScaledVariableDebt": "117694766706416553160100",
+      "variableBorrowIndex": "1005096238292405352590901947",
+      "reserveFactor": "2000",
+      "variableRateSlope1": "90000000000000000000000000",
+      "variableRateSlope2": "3000000000000000000000000000",
+      "baseVariableBorrowRate": "0",
+      "optimalUsageRate": "450000000000000000000000000"
     }
   ],
   "lastUpdated": "2026-03-09T12:00:00.000Z",
   "staleTimeMs": 60000,
-  "sources": { ... }
+  "sources": {
+    "subgraphChains": [137, 43114],
+    "onchainChains": [1, 10, 42161],
+    "subgraphMissingChains": [],
+    "unhealthyRpcEndpoints": []
+  }
 }
 ```
+
+**响应字段说明**:
+
+| 字段 | 类型 | 单位 | 说明 |
+|------|------|------|------|
+| `chainId` | number | - | 链 ID |
+| `marketName` | string | - | 市场名称，如 "AaveV3Ethereum" |
+| `tokenAddress` | string | - | 底层 token 地址（小写） |
+| `decimals` | number | - | token 精度 |
+| `deficit` | string | **token 原始单位** | 该储备的 deficit（坏账缺口），用于 utilization 分母口径修正 |
+| `availableLiquidity` | string | **token 原始单位** | 可用流动性（除以 `10^decimals` 得到 token 数量） |
+| `totalScaledVariableDebt` | string | **scaled token** | 缩放后的可变债务（需乘 `variableBorrowIndex / RAY`） |
+| `variableBorrowIndex` | string | **RAY (10^27)** | 可变借款累积指数 |
+| `reserveFactor` | string | **BPS (10^4)** | 储备金率（2000 = 20%） |
+| `variableRateSlope1` | string | **RAY (10^27)** | 最优使用率以下的利率斜率 |
+| `variableRateSlope2` | string | **RAY (10^27)** | 最优使用率以上的利率斜率 |
+| `baseVariableBorrowRate` | string | **RAY (10^27)** | 基础可变借款利率 |
+| `optimalUsageRate` | string | **RAY (10^27)** | 最优使用率（0.45 * 10^27 = 45%） |
+
+> **注意**：所有大数值字段均为字符串类型（避免 JavaScript 精度丢失），前端需使用 `BigInt` 处理。详细单位转换说明见下方「数值单位说明」章节。
+>
+> `deficit` 来源优先级：
+> - On-chain 路径：`pool.getReserveDeficit(asset)`（最高优先级）
+> - Aave API fallback：当前不提供 deficit，返回 `0`
+> - Subgraph fallback：当前不提供 deficit，返回 `0`
 
 **状态码**: `200` 成功，`400` 参数无效（如 `chainId` 非正整数），`500` 服务端错误
 
@@ -496,7 +535,9 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 ### 字段类型说明
 
 1. **APY/APR 格式**:
-   - `supplyApy` / `borrowApy`: 数值格式的百分比（如 `2.07` 表示 2.07%），如果为 `undefined` 则在 JSON 中不出现
+   - `supplyApy`: 数值格式的百分比（如 `2.07` 表示 2.07%），如果为 `undefined` 则在 JSON 中不出现
+   - `borrowApy`: 数值格式的百分比（如 `3.97` 表示 3.97%），即使借贷被禁用也会返回真实值
+   - `borrowDisabled`: 布尔值，仅当借贷被禁用时出现且为 `true`（节约带宽）
    - `supplyIncentives` / `borrowIncentives`: 数值数组，每个元素为百分比数值（如 `[0.5, 1.2]` 表示 0.5% 和 1.2%），如果为空数组则在 JSON 中不出现
    - `meritSupplys` / `meritBorrows`: 对象数组，每个对象包含：
      - `apr`: 数值格式的百分比（如 `5.2` 表示 5.2%）
@@ -516,6 +557,7 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
    - **重要**：数值 `0` 是有效值，会保留在 JSON 中（不会被省略）
    - 所有激励相关字段都是可选的，包括：
      - `supplyApy` / `borrowApy`
+     - `borrowDisabled`（仅当 `true` 时出现）
      - `supplyIncentives` / `borrowIncentives`
      - `meritSupplys` / `meritBorrows`
      - `merklSupplys` / `merklBorrows` / `merklHolds`
@@ -526,7 +568,8 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
      - `merklSupplys` / `merklBorrows` / `merklHolds`（空数组时）
      - `brevisSupplys` / `brevisBorrows`（空数组时）
      - `aTokenAddress` / `vTokenAddress`（null 时）
-     - `supplyApy` / `borrowApy`（undefined 时）
+     - `supplyApy`（undefined 时）
+     - `borrowDisabled`（`false` 或 undefined 时，即借贷启用时不出现）
 
 3. **Merit 数据结构说明**:
    - `meritSupplys` 和 `meritBorrows` 是数组，每个元素代表一个 Merit 激励活动
@@ -537,6 +580,119 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
      - 如果 `meritSupplys` 条目包含 `requiredBorrowTokens`，表示需要先 borrow 指定的 token 才能获得该 supply APR
      - 如果 `meritBorrows` 条目包含 `requiredSupplyTokens`，表示需要先 supply 指定的 token 才能获得该 borrow APR
      - `'multiple'` 表示任意 token 都可以满足条件
+
+4. **供应禁用状态 (`supplyDisabled`)**:
+   - Aave 协议有三种方式禁用供应：
+     1. 储备冻结：`isFrozen === true`
+     2. 储备暂停：`isPaused === true`
+     3. Cap 设为 1：`supplyCap === 1`（实际上无法供应）
+   - 当上述任一条件满足时，`supplyDisabled: true` 会出现在响应中
+   - `supplyCapUsd` 始终返回（如果有值），表示供应上限的美元金额
+   - 前端处理建议：
+     ```typescript
+     // 判断是否可供应
+     const canSupply = !reserve.supplyDisabled;
+     
+     // 显示供应上限
+     if (reserve.supplyCapUsd) {
+       console.log(`Supply cap: $${reserve.supplyCapUsd.toLocaleString()}`);
+     }
+     ```
+
+5. **借贷禁用状态 (`borrowDisabled`)**:
+   - Aave 协议有两种方式禁用借贷：
+     1. 直接禁用：`borrowingState === "DISABLED"`
+     2. Cap 设为 1：`borrowCap === 1`（实际上无法借贷）
+   - 当上述任一条件满足时，`borrowDisabled: true` 会出现在响应中
+   - 即使借贷被禁用，`borrowApy` 仍返回真实的利率值（供展示或分析用途）
+   - 前端处理建议：
+     ```typescript
+     // 判断是否可借贷
+     const canBorrow = !reserve.borrowDisabled;
+     
+     // 显示借贷利率（可加禁用标记）
+     if (reserve.borrowDisabled) {
+       displayRate(reserve.borrowApy, { disabled: true });
+     } else {
+       displayRate(reserve.borrowApy);
+     }
+     ```
+
+6. **数值单位说明**:
+
+   #### `/api/markets` 响应字段单位
+
+   | 字段 | 单位 | 说明 |
+   |------|------|------|
+   | `tokenPrice` | USD | 每个 token 的美元价格 |
+   | `reserveSizeUsd` | USD | 市场总供应量（TVL），美元计价 |
+   | `supplyCapUsd` | USD | 供应上限，美元计价 |
+   | `utilizationPct` | 百分比 (0-100) | 资金利用率，如 `45.5` 表示 45.5% |
+   | `supplyApy` | 百分比 | 供应 APY，如 `2.07` 表示 2.07% |
+   | `borrowApy` | 百分比 | 借贷 APY，如 `3.97` 表示 3.97% |
+   | `supplyIncentives` | 百分比数组 | 协议供应激励 APR |
+   | `borrowIncentives` | 百分比数组 | 协议借贷激励 APR |
+   | `meritSupplys[].apr` | 百分比 | Merit 供应 APR |
+   | `merklSupplys[].breakdowns[].campaignApr` | 百分比 | Merkl campaign APR |
+
+   #### `/api/rate-inputs` 响应字段单位
+
+   **重要**：rate-inputs 返回的是链上原始数据，需要前端自行转换。
+
+   | 字段 | 原始单位 | 转换说明 |
+   |------|----------|----------|
+   | `decimals` | 整数 | token 精度（用于其他字段的换算） |
+   | `deficit` | **token 原始单位** (string) | 坏账缺口；utilization 分母口径需要加上该值 |
+   | `availableLiquidity` | **token 原始单位** (string) | 可用流动性。换算：`BigInt(value) / 10^decimals` 得到 token 数量 |
+   | `totalScaledVariableDebt` | **scaled token 单位** (string) | 缩放后的可变利率债务。需乘以 `variableBorrowIndex` 并除以 RAY 得到实际债务 |
+   | `variableBorrowIndex` | **RAY** (27 decimals) | 可变借款指数。换算：`BigInt(value) / 10^27` 得到倍数 |
+   | `reserveFactor` | **BPS** (4 decimals) | 储备金率。换算：`value / 10000` 得到小数（如 2000 → 0.20 = 20%） |
+   | `variableRateSlope1` | **RAY** (27 decimals) | 利率曲线斜率 1。换算：`BigInt(value) / 10^27` 得到小数 |
+   | `variableRateSlope2` | **RAY** (27 decimals) | 利率曲线斜率 2。换算同上 |
+   | `baseVariableBorrowRate` | **RAY** (27 decimals) | 基础可变借款利率。换算同上 |
+   | `optimalUsageRate` | **RAY** (27 decimals) | 最优使用率。换算：`BigInt(value) / 10^27`（如 450000...000 → 0.45 = 45%） |
+
+   #### 常用单位定义
+
+   | 单位名称 | 精度 | 说明 |
+   |----------|------|------|
+   | **RAY** | 27 decimals | Aave 协议标准精度单位，`1 RAY = 10^27` |
+   | **BPS** | 4 decimals | 基点（Basis Points），`10000 BPS = 100%` |
+   | **WAD** | 18 decimals | 常见 ERC20 精度，`1 WAD = 10^18` |
+
+   #### 前端转换示例
+
+   ```typescript
+   const RAY = BigInt(10) ** BigInt(27);
+   const BPS_DIVISOR = 10000;
+
+   // 转换 availableLiquidity 为 token 数量
+   function toTokenAmount(raw: string, decimals: number): number {
+     return Number(BigInt(raw)) / Math.pow(10, decimals);
+   }
+
+   // 转换 RAY 单位为小数
+   function fromRay(raw: string): number {
+     return Number(BigInt(raw)) / Number(RAY);
+   }
+
+   // 转换 BPS 为小数
+   function fromBps(raw: string): number {
+     return Number(raw) / BPS_DIVISOR;
+   }
+
+   // 计算实际可变债务
+   function getActualVariableDebt(
+     scaledDebt: string,
+     borrowIndex: string,
+     decimals: number
+   ): number {
+     const scaled = BigInt(scaledDebt);
+     const index = BigInt(borrowIndex);
+     const actualRaw = (scaled * index) / RAY;
+     return Number(actualRaw) / Math.pow(10, decimals);
+   }
+   ```
 
 ### 数据来源
 
@@ -632,10 +788,12 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
   - 健康检查接口增强：返回详细的环境配置信息
   - **2026-03-11**：明确仅 `GET /api/markets` 触发市场数据新鲜度检查与自动刷新；其他端点使用各自缓存/TTL
   - **2026-03-11（breaking）**：`GET /api/markets` 响应结构切换为 `snapshot + reserves`（`markets-v2`）
-  - **2026-03-11**：`reserves` 保留原全量字段，并新增 `tokenPrice`、`marketSizeUsd`、`utilizationPct`
+  - **2026-03-11**：`reserves` 保留原全量字段，并新增 `tokenPrice`、`reserveSizeUsd`、`utilizationPct`
   - **2026-03-11**：Merkl reward token 价格先不在 `/api/markets` 输出；若 reward token 为某 reserve 的 aToken，也不单独输出
   - **2026-03-13**：为 `/api/markets`、`/api/rate-inputs`、`/api/coingecko-*`、`/api/campaigns/forecast-states` 增加 `staleTimeMs` 字段说明
   - **2026-03-13**：新增 `/api/meta/side-data` 端点文档，并描述 categories/fdv 子快照的 `fetchedAt` 与 `staleTimeMs`
+  - **2026-03-13（breaking）**：`/api/markets` 字段 `marketSizeUsd` 更名为 `reserveSizeUsd`
+  - **2026-03-13（breaking）**：`/api/rate-inputs` 字段从 `reserveSize` 调整为 `deficit`
 
 ## 注意事项
 
@@ -649,7 +807,8 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
    - 数值 `0` 是有效值，会保留在 JSON 中
 4. **`/api/markets` 字段变化（breaking）**:
    - 结构：`snapshot + reserves`
-   - `reserves` 中保留原全量字段，并新增 `tokenPrice`、`marketSizeUsd`、`utilizationPct`、`reserveId`
+   - `reserves` 中保留原全量字段，并新增 `tokenPrice`、`reserveSizeUsd`、`utilizationPct`、`reserveId`
+   - `rate-inputs` 新增 `deficit`，前端在 utilization 分母中应与 `availableLiquidity + totalVariableDebt` 合并使用
 5. **数据新鲜度**: 建议根据 `snapshot.lastUpdated` 字段判断数据是否可用
 6. **更新机制**: 数据更新是异步的，更新过程中会返回缓存数据
 7. **过滤逻辑**: 所有排序和过滤应在客户端完成，API 不提供查询参数
