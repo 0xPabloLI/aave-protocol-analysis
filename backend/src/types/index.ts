@@ -16,6 +16,7 @@ export interface MarketWithSpread {
   vTokenAddress?: string | null;
   supplyApy?: number | null;
   borrowApy?: number | null;
+  borrowDisabled?: boolean;
   supplyIncentives?: number[];
   borrowIncentives?: number[];
   meritSupplys?: Array<{

@@ -39,7 +39,8 @@ interface FormattedReserveData {
   
   // 基础 APY
   supplyApy?: number;                    // Supply APY（百分比数值，如 2.07 表示 2.07%），如果为 undefined 则在 JSON 中不出现
-  borrowApy?: number;                    // Borrow APY（百分比数值，如 3.97 表示 3.97%），如果为 undefined 则在 JSON 中不出现
+  borrowApy?: number;                    // Borrow APY（百分比数值，如 3.97 表示 3.97%），即使借贷被禁用也会返回真实值
+  borrowDisabled?: boolean;              // 借贷是否被禁用（仅当 true 时出现），原因：borrowingState=DISABLED 或 borrowCap=1
   
   // 协议激励（来自 Aave 协议）
   supplyIncentives?: number[];           // Protocol supply incentives（百分比数值数组），如果为空数组则在 JSON 中不出现
