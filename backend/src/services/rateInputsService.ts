@@ -3,6 +3,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { UiPoolDataProvider } from '@aave/contract-helpers';
 import * as AaveAddressBook from '@bgd-labs/aave-address-book';
+import { Contract } from 'ethers';
 import { getAavePublicRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { logger } from '../logger.js';
@@ -307,6 +308,7 @@ interface AaveApiReserve {
   borrowInfo: {
     availableLiquidity: { amount: { raw: string } };
     total: { amount: { raw: string } };
+    deficit?: { amount?: { raw?: string }; raw?: string } | string | number;
     reserveFactor: { raw: string };
     variableRateSlope1: { raw: string };
     variableRateSlope2: { raw: string };
@@ -319,6 +321,47 @@ interface AaveApiMarket {
   name: string;
   chain: { chainId: number };
   reserves: AaveApiReserve[];
+}
+
+const POOL_ADDRESSES_PROVIDER_ABI = [
+  'function getPool() view returns (address)',
+];
+
+const POOL_DEFICIT_ABI = [
+  'function getReserveDeficit(address asset) view returns (uint256)',
+];
+
+async function fetchReserveDeficitMap(
+  provider: unknown,
+  poolAddressesProvider: string,
+  tokenAddresses: string[]
+): Promise<Map<string, string>> {
+  const output = new Map<string, string>();
+  if (tokenAddresses.length === 0) return output;
+
+  const addressProvider = new Contract(
+    poolAddressesProvider,
+    POOL_ADDRESSES_PROVIDER_ABI,
+    provider as any
+  );
+  const poolAddress = await addressProvider.getPool();
+  const pool = new Contract(poolAddress, POOL_DEFICIT_ABI, provider as any);
+
+  const deficits = await Promise.all(
+    tokenAddresses.map(async (asset) => {
+      try {
+        const value = await pool.getReserveDeficit(asset);
+        return { asset, value: value?.toString?.() ?? String(value ?? '0') };
+      } catch {
+        return { asset, value: '0' };
+      }
+    })
+  );
+
+  for (const item of deficits) {
+    output.set(normalizeAddress(item.asset), item.value);
+  }
+  return output;
 }
 
 interface AaveApiResponse {
@@ -372,18 +415,18 @@ async function fetchAaveApiChains(chainIds: number[]): Promise<RawFetchResult[]>
           // Aave API returns totalDebt as borrowInfo.total, not scaledDebt + index
           // We'll use totalDebt directly and set index to RAY (1e27) as placeholder
           const totalDebt = toNumericString(borrowInfo.total?.amount?.raw);
-          const RAY = '1000000000000000000000000000'; // 1e27
-
+          const RAY_STR = '1000000000000000000000000000'; // 1e27
           records.push({
             marketName,
             chainId,
             tokenAddress: normalizeAddress(address),
             decimals: toReserveDecimals(reserve.underlyingToken?.decimals),
+            deficit: '0',
             availableLiquidity: toNumericString(borrowInfo.availableLiquidity?.amount?.raw),
             // For API source, we provide totalDebt directly
             // scaledDebt = totalDebt when index = RAY
             totalScaledVariableDebt: totalDebt,
-            variableBorrowIndex: RAY,
+            variableBorrowIndex: RAY_STR,
             reserveFactor: toNumericString(borrowInfo.reserveFactor?.raw),
             variableRateSlope1: toNumericString(borrowInfo.variableRateSlope1?.raw),
             variableRateSlope2: toNumericString(borrowInfo.variableRateSlope2?.raw),
@@ -567,6 +610,7 @@ async function fetchSubgraphChain(
           chainId,
           tokenAddress,
           decimals: toReserveDecimals(reserve.decimals),
+          deficit: toNumericString(reserve.deficit) || '0',
           availableLiquidity: toNumericString(reserve.availableLiquidity),
           totalScaledVariableDebt: toNumericString(reserve.totalScaledVariableDebt),
           variableBorrowIndex: toNumericString(reserve.variableBorrowIndex),
@@ -630,6 +674,13 @@ async function fetchOnchainChain(
         `on-chain fetch timeout for chain ${config.chainId}`
       );
       const reserves = (humanized as unknown as { reservesData?: Array<Record<string, unknown>> }).reservesData ?? [];
+      const deficitByAsset = await fetchReserveDeficitMap(
+        provider,
+        config.poolAddressesProvider,
+        reserves
+          .map((reserve) => String(reserve.underlyingAsset || '').trim())
+          .filter(Boolean)
+      );
 
       const records: ReserveRateInputInternal[] = [];
       for (const reserve of reserves) {
@@ -643,6 +694,7 @@ async function fetchOnchainChain(
           chainId: config.chainId,
           tokenAddress,
           decimals: toReserveDecimals(reserve.decimals),
+          deficit: toNumericString(deficitByAsset.get(tokenAddress) ?? reserve.deficit) || '0',
           availableLiquidity: toNumericString(reserve.availableLiquidity),
           totalScaledVariableDebt: toNumericString(reserve.totalScaledVariableDebt),
           variableBorrowIndex: toNumericString(reserve.variableBorrowIndex),
@@ -713,103 +765,107 @@ class RateInputsService {
       (a, b) => (a.chainId - b.chainId) || a.marketName.localeCompare(b.marketName)
     );
 
-    // Collect unique chain IDs for Aave API batch request
-    const allChainIds = [...new Set(targets.map((t) => t.chainId))];
+    const hasAnyRecordForTarget = (target: TargetMarket): boolean =>
+      records.some(
+        (r) =>
+          r.chainId === target.chainId &&
+          normalizeMarketName(r.marketName) === normalizeMarketName(target.marketName)
+      );
 
-    // NEW PRIORITY: Aave API → On-chain → Subgraph
-    // Reason: Aave API is real-time, free, no RPC calls needed
-
-    // 1. Try Aave API first (batch request for all chains)
-    let apiResults: RawFetchResult[] = [];
-    try {
-      logger.info(`🌐 Fetching rate-inputs from Aave API for ${allChainIds.length} chains...`);
-      apiResults = await fetchAaveApiChains(allChainIds);
-      for (const result of apiResults) {
-        rawFetchResults.push(result);
-        apiChains.add(result.chainId);
-        for (const item of result.records) {
-          const key = `${normalizeMarketName(item.marketName)}:${item.chainId}:${item.tokenAddress}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          records.push(item);
+    // 1) On-chain first (highest priority, deficit-aware)
+    await Promise.all(
+      targets.map(async (target) => {
+        const { chainId, marketName, tokenFilter } = target;
+        const onchainConfig = resolveOnchainFallbackConfig(marketName, chainId);
+        if (!onchainConfig) return;
+        try {
+          const onchainResult = await fetchOnchainChain(onchainConfig, tokenFilter, marketName);
+          rawFetchResults.push(onchainResult);
+          if (onchainResult.records.length === 0) return;
+          onchainChains.add(chainId);
+          for (const item of onchainResult.records) {
+            const key = `${normalizeMarketName(item.marketName)}:${item.chainId}:${item.tokenAddress}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            records.push(item);
+          }
+        } catch (error) {
+          logger.warn(
+            `On-chain fetch failed for chain ${chainId} market ${marketName}: ${
+              error instanceof Error ? error.message : String(error)
+            }; will try Aave API/subgraph fallback.`
+          );
         }
+      })
+    );
+
+    // 2) Aave API fallback for markets still missing
+    const marketsMissingAfterOnchain = targets.filter((target) => !hasAnyRecordForTarget(target));
+    if (marketsMissingAfterOnchain.length > 0) {
+      const fallbackChainIds = [...new Set(marketsMissingAfterOnchain.map((t) => t.chainId))];
+      const fallbackTargetMap = new Map<string, TargetMarket>();
+      for (const target of marketsMissingAfterOnchain) {
+        fallbackTargetMap.set(`${normalizeMarketName(target.marketName)}:${target.chainId}`, target);
       }
-      logger.info(`✅ Aave API returned data for ${apiChains.size} chains, ${records.length} reserves`);
-    } catch (error) {
-      logger.warn(`Aave API fetch failed: ${error instanceof Error ? error.message : String(error)}; will try on-chain fallback.`);
+      try {
+        logger.info(`🌐 Fallback: fetching ${fallbackChainIds.length} chain(s) from Aave API...`);
+        const apiResults = await fetchAaveApiChains(fallbackChainIds);
+        for (const result of apiResults) {
+          rawFetchResults.push(result);
+          for (const item of result.records) {
+            const target = fallbackTargetMap.get(
+              `${normalizeMarketName(item.marketName)}:${item.chainId}`
+            );
+            if (!target) continue;
+            if (target.tokenFilter.size > 0 && !target.tokenFilter.has(item.tokenAddress)) continue;
+            const key = `${normalizeMarketName(item.marketName)}:${item.chainId}:${item.tokenAddress}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            records.push(item);
+            apiChains.add(item.chainId);
+          }
+        }
+      } catch (error) {
+        logger.warn(
+          `Aave API fallback failed: ${error instanceof Error ? error.message : String(error)}; will try subgraph fallback.`
+        );
+      }
     }
 
-    // 2. For markets not covered by API, try on-chain fallback
-    const marketsNeedingFallback = targets.filter((target) => {
-      const key = `${normalizeMarketName(target.marketName)}:${target.chainId}`;
-      // Check if any record exists for this market
-      return !records.some(
-        (r) => normalizeMarketName(r.marketName) === normalizeMarketName(target.marketName) && r.chainId === target.chainId
-      );
-    });
-
-    if (marketsNeedingFallback.length > 0) {
-      logger.info(`📡 ${marketsNeedingFallback.length} markets need on-chain/subgraph fallback`);
+    // 3) Subgraph last resort
+    const marketsMissingAfterApi = targets.filter((target) => !hasAnyRecordForTarget(target));
+    if (marketsMissingAfterApi.length > 0) {
+      logger.info(`📡 ${marketsMissingAfterApi.length} market(s) still missing; trying subgraph fallback...`);
     }
 
     await Promise.all(
-      marketsNeedingFallback.map(async (target) => {
+      marketsMissingAfterApi.map(async (target) => {
         const { chainId, marketName, marketSlug, tokenFilter } = target;
-        const onchainConfig = resolveOnchainFallbackConfig(marketName, chainId);
         const deployment = resolveSubgraphDeployment(deployments, chainId, marketSlug);
-
-        // 2a. Try on-chain first
-        if (onchainConfig) {
-          try {
-            const onchainResult = await fetchOnchainChain(onchainConfig, tokenFilter, marketName);
-            rawFetchResults.push(onchainResult);
-            if (onchainResult.records.length > 0) {
-              onchainChains.add(chainId);
-              for (const item of onchainResult.records) {
-                const key = `${normalizeMarketName(item.marketName)}:${item.chainId}:${item.tokenAddress}`;
-                if (seen.has(key)) continue;
-                seen.add(key);
-                records.push(item);
-              }
-              return;
-            }
-          } catch (error) {
-            logger.warn(
-              `On-chain fetch failed for chain ${chainId} market ${marketName}: ${
-                error instanceof Error ? error.message : String(error)
-              }; will try subgraph fallback.`
-            );
-          }
+        if (!deployment) return;
+        const requiresApiKey = (deployment.queryUrlTemplate || '').includes('{apiKey}');
+        if (requiresApiKey && !hasGraphApiKey) {
+          logger.warn(`Subgraph for chain ${chainId} requires API key but THE_GRAPH_API_KEY not set.`);
+          return;
         }
-
-        // 2b. Fallback to subgraph (last resort)
-        if (deployment) {
-          const requiresApiKey = (deployment.queryUrlTemplate || '').includes('{apiKey}');
-          if (requiresApiKey && !hasGraphApiKey) {
-            logger.warn(`Subgraph for chain ${chainId} requires API key but THE_GRAPH_API_KEY not set.`);
-            return;
+        try {
+          const subgraphResult = await fetchSubgraphChain(marketName, chainId, deployment, tokenFilter);
+          rawFetchResults.push(subgraphResult);
+          if (subgraphResult.records.length === 0) return;
+          subgraphChains.add(chainId);
+          logger.info(`📊 Using subgraph fallback for chain ${chainId} market ${marketName}`);
+          for (const item of subgraphResult.records) {
+            const key = `${normalizeMarketName(item.marketName)}:${item.chainId}:${item.tokenAddress}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            records.push(item);
           }
-
-          try {
-            const subgraphResult = await fetchSubgraphChain(marketName, chainId, deployment, tokenFilter);
-            rawFetchResults.push(subgraphResult);
-            if (subgraphResult.records.length > 0) {
-              subgraphChains.add(chainId);
-              logger.info(`📊 Using subgraph fallback for chain ${chainId} market ${marketName}`);
-              for (const item of subgraphResult.records) {
-                const key = `${normalizeMarketName(item.marketName)}:${item.chainId}:${item.tokenAddress}`;
-                if (seen.has(key)) continue;
-                seen.add(key);
-                records.push(item);
-              }
-            }
-          } catch (error) {
-            logger.warn(
-              `Subgraph fallback also failed for chain ${chainId} market ${marketName}: ${
-                error instanceof Error ? error.message : String(error)
-              }`
-            );
-          }
+        } catch (error) {
+          logger.warn(
+            `Subgraph fallback failed for chain ${chainId} market ${marketName}: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
         }
       })
     );
@@ -849,8 +905,8 @@ class RateInputsService {
           a.tokenAddress.localeCompare(b.tokenAddress)
       ),
       sources: {
-        // New priority: Aave API (primary) → On-chain (fallback) → Subgraph (last resort)
-        onchainChains: Array.from(new Set([...apiChains, ...onchainChains])).sort((a, b) => a - b),
+        // Priority: On-chain (primary) → Aave API (fallback) → Subgraph (last resort)
+        onchainChains: Array.from(onchainChains).sort((a, b) => a - b),
         subgraphChains: Array.from(subgraphChains).sort((a, b) => a - b),
         subgraphMissingChains: [], // No longer tracking this
         unhealthyRpcEndpoints: ethProviderService.getUnhealthyEndpoints(),
@@ -859,8 +915,8 @@ class RateInputsService {
 
     logger.info(
       `✅ Rate-inputs refresh complete: ${records.length} reserves, ` +
-      `${apiChains.size} chains via Aave API (primary), ` +
-      `${onchainChains.size} chains via on-chain (fallback), ` +
+      `${onchainChains.size} chains via on-chain (primary), ` +
+      `${apiChains.size} chains via Aave API (fallback), ` +
       `${subgraphChains.size} chains via subgraph (last resort)`
     );
 

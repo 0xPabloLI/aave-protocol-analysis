@@ -77,11 +77,13 @@ interface FormattedReserveData {
   tokenSymbol: string;
   tokenAddress: string; // underlying token address
   tokenPrice?: number;
-  marketSizeUsd?: number;
+  reserveSizeUsd?: number;
   utilizationPct?: number;
   aTokenAddress: string | null; // aToken address
   vTokenAddress: string | null; // variableDebtToken address
   supplyApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
+  supplyDisabled?: boolean; // true when isFrozen, isPaused, or supplyCap is 1
+  supplyCapUsd?: number; // 供应上限（USD）
   borrowApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
   borrowDisabled?: boolean; // true when borrowingState is DISABLED or borrowCap is 1
   supplyIncentives: number[]; // Protocol supply incentives 百分比值数组
@@ -104,11 +106,13 @@ interface RuntimeReserveData {
   tokenSymbol: string;
   tokenAddress: string;
   tokenPrice?: number;
-  marketSizeUsd?: number;
+  reserveSizeUsd?: number;
   utilizationPct?: number;
   aTokenAddress?: string;
   vTokenAddress?: string;
   supplyApy?: number;
+  supplyDisabled?: boolean;
+  supplyCapUsd?: number;
   borrowApy?: number;
   borrowDisabled?: boolean;
   supplyIncentives?: number[];
@@ -167,11 +171,13 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     tokenSymbol: item.tokenSymbol,
     tokenAddress: item.tokenAddress,
     ...(item.tokenPrice !== undefined ? { tokenPrice: item.tokenPrice } : {}),
-    ...(item.marketSizeUsd !== undefined ? { marketSizeUsd: item.marketSizeUsd } : {}),
+    ...(item.reserveSizeUsd !== undefined ? { reserveSizeUsd: item.reserveSizeUsd } : {}),
     ...(item.utilizationPct !== undefined ? { utilizationPct: item.utilizationPct } : {}),
     ...(item.aTokenAddress ? { aTokenAddress: item.aTokenAddress } : {}),
     ...(item.vTokenAddress ? { vTokenAddress: item.vTokenAddress } : {}),
     ...(item.supplyApy !== undefined ? { supplyApy: item.supplyApy } : {}),
+    ...(item.supplyDisabled ? { supplyDisabled: true } : {}),
+    ...(item.supplyCapUsd !== undefined ? { supplyCapUsd: item.supplyCapUsd } : {}),
     ...(item.borrowApy !== undefined ? { borrowApy: item.borrowApy } : {}),
     ...(item.borrowDisabled ? { borrowDisabled: true } : {}),
     ...(item.supplyIncentives && item.supplyIncentives.length > 0 ? { supplyIncentives: item.supplyIncentives } : {}),
@@ -364,16 +370,24 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           toFiniteNumber(reserve?.size?.usdPerToken) ??
           toFiniteNumber(reserve?.usdExchangeRate) ??
           undefined;
-        const marketSizeUsd = toFiniteNumber(reserve?.size?.usd) ?? undefined;
+        const reserveSizeUsd = toFiniteNumber(reserve?.size?.usd) ?? undefined;
         const utilizationRaw = toFiniteNumber(reserve?.borrowInfo?.utilizationRate?.value);
         const utilizationPct =
           utilizationRaw !== null && utilizationRaw >= 0 ? utilizationRaw * 100 : undefined;
         const aTokenAddress = reserve.aToken?.address ?? null;
         const vTokenAddress = reserve.vToken?.address ?? null;
         
-        // 检查 supplyCap，如果为 1 则将 supplyApy 设置为 undefined（因为对用户没有意义）
+        // 检查 supply 是否被禁用：isFrozen、isPaused、supplyCap=1
+        const isFrozen = reserve.isFrozen === true;
+        const isPaused = reserve.isPaused === true;
         const supplyCapValue = reserve.supplyInfo?.supplyCap?.amount?.value;
         const supplyCapIsOne = supplyCapValue !== undefined && parseFloat(supplyCapValue) === 1;
+        const isSupplyDisabled = isFrozen || isPaused || supplyCapIsOne;
+        
+        // 提取 supplyCapUsd（单位：USD）
+        const supplyCapUsdRaw = reserve.supplyInfo?.supplyCap?.usd;
+        const supplyCapUsd = supplyCapUsdRaw ? parseFloat(supplyCapUsdRaw) : undefined;
+        
         // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
         const supplyApyValue = reserve.supplyInfo?.apy?.value;
         const supplyApy = supplyCapIsOne || !supplyApyValue
@@ -426,11 +440,15 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           tokenSymbol,
           tokenAddress,
           tokenPrice,
-          marketSizeUsd,
+          reserveSizeUsd,
           utilizationPct,
           aTokenAddress,
           vTokenAddress,
           supplyApy,
+          // 仅当 supply 被禁用时才添加此标志（节约带宽）
+          ...(isSupplyDisabled ? { supplyDisabled: true } : {}),
+          // supplyCapUsd 始终传递（如果有值）
+          ...(supplyCapUsd !== undefined ? { supplyCapUsd } : {}),
           borrowApy,
           // 仅当 borrowing 被禁用时才添加此标志（节约带宽）
           ...(isBorrowDisabled ? { borrowDisabled: true } : {}),

@@ -222,15 +222,20 @@ Each incentive API uses different identifiers:
 - **Token price delivery**: keep full reserve rows in `reserves` and attach `tokenPrice` inline.
 - **Reward token rule**: Merkl reward token prices are not output in `/api/markets` for now; if a reward token is an Aave `aToken`, do not emit a separate price entry.
 
-### TVL Definition
-`reserves[].tvlUsd` = **total supply** (not supply − borrowed). This matches industry convention (DefiLlama, etc.). Use `borrowInfo.availableLiquidity` if you need "how much can still be borrowed".
+### Reserve Size Definitions
+- `reserves[].reserveSizeUsd` = **total supply in USD** (not supply − borrowed). This matches the Aave reserve `size.usd` surface.
+- `rate-inputs[].deficit` = **raw token units** from `pool.getReserveDeficit(asset)` (for simulation utilization denominator adjustment).
+- `borrowInfo.availableLiquidity` remains the right field for "how much can still be borrowed now".
 
 ### Frozen/Paused Reserves
-Automatically excluded: `isFrozen === true` or `isPaused === true`
+Reserves with `isFrozen === true` or `isPaused === true` are still included in output but marked with `supplyDisabled: true`.
 
-### Capacity Limits & Null Handling
+### Capacity Limits & Disabled State Handling
 - `supplyApy` → `undefined` (omitted) when `supplyCap === 1`
-- `borrowApy` → `undefined` when `borrowCap === 1` or `borrowingState === "DISABLED"`
+- `supplyDisabled` → `true` (present only when disabled) when `isFrozen`, `isPaused`, or `supplyCap === 1`
+- `supplyCapUsd` → always returns USD value of supply cap (if available)
+- `borrowApy` → always returns real value (even when borrowing is disabled)
+- `borrowDisabled` → `true` (present only when disabled) when `borrowCap === 1` or `borrowingState === "DISABLED"`
 
 ### Network Discovery
 Uses `@bgd-labs/aave-address-book` to auto-discover AaveV3 networks. Excludes test networks (Sepolia, Fuji).
