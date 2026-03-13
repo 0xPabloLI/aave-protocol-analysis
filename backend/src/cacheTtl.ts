@@ -27,15 +27,19 @@ export const BACKEND_SCHEDULE_CRON = {
 } as const;
 
 export const BACKEND_CACHE_TTL_MS = {
-  // Same-source near-realtime family.
+  // Same-source near-realtime family (markets, rate-inputs).
   realtimeFamily: BACKEND_TIME_MS.oneMinute,
   rateInputsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
   marketsDataStaleThreshold: BACKEND_TIME_MS.oneMinute,
   marketsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
-  merklLiteFileMaxAge: BACKEND_TIME_MS.oneMinute,
-  merklForecastResultDefault: BACKEND_TIME_MS.oneMinute,
-  merklForecastOpportunityMetaDefault: BACKEND_TIME_MS.oneMinute,
-  merklOpportunitiesDefault: BACKEND_TIME_MS.oneMinute,
+
+  // Merkl forecast family.
+  // forecastResult aligned with metricsMin since underlying metrics data won't change faster.
+  merklForecastResultDefault: BACKEND_TIME_MS.tenMinutes,
+  // opportunityMeta/liteFile/opportunities are metadata lookups, can be shorter.
+  merklForecastOpportunityMetaDefault: BACKEND_TIME_MS.fiveMinutes,
+  merklLiteFileMaxAge: BACKEND_TIME_MS.fiveMinutes,
+  merklOpportunitiesDefault: BACKEND_TIME_MS.fiveMinutes,
 
   // CoinGecko family.
   coingeckoSlowFamily: BACKEND_TIME_MS.sixHours,
@@ -45,11 +49,13 @@ export const BACKEND_CACHE_TTL_MS = {
   coingeckoFdv: BACKEND_TIME_MS.fiveMinutes,
   coingeckoFdvMonitor: BACKEND_TIME_MS.sixHours,
 
-  // Merkl metrics family.
+  // Merkl metrics family (underlying data for forecast computation).
+  // Dynamic TTL = observed cadence / 4, clamped to [min, max].
   merklMetricsDefault: BACKEND_TIME_MS.thirtyMinutes,
   merklMetricsMin: BACKEND_TIME_MS.tenMinutes,
   merklMetricsMax: BACKEND_TIME_MS.sixHours,
-  merklMetricsEmpty: BACKEND_TIME_MS.fiveMinutes,
+  // Empty = no dailyRewardsRecords yet; retry more frequently (below clamp min is intentional).
+  merklMetricsEmpty: BACKEND_TIME_MS.tenMinutes,
 } as const;
 
 export const BACKEND_TIMEOUT_MS = {
