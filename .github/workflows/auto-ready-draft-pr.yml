@@ -1,0 +1,119 @@
+name: Auto Ready Draft PRs
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+permissions:
+  pull-requests: write
+  checks: read
+
+jobs:
+  mark-ready-when-ci-passes:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Find and mark draft PRs as ready
+        uses: actions/github-script@v8
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const headSha = '${{ github.event.workflow_run.head_sha }}';
+            const headBranch = '${{ github.event.workflow_run.head_branch }}';
+            
+            core.info(`Looking for draft PRs with head SHA: ${headSha}, branch: ${headBranch}`);
+            
+            // Find PRs by head branch (more reliable)
+            let prs = [];
+            try {
+              const { data } = await github.rest.pulls.list({
+                owner,
+                repo,
+                state: 'open',
+                head: `${owner}:${headBranch}`,
+                per_page: 100,
+              });
+              prs = data;
+            } catch (error) {
+              core.warning(`Failed to find PRs by branch: ${error.message}`);
+            }
+            
+            // Also try to find by searching all open PRs and matching SHA
+            if (prs.length === 0) {
+              try {
+                const { data: allPRs } = await github.rest.pulls.list({
+                  owner,
+                  repo,
+                  state: 'open',
+                  per_page: 100,
+                });
+                prs = allPRs.filter(pr => pr.head.sha === headSha);
+              } catch (error) {
+                core.warning(`Failed to search all PRs: ${error.message}`);
+              }
+            }
+            
+            const draftPRs = prs.filter(pr => pr.draft === true);
+            
+            if (draftPRs.length === 0) {
+              core.info('No draft PRs found for this workflow run');
+              return;
+            }
+            
+            core.info(`Found ${draftPRs.length} draft PR(s): ${draftPRs.map(pr => `#${pr.number}`).join(', ')}`);
+            
+            // Check each draft PR's status
+            for (const pr of draftPRs) {
+              try {
+                const { data: checks } = await github.rest.checks.listForRef({
+                  owner,
+                  repo,
+                  ref: pr.head.sha,
+                });
+                
+                const { data: status } = await github.rest.repos.getCombinedStatusForRef({
+                  owner,
+                  repo,
+                  ref: pr.head.sha,
+                });
+                
+                // Check if all required checks are passing
+                const completedChecks = checks.check_runs.filter(check => 
+                  check.status === 'completed'
+                );
+                
+                const allChecksPassed = 
+                  completedChecks.length > 0 &&
+                  completedChecks.every(check => 
+                    check.conclusion === 'success' || check.conclusion === 'skipped'
+                  ) &&
+                  status.state !== 'failure' &&
+                  (status.state === 'success' || status.statuses.length === 0);
+                
+                if (allChecksPassed) {
+                  core.info(`All CI checks passed for PR #${pr.number}, marking as ready`);
+                  
+                  await github.rest.pulls.update({
+                    owner,
+                    repo,
+                    pull_number: pr.number,
+                    draft: false,
+                  });
+                  
+                  core.info(`✅ PR #${pr.number} marked as ready for review`);
+                } else {
+                  const pendingChecks = checks.check_runs.filter(check => 
+                    check.status !== 'completed'
+                  );
+                  core.info(`PR #${pr.number} still has ${pendingChecks.length} pending checks, skipping`);
+                }
+              } catch (error) {
+                core.warning(`Failed to process PR #${pr.number}: ${error.message}`);
+              }
+            }

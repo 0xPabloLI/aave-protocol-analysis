@@ -31,10 +31,36 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Save original snapshot (if exists)
+        id: save-original
+        run: |
+          if [ -f "docs/api/aave-subgraph-deployments.snapshot.json" ]; then
+            cp docs/api/aave-subgraph-deployments.snapshot.json /tmp/original-snapshot.json
+            echo "original_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "original_exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Sync deployment snapshot
         run: npm run subgraphs:sync
 
+      - name: Check for actual changes (excluding timestamp)
+        id: check-changes
+        run: |
+          if [ "${{ steps.save-original.outputs.original_exists }}" == "false" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "ℹ️  No original file exists, assuming changes"
+          else
+            if node scripts/check-subgraph-changes.mjs; then
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+            else
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+        continue-on-error: true
+
       - name: Create PR when snapshot changed
+        if: steps.check-changes.outputs.has_changes == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore(subgraph): sync deployment snapshot"
