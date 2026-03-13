@@ -118,7 +118,7 @@ interface MerklCampaignBreakdown {
 
 **端点**: `GET /api/markets`
 
-**描述**: 获取 markets 快照（`markets-v2`），返回 `snapshot + reserves`。其中 `reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `tvlUsd` / `utilizationPct` 以支持前端展示。如果数据超过 1 分钟未更新，会自动触发后台更新。若更新持续失败且快照陈旧时间超过硬上限（默认 5 分钟），接口会返回 `503`，避免长期返回过旧数据。
+**描述**: 获取 markets 快照（`markets-v2`），返回 `snapshot + reserves`。其中 `reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `marketSizeUsd` / `utilizationPct` 以支持前端展示。如果数据超过 1 分钟未更新，会自动触发后台更新。若更新持续失败且快照陈旧时间超过硬上限（默认 5 分钟），接口会返回 `503`，避免长期返回过旧数据。
 
 **请求参数**: 无
 
@@ -166,7 +166,7 @@ interface MarketsResponse {
       "vTokenAddress": "0x0c91bcA95b5FE69164cE583A2ec9429A569798Ed",
       "supplyApy": 0.183795381577371,
       "tokenPrice": 3942.52,
-      "tvlUsd": 1083255123.44,
+      "marketSizeUsd": 1083255123.44,
       "utilizationPct": 61.08
     }
   ]
@@ -199,7 +199,7 @@ interface MarketsResponse {
 - `reserves[].tokenSymbol`
 - `reserves[].tokenAddress`
 - `reserves[].tokenPrice`
-- `reserves[].tvlUsd`
+- `reserves[].marketSizeUsd`
 - `reserves[].utilizationPct`
 - 以及原有激励字段（`supplyIncentives` / `borrowIncentives` / `merit*` / `merkl*` / `brevis*`）
 
@@ -246,13 +246,15 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 {
   "requested": 23,
   "items": [],
-  "errors": []
+  "errors": [],
+  "staleTimeMs": 60000
 }
 ```
 
 其中：
 - `items` 为成功计算的 campaign 状态数组（字段同单个接口）。
 - `errors` 为失败项数组：`{ campaignId, status, message }`。
+- `staleTimeMs` 为 Merkl forecast 结果缓存 TTL（毫秒），默认 60 秒（可通过环境变量 `MERKL_FORECAST_RESULT_CACHE_TTL_MS` 覆盖）。
 
 **状态码**:
 - `200`: 成功（部分失败也返回 200，失败体现在 `errors`）
@@ -424,6 +426,70 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 ---
 
+### 7. 获取侧数据聚合（Meta Side Data）
+
+**端点**: `GET /api/meta/side-data`
+
+**描述**: 聚合返回低频侧数据的元信息，用于前端一次性获取 CoinGecko 分类和 FDV 快照的状态。内部组合了：
+
+- `GET /api/coingecko-categories` 的最新快照元信息
+- `GET /api/coingecko-fdv` 的最新快照元信息
+
+不会触发市场数据刷新，仅依赖各自缓存与 TTL。
+
+**请求参数**: 无
+
+**响应格式**:
+
+```json
+{
+  "generatedAt": "2026-03-09T12:00:00.000Z",
+  "partial": false,
+  "categories": {
+    "uniqueSymbolsStablecoins": ["USDT", "USDC", "DAI"],
+    "uniqueSymbolsEth": ["WETH", "STETH", "RETH"],
+    "fetchedAt": "2026-03-09T12:00:00.000Z",
+    "staleTimeMs": 21600000
+  },
+  "fdv": {
+    "items": [
+      {
+        "id": "binancecoin",
+        "symbol": "BNB",
+        "name": "BNB",
+        "fdvUsd": 123456789012,
+        "source": "coinmarketcap"
+      }
+    ],
+    "fetchedAt": "2026-03-09T12:00:00.000Z",
+    "staleTimeMs": 300000
+  },
+  "errors": {
+    "categories": "optional error message when categories snapshot fails",
+    "fdv": "optional error message when fdv snapshot fails"
+  }
+}
+```
+
+字段说明：
+
+- `generatedAt`: 当前 meta 响应生成时间（ISO 8601）。
+- `partial`: 当 categories 或 fdv 其中之一失败时为 `true`。
+- `categories`: 当分类快照可用时存在，结构同 `GET /api/coingecko-categories`，附加：
+  - `fetchedAt`: 分类数据上次刷新时间。
+  - `staleTimeMs`: 分类缓存 TTL（毫秒）。
+- `fdv`: 当 FDV 快照可用时存在，结构同 `GET /api/coingecko-fdv`，附加：
+  - `fetchedAt`: FDV 数据上次刷新时间。
+  - `staleTimeMs`: FDV 缓存 TTL（毫秒）。
+- `errors`: 可选对象，键为 `categories`/`fdv`，值为对应子任务失败时的错误信息。
+
+**状态码**:
+
+- `200`: 至少有一块数据成功（`partial` 可能为 `true`）。
+- `500`: categories 与 fdv 均失败（无可用侧数据）。
+
+---
+
 ## 数据说明
 
 ### 字段类型说明
@@ -550,7 +616,7 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
 ## 版本信息
 
 - **API 版本**: 3.0
-- **文档更新时间**: 2026-03-11
+- **文档更新时间**: 2026-03-13
 - **最后更新**:
   - 补充端点：`GET /api/health`、`GET /api/coingecko-fdv`、`GET /api/rate-inputs`
   - 基础路径说明更新为完整 API 列表
@@ -565,8 +631,10 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
   - 健康检查接口增强：返回详细的环境配置信息
   - **2026-03-11**：明确仅 `GET /api/markets` 触发市场数据新鲜度检查与自动刷新；其他端点使用各自缓存/TTL
   - **2026-03-11（breaking）**：`GET /api/markets` 响应结构切换为 `snapshot + reserves`（`markets-v2`）
-  - **2026-03-11**：`reserves` 保留原全量字段，并新增 `tokenPrice`、`tvlUsd`、`utilizationPct`
+  - **2026-03-11**：`reserves` 保留原全量字段，并新增 `tokenPrice`、`marketSizeUsd`、`utilizationPct`
   - **2026-03-11**：Merkl reward token 价格先不在 `/api/markets` 输出；若 reward token 为某 reserve 的 aToken，也不单独输出
+  - **2026-03-13**：为 `/api/markets`、`/api/rate-inputs`、`/api/coingecko-*`、`/api/campaigns/forecast-states` 增加 `staleTimeMs` 字段说明
+  - **2026-03-13**：新增 `/api/meta/side-data` 端点文档，并描述 categories/fdv 子快照的 `fetchedAt` 与 `staleTimeMs`
 
 ## 注意事项
 
@@ -580,7 +648,7 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
    - 数值 `0` 是有效值，会保留在 JSON 中
 4. **`/api/markets` 字段变化（breaking）**:
    - 结构：`snapshot + reserves`
-   - `reserves` 中保留原全量字段，并新增 `tokenPrice`、`tvlUsd`、`utilizationPct`、`reserveId`
+   - `reserves` 中保留原全量字段，并新增 `tokenPrice`、`marketSizeUsd`、`utilizationPct`、`reserveId`
 5. **数据新鲜度**: 建议根据 `snapshot.lastUpdated` 字段判断数据是否可用
 6. **更新机制**: 数据更新是异步的，更新过程中会返回缓存数据
 7. **过滤逻辑**: 所有排序和过滤应在客户端完成，API 不提供查询参数

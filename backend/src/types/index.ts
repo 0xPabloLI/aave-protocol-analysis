@@ -10,7 +10,7 @@ export interface MarketWithSpread {
   tokenSymbol: string;
   tokenAddress: string;
   tokenPrice?: number;
-  tvlUsd?: number;
+  marketSizeUsd?: number;
   utilizationPct?: number;
   aTokenAddress?: string | null;
   vTokenAddress?: string | null;

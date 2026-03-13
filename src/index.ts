@@ -77,7 +77,7 @@ interface FormattedReserveData {
   tokenSymbol: string;
   tokenAddress: string; // underlying token address
   tokenPrice?: number;
-  tvlUsd?: number;
+  marketSizeUsd?: number;
   utilizationPct?: number;
   aTokenAddress: string | null; // aToken address
   vTokenAddress: string | null; // variableDebtToken address
@@ -103,7 +103,7 @@ interface RuntimeReserveData {
   tokenSymbol: string;
   tokenAddress: string;
   tokenPrice?: number;
-  tvlUsd?: number;
+  marketSizeUsd?: number;
   utilizationPct?: number;
   aTokenAddress?: string;
   vTokenAddress?: string;
@@ -165,7 +165,7 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     tokenSymbol: item.tokenSymbol,
     tokenAddress: item.tokenAddress,
     ...(item.tokenPrice !== undefined ? { tokenPrice: item.tokenPrice } : {}),
-    ...(item.tvlUsd !== undefined ? { tvlUsd: item.tvlUsd } : {}),
+    ...(item.marketSizeUsd !== undefined ? { marketSizeUsd: item.marketSizeUsd } : {}),
     ...(item.utilizationPct !== undefined ? { utilizationPct: item.utilizationPct } : {}),
     ...(item.aTokenAddress ? { aTokenAddress: item.aTokenAddress } : {}),
     ...(item.vTokenAddress ? { vTokenAddress: item.vTokenAddress } : {}),
@@ -361,7 +361,7 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           toFiniteNumber(reserve?.size?.usdPerToken) ??
           toFiniteNumber(reserve?.usdExchangeRate) ??
           undefined;
-        const tvlUsd = toFiniteNumber(reserve?.size?.usd) ?? undefined;
+        const marketSizeUsd = toFiniteNumber(reserve?.size?.usd) ?? undefined;
         const utilizationRaw = toFiniteNumber(reserve?.borrowInfo?.utilizationRate?.value);
         const utilizationPct =
           utilizationRaw !== null && utilizationRaw >= 0 ? utilizationRaw * 100 : undefined;
@@ -423,7 +423,7 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           tokenSymbol,
           tokenAddress,
           tokenPrice,
-          tvlUsd,
+          marketSizeUsd,
           utilizationPct,
           aTokenAddress,
           vTokenAddress,
