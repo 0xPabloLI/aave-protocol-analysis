@@ -11,12 +11,13 @@
   - `/api/markets` - 市场数据
   - `/api/coingecko-categories` - CoinGecko 分类数据
   - `/api/coingecko-fdv` - CoinGecko FDV 数据
+  - `/api/meta/side-data` - 低频侧数据聚合（categories + fdv）
   - `/api/campaigns/forecast-states` - Merkl 活动预测状态（批量）
   - `/api/rate-inputs` - 利率输入/储备参数
   - `/health`、`/api/health` - 健康检查
 - **数据格式**: JSON
 - **字符编码**: UTF-8
-- **端点总数**: **7 个**（7 条 URL；若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 6 个逻辑端点）
+- **端点总数**: **8 个**（8 条 URL；若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 7 个逻辑端点）
 
 ## 数据模型
 

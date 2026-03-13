@@ -118,7 +118,7 @@ The server uses environment variables for configuration (see [AGENTS.md](AGENTS.
 
 ### API Endpoints
 
-The backend API server runs on `http://localhost:3001` by default. **7 endpoints** in total:
+The backend API server runs on `http://localhost:3001` by default. **8 endpoints** in total:
 
 | Method & Path | Description |
 |--------------|-------------|
@@ -127,6 +127,7 @@ The backend API server runs on `http://localhost:3001` by default. **7 endpoints
 | `GET /api/markets` | All market data; includes `data`, `lastUpdated`, `isStale`, `updateInProgress`, **`tokenPrices`** (token prices only here) |
 | `GET /api/coingecko-categories` | CoinGecko categories (stablecoins, ETH-related) |
 | `GET /api/coingecko-fdv` | FDV data (CoinMarketCap primary, CoinGecko fallback) |
+| `GET /api/meta/side-data` | Low-frequency side-data meta payload (`coingecko-categories` + `coingecko-fdv`) |
 | `GET /api/campaigns/forecast-states` | Merkl campaign forecast states (optional `ids=...`) |
 | `GET /api/rate-inputs` | Reserve rate inputs (optional `chainId`, `asset`, `marketName`) |
 

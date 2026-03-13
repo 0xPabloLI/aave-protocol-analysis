@@ -60,7 +60,7 @@ interface CoinMarketCapQuotesResponse {
   data?: Record<string, CoinMarketCapQuote | CoinMarketCapQuote[]>;
 }
 
-interface CoingeckoCategoriesData {
+export interface CoingeckoCategoriesData {
   uniqueSymbolsStablecoins: string[];
   uniqueSymbolsEth: string[];
 }
@@ -417,6 +417,18 @@ export async function warmCoingeckoCategoriesCache(): Promise<void> {
   await getOrRefreshCoingeckoCategoriesData('startup');
 }
 
+export async function getCoingeckoCategoriesSnapshot(
+  source: 'request' | 'startup' | 'meta' = 'request'
+): Promise<{ data: CoingeckoCategoriesData; fetchedAt: string; staleTimeMs: number }> {
+  const data = await getOrRefreshCoingeckoCategoriesData(source === 'meta' ? 'request' : source);
+  const fetchedAtMs = cachedResponse?.fetchedAt ?? Date.now();
+  return {
+    data,
+    fetchedAt: new Date(fetchedAtMs).toISOString(),
+    staleTimeMs: CACHE_TTL_MS,
+  };
+}
+
 function hasReusableFdvCache(): boolean {
   if (!cachedFdvResponse) return false;
   if (Date.now() - cachedFdvResponse.fetchedAt >= FDV_CACHE_TTL_MS) return false;
@@ -472,6 +484,16 @@ async function getOrRefreshFdvData(
 
 export async function warmCoingeckoFdvCache(): Promise<void> {
   await getOrRefreshFdvData('cron');
+}
+
+export async function getCoingeckoFdvSnapshot(
+  source: 'request' | 'cron' | 'meta' = 'request'
+): Promise<{ data: { items: FdvItem[]; fetchedAt: string }; staleTimeMs: number }> {
+  const data = await getOrRefreshFdvData(source === 'meta' ? 'request' : source);
+  return {
+    data,
+    staleTimeMs: FDV_CACHE_TTL_MS,
+  };
 }
 
 export const getCoingeckoFdv = async (req: Request, res: Response) => {

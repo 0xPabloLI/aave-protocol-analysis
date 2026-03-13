@@ -8,6 +8,7 @@ import coingeckoRouter from './routes/coingecko.js';
 import coingeckoFdvRouter from './routes/coingeckoFdv.js';
 import campaignsRouter from './routes/campaigns.js';
 import rateInputsRouter from './routes/rateInputs.js';
+import metaRouter from './routes/meta.js';
 import { dataService } from './services/dataService.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
 import { warmCoingeckoCategoriesCache } from './controllers/coingeckoController.js';
@@ -60,6 +61,7 @@ app.get('/favicon.ico', (req, res) => {
 app.use('/api/markets', marketsRouter);
 app.use('/api/coingecko-categories', coingeckoRouter);
 app.use('/api/coingecko-fdv', coingeckoFdvRouter);
+app.use('/api/meta', metaRouter);
 app.use('/api/campaigns', campaignsRouter);
 app.use('/api/rate-inputs', rateInputsRouter);
 

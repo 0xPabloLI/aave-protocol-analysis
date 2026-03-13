@@ -49,6 +49,13 @@ export function apiCacheHeadersMiddleware(req: Request, res: Response, next: Nex
     return;
   }
 
+  if (path.startsWith('/api/meta/side-data')) {
+    // Meta payload contains FDV (5m TTL) and categories (6h TTL), so use the shorter TTL.
+    setCacheControlIfMissing(res, CACHE_CONTROL.coingeckoFdv);
+    next();
+    return;
+  }
+
   if (path.startsWith('/api/coingecko-categories')) {
     setCacheControlIfMissing(res, CACHE_CONTROL.coingeckoCategories);
     next();
@@ -57,4 +64,3 @@ export function apiCacheHeadersMiddleware(req: Request, res: Response, next: Nex
 
   next();
 }
-
