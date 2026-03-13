@@ -93,6 +93,7 @@ node_modules
 scripts/*
 !scripts/sync-aave-subgraph-deployments.mjs
 !scripts/check-subgraph-rate-inputs-health.mjs
+!scripts/check-subgraph-changes.mjs
 
 data/
 docs/api/subgraph-rate-inputs-health.snapshot.json

@@ -53,8 +53,9 @@ jobs:
 
       - name: Audit runtime dependencies (High/Critical)
         run: |
-          npm audit --omit=dev --audit-level=high
-          npm --prefix backend audit --omit=dev --audit-level=high
+          set -e
+          npm audit --omit=dev --audit-level=high || exit 1
+          npm --prefix backend audit --omit=dev --audit-level=high || exit 1
 
   auto-remediate-on-failure:
     needs:
