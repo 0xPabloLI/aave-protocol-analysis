@@ -97,6 +97,7 @@ export interface MarketsResponse {
   snapshot: {
     lastUpdated: string; // ISO timestamp
     version: 'markets-v2';
+    staleTimeMs: number;
   };
   reserves: MarketWithSpread[];
 }
@@ -126,7 +127,6 @@ export interface ReserveRateInput {
 export interface RateInputsResponse {
   data: ReserveRateInput[];
   lastUpdated: string;
-  isStale: boolean;
   staleTimeMs: number;
   sources: {
     subgraphChains: number[];

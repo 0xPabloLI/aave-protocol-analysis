@@ -129,6 +129,7 @@ interface MarketsResponse {
   snapshot: {
     lastUpdated: string;               // 最后更新时间（ISO 8601）
     version: 'markets-v2';
+    staleTimeMs: number;               // 认为数据过期的阈值（毫秒），默认 60 秒
   };
   reserves: MarketWithSpread[];        // 保留原全量字段 + 新增展示字段
 }
@@ -328,7 +329,8 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
       "source": "coinmarketcap"
     }
   ],
-  "fetchedAt": "2026-03-09T12:00:00.000Z"
+  "fetchedAt": "2026-03-09T12:00:00.000Z",
+  "staleTimeMs": 300000
 }
 ```
 
@@ -355,7 +357,9 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 ```json
 {
   "uniqueSymbolsStablecoins": ["USDT", "USDC", "DAI", "BUSD", ...],
-  "uniqueSymbolsEth": ["WETH", "STETH", "RETH", "CBETH", ...]
+  "uniqueSymbolsEth": ["WETH", "STETH", "RETH", "CBETH", ...],
+  "fetchedAt": "2026-03-09T12:00:00.000Z",
+  "staleTimeMs": 21600000
 }
 ```
 
@@ -411,7 +415,6 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
     }
   ],
   "lastUpdated": "2026-03-09T12:00:00.000Z",
-  "isStale": false,
   "staleTimeMs": 60000,
   "sources": { ... }
 }

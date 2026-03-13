@@ -699,7 +699,6 @@ class RateInputsService {
     const response: RateInputsResponse = {
       data: publicData,
       lastUpdated: new Date(snapshot.fetchedAt).toISOString(),
-      isStale: Date.now() - snapshot.fetchedAt > RATE_INPUTS_TTL_MS,
       staleTimeMs: RATE_INPUTS_TTL_MS,
       sources:
         filters.chainId === undefined
