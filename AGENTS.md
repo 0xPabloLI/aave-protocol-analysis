@@ -204,6 +204,7 @@ debug/brevis-raw-data.json                # Brevis raw data with API responses
 debug/merkl-raw-data.json                 # Merkl raw data (debug)
 debug/merit-raw-data.json                 # Merit raw data (debug)
 debug/merit-merkl-raw-data.json           # Merit↔Merkl round estimation debug
+debug/rate-inputs-raw-data.json           # Rate-inputs raw subgraph/onchain responses (backend)
 ```
 
 ### Logging
@@ -220,6 +221,9 @@ Each incentive API uses different identifiers:
 - **Brevis**: `chainId-tokenAddress` index
 - **Token price delivery**: keep full reserve rows in `reserves` and attach `tokenPrice` inline.
 - **Reward token rule**: Merkl reward token prices are not output in `/api/markets` for now; if a reward token is an Aave `aToken`, do not emit a separate price entry.
+
+### TVL Definition
+`reserves[].tvlUsd` = **total supply** (not supply − borrowed). This matches industry convention (DefiLlama, etc.). Use `borrowInfo.availableLiquidity` if you need "how much can still be borrowed".
 
 ### Frozen/Paused Reserves
 Automatically excluded: `isFrozen === true` or `isPaused === true`
