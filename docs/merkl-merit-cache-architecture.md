@@ -141,12 +141,12 @@ flowchart TD
 - Forecast-only campaign meta index:
   - `campaignId -> { tvl, campaignTypeHint, distributionTypeRaw, campaignSnapshot }`
 - Rebuilt on demand when expired
-- TTL (current): minute-level (default 60s), configurable independently from forecast result cache
+- TTL (current): 5 minutes (default), configurable independently from forecast result cache
 
 ### C) `forecastCache` (`backend/src/services/merklForecastService.ts`)
 - Final forecast state cache by campaignId
 - Stores computed result returned by `/api/campaigns/forecast-states`
-- TTL (current): minute-level (default 60s), intentionally aligned with opportunity meta freshness
+- TTL (current): 10 minutes (default), aligned with `merklMetricsMin` since underlying metrics data won't change faster
 
 Example shape:
 ```ts
@@ -219,7 +219,7 @@ Two different concepts:
 
 Example in current code:
 - `merkl-opportunity-meta-lite.json` is written when root data refresh runs (often ~1m cadence)
-- Forecast service accepts it if file timestamp is within **60s**
+- Forecast service accepts it if file timestamp is within **5 minutes**
 
 This decoupling makes the system tolerant to scheduler jitter and temporary delays.
 

@@ -130,12 +130,35 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 
 | Family | 值 | 作用范围 | 说明 |
 |---|---:|---|---|
-| `realtimeFamily` | 60s | `marketsDataStaleThreshold`、`rate-inputs`、`merklLiteFileMaxAge`、`merklForecastResultDefault`、`merklForecastOpportunityMetaDefault`、`merklOpportunitiesDefault` | 同一快照新鲜度族，统一 60 秒避免跨接口不同步。 |
+| `realtimeFamily` | 60s | `marketsDataStaleThreshold`、`rate-inputs` | markets 和 rate-inputs 统一 60 秒。 |
+| `merklForecastResult` | 10m | `merklForecastResultDefault` | 与 `merklMetricsMin` 对齐，底层 metrics 不会更快更新。 |
+| `merklForecastMeta` | 5m | `merklForecastOpportunityMetaDefault`、`merklLiteFileMaxAge`、`merklOpportunitiesDefault` | 元数据查询可更频繁。 |
 | `marketsServeStaleMax` | 5m | `/api/markets` hard stale cap | 超过该值返回 `503`，避免长期返回旧快照。 |
-| `coingeckoFastFamily` | 10m | 其他 CoinGecko 快族 | 平衡新鲜度和配额。 |
-| `coingeckoFdv` | 5m | FDV 缓存 | 与 FDV 预热 cron（每 5 分钟）一致，cron 与请求路径共用同一 TTL，过期才刷新。 |
+| `coingeckoFdv` | 5m | FDV 缓存 | 与 FDV 预热 cron（每 5 分钟）一致。 |
 | `coingeckoSlowFamily` | 6h | `coingeckoCategories`、`coingeckoFdvMonitor` | 低频元数据/监控，长 TTL 降低外部 API 压力。 |
-| `merklMetrics*` | 5m~6h | `merklMetricsDefault/Min/Max/Empty` | 按指标节奏做有界动态 TTL。 |
+| `merklMetrics*` | 10m~6h | `merklMetricsDefault/Min/Max/Empty` | 按指标节奏做有界动态 TTL（clamp 范围统一为 10m~6h）。 |
+
+### 端点对外 staleTimeMs 与内部 TTL 对齐表
+
+> 这一节确保前端 `staleTime` 与后端实际刷新频率一致。
+
+| 端点 | 对外 staleTimeMs | 内部缓存 TTL | 数据源更新频率 | 对齐状态 |
+|------|-----------------|-------------|---------------|---------|
+| `GET /api/markets` | 60s | 60s | 60s cron | ✓ |
+| `GET /api/rate-inputs` | 60s | 60s | 60s cron | ✓ |
+| `GET /api/campaigns/forecast-states` | 10m | forecastCache 10m | metrics 动态 10m~6h | ✓ 对齐 metricsMin |
+| `GET /api/coingecko-fdv` | 5m | 5m | 5m cron | ✓ |
+| `GET /api/coingecko-categories` | 6h | 6h | 6h cron | ✓ |
+| `GET /api/meta/side-data` | 按子块各自 TTL | categories 6h / fdv 5m / forecast 10m | 聚合 | ✓ 子块独立 |
+
+### Merkl Metrics 动态 TTL 说明
+
+```
+观测 dailyRewardsRecords 时间戳间隔 → 取中位数作为 cadence
+→ TTL = cadence / 4（保守策略）
+→ clamp 到 [merklMetricsMin=10m, merklMetricsMax=6h]
+→ 空数据时用 merklMetricsEmpty=10m（与 min 一致）
+```
 
 ### 按端点汇总：软过期 / 硬过期 / 回退策略
 
@@ -145,12 +168,12 @@ async function checkAndUpdateDataIfStale(): Promise<void> {
 |---|---|---|---|---|---|
 | `GET /api/markets` | Aave markets 快照（`markets-v2`） | `BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold = 1m` | `BACKEND_CACHE_TTL_MS.marketsServeStaleMax = 5m` | 超过 1m 视为 stale，`checkAndUpdateDataIfStale()` 触发更新（scheduler 或按需）；只要快照年龄在 5m 以内，仍继续返回当前缓存数据。 | 如果更新失败或超时，状态标记为 `error`，**继续使用旧快照**；一旦快照年龄超过 5m，直接返回 `503`，拒绝再用旧快照（`errorCode = "MARKETS_SNAPSHOT_HARD_STALE"`）。 |
 | `GET /api/rate-inputs` | 利率输入 / 储备参数 | `RATE_INPUTS_TTL_MS = BACKEND_CACHE_TTL_MS.realtimeFamily = 1m` | `RATE_INPUTS_MAX_STALE_MS = BACKEND_CACHE_TTL_MS.rateInputsServeStaleMax = 5m` | 首次请求或 `>5m`：同步刷新快照（阻塞直到拿到最新或失败）；`1m~5m`：直接返回旧快照，同时在后台触发一次刷新。 | 软过期场景（1m~5m）如果后台刷新失败，仅记录 `warn`，客户端继续拿到旧数据；硬过期场景（>5m）如果同步刷新失败，controller 抛错，最终返回 `500`（**不会回退到更旧的快照**）。 |
-| `GET /api/campaigns/forecast-states` | Merkl campaign forecast 状态 | 结果缓存 `FORECAST_CACHE_TTL_MS` 默认 `1m`（可由 env 覆盖）；Merkl metrics 动态 TTL 由 `METRICS_CACHE_*` 控制（10m~6h） | 无单独“硬过期编码”，上限由 Merkl metrics TTL 约束 | 单个 campaign 命中缓存则直接返回；缓存过期则重新从 Merkl API / 本地 lite 文件计算。 | “部分失败”通过响应体里的 `errors[]` 表达（整体仍是 200）；只有极端情况（如本地 markets 缓存损坏）才会抛到顶层返回 `500`，没有针对年龄的 503 逻辑。 |
+| `GET /api/campaigns/forecast-states` | Merkl campaign forecast 状态 | 结果缓存 `FORECAST_CACHE_TTL_MS` 默认 `10m`（可由 env 覆盖，与 `merklMetricsMin` 对齐）；Merkl metrics 动态 TTL 由 `METRICS_CACHE_*` 控制（10m~6h） | 无单独“硬过期编码”，上限由 Merkl metrics TTL 约束 | 单个 campaign 命中缓存则直接返回；缓存过期则重新从 Merkl API / 本地 lite 文件计算。 | “部分失败”通过响应体里的 `errors[]` 表达（整体仍是 200）；只有极端情况（如本地 markets 缓存损坏）才会抛到顶层返回 `500`，没有针对年龄的 503 逻辑。 |
 | `GET /api/coingecko-categories` | `stablecoins / ETH` 符号集合 | `BACKEND_CACHE_TTL_MS.coingeckoCategories = 6h` | 同一数值视为最大陈旧；过期即必须刷新 | 缓存未过 6h：直接返回缓存；超过 6h：通过 `fetchJsonWithRetry` 串行请求 5 个 CoinGecko 分类页并更新缓存（有 rate limit & 指数退避）。 | 如果刷新期间所有重试都失败，内部抛错，controller 返回 `500`；**不会在 TTL 过期后回退使用旧缓存**（即使内存中仍有旧值）。 |
 | `GET /api/coingecko-fdv` | FDV 列表（CEX 代币 FDV） | `BACKEND_CACHE_TTL_MS.coingeckoFdv = 5m` | 同一数值视为最大陈旧；过期即必须刷新，同时要求所有条目 `fdvUsd !== null` | 缓存未过 5m 且没有 `fdvUsd = null`：直接返回缓存；过期或含 null：强制刷新，先尝试 CoinMarketCap，再回退 CoinGecko FDV。 | 若 CMC 和 CoinGecko 都失败，刷新 promise 抛错，controller 返回 `500`；**不会在 TTL 过期后继续用旧 FDV 缓存**。 |
 | `GET /api/health` / `GET /health` | 健康检查（环境 & 配置摘要） | 无 | 无 | 实时构造 JSON 返回，不做缓存或 TTL 判断。 | N/A（只要进程还活着基本能返回 200；严重错误才会 500）。 |
 
-> 前端的 `staleTime` 应当与“软过期阈值”对齐：例如 `/api/markets` 与 `/api/rate-inputs` 统一为 1 分钟；而硬过期（如 markets 5 分钟）主要用于防止后端“无限期兜底旧快照”，正常流量下不应触发。
+> 前端的 `staleTime` 应当与“软过期阈值”对齐：例如 `/api/markets` 与 `/api/rate-inputs` 统一为 1 分钟，`/api/campaigns/forecast-states` 为 10 分钟（与 metricsMin 对齐）；而硬过期（如 markets 5 分钟）主要用于防止后端“无限期兜底旧快照”，正常流量下不应触发。
 
 ### 非 TTL 但已收敛的时间配置
 

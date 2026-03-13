@@ -256,14 +256,14 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
   "requested": 23,
   "items": [],
   "errors": [],
-  "staleTimeMs": 60000
+  "staleTimeMs": 600000
 }
 ```
 
 其中：
 - `items` 为成功计算的 campaign 状态数组（字段同单个接口）。
 - `errors` 为失败项数组：`{ campaignId, status, message }`。
-- `staleTimeMs` 为 Merkl forecast 结果缓存 TTL（毫秒），默认 60 秒（可通过环境变量 `MERKL_FORECAST_RESULT_CACHE_TTL_MS` 覆盖）。
+- `staleTimeMs` 为 Merkl forecast 结果缓存 TTL（毫秒），默认 10 分钟（与 `merklMetricsMin` 对齐，可通过环境变量 `MERKL_FORECAST_RESULT_CACHE_TTL_MS` 覆盖）。
 
 **状态码**:
 - `200`: 成功（部分失败也返回 200，失败体现在 `errors`）
@@ -470,10 +470,11 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 **端点**: `GET /api/meta/side-data`
 
-**描述**: 聚合返回低频侧数据的元信息，用于前端一次性获取 CoinGecko 分类和 FDV 快照的状态。内部组合了：
+**描述**: 聚合返回低频侧数据，用于前端一次性获取 CoinGecko 分类、FDV 快照和 Merkl forecast 状态。内部组合了：
 
-- `GET /api/coingecko-categories` 的最新快照元信息
-- `GET /api/coingecko-fdv` 的最新快照元信息
+- `GET /api/coingecko-categories` 的最新快照元信息（6h TTL）
+- `GET /api/coingecko-fdv` 的最新快照元信息（5m TTL）
+- `GET /api/campaigns/forecast-states` 的全量 forecast 数据（10m TTL）
 
 不会触发市场数据刷新，仅依赖各自缓存与 TTL。
 
@@ -504,9 +505,27 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
     "fetchedAt": "2026-03-09T12:00:00.000Z",
     "staleTimeMs": 300000
   },
+  "forecast": {
+    "items": [
+      {
+        "campaignId": "0x...",
+        "campaignType": "DUTCH_AUCTION",
+        "plannedDaily": 1000,
+        "requiredDaily": 1200,
+        "aprCap": null,
+        "totalBudget": 100000,
+        "distributedSoFar": 45000,
+        "latestTvl": 5000000,
+        "endTimestamp": 1710000000
+      }
+    ],
+    "errors": [],
+    "staleTimeMs": 600000
+  },
   "errors": {
     "categories": "optional error message when categories snapshot fails",
-    "fdv": "optional error message when fdv snapshot fails"
+    "fdv": "optional error message when fdv snapshot fails",
+    "forecast": "optional error message when forecast snapshot fails"
   }
 }
 ```
@@ -514,19 +533,23 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 字段说明：
 
 - `generatedAt`: 当前 meta 响应生成时间（ISO 8601）。
-- `partial`: 当 categories 或 fdv 其中之一失败时为 `true`。
+- `partial`: 当 categories、fdv、forecast 其中之一失败时为 `true`。
 - `categories`: 当分类快照可用时存在，结构同 `GET /api/coingecko-categories`，附加：
   - `fetchedAt`: 分类数据上次刷新时间。
-  - `staleTimeMs`: 分类缓存 TTL（毫秒）。
+  - `staleTimeMs`: 分类缓存 TTL（毫秒），默认 6 小时。
 - `fdv`: 当 FDV 快照可用时存在，结构同 `GET /api/coingecko-fdv`，附加：
   - `fetchedAt`: FDV 数据上次刷新时间。
-  - `staleTimeMs`: FDV 缓存 TTL（毫秒）。
-- `errors`: 可选对象，键为 `categories`/`fdv`，值为对应子任务失败时的错误信息。
+  - `staleTimeMs`: FDV 缓存 TTL（毫秒），默认 5 分钟。
+- `forecast`: 当 forecast 快照可用时存在，结构：
+  - `items`: forecast 状态数组，字段同 `GET /api/campaigns/forecast-states`。
+  - `errors`: 部分 campaign 计算失败的错误数组（`{ campaignId, message }`）。
+  - `staleTimeMs`: forecast 缓存 TTL（毫秒），默认 10 分钟。
+- `errors`: 可选对象，键为 `categories`/`fdv`/`forecast`，值为对应子任务整体失败时的错误信息。
 
 **状态码**:
 
 - `200`: 至少有一块数据成功（`partial` 可能为 `true`）。
-- `500`: categories 与 fdv 均失败（无可用侧数据）。
+- `500`: categories、fdv、forecast 均失败（无可用侧数据）。
 
 ---
 

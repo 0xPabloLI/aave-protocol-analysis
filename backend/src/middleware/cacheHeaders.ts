@@ -50,7 +50,7 @@ export function apiCacheHeadersMiddleware(req: Request, res: Response, next: Nex
   }
 
   if (path.startsWith('/api/meta/side-data')) {
-    // Meta payload contains FDV (5m TTL) and categories (6h TTL), so use the shorter TTL.
+    // Meta payload contains FDV (5m), forecast (10m), and categories (6h); use the shortest TTL.
     setCacheControlIfMissing(res, CACHE_CONTROL.coingeckoFdv);
     next();
     return;

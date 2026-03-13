@@ -29,6 +29,42 @@ supplyUsageRatio = totalDebt / (availableLiquidity + totalDebt + deficit);
 - Flash loans temporarily reduce `availableLiquidity` but do not reduce `virtualUnderlyingBalance`.
 - `deficit` affects `supplyUsageRatio`, not `borrowUsageRatio`.
 
+### Reserve Size Composition (SDK vs rate-inputs)
+
+The Aave SDK returns `reserve.size` which equals the **total supply** of the reserve:
+
+```
+reserve.size.raw = availableLiquidity + totalVariableDebt
+```
+
+Where `totalVariableDebt` is calculated from scaled debt:
+
+```
+totalVariableDebt = totalScaledVariableDebt × variableBorrowIndex ÷ 10²⁷
+```
+
+**Verification example (ENS on Ethereum Mainnet):**
+
+| Source | Field | Value (raw, 18 decimals) |
+|--------|-------|--------------------------|
+| aave-all-markets-data.json | `reserve.size.amount.raw` | `22357926998021311743149` |
+| rate-inputs-raw-data.json | `availableLiquidity` | `20104153613733729749180` |
+| rate-inputs-raw-data.json | `totalScaledVariableDebt` | `2168648519088846201515` |
+| rate-inputs-raw-data.json | `variableBorrowIndex` | `1039220739858227231737964167` |
+| rate-inputs-raw-data.json | `deficit` | `5768310051222005613888` |
+
+Calculation:
+```
+totalVariableDebt = 2168648519088846201515 × 1039220739858227231737964167 ÷ 10²⁷
+                  = 2253773384287581993969
+
+reserve.size.raw  = availableLiquidity + totalVariableDebt
+                  = 20104153613733729749180 + 2253773384287581993969
+                  = 22357926998021311743149  ✓ (matches SDK output)
+```
+
+**Key insight:** `deficit` (bad debt) is **not** included in `reserve.size`. It represents recorded bad debt and is tracked separately for rate calculation purposes (affects `supplyUsageRatio` only).
+
 ### Can we "just fetch one more field" (`deficit`) from The Graph?
 
 Not always.

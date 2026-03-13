@@ -153,7 +153,7 @@ Data files include `_metadata.timestamp` (written by fetcher). Backend prioritiz
 
 ### API Endpoints
 
-**共 7 个端点**（完整列表与详细说明见 `docs/api/api-documentation.md`）。`GET /api/markets` 使用 `markets-v2` 结构：根级 `snapshot + reserves`；价格主字段在 `reserves[].tokenPrice`。
+**共 8 个端点**（完整列表与详细说明见 `docs/api/api-documentation.md`）。`GET /api/markets` 使用 `markets-v2` 结构：根级 `snapshot + reserves`；价格主字段在 `reserves[].tokenPrice`。
 
 ```
 GET /health                        # Health check with environment info
@@ -163,6 +163,7 @@ GET /api/coingecko-categories      # CoinGecko category data (stablecoins, ETH-r
 GET /api/coingecko-fdv             # CoinGecko FDV data (CMC primary, CG fallback)
 GET /api/campaigns/forecast-states # Merkl campaign forecast states (optional ids=...)
 GET /api/rate-inputs               # Reserve rate inputs (optional chainId, asset, marketName)
+GET /api/meta/side-data            # Aggregated side data (categories + fdv + forecast)
 ```
 
 **Markets 数据新鲜度**（仅以下端点会触发 `checkAndUpdateDataIfStale()`）:
@@ -179,8 +180,8 @@ NODE_ENV=development               # Environment mode
 FRONTEND_URL=https://example.com   # CORS whitelist (production only, comma-separated)
 ALLOWED_DEV_ORIGINS=...            # Dev CORS whitelist
 DOPPLER_TOKEN=...                  # Doppler secrets (production)
-MERKL_FORECAST_RESULT_CACHE_TTL_MS=60000              # Forecast result cache TTL (default 60s)
-MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS=60000    # Opportunity meta cache TTL (default 60s)
+MERKL_FORECAST_RESULT_CACHE_TTL_MS=600000             # Forecast result cache TTL (default 10m, aligned with metricsMin)
+MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS=300000   # Opportunity meta cache TTL (default 5m)
 MERKL_METRICS_CACHE_TTL_MS=1800000                    # Metrics cache default TTL (default 30m, dynamic cadence-based)
 ```
 
