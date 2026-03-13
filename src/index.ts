@@ -83,6 +83,7 @@ interface FormattedReserveData {
   vTokenAddress: string | null; // variableDebtToken address
   supplyApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
   borrowApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
+  borrowDisabled?: boolean; // true when borrowingState is DISABLED or borrowCap is 1
   supplyIncentives: number[]; // Protocol supply incentives 百分比值数组
   borrowIncentives: number[]; // Protocol borrow incentives 百分比值数组
   meritSupplys?: MeritAprEntry[];
@@ -109,6 +110,7 @@ interface RuntimeReserveData {
   vTokenAddress?: string;
   supplyApy?: number;
   borrowApy?: number;
+  borrowDisabled?: boolean;
   supplyIncentives?: number[];
   borrowIncentives?: number[];
   meritSupplys?: MeritAprEntry[];
@@ -171,6 +173,7 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.vTokenAddress ? { vTokenAddress: item.vTokenAddress } : {}),
     ...(item.supplyApy !== undefined ? { supplyApy: item.supplyApy } : {}),
     ...(item.borrowApy !== undefined ? { borrowApy: item.borrowApy } : {}),
+    ...(item.borrowDisabled ? { borrowDisabled: true } : {}),
     ...(item.supplyIncentives && item.supplyIncentives.length > 0 ? { supplyIncentives: item.supplyIncentives } : {}),
     ...(item.borrowIncentives && item.borrowIncentives.length > 0 ? { borrowIncentives: item.borrowIncentives } : {}),
     ...(item.meritSupplys && item.meritSupplys.length > 0
@@ -380,15 +383,15 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         // 检查 borrowingState 是否为 "DISABLED"，如果是则表示该 token 不能被 borrow
         const isBorrowDisabledByState = reserve.borrowInfo?.borrowingState === "DISABLED";
         
-        // 检查 borrowCap，如果为 1 则将 borrowApy 设置为 undefined（因为对用户没有意义）
+        // 检查 borrowCap，如果为 1 也视为 disabled（因为对用户没有实际意义）
         const borrowCapValue = reserve.borrowInfo?.borrowCap?.amount?.value;
         const borrowCapIsOne = borrowCapValue !== undefined && parseFloat(borrowCapValue) === 1;
         const isBorrowDisabled = isBorrowDisabledByState || borrowCapIsOne;
+        
         // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
+        // 即使 disabled 也传递真实的 borrowApy（前端可能需要展示参考值）
         const borrowApyValue = reserve.borrowInfo?.apy?.value;
-        const borrowApy = isBorrowDisabled || !borrowApyValue
-          ? undefined 
-          : parseFloat(borrowApyValue) * 100;
+        const borrowApy = borrowApyValue ? parseFloat(borrowApyValue) * 100 : undefined;
         
         // 从 reserve.incentives 中提取 protocol supply 和 borrow incentives
         // 使用 value*100 转换为百分比值数组
@@ -429,6 +432,8 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           vTokenAddress,
           supplyApy,
           borrowApy,
+          // 仅当 borrowing 被禁用时才添加此标志（节约带宽）
+          ...(isBorrowDisabled ? { borrowDisabled: true } : {}),
           // Protocol incentives - 从 reserve.incentives 提取
           supplyIncentives: protocolSupplyIncentives.length > 0 ? protocolSupplyIncentives : undefined as any,
           borrowIncentives: protocolBorrowIncentives.length > 0 ? protocolBorrowIncentives : undefined as any

@@ -2,6 +2,15 @@
 
 本文档面向开发者，介绍如何部署 Aave Backend 服务到生产环境或本地测试环境。
 
+## 部署架构选择
+
+| 架构 | 适用场景 | 说明 |
+|------|----------|------|
+| **单服务**（本文档） | 自建服务器、Railway 常驻模式 | 简单直接，一个进程包含 API + 定时任务 |
+| **三服务**（[详见此文档](./railway-three-service-architecture.md)） | Railway Serverless / App Sleeping | API + 更新服务 + Redis 分离，支持 API 休眠 |
+
+若计划在 Railway 使用 Serverless（App Sleeping）模式，推荐阅读 [三服务架构方案](./railway-three-service-architecture.md)。
+
 ## 前置要求
 
 - Node.js 20+ 
