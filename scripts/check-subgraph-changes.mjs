@@ -38,8 +38,7 @@ async function main() {
     } catch (error) {
       // File doesn't exist - assume there are changes
       console.log('⚠️  Could not read original file, assuming changes exist');
-      process.exitCode = 0; // Exit with 0 to indicate changes exist
-      return;
+      process.exit(0); // Exit with 0 to indicate changes exist
     }
 
     // Compare snapshots (excluding timestamp)
@@ -47,15 +46,15 @@ async function main() {
 
     if (hasChanges) {
       console.log('✅ Actual changes detected (excluding timestamp)');
-      process.exitCode = 0; // Exit with 0 to indicate changes exist
+      process.exit(0); // Exit with 0 to indicate changes exist
     } else {
       console.log('ℹ️  No actual changes detected (only timestamp updated)');
-      process.exitCode = 1; // Exit with 1 to indicate no changes
+      process.exit(1); // Exit with 1 to indicate no changes
     }
   } catch (error) {
     console.error('❌ Check failed:', error instanceof Error ? error.message : String(error));
     // On error, assume changes exist to be safe
-    process.exitCode = 0;
+    process.exit(0);
   }
 }
 
