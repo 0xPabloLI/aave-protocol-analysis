@@ -276,6 +276,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
       snapshot: {
         lastUpdated: lastUpdated?.toISOString() || new Date().toISOString(),
         version: 'markets-v2',
+        staleTimeMs: BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold,
       },
       reserves: dataWithTokenPrice,
     };

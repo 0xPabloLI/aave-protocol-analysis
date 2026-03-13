@@ -26,7 +26,7 @@ const LEGACY_SHARED_FORECAST_TTL_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 })();
 
-const FORECAST_CACHE_TTL_MS = (() => {
+export const FORECAST_CACHE_TTL_MS = (() => {
   const raw = process.env.MERKL_FORECAST_RESULT_CACHE_TTL_MS;
   if (!raw) return LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastResultDefault;
   const parsed = Number.parseInt(raw, 10);

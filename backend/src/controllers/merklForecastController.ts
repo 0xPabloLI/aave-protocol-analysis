@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { getMerklForecastState } from '../services/merklForecastService.js';
+import { FORECAST_CACHE_TTL_MS, getMerklForecastState } from '../services/merklForecastService.js';
 import { dataService } from '../services/dataService.js';
 import type { MarketWithSpread } from '../types/index.js';
 
@@ -94,6 +94,7 @@ export const getCampaignForecastStates = async (req: Request, res: Response): Pr
     requested: dedupedCampaignIds.length,
     items,
     errors,
+    staleTimeMs: FORECAST_CACHE_TTL_MS,
   });
 };
 
