@@ -964,20 +964,18 @@ async function fetchAaveMarkets(): Promise<void> {
       return { merit: meritData, merkl: merklData, brevis: brevisData };
     };
     
-    // 创建超时 Promise
+    // 创建超时 Promise（带取消功能）
+    let timeoutId: NodeJS.Timeout | null = null;
+    let mainTaskCompleted = false;
+    
     const timeoutPromise = new Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex }>((resolve) => {
-      setTimeout(async () => {
+      timeoutId = setTimeout(async () => {
+        // 如果主任务已完成，不输出警告
+        if (mainTaskCompleted) return;
+        
         logger.warn(`⏱️ Incentive data fetching timeout after ${INCENTIVE_DATA_TIMEOUT_MS / 1000}s, extracting completed results...`);
         
-        // 超时后，检查哪些任务已完成，使用已完成的结果
-        const results = await Promise.allSettled([
-          Promise.race([meritPromise, Promise.resolve({} as MeritDataIndex)]),
-          Promise.race([merklPromise, Promise.resolve({ index: {} as MerklDataIndex } as MerklProcessedData)]),
-          Promise.race([brevisPromise, Promise.resolve({} as BrevisDataIndex)]),
-        ]);
-        
         // 使用一个很短的超时（100ms）来检查每个 Promise 是否已完成
-        // 如果已完成，获取结果；如果还在 pending，使用空对象
         const checkCompleted = async <T>(promise: Promise<T>, defaultValue: T): Promise<{ completed: boolean; value: T }> => {
           try {
             const result = await Promise.race([
@@ -1013,7 +1011,11 @@ async function fetchAaveMarkets(): Promise<void> {
     
     // 使用 Promise.race，取先完成的（任务完成或超时）
     const { merit: meritData, merkl: merklData, brevis: brevisData } = await Promise.race([
-      getCompletedResults(),
+      getCompletedResults().then(result => {
+        mainTaskCompleted = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        return result;
+      }),
       timeoutPromise,
     ]);
     
