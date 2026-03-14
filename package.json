@@ -22,9 +22,7 @@
     "ci:auto-fix": "npm audit fix --omit=dev || true && npm --prefix backend audit fix --omit=dev || true",
     "deploy": "./deploy.sh",
     "mcp:context7": "node .cursor/context7-server.js",
-    "prune": "ts-prune -i '.*aave-shared-config/index\\.d\\.ts' 2>&1 | (grep -v '(used in module)' | grep -q . && exit 1 || exit 0)",
-    "subgraphs:sync": "node scripts/sync-aave-subgraph-deployments.mjs",
-    "subgraphs:check-rate-inputs": "node scripts/check-subgraph-rate-inputs-health.mjs"
+    "prune": "ts-prune -i '.*aave-shared-config/index\\.d\\.ts' 2>&1 | (grep -v '(used in module)' | grep -q . && exit 1 || exit 0)"
   },
   "dependencies": {
     "@aave/client": "^0.6.1",
