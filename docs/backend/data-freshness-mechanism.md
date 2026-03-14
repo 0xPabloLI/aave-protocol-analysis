@@ -213,8 +213,33 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 - `BACKEND_SCHEDULE_CRON.eachMinuteAtSecondZero`（`0 * * * * *`）
 - `coingeckoFetchConfig.maxDelayMs` 默认（60 秒）
 - `coingeckoFetchConfig.rateLimitMinWaitSeconds` 默认（60 秒）
+- `merklFetchConfig.maxConcurrency` 默认 5（并发限制）
+- `merklFetchConfig.maxRetries` 默认 3（指数退避重试）
+- `merklFetchConfig.baseDelayMs` 默认 1 秒 / `maxDelayMs` 默认 10 秒
 
 说明：上述为超时/调度/限流，不属于快照 freshness TTL，但已和 TTL 一样走统一时间常量管理。
+
+### Merkl API Rate Limit & 并发控制
+
+**官方限制**（[docs.merkl.xyz](https://docs.merkl.xyz/integrate-merkl/app#api-rate-limit)）：
+- 默认 **10 requests/second**
+- 可通过申请自定义 API Key（`X-API-Key` header）提升限额
+
+**本项目策略**：
+
+Forecast cron 刷新时会为每个 campaign 并发请求 `campaigns/{id}` + `campaigns/{id}/metrics`，campaign 数量 30+ 时瞬间并发可达 60+，远超限制导致 `ECONNRESET`。
+
+解决方案（`merklForecastService.ts` / `config.ts`）：
+
+| 配置项 | 默认值 | 说明 |
+|---|---|---|
+| `MERKL_FETCH_MAX_CONCURRENCY` | 5 | 同时在途的 Merkl API 请求数（留一半给 opportunities 等其他调用） |
+| `MERKL_FETCH_MAX_RETRIES` | 3 | 瞬态错误（ECONNRESET / 429 / 5xx）最大重试次数 |
+| `MERKL_FETCH_BASE_DELAY_MS` | 1000 | 指数退避起始延迟 |
+| `MERKL_FETCH_MAX_DELAY_MS` | 10000 | 指数退避最大延迟 |
+
+重试覆盖的错误类型：`ECONNRESET`、`ETIMEDOUT`、`UND_ERR_SOCKET`（Node undici）、HTTP 429、HTTP 5xx。
+非瞬态错误（如 404）不重试，直接抛出。
 
 ## 工作流程
 

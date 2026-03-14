@@ -1,5 +1,33 @@
 import { BACKEND_FETCH_TIMING_MS, BACKEND_TIME_MS, BACKEND_TIME_SECONDS } from './cacheTtl.js';
 
+// Merkl API 请求的重试/并发配置
+// Rate Limit 参考：https://docs.merkl.xyz/integrate-merkl/app#api-rate-limit
+// - 默认限制：10 requests/second
+// - 可通过申请 API Key（X-API-Key header）提升限额
+//
+// 当前配置：
+// - 最大并发 5（留一半给 opportunities 等其他请求）
+// - 3 次重试 + 指数退避（1s → 2s → 4s，最大 10s）
+// - 覆盖 ECONNRESET / 429 / 5xx 等瞬态错误
+export const merklFetchConfig = {
+  maxConcurrency: readNumberEnv('MERKL_FETCH_MAX_CONCURRENCY', {
+    defaultValue: 5,
+    min: 1,
+  }),
+  maxRetries: readNumberEnv('MERKL_FETCH_MAX_RETRIES', {
+    defaultValue: 3,
+    min: 0,
+  }),
+  baseDelayMs: readNumberEnv('MERKL_FETCH_BASE_DELAY_MS', {
+    defaultValue: BACKEND_FETCH_TIMING_MS.merklRetryBaseDelay,
+    min: 100,
+  }),
+  maxDelayMs: readNumberEnv('MERKL_FETCH_MAX_DELAY_MS', {
+    defaultValue: BACKEND_FETCH_TIMING_MS.merklRetryMaxDelay,
+    min: 1000,
+  }),
+};
+
 type NumberEnvOptions = {
   defaultValue: number;
   min?: number;
