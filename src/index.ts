@@ -92,12 +92,11 @@ interface FormattedReserveData {
   // Rate-input fields for manual APR calculation (raw strings for precision)
   decimals?: number;
   availableLiquidity?: string;
-  totalScaledVariableDebt?: string;
-  variableBorrowIndex?: string; // RAY (1e27) when using Aave API
   reserveFactor?: string;
   variableRateSlope1?: string;
   variableRateSlope2?: string;
   optimalUsageRate?: string;
+  // Note: baseVariableBorrowRate is NOT available from Aave API
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
   merklSupplys?: MerklOpportunityGroup[];
@@ -131,13 +130,12 @@ interface RuntimeReserveData {
   // Rate-input fields for manual APR calculation
   decimals?: number;
   availableLiquidity?: string;
-  totalScaledVariableDebt?: string;
-  variableBorrowIndex?: string;
   reserveFactor?: string;
   variableRateSlope1?: string;
   variableRateSlope2?: string;
   optimalUsageRate?: string;
   deficit?: string; // from on-chain RPC
+  // Note: baseVariableBorrowRate is NOT available from Aave API
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
   merklSupplys?: MerklOpportunityGroup[];
@@ -240,8 +238,6 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     // Rate-input fields for manual APR calculation
     ...(item.decimals !== undefined ? { decimals: item.decimals } : {}),
     ...(item.availableLiquidity ? { availableLiquidity: item.availableLiquidity } : {}),
-    ...(item.totalScaledVariableDebt ? { totalScaledVariableDebt: item.totalScaledVariableDebt } : {}),
-    ...(item.variableBorrowIndex ? { variableBorrowIndex: item.variableBorrowIndex } : {}),
     ...(item.reserveFactor ? { reserveFactor: item.reserveFactor } : {}),
     ...(item.variableRateSlope1 ? { variableRateSlope1: item.variableRateSlope1 } : {}),
     ...(item.variableRateSlope2 ? { variableRateSlope2: item.variableRateSlope2 } : {}),
@@ -462,14 +458,11 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         // All raw values are strings to preserve precision for on-chain math
         const decimals = reserve.underlyingToken?.decimals ?? undefined;
         const availableLiquidity = reserve.borrowInfo?.availableLiquidity?.amount?.raw ?? undefined;
-        // Aave API returns actual debt (not scaled), use RAY index workaround
-        const totalScaledVariableDebt = reserve.borrowInfo?.total?.amount?.raw ?? undefined;
-        const variableBorrowIndex = totalScaledVariableDebt ? '1000000000000000000000000000' : undefined; // RAY (1e27)
         const reserveFactorRaw = reserve.borrowInfo?.reserveFactor?.raw ?? undefined;
         const variableRateSlope1 = reserve.borrowInfo?.variableRateSlope1?.raw ?? undefined;
         const variableRateSlope2 = reserve.borrowInfo?.variableRateSlope2?.raw ?? undefined;
         const optimalUsageRate = reserve.borrowInfo?.optimalUsageRate?.raw ?? undefined;
-        // baseVariableBorrowRate is NOT available from Aave API - would need on-chain fetch
+        // Note: baseVariableBorrowRate is NOT available from Aave API
         
         // 从 reserve.incentives 中提取 protocol supply 和 borrow incentives
         // 使用 value*100 转换为百分比值数组
@@ -524,8 +517,6 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           // Rate-input fields for manual APR calculation (raw strings for precision)
           ...(decimals !== undefined ? { decimals } : {}),
           ...(availableLiquidity ? { availableLiquidity } : {}),
-          ...(totalScaledVariableDebt ? { totalScaledVariableDebt } : {}),
-          ...(variableBorrowIndex ? { variableBorrowIndex } : {}),
           ...(reserveFactorRaw ? { reserveFactor: reserveFactorRaw } : {}),
           ...(variableRateSlope1 ? { variableRateSlope1 } : {}),
           ...(variableRateSlope2 ? { variableRateSlope2 } : {}),
