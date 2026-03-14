@@ -1,8 +1,25 @@
 # CI + Security Automation Flow
 
-**Local hooks**: This repo uses `pre-commit` and `pre-push` hooks that run `npm run ci:remote`. On failure, hooks attempt `npm run ci:auto-fix` then re-run `ci:remote`. See [AGENTS.md](../AGENTS.md#local-git-hook-policy-mandatory).
+## Local Hooks
 
-**GitHub Actions** — this repository has four related workflows:
+This repo uses `pre-commit` and `pre-push` hooks that run `npm run ci:remote`. On failure, hooks attempt `npm run ci:auto-fix` then re-run `ci:remote`. See [AGENTS.md](../AGENTS.md#local-git-hook-policy-mandatory).
+
+### Lock File Drift Prevention
+
+**Problem**: Local hooks run against working directory files, but CI runs against committed files. If `package-lock.json` is updated locally (via `npm install` or `npm audit fix`) but not committed, local checks pass while CI fails.
+
+**Solution**: Hooks now include lock file drift detection:
+
+| Hook | Behavior |
+|------|----------|
+| `pre-commit` | Auto-stages uncommitted `package-lock.json` / `backend/package-lock.json` |
+| `pre-push` | Blocks push if lock files have uncommitted changes |
+
+This ensures lock file changes are always included in commits, preventing local/CI audit result drift.
+
+## GitHub Actions
+
+This repository has four related workflows:
 
 1. `CI` (`.github/workflows/ci.yml`)
    - Triggered by `push` and `pull_request`
@@ -54,3 +71,35 @@ In GitHub UI:
 - Select a workflow (`Security Moderate Report` or `CI Auto Remediation`)
 - Click `Run workflow`
 - For `CI Auto Remediation`, optional `branch` can be specified
+
+## Architecture Notes
+
+### Single Remediation Source (Avoid Duplicate PRs)
+
+**Anti-pattern**: Having both an inline remediation job in `ci.yml` AND a separate `ci-auto-remediation.yml` workflow. Both trigger on CI failure and create duplicate PRs.
+
+**Correct pattern**: Keep remediation logic in ONE place only:
+- `ci.yml`: Only build/test/audit checks, read-only permissions
+- `ci-auto-remediation.yml`: Triggered via `workflow_run` event when CI fails, has write permissions
+
+```
+CI fails (ci.yml, read-only)
+      ↓
+workflow_run event
+      ↓
+ci-auto-remediation.yml (write permissions)
+      ↓
+Single remediation PR
+```
+
+### Workflow Run Trigger Conditions
+
+`ci-auto-remediation.yml` only triggers when:
+1. `CI` workflow completes with `conclusion == 'failure'`
+2. The triggering event was `push` (not PR)
+3. Branch matches configured list (main, railway, feature/**)
+
+This prevents:
+- Duplicate runs on PR events (PRs don't need auto-remediation PRs)
+- Runs on successful CI (no remediation needed)
+- Infinite loops (remediation branches start with `bot/ci-auto-remediation-`)
