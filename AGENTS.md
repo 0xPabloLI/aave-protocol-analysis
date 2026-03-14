@@ -106,8 +106,8 @@ External APIs → Backend Cron Jobs → In-Memory Snapshots → REST Clients
 #### Backend API (`backend/src/`)
 
 **Core Services**:
-- `services/marketsService.ts` - Unified data fetcher (markets + deficit); parallel fetch from Aave API + RPC; single `fetchedAt` for consistent staleness
-- `services/deficitService.ts` - On-chain deficit fetcher via `UiPoolDataProvider.getReservesHumanized()` (Aave v3.3.0+); graceful degradation if RPC fails
+- `services/marketsService.ts` - Unified data fetcher (markets + on-chain data); parallel fetch from Aave API + RPC; single `fetchedAt` for consistent staleness
+- `services/onchainDataService.ts` - On-chain data fetcher (`deficit`, `baseVariableBorrowRate`) via `UiPoolDataProvider.getReservesHumanized()`; 5-min cache TTL on failure
 - `services/updateScheduler.ts` - Cron scheduler (markets 1m unified, forecast 10m, FDV 5m, categories 6h)
 - `services/merklForecastService.ts` - Merkl forecast data processor; metricsCache (dynamic TTL 10m-6h) + campaignOpportunityCache (5m)
 
@@ -233,7 +233,8 @@ Each incentive API uses different identifiers:
 ### Reserve Size Definitions
 - `reserves[].reserveSizeUsd` = **total supply in USD** (not supply − borrowed). This matches the Aave reserve `size.usd` surface.
 - `reserve.size.raw` composition: `availableLiquidity + totalVariableDebt`, where `totalVariableDebt = totalScaledVariableDebt × variableBorrowIndex ÷ 10²⁷`. See `docs/api/native-apr-calculation.md` for derivation.
-- `reserves[].deficit` = **raw token units** from `UiPoolDataProvider.getReservesHumanized()` (Aave v3.3.0+); for simulation utilization denominator adjustment. '0' if not available. **Not included** in `reserve.size`.
+- `reserves[].deficit` = **raw token units** from `UiPoolDataProvider.getReservesHumanized()` (Aave v3.3.0+); for simulation utilization denominator adjustment. Absent if RPC failed. **Not included** in `reserve.size`.
+- `reserves[].baseVariableBorrowRate` = **RAY (1e27)** from same RPC call; for simulated borrow rate calculation. Absent if RPC failed.
 - `borrowInfo.availableLiquidity` remains the right field for "how much can still be borrowed now".
 
 ### Frozen/Paused Reserves

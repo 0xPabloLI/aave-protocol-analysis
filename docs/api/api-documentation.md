@@ -100,13 +100,15 @@ interface FormattedReserveData {
   // Rate Inputs（用于 APR 模拟计算，可选字段，扁平化到 reserve 中）
   // 所有值为 BigNumber 字符串（RAY = 10^27 用于利率，token decimals 用于金额）
   decimals?: number;                     // 代币精度
-  deficit?: string;                      // 【单位: raw token】储备赤字（坏账），用于计算准确的 utilization；仅 on-chain 可获取
   availableLiquidity?: string;           // 【单位: raw token】可用流动性
   reserveFactor?: string;                // 【单位: RAY】储备因子
   variableRateSlope1?: string;           // 【单位: RAY】利率曲线斜率1
   variableRateSlope2?: string;           // 【单位: RAY】利率曲线斜率2
   optimalUsageRate?: string;             // 【单位: RAY】最优利用率（如 920000000000000000000000000 = 92%）
-  // Note: baseVariableBorrowRate 仅 on-chain 可获取，Aave API 不提供
+  // On-chain only fields (from UiPoolDataProvider.getReservesHumanized())
+  // Cached for 5 min on RPC failure; absent if no data available
+  baseVariableBorrowRate?: string;       // 【单位: RAY】基础可变借款利率（用于模拟利率计算）
+  deficit?: string;                      // 【单位: raw token】储备赤字（坏账），用于计算准确的 Supply APY
 }
 ```
 
@@ -601,14 +603,15 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
    | 字段 | 原始单位 | 转换说明 |
    |------|----------|----------|
    | `decimals` | 整数 | token 精度（用于其他字段的换算） |
-   | `deficit` | **token 原始单位** (string) | 坏账缺口（仅 on-chain 可获取），不可用时字段缺失 |
    | `availableLiquidity` | **token 原始单位** (string) | 可用流动性。换算：`BigInt(value) / 10^decimals` 得到 token 数量 |
    | `reserveFactor` | **BPS** (4 decimals) | 储备金率。换算：`value / 10000` 得到小数（如 2000 → 0.20 = 20%） |
    | `variableRateSlope1` | **RAY** (27 decimals) | 利率曲线斜率 1。换算：`BigInt(value) / 10^27` 得到小数 |
    | `variableRateSlope2` | **RAY** (27 decimals) | 利率曲线斜率 2。换算同上 |
    | `optimalUsageRate` | **RAY** (27 decimals) | 最优使用率。换算：`BigInt(value) / 10^27`（如 450000...000 → 0.45 = 45%） |
+   | `baseVariableBorrowRate` | **RAY** (27 decimals) | 基础可变借款利率（on-chain only），用于模拟利率计算 |
+   | `deficit` | **token 原始单位** (string) | 坏账缺口（on-chain only），用于计算准确的 Supply APY |
 
-   **注意**：`baseVariableBorrowRate` 仅可从 on-chain 获取，Aave API 不提供。如需模拟利率计算，需单独获取或假设为 0（多数 reserve 为 0）。
+   **On-chain 字段说明**：`baseVariableBorrowRate` 和 `deficit` 仅从 RPC 获取（UiPoolDataProvider.getReservesHumanized）。如 RPC 失败，使用 5 分钟内的缓存数据；超过缓存期或无缓存时字段缺失。
 
    #### 常用单位定义
 

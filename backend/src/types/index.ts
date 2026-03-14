@@ -27,11 +27,10 @@ export interface MarketWithSpread {
   variableRateSlope1?: string;
   variableRateSlope2?: string;
   optimalUsageRate?: string;
-  // Note: baseVariableBorrowRate is NOT available from Aave API
-  // On-chain deficit (bad debt) in raw token units
-  // From UiPoolDataProvider.getReservesHumanized() (Aave v3.3.0+)
-  // Absent if RPC fetch failed; use '0' as default in calculations
-  deficit?: string;
+  // On-chain only fields (from UiPoolDataProvider.getReservesHumanized())
+  // Absent if RPC fetch failed; cached for 5 min on failure
+  baseVariableBorrowRate?: string; // RAY (1e27) - for simulated borrow rate calculation
+  deficit?: string; // raw token units - for accurate supply APY calculation
   supplyIncentives?: number[];
   borrowIncentives?: number[];
   meritSupplys?: Array<{

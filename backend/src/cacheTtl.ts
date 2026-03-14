@@ -31,7 +31,7 @@ export const BACKEND_CACHE_TTL_MS = {
   realtimeFamily: BACKEND_TIME_MS.oneMinute,
   marketsDataStaleThreshold: BACKEND_TIME_MS.oneMinute,
   marketsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
-  deficitCacheTtl: BACKEND_TIME_MS.fiveMinutes,
+  onchainCacheTtl: BACKEND_TIME_MS.fiveMinutes,
 
   // Merkl forecast family.
   // forecastResult aligned with metricsMin since underlying metrics data won't change faster.
