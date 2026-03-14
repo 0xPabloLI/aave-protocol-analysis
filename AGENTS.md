@@ -107,7 +107,7 @@ External APIs → Backend Cron Jobs → In-Memory Snapshots → REST Clients
 
 **Core Services**:
 - `services/marketsService.ts` - Unified data fetcher (markets + on-chain data); parallel fetch from Aave API + RPC; single `fetchedAt` for consistent staleness
-- `services/onchainDataService.ts` - On-chain data fetcher (`deficit`, `baseVariableBorrowRate`) via `UiPoolDataProvider.getReservesHumanized()`; 5-min cache TTL on failure
+- `services/onchainDataService.ts` - On-chain data fetcher (`deficit`, `baseVariableBorrowRate`) via `UiPoolDataProvider.getReservesHumanized()`; per-chain cache with 30-min TTL; cron every 1 min at :10
 - `services/updateScheduler.ts` - Cron scheduler (markets 1m unified, forecast 10m, FDV 5m, categories 6h)
 - `services/merklForecastService.ts` - Merkl forecast data processor; metricsCache (dynamic TTL 10m-6h) + campaignOpportunityCache (5m)
 
@@ -317,5 +317,7 @@ Don't set secrets in `ecosystem.config.cjs`—they'll override Doppler.
 ## Learned Workspace Facts
 
 - Backend imports from `dist/index.js` — changes to `src/index.ts` require `npm run build` before backend sees updates
-- Deficit comes from `UiPoolDataProvider.getReservesHumanized()` (Aave v3.3.0+); cached for 5 minutes on failure
-- Markets and deficit fetched in parallel (both 60s timeout); deficit uses cache fallback within TTL
+- On-chain data (`deficit`, `baseVariableBorrowRate`) from `UiPoolDataProvider.getReservesHumanized()`; per-chain cache with 30-min TTL; no overall timeout (each chain tries all RPCs with 15s per attempt)
+- Markets cron at :00 and on-chain cron at :10 every minute; markets read from on-chain cache at merge time
+- `/api/rate-inputs` removed; all rate-input fields live in `/api/markets` reserves; frontend must fallback when `deficit` or `baseVariableBorrowRate` are absent
+- `totalVariableDebt` from Aave SDK replaces `totalScaledVariableDebt` + `variableBorrowIndex`; precision (raw token units, BPS, RAY) aligned with former on-chain source
