@@ -198,6 +198,7 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.supplyCapUsd !== undefined ? { supplyCapUsd: item.supplyCapUsd } : {}),
     ...(item.borrowApy !== undefined ? { borrowApy: item.borrowApy } : {}),
     ...(item.borrowDisabled ? { borrowDisabled: true } : {}),
+    ...(item.borrowCapUsd !== undefined ? { borrowCapUsd: item.borrowCapUsd } : {}),
     ...(item.supplyIncentives && item.supplyIncentives.length > 0 ? { supplyIncentives: item.supplyIncentives } : {}),
     ...(item.borrowIncentives && item.borrowIncentives.length > 0 ? { borrowIncentives: item.borrowIncentives } : {}),
     ...(item.meritSupplys && item.meritSupplys.length > 0
