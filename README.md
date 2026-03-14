@@ -129,7 +129,6 @@ The backend API server runs on `http://localhost:3001` by default. **8 endpoints
 | `GET /api/coingecko-fdv` | FDV data (CoinMarketCap primary, CoinGecko fallback) |
 | `GET /api/meta/side-data` | Low-frequency side-data meta payload (`coingecko-categories` + `coingecko-fdv`) |
 | `GET /api/campaigns/forecast-states` | Merkl campaign forecast states (optional `ids=...`) |
-| `GET /api/rate-inputs` | Reserve rate inputs (optional `chainId`, `asset`, `marketName`) |
 
 **Data freshness**: Only `GET /api/markets` triggers automatic market data refresh when stale (1-minute window). Other endpoints use their own cache/TTL. See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
 

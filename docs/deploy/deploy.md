@@ -134,7 +134,7 @@ Merkl 预测相关（可选，有默认值）：`MERKL_FORECAST_RESULT_CACHE_TTL
 ## 数据更新
 
 - **市场数据**：仅 `GET /api/markets` 会触发市场数据新鲜度检查；若数据超过 1 分钟未更新，该请求会触发自动刷新（带并发控制）。后端另有每分钟定时任务作为兜底。
-- **其他端点**：`/api/coingecko-*`、`/api/campaigns/forecast-states`、`/api/rate-inputs` 使用各自缓存/TTL，不触发市场数据刷新。
+- **其他端点**：`/api/coingecko-*`、`/api/campaigns/forecast-states` 使用各自缓存/TTL，不触发市场数据刷新。
 - **FDV**：FDV 缓存由后端定时任务每 **5 分钟**预热一次，请求路径与 cron 共用同一 TTL（5 分钟），过期时请求也可触发刷新。
 
 ## 健康检查
@@ -170,7 +170,6 @@ curl http://localhost:3001/health
 - `GET /api/coingecko-categories` - CoinGecko 分类（稳定币、ETH 相关）
 - `GET /api/coingecko-fdv` - FDV 数据（CoinMarketCap 优先，CoinGecko 回退）
 - `GET /api/campaigns/forecast-states` - Merkl 活动预测状态（可选 `ids=...`）
-- `GET /api/rate-inputs` - 储备利率输入（可选 `chainId`、`asset`、`marketName`）
 
 ## 日志
 
