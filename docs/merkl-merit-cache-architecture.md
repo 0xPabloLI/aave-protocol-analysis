@@ -22,7 +22,7 @@ flowchart LR
   MERKL["src/merkl-api.ts (Merkl ingest + indexing)"]
   MERIT["src/merit-api.ts (Merit ingest + mapping)"]
   SHARED["@internal/aave-shared-config (Merkl opportunities fetch/cache)"]
-  DFS["backend/dataService (/api/markets file cache)"]
+  MKS["backend/marketsService (internalized fetcher + memory snapshot)"]
   FCS["backend/merklForecastService (forecast compute + caches)"]
   MOC["backend/merklOpportunityClient (forecast Merkl opportunities fetcher)"]
   MKLITE["data/runtime/merkl-opportunity-meta-lite.json"]
@@ -38,7 +38,7 @@ flowchart LR
   IDX -- "writes" --> MARKETS
   MERIT -- "writes" --> TIMER
 
-  DFS -- "reads" --> MARKETS
+  MKS -- "cron-write" --> MARKETS
   FCS -- "reads" --> MKLITE
   FCS -. "uses data" .-> MOC
   MOC -. "uses data" .-> SHARED
@@ -101,8 +101,8 @@ flowchart TD
   D --> J["data/runtime/merkl-opportunity-meta-lite.json (runtime-lite)"]
   D --> R["@internal/aave-shared-config snapshot (memory)"]
   B --> K["data/runtime/aave-formatted-data.json"]
-  L["backend /api/markets"] --> M["dataService (memory cache)"]
-  M --> K
+  L["backend /api/markets"] --> M["marketsService (memory snapshot)"]
+  M -- "cron-write" --> K
   N["backend /api/campaigns/forecast-states"] --> O["merklForecastService"]
   O --> P["campaignOpportunityCache (memory)"]
   O --> J
@@ -116,7 +116,7 @@ flowchart TD
 
 ### Runtime-facing (program reads)
 - `data/runtime/aave-formatted-data.json`
-  - Main `/api/markets` source (via `dataService`)
+  - Main `/api/markets` source (via `marketsService` cron-write)
 - `data/runtime/merkl-opportunity-meta-lite.json`
   - Forecast service preferred file source (campaign-level lightweight meta)
 - `data/runtime/merit-campaign-metadata-cache.json`
@@ -134,9 +134,10 @@ flowchart TD
 
 ## 3) In-Memory Caches (Runtime)
 
-### A) `dataService` cache (`backend/src/services/dataService.ts`)
-- Caches parsed `data/runtime/aave-formatted-data.json` for `/api/markets`
-- Stale threshold (current): 60s
+### A) `marketsService` snapshot (`backend/src/services/marketsService.ts`)
+- Internalized data fetcher with in-memory snapshot
+- Cron-write/API-read-only pattern (cron every 1 minute)
+- Uses `fetchMarketsPayload()` from `dist/index.js` (root fetcher)
 
 ### B) `campaignOpportunityCache` (`backend/src/services/merklForecastService.ts`)
 - Forecast-only campaign meta index:

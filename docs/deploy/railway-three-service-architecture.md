@@ -102,17 +102,17 @@ if (redisUrl) {
 
 ### 2. API 服务（读 Redis）
 
-**文件**：`backend/src/services/dataService.ts`
+**文件**：`backend/src/services/marketsService.ts`
 
-**改动**：`loadData()` 优先从 Redis 读取，失败或无配置时回退到文件：
+**改动**：`refreshMarketsSnapshot()` 优先从 Redis 读取，失败或无配置时回退到内部 fetcher：
 
 ```typescript
 import Redis from 'ioredis';
 
-async loadData(): Promise<MarketWithSpread[]> {
+export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
   const redisUrl = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL;
   
-  // 优先 Redis
+  // 优先 Redis（Serverless 场景）
   if (redisUrl) {
     try {
       const redis = new Redis(redisUrl);
@@ -120,23 +120,19 @@ async loadData(): Promise<MarketWithSpread[]> {
       await redis.quit();
       
       if (raw) {
-        const parsed = JSON.parse(raw);
-        // 和现有 JSON 文件解析逻辑一致
-        if (parsed._metadata && parsed.data) {
-          this.cache = parsed.data;
-          this.tokenPrices = parsed.tokenPrices || null;
-          this.dataTimestamp = new Date(parsed._metadata.timestamp);
-          this.lastCacheUpdate = new Date();
-          return this.cache;
-        }
+        const payload = JSON.parse(raw) as MarketsPayload;
+        snapshot = { payload, fetchedAt: Date.now() };
+        return snapshot;
       }
     } catch (error) {
-      logger.warn('Failed to load from Redis, falling back to file:', error);
+      logger.warn('Failed to load from Redis, falling back to fetcher:', error);
     }
   }
   
-  // 回退到文件（本地开发或 Redis 不可用）
-  return this.loadDataFromFile();
+  // 回退到内部 fetcher（本地开发或 Redis 不可用）
+  const payload = await fetchMarketsPayload();
+  snapshot = { payload, fetchedAt: Date.now() };
+  return snapshot;
 }
 ```
 
@@ -248,7 +244,7 @@ const redisUrl = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL;
    - 根目录添加 `ioredis` 依赖
    - `src/index.ts` 添加写 Redis 逻辑（有 `REDIS_URL` 才写）
    - `backend` 添加 `ioredis` 依赖
-   - `dataService.ts` 添加从 Redis 读的逻辑（优先 Redis，回退文件）
+   - `marketsService.ts` 添加从 Redis 读的逻辑（优先 Redis，回退 fetcher）
 
 2. **本地测试**
    - 不设 `REDIS_URL`：代码走文件路径，和现在一样
