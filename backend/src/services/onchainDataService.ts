@@ -19,8 +19,7 @@ import { ethProviderService } from './ethProviderService.js';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 
-const ONCHAIN_PER_CHAIN_TIMEOUT_MS = 30_000; // 30s timeout per RPC attempt (longer for async)
-const ONCHAIN_OVERALL_TIMEOUT_MS = 120_000; // 120s overall timeout (async can take longer)
+const ONCHAIN_PER_RPC_TIMEOUT_MS = 15_000; // 15s timeout per RPC endpoint attempt
 
 /**
  * On-chain reserve data - fields only available from RPC
@@ -119,8 +118,8 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
         uiPoolDataProvider.getReservesHumanized({
           lendingPoolAddressProvider: config.poolAddressesProvider,
         }),
-        ONCHAIN_PER_CHAIN_TIMEOUT_MS,
-        `On-chain fetch timeout for chain ${config.chainId}`
+        ONCHAIN_PER_RPC_TIMEOUT_MS,
+        `On-chain fetch timeout for chain ${config.chainId} via ${rpcUrl}`
       );
       
       const reserves = (humanized as any).reservesData ?? [];
@@ -169,13 +168,20 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
 
 /**
  * Refresh on-chain data cache for all chains.
- * Called by cron independently from markets fetch.
- * Uses per-chain caching so partial success is preserved.
+ * Called by cron every 1 minute (same as markets).
+ * 
+ * Architecture:
+ * - All chains fetch concurrently (no overall timeout)
+ * - Each chain tries all RPC endpoints with 15s timeout per attempt
+ * - When a chain succeeds, it immediately updates its per-chain cache
+ * - Per-chain TTL is 30 minutes; stale chains are excluded at read time
  */
 export async function refreshOnchainCache(): Promise<void> {
-  // If refresh is already in progress, wait for it
+  // If refresh is already in progress, skip (don't queue)
+  // This prevents buildup if previous refresh is slow
   if (refreshInProgress) {
-    return refreshInProgress;
+    logger.debug('On-chain cache refresh already in progress, skipping');
+    return;
   }
 
   refreshInProgress = (async () => {
@@ -183,17 +189,17 @@ export async function refreshOnchainCache(): Promise<void> {
       const startTime = Date.now();
       const chainIds = Array.from(CHAIN_CONFIGS.keys());
       
-      logger.info(`🔗 Refreshing on-chain cache (deficit, baseVariableBorrowRate) for ${chainIds.length} chains...`);
+      logger.info(`🔗 Refreshing on-chain cache for ${chainIds.length} chains (concurrent, no overall timeout)...`);
       
+      // Fire all chains concurrently - no overall timeout
+      // Each chain tries all its RPC endpoints with 15s per-RPC timeout
       const results = await Promise.allSettled(
         chainIds.map(chainId => {
           const config = CHAIN_CONFIGS.get(chainId);
           if (!config) return Promise.resolve(false);
-          return withTimeout(
-            fetchAndCacheChain(config),
-            ONCHAIN_PER_CHAIN_TIMEOUT_MS + 5000, // Extra margin
-            `Chain ${chainId} overall timeout`
-          ).catch(() => false);
+          // No timeout wrapper here - fetchAndCacheChain handles per-RPC timeout
+          // and will try ALL RPC endpoints before returning
+          return fetchAndCacheChain(config);
         })
       );
       
@@ -214,7 +220,7 @@ export async function refreshOnchainCache(): Promise<void> {
       }
       
       const elapsed = Date.now() - startTime;
-      logger.info(`✅ On-chain cache refresh: ${totalReserves} reserves from ${successCount} chains in ${elapsed}ms (${failCount} chains failed/cached)`);
+      logger.info(`✅ On-chain cache refresh: ${totalReserves} reserves from ${successCount}/${chainIds.length} chains in ${elapsed}ms`);
     } finally {
       refreshInProgress = null;
     }

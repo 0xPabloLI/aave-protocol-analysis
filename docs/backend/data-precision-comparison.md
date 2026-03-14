@@ -7,6 +7,63 @@
 | **Aave SDK** | `@aave/client` GraphQL API | Most market data (rates, caps, balances, etc.) |
 | **On-chain RPC** | `UiPoolDataProvider.getReservesHumanized()` | `deficit`, `baseVariableBorrowRate` |
 
+---
+
+## 新旧 Rate-Inputs 参数对比
+
+### ⚠️ 架构变更说明
+
+| 旧架构 (Subgraph) | 新架构 (Aave SDK + RPC) |
+|------------------|------------------------|
+| 从 Subgraph 获取 `totalScaledVariableDebt` + `variableBorrowIndex` | 从 Aave SDK 直接获取 `totalVariableDebt` (已是实际值) |
+| 需要手动计算: `actualDebt = scaledDebt * index / RAY` | 无需计算，SDK 已返回实际债务 |
+| `baseVariableBorrowRate` 从 Subgraph 获取 | `baseVariableBorrowRate` 从 On-chain RPC 获取 |
+| 单一数据源 | 两个数据源并行: SDK + RPC |
+
+### 字段精度对比表
+
+| 字段 | 旧来源 | 新来源 | 精度 | 单位 | 变化 |
+|------|--------|--------|------|------|------|
+| `decimals` | Subgraph | Aave SDK | Number | Integer | ✅ 相同 |
+| `availableLiquidity` | Subgraph | Aave SDK | String | Raw token units | ✅ 相同 |
+| `totalScaledVariableDebt` | Subgraph | **已移除** | - | - | ❌ 移除 |
+| `variableBorrowIndex` | Subgraph | **已移除** | - | - | ❌ 移除 |
+| `totalVariableDebt` | **新增** | Aave SDK | String | Raw token units | ✅ 新增 (无需手动计算) |
+| `reserveFactor` | Subgraph | Aave SDK | String | BPS (e.g., "2000" = 20%) | ✅ 相同 |
+| `variableRateSlope1` | Subgraph | Aave SDK | String | RAY (27 decimals) | ✅ 相同 |
+| `variableRateSlope2` | Subgraph | Aave SDK | String | RAY (27 decimals) | ✅ 相同 |
+| `optimalUsageRate` | Subgraph | Aave SDK | String | RAY (27 decimals) | ✅ 相同 |
+| `baseVariableBorrowRate` | Subgraph | On-chain RPC | String | RAY (27 decimals) | ⚠️ 来源变更 |
+| `deficit` | On-chain RPC | On-chain RPC | String | Raw token units | ✅ 相同 |
+
+### 精度验证示例
+
+```
+// 旧数据 (Subgraph)
+reserveFactor: "2000"           // BPS → 20%
+variableRateSlope1: "90000000000000000000000000"  // RAY → 9%
+totalScaledVariableDebt: "117696480695582200739041"
+variableBorrowIndex: "1000000000000000000000000000"  // RAY
+
+// 新数据 (Aave SDK + RPC)
+reserveFactor: "2000"           // BPS → 20% ✅ 相同
+variableRateSlope1: "90000000000000000000000000"  // RAY → 9% ✅ 相同
+totalVariableDebt: "117696978016261246212959"     // 实际值，无需计算
+baseVariableBorrowRate: "0"     // RAY → 0% (从 RPC 获取)
+deficit: "0"                    // Raw token units (从 RPC 获取)
+```
+
+### 前端兼容性
+
+| 场景 | 影响 | 处理建议 |
+|------|------|----------|
+| 使用 `totalScaledVariableDebt` | ❌ 字段已移除 | 改用 `totalVariableDebt` |
+| 使用 `variableBorrowIndex` | ❌ 字段已移除 | 不再需要 |
+| 计算实际债务 | ✅ 简化 | 直接使用 `totalVariableDebt` |
+| `baseVariableBorrowRate` 缺失 | ⚠️ 可能缺失 | 使用 fallback 值 "0" |
+
+---
+
 ## Field Precision Comparison
 
 ### Fields from Aave SDK (`/api/markets`)
@@ -22,11 +79,11 @@
 | `utilizationPct` | Float | Percent (75.5 = 75.5%) | Already converted to percent |
 | `decimals` | Number | Integer | Token decimals (6, 8, 18, etc.) |
 | `availableLiquidity` | String | Raw token units | `BigInt` string |
-| `totalVariableDebt` | String | Raw token units | Total borrowed, `BigInt` string |
-| `reserveFactor` | String | RAY (27 decimals) | `200000000000000000000000000` = 20% |
+| `totalVariableDebt` | String | Raw token units | Total borrowed (actual, not scaled) |
+| `reserveFactor` | String | BPS (4 decimals) | "2000" = 20%, "1500" = 15% |
 | `variableRateSlope1` | String | RAY (27 decimals) | Interest rate parameter |
 | `variableRateSlope2` | String | RAY (27 decimals) | Interest rate parameter |
-| `optimalUsageRate` | String | RAY (27 decimals) | `900000000000000000000000000` = 90% |
+| `optimalUsageRate` | String | RAY (27 decimals) | "900000000000000000000000000" = 90% |
 
 ### Fields from On-chain RPC
 

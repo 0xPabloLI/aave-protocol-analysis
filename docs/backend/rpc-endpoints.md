@@ -37,19 +37,37 @@ packages/aave-shared-config/index.js
 
 ## Architecture
 
-On-chain data is fetched **asynchronously** from markets, allowing longer timeouts:
+On-chain data is fetched **concurrently per-chain**, allowing all RPCs to be tried:
 
-- **Cron schedule**: Every 5 minutes (async from markets every 1 min)
-- **Per-chain timeout**: 30 seconds
-- **Overall timeout**: 120 seconds
+- **Cron schedule**: Every 1 minute at second :10 (markets at :00)
+- **Per-RPC timeout**: 15 seconds
+- **No overall timeout**: All chains run concurrently, each tries all RPC endpoints
+- **Per-chain cache**: Each chain has its own `updatedAt` timestamp
 - **Cache TTL**: 30 minutes (on-chain data changes infrequently)
+
+## Fetch Flow
+
+```
+Cron :10 每分钟
+   ↓
+启动所有链并发 (Promise.allSettled)
+   ↓
+Chain 1: RPC1(15s) → 失败 → RPC2(15s) → 成功 → 更新 chain cache
+Chain 2: RPC1(15s) → 成功 → 更新 chain cache
+Chain 3: RPC1(15s) → 失败 → RPC2(15s) → 失败 → ... → 全部失败 → 保留旧 cache
+...
+   ↓
+Markets 读取时 (每分钟 :00)
+   ↓
+遍历 per-chain cache，只取 TTL 内的数据
+```
 
 ## Failover Strategy
 
-1. RPC endpoints are tried in order (first success wins)
-2. Per-chain results are cached independently
-3. On RPC failure: use cached data within 30-min TTL
-4. If no cache: `deficit` defaults to `"0"`, `baseVariableBorrowRate` calculated from reverse formula
+1. RPC endpoints are tried in order for each chain (first success wins)
+2. Each chain updates its own cache entry independently
+3. On RPC failure: cached data within 30-min TTL is preserved
+4. If no valid cache: `deficit` defaults to `"0"`, `baseVariableBorrowRate` calculated via reverse formula
 5. Provider health tracking via `ethProviderService.ts`
 
 ## Adding New RPC Endpoints
