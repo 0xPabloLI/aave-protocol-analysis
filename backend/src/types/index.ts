@@ -1,6 +1,24 @@
 // 复用现有的 FormattedReserveData 类型定义
 // 注意：这个文件需要从主项目的 src/index.ts 中导出类型
 
+/**
+ * Embedded rate-inputs for a reserve (merged from /api/rate-inputs).
+ * All values are raw BigNumber strings (RAY = 10^27 for rates, token decimals for amounts).
+ */
+export interface EmbeddedRateInputs {
+  decimals: number;
+  deficit: string;
+  deficitAvailable: boolean;
+  availableLiquidity: string;
+  totalScaledVariableDebt: string;
+  variableBorrowIndex: string;
+  reserveFactor: string;
+  variableRateSlope1: string;
+  variableRateSlope2: string;
+  baseVariableBorrowRate: string;
+  optimalUsageRate: string;
+}
+
 export interface MarketWithSpread {
   reserveId: string;
   marketName: string;
@@ -20,6 +38,8 @@ export interface MarketWithSpread {
   borrowApy?: number | null;
   borrowDisabled?: boolean;
   borrowCapUsd?: number;
+  // Embedded rate-inputs for APR simulation (optional, may be absent if rate-inputs unavailable)
+  rateInputs?: EmbeddedRateInputs;
   supplyIncentives?: number[];
   borrowIncentives?: number[];
   meritSupplys?: Array<{
@@ -102,6 +122,7 @@ export interface MarketsResponse {
     lastUpdated: string; // ISO timestamp
     version: 'markets-v2';
     staleTimeMs: number;
+    rateInputsAvailable: boolean; // true if rate-inputs were merged into reserves
   };
   reserves: MarketWithSpread[];
 }

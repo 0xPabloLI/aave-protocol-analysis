@@ -960,10 +960,60 @@ class RateInputsService {
       staleTimeMs: RATE_INPUTS_TTL_MS,
     };
   }
+
+  /**
+   * Get rate-inputs as a Map for quick lookup by chainId-tokenAddress.
+   * Used by marketsController to merge rate-inputs into reserves.
+   * Returns null if snapshot not yet populated.
+   */
+  getRateInputsMap(): Map<string, ReserveRateInput> | null {
+    if (!this.snapshot) {
+      return null;
+    }
+
+    const map = new Map<string, ReserveRateInput>();
+    for (const item of this.snapshot.data) {
+      // Key: chainId-tokenAddress (lowercase)
+      const key = `${item.chainId}-${item.tokenAddress.toLowerCase()}`;
+      // Strip internal fields (source, sourceDetail) before exposing
+      const { source: _source, sourceDetail: _sourceDetail, ...publicItem } = item;
+      map.set(key, publicItem);
+    }
+    return map;
+  }
+
+  /**
+   * Check if rate-inputs snapshot is available.
+   */
+  hasSnapshot(): boolean {
+    return this.snapshot !== null;
+  }
 }
 
 export const rateInputsService = new RateInputsService();
 
 export async function warmRateInputsCache(): Promise<void> {
   await rateInputsService.refreshSnapshot();
+}
+
+/**
+ * Get rate-inputs as a Map for quick lookup by reserveId (marketName:chainId:tokenAddress).
+ * Used by marketsController to merge rate-inputs into markets response.
+ * Returns null if snapshot not yet populated.
+ */
+export function getRateInputsMap(): Map<string, ReserveRateInput> | null {
+  const snapshot = rateInputsService['snapshot'];
+  if (!snapshot) {
+    return null;
+  }
+
+  const map = new Map<string, ReserveRateInput>();
+  for (const item of snapshot.data) {
+    // Key format matches reserveId: marketName:chainId:tokenAddress
+    const key = `${item.marketName}:${item.chainId}:${item.tokenAddress.toLowerCase()}`;
+    // Strip internal fields (source, sourceDetail) before exposing
+    const { source: _source, sourceDetail: _sourceDetail, ...publicItem } = item as any;
+    map.set(key, publicItem);
+  }
+  return map;
 }

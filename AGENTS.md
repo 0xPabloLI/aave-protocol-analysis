@@ -173,8 +173,11 @@ GET /api/meta/side-data            # Aggregated side data (categories + fdv + fo
 ```
 
 **Markets 数据新鲜度**（仅以下端点会触发 `checkAndUpdateDataIfStale()`）:
-- `GET /api/markets` — 响应含 `{ snapshot, reserves }`；若数据超过 1 分钟未更新会自动触发刷新并受并发控制。
+- `GET /api/markets` — 响应含 `{ snapshot, reserves }`；每个 reserve 包含可选 `rateInputs` 字段（合并自 rate-inputs 服务）
+  - `snapshot.rateInputsAvailable` 指示 rate-inputs 是否已合并
+  - 若数据超过 1 分钟未更新会自动触发刷新并受并发控制
 - 其他端点（coingecko、campaigns、rate-inputs）使用各自缓存/TTL，不触发市场数据刷新。
+- `/api/rate-inputs` 仍可单独调用，返回与嵌入的 `rateInputs` 相同字段（向后兼容）。
 
 ## Configuration
 

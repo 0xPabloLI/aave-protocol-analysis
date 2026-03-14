@@ -97,6 +97,21 @@ interface FormattedReserveData {
     endDate: string;                      // 活动结束日期
     name: string;                        // 活动名称
   }>;
+  
+  // Rate Inputs（用于 APR 模拟计算，可选字段）
+  rateInputs?: {
+    decimals: number;                    // 代币精度
+    deficit: string;                     // 【单位: raw token】储备赤字（坏账），用于计算准确的 utilization
+    deficitAvailable: boolean;           // deficit 是否可用（true 表示从链上获取，false 表示为默认 "0"）
+    availableLiquidity: string;          // 【单位: raw token】可用流动性
+    totalScaledVariableDebt: string;     // 【单位: scaled token】总可变债务（需 ÷ variableBorrowIndex 转换）
+    variableBorrowIndex: string;         // 【单位: RAY (10^27)】可变借款指数
+    reserveFactor: string;               // 【单位: RAY】储备因子
+    variableRateSlope1: string;          // 【单位: RAY】利率曲线斜率1
+    variableRateSlope2: string;          // 【单位: RAY】利率曲线斜率2
+    baseVariableBorrowRate: string;      // 【单位: RAY】基础可变借款利率
+    optimalUsageRate: string;            // 【单位: RAY】最优利用率（如 920000000000000000000000000 = 92%）
+  };
 }
 ```
 
@@ -140,8 +155,9 @@ interface MarketsResponse {
     lastUpdated: string;               // 最后更新时间（ISO 8601）
     version: 'markets-v2';
     staleTimeMs: number;               // 认为数据过期的阈值（毫秒），默认 60 秒
+    rateInputsAvailable: boolean;      // rate-inputs 是否已合并到 reserves（true 时每个 reserve 含 rateInputs 字段）
   };
-  reserves: MarketWithSpread[];        // 保留原全量字段 + 新增展示字段
+  reserves: MarketWithSpread[];        // 保留原全量字段 + 新增展示字段 + rateInputs
 }
 ```
 
@@ -818,6 +834,9 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
   - **2026-03-13**：新增 `/api/meta/side-data` 端点文档，并描述 categories/fdv 子快照的 `fetchedAt` 与 `staleTimeMs`
   - **2026-03-13（breaking）**：`/api/markets` 字段 `marketSizeUsd` 更名为 `reserveSizeUsd`
   - **2026-03-13（breaking）**：`/api/rate-inputs` 字段从 `reserveSize` 调整为 `deficit`
+  - **2026-03-14**：合并 `rate-inputs` 到 `/api/markets`：每个 reserve 新增可选 `rateInputs` 字段，包含 APR 模拟所需的全部参数（deficit、availableLiquidity、variableRateSlope1/2 等）
+  - **2026-03-14**：`snapshot` 新增 `rateInputsAvailable` 布尔字段，指示 rate-inputs 是否已成功合并
+  - **2026-03-14**：新增 `borrowCapUsd` 字段，与 `supplyCapUsd` 对称
 
 ## 注意事项
 
