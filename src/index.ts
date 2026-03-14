@@ -89,6 +89,15 @@ interface FormattedReserveData {
   borrowCapUsd?: number; // 借款上限（USD），与 supplyCapUsd 对称
   supplyIncentives: number[]; // Protocol supply incentives 百分比值数组
   borrowIncentives: number[]; // Protocol borrow incentives 百分比值数组
+  // Rate-input fields for manual APR calculation (raw strings for precision)
+  decimals?: number;
+  availableLiquidity?: string;
+  totalScaledVariableDebt?: string;
+  variableBorrowIndex?: string; // RAY (1e27) when using Aave API
+  reserveFactor?: string;
+  variableRateSlope1?: string;
+  variableRateSlope2?: string;
+  optimalUsageRate?: string;
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
   merklSupplys?: MerklOpportunityGroup[];
@@ -119,6 +128,16 @@ interface RuntimeReserveData {
   borrowCapUsd?: number;
   supplyIncentives?: number[];
   borrowIncentives?: number[];
+  // Rate-input fields for manual APR calculation
+  decimals?: number;
+  availableLiquidity?: string;
+  totalScaledVariableDebt?: string;
+  variableBorrowIndex?: string;
+  reserveFactor?: string;
+  variableRateSlope1?: string;
+  variableRateSlope2?: string;
+  optimalUsageRate?: string;
+  deficit?: string; // from on-chain RPC
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
   merklSupplys?: MerklOpportunityGroup[];
@@ -218,6 +237,15 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
       : {}),
     ...(item.brevisSupplys && item.brevisSupplys.length > 0 ? { brevisSupplys: item.brevisSupplys } : {}),
     ...(item.brevisBorrows && item.brevisBorrows.length > 0 ? { brevisBorrows: item.brevisBorrows } : {}),
+    // Rate-input fields for manual APR calculation
+    ...(item.decimals !== undefined ? { decimals: item.decimals } : {}),
+    ...(item.availableLiquidity ? { availableLiquidity: item.availableLiquidity } : {}),
+    ...(item.totalScaledVariableDebt ? { totalScaledVariableDebt: item.totalScaledVariableDebt } : {}),
+    ...(item.variableBorrowIndex ? { variableBorrowIndex: item.variableBorrowIndex } : {}),
+    ...(item.reserveFactor ? { reserveFactor: item.reserveFactor } : {}),
+    ...(item.variableRateSlope1 ? { variableRateSlope1: item.variableRateSlope1 } : {}),
+    ...(item.variableRateSlope2 ? { variableRateSlope2: item.variableRateSlope2 } : {}),
+    ...(item.optimalUsageRate ? { optimalUsageRate: item.optimalUsageRate } : {}),
   };
 }
 
@@ -430,6 +458,19 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         const borrowApyValue = reserve.borrowInfo?.apy?.value;
         const borrowApy = borrowApyValue ? parseFloat(borrowApyValue) * 100 : undefined;
         
+        // Rate-input fields for manual APR calculation (from Aave SDK)
+        // All raw values are strings to preserve precision for on-chain math
+        const decimals = reserve.underlyingToken?.decimals ?? undefined;
+        const availableLiquidity = reserve.borrowInfo?.availableLiquidity?.amount?.raw ?? undefined;
+        // Aave API returns actual debt (not scaled), use RAY index workaround
+        const totalScaledVariableDebt = reserve.borrowInfo?.total?.amount?.raw ?? undefined;
+        const variableBorrowIndex = totalScaledVariableDebt ? '1000000000000000000000000000' : undefined; // RAY (1e27)
+        const reserveFactorRaw = reserve.borrowInfo?.reserveFactor?.raw ?? undefined;
+        const variableRateSlope1 = reserve.borrowInfo?.variableRateSlope1?.raw ?? undefined;
+        const variableRateSlope2 = reserve.borrowInfo?.variableRateSlope2?.raw ?? undefined;
+        const optimalUsageRate = reserve.borrowInfo?.optimalUsageRate?.raw ?? undefined;
+        // baseVariableBorrowRate is NOT available from Aave API - would need on-chain fetch
+        
         // 从 reserve.incentives 中提取 protocol supply 和 borrow incentives
         // 使用 value*100 转换为百分比值数组
         const protocolSupplyIncentives: number[] = [];
@@ -479,7 +520,16 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           ...(borrowCapUsd !== undefined ? { borrowCapUsd } : {}),
           // Protocol incentives - 从 reserve.incentives 提取
           supplyIncentives: protocolSupplyIncentives.length > 0 ? protocolSupplyIncentives : undefined as any,
-          borrowIncentives: protocolBorrowIncentives.length > 0 ? protocolBorrowIncentives : undefined as any
+          borrowIncentives: protocolBorrowIncentives.length > 0 ? protocolBorrowIncentives : undefined as any,
+          // Rate-input fields for manual APR calculation (raw strings for precision)
+          ...(decimals !== undefined ? { decimals } : {}),
+          ...(availableLiquidity ? { availableLiquidity } : {}),
+          ...(totalScaledVariableDebt ? { totalScaledVariableDebt } : {}),
+          ...(variableBorrowIndex ? { variableBorrowIndex } : {}),
+          ...(reserveFactorRaw ? { reserveFactor: reserveFactorRaw } : {}),
+          ...(variableRateSlope1 ? { variableRateSlope1 } : {}),
+          ...(variableRateSlope2 ? { variableRateSlope2 } : {}),
+          ...(optimalUsageRate ? { optimalUsageRate } : {}),
         });
       });
     }
