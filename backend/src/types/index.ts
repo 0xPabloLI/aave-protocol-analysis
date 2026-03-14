@@ -124,7 +124,6 @@ export interface MarketsResponse {
     lastUpdated: string; // ISO timestamp
     version: 'markets-v2';
     staleTimeMs: number;
-    rateInputsAvailable: boolean; // true if rate-inputs were merged into reserves
   };
   reserves: MarketWithSpread[];
 }
