@@ -162,28 +162,18 @@ Example shape:
 }
 ```
 
-### C.1) `forecastCache` (`backend/src/services/merklForecastService.ts`)
-- **Per-campaignId cache** used internally during cron refresh
-- Stores computed forecast state for each campaign
-- TTL (current): 10 minutes (default), aligned with `merklMetricsMin`
-
-Example shape:
-```ts
-Map<string, {
-  data: MerklForecastState;
-  expiresAt: number;
-}>
-```
-
 ### D) `metricsCache` (`backend/src/services/merklForecastService.ts`)
 - Per-campaign cache for **forecast-trimmed** Merkl `/metrics` data (`dailyRewardsRecords`, `tvlRecords` latest-only)
 - TTL is derived from observed metrics record cadence (with default/min/max bounds)
-- Purpose: reduce `/metrics` request frequency while keeping `forecastCache` short-lived
+- **This is the key optimization** - metrics API calls are expensive; forecast computation is fast
 - Cadence inference uses `dailyRewardsRecords` timestamps (same series used for `distributedSoFar` integration)
 - Current defaults:
   - default TTL: 30m
-  - empty-record TTL: 5m
+  - empty-record TTL: 10m (aligned with clamp min)
   - dynamic TTL clamp: 10m .. 6h
+
+**Note**: `forecastCache` was removed because with cron-write pattern (every 10m), it provided no benefit.
+The forecast computation is fast; the `metricsCache` with dynamic TTL is what actually saves API calls.
 
 ### E) `@internal/aave-shared-config` snapshot cache (`packages/aave-shared-config`)
 - Caches **raw Merkl opportunities array** (not forecast-lite)

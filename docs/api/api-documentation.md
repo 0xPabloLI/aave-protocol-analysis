@@ -49,6 +49,7 @@ interface FormattedReserveData {
   supplyCapUsd?: number;                 // 【单位: USD】供应上限金额
   borrowApy?: number;                    // 【单位: 百分比】Borrow APY，如 3.97 表示 3.97%（即使禁用也返回真实值）
   borrowDisabled?: boolean;              // 借贷是否被禁用（仅当 true 时出现），原因：borrowingState=DISABLED 或 borrowCap=1
+  borrowCapUsd?: number;                 // 【单位: USD】借贷上限金额，与 supplyCapUsd 对称
   
   // 协议激励（来自 Aave 协议，单位: 百分比）
   supplyIncentives?: number[];           // 【单位: 百分比数组】Protocol supply incentives

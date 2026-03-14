@@ -19,6 +19,7 @@ export interface MarketWithSpread {
   supplyCapUsd?: number;
   borrowApy?: number | null;
   borrowDisabled?: boolean;
+  borrowCapUsd?: number;
   supplyIncentives?: number[];
   borrowIncentives?: number[];
   meritSupplys?: Array<{

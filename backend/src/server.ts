@@ -9,10 +9,11 @@ import coingeckoFdvRouter from './routes/coingeckoFdv.js';
 import campaignsRouter from './routes/campaigns.js';
 import rateInputsRouter from './routes/rateInputs.js';
 import metaRouter from './routes/meta.js';
-import { dataService } from './services/dataService.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
-import { warmCoingeckoCategoriesCache } from './controllers/coingeckoController.js';
+import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
+import { warmRateInputsCache } from './services/rateInputsService.js';
+import { warmMarketsCache } from './services/marketsService.js';
 import { logger } from './logger.js';
 
 const app = express();
@@ -88,34 +89,42 @@ const healthHandler = (req: express.Request, res: express.Response) => {
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
-// 启动时加载数据到缓存
-dataService.loadData()
+// 启动时预热所有缓存，避免首个请求冷启动
+// 注意：cron 不会在启动时立即执行，所以需要显式 warmup
+// 所有 API 数据现在使用 cron-write/API-read-only 模式
+logger.info('🔄 Starting cache warmup (all data will be fetched before server accepts requests)...');
+
+Promise.allSettled([
+  warmMarketsCache()
+    .then(() => logger.info('✅ Markets cache warmed on startup'))
+    .catch((error) => logger.warn('⚠️  Failed to warm markets on startup:', error)),
+  warmCoingeckoCategoriesCache()
+    .then(() => logger.info('✅ Coingecko categories cache warmed on startup'))
+    .catch((error) => logger.warn('⚠️  Failed to warm coingecko categories on startup:', error)),
+  warmCoingeckoFdvCache()
+    .then(() => logger.info('✅ Coingecko FDV cache warmed on startup'))
+    .catch((error) => logger.warn('⚠️  Failed to warm coingecko FDV on startup:', error)),
+  warmCampaignForecastStatesCache()
+    .then((summary) => logger.info(`✅ Forecast snapshot cache warmed on startup: requested=${summary.requested}, fulfilled=${summary.fulfilled}, failed=${summary.failed}`))
+    .catch((error) => logger.warn('⚠️  Failed to warm forecast snapshot on startup:', error)),
+  warmRateInputsCache()
+    .then(() => logger.info('✅ Rate-inputs cache warmed on startup'))
+    .catch((error) => logger.warn('⚠️  Failed to warm rate-inputs on startup:', error)),
+])
   .then(() => {
-    logger.info('✅ Data loaded into cache');
+    logger.info('✅ All caches warmed');
     
     // 启动定时更新任务
     startUpdateScheduler();
-
-    // 启动时预热缓存，避免首个请求冷启动
-    return Promise.allSettled([
-      warmCoingeckoCategoriesCache()
-        .then(() => logger.info('✅ Coingecko categories cache warmed on startup'))
-        .catch((error) => logger.warn('⚠️  Failed to warm coingecko categories on startup:', error)),
-      warmCampaignForecastStatesCache()
-        .then((summary) => logger.info(`✅ Forecast snapshot cache warmed on startup: requested=${summary.requested}, fulfilled=${summary.fulfilled}, failed=${summary.failed}`))
-        .catch((error) => logger.warn('⚠️  Failed to warm forecast snapshot on startup:', error)),
-    ]);
-  })
-  .finally(() => {
     
     // 启动服务器
     app.listen(PORT, () => {
-      logger.info(`🚀 Server running on http://localhost:${PORT}`);
+      logger.info(`🚀 Server ready on http://localhost:${PORT}`);
     });
   })
   .catch((error) => {
-    logger.error('❌ Failed to load data:', error);
-    logger.warn('⚠️  Data file not found. Please run data fetch script first.');
+    logger.error('❌ Startup warmup failed:', error);
+    process.exit(1);
   });
 
 // ts-prune-ignore-next
