@@ -106,9 +106,10 @@ External APIs → Backend Cron Jobs → In-Memory Snapshots → REST Clients
 #### Backend API (`backend/src/`)
 
 **Core Services**:
-- `services/dataService.ts` - In-memory cache manager; reads JSON file with metadata, tracks staleness (1-min threshold)
-- `services/updateScheduler.ts` - Cron-based backup refresh (1-min interval); skips if data already fresh
-- `services/merklForecastService.ts` - Merkl forecast data processor
+- `services/marketsService.ts` - Internalized data fetcher; cron-write/API-read-only pattern; in-memory snapshot with `refreshMarketsSnapshot()` + `getMarketsSnapshot()`
+- `services/updateScheduler.ts` - Cron scheduler (markets 1m, rate-inputs 1m, forecast 10m, FDV 5m, categories 6h)
+- `services/merklForecastService.ts` - Merkl forecast data processor; metricsCache (dynamic TTL 10m-6h) + campaignOpportunityCache (5m)
+- `services/rateInputsService.ts` - On-chain/API rate inputs; only `deficit` requires on-chain RPC
 
 **Request Handlers**:
 - `controllers/marketsController.ts` - Primary controller; implements `checkAndUpdateDataIfStale()` with concurrency control

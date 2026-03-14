@@ -58,7 +58,3 @@ export const BACKEND_CACHE_TTL_MS = {
   // Empty = no dailyRewardsRecords yet; retry more frequently (below clamp min is intentional).
   merklMetricsEmpty: BACKEND_TIME_MS.tenMinutes,
 } as const;
-
-export const BACKEND_TIMEOUT_MS = {
-  update: 3 * BACKEND_TIME_MS.oneMinute,
-} as const;

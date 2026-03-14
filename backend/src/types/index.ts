@@ -106,13 +106,6 @@ export interface MarketsResponse {
   reserves: MarketWithSpread[];
 }
 
-export interface UpdateStatus {
-  status: 'idle' | 'updating' | 'error';
-  lastUpdated: string | null;
-  lastSuccessfulUpdate: string | null;
-  error?: string;
-}
-
 export interface ReserveRateInput {
   marketName: string;
   chainId: number;

@@ -78,50 +78,43 @@
 
 ## 实现细节
 
-### 数据服务层 (`dataService.ts`)
+### 数据服务层 (`marketsService.ts`)
+
+**注意**: 原 `dataService.ts` 已删除，由 `marketsService.ts` 替代。现在使用 cron-write/API-read-only 模式：
 
 ```typescript
-import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
+// marketsService.ts - 内存快照 + cron 刷新
+let snapshot: MarketsSnapshot | null = null;
 
-// 检查数据是否过期
-isStale(): boolean {
-  const lastUpdated = this.getLastUpdated();
-  if (!lastUpdated) return true;
-  
-  const now = new Date();
-  const age = now.getTime() - lastUpdated.getTime();
-  return age > BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold;
+export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
+  // ... cron 每分钟调用
+  const payload = await fetchMarketsPayload();
+  snapshot = { payload, fetchedAt: Date.now() };
+  return snapshot;
+}
+
+export function getMarketsSnapshot(): MarketsSnapshot | null {
+  return snapshot;  // API 只读，从不触发刷新
 }
 ```
 
 ### 控制器层 (`marketsController.ts`)
 
-#### 核心函数：`checkAndUpdateDataIfStale()`
+现在使用纯读取模式（cron-write/API-read-only）：
 
 ```typescript
-async function checkAndUpdateDataIfStale(): Promise<void> {
-  const isStale = dataService.isStale();
-  const currentStatus = getUpdateStatus();
+export async function getMarkets(req: Request, res: Response): Promise<void> {
+  const { payload, staleTimeMs, ageMs } = getMarketsData();
   
-  // 数据过期且无更新进行中 → 触发更新
-  if (isStale && currentStatus.status !== 'updating') {
-    // 设置更新状态（锁）
-    setUpdateStatus({ status: 'updating', ... });
-    
-    try {
-      // 执行数据更新
-      await fetchAaveMarketsData();
-      await dataService.refreshCache();
-      
-      // 更新成功，释放锁
-      setUpdateStatus({ status: 'idle', ... });
-    } catch (error) {
-      // 更新失败，记录错误
-      setUpdateStatus({ status: 'error', ... });
-    }
-  } 
-  // 已有更新进行中 → 等待
-  else if (currentStatus.status === 'updating') {
+  // 快照尚未就绪（冷启动）→ 返回 503
+  if (!payload) {
+    res.status(503).json({ errorCode: 'MARKETS_SNAPSHOT_NOT_READY', ... });
+    return;
+  }
+  
+  // 直接返回快照数据，无需检查过期或触发刷新
+  res.json({ snapshot: { ... }, reserves: filteredData });
+}
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
 }
