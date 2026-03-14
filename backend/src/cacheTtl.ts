@@ -22,17 +22,16 @@ export const BACKEND_SCHEDULE_CRON = {
   marketsBackupEveryMinuteAtSecond0: '0 * * * * *',
   coingeckoFdvWarmEveryFiveMinutesAtSecond5: '5 */5 * * * *',
   coingeckoCategoriesWarmEverySixHoursAtSecond10: '10 0 */6 * * *',
-  rateInputsWarmEveryMinuteAtSecond20: '20 * * * * *',
   // Aligned with merklForecastResultDefault (10 min) for cron-write/API-read-only pattern.
   campaignForecastWarmEveryTenMinutesAtSecond30: '30 */10 * * * *',
 } as const;
 
 export const BACKEND_CACHE_TTL_MS = {
-  // Same-source near-realtime family (markets, rate-inputs).
+  // Markets near-realtime family.
   realtimeFamily: BACKEND_TIME_MS.oneMinute,
-  rateInputsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
   marketsDataStaleThreshold: BACKEND_TIME_MS.oneMinute,
   marketsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
+  deficitCacheTtl: BACKEND_TIME_MS.fiveMinutes,
 
   // Merkl forecast family.
   // forecastResult aligned with metricsMin since underlying metrics data won't change faster.

@@ -7,12 +7,10 @@ import marketsRouter from './routes/markets.js';
 import coingeckoRouter from './routes/coingecko.js';
 import coingeckoFdvRouter from './routes/coingeckoFdv.js';
 import campaignsRouter from './routes/campaigns.js';
-import rateInputsRouter from './routes/rateInputs.js';
 import metaRouter from './routes/meta.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
-import { warmRateInputsCache } from './services/rateInputsService.js';
 import { warmMarketsCache } from './services/marketsService.js';
 import { logger } from './logger.js';
 
@@ -65,7 +63,7 @@ app.use('/api/coingecko-categories', coingeckoRouter);
 app.use('/api/coingecko-fdv', coingeckoFdvRouter);
 app.use('/api/meta', metaRouter);
 app.use('/api/campaigns', campaignsRouter);
-app.use('/api/rate-inputs', rateInputsRouter);
+// Note: /api/rate-inputs endpoint removed - rate-inputs are now merged into /api/markets
 
 const healthHandler = (req: express.Request, res: express.Response) => {
   res.json({ 
@@ -92,11 +90,12 @@ app.get('/api/health', healthHandler);
 // 启动时预热所有缓存，避免首个请求冷启动
 // 注意：cron 不会在启动时立即执行，所以需要显式 warmup
 // 所有 API 数据现在使用 cron-write/API-read-only 模式
+// Markets warmup includes deficit fetching (single unified fetch)
 logger.info('🔄 Starting cache warmup (all data will be fetched before server accepts requests)...');
 
 Promise.allSettled([
   warmMarketsCache()
-    .then(() => logger.info('✅ Markets cache warmed on startup'))
+    .then(() => logger.info('✅ Markets + Deficit cache warmed on startup'))
     .catch((error) => logger.warn('⚠️  Failed to warm markets on startup:', error)),
   warmCoingeckoCategoriesCache()
     .then(() => logger.info('✅ Coingecko categories cache warmed on startup'))
@@ -107,9 +106,6 @@ Promise.allSettled([
   warmCampaignForecastStatesCache()
     .then((summary) => logger.info(`✅ Forecast snapshot cache warmed on startup: requested=${summary.requested}, fulfilled=${summary.fulfilled}, failed=${summary.failed}`))
     .catch((error) => logger.warn('⚠️  Failed to warm forecast snapshot on startup:', error)),
-  warmRateInputsCache()
-    .then(() => logger.info('✅ Rate-inputs cache warmed on startup'))
-    .catch((error) => logger.warn('⚠️  Failed to warm rate-inputs on startup:', error)),
 ])
   .then(() => {
     logger.info('✅ All caches warmed');
