@@ -15,6 +15,8 @@ export const BACKEND_FETCH_TIMING_MS = {
   coingeckoBaseDelay: 2 * 1000,
   coingeckoMinRequestInterval: 2500,
   coingeckoMinRequestIntervalFloor: 1000,
+  merklRetryBaseDelay: 1000,
+  merklRetryMaxDelay: 10 * 1000,
 } as const;
 
 // Node-cron 6-field format (includes seconds): at second 0, every minute.
