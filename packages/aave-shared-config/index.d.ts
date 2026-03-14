@@ -20,12 +20,12 @@ export interface DefaultAaveTydroOpportunitiesQuery {
   itemsPerPage: number;
 }
 
-export declare const AAVE_PUBLIC_RPC_URLS_BY_CHAIN_KEY: Readonly<Record<string, readonly string[]>>;
+export declare const AAVE_RPC_URLS_BY_CHAIN_KEY: Readonly<Record<string, readonly string[]>>;
 export declare const AAVE_CHAIN_KEY_ALIASES: Readonly<Record<string, string>>;
 export declare const AAVE_CHAIN_ID_TO_RPC_KEY: Readonly<Record<number, string>>;
 export declare const resolveAaveRpcChainKey: (chainNameOrKey: unknown) => string;
-export declare const getAavePublicRpcUrlsByChainName: (chainNameOrKey: unknown) => string[];
-export declare const getAavePublicRpcUrlsByChainId: (chainId: unknown) => string[];
+export declare const getAaveRpcUrlsByChainName: (chainNameOrKey: unknown) => string[];
+export declare const getAaveRpcUrlsByChainId: (chainId: unknown) => string[];
 
 export declare const DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY: DefaultAaveTydroOpportunitiesQuery;
 

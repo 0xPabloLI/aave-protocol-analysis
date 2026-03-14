@@ -14,7 +14,7 @@
 
 import { UiPoolDataProvider } from '@aave/contract-helpers';
 import * as AaveAddressBook from '@bgd-labs/aave-address-book';
-import { getAavePublicRpcUrlsByChainId } from '@internal/aave-shared-config';
+import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { ethProviderService } from './ethProviderService.js';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
@@ -85,7 +85,7 @@ function buildChainConfigs(): Map<number, OnchainConfig> {
       chainName,
       uiPoolDataProviderAddress,
       poolAddressesProvider,
-      defaultRpcUrls: getAavePublicRpcUrlsByChainId(chainId),
+      defaultRpcUrls: getAaveRpcUrlsByChainId(chainId),
     });
   }
   

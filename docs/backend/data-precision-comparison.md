@@ -9,6 +9,30 @@
 
 ---
 
+## 原 On-chain 数据精度 vs 现 Aave SDK 数据精度
+
+以下字段以前从链上（UiPoolDataProvider / Pool 合约）读取，现在除 `deficit`、`baseVariableBorrowRate` 外均改为从 Aave SDK 获取。精度与单位是否一致见下表。
+
+| 字段 | 原 On-chain 精度/单位 | 现 Aave SDK 精度/单位 | 是否对齐 |
+|------|------------------------|------------------------|----------|
+| `decimals` | `uint8`，整数 | `number`，整数 | ✅ 一致 |
+| `availableLiquidity` | `uint256`，raw 代币单位（与 token decimals 一致） | `string`，raw 代币单位（GraphQL `amount.raw`） | ✅ 一致 |
+| `totalVariableDebt` | 链上为 `totalScaledVariableDebt`（scaled）× `variableBorrowIndex`（RAY）算出实际值，raw | `string`，`borrowInfo.total.amount.raw`，已是实际债务 raw | ✅ 一致（SDK 直接给实际值） |
+| `reserveFactor` | `uint256`，BPS（10000 = 100%） | `string`，BPS（如 `"2000"` = 20%，API 里 `decimals: 4`） | ✅ 一致 |
+| `variableRateSlope1` | `uint256`，RAY（10²⁷） | `string`，RAY（如 `"90000000000000000000000000"` = 9%，API 里 `decimals: 27`） | ✅ 一致 |
+| `variableRateSlope2` | `uint256`，RAY（10²⁷） | `string`，RAY，`decimals: 27` | ✅ 一致 |
+| `optimalUsageRate` | `uint256`，RAY（10²⁷） | `string`，RAY，`decimals: 27` | ✅ 一致 |
+| `baseVariableBorrowRate` | `uint256`，RAY（10²⁷），链上读 | 仍由 **On-chain RPC** 提供，`string` RAY | ✅ 未改来源，精度不变 |
+| `deficit` | `uint256`，raw 代币单位，链上读 | 仍由 **On-chain RPC** 提供，`string` raw | ✅ 未改来源，精度不变 |
+
+### 小结
+
+- **数值含义与精度**：从 on-chain 切到 Aave SDK 的字段，单位与链上一致（RAW / BPS / RAY），可直接用于原有公式。
+- **类型**：链上是 `uint256`，SDK 用 `string` 传 raw，避免 JS 大数精度问题，前端用 `BigInt` 计算即可。
+- **仅剩两条仍走 on-chain**：`deficit`、`baseVariableBorrowRate`，精度与之前链上一致。
+
+---
+
 ## 新旧 Rate-Inputs 参数对比
 
 ### ⚠️ 架构变更说明

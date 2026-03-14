@@ -13,7 +13,7 @@ import {
   type MeritDynamicInfo,
 } from './cloudflare-browser.js';
 import { meritKeyAliases } from './config.js';
-import { getAavePublicRpcUrlsByChainName } from '@internal/aave-shared-config';
+import { getAaveRpcUrlsByChainName } from '@internal/aave-shared-config';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
@@ -693,7 +693,7 @@ export function parseChainKey(parts: string[]): string {
  * 根据链名获取 RPC URL
  */
 function getRpcUrlsFromChainName(chainName: string): string[] {
-  return getAavePublicRpcUrlsByChainName(chainName);
+  return getAaveRpcUrlsByChainName(chainName);
 }
 
 /**
