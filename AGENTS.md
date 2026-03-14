@@ -63,6 +63,10 @@ The backend requires runtime data files before serving requests:
 - Do not bypass hooks as a normal workflow.
 - If local checks fail repeatedly, rely on CI remediation PR flow as a fallback path, then merge validated fixes back to the working branch.
 
+**Lock File Drift Prevention**:
+- `pre-commit` auto-stages any unstaged `package-lock.json` / `backend/package-lock.json` changes to prevent local/CI audit drift.
+- `pre-push` blocks push if lock files have uncommitted changes, since CI uses committed versions.
+
 ## Code Architecture
 
 ### Data Flow Pipeline
@@ -225,7 +229,8 @@ Each incentive API uses different identifiers:
 
 ### Reserve Size Definitions
 - `reserves[].reserveSizeUsd` = **total supply in USD** (not supply − borrowed). This matches the Aave reserve `size.usd` surface.
-- `rate-inputs[].deficit` = **raw token units** from `pool.getReserveDeficit(asset)` (for simulation utilization denominator adjustment).
+- `reserve.size.raw` composition: `availableLiquidity + totalVariableDebt`, where `totalVariableDebt = totalScaledVariableDebt × variableBorrowIndex ÷ 10²⁷`. See `docs/api/native-apr-calculation.md` for derivation.
+- `rate-inputs[].deficit` = **raw token units** from `pool.getReserveDeficit(asset)` (for simulation utilization denominator adjustment). **Not included** in `reserve.size`.
 - `borrowInfo.availableLiquidity` remains the right field for "how much can still be borrowed now".
 
 ### Frozen/Paused Reserves
