@@ -102,7 +102,7 @@ interface FormattedReserveData {
   rateInputs?: {
     decimals: number;                    // 代币精度
     deficit: string;                     // 【单位: raw token】储备赤字（坏账），用于计算准确的 utilization
-    deficitAvailable: boolean;           // deficit 是否可用（true 表示从链上获取，false 表示为默认 "0"）
+    deficitAvailable: boolean;           // deficit 是否从链上 RPC 获取（true = 真实值，false = fallback 到 API/Subgraph 时的默认 "0"）
     availableLiquidity: string;          // 【单位: raw token】可用流动性
     totalScaledVariableDebt: string;     // 【单位: scaled token】总可变债务（需 ÷ variableBorrowIndex 转换）
     variableBorrowIndex: string;         // 【单位: RAY (10^27)】可变借款指数

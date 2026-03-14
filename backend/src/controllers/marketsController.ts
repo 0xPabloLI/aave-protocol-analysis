@@ -59,10 +59,12 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
         }
 
         // Merge rate-inputs into reserve
+        // deficitAvailable indicates if deficit was fetched from on-chain RPC (true)
+        // or is a placeholder '0' from Aave API/Subgraph fallback (false)
         const embedded: EmbeddedRateInputs = {
           decimals: rateInput.decimals,
           deficit: rateInput.deficit,
-          deficitAvailable: rateInput.deficit !== '0',
+          deficitAvailable: rateInput.deficitAvailable,
           availableLiquidity: rateInput.availableLiquidity,
           totalScaledVariableDebt: rateInput.totalScaledVariableDebt,
           variableBorrowIndex: rateInput.variableBorrowIndex,
