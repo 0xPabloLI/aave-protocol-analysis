@@ -20,6 +20,15 @@ export interface MarketWithSpread {
   borrowApy?: number | null;
   borrowDisabled?: boolean;
   borrowCapUsd?: number;
+  // Rate-input fields for manual APR calculation (from Aave SDK)
+  decimals?: number;
+  availableLiquidity?: string;
+  totalScaledVariableDebt?: string;
+  variableBorrowIndex?: string; // RAY (1e27) when using Aave API
+  reserveFactor?: string;
+  variableRateSlope1?: string;
+  variableRateSlope2?: string;
+  optimalUsageRate?: string;
   // On-chain deficit (bad debt) in raw token units
   // From UiPoolDataProvider.getReservesHumanized() (Aave v3.3.0+)
   // Absent if RPC fetch failed; use '0' as default in calculations
