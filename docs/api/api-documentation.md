@@ -8,7 +8,7 @@
 
 - **服务地址**: `http://localhost:3001` (开发环境)
 - **API 基础路径**:
-  - `/api/markets` - 市场数据（含 rate-inputs 字段）
+  - `/api/markets` - 市场数据（含 on-chain 字段）
   - `/api/coingecko-categories` - CoinGecko 分类数据
   - `/api/coingecko-fdv` - CoinGecko FDV 数据
   - `/api/meta/side-data` - 低频侧数据聚合（categories + fdv）
@@ -97,7 +97,7 @@ interface FormattedReserveData {
     name: string;                        // 活动名称
   }>;
   
-  // Rate Inputs（用于 APR 模拟计算，可选字段，扁平化到 reserve 中）
+  // On-chain & SDK fields（用于 APR 模拟计算，可选字段，扁平化到 reserve 中）
   // 所有值为 BigNumber 字符串（RAY = 10^27 用于利率，token decimals 用于金额）
   decimals?: number;                     // 代币精度
   availableLiquidity?: string;           // 【单位: raw token】可用流动性
@@ -153,7 +153,7 @@ interface MarketsResponse {
     version: 'markets-v2';
     staleTimeMs: number;               // 认为数据过期的阈值（毫秒），默认 60 秒
   };
-  reserves: MarketWithSpread[];        // 保留原全量字段 + 新增展示字段 + 可选 rateInputs
+  reserves: MarketWithSpread[];        // 保留原全量字段 + 新增展示字段 + 可选 on-chain 字段
 }
 ```
 
@@ -596,9 +596,9 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
    | `meritSupplys[].apr` | 百分比 | Merit 供应 APR |
    | `merklSupplys[].breakdowns[].campaignApr` | 百分比 | Merkl campaign APR |
 
-   #### Rate-input 字段单位（位于 `/api/markets` 的 `reserves[]` 中）
+   #### On-chain & SDK 字段单位（位于 `/api/markets` 的 `reserves[]` 中）
 
-   **重要**：rate-inputs 字段为链上原始数据，需要前端自行转换。这些字段可选（若 rate-inputs 获取失败则不存在）。
+   **重要**：这些字段为链上或 SDK 原始数据，需要前端自行转换。这些字段可选（若 RPC 获取失败则 on-chain 字段不存在）。
 
    | 字段 | 原始单位 | 转换说明 |
    |------|----------|----------|
@@ -674,7 +674,7 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 - **仅 `GET /api/markets`** 会触发市场数据新鲜度检查：若数据超过 1 分钟未更新，该请求会触发后台刷新（带并发锁），其他端点不触发市场数据刷新。
 - 其他端点（`/api/coingecko-*`、`/api/campaigns/forecast-states`）使用各自缓存与 TTL。
-- Rate-inputs 数据每分钟独立刷新（cron），合并到 `/api/markets` 响应中。
+- On-chain 数据（deficit, baseVariableBorrowRate）与 markets 并行获取，合并到 `/api/markets` 响应中。
 - 使用锁机制防止并发更新；更新进行中时，请求会等待约 1 秒再返回。
 - `/api/markets` 返回 `snapshot + reserves`；`isStale` / `updateInProgress` 不在该接口响应中。
 

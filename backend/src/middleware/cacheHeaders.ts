@@ -31,12 +31,6 @@ export function apiCacheHeadersMiddleware(req: Request, res: Response, next: Nex
     return;
   }
 
-  if (path.startsWith('/api/rate-inputs')) {
-    setCacheControlIfMissing(res, CACHE_CONTROL.coreRealtime);
-    next();
-    return;
-  }
-
   if (path.startsWith('/api/campaigns/forecast-states')) {
     setCacheControlIfMissing(res, CACHE_CONTROL.coreRealtime);
     next();
