@@ -104,7 +104,6 @@ interface OnchainFallbackConfig {
 interface ServiceSnapshot {
   fetchedAt: number;
   data: ReserveRateInputInternal[];
-  sources: RateInputsResponse['sources'];
 }
 
 type QueryFilters = {
@@ -904,13 +903,6 @@ class RateInputsService {
           a.marketName.localeCompare(b.marketName) ||
           a.tokenAddress.localeCompare(b.tokenAddress)
       ),
-      sources: {
-        // Priority: On-chain (primary) → Aave API (fallback) → Subgraph (last resort)
-        onchainChains: Array.from(onchainChains).sort((a, b) => a - b),
-        subgraphChains: Array.from(subgraphChains).sort((a, b) => a - b),
-        subgraphMissingChains: [], // No longer tracking this
-        unhealthyRpcEndpoints: ethProviderService.getUnhealthyEndpoints(),
-      },
     };
 
     logger.info(
@@ -962,24 +954,11 @@ class RateInputsService {
 
     const publicData: ReserveRateInput[] = filtered.map(({ source: _source, sourceDetail: _sourceDetail, ...item }) => item);
 
-    const response: RateInputsResponse = {
+    return {
       data: publicData,
       lastUpdated: new Date(snapshot.fetchedAt).toISOString(),
       staleTimeMs: RATE_INPUTS_TTL_MS,
-      sources:
-        filters.chainId === undefined
-          ? snapshot.sources
-          : {
-              subgraphChains: snapshot.sources.subgraphChains.filter((chainId) => chainId === filters.chainId),
-              onchainChains: snapshot.sources.onchainChains.filter((chainId) => chainId === filters.chainId),
-              subgraphMissingChains: snapshot.sources.subgraphMissingChains.filter((chainId) => chainId === filters.chainId),
-              unhealthyRpcEndpoints: snapshot.sources.unhealthyRpcEndpoints.filter(
-                (item) => item.chainId === filters.chainId
-              ),
-            },
     };
-
-    return response;
   }
 }
 

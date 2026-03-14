@@ -133,15 +133,4 @@ export interface RateInputsResponse {
   data: ReserveRateInput[];
   lastUpdated: string;
   staleTimeMs: number;
-  sources: {
-    subgraphChains: number[];
-    onchainChains: number[];
-    subgraphMissingChains: number[];
-    unhealthyRpcEndpoints: Array<{
-      chainId: number;
-      rpcUrl: string;
-      lastError: string;
-      suppressedUntil: string;
-    }>;
-  };
 }
