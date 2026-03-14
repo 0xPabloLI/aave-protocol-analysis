@@ -8,6 +8,8 @@
 export interface EmbeddedRateInputs {
   decimals: number;
   deficit: string;
+  // true = deficit fetched from on-chain RPC (real value)
+  // false = deficit is '0' placeholder (data from Aave API or Subgraph fallback)
   deficitAvailable: boolean;
   availableLiquidity: string;
   totalScaledVariableDebt: string;

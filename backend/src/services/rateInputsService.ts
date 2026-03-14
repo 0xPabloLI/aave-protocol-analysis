@@ -997,23 +997,34 @@ export async function warmRateInputsCache(): Promise<void> {
 }
 
 /**
+ * Extended rate-input for embedding in markets response.
+ * Includes `deficitAvailable` flag indicating if deficit was fetched from on-chain RPC.
+ */
+export interface RateInputWithDeficitFlag extends ReserveRateInput {
+  deficitAvailable: boolean;
+}
+
+/**
  * Get rate-inputs as a Map for quick lookup by reserveId (marketName:chainId:tokenAddress).
  * Used by marketsController to merge rate-inputs into markets response.
  * Returns null if snapshot not yet populated.
  */
-export function getRateInputsMap(): Map<string, ReserveRateInput> | null {
+export function getRateInputsMap(): Map<string, RateInputWithDeficitFlag> | null {
   const snapshot = rateInputsService['snapshot'];
   if (!snapshot) {
     return null;
   }
 
-  const map = new Map<string, ReserveRateInput>();
+  const map = new Map<string, RateInputWithDeficitFlag>();
   for (const item of snapshot.data) {
     // Key format matches reserveId: marketName:chainId:tokenAddress
     const key = `${item.marketName}:${item.chainId}:${item.tokenAddress.toLowerCase()}`;
-    // Strip internal fields (source, sourceDetail) before exposing
-    const { source: _source, sourceDetail: _sourceDetail, ...publicItem } = item as any;
-    map.set(key, publicItem);
+    // Strip internal fields (source, sourceDetail) and add deficitAvailable flag
+    const { source: _source, sourceDetail, ...publicItem } = item as any;
+    // deficit is only available from actual on-chain RPC (sourceDetail starts with 'rpc:')
+    // Aave API and Subgraph don't expose deficit, so we hardcode '0' for those
+    const deficitAvailable = sourceDetail?.startsWith('rpc:') ?? false;
+    map.set(key, { ...publicItem, deficitAvailable });
   }
   return map;
 }
