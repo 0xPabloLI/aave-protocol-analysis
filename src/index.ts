@@ -86,6 +86,7 @@ interface FormattedReserveData {
   supplyCapUsd?: number; // 供应上限（USD）
   borrowApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
   borrowDisabled?: boolean; // true when borrowingState is DISABLED or borrowCap is 1
+  borrowCapUsd?: number; // 借款上限（USD），与 supplyCapUsd 对称
   supplyIncentives: number[]; // Protocol supply incentives 百分比值数组
   borrowIncentives: number[]; // Protocol borrow incentives 百分比值数组
   meritSupplys?: MeritAprEntry[];
@@ -115,6 +116,7 @@ interface RuntimeReserveData {
   supplyCapUsd?: number;
   borrowApy?: number;
   borrowDisabled?: boolean;
+  borrowCapUsd?: number;
   supplyIncentives?: number[];
   borrowIncentives?: number[];
   meritSupplys?: MeritAprEntry[];
@@ -125,6 +127,22 @@ interface RuntimeReserveData {
   brevisSupplys?: BrevisCampaignItem[];
   brevisBorrows?: BrevisCampaignItem[];
 }
+
+// Payload interface for backend to import (cron-write/API-read-only pattern)
+// ts-prune-ignore-next
+export interface MarketsPayload {
+  _metadata: {
+    timestamp: string;
+    version: string;
+    dataCount: number;
+    profile: string;
+  };
+  data: RuntimeReserveData[];
+}
+
+// Re-export for backend type usage
+// ts-prune-ignore-next
+export type { RuntimeReserveData };
 
 function pruneMeritEntryForRuntime(entry: MeritAprEntry): MeritAprEntry {
   return {
@@ -402,6 +420,10 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         const borrowCapIsOne = borrowCapValue !== undefined && parseFloat(borrowCapValue) === 1;
         const isBorrowDisabled = isBorrowDisabledByState || borrowCapIsOne;
         
+        // 提取 borrowCapUsd（单位：USD），与 supplyCapUsd 对称
+        const borrowCapUsdRaw = reserve.borrowInfo?.borrowCap?.usd;
+        const borrowCapUsd = borrowCapUsdRaw ? parseFloat(borrowCapUsdRaw) : undefined;
+        
         // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
         // 即使 disabled 也传递真实的 borrowApy（前端可能需要展示参考值）
         const borrowApyValue = reserve.borrowInfo?.apy?.value;
@@ -452,6 +474,8 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           borrowApy,
           // 仅当 borrowing 被禁用时才添加此标志（节约带宽）
           ...(isBorrowDisabled ? { borrowDisabled: true } : {}),
+          // borrowCapUsd 始终传递（如果有值），与 supplyCapUsd 对称
+          ...(borrowCapUsd !== undefined ? { borrowCapUsd } : {}),
           // Protocol incentives - 从 reserve.incentives 提取
           supplyIncentives: protocolSupplyIncentives.length > 0 ? protocolSupplyIncentives : undefined as any,
           borrowIncentives: protocolBorrowIncentives.length > 0 ? protocolBorrowIncentives : undefined as any
@@ -1105,6 +1129,66 @@ async function fetchAaveMarkets(): Promise<void> {
       logger.error('❌ Failed to save error data:', writeError);
     }
   }
+}
+
+// 导出数据获取函数供 backend 内化使用（cron-write/API-read-only 模式）
+// 返回内存中的 payload，不写文件
+// ts-prune-ignore-next
+export async function fetchMarketsPayload(): Promise<MarketsPayload> {
+  // 🧹 启动时检查并清理 Cloudflare browser sessions
+  logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
+  await checkAndReportSessionStatus();
+
+  // 从所有链获取市场数据
+  const marketData = await fetchAaveMarketData();
+  
+  // 格式化数据
+  logger.info('\n📊 Formatting market data...');
+  const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
+  logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
+
+  // 并发获取 Merit、Merkl 和 Brevis 数据
+  logger.info('🚀 Starting incentive data fetching concurrently...');
+  
+  const meritPromise = fetchMeritData().catch((error) => {
+    logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return {} as MeritDataIndex;
+  });
+  const merklPromise = processMerklData().catch((error) => {
+    logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { index: {} as MerklDataIndex } as MerklProcessedData;
+  });
+  const brevisPromise = fetchBrevisAprs(baseDataset).catch((error) => {
+    logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return {} as BrevisDataIndex;
+  });
+
+  const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
+  
+  const meritData: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
+  const merklResult: MerklProcessedData =
+    results[1].status === 'fulfilled'
+      ? (results[1].value as MerklProcessedData)
+      : { index: {} as MerklDataIndex };
+  const merklData: MerklDataIndex = merklResult.index;
+  const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
+
+  // Enrich with incentive data
+  logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
+  const enrichedData = enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
+  const runtimeData = enrichedData.map(pruneReserveForRuntime);
+
+  logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves`);
+
+  return {
+    _metadata: {
+      timestamp: marketData.timestamp,
+      version: '2.0-runtime-minimal',
+      dataCount: runtimeData.length,
+      profile: 'runtime-minimal',
+    },
+    data: runtimeData,
+  };
 }
 
 // 导出主函数,以便其他模块可以调用（backend 通过 dist 引用）

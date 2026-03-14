@@ -8,7 +8,7 @@ import { getAavePublicRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { logger } from '../logger.js';
 import type { MarketWithSpread, RateInputsResponse, ReserveRateInput } from '../types/index.js';
-import { dataService } from './dataService.js';
+import { getMarketsSnapshot } from './marketsService.js';
 import { ethProviderService } from './ethProviderService.js';
 
 const RATE_INPUTS_TTL_MS = BACKEND_CACHE_TTL_MS.realtimeFamily;
@@ -739,7 +739,7 @@ class RateInputsService {
     return Date.now() - this.snapshot.fetchedAt > RATE_INPUTS_TTL_MS;
   }
 
-  private async refreshSnapshot(): Promise<ServiceSnapshot> {
+  async refreshSnapshot(): Promise<ServiceSnapshot> {
     if (this.inFlightRefresh) return this.inFlightRefresh;
     this.inFlightRefresh = this.doRefreshSnapshot().finally(() => {
       this.inFlightRefresh = null;
@@ -748,7 +748,15 @@ class RateInputsService {
   }
 
   private async doRefreshSnapshot(): Promise<ServiceSnapshot> {
-    const marketRows = await dataService.getData();
+    const marketsSnapshot = getMarketsSnapshot();
+    if (!marketsSnapshot) {
+      logger.warn('Markets snapshot not available for rate-inputs refresh');
+      return {
+        data: [],
+        fetchedAt: Date.now(),
+      };
+    }
+    const marketRows = marketsSnapshot.payload.data;
     const targetMarkets = buildTargetMarketMap(marketRows);
     const deployments = await loadSubgraphDeployments();
     const hasGraphApiKey = Boolean(process.env.THE_GRAPH_API_KEY);
@@ -917,26 +925,18 @@ class RateInputsService {
   }
 
   async getRateInputs(filters: QueryFilters): Promise<RateInputsResponse> {
-    let snapshot = this.snapshot;
+    // Cron-write/API-read-only pattern: API requests never trigger refresh.
+    // Cron (every 1 min) + startup warmup handle all refreshes.
+    const snapshot = this.snapshot;
 
-    // Cold start: block until we have the first snapshot.
     if (!snapshot) {
-      snapshot = await this.refreshSnapshot();
-    } else {
-      const ageMs = Date.now() - snapshot.fetchedAt;
-      if (ageMs > RATE_INPUTS_MAX_STALE_MS) {
-        // Hard stale cap: do not serve very old snapshots.
-        snapshot = await this.refreshSnapshot();
-      } else if (ageMs > RATE_INPUTS_TTL_MS) {
-        // Soft stale window: serve current snapshot, refresh in background.
-        void this.refreshSnapshot().catch((error) => {
-          logger.warn(
-            `Background rate-inputs refresh failed: ${
-              error instanceof Error ? error.message : String(error)
-            }`
-          );
-        });
-      }
+      // Cold start before cron/warmup runs - return empty with warning.
+      logger.warn('Rate-inputs snapshot not yet populated; returning empty response');
+      return {
+        data: [],
+        lastUpdated: new Date().toISOString(),
+        staleTimeMs: RATE_INPUTS_TTL_MS,
+      };
     }
 
     let filtered = snapshot.data;
@@ -965,5 +965,5 @@ class RateInputsService {
 export const rateInputsService = new RateInputsService();
 
 export async function warmRateInputsCache(): Promise<void> {
-  await rateInputsService.getRateInputs({});
+  await rateInputsService.refreshSnapshot();
 }

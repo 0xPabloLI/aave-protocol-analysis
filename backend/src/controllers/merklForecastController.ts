@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { FORECAST_CACHE_TTL_MS, getMerklForecastState } from '../services/merklForecastService.js';
-import { dataService } from '../services/dataService.js';
+import { getMarketsSnapshot } from '../services/marketsService.js';
 import { logger } from '../logger.js';
 import type { MarketWithSpread } from '../types/index.js';
 
@@ -59,7 +59,12 @@ let snapshotCache: SnapshotCacheEntry | null = null;
  * Called by cron scheduler only.
  */
 export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> => {
-  const campaignIds = [...new Set(collectCampaignIdsFromMarkets(await dataService.getData()))];
+  const marketsSnapshot = getMarketsSnapshot();
+  if (!marketsSnapshot) {
+    logger.warn('Markets snapshot not available for forecast refresh; returning empty snapshot');
+    return { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
+  }
+  const campaignIds = [...new Set(collectCampaignIdsFromMarkets(marketsSnapshot.payload.data))];
   if (campaignIds.length === 0) {
     const emptySnapshot: ForecastSnapshot = { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
     snapshotCache = { snapshot: emptySnapshot, generatedAt: Date.now() };
