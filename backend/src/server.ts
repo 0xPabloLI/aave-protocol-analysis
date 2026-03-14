@@ -12,6 +12,7 @@ import { startUpdateScheduler } from './services/updateScheduler.js';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
 import { warmMarketsCache } from './services/marketsService.js';
+import { refreshOnchainCache } from './services/onchainDataService.js';
 import { logger } from './logger.js';
 
 const app = express();
@@ -90,12 +91,15 @@ app.get('/api/health', healthHandler);
 // 启动时预热所有缓存，避免首个请求冷启动
 // 注意：cron 不会在启动时立即执行，所以需要显式 warmup
 // 所有 API 数据现在使用 cron-write/API-read-only 模式
-// Markets warmup includes deficit fetching (single unified fetch)
 logger.info('🔄 Starting cache warmup (all data will be fetched before server accepts requests)...');
 
 Promise.allSettled([
+  // Warm on-chain cache first (markets will read from it)
+  refreshOnchainCache()
+    .then(() => logger.info('✅ On-chain cache (deficit, baseRate) warmed on startup'))
+    .catch((error) => logger.warn('⚠️  Failed to warm on-chain cache on startup:', error)),
   warmMarketsCache()
-    .then(() => logger.info('✅ Markets + Deficit cache warmed on startup'))
+    .then(() => logger.info('✅ Markets cache warmed on startup'))
     .catch((error) => logger.warn('⚠️  Failed to warm markets on startup:', error)),
   warmCoingeckoCategoriesCache()
     .then(() => logger.info('✅ Coingecko categories cache warmed on startup'))

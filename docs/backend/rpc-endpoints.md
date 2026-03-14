@@ -35,12 +35,21 @@ packages/aave-shared-config/index.js
 | Plasma | 9745 | `rpc.plasma.to` |
 | Ink | 57073 | `ink.drpc.org`, `rpc.inkonchain.com` |
 
+## Architecture
+
+On-chain data is fetched **asynchronously** from markets, allowing longer timeouts:
+
+- **Cron schedule**: Every 5 minutes (async from markets every 1 min)
+- **Per-chain timeout**: 30 seconds
+- **Overall timeout**: 120 seconds
+- **Cache TTL**: 30 minutes (on-chain data changes infrequently)
+
 ## Failover Strategy
 
 1. RPC endpoints are tried in order (first success wins)
-2. Per-chain timeout: 15 seconds
-3. Overall timeout: 60 seconds
-4. On failure: use 5-min cached data if available
+2. Per-chain results are cached independently
+3. On RPC failure: use cached data within 30-min TTL
+4. If no cache: `deficit` defaults to `"0"`, `baseVariableBorrowRate` calculated from reverse formula
 5. Provider health tracking via `ethProviderService.ts`
 
 ## Adding New RPC Endpoints

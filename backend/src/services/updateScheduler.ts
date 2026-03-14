@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from '../controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from '../controllers/merklForecastController.js';
 import { refreshMarketsSnapshot } from './marketsService.js';
+import { refreshOnchainCache } from './onchainDataService.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
@@ -9,22 +10,36 @@ import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
  * 启动定时更新任务
  * 所有数据使用 cron-write/API-read-only 模式
  * 
- * Architecture: Markets refresh includes deficit fetch (single cron, single fetchedAt)
+ * Architecture:
+ * - Markets: every 1 minute, reads from on-chain cache
+ * - On-chain (deficit, baseVariableBorrowRate): every 5 minutes, async with 30-min TTL
  */
 export function startUpdateScheduler(): void {
   logger.info('📅 Starting cron schedulers (all cron-write/API-read-only):');
-  logger.info('   • Markets + Deficit: every 1 minute (unified)');
+  logger.info('   • Markets: every 1 minute');
+  logger.info('   • On-chain (deficit, baseRate): every 5 minutes (30-min TTL)');
   logger.info('   • Forecast: every 10 minutes');
   logger.info('   • FDV: every 5 minutes');
   logger.info('   • Categories: every 6 hours');
 
-  // Markets refresh every minute (includes deficit fetch in parallel)
+  // Markets refresh every minute (reads from on-chain cache)
   cron.schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
     try {
       await refreshMarketsSnapshot();
     } catch (error) {
       logger.warn(
         `Markets refresh scheduler failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  });
+
+  // On-chain data refresh every 5 minutes (async, longer timeout allowed)
+  cron.schedule(BACKEND_SCHEDULE_CRON.onchainDataWarmEveryFiveMinutesAtSecond10, async () => {
+    try {
+      await refreshOnchainCache();
+    } catch (error) {
+      logger.warn(
+        `On-chain cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   });
