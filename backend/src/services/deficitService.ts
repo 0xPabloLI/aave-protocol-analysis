@@ -45,6 +45,9 @@ function buildChainConfigs(): Map<number, OnchainConfig> {
     if (!key.startsWith('AaveV3')) continue;
     if (!value || typeof value !== 'object') continue;
     
+    // Skip testnets (same filter as markets fetcher)
+    if (key.includes('Sepolia') || key.includes('Fuji')) continue;
+    
     const chainId = Number((value as any).CHAIN_ID);
     const uiPoolDataProviderAddress = (value as any).UI_POOL_DATA_PROVIDER;
     const poolAddressesProvider = (value as any).POOL_ADDRESSES_PROVIDER;
