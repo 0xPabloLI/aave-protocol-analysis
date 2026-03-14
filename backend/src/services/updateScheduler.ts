@@ -1,7 +1,6 @@
 import cron from 'node-cron';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from '../controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from '../controllers/merklForecastController.js';
-import { warmRateInputsCache } from './rateInputsService.js';
 import { refreshMarketsSnapshot } from './marketsService.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
@@ -9,16 +8,17 @@ import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 /**
  * 启动定时更新任务
  * 所有数据使用 cron-write/API-read-only 模式
+ * 
+ * Architecture: Markets refresh includes deficit fetch (single cron, single fetchedAt)
  */
 export function startUpdateScheduler(): void {
   logger.info('📅 Starting cron schedulers (all cron-write/API-read-only):');
-  logger.info('   • Markets: every 1 minute');
-  logger.info('   • Rate-inputs: every 1 minute');
+  logger.info('   • Markets + Deficit: every 1 minute (unified)');
   logger.info('   • Forecast: every 10 minutes');
   logger.info('   • FDV: every 5 minutes');
   logger.info('   • Categories: every 6 hours');
 
-  // Markets refresh every minute (cron-write, API-read-only)
+  // Markets refresh every minute (includes deficit fetch in parallel)
   cron.schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
     try {
       await refreshMarketsSnapshot();
@@ -36,17 +36,6 @@ export function startUpdateScheduler(): void {
     } catch (error) {
       logger.warn(
         `FDV warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  });
-
-  // Warm rate-inputs cache every minute to keep core snapshot hot.
-  cron.schedule(BACKEND_SCHEDULE_CRON.rateInputsWarmEveryMinuteAtSecond20, async () => {
-    try {
-      await warmRateInputsCache();
-    } catch (error) {
-      logger.warn(
-        `Rate-inputs warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   });

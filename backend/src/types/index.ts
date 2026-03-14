@@ -1,26 +1,6 @@
 // 复用现有的 FormattedReserveData 类型定义
 // 注意：这个文件需要从主项目的 src/index.ts 中导出类型
 
-/**
- * Embedded rate-inputs for a reserve (merged from /api/rate-inputs).
- * All values are raw BigNumber strings (RAY = 10^27 for rates, token decimals for amounts).
- */
-export interface EmbeddedRateInputs {
-  decimals: number;
-  deficit: string;
-  // true = deficit fetched from on-chain RPC (real value)
-  // false = deficit is '0' placeholder (data from Aave API or Subgraph fallback)
-  deficitAvailable: boolean;
-  availableLiquidity: string;
-  totalScaledVariableDebt: string;
-  variableBorrowIndex: string;
-  reserveFactor: string;
-  variableRateSlope1: string;
-  variableRateSlope2: string;
-  baseVariableBorrowRate: string;
-  optimalUsageRate: string;
-}
-
 export interface MarketWithSpread {
   reserveId: string;
   marketName: string;
@@ -40,8 +20,10 @@ export interface MarketWithSpread {
   borrowApy?: number | null;
   borrowDisabled?: boolean;
   borrowCapUsd?: number;
-  // Embedded rate-inputs for APR simulation (optional, may be absent if rate-inputs unavailable)
-  rateInputs?: EmbeddedRateInputs;
+  // On-chain deficit (bad debt) in raw token units
+  // From UiPoolDataProvider.getReservesHumanized() (Aave v3.3.0+)
+  // Absent if RPC fetch failed; use '0' as default in calculations
+  deficit?: string;
   supplyIncentives?: number[];
   borrowIncentives?: number[];
   meritSupplys?: Array<{
@@ -128,25 +110,6 @@ export interface MarketsResponse {
   reserves: MarketWithSpread[];
 }
 
-export interface ReserveRateInput {
-  marketName: string;
-  chainId: number;
-  tokenAddress: string;
-  decimals: number;
-  // reserve deficit (raw token units)
-  deficit: string;
-  availableLiquidity: string;
-  totalScaledVariableDebt: string;
-  variableBorrowIndex: string;
-  reserveFactor: string;
-  variableRateSlope1: string;
-  variableRateSlope2: string;
-  baseVariableBorrowRate: string;
-  optimalUsageRate: string;
-}
-
-export interface RateInputsResponse {
-  data: ReserveRateInput[];
-  lastUpdated: string;
-  staleTimeMs: number;
-}
+// Note: ReserveRateInput and RateInputsResponse removed
+// Rate-inputs are no longer a separate concept; only deficit is fetched from on-chain
+// and merged into MarketWithSpread.deficit

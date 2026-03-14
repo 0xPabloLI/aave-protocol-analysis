@@ -8,16 +8,15 @@
 
 - **服务地址**: `http://localhost:3001` (开发环境)
 - **API 基础路径**:
-  - `/api/markets` - 市场数据
+  - `/api/markets` - 市场数据（含 rate-inputs 字段）
   - `/api/coingecko-categories` - CoinGecko 分类数据
   - `/api/coingecko-fdv` - CoinGecko FDV 数据
   - `/api/meta/side-data` - 低频侧数据聚合（categories + fdv）
   - `/api/campaigns/forecast-states` - Merkl 活动预测状态（批量）
-  - `/api/rate-inputs` - 利率输入/储备参数
   - `/health`、`/api/health` - 健康检查
 - **数据格式**: JSON
 - **字符编码**: UTF-8
-- **端点总数**: **8 个**（8 条 URL；若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 7 个逻辑端点）
+- **端点总数**: **7 个**（7 条 URL；若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 6 个逻辑端点）
 
 ## 数据模型
 
@@ -98,20 +97,18 @@ interface FormattedReserveData {
     name: string;                        // 活动名称
   }>;
   
-  // Rate Inputs（用于 APR 模拟计算，可选字段）
-  rateInputs?: {
-    decimals: number;                    // 代币精度
-    deficit: string;                     // 【单位: raw token】储备赤字（坏账），用于计算准确的 utilization
-    deficitAvailable: boolean;           // deficit 是否从链上 RPC 获取（true = 真实值，false = fallback 到 API/Subgraph 时的默认 "0"）
-    availableLiquidity: string;          // 【单位: raw token】可用流动性
-    totalScaledVariableDebt: string;     // 【单位: scaled token】总可变债务（需 ÷ variableBorrowIndex 转换）
-    variableBorrowIndex: string;         // 【单位: RAY (10^27)】可变借款指数
-    reserveFactor: string;               // 【单位: RAY】储备因子
-    variableRateSlope1: string;          // 【单位: RAY】利率曲线斜率1
-    variableRateSlope2: string;          // 【单位: RAY】利率曲线斜率2
-    baseVariableBorrowRate: string;      // 【单位: RAY】基础可变借款利率
-    optimalUsageRate: string;            // 【单位: RAY】最优利用率（如 920000000000000000000000000 = 92%）
-  };
+  // Rate Inputs（用于 APR 模拟计算，可选字段，扁平化到 reserve 中）
+  // 所有值为 BigNumber 字符串（RAY = 10^27 用于利率，token decimals 用于金额）
+  decimals?: number;                     // 代币精度
+  deficit?: string;                      // 【单位: raw token】储备赤字（坏账），用于计算准确的 utilization；来自 getReservesHumanized()，不可用时为 '0'
+  availableLiquidity?: string;           // 【单位: raw token】可用流动性
+  totalScaledVariableDebt?: string;      // 【单位: scaled token】总可变债务（需 ÷ variableBorrowIndex 转换）
+  variableBorrowIndex?: string;          // 【单位: RAY (10^27)】可变借款指数
+  reserveFactor?: string;                // 【单位: RAY】储备因子
+  variableRateSlope1?: string;           // 【单位: RAY】利率曲线斜率1
+  variableRateSlope2?: string;           // 【单位: RAY】利率曲线斜率2
+  baseVariableBorrowRate?: string;       // 【单位: RAY】基础可变借款利率
+  optimalUsageRate?: string;             // 【单位: RAY】最优利用率（如 920000000000000000000000000 = 92%）
 }
 ```
 
@@ -407,82 +404,7 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 ---
 
-### 6. 获取利率输入（储备参数）
-
-**端点**: `GET /api/rate-inputs`
-
-**描述**: 获取储备利率计算所需参数（流动性、债务、利率曲线等），用于客户端或第三方计算 APY。数据来自 Aave 子图或链上，具有独立 TTL（与市场数据同族，默认 60 秒），不触发市场数据刷新。
-
-**请求参数**（均为可选）:
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `chainId` | 正整数 | 按链 ID 过滤 |
-| `asset` | 字符串 | 按底层资产地址（小写）过滤 |
-| `marketName` | 字符串 | 按市场名称过滤 |
-
-**响应格式**:
-
-```json
-{
-  "data": [
-    {
-      "chainId": 1,
-      "marketName": "AaveV3Ethereum",
-      "tokenAddress": "0x...",
-      "decimals": 18,
-      "deficit": "0",
-      "availableLiquidity": "4512942554869044630386380",
-      "totalScaledVariableDebt": "117694766706416553160100",
-      "variableBorrowIndex": "1005096238292405352590901947",
-      "reserveFactor": "2000",
-      "variableRateSlope1": "90000000000000000000000000",
-      "variableRateSlope2": "3000000000000000000000000000",
-      "baseVariableBorrowRate": "0",
-      "optimalUsageRate": "450000000000000000000000000"
-    }
-  ],
-  "lastUpdated": "2026-03-09T12:00:00.000Z",
-  "staleTimeMs": 60000,
-  "sources": {
-    "subgraphChains": [137, 43114],
-    "onchainChains": [1, 10, 42161],
-    "subgraphMissingChains": [],
-    "unhealthyRpcEndpoints": []
-  }
-}
-```
-
-**响应字段说明**:
-
-| 字段 | 类型 | 单位 | 说明 |
-|------|------|------|------|
-| `chainId` | number | - | 链 ID |
-| `marketName` | string | - | 市场名称，如 "AaveV3Ethereum" |
-| `tokenAddress` | string | - | 底层 token 地址（小写） |
-| `decimals` | number | - | token 精度 |
-| `deficit` | string | **token 原始单位** | 该储备的 deficit（坏账缺口），用于 utilization 分母口径修正 |
-| `availableLiquidity` | string | **token 原始单位** | 可用流动性（除以 `10^decimals` 得到 token 数量） |
-| `totalScaledVariableDebt` | string | **scaled token** | 缩放后的可变债务（需乘 `variableBorrowIndex / RAY`） |
-| `variableBorrowIndex` | string | **RAY (10^27)** | 可变借款累积指数 |
-| `reserveFactor` | string | **BPS (10^4)** | 储备金率（2000 = 20%） |
-| `variableRateSlope1` | string | **RAY (10^27)** | 最优使用率以下的利率斜率 |
-| `variableRateSlope2` | string | **RAY (10^27)** | 最优使用率以上的利率斜率 |
-| `baseVariableBorrowRate` | string | **RAY (10^27)** | 基础可变借款利率 |
-| `optimalUsageRate` | string | **RAY (10^27)** | 最优使用率（0.45 * 10^27 = 45%） |
-
-> **注意**：所有大数值字段均为字符串类型（避免 JavaScript 精度丢失），前端需使用 `BigInt` 处理。详细单位转换说明见下方「数值单位说明」章节。
->
-> `deficit` 来源优先级：
-> - On-chain 路径：`pool.getReserveDeficit(asset)`（最高优先级）
-> - Aave API fallback：当前不提供 deficit，返回 `0`
-> - Subgraph fallback：当前不提供 deficit，返回 `0`
-
-**状态码**: `200` 成功，`400` 参数无效（如 `chainId` 非正整数），`500` 服务端错误
-
----
-
-### 7. 获取侧数据聚合（Meta Side Data）
+### 6. 获取侧数据聚合（Meta Side Data）
 
 **端点**: `GET /api/meta/side-data`
 
@@ -674,14 +596,14 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
    | `meritSupplys[].apr` | 百分比 | Merit 供应 APR |
    | `merklSupplys[].breakdowns[].campaignApr` | 百分比 | Merkl campaign APR |
 
-   #### `/api/rate-inputs` 响应字段单位
+   #### Rate-input 字段单位（位于 `/api/markets` 的 `reserves[]` 中）
 
-   **重要**：rate-inputs 返回的是链上原始数据，需要前端自行转换。
+   **重要**：rate-inputs 字段为链上原始数据，需要前端自行转换。这些字段可选（若 rate-inputs 获取失败则不存在）。
 
    | 字段 | 原始单位 | 转换说明 |
    |------|----------|----------|
    | `decimals` | 整数 | token 精度（用于其他字段的换算） |
-   | `deficit` | **token 原始单位** (string) | 坏账缺口；utilization 分母口径需要加上该值 |
+   | `deficit` | **token 原始单位** (string) | 坏账缺口（来自 getReservesHumanized，Aave v3.3.0+），不可用时为 '0' |
    | `availableLiquidity` | **token 原始单位** (string) | 可用流动性。换算：`BigInt(value) / 10^decimals` 得到 token 数量 |
    | `totalScaledVariableDebt` | **scaled token 单位** (string) | 缩放后的可变利率债务。需乘以 `variableBorrowIndex` 并除以 RAY 得到实际债务 |
    | `variableBorrowIndex` | **RAY** (27 decimals) | 可变借款指数。换算：`BigInt(value) / 10^27` 得到倍数 |
@@ -751,7 +673,8 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 ### 数据更新机制
 
 - **仅 `GET /api/markets`** 会触发市场数据新鲜度检查：若数据超过 1 分钟未更新，该请求会触发后台刷新（带并发锁），其他端点不触发市场数据刷新。
-- 其他端点（`/api/coingecko-*`、`/api/campaigns/forecast-states`、`/api/rate-inputs`）使用各自缓存与 TTL。
+- 其他端点（`/api/coingecko-*`、`/api/campaigns/forecast-states`）使用各自缓存与 TTL。
+- Rate-inputs 数据每分钟独立刷新（cron），合并到 `/api/markets` 响应中。
 - 使用锁机制防止并发更新；更新进行中时，请求会等待约 1 秒再返回。
 - `/api/markets` 返回 `snapshot + reserves`；`isStale` / `updateInProgress` 不在该接口响应中。
 
@@ -804,17 +727,14 @@ curl http://localhost:3001/api/coingecko-categories
 
 # 获取 CoinGecko FDV 数据
 curl http://localhost:3001/api/coingecko-fdv
-
-# 获取利率输入（可选过滤：chainId, asset, marketName）
-curl "http://localhost:3001/api/rate-inputs?chainId=1"
 ```
 
 ## 版本信息
 
-- **API 版本**: 3.0
-- **文档更新时间**: 2026-03-13
+- **API 版本**: 3.1
+- **文档更新时间**: 2026-03-14
 - **最后更新**:
-  - 补充端点：`GET /api/health`、`GET /api/coingecko-fdv`、`GET /api/rate-inputs`
+  - 补充端点：`GET /api/health`、`GET /api/coingecko-fdv`
   - 基础路径说明更新为完整 API 列表
   - 重构 Merit 数据结构：统一为 `meritSupplys` 和 `meritBorrows` 数组，每个条目包含完整的活动信息（apr, selfApr, link, startDate, endDate, startBlock, endBlock）
   - 统一命名：所有激励字段使用复数形式（meritSupplys, meritBorrows, merklSupplys, merklBorrows, merklHolds）
@@ -829,12 +749,12 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
   - **2026-03-11（breaking）**：`GET /api/markets` 响应结构切换为 `snapshot + reserves`（`markets-v2`）
   - **2026-03-11**：`reserves` 保留原全量字段，并新增 `tokenPrice`、`reserveSizeUsd`、`utilizationPct`
   - **2026-03-11**：Merkl reward token 价格先不在 `/api/markets` 输出；若 reward token 为某 reserve 的 aToken，也不单独输出
-  - **2026-03-13**：为 `/api/markets`、`/api/rate-inputs`、`/api/coingecko-*`、`/api/campaigns/forecast-states` 增加 `staleTimeMs` 字段说明
+  - **2026-03-13**：为 `/api/markets`、`/api/coingecko-*`、`/api/campaigns/forecast-states` 增加 `staleTimeMs` 字段说明
   - **2026-03-13**：新增 `/api/meta/side-data` 端点文档，并描述 categories/fdv 子快照的 `fetchedAt` 与 `staleTimeMs`
   - **2026-03-13（breaking）**：`/api/markets` 字段 `marketSizeUsd` 更名为 `reserveSizeUsd`
-  - **2026-03-13（breaking）**：`/api/rate-inputs` 字段从 `reserveSize` 调整为 `deficit`
-  - **2026-03-14**：合并 `rate-inputs` 到 `/api/markets`：每个 reserve 新增可选 `rateInputs` 字段，包含 APR 模拟所需的全部参数（deficit、availableLiquidity、variableRateSlope1/2 等）
   - **2026-03-14**：新增 `borrowCapUsd` 字段，与 `supplyCapUsd` 对称
+  - **2026-03-14（breaking）**：移除独立的 `/api/rate-inputs` 端点，rate-input 字段扁平化合并到 `/api/markets` 的 `reserves[]` 中（`decimals`、`deficit`、`availableLiquidity` 等）
+  - **2026-03-14**：移除 `deficitAvailable` 标志；deficit 来自 `UiPoolDataProvider.getReservesHumanized()`（Aave v3.3.0+），RPC 失败时使用 5 分钟内的缓存，超时则字段缺失
 
 ## 注意事项
 

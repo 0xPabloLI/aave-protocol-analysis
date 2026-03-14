@@ -106,10 +106,10 @@ External APIs → Backend Cron Jobs → In-Memory Snapshots → REST Clients
 #### Backend API (`backend/src/`)
 
 **Core Services**:
-- `services/marketsService.ts` - Internalized data fetcher; cron-write/API-read-only pattern; in-memory snapshot with `refreshMarketsSnapshot()` + `getMarketsSnapshot()`
-- `services/updateScheduler.ts` - Cron scheduler (markets 1m, rate-inputs 1m, forecast 10m, FDV 5m, categories 6h)
+- `services/marketsService.ts` - Unified data fetcher (markets + deficit); parallel fetch from Aave API + RPC; single `fetchedAt` for consistent staleness
+- `services/deficitService.ts` - On-chain deficit fetcher via `UiPoolDataProvider.getReservesHumanized()` (Aave v3.3.0+); graceful degradation if RPC fails
+- `services/updateScheduler.ts` - Cron scheduler (markets 1m unified, forecast 10m, FDV 5m, categories 6h)
 - `services/merklForecastService.ts` - Merkl forecast data processor; metricsCache (dynamic TTL 10m-6h) + campaignOpportunityCache (5m)
-- `services/rateInputsService.ts` - On-chain/API rate inputs; only `deficit` requires on-chain RPC
 
 **Request Handlers**:
 - `controllers/marketsController.ts` - Primary controller; implements `checkAndUpdateDataIfStale()` with concurrency control
@@ -168,16 +168,15 @@ GET /api/markets                   # markets-v2 snapshot + full reserves (no que
 GET /api/coingecko-categories      # CoinGecko category data (stablecoins, ETH-related)
 GET /api/coingecko-fdv             # CoinGecko FDV data (CMC primary, CG fallback)
 GET /api/campaigns/forecast-states # Merkl campaign forecast states (optional ids=...)
-GET /api/rate-inputs               # Reserve rate inputs (optional chainId, asset, marketName)
 GET /api/meta/side-data            # Aggregated side data (categories + fdv + forecast)
 ```
 
 **Markets 数据新鲜度**（仅以下端点会触发 `checkAndUpdateDataIfStale()`）:
-- `GET /api/markets` — 响应含 `{ snapshot, reserves }`；每个 reserve 包含可选 `rateInputs` 字段（合并自 rate-inputs 服务）
-  - 前端通过 `reserve.rateInputs !== undefined` 判断是否有 rate-inputs 数据
+- `GET /api/markets` — 响应含 `{ snapshot, reserves }`；每个 reserve 包含可选 `deficit` 字段
+  - 前端通过 `reserve.deficit !== undefined` 判断是否有 on-chain deficit 数据
   - 若数据超过 1 分钟未更新会自动触发刷新并受并发控制
-- 其他端点（coingecko、campaigns、rate-inputs）使用各自缓存/TTL，不触发市场数据刷新。
-- `/api/rate-inputs` 仍可单独调用，返回与嵌入的 `rateInputs` 相同字段（向后兼容）。
+  - Deficit 获取失败时优雅降级：markets 仍可用，只是没有 deficit 字段
+- 其他端点（coingecko、campaigns）使用各自缓存/TTL，不触发市场数据刷新。
 
 ## Configuration
 
@@ -214,7 +213,6 @@ debug/brevis-raw-data.json                # Brevis raw data with API responses
 debug/merkl-raw-data.json                 # Merkl raw data (debug)
 debug/merit-raw-data.json                 # Merit raw data (debug)
 debug/merit-merkl-raw-data.json           # Merit↔Merkl round estimation debug
-debug/rate-inputs-raw-data.json           # Rate-inputs raw subgraph/onchain responses (backend)
 ```
 
 ### Logging
@@ -235,7 +233,7 @@ Each incentive API uses different identifiers:
 ### Reserve Size Definitions
 - `reserves[].reserveSizeUsd` = **total supply in USD** (not supply − borrowed). This matches the Aave reserve `size.usd` surface.
 - `reserve.size.raw` composition: `availableLiquidity + totalVariableDebt`, where `totalVariableDebt = totalScaledVariableDebt × variableBorrowIndex ÷ 10²⁷`. See `docs/api/native-apr-calculation.md` for derivation.
-- `rate-inputs[].deficit` = **raw token units** from `pool.getReserveDeficit(asset)` (for simulation utilization denominator adjustment). **Not included** in `reserve.size`.
+- `reserves[].deficit` = **raw token units** from `UiPoolDataProvider.getReservesHumanized()` (Aave v3.3.0+); for simulation utilization denominator adjustment. '0' if not available. **Not included** in `reserve.size`.
 - `borrowInfo.availableLiquidity` remains the right field for "how much can still be borrowed now".
 
 ### Frozen/Paused Reserves
@@ -254,8 +252,7 @@ Uses `@bgd-labs/aave-address-book` to auto-discover AaveV3 networks. Excludes te
 
 ### Backend Cache Architecture
 - **All endpoints use cron-write/API-read-only** pattern (API requests never trigger external fetches):
-  - Markets: cron every 1m refreshes `marketsSnapshot`
-  - Rate-inputs: cron every 1m refreshes snapshot
+  - Markets (unified): cron every 1m refreshes `marketsSnapshot` with parallel Aave API + RPC deficit fetch
   - Merkl forecast: cron every 10m refreshes `snapshotCache`
   - CoinGecko categories/FDV: cron every 6h/5m refreshes cache
 - **Startup warmup**: All caches are explicitly warmed in `server.ts` before `app.listen()`. Server only accepts requests after all data is ready.
@@ -311,13 +308,13 @@ Don't set secrets in `ecosystem.config.cjs`—they'll override Doppler.
 ## Learned User Preferences
 
 - Keep documentation concise; remove outdated/superseded content rather than accumulating
-- Question redundant boolean flags when data comes from the same source (e.g., if rateInputs exists, a separate `rateInputsAvailable` flag adds no value)
-- Prefer merging API endpoints when data is pre-fetched together with the same TTL/staleness
+- Question redundant boolean flags when data comes from the same source (e.g., if all rate-input fields exist, a separate flag adds no value)
+- Prefer merging API endpoints when data is pre-fetched together with the same TTL/staleness; flatten nested objects when possible
 - Verify changes appear in API response after implementation; rebuild `dist/` if backend imports from it
 - Organize reusable patterns into `docs/reusable/` for cross-project portability
 
 ## Learned Workspace Facts
 
 - Backend imports from `dist/index.js` — changes to `src/index.ts` require `npm run build` before backend sees updates
-- `deficitAvailable` is true only when `sourceDetail.startsWith('rpc:')` (on-chain RPC); Aave API and Subgraph fallbacks don't expose deficit
-- Rate-inputs data sources in priority: on-chain RPC (has deficit) → Aave API (no deficit) → Subgraph (no deficit)
+- Deficit comes from `UiPoolDataProvider.getReservesHumanized()` (Aave v3.3.0+); cached for 5 minutes on failure
+- Markets and deficit fetched in parallel (both 60s timeout); deficit uses cache fallback within TTL
