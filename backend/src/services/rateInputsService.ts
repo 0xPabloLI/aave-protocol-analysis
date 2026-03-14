@@ -495,8 +495,8 @@ async function loadSubgraphDeployments(): Promise<Map<string, SubgraphDeployment
       map.set(key, picked);
     }
     return map;
-  } catch (error) {
-    logger.warn(`Failed to load subgraph deployment snapshot (${SUBGRAPH_SNAPSHOT_PATH}): ${error instanceof Error ? error.message : String(error)}`);
+  } catch {
+    // Subgraph snapshot is optional; silently return empty map if unavailable
     return new Map<string, SubgraphDeploymentRecord>();
   }
 }
