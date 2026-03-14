@@ -23,12 +23,13 @@ export interface MarketWithSpread {
   // Rate-input fields for manual APR calculation (from Aave SDK)
   decimals?: number;
   availableLiquidity?: string;
+  totalVariableDebt?: string; // raw token units - total borrowed
   reserveFactor?: string;
   variableRateSlope1?: string;
   variableRateSlope2?: string;
   optimalUsageRate?: string;
   // On-chain only fields (from UiPoolDataProvider.getReservesHumanized())
-  // Absent if RPC fetch failed; cached for 5 min on failure
+  // Absent if RPC fetch failed; cached for 30 min on failure
   baseVariableBorrowRate?: string; // RAY (1e27) - for simulated borrow rate calculation
   deficit?: string; // raw token units - for accurate supply APY calculation
   supplyIncentives?: number[];

@@ -92,6 +92,7 @@ interface FormattedReserveData {
   // Rate-input fields for manual APR calculation (raw strings for precision)
   decimals?: number;
   availableLiquidity?: string;
+  totalVariableDebt?: string; // Total borrowed (raw token units)
   reserveFactor?: string;
   variableRateSlope1?: string;
   variableRateSlope2?: string;
@@ -130,12 +131,13 @@ interface RuntimeReserveData {
   // Rate-input fields for manual APR calculation
   decimals?: number;
   availableLiquidity?: string;
+  totalVariableDebt?: string; // Total borrowed (raw token units)
   reserveFactor?: string;
   variableRateSlope1?: string;
   variableRateSlope2?: string;
   optimalUsageRate?: string;
   deficit?: string; // from on-chain RPC
-  // Note: baseVariableBorrowRate is NOT available from Aave API
+  baseVariableBorrowRate?: string; // from on-chain RPC
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
   merklSupplys?: MerklOpportunityGroup[];
@@ -238,6 +240,7 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     // Rate-input fields for manual APR calculation
     ...(item.decimals !== undefined ? { decimals: item.decimals } : {}),
     ...(item.availableLiquidity ? { availableLiquidity: item.availableLiquidity } : {}),
+    ...(item.totalVariableDebt ? { totalVariableDebt: item.totalVariableDebt } : {}),
     ...(item.reserveFactor ? { reserveFactor: item.reserveFactor } : {}),
     ...(item.variableRateSlope1 ? { variableRateSlope1: item.variableRateSlope1 } : {}),
     ...(item.variableRateSlope2 ? { variableRateSlope2: item.variableRateSlope2 } : {}),
@@ -458,6 +461,7 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         // All raw values are strings to preserve precision for on-chain math
         const decimals = reserve.underlyingToken?.decimals ?? undefined;
         const availableLiquidity = reserve.borrowInfo?.availableLiquidity?.amount?.raw ?? undefined;
+        const totalVariableDebt = reserve.borrowInfo?.total?.amount?.raw ?? undefined; // Total borrowed
         const reserveFactorRaw = reserve.borrowInfo?.reserveFactor?.raw ?? undefined;
         const variableRateSlope1 = reserve.borrowInfo?.variableRateSlope1?.raw ?? undefined;
         const variableRateSlope2 = reserve.borrowInfo?.variableRateSlope2?.raw ?? undefined;
@@ -517,6 +521,7 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
           // Rate-input fields for manual APR calculation (raw strings for precision)
           ...(decimals !== undefined ? { decimals } : {}),
           ...(availableLiquidity ? { availableLiquidity } : {}),
+          ...(totalVariableDebt ? { totalVariableDebt } : {}),
           ...(reserveFactorRaw ? { reserveFactor: reserveFactorRaw } : {}),
           ...(variableRateSlope1 ? { variableRateSlope1 } : {}),
           ...(variableRateSlope2 ? { variableRateSlope2 } : {}),

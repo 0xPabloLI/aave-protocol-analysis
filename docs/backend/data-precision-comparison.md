@@ -13,17 +13,20 @@
 
 | Field | Precision | Unit | Notes |
 |-------|-----------|------|-------|
-| `supplyApy` | Float | Decimal (0.05 = 5%) | Already converted |
-| `borrowApy` | Float | Decimal (0.03 = 3%) | Already converted |
+| `supplyApy` | Float | Percent (5.2 = 5.2%) | Already converted to percent |
+| `borrowApy` | Float | Percent (3.5 = 3.5%) | Already converted to percent |
 | `tokenPrice` | Float | USD | Already converted |
 | `supplyCapUsd` | Float | USD | Already converted |
 | `borrowCapUsd` | Float | USD | Already converted |
 | `reserveSizeUsd` | Float | USD | Already converted |
+| `utilizationPct` | Float | Percent (75.5 = 75.5%) | Already converted to percent |
+| `decimals` | Number | Integer | Token decimals (6, 8, 18, etc.) |
 | `availableLiquidity` | String | Raw token units | `BigInt` string |
-| `reserveFactor` | String | BPS (4 decimals) | `2000` = 20% |
+| `totalVariableDebt` | String | Raw token units | Total borrowed, `BigInt` string |
+| `reserveFactor` | String | RAY (27 decimals) | `200000000000000000000000000` = 20% |
 | `variableRateSlope1` | String | RAY (27 decimals) | Interest rate parameter |
 | `variableRateSlope2` | String | RAY (27 decimals) | Interest rate parameter |
-| `optimalUsageRate` | String | RAY (27 decimals) | `920000000000000000000000000` = 92% |
+| `optimalUsageRate` | String | RAY (27 decimals) | `900000000000000000000000000` = 90% |
 
 ### Fields from On-chain RPC
 

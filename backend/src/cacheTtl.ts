@@ -22,6 +22,8 @@ export const BACKEND_FETCH_TIMING_MS = {
 // Node-cron 6-field format (includes seconds): at second 0, every minute.
 export const BACKEND_SCHEDULE_CRON = {
   marketsBackupEveryMinuteAtSecond0: '0 * * * * *',
+  // On-chain data refresh: every 5 min at second 10 (async from markets, longer cache)
+  onchainDataWarmEveryFiveMinutesAtSecond10: '10 */5 * * * *',
   coingeckoFdvWarmEveryFiveMinutesAtSecond5: '5 */5 * * * *',
   coingeckoCategoriesWarmEverySixHoursAtSecond10: '10 0 */6 * * *',
   // Aligned with merklForecastResultDefault (10 min) for cron-write/API-read-only pattern.
@@ -33,7 +35,8 @@ export const BACKEND_CACHE_TTL_MS = {
   realtimeFamily: BACKEND_TIME_MS.oneMinute,
   marketsDataStaleThreshold: BACKEND_TIME_MS.oneMinute,
   marketsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
-  onchainCacheTtl: BACKEND_TIME_MS.fiveMinutes,
+  // On-chain data TTL: 30 min (deficit/baseVariableBorrowRate change infrequently)
+  onchainCacheTtl: BACKEND_TIME_MS.thirtyMinutes,
 
   // Merkl forecast family.
   // forecastResult aligned with metricsMin since underlying metrics data won't change faster.
