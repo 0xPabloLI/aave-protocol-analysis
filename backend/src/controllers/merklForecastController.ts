@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { FORECAST_CACHE_TTL_MS, getMerklForecastState } from '../services/merklForecastService.js';
 import { dataService } from '../services/dataService.js';
+import { logger } from '../logger.js';
 import type { MarketWithSpread } from '../types/index.js';
 
 export const toForecastResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>) => ({
@@ -46,10 +47,23 @@ const collectCampaignIdsFromMarkets = (markets: MarketWithSpread[]): string[] =>
   return Array.from(ids);
 };
 
-export const getForecastSnapshot = async (): Promise<ForecastSnapshot> => {
+// Global snapshot cache (cron-write, API-read-only pattern).
+interface SnapshotCacheEntry {
+  snapshot: ForecastSnapshot;
+  generatedAt: number;
+}
+let snapshotCache: SnapshotCacheEntry | null = null;
+
+/**
+ * Fetch fresh forecast data from Merkl API and update the global snapshot cache.
+ * Called by cron scheduler only.
+ */
+export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> => {
   const campaignIds = [...new Set(collectCampaignIdsFromMarkets(await dataService.getData()))];
   if (campaignIds.length === 0) {
-    return { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
+    const emptySnapshot: ForecastSnapshot = { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
+    snapshotCache = { snapshot: emptySnapshot, generatedAt: Date.now() };
+    return emptySnapshot;
   }
 
   const results = await Promise.allSettled(campaignIds.map((id) => getMerklForecastState(id)));
@@ -67,7 +81,23 @@ export const getForecastSnapshot = async (): Promise<ForecastSnapshot> => {
     }
   });
 
-  return { items, errors, staleTimeMs: FORECAST_CACHE_TTL_MS };
+  const snapshot: ForecastSnapshot = { items, errors, staleTimeMs: FORECAST_CACHE_TTL_MS };
+  snapshotCache = { snapshot, generatedAt: Date.now() };
+  return snapshot;
+};
+
+/**
+ * Get forecast snapshot from cache (API-read-only).
+ * Returns cached snapshot if available, or empty snapshot with warning if cache not yet populated.
+ */
+export const getForecastSnapshot = async (): Promise<ForecastSnapshot> => {
+  if (snapshotCache) {
+    return snapshotCache.snapshot;
+  }
+  // Cache not yet populated (server just started, cron hasn't run yet).
+  // Return empty snapshot instead of triggering fetch.
+  logger.warn('Forecast snapshot cache not yet populated; returning empty snapshot');
+  return { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
 };
 
 export const getCampaignForecastStates = async (req: Request, res: Response): Promise<void> => {
@@ -105,8 +135,12 @@ export const getCampaignForecastStates = async (req: Request, res: Response): Pr
   res.json({ requested: campaignIds.length, items, errors, staleTimeMs: FORECAST_CACHE_TTL_MS });
 };
 
+/**
+ * Warm the forecast snapshot cache by fetching fresh data from Merkl API.
+ * Called by cron scheduler and server startup.
+ */
 export async function warmCampaignForecastStatesCache(): Promise<{ requested: number; fulfilled: number; failed: number }> {
-  const snapshot = await getForecastSnapshot();
+  const snapshot = await refreshForecastSnapshotCache();
   return {
     requested: snapshot.items.length + snapshot.errors.length,
     fulfilled: snapshot.items.length,

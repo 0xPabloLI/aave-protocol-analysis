@@ -12,6 +12,7 @@ import metaRouter from './routes/meta.js';
 import { dataService } from './services/dataService.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
 import { warmCoingeckoCategoriesCache } from './controllers/coingeckoController.js';
+import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
 import { logger } from './logger.js';
 
 const app = express();
@@ -95,14 +96,15 @@ dataService.loadData()
     // 启动定时更新任务
     startUpdateScheduler();
 
-    // 启动时预热 coingecko categories，避免首个请求冷启动
-    return warmCoingeckoCategoriesCache()
-      .then(() => {
-        logger.info('✅ Coingecko categories cache warmed on startup');
-      })
-      .catch((error) => {
-        logger.warn('⚠️  Failed to warm coingecko categories on startup:', error);
-      });
+    // 启动时预热缓存，避免首个请求冷启动
+    return Promise.allSettled([
+      warmCoingeckoCategoriesCache()
+        .then(() => logger.info('✅ Coingecko categories cache warmed on startup'))
+        .catch((error) => logger.warn('⚠️  Failed to warm coingecko categories on startup:', error)),
+      warmCampaignForecastStatesCache()
+        .then((summary) => logger.info(`✅ Forecast snapshot cache warmed on startup: requested=${summary.requested}, fulfilled=${summary.fulfilled}, failed=${summary.failed}`))
+        .catch((error) => logger.warn('⚠️  Failed to warm forecast snapshot on startup:', error)),
+    ]);
   })
   .finally(() => {
     

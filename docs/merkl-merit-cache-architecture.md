@@ -61,29 +61,30 @@ flowchart LR
   A -- "writes" --> K["data/runtime/aave-formatted-data.json"]
 ```
 
-### B) Forecast request path (`/api/campaigns/forecast-states`)
+### B) Forecast data path (`/api/campaigns/forecast-states`)
+
+**Cron-write, API-read-only pattern** (changed 2026-03-14):
 
 ```mermaid
 flowchart LR
-  A["forecast request"] --> B{"forecastCache hit?"}
-  B -- yes --> Z["return cached forecast"]
-  B -- no --> C["merklForecastService"]
-  C --> D{"campaignOpportunityCache fresh?"}
-  D -- yes --> E["use campaignOpportunityCache"]
-  D -- no --> F{"runtime lite fresh? (<=60s)"}
-  F -- yes --> G["build campaignOpportunityCache from lite file"]
-  F -- no --> H["merklOpportunityClient"]
-  H --> I["@internal/aave-shared-config snapshot"]
-  I -. "fallback" .-> J["Merkl /v4/opportunities (if snapshot miss)"]
-  H --> K["opportunities[]"]
-  K --> G
-  E --> L["Merkl /v4/campaigns/{id}/metrics"]
-  G --> L
-  L --> MC["metricsCache (per campaign, dynamic TTL)"]
-  MC --> M["build forecast state"]
-  M --> N["write forecastCache"]
-  N --> Z
+  subgraph CRON["Cron (every 10 min)"]
+    C1["warmCampaignForecastStatesCache()"] --> C2["refreshForecastSnapshotCache()"]
+    C2 --> C3["getMerklForecastState() per campaignId"]
+    C3 --> C4["Merkl /v4/campaigns/{id}/metrics"]
+    C4 --> C5["update global snapshotCache"]
+  end
+
+  subgraph API["API Request"]
+    A1["forecast request"] --> A2["getForecastSnapshot()"]
+    A2 --> A3{"snapshotCache exists?"}
+    A3 -- yes --> A4["return cached snapshot"]
+    A3 -- no --> A5["return empty snapshot + warn"]
+  end
+
+  C5 -.-> A3
 ```
+
+**Key change**: API requests **never** call Merkl API. They only read from the global snapshot cache populated by cron.
 
 ## 1) Big Picture (Backend)
 
@@ -143,27 +144,33 @@ flowchart TD
 - Rebuilt on demand when expired
 - TTL (current): 5 minutes (default), configurable independently from forecast result cache
 
-### C) `forecastCache` (`backend/src/services/merklForecastService.ts`)
-- Final forecast state cache by campaignId
-- Stores computed result returned by `/api/campaigns/forecast-states`
-- TTL (current): 10 minutes (default), aligned with `merklMetricsMin` since underlying metrics data won't change faster
+### C) `snapshotCache` (`backend/src/controllers/merklForecastController.ts`)
+- **Global snapshot cache** for all forecast states (cron-write, API-read-only pattern)
+- Populated by `warmCampaignForecastStatesCache()` (cron every 10 min + server startup)
+- API requests **only read** from this cache; they never trigger Merkl API calls
+- TTL: effectively 10 minutes (controlled by cron interval)
+
+Example shape:
+```ts
+{
+  snapshot: {
+    items: ForecastResponseItem[];
+    errors: Array<{ campaignId: string; message: string }>;
+    staleTimeMs: number;
+  };
+  generatedAt: number;
+}
+```
+
+### C.1) `forecastCache` (`backend/src/services/merklForecastService.ts`)
+- **Per-campaignId cache** used internally during cron refresh
+- Stores computed forecast state for each campaign
+- TTL (current): 10 minutes (default), aligned with `merklMetricsMin`
 
 Example shape:
 ```ts
 Map<string, {
-  data: {
-    campaignId: string;
-    campaignType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' | 'DUTCH_AUCTION' | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
-    plannedDaily: number;
-    requiredDaily: number;
-    totalBudget: number;
-    distributedSoFar: number;
-    latestTvl: number;
-    aprCap: number | null;
-    startTimestamp: number;
-    endTimestamp: number;
-    asOf: number;
-  };
+  data: MerklForecastState;
   expiresAt: number;
 }>
 ```
