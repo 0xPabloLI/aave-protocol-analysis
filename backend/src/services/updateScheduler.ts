@@ -192,8 +192,8 @@ export function startUpdateScheduler(): void {
     }
   });
 
-  // Warm campaign forecast cache every hour with market-derived campaign IDs.
-  cron.schedule(BACKEND_SCHEDULE_CRON.campaignForecastWarmEveryHourAtSecond30, async () => {
+  // Refresh campaign forecast snapshot every 10 minutes (cron-write, API-read-only pattern).
+  cron.schedule(BACKEND_SCHEDULE_CRON.campaignForecastWarmEveryTenMinutesAtSecond30, async () => {
     try {
       const summary = await warmCampaignForecastStatesCache();
       logger.info(

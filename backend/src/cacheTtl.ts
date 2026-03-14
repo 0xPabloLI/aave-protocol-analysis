@@ -23,7 +23,8 @@ export const BACKEND_SCHEDULE_CRON = {
   coingeckoFdvWarmEveryFiveMinutesAtSecond5: '5 */5 * * * *',
   coingeckoCategoriesWarmEverySixHoursAtSecond10: '10 0 */6 * * *',
   rateInputsWarmEveryMinuteAtSecond20: '20 * * * * *',
-  campaignForecastWarmEveryHourAtSecond30: '30 0 * * * *',
+  // Aligned with merklForecastResultDefault (10 min) for cron-write/API-read-only pattern.
+  campaignForecastWarmEveryTenMinutesAtSecond30: '30 */10 * * * *',
 } as const;
 
 export const BACKEND_CACHE_TTL_MS = {
