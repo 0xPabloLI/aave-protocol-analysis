@@ -121,6 +121,43 @@ export const AAVE_PUBLIC_RPC_URLS_BY_CHAIN_KEY = Object.freeze({
     'https://ink.drpc.org',
     'https://rpc.inkonchain.com',
   ]),
+  blast: Object.freeze([
+    'https://rpc.blast.io',
+    'https://blast.drpc.org',
+    'https://rpc.ankr.com/blast',
+    'https://blast-rpc.publicnode.com',
+  ]),
+  palm: Object.freeze([
+    'https://palm-mainnet.public.blastapi.io',
+  ]),
+  opbnb: Object.freeze([
+    'https://opbnb-mainnet-rpc.bnbchain.org',
+    'https://opbnb.drpc.org',
+    'https://opbnb-rpc.publicnode.com',
+  ]),
+  zkLinkNova: Object.freeze([
+    'https://rpc.zklink.io',
+  ]),
+  manta: Object.freeze([
+    'https://pacific-rpc.manta.network/http',
+    'https://manta-pacific.drpc.org',
+    'https://1rpc.io/manta',
+  ]),
+  berachain: Object.freeze([
+    'https://rpc.berachain.com',
+    'https://berachain.drpc.org',
+    'https://berachain-rpc.publicnode.com',
+  ]),
+  abstract: Object.freeze([
+    'https://api.abstractions.io',
+    'https://abstract.drpc.org',
+  ]),
+  flare: Object.freeze([
+    'https://flare-api.flare.network/ext/C/rpc',
+    'https://rpc.ankr.com/flare',
+    'https://flare.drpc.org',
+    'https://flare-rpc.publicnode.com',
+  ]),
 });
 
 export const AAVE_CHAIN_KEY_ALIASES = Object.freeze({
@@ -156,6 +193,14 @@ export const AAVE_CHAIN_ID_TO_RPC_KEY = Object.freeze({
   43114: 'avalanche',
   534352: 'scroll',
   1666600000: 'harmony',
+  81457: 'blast',
+  11297108109: 'palm',
+  204: 'opbnb',
+  810180: 'zkLinkNova',
+  169: 'manta',
+  80094: 'berachain',
+  2741: 'abstract',
+  14: 'flare',
 });
 
 const normalizeHttpUrls = (urls) =>

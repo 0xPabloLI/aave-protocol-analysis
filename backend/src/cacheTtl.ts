@@ -22,8 +22,8 @@ export const BACKEND_FETCH_TIMING_MS = {
 // Node-cron 6-field format (includes seconds): at second 0, every minute.
 export const BACKEND_SCHEDULE_CRON = {
   marketsBackupEveryMinuteAtSecond0: '0 * * * * *',
-  // On-chain data refresh: every 5 min at second 10 (async from markets, longer cache)
-  onchainDataWarmEveryFiveMinutesAtSecond10: '10 */5 * * * *',
+  // On-chain data refresh: every 1 min at second 10 (per-chain concurrent, 30-min TTL)
+  onchainDataWarmEveryMinuteAtSecond10: '10 * * * * *',
   coingeckoFdvWarmEveryFiveMinutesAtSecond5: '5 */5 * * * *',
   coingeckoCategoriesWarmEverySixHoursAtSecond10: '10 0 */6 * * *',
   // Aligned with merklForecastResultDefault (10 min) for cron-write/API-read-only pattern.
