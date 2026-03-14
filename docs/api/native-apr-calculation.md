@@ -67,23 +67,19 @@ reserve.size.raw  = availableLiquidity + totalVariableDebt
 
 ### On-chain vs API Data Availability
 
-| Field | On-chain RPC | Aave API | Subgraph | Notes |
-|-------|:------------:|:--------:|:--------:|-------|
-| `availableLiquidity` | ✅ | ✅ | ✅ | |
-| `totalScaledVariableDebt` | ✅ | — | ✅ | API 返回 `total`（实际债务） |
-| `variableBorrowIndex` | ✅ | — | ✅ | API 不需要，因为直接提供 `total` |
-| `reserveFactor` | ✅ | ✅ | ✅ | |
-| `variableRateSlope1/2` | ✅ | ✅ | ✅ | |
-| `baseVariableBorrowRate` | ✅ | ✅ | ✅ | |
-| `optimalUsageRate` | ✅ | ✅ | ✅ | |
-| **`deficit`** | ✅ | ❌ | ❌ | **仅 on-chain 可获取** |
+| Field | On-chain RPC | Aave API | Notes |
+|-------|:------------:|:--------:|-------|
+| `availableLiquidity` | ✅ | ✅ | |
+| `reserveFactor` | ✅ | ✅ | |
+| `variableRateSlope1/2` | ✅ | ✅ | |
+| `optimalUsageRate` | ✅ | ✅ | |
+| **`baseVariableBorrowRate`** | ✅ | ❌ | **仅 on-chain 可获取**，用于模拟利率计算 |
+| **`deficit`** | ✅ | ❌ | **仅 on-chain 可获取**，用于 Supply APY 计算 |
 
-**结论**：只有 `deficit` 必须通过 on-chain RPC (`pool.getReserveDeficit(asset)`) 获取。
-
-Aave API 返回 `total`（实际债务）而非 `scaledDebt + index`，代码通过设置 `index = RAY` 使计算等价：
-```
-actualDebt = scaledDebt × index ÷ RAY  →  当 index = RAY 时，actualDebt = scaledDebt
-```
+**结论**：
+- `deficit` 必须通过 on-chain RPC 获取
+- `baseVariableBorrowRate` 仅 on-chain 可获取（如需模拟利率计算）
+- 其他字段均可从 Aave API 获取
 
 ---
 
