@@ -35,7 +35,6 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 
     // Get rate-inputs map for merging (may be null if not yet populated)
     const rateInputsMap = getRateInputsMap();
-    const rateInputsAvailable = rateInputsMap !== null && rateInputsMap.size > 0;
 
     // Filter invalid entries and merge rate-inputs
     const reserves: MarketWithSpread[] = payload.data
@@ -86,7 +85,6 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
         lastUpdated: payload._metadata.timestamp,
         version: 'markets-v2',
         staleTimeMs,
-        rateInputsAvailable,
       },
       reserves,
     };

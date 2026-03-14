@@ -174,7 +174,7 @@ GET /api/meta/side-data            # Aggregated side data (categories + fdv + fo
 
 **Markets 数据新鲜度**（仅以下端点会触发 `checkAndUpdateDataIfStale()`）:
 - `GET /api/markets` — 响应含 `{ snapshot, reserves }`；每个 reserve 包含可选 `rateInputs` 字段（合并自 rate-inputs 服务）
-  - `snapshot.rateInputsAvailable` 指示 rate-inputs 是否已合并
+  - 前端通过 `reserve.rateInputs !== undefined` 判断是否有 rate-inputs 数据
   - 若数据超过 1 分钟未更新会自动触发刷新并受并发控制
 - 其他端点（coingecko、campaigns、rate-inputs）使用各自缓存/TTL，不触发市场数据刷新。
 - `/api/rate-inputs` 仍可单独调用，返回与嵌入的 `rateInputs` 相同字段（向后兼容）。
@@ -307,3 +307,17 @@ In production with Doppler:
 3. Doppler-fetched secrets (lowest, only if not already set)
 
 Don't set secrets in `ecosystem.config.cjs`—they'll override Doppler.
+
+## Learned User Preferences
+
+- Keep documentation concise; remove outdated/superseded content rather than accumulating
+- Question redundant boolean flags when data comes from the same source (e.g., if rateInputs exists, a separate `rateInputsAvailable` flag adds no value)
+- Prefer merging API endpoints when data is pre-fetched together with the same TTL/staleness
+- Verify changes appear in API response after implementation; rebuild `dist/` if backend imports from it
+- Organize reusable patterns into `docs/reusable/` for cross-project portability
+
+## Learned Workspace Facts
+
+- Backend imports from `dist/index.js` — changes to `src/index.ts` require `npm run build` before backend sees updates
+- `deficitAvailable` is true only when `sourceDetail.startsWith('rpc:')` (on-chain RPC); Aave API and Subgraph fallbacks don't expose deficit
+- Rate-inputs data sources in priority: on-chain RPC (has deficit) → Aave API (no deficit) → Subgraph (no deficit)

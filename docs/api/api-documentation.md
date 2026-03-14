@@ -155,9 +155,8 @@ interface MarketsResponse {
     lastUpdated: string;               // 最后更新时间（ISO 8601）
     version: 'markets-v2';
     staleTimeMs: number;               // 认为数据过期的阈值（毫秒），默认 60 秒
-    rateInputsAvailable: boolean;      // rate-inputs 是否已合并到 reserves（true 时每个 reserve 含 rateInputs 字段）
   };
-  reserves: MarketWithSpread[];        // 保留原全量字段 + 新增展示字段 + rateInputs
+  reserves: MarketWithSpread[];        // 保留原全量字段 + 新增展示字段 + 可选 rateInputs
 }
 ```
 
@@ -835,7 +834,6 @@ curl "http://localhost:3001/api/rate-inputs?chainId=1"
   - **2026-03-13（breaking）**：`/api/markets` 字段 `marketSizeUsd` 更名为 `reserveSizeUsd`
   - **2026-03-13（breaking）**：`/api/rate-inputs` 字段从 `reserveSize` 调整为 `deficit`
   - **2026-03-14**：合并 `rate-inputs` 到 `/api/markets`：每个 reserve 新增可选 `rateInputs` 字段，包含 APR 模拟所需的全部参数（deficit、availableLiquidity、variableRateSlope1/2 等）
-  - **2026-03-14**：`snapshot` 新增 `rateInputsAvailable` 布尔字段，指示 rate-inputs 是否已成功合并
   - **2026-03-14**：新增 `borrowCapUsd` 字段，与 `supplyCapUsd` 对称
 
 ## 注意事项
