@@ -86,6 +86,8 @@ async function main() {
     optimalUsageRate: sdkReserve.optimalUsageRate,
     variableRateSlope1: sdkReserve.variableRateSlope1,
     variableRateSlope2: sdkReserve.variableRateSlope2,
+    availableLiquidity: sdkReserve.availableLiquidity,
+    totalVariableDebt: sdkReserve.totalVariableDebt,
   };
 
   const fmt = (v) => (v === undefined || v === null ? '—' : String(v));
@@ -93,7 +95,52 @@ async function main() {
 
   console.log('\n========== SNX AaveV3Ethereum 参数对比 ==========\n');
 
-  console.log('--- baseVariableBorrowRate (链上真实值 vs 用 SDK 反推) ---');
+  console.log('--- deficit (链上) ---');
+  const deficitRaw = onchainReserve.deficit != null ? String(onchainReserve.deficit) : null;
+  console.log('  On-chain deficit (raw):', deficitRaw ?? '无');
+  if (deficitRaw && deficitRaw !== '0') {
+    console.log('  (有 deficit，单位: 该 reserve 的 token 最小单位)');
+  }
+
+  console.log('\n--- availableLiquidity + totalVariableDebt (链上 vs SDK) ---');
+  const ocLiqRaw = onchain.availableLiquidity != null ? String(onchain.availableLiquidity) : null;
+  const ocDebtRaw =
+    onchain.totalVariableDebt != null && onchain.variableBorrowIndex != null
+      ? (BigInt(String(onchain.totalVariableDebt)) * BigInt(String(onchain.variableBorrowIndex))) / RAY
+      : onchain.totalVariableDebt != null
+        ? String(onchain.totalVariableDebt)
+        : null;
+  const ocDebtForSum =
+    onchain.totalVariableDebt != null && onchain.variableBorrowIndex != null
+      ? (BigInt(String(onchain.totalVariableDebt)) * BigInt(String(onchain.variableBorrowIndex))) / RAY
+      : onchain.totalVariableDebt != null
+        ? BigInt(String(onchain.totalVariableDebt))
+        : null;
+  const ocLiqBig = ocLiqRaw != null ? BigInt(ocLiqRaw) : null;
+  const sdkLiq = sdk.availableLiquidity != null ? String(sdk.availableLiquidity) : null;
+  const sdkDebt = sdk.totalVariableDebt != null ? String(sdk.totalVariableDebt) : null;
+  const sdkLiqBig = sdkLiq != null ? BigInt(sdkLiq) : null;
+  const sdkDebtBig = sdkDebt != null ? BigInt(sdkDebt) : null;
+  console.log('  availableLiquidity (raw):');
+  console.log('    链上:', ocLiqRaw ?? '—');
+  console.log('    SDK: ', sdkLiq ?? '—');
+  console.log('    一致:', ocLiqRaw !== null && sdkLiq !== null && ocLiqRaw === sdkLiq ? '✓' : ocLiqRaw === null || sdkLiq === null ? '—' : '✗');
+  console.log('  totalVariableDebt (raw, 链上若为 scaled 则已按 variableBorrowIndex 换算):');
+  console.log('    链上:', ocDebtRaw != null ? (typeof ocDebtRaw === 'string' ? ocDebtRaw : String(ocDebtRaw)) : '—');
+  console.log('    SDK: ', sdkDebt ?? '—');
+  console.log('    一致:', ocDebtRaw !== null && sdkDebt !== null && String(ocDebtRaw) === sdkDebt ? '✓' : ocDebtRaw == null || sdkDebt == null ? '—' : '✗');
+  const ocSum = ocLiqBig != null && ocDebtForSum != null ? ocLiqBig + ocDebtForSum : null;
+  const sdkSum = sdkLiqBig != null && sdkDebtBig != null ? sdkLiqBig + sdkDebtBig : null;
+  console.log('  availableLiquidity + totalVariableDebt (分母，用于 util):');
+  console.log('    链上:', ocSum != null ? String(ocSum) : '—');
+  console.log('    SDK: ', sdkSum != null ? String(sdkSum) : '—');
+  console.log('    一致:', ocSum !== null && sdkSum !== null && ocSum === sdkSum ? '✓' : ocSum === null || sdkSum === null ? '—' : '✗');
+  if (ocSum != null && sdkSum != null && ocSum !== sdkSum) {
+    const diff = ocSum > sdkSum ? ocSum - sdkSum : sdkSum - ocSum;
+    console.log('    差值 (abs):', String(diff));
+  }
+
+  console.log('\n--- baseVariableBorrowRate (链上真实值 vs 用 SDK 反推) ---');
   console.log('  On-chain (RAY):', fmt(onchain.baseVariableBorrowRate));
   console.log('  On-chain (%):', fmtPct(rayToPct(onchain.baseVariableBorrowRate)));
 

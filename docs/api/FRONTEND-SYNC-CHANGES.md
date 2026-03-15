@@ -1,7 +1,7 @@
 # 前端同步更新说明（Markets API 变更）
 
 **文档版本**: 2026-03  
-**后端变更摘要**: 撤销独立 rate-inputs 接口，所有数据统一由 `GET /api/markets` 返回；部分字段更名/移除，on-chain 字段可能缺失需前端 fallback。
+**后端变更摘要**: 撤销独立 rate-inputs 接口，所有数据统一由 `GET /api/markets` 返回；部分字段更名/移除，`deficit`/`baseVariableBorrowRate`/`totalVariableDebt` 已由后端保证返回。
 
 ---
 
@@ -13,7 +13,7 @@
 | **数据源统一** | 原 rate-inputs 所需字段全部并入 `GET /api/markets` 的 `reserves[]` |
 | **字段移除** | `totalScaledVariableDebt`、`variableBorrowIndex` 不再返回 |
 | **字段新增** | `totalVariableDebt`（总借款，raw 单位，直接可用） |
-| **可选 on-chain 字段** | `deficit`、`baseVariableBorrowRate` 可能缺失，前端必须做 fallback |
+| **字段保障** | `deficit`、`baseVariableBorrowRate`、`totalVariableDebt` 由后端保证返回，可直接使用 |
 
 ---
 
@@ -63,15 +63,14 @@ GET /api/markets          → 市场 + 全部 reserve 数据（含原 rate-input
 | `variableRateSlope2` | `string` | RAY (10²⁷) | 利率曲线斜率 2 |
 | `optimalUsageRate` | `string` | RAY (10²⁷) | 最优利用率 |
 
-### 3.4 On-chain 字段（可能缺失，必须 fallback）
+### 3.4 On-chain 字段（后端保证返回）
 
-| 字段 | 类型 | 单位/精度 | 说明 | 缺失时建议 |
-|------|------|-----------|------|------------|
-| `deficit` | `string` | Raw token units | 坏账，用于 Supply APY 计算 | 使用 `"0"` |
-| `baseVariableBorrowRate` | `string` | RAY (10²⁷) | 基础可变借款利率，用于模拟利率 | 使用 `"0"` |
+| 字段 | 类型 | 单位/精度 | 说明 |
+|------|------|-----------|------|
+| `deficit` | `string` | Raw token units | 坏账，用于 Supply APY 计算 |
+| `baseVariableBorrowRate` | `string` | RAY (10²⁷) | 基础可变借款利率，用于模拟利率 |
 
-- 后端在 RPC 失败或超时时会使用 30 分钟内缓存；若仍无数据则不会返回上述两字段。
-- 前端应始终做「有则用，无则用默认值」的处理，并建议在 UI 上对「使用默认值」的情况做轻量提示（如小图标/tooltip）。
+- 后端已保证上述字段在响应中可用（含后端侧降级处理）；前端可直接使用，无需额外 fallback。
 
 ---
 
@@ -92,9 +91,7 @@ GET /api/markets          → 市场 + 全部 reserve 数据（含原 rate-input
 - [ ] **移除** 所有对 `GET /api/rate-inputs` 的调用及对应 hook（如 `useReserveRateInputs`）。
 - [ ] **改为** 仅请求 `GET /api/markets`，从 `reserves` 中按 `chainId`、`tokenAddress`（及可选 `marketName`）取当前 reserve。
 - [ ] **删除** 对 `totalScaledVariableDebt`、`variableBorrowIndex` 的引用；**改用** `totalVariableDebt` 作为总借款（无需再乘 index）。
-- [ ] **对 `deficit`、`baseVariableBorrowRate` 做 fallback**：  
-  `deficit = reserve.deficit ?? '0'`，`baseVariableBorrowRate = reserve.baseVariableBorrowRate ?? '0'`。
-- [ ] **（可选）** 当使用 fallback 值时，在模拟/APY 相关 UI 上做轻量提示。
+- [ ] **直接使用** `deficit`、`baseVariableBorrowRate`、`totalVariableDebt`（后端已保证返回）。
 
 ---
 
@@ -107,24 +104,22 @@ interface ReserveForRateCalc {
   tokenAddress: string;
   marketName?: string;
 
-  decimals?: number;
-  availableLiquidity?: string;
-  totalVariableDebt?: string;   // 新增，替代 totalScaledVariableDebt + variableBorrowIndex
-  reserveFactor?: string;
-  variableRateSlope1?: string;
-  variableRateSlope2?: string;
-  optimalUsageRate?: string;
-
-  // On-chain，可能缺失
-  deficit?: string;
-  baseVariableBorrowRate?: string;
+  decimals: number;
+  availableLiquidity: string;
+  totalVariableDebt: string;   // 新增，替代 totalScaledVariableDebt + variableBorrowIndex
+  reserveFactor: string;
+  variableRateSlope1: string;
+  variableRateSlope2: string;
+  optimalUsageRate: string;
+  deficit: string;
+  baseVariableBorrowRate: string;
 }
 
 // 使用示例
 function getRateInputsFromReserve(reserve: ReserveForRateCalc) {
-  const deficit = reserve.deficit ?? '0';
-  const baseVariableBorrowRate = reserve.baseVariableBorrowRate ?? '0';
-  const totalVariableDebt = reserve.totalVariableDebt ?? '0';
+  const deficit = reserve.deficit;
+  const baseVariableBorrowRate = reserve.baseVariableBorrowRate;
+  const totalVariableDebt = reserve.totalVariableDebt;
   // ...
 }
 ```
