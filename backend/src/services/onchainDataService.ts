@@ -1,13 +1,14 @@
 /**
  * On-chain Data Service - Fetches data only available from on-chain RPC
- * 
+ *
  * Fetches `deficit` and `baseVariableBorrowRate` from UiPoolDataProvider.getReservesHumanized()
- * for all chains. These are the only data points not available from Aave API.
- * 
+ * for all pools (all address-book markets including same-chain variants e.g. Ethereum main, Lido, EtherFi, Horizon).
+ *
  * Architecture:
+ * - One config per address-book entry (per pool/market), not per chainId
+ * - Cache key for merge: reserveId = `${marketName}:${chainId}:${tokenAddress}` (matches SDK reserveId)
  * - Runs independently from markets fetch (async, non-blocking)
- * - Per-chain caching with 30-min TTL (on-chain data changes infrequently)
- * - Markets fetch reads from cache, never waits for fresh fetch
+ * - Per-pool caching with 30-min TTL
  * - If RPC fails, cached data within TTL is used
  * - If no cached data, fields are absent (with fallback calculation for baseVariableBorrowRate)
  */
@@ -38,6 +39,7 @@ interface ChainCacheEntry {
 }
 
 interface OnchainConfig {
+  poolKey: string; // address-book key (e.g. AaveV3Ethereum, AaveV3EthereumLido), matches SDK marketName
   chainId: number;
   chainName: string;
   uiPoolDataProviderAddress: string;
@@ -56,31 +58,27 @@ function normalizeAddress(addr: string): string {
   return addr.toLowerCase().trim();
 }
 
-function buildChainConfigs(): Map<number, OnchainConfig> {
-  const configs = new Map<number, OnchainConfig>();
-  
+/** Build one config per address-book pool (all markets including same-chain variants). */
+function buildPoolConfigs(): Map<string, OnchainConfig> {
+  const configs = new Map<string, OnchainConfig>();
+
   for (const [key, value] of Object.entries(AaveAddressBook)) {
     if (!key.startsWith('AaveV3')) continue;
     if (!value || typeof value !== 'object') continue;
-    
-    // Skip testnets (same filter as markets fetcher)
+
     if (key.includes('Sepolia') || key.includes('Fuji')) continue;
-    
+
     const chainId = Number((value as any).CHAIN_ID);
     const uiPoolDataProviderAddress = (value as any).UI_POOL_DATA_PROVIDER;
     const poolAddressesProvider = (value as any).POOL_ADDRESSES_PROVIDER;
-    
+
     if (!Number.isFinite(chainId) || chainId <= 0) continue;
     if (typeof uiPoolDataProviderAddress !== 'string') continue;
     if (typeof poolAddressesProvider !== 'string') continue;
-    
-    // Skip if already have this chain (prefer non-Lido/EtherFi markets)
-    if (configs.has(chainId)) {
-      if (/Lido|EtherFi/i.test(key)) continue;
-    }
-    
+
     const chainName = key.replace(/^AaveV3/, '');
-    configs.set(chainId, {
+    configs.set(key, {
+      poolKey: key,
       chainId,
       chainName,
       uiPoolDataProviderAddress,
@@ -88,14 +86,24 @@ function buildChainConfigs(): Map<number, OnchainConfig> {
       defaultRpcUrls: getAaveRpcUrlsByChainId(chainId),
     });
   }
-  
+
   return configs;
 }
 
-const CHAIN_CONFIGS = buildChainConfigs();
+const POOL_CONFIGS = buildPoolConfigs();
 
-// Per-chain cache: chainId -> ChainCacheEntry
-const chainCache = new Map<number, ChainCacheEntry>();
+/**
+ * Map address-book pool key to SDK market name when they differ (API returns different casing/name).
+ * Used so getOnchainDataFromCache() emits reserveIds that match reserve.reserveId from the payload.
+ */
+const POOL_KEY_TO_SDK_MARKET_NAME: Record<string, string> = {
+  AaveV3InkWhitelabel: 'AaveV3Ink',
+  AaveV3MegaEth: 'AaveV3MegaETH',
+  AaveV3ZkSync: 'AaveV3zkSync',
+};
+
+// Per-pool cache: poolKey (address-book key) -> ChainCacheEntry
+const poolCache = new Map<string, ChainCacheEntry>();
 
 // Refresh lock to prevent concurrent refreshes
 let refreshInProgress: Promise<void> | null = null;
@@ -146,39 +154,35 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
         }
       }
       
-      // Update cache for this chain
-      chainCache.set(config.chainId, {
+      poolCache.set(config.poolKey, {
         data: chainData,
         updatedAt: Date.now(),
       });
-      
+
       ethProviderService.reportProviderSuccess(config.chainId, rpcUrl);
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       ethProviderService.reportProviderFailure(config.chainId, rpcUrl, message);
-      logger.debug(`On-chain fetch failed for chain ${config.chainId} via ${rpcUrl}: ${message}`);
+      logger.debug(`On-chain fetch failed for ${config.poolKey} via ${rpcUrl}: ${message}`);
     }
   }
-  
-  // All RPC endpoints failed for this chain
-  logger.warn(`All RPC endpoints failed for chain ${config.chainId}, using cached data if available`);
+
+  logger.warn(`All RPC endpoints failed for ${config.poolKey}, using cached data if available`);
   return false;
 }
 
 /**
  * Refresh on-chain data cache for all chains.
  * Called by cron every 1 minute (same as markets).
- * 
+ *
  * Architecture:
- * - All chains fetch concurrently (no overall timeout)
- * - Each chain tries all RPC endpoints with 15s timeout per attempt
- * - When a chain succeeds, it immediately updates its per-chain cache
- * - Per-chain TTL is 30 minutes; stale chains are excluded at read time
+ * - All pools fetch concurrently (no overall timeout)
+ * - Each pool tries all RPC endpoints with 15s timeout per attempt
+ * - When a pool succeeds, it immediately updates its cache entry
+ * - Per-pool TTL is 30 minutes; stale entries excluded at read time
  */
 export async function refreshOnchainCache(): Promise<void> {
-  // If refresh is already in progress, skip (don't queue)
-  // This prevents buildup if previous refresh is slow
   if (refreshInProgress) {
     logger.debug('On-chain cache refresh already in progress, skipping');
     return;
@@ -187,40 +191,36 @@ export async function refreshOnchainCache(): Promise<void> {
   refreshInProgress = (async () => {
     try {
       const startTime = Date.now();
-      const chainIds = Array.from(CHAIN_CONFIGS.keys());
-      
-      logger.info(`🔗 Refreshing on-chain cache for ${chainIds.length} chains (concurrent, no overall timeout)...`);
-      
-      // Fire all chains concurrently - no overall timeout
-      // Each chain tries all its RPC endpoints with 15s per-RPC timeout
+      const poolKeys = Array.from(POOL_CONFIGS.keys());
+
+      logger.info(`🔗 Refreshing on-chain cache for ${poolKeys.length} pools (concurrent, no overall timeout)...`);
+
       const results = await Promise.allSettled(
-        chainIds.map(chainId => {
-          const config = CHAIN_CONFIGS.get(chainId);
+        poolKeys.map((poolKey) => {
+          const config = POOL_CONFIGS.get(poolKey);
           if (!config) return Promise.resolve(false);
-          // No timeout wrapper here - fetchAndCacheChain handles per-RPC timeout
-          // and will try ALL RPC endpoints before returning
           return fetchAndCacheChain(config);
         })
       );
-      
+
       let successCount = 0;
       let failCount = 0;
       let totalReserves = 0;
-      
+
       for (let i = 0; i < results.length; i++) {
-        const chainId = chainIds[i];
+        const poolKey = poolKeys[i];
         const result = results[i];
         if (result.status === 'fulfilled' && result.value) {
           successCount++;
-          const entry = chainCache.get(chainId);
+          const entry = poolCache.get(poolKey);
           if (entry) totalReserves += entry.data.size;
         } else {
           failCount++;
         }
       }
-      
+
       const elapsed = Date.now() - startTime;
-      logger.info(`✅ On-chain cache refresh: ${totalReserves} reserves from ${successCount}/${chainIds.length} chains in ${elapsed}ms`);
+      logger.info(`✅ On-chain cache refresh: ${totalReserves} reserves from ${successCount}/${poolKeys.length} pools in ${elapsed}ms`);
     } finally {
       refreshInProgress = null;
     }
@@ -231,25 +231,27 @@ export async function refreshOnchainCache(): Promise<void> {
 
 /**
  * Get cached on-chain data for all reserves.
+ * Key = reserveId (marketName:chainId:tokenAddress) to match SDK payload.
  * Returns only data within TTL; expired entries are excluded.
- * This is read-only and never triggers a fetch.
+ * Read-only; never triggers a fetch.
  */
 export function getOnchainDataFromCache(): Map<string, OnchainReserveData> {
   const result = new Map<string, OnchainReserveData>();
   const now = Date.now();
   const ttl = BACKEND_CACHE_TTL_MS.onchainCacheTtl;
-  
-  for (const [chainId, entry] of chainCache) {
+
+  for (const [poolKey, entry] of poolCache) {
     const age = now - entry.updatedAt;
-    if (age < ttl) {
-      // Cache is still valid
-      for (const [tokenAddr, data] of entry.data) {
-        const key = `${chainId}:${tokenAddr}`;
-        result.set(key, data);
-      }
+    if (age >= ttl) continue;
+    const config = POOL_CONFIGS.get(poolKey);
+    if (!config) continue;
+    const marketName = POOL_KEY_TO_SDK_MARKET_NAME[poolKey] ?? poolKey;
+    for (const [tokenAddr, data] of entry.data) {
+      const reserveId = `${marketName}:${config.chainId}:${tokenAddr}`;
+      result.set(reserveId, data);
     }
   }
-  
+
   return result;
 }
 
@@ -257,37 +259,37 @@ export function getOnchainDataFromCache(): Map<string, OnchainReserveData> {
  * Get cache status for logging/monitoring.
  */
 export function getOnchainCacheStatus(): {
-  chainCount: number;
+  poolCount: number;
   reserveCount: number;
-  freshChains: number;
-  staleChains: number;
+  freshPools: number;
+  stalePools: number;
   oldestUpdateMs: number | null;
 } {
   const now = Date.now();
   const ttl = BACKEND_CACHE_TTL_MS.onchainCacheTtl;
-  let freshChains = 0;
-  let staleChains = 0;
+  let freshPools = 0;
+  let stalePools = 0;
   let reserveCount = 0;
   let oldestUpdate: number | null = null;
-  
-  for (const [, entry] of chainCache) {
+
+  for (const [, entry] of poolCache) {
     const age = now - entry.updatedAt;
     if (age < ttl) {
-      freshChains++;
+      freshPools++;
       reserveCount += entry.data.size;
     } else {
-      staleChains++;
+      stalePools++;
     }
     if (oldestUpdate === null || entry.updatedAt < oldestUpdate) {
       oldestUpdate = entry.updatedAt;
     }
   }
-  
+
   return {
-    chainCount: chainCache.size,
+    poolCount: poolCache.size,
     reserveCount,
-    freshChains,
-    staleChains,
+    freshPools,
+    stalePools,
     oldestUpdateMs: oldestUpdate ? now - oldestUpdate : null,
   };
 }
@@ -298,37 +300,54 @@ export function getOnchainCacheStatus(): {
 
 const RAY = BigInt('1000000000000000000000000000'); // 1e27
 
+/** Seconds per year; must match Aave on-chain (365*24*3600). */
+const SECONDS_PER_YEAR = 365 * 24 * 60 * 60;
+
+/**
+ * Convert SDK borrow APY (%) to APR in RAY using the inverse of chain per-second compounding.
+ * On-chain: ratePerSecond = rateRay/RAY / SECONDS_PER_YEAR; index compounds as
+ * (1 + ratePerSecond)^exp over exp seconds, so 1+APY = (1 + APR/SECONDS_PER_YEAR)^SECONDS_PER_YEAR.
+ * Hence APR = SECONDS_PER_YEAR * ((1+APY)^(1/SECONDS_PER_YEAR) - 1).
+ */
+function apyPercentToAprRay(apyPercent: number): bigint {
+  const apyDecimal = apyPercent / 100;
+  if (!Number.isFinite(apyDecimal) || apyDecimal <= -1) return 0n;
+  const onePlusApy = 1 + apyDecimal;
+  const aprDecimal =
+    SECONDS_PER_YEAR * (Math.pow(onePlusApy, 1 / SECONDS_PER_YEAR) - 1);
+  if (!Number.isFinite(aprDecimal) || aprDecimal < 0) return 0n;
+  return BigInt(Math.floor(aprDecimal * 1e27));
+}
+
 /**
  * Calculate baseVariableBorrowRate from borrowApy using reverse formula.
- * This is used when RPC data is unavailable.
- * 
- * Forward formula (Aave V3):
- * If borrowUsageRate <= optimalUsageRate:
- *   variableBorrowRate = baseVariableBorrowRate + rayMul(variableRateSlope1, normalizedUsage)
- * 
- * Reverse (when usage is low, assuming normalizedUsage ≈ 0):
- *   baseVariableBorrowRate ≈ variableBorrowRate (APR in ray)
- * 
- * For more accuracy, we need utilization data to reverse the full formula.
+ * Used when RPC data is unavailable.
+ *
+ * Inputs:
+ * - borrowApyPercent: SDK borrow APY (%). Converted to APR in RAY via inverse of per-second compounding: APR = SECONDS_PER_YEAR*((1+APY)^(1/SECONDS_PER_YEAR)-1).
+ * - utilizationPct: borrow usage in % = totalDebt / (availableLiquidity + totalDebt). Same as chain; deficit is not included.
+ * - This function does not use reserve size; only utilization and rate params. Uses this reserve's slopes/optimal (same market).
+ *
+ * Forward formula (Aave V3 two-slope model):
+ * - If borrowUsageRate <= optimalUsageRate:
+ *     variableBorrowRate = baseRate + slope1 * (util / optimal)
+ * - If borrowUsageRate > optimalUsageRate:
+ *     excessRatio = (util - optimal) / (RAY - optimal)
+ *     variableBorrowRate = baseRate + slope1 + slope2 * excessRatio
  */
 export function calculateBaseRateFallback(
   borrowApyPercent: number | null | undefined,
   utilizationPct: number | null | undefined,
   optimalUsageRateRay: string | undefined,
-  variableRateSlope1Ray: string | undefined
+  variableRateSlope1Ray: string | undefined,
+  variableRateSlope2Ray?: string
 ): string | null {
-  // If no borrowApy, can't calculate
   if (borrowApyPercent === null || borrowApyPercent === undefined) {
     return null;
   }
-  
-  // Convert APY% to APR in ray (approximate: for small values APY ≈ APR)
-  // APY = (1 + APR/n)^n - 1, for continuous: APR ≈ ln(1 + APY)
-  // For simplicity, use: APR ≈ APY (valid when APY < 20%)
-  const aprDecimal = borrowApyPercent / 100; // e.g., 5.2% -> 0.052
-  const borrowRateRay = BigInt(Math.floor(aprDecimal * 1e27));
-  
-  // If we have utilization and slope data, do proper reverse calculation
+
+  const borrowRateRay = apyPercentToAprRay(borrowApyPercent);
+
   if (
     utilizationPct !== null &&
     utilizationPct !== undefined &&
@@ -339,26 +358,28 @@ export function calculateBaseRateFallback(
       const utilRay = BigInt(Math.floor((utilizationPct / 100) * 1e27));
       const optimalRay = BigInt(optimalUsageRateRay);
       const slope1Ray = BigInt(variableRateSlope1Ray);
-      
-      // If utilization <= optimal (common case):
-      // borrowRate = baseRate + slope1 * (util / optimal)
-      // baseRate = borrowRate - slope1 * (util / optimal)
+
       if (utilRay <= optimalRay && optimalRay > 0n) {
+        // baseRate = borrowRate - slope1 * (util / optimal)
         const normalizedUsage = (utilRay * RAY) / optimalRay;
         const slope1Contribution = (slope1Ray * normalizedUsage) / RAY;
         const baseRate = borrowRateRay - slope1Contribution;
-        
-        // Base rate should be >= 0
-        if (baseRate >= 0n) {
-          return baseRate.toString();
-        }
+        if (baseRate >= 0n) return baseRate.toString();
+      } else if (utilRay > optimalRay && variableRateSlope2Ray) {
+        // baseRate = borrowRate - slope1 - slope2 * excessRatio
+        // excessRatio = (util - optimal) / (RAY - optimal)
+        const slope2Ray = BigInt(variableRateSlope2Ray);
+        const denom = RAY - optimalRay;
+        if (denom <= 0n) return '0';
+        const excessRatio = ((utilRay - optimalRay) * RAY) / denom;
+        const slope2Contribution = (slope2Ray * excessRatio) / RAY;
+        const baseRate = borrowRateRay - slope1Ray - slope2Contribution;
+        if (baseRate >= 0n) return baseRate.toString();
       }
     } catch {
-      // Fall through to simple approximation
+      // fall through
     }
   }
-  
-  // Simple fallback: assume low utilization, base rate ≈ 0
-  // Most Aave markets have baseVariableBorrowRate = 0
+
   return '0';
 }

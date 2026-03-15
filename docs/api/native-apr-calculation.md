@@ -76,7 +76,7 @@ reserve.size.raw  = availableLiquidity + totalVariableDebt
 
 **结论**：
 - `deficit` 必须通过 on-chain RPC 获取
-- `baseVariableBorrowRate` 仅 on-chain 可获取（如需模拟利率计算）
+- `baseVariableBorrowRate` 优先从 on-chain 获取；**缺失时**后端用 fallback 反推：链上按秒复利，APR = SECONDS_PER_YEAR×((1+APY)^(1/SECONDS_PER_YEAR)−1)，再用该 reserve 的 `utilizationPct`、slopes、optimal 反算 base。计算中**不使用** reserve size。
 - 其他字段均可从 Aave API 获取
 
 ---
