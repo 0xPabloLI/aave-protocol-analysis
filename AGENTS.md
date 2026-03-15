@@ -312,12 +312,16 @@ Don't set secrets in `ecosystem.config.cjs`—they'll override Doppler.
 - Question redundant boolean flags when data comes from the same source (e.g., if all rate-input fields exist, a separate flag adds no value)
 - Prefer merging API endpoints when data is pre-fetched together with the same TTL/staleness; flatten nested objects when possible
 - Verify changes appear in API response after implementation; rebuild `dist/` if backend imports from it
+- When adding new reserve fields to fetcher output, also add them to `pruneReserveForRuntime()` or they will not appear in runtime/API; then rebuild root so backend sees updates
 - Organize reusable patterns into `docs/reusable/` for cross-project portability
 
 ## Learned Workspace Facts
 
 - Backend imports from `dist/index.js` — changes to `src/index.ts` require `npm run build` before backend sees updates
+- New reserve-level fields must be listed in `pruneReserveForRuntime()` (src/index.ts) or they are dropped from runtime JSON and API response
 - On-chain data (`deficit`, `baseVariableBorrowRate`) from `UiPoolDataProvider.getReservesHumanized()`; per-chain cache with 30-min TTL; no overall timeout (each chain tries all RPCs with 15s per attempt)
+- Only `deficit` requires on-chain RPC; other rate-input fields are available from Aave API (total vs scaledDebt handled in code)
 - Markets cron at :00 and on-chain cron at :10 every minute; markets read from on-chain cache at merge time
 - `/api/rate-inputs` removed; all rate-input fields live in `/api/markets` reserves; frontend must fallback when `deficit` or `baseVariableBorrowRate` are absent
+- RPC order in `packages/aave-shared-config`: public RPC first, private (Infura/Ankr/Alchemy) last
 - `totalVariableDebt` from Aave SDK replaces `totalScaledVariableDebt` + `variableBorrowIndex`; precision (raw token units, BPS, RAY) aligned with former on-chain source
