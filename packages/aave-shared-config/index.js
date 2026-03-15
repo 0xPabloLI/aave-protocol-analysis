@@ -4,63 +4,210 @@ const DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS = 60 * 1000;
 
 const opportunitiesSnapshotCache = new Map();
 
-export const AAVE_PUBLIC_RPC_URLS_BY_CHAIN_KEY = Object.freeze({
+const {
+  INFURA_PROJECT_ID,
+  // QUICKNODE_API_KEY, // no free plan – commented out
+  ALCHEMY_API_KEY,
+  ANKR_API_KEY,
+} = process.env;
+
+// RPC order: public endpoints first, private (Infura/Alchemy/Ankr) last. Infura = mainnet HTTPS per https://docs.metamask.io/services/get-started/endpoints. Alchemy = latest mainnet v2 endpoints.
+export const AAVE_RPC_URLS_BY_CHAIN_KEY = Object.freeze({
   ethereum: Object.freeze([
-    'https://mainnet.gateway.tenderly.co',
-    'https://rpc.flashbots.net',
-    'https://eth.llamarpc.com',
-    'https://eth-mainnet.public.blastapi.io',
     'https://ethereum-rpc.publicnode.com',
+    'https://eth-mainnet.public.blastapi.io',
+    'https://eth.drpc.org',
+    'https://1rpc.io/eth',
+    `https://mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+    `https://rpc.ankr.com/eth/${ANKR_API_KEY}`,
   ]),
   polygon: Object.freeze([
     'https://gateway.tenderly.co/public/polygon',
     'https://polygon-pokt.nodies.app',
     'https://polygon-bor-rpc.publicnode.com',
-    'https://polygon-rpc.com',
-    'https://polygon-mainnet.public.blastapi.io',
     'https://rpc-mainnet.matic.quiknode.pro',
+    'https://polygon.drpc.org',
+    'https://1rpc.io/matic',
+    `https://polygon-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://rpc.ankr.com/polygon/${ANKR_API_KEY}`,
+    `https://polygon-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   avalanche: Object.freeze([
     'https://api.avax.network/ext/bc/C/rpc',
-    'https://ava-mainnet.public.blastapi.io/ext/bc/C/rpc',
-    'https://rpc.ankr.com/avalanche',
+    'https://avalanche.drpc.org',
+    'https://1rpc.io/avax/c',
+    'https://avalanche-c-chain-rpc.publicnode.com',
+    `https://avalanche-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://rpc.ankr.com/avalanche/${ANKR_API_KEY}`,
+    `https://avax-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   arbitrum: Object.freeze([
     'https://arb1.arbitrum.io/rpc',
-    'https://rpc.ankr.com/arbitrum',
     'https://1rpc.io/arb',
+    'https://arbitrum.drpc.org',
+    'https://arbitrum-one-rpc.publicnode.com',
+    `https://arbitrum-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+    `https://rpc.ankr.com/arbitrum/${ANKR_API_KEY}`,
   ]),
   base: Object.freeze([
     'https://1rpc.io/base',
     'https://base.llamarpc.com',
     'https://base.publicnode.com',
     'https://base-mainnet.public.blastapi.io',
+    'https://base.drpc.org',
+    `https://base-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://rpc.ankr.com/base/${ANKR_API_KEY}`,
+    `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   optimism: Object.freeze([
     'https://public-op-mainnet.fastnode.io',
     'https://optimism-rpc.publicnode.com',
+    'https://optimism.drpc.org',
+    'https://1rpc.io/op',
+    `https://optimism-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://rpc.ankr.com/optimism/${ANKR_API_KEY}`,
+    `https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
-  metis: Object.freeze(['https://andromeda.metis.io/?owner=1088']),
-  gnosis: Object.freeze(['https://gnosis-rpc.publicnode.com', 'https://rpc.gnosischain.com']),
-  bnb: Object.freeze(['https://bsc.publicnode.com', 'https://bsc-mainnet.public.blastapi.io']),
-  scroll: Object.freeze(['https://rpc.scroll.io', 'https://rpc.ankr.com/scroll']),
-  zksync: Object.freeze(['https://mainnet.era.zksync.io']),
+  metis: Object.freeze([
+    'https://andromeda.metis.io/?owner=1088',
+    'https://metis-rpc.publicnode.com',
+    'https://metis.drpc.org',
+    'https://metis-andromeda.gateway.tenderly.co',
+    `https://rpc.ankr.com/metis/${ANKR_API_KEY}`,
+    `https://metis-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  gnosis: Object.freeze([
+    'https://gnosis-rpc.publicnode.com',
+    'https://rpc.gnosischain.com',
+    'https://1rpc.io/gnosis',
+    'https://gnosis.drpc.org',
+    'https://gnosis.api.onfinality.io/public',
+    `https://rpc.ankr.com/gnosis/${ANKR_API_KEY}`,
+    `https://gnosis-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  bnb: Object.freeze([
+    'https://bsc.publicnode.com',
+    'https://bsc-mainnet.public.blastapi.io',
+    'https://1rpc.io/bnb',
+    'https://bsc.drpc.org',
+    `https://bsc-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+    `https://rpc.ankr.com/bsc/${ANKR_API_KEY}`,
+  ]),
+  scroll: Object.freeze([
+    'https://rpc.scroll.io',
+    'https://scroll-rpc.publicnode.com',
+    'https://scroll.drpc.org',
+    'https://1rpc.io/scroll',
+    `https://scroll-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://rpc.ankr.com/scroll/${ANKR_API_KEY}`,
+    `https://scroll-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  zksync: Object.freeze([
+    'https://mainnet.era.zksync.io',
+    'https://zksync.drpc.org',
+    'https://1rpc.io/zksync2-era',
+    'https://zksync-era.public-rpc.com',
+    `https://zksync-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://rpc.ankr.com/zksync_era/${ANKR_API_KEY}`,
+    `https://zksync-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
   linea: Object.freeze([
     'https://1rpc.io/linea',
     'https://linea.drpc.org',
     'https://linea-rpc.publicnode.com',
+    'https://rpc.linea.build',
+    `https://linea-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://rpc.ankr.com/linea/${ANKR_API_KEY}`,
+    `https://linea-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   sonic: Object.freeze([
     'https://rpc.soniclabs.com',
     'https://sonic.drpc.org',
     'https://sonic-rpc.publicnode.com',
+    `https://sonic-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+    `https://rpc.ankr.com/sonic/${ANKR_API_KEY}`,
   ]),
-  celo: Object.freeze(['https://rpc.ankr.com/celo', 'https://celo.drpc.org']),
-  soneium: Object.freeze(['https://soneium.drpc.org', 'https://rpc.soneium.org']),
-  mantle: Object.freeze(['https://rpc.mantle.xyz']),
-  megaeth: Object.freeze(['https://mainnet.megaeth.com/rpc']),
-  plasma: Object.freeze(['https://rpc.plasma.to']),
-  ink: Object.freeze(['https://ink.drpc.org']),
+  celo: Object.freeze([
+    'https://celo.drpc.org',
+    'https://forno.celo.org',
+    'https://celo-mainnet.gateway.tatum.io',
+    `https://celo-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://rpc.ankr.com/celo/${ANKR_API_KEY}`,
+    `https://celo-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  soneium: Object.freeze([
+    'https://soneium.drpc.org',
+    'https://rpc.soneium.org',
+    'https://soneium-rpc.publicnode.com',
+    'https://soneium.gateway.tenderly.co',
+    `https://soneium-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  mantle: Object.freeze([
+    'https://rpc.mantle.xyz',
+    'https://mantle.publicnode.com',
+    'https://mantle.drpc.org',
+    'https://mantle.gateway.tenderly.co',
+    `https://mantle-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://rpc.ankr.com/mantle/${ANKR_API_KEY}`,
+    `https://mantle-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  megaeth: Object.freeze([
+    'https://mainnet.megaeth.com/rpc',
+    `https://megaeth-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://megaeth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  plasma: Object.freeze([
+    'https://rpc.plasma.to',
+    `https://plasma-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  ink: Object.freeze([
+    'https://ink.drpc.org',
+    `https://ink-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  blast: Object.freeze([
+    'https://rpc.blast.io',
+    'https://blast.drpc.org',
+    'https://blast-rpc.publicnode.com',
+    `https://blast-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://rpc.ankr.com/blast/${ANKR_API_KEY}`,
+    `https://blast-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  palm: Object.freeze([
+    `https://palm-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+  ]),
+  opbnb: Object.freeze([
+    'https://opbnb-mainnet-rpc.bnbchain.org',
+    'https://opbnb.drpc.org',
+    'https://opbnb-rpc.publicnode.com',
+    `https://opbnb-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
+    `https://opbnb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  zkLinkNova: Object.freeze([
+    'https://rpc.zklink.io',
+  ]),
+  manta: Object.freeze([
+    'https://pacific-rpc.manta.network/http',
+    'https://manta-pacific.drpc.org',
+    'https://1rpc.io/manta',
+  ]),
+  berachain: Object.freeze([
+    'https://rpc.berachain.com',
+    'https://berachain.drpc.org',
+    'https://berachain-rpc.publicnode.com',
+    `https://berachain-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+  ]),
+  abstract: Object.freeze([
+    `https://abstract-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
+    // `https://cosmological-solitary-uranium.abstract-mainnet.quiknode.pro/${QUICKNODE_API_KEY}`,
+  ]),
+  flare: Object.freeze([
+    'https://flare-api.flare.network/ext/C/rpc',
+    'https://rpc.ankr.com/flare',
+    `https://rpc.ankr.com/flare/${ANKR_API_KEY}`,
+  ]),
 });
 
 export const AAVE_CHAIN_KEY_ALIASES = Object.freeze({
@@ -96,6 +243,14 @@ export const AAVE_CHAIN_ID_TO_RPC_KEY = Object.freeze({
   43114: 'avalanche',
   534352: 'scroll',
   1666600000: 'harmony',
+  81457: 'blast',
+  11297108109: 'palm',
+  204: 'opbnb',
+  810180: 'zkLinkNova',
+  169: 'manta',
+  80094: 'berachain',
+  2741: 'abstract',
+  14: 'flare',
 });
 
 const normalizeHttpUrls = (urls) =>
@@ -109,15 +264,15 @@ export const resolveAaveRpcChainKey = (chainNameOrKey) => {
   return AAVE_CHAIN_KEY_ALIASES[normalized] ?? normalized;
 };
 
-export const getAavePublicRpcUrlsByChainName = (chainNameOrKey) => {
+export const getAaveRpcUrlsByChainName = (chainNameOrKey) => {
   const key = resolveAaveRpcChainKey(chainNameOrKey);
-  return normalizeHttpUrls(AAVE_PUBLIC_RPC_URLS_BY_CHAIN_KEY[key] ?? []);
+  return normalizeHttpUrls(AAVE_RPC_URLS_BY_CHAIN_KEY[key] ?? []);
 };
 
-export const getAavePublicRpcUrlsByChainId = (chainId) => {
+export const getAaveRpcUrlsByChainId = (chainId) => {
   const key = AAVE_CHAIN_ID_TO_RPC_KEY[Number(chainId)];
   if (!key) return [];
-  return normalizeHttpUrls(AAVE_PUBLIC_RPC_URLS_BY_CHAIN_KEY[key] ?? []);
+  return normalizeHttpUrls(AAVE_RPC_URLS_BY_CHAIN_KEY[key] ?? []);
 };
 
 export const DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY = Object.freeze({

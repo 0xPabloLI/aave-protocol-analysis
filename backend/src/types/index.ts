@@ -2,38 +2,56 @@
 // 注意：这个文件需要从主项目的 src/index.ts 中导出类型
 
 export interface MarketWithSpread {
+  reserveId: string;
   marketName: string;
   chainName: string;
   chainId: number;
   tokenName: string;
   tokenSymbol: string;
   tokenAddress: string;
-  aTokenAddress: string | null;
-  vTokenAddress: string | null;
-  supplyApy: number | null;
-  borrowApy: number | null;
-  supplyIncentives: number[];
-  borrowIncentives: number[];
+  tokenPrice?: number;
+  reserveSizeUsd?: number;
+  utilizationPct?: number;
+  aTokenAddress?: string | null;
+  vTokenAddress?: string | null;
+  supplyApy?: number | null;
+  supplyDisabled?: boolean;
+  supplyCapUsd?: number;
+  borrowApy?: number | null;
+  borrowDisabled?: boolean;
+  borrowCapUsd?: number;
+  // Rate-input fields for manual APR calculation (from Aave SDK)
+  decimals?: number;
+  availableLiquidity?: string;
+  totalVariableDebt?: string; // raw token units - total borrowed
+  reserveFactor?: string;
+  variableRateSlope1?: string;
+  variableRateSlope2?: string;
+  optimalUsageRate?: string;
+  // On-chain only fields (from UiPoolDataProvider.getReservesHumanized())
+  // Absent if RPC fetch failed; cached for 30 min on failure
+  baseVariableBorrowRate?: string; // RAY (1e27) - for simulated borrow rate calculation
+  deficit?: string; // raw token units - for accurate supply APY calculation
+  supplyIncentives?: number[];
+  borrowIncentives?: number[];
   meritSupplys?: Array<{
     apr: number;
     selfApr?: number;
     link: string;
+    name?: string;
+    message?: unknown;
     startDate: string;
     endDate: string;
-    startBlock?: string;
-    endBlock?: string;
-    requiredBorrowTokens?: string[];
     lastRoundRewardUsd?: number;
   }>;
   meritBorrows?: Array<{
     apr: number;
     selfApr?: number;
     link: string;
+    name?: string;
+    message?: unknown;
     startDate: string;
     endDate: string;
-    startBlock?: string;
-    endBlock?: string;
-    requiredSupplyTokens?: string[];
     lastRoundRewardUsd?: number;
   }>;
   merklSupplys?: Array<{
@@ -46,9 +64,7 @@ export interface MarketWithSpread {
       campaignEndedAt: string;
       campaignId: string;
       whitelistOnly?: boolean;
-      distributionType?: string;
       pointsPerThousandUsd?: number;
-      dailyPoints?: number;
     }>;
   }>;
   merklBorrows?: Array<{
@@ -61,9 +77,7 @@ export interface MarketWithSpread {
       campaignEndedAt: string;
       campaignId: string;
       whitelistOnly?: boolean;
-      distributionType?: string;
       pointsPerThousandUsd?: number;
-      dailyPoints?: number;
     }>;
   }>;
   merklHolds?: Array<{
@@ -76,9 +90,7 @@ export interface MarketWithSpread {
       campaignEndedAt: string;
       campaignId: string;
       whitelistOnly?: boolean;
-      distributionType?: string;
       pointsPerThousandUsd?: number;
-      dailyPoints?: number;
     }>;
   }>;
   brevisSupplys?: Array<{
@@ -97,56 +109,15 @@ export interface MarketWithSpread {
   }>;
 }
 
-export interface TokenPriceEntry {
-  price: number;
-  updatedAt: number;
-  source: string;
-}
-
-export type TokenPricesIndex = Record<string, TokenPriceEntry>;
-
 export interface MarketsResponse {
-  data: MarketWithSpread[];
-  lastUpdated: string; // ISO timestamp
-  isStale: boolean; // true if data is older than 1 minute
-  updateInProgress: boolean; // true if update is in progress
-  tokenPrices?: TokenPricesIndex;
-}
-
-export interface UpdateStatus {
-  status: 'idle' | 'updating' | 'error';
-  lastUpdated: string | null;
-  lastSuccessfulUpdate: string | null;
-  error?: string;
-}
-
-export type RateInputSource = 'subgraph' | 'onchain';
-
-export interface ReserveRateInput {
-  marketName: string;
-  chainId: number;
-  tokenAddress: string;
-  decimals: number;
-  availableLiquidity: string;
-  totalScaledVariableDebt: string;
-  variableBorrowIndex: string;
-  reserveFactor: string;
-  variableRateSlope1: string;
-  variableRateSlope2: string;
-  baseVariableBorrowRate: string;
-  optimalUsageRate: string;
-  source: RateInputSource;
-  sourceDetail: string;
-}
-
-export interface RateInputsResponse {
-  data: ReserveRateInput[];
-  lastUpdated: string;
-  isStale: boolean;
-  staleTimeMs: number;
-  sources: {
-    subgraphChains: number[];
-    onchainChains: number[];
-    subgraphMissingChains: number[];
+  snapshot: {
+    lastUpdated: string; // ISO timestamp
+    version: 'markets-v2';
+    staleTimeMs: number;
   };
+  reserves: MarketWithSpread[];
 }
+
+// Note: ReserveRateInput and RateInputsResponse removed
+// Rate-inputs are no longer a separate concept; only deficit is fetched from on-chain
+// and merged into MarketWithSpread.deficit

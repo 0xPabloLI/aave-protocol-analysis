@@ -51,9 +51,11 @@ The backend requires runtime data files before serving requests:
 3. Start backend: `cd backend && npm run dev`
 
 ### Architecture Notes (Read Before Cache/Data-Flow Changes)
-- `docs/merkl-merit-cache-architecture.md` — current Merkl/Merit cache layers, file roles, fallback chains
-- `docs/development-best-practices.md` — implementation patterns agreed during refactors (TTL/freshness, file layering, naming)
-- If you change cache layers, file paths/layout, data-flow boundaries, or fallback chains, update both docs above in the same PR/commit set.
+- `docs/merkl-merit-cache-architecture.md` — Merkl/Merit cache layers, file roles, fallback chains
+- `docs/backend/data-freshness-mechanism.md` — TTL configuration, freshness thresholds, staleness handling
+- `docs/development-best-practices.md` — general implementation patterns (naming, API design, change management)
+- `docs/deploy/cloudflare-complete-guide.md` — Cloudflare Workers, API caching, concurrency control
+- If you change cache layers, file paths/layout, data-flow boundaries, or fallback chains, update relevant docs in the same PR/commit set.
 - When adding/changing a TTL, first verify the upstream data update cadence (docs or observed timestamps) and document the reasoning if non-obvious.
 
 ### Local Git Hook Policy (Mandatory)
@@ -63,26 +65,29 @@ The backend requires runtime data files before serving requests:
 - Do not bypass hooks as a normal workflow.
 - If local checks fail repeatedly, rely on CI remediation PR flow as a fallback path, then merge validated fixes back to the working branch.
 
+**Lock File Drift Prevention**:
+- `pre-commit` auto-stages any unstaged `package-lock.json` / `backend/package-lock.json` changes to prevent local/CI audit drift.
+- `pre-push` blocks push if lock files have uncommitted changes, since CI uses committed versions.
+
 ## Code Architecture
 
 ### Data Flow Pipeline
 
 ```
-External APIs → Data Fetcher (src/index.ts) → JSON Snapshots (data/runtime + data/debug) → Backend API (backend/) → REST Clients
-     ↓                                              ↓                         ↓
-[Aave SDK, Merit,                    [runtime + debug snapshots,   [In-memory cache with
- Merkl, Brevis APIs]                  metadata timestamp]            auto-refresh mechanism]
+External APIs → Backend Cron Jobs → In-Memory Snapshots → REST Clients
+     ↓                    ↓                   ↓
+[Aave SDK, Merit,    [cron-write every      [API-read-only:
+ Merkl, Brevis,       1-10 minutes]          never triggers
+ CoinGecko APIs]                             external fetches]
 ```
 
 **Key Architectural Concepts**:
 
-1. **Separation of Concerns**: Data fetching and API serving are mostly decoupled. `/api/markets` reads runtime files, while Merkl forecast endpoints may call Merkl APIs as a fallback when runtime snapshots are missing/stale.
+1. **Cron-Write/API-Read-Only**: All data endpoints use this pattern. Cron jobs periodically fetch fresh data; API requests only read from in-memory snapshots, never triggering external API calls.
 
-2. **Automatic Data Freshness**: Backend implements staleness detection (1-minute threshold) with automatic refresh and concurrency control. See `docs/backend/data-freshness-mechanism.md` for flow details.
+2. **Startup Warmup**: All caches are pre-populated in `server.ts` before `app.listen()` because cron doesn't run immediately. Server only accepts requests after all data is ready.
 
-3. **Concurrency Safety**: Uses `updateStatus` state machine (`idle` → `updating` → `idle`/`error`) with promise tracking (`activeUpdatePromise`) to prevent duplicate concurrent updates.
-
-4. **Smart Waiting**: When update is in progress, requests wait 1 second instead of returning stale data, improving user experience.
+3. **Internalized Fetcher**: The data fetcher logic (`src/index.ts`) is imported directly into backend and executed via cron, eliminating file-based communication. Data lives entirely in memory.
 
 ### Module Responsibilities
 
@@ -101,9 +106,10 @@ External APIs → Data Fetcher (src/index.ts) → JSON Snapshots (data/runtime +
 #### Backend API (`backend/src/`)
 
 **Core Services**:
-- `services/dataService.ts` - In-memory cache manager; reads JSON file with metadata, tracks staleness (1-min threshold)
-- `services/updateScheduler.ts` - Cron-based backup refresh (1-min interval); skips if data already fresh
-- `services/merklForecastService.ts` - Merkl forecast data processor
+- `services/marketsService.ts` - Unified data fetcher (markets + on-chain data); parallel fetch from Aave API + RPC; single `fetchedAt` for consistent staleness
+- `services/onchainDataService.ts` - On-chain data fetcher (`deficit`, `baseVariableBorrowRate`) via `UiPoolDataProvider.getReservesHumanized()`; per-chain cache with 30-min TTL; cron every 1 min at :10
+- `services/updateScheduler.ts` - Cron scheduler (markets 1m unified, forecast 10m, FDV 5m, categories 6h)
+- `services/merklForecastService.ts` - Merkl forecast data processor; metricsCache (dynamic TTL 10m-6h) + campaignOpportunityCache (5m)
 
 **Request Handlers**:
 - `controllers/marketsController.ts` - Primary controller; implements `checkAndUpdateDataIfStale()` with concurrency control
@@ -151,20 +157,26 @@ if (isStale && !activeUpdatePromise && status !== 'updating') {
 #### 5. Metadata-Based Timestamps
 Data files include `_metadata.timestamp` (written by fetcher). Backend prioritizes this over file mtime, ensuring accurate staleness detection even if file is copied/touched.
 
-### API Endpoints (All Auto-Check Freshness)
+### API Endpoints
+
+**共 8 个端点**（完整列表与详细说明见 `docs/api/api-documentation.md`）。`GET /api/markets` 使用 `markets-v2` 结构：根级 `snapshot + reserves`；价格主字段在 `reserves[].tokenPrice`。
 
 ```
-GET /health                    # Health check with environment info
-GET /api/markets               # All market data (no query params)
-GET /api/markets/list          # Market-chain combinations
-GET /api/coingecko-categories  # CoinGecko category data
-GET /api/coingecko-fdv         # CoinGecko FDV data
-GET /api/campaigns             # Merkl forecast campaigns
+GET /health                        # Health check with environment info
+GET /api/health                    # Same handler as /health (API namespace)
+GET /api/markets                   # markets-v2 snapshot + full reserves (no query params)
+GET /api/coingecko-categories      # CoinGecko category data (stablecoins, ETH-related)
+GET /api/coingecko-fdv             # CoinGecko FDV data (CMC primary, CG fallback)
+GET /api/campaigns/forecast-states # Merkl campaign forecast states (optional ids=...)
+GET /api/meta/side-data            # Aggregated side data (categories + fdv + forecast)
 ```
 
-**Response Format**: `{ data, lastUpdated, isStale, updateInProgress }`
-
-Every endpoint calls `checkAndUpdateDataIfStale()` before responding. If data is stale, update is triggered automatically (with timeout protection and concurrency control).
+**Markets 数据新鲜度**（仅以下端点会触发 `checkAndUpdateDataIfStale()`）:
+- `GET /api/markets` — 响应含 `{ snapshot, reserves }`；每个 reserve 包含可选 `deficit` 字段
+  - 前端通过 `reserve.deficit !== undefined` 判断是否有 on-chain deficit 数据
+  - 若数据超过 1 分钟未更新会自动触发刷新并受并发控制
+  - Deficit 获取失败时优雅降级：markets 仍可用，只是没有 deficit 字段
+- 其他端点（coingecko、campaigns）使用各自缓存/TTL，不触发市场数据刷新。
 
 ## Configuration
 
@@ -176,8 +188,8 @@ NODE_ENV=development               # Environment mode
 FRONTEND_URL=https://example.com   # CORS whitelist (production only, comma-separated)
 ALLOWED_DEV_ORIGINS=...            # Dev CORS whitelist
 DOPPLER_TOKEN=...                  # Doppler secrets (production)
-MERKL_FORECAST_RESULT_CACHE_TTL_MS=60000              # Forecast result cache TTL (default 60s)
-MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS=60000    # Opportunity meta cache TTL (default 60s)
+MERKL_FORECAST_RESULT_CACHE_TTL_MS=600000             # Forecast result cache TTL (default 10m, aligned with metricsMin)
+MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS=300000   # Opportunity meta cache TTL (default 5m)
 MERKL_METRICS_CACHE_TTL_MS=1800000                    # Metrics cache default TTL (default 30m, dynamic cadence-based)
 ```
 
@@ -215,21 +227,40 @@ Each incentive API uses different identifiers:
 - **Merit**: `chainId-tokenAddress` (e.g., `"1-0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"`)
 - **Merkl**: Chain name + symbol case-insensitive (e.g., `ethereum` + `USDC`)
 - **Brevis**: `chainId-tokenAddress` index
+- **Token price delivery**: keep full reserve rows in `reserves` and attach `tokenPrice` inline.
+- **Reward token rule**: Merkl reward token prices are not output in `/api/markets` for now; if a reward token is an Aave `aToken`, do not emit a separate price entry.
+
+### Reserve Size Definitions
+- `reserves[].reserveSizeUsd` = **total supply in USD** (not supply − borrowed). This matches the Aave reserve `size.usd` surface.
+- `reserve.size.raw` composition: `availableLiquidity + totalVariableDebt`, where `totalVariableDebt = totalScaledVariableDebt × variableBorrowIndex ÷ 10²⁷`. See `docs/api/native-apr-calculation.md` for derivation.
+- `reserves[].deficit` = **raw token units** from `UiPoolDataProvider.getReservesHumanized()` (Aave v3.3.0+); for simulation utilization denominator adjustment. Absent if RPC failed. **Not included** in `reserve.size`.
+- `reserves[].baseVariableBorrowRate` = **RAY (1e27)** from same RPC call; for simulated borrow rate calculation. Absent if RPC failed.
+- `borrowInfo.availableLiquidity` remains the right field for "how much can still be borrowed now".
 
 ### Frozen/Paused Reserves
-Automatically excluded: `isFrozen === true` or `isPaused === true`
+Reserves with `isFrozen === true` or `isPaused === true` are still included in output but marked with `supplyDisabled: true`.
 
-### Capacity Limits & Null Handling
+### Capacity Limits & Disabled State Handling
 - `supplyApy` → `undefined` (omitted) when `supplyCap === 1`
-- `borrowApy` → `undefined` when `borrowCap === 1` or `borrowingState === "DISABLED"`
+- `supplyDisabled` → `true` (present only when disabled) when `isFrozen`, `isPaused`, or `supplyCap === 1`
+- `supplyCapUsd` → always returns USD value of supply cap (if available)
+- `borrowApy` → always returns real value (even when borrowing is disabled)
+- `borrowDisabled` → `true` (present only when disabled) when `borrowCap === 1` or `borrowingState === "DISABLED"`
+- `borrowCapUsd` → always returns USD value of borrow cap (if available), symmetric with `supplyCapUsd`
 
 ### Network Discovery
 Uses `@bgd-labs/aave-address-book` to auto-discover AaveV3 networks. Excludes test networks (Sepolia, Fuji).
 
 ### Backend Cache Architecture
-- `/api/markets` reads from `data/runtime/aave-formatted-data.json` generated by root fetcher
-- Merkl forecast endpoints prefer runtime-lite snapshots and can fall back to Merkl online APIs
-- Cache loaded on startup; refreshed automatically when stale
+- **All endpoints use cron-write/API-read-only** pattern (API requests never trigger external fetches):
+  - Markets (unified): cron every 1m refreshes `marketsSnapshot` with parallel Aave API + RPC deficit fetch
+  - Merkl forecast: cron every 10m refreshes `snapshotCache`
+  - CoinGecko categories/FDV: cron every 6h/5m refreshes cache
+- **Startup warmup**: All caches are explicitly warmed in `server.ts` before `app.listen()`. Server only accepts requests after all data is ready.
+- **Cache structure choice**: Use `Map<key, entry>` when items have different TTLs (e.g., `metricsCache` per-campaign with dynamic TTL 10m-6h); use single snapshot object when API returns all data together
+- **metricsCache optimization**: Stores raw Merkl metrics with dynamic TTL (10m-6h based on data cadence). This is the key optimization - metrics API calls are expensive, forecast computation is fast. `forecastCache` was removed as redundant with cron-write pattern.
+- See `docs/backend/data-freshness-mechanism.md` for detailed TTL tables and staleness thresholds
+- See `docs/deploy/cloudflare-complete-guide.md` for API cache headers and Cloudflare rules
 
 ### Update Timeout Protection
 Updates have timeout protection (configurable via `UPDATE_TIMEOUT_MS`). If update exceeds max time, lock is cleared to prevent permanent blocking, but original promise continues in background.
@@ -265,6 +296,7 @@ Be careful with the concurrency control mechanism. The `activeUpdatePromise` and
 Update both:
 1. Root fetcher output format in `src/index.ts`
 2. Backend type definitions in `backend/src/types/index.ts`
+3. Keep existing reserve-level incentive fields unless explicitly removed by product/API contract decision.
 
 ### Environment Variable Priority
 In production with Doppler:
@@ -273,3 +305,23 @@ In production with Doppler:
 3. Doppler-fetched secrets (lowest, only if not already set)
 
 Don't set secrets in `ecosystem.config.cjs`—they'll override Doppler.
+
+## Learned User Preferences
+
+- Keep documentation concise; remove outdated/superseded content rather than accumulating
+- Question redundant boolean flags when data comes from the same source (e.g., if all rate-input fields exist, a separate flag adds no value)
+- Prefer merging API endpoints when data is pre-fetched together with the same TTL/staleness; flatten nested objects when possible
+- Verify changes appear in API response after implementation; rebuild `dist/` if backend imports from it
+- When adding new reserve fields to fetcher output, also add them to `pruneReserveForRuntime()` or they will not appear in runtime/API; then rebuild root so backend sees updates
+- Organize reusable patterns into `docs/reusable/` for cross-project portability
+
+## Learned Workspace Facts
+
+- Backend imports from `dist/index.js` — changes to `src/index.ts` require `npm run build` before backend sees updates
+- New reserve-level fields must be listed in `pruneReserveForRuntime()` (src/index.ts) or they are dropped from runtime JSON and API response
+- On-chain data (`deficit`, `baseVariableBorrowRate`) from `UiPoolDataProvider.getReservesHumanized()`; per-chain cache with 30-min TTL; no overall timeout (each chain tries all RPCs with 15s per attempt)
+- Only `deficit` requires on-chain RPC; other rate-input fields are available from Aave API (total vs scaledDebt handled in code)
+- Markets cron at :00 and on-chain cron at :10 every minute; markets read from on-chain cache at merge time
+- `/api/rate-inputs` removed; all rate-input fields live in `/api/markets` reserves; frontend must fallback when `deficit` or `baseVariableBorrowRate` are absent
+- RPC order in `packages/aave-shared-config`: public RPC first, private (Infura/Ankr/Alchemy) last
+- `totalVariableDebt` from Aave SDK replaces `totalScaledVariableDebt` + `variableBorrowIndex`; precision (raw token units, BPS, RAY) aligned with former on-chain source

@@ -1,16 +1,22 @@
 import './env.js';
 import express from 'express';
+import compression from 'compression';
 import { corsMiddleware } from './middleware/cors.js';
+import { apiCacheHeadersMiddleware } from './middleware/cacheHeaders.js';
 import marketsRouter from './routes/markets.js';
 import coingeckoRouter from './routes/coingecko.js';
 import coingeckoFdvRouter from './routes/coingeckoFdv.js';
 import campaignsRouter from './routes/campaigns.js';
-import rateInputsRouter from './routes/rateInputs.js';
-import { dataService } from './services/dataService.js';
+import metaRouter from './routes/meta.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
+import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controllers/coingeckoController.js';
+import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
+import { warmMarketsCache } from './services/marketsService.js';
+import { refreshOnchainCache } from './services/onchainDataService.js';
 import { logger } from './logger.js';
 
 const app = express();
+app.set('etag', 'weak');
 // 端口配置：优先读取环境变量，默认 3001
 // 环境变量读取优先级（使用 dotenv 后）：
 // 1. 系统环境变量 PORT（最高优先级，会覆盖 .env 文件）
@@ -37,13 +43,28 @@ const PORT: number = (() => {
 // Middleware
 app.use(corsMiddleware);
 app.use(express.json());
+app.use(
+  compression({
+    // Keep tiny payloads uncompressed to avoid needless CPU overhead.
+    threshold: 1024,
+  })
+);
+app.use(apiCacheHeadersMiddleware);
+
+// Avoid noisy 404s for automatic browser favicon requests.
+// We intentionally return 204 No Content with a cache header instead of serving an icon file.
+app.get('/favicon.ico', (req, res) => {
+  res.status(204).setHeader('Cache-Control', 'public, max-age=86400');
+  res.end();
+});
 
 // Routes
 app.use('/api/markets', marketsRouter);
 app.use('/api/coingecko-categories', coingeckoRouter);
 app.use('/api/coingecko-fdv', coingeckoFdvRouter);
+app.use('/api/meta', metaRouter);
 app.use('/api/campaigns', campaignsRouter);
-app.use('/api/rate-inputs', rateInputsRouter);
+// Note: /api/rate-inputs endpoint removed - rate-inputs are now merged into /api/markets
 
 const healthHandler = (req: express.Request, res: express.Response) => {
   res.json({ 
@@ -67,26 +88,43 @@ const healthHandler = (req: express.Request, res: express.Response) => {
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
-// 启动时加载数据到缓存
-dataService.loadData()
+// 启动时预热所有缓存，避免首个请求冷启动
+// 注意：cron 不会在启动时立即执行，所以需要显式 warmup
+// 所有 API 数据现在使用 cron-write/API-read-only 模式
+logger.info('🔄 Starting cache warmup (all data will be fetched before server accepts requests)...');
+
+Promise.allSettled([
+  // Warm on-chain cache first (markets will read from it)
+  refreshOnchainCache()
+    .then(() => logger.info('✅ On-chain cache (deficit, baseRate) warmed on startup'))
+    .catch((error) => logger.warn('⚠️  Failed to warm on-chain cache on startup:', error)),
+  warmMarketsCache()
+    .then(() => logger.info('✅ Markets cache warmed on startup'))
+    .catch((error) => logger.warn('⚠️  Failed to warm markets on startup:', error)),
+  warmCoingeckoCategoriesCache()
+    .then(() => logger.info('✅ Coingecko categories cache warmed on startup'))
+    .catch((error) => logger.warn('⚠️  Failed to warm coingecko categories on startup:', error)),
+  warmCoingeckoFdvCache()
+    .then(() => logger.info('✅ Coingecko FDV cache warmed on startup'))
+    .catch((error) => logger.warn('⚠️  Failed to warm coingecko FDV on startup:', error)),
+  warmCampaignForecastStatesCache()
+    .then((summary) => logger.info(`✅ Forecast snapshot cache warmed on startup: requested=${summary.requested}, fulfilled=${summary.fulfilled}, failed=${summary.failed}`))
+    .catch((error) => logger.warn('⚠️  Failed to warm forecast snapshot on startup:', error)),
+])
   .then(() => {
-    logger.info('✅ Data loaded into cache');
+    logger.info('✅ All caches warmed');
     
     // 启动定时更新任务
     startUpdateScheduler();
     
     // 启动服务器
     app.listen(PORT, () => {
-      logger.info(`🚀 Server running on http://localhost:${PORT}`);
+      logger.info(`🚀 Server ready on http://localhost:${PORT}`);
     });
   })
   .catch((error) => {
-    logger.error('❌ Failed to load data:', error);
-    // 即使加载失败也启动服务器（可能是首次运行，数据文件不存在）
-    app.listen(PORT, () => {
-      logger.warn('⚠️  Data file not found. Please run data fetch script first.');
-      logger.info(`🚀 Server running on http://localhost:${PORT}`);
-    });
+    logger.error('❌ Startup warmup failed:', error);
+    process.exit(1);
   });
 
 // ts-prune-ignore-next

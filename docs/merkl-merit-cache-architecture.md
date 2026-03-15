@@ -22,7 +22,7 @@ flowchart LR
   MERKL["src/merkl-api.ts (Merkl ingest + indexing)"]
   MERIT["src/merit-api.ts (Merit ingest + mapping)"]
   SHARED["@internal/aave-shared-config (Merkl opportunities fetch/cache)"]
-  DFS["backend/dataService (/api/markets file cache)"]
+  MKS["backend/marketsService (internalized fetcher + memory snapshot)"]
   FCS["backend/merklForecastService (forecast compute + caches)"]
   MOC["backend/merklOpportunityClient (forecast Merkl opportunities fetcher)"]
   MKLITE["data/runtime/merkl-opportunity-meta-lite.json"]
@@ -38,7 +38,7 @@ flowchart LR
   IDX -- "writes" --> MARKETS
   MERIT -- "writes" --> TIMER
 
-  DFS -- "reads" --> MARKETS
+  MKS -- "cron-write" --> MARKETS
   FCS -- "reads" --> MKLITE
   FCS -. "uses data" .-> MOC
   MOC -. "uses data" .-> SHARED
@@ -61,29 +61,30 @@ flowchart LR
   A -- "writes" --> K["data/runtime/aave-formatted-data.json"]
 ```
 
-### B) Forecast request path (`/api/campaigns/forecast-states`)
+### B) Forecast data path (`/api/campaigns/forecast-states`)
+
+**Cron-write, API-read-only pattern** (changed 2026-03-14):
 
 ```mermaid
 flowchart LR
-  A["forecast request"] --> B{"forecastCache hit?"}
-  B -- yes --> Z["return cached forecast"]
-  B -- no --> C["merklForecastService"]
-  C --> D{"campaignOpportunityCache fresh?"}
-  D -- yes --> E["use campaignOpportunityCache"]
-  D -- no --> F{"runtime lite fresh? (<=60s)"}
-  F -- yes --> G["build campaignOpportunityCache from lite file"]
-  F -- no --> H["merklOpportunityClient"]
-  H --> I["@internal/aave-shared-config snapshot"]
-  I -. "fallback" .-> J["Merkl /v4/opportunities (if snapshot miss)"]
-  H --> K["opportunities[]"]
-  K --> G
-  E --> L["Merkl /v4/campaigns/{id}/metrics"]
-  G --> L
-  L --> MC["metricsCache (per campaign, dynamic TTL)"]
-  MC --> M["build forecast state"]
-  M --> N["write forecastCache"]
-  N --> Z
+  subgraph CRON["Cron (every 10 min)"]
+    C1["warmCampaignForecastStatesCache()"] --> C2["refreshForecastSnapshotCache()"]
+    C2 --> C3["getMerklForecastState() per campaignId"]
+    C3 --> C4["Merkl /v4/campaigns/{id}/metrics"]
+    C4 --> C5["update global snapshotCache"]
+  end
+
+  subgraph API["API Request"]
+    A1["forecast request"] --> A2["getForecastSnapshot()"]
+    A2 --> A3{"snapshotCache exists?"}
+    A3 -- yes --> A4["return cached snapshot"]
+    A3 -- no --> A5["return empty snapshot + warn"]
+  end
+
+  C5 -.-> A3
 ```
+
+**Key change**: API requests **never** call Merkl API. They only read from the global snapshot cache populated by cron.
 
 ## 1) Big Picture (Backend)
 
@@ -100,8 +101,8 @@ flowchart TD
   D --> J["data/runtime/merkl-opportunity-meta-lite.json (runtime-lite)"]
   D --> R["@internal/aave-shared-config snapshot (memory)"]
   B --> K["data/runtime/aave-formatted-data.json"]
-  L["backend /api/markets"] --> M["dataService (memory cache)"]
-  M --> K
+  L["backend /api/markets"] --> M["marketsService (memory snapshot)"]
+  M -- "cron-write" --> K
   N["backend /api/campaigns/forecast-states"] --> O["merklForecastService"]
   O --> P["campaignOpportunityCache (memory)"]
   O --> J
@@ -115,7 +116,7 @@ flowchart TD
 
 ### Runtime-facing (program reads)
 - `data/runtime/aave-formatted-data.json`
-  - Main `/api/markets` source (via `dataService`)
+  - Main `/api/markets` source (via `marketsService` cron-write)
 - `data/runtime/merkl-opportunity-meta-lite.json`
   - Forecast service preferred file source (campaign-level lightweight meta)
 - `data/runtime/merit-campaign-metadata-cache.json`
@@ -123,7 +124,7 @@ flowchart TD
 
 ### Debug / Troubleshoot (human-facing first)
 - `data/debug/merkl-raw-data.json`
-  - Full Merkl debug snapshot (raw/live opportunities + processed/index/tokenPrices)
+  - Full Merkl debug snapshot (raw/live opportunities + processed/index)
 - `data/debug/merit-raw-data.json`
   - Merit APR raw + campaignMetadataByKey + built index
 - `data/debug/merit-merkl-raw-data.json`
@@ -133,50 +134,47 @@ flowchart TD
 
 ## 3) In-Memory Caches (Runtime)
 
-### A) `dataService` cache (`backend/src/services/dataService.ts`)
-- Caches parsed `data/runtime/aave-formatted-data.json` for `/api/markets`
-- Stale threshold (current): 60s
+### A) `marketsService` snapshot (`backend/src/services/marketsService.ts`)
+- Internalized data fetcher with in-memory snapshot
+- Cron-write/API-read-only pattern (cron every 1 minute)
+- Uses `fetchMarketsPayload()` from `dist/index.js` (root fetcher)
 
 ### B) `campaignOpportunityCache` (`backend/src/services/merklForecastService.ts`)
 - Forecast-only campaign meta index:
   - `campaignId -> { tvl, campaignTypeHint, distributionTypeRaw, campaignSnapshot }`
 - Rebuilt on demand when expired
-- TTL (current): minute-level (default 60s), configurable independently from forecast result cache
+- TTL (current): 5 minutes (default), configurable independently from forecast result cache
 
-### C) `forecastCache` (`backend/src/services/merklForecastService.ts`)
-- Final forecast state cache by campaignId
-- Stores computed result returned by `/api/campaigns/forecast-states`
-- TTL (current): minute-level (default 60s), intentionally aligned with opportunity meta freshness
+### C) `snapshotCache` (`backend/src/controllers/merklForecastController.ts`)
+- **Global snapshot cache** for all forecast states (cron-write, API-read-only pattern)
+- Populated by `warmCampaignForecastStatesCache()` (cron every 10 min + server startup)
+- API requests **only read** from this cache; they never trigger Merkl API calls
+- TTL: effectively 10 minutes (controlled by cron interval)
 
 Example shape:
 ```ts
-Map<string, {
-  data: {
-    campaignId: string;
-    campaignType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' | 'DUTCH_AUCTION' | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
-    plannedDaily: number;
-    requiredDaily: number;
-    totalBudget: number;
-    distributedSoFar: number;
-    latestTvl: number;
-    aprCap: number | null;
-    startTimestamp: number;
-    endTimestamp: number;
-    asOf: number;
+{
+  snapshot: {
+    items: ForecastResponseItem[];
+    errors: Array<{ campaignId: string; message: string }>;
+    staleTimeMs: number;
   };
-  expiresAt: number;
-}>
+  generatedAt: number;
+}
 ```
 
 ### D) `metricsCache` (`backend/src/services/merklForecastService.ts`)
 - Per-campaign cache for **forecast-trimmed** Merkl `/metrics` data (`dailyRewardsRecords`, `tvlRecords` latest-only)
 - TTL is derived from observed metrics record cadence (with default/min/max bounds)
-- Purpose: reduce `/metrics` request frequency while keeping `forecastCache` short-lived
+- **This is the key optimization** - metrics API calls are expensive; forecast computation is fast
 - Cadence inference uses `dailyRewardsRecords` timestamps (same series used for `distributedSoFar` integration)
 - Current defaults:
   - default TTL: 30m
-  - empty-record TTL: 5m
+  - empty-record TTL: 10m (aligned with clamp min)
   - dynamic TTL clamp: 10m .. 6h
+
+**Note**: `forecastCache` was removed because with cron-write pattern (every 10m), it provided no benefit.
+The forecast computation is fast; the `metricsCache` with dynamic TTL is what actually saves API calls.
 
 ### E) `@internal/aave-shared-config` snapshot cache (`packages/aave-shared-config`)
 - Caches **raw Merkl opportunities array** (not forecast-lite)
@@ -219,7 +217,7 @@ Two different concepts:
 
 Example in current code:
 - `merkl-opportunity-meta-lite.json` is written when root data refresh runs (often ~1m cadence)
-- Forecast service accepts it if file timestamp is within **60s**
+- Forecast service accepts it if file timestamp is within **5 minutes**
 
 This decoupling makes the system tolerant to scheduler jitter and temporary delays.
 

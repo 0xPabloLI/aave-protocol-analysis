@@ -3,6 +3,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
+import { merklFetchConfig } from '../config.js';
 import {
   buildForecastState,
   normalizeCampaignType,
@@ -26,7 +27,7 @@ const LEGACY_SHARED_FORECAST_TTL_MS = (() => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 })();
 
-const FORECAST_CACHE_TTL_MS = (() => {
+export const FORECAST_CACHE_TTL_MS = (() => {
   const raw = process.env.MERKL_FORECAST_RESULT_CACHE_TTL_MS;
   if (!raw) return LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastResultDefault;
   const parsed = Number.parseInt(raw, 10);
@@ -55,11 +56,6 @@ const METRICS_CACHE_MIN_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsMin;
 const METRICS_CACHE_MAX_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsMax;
 const METRICS_CACHE_EMPTY_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsEmpty;
 
-interface ForecastCacheEntry {
-  data: MerklForecastState;
-  expiresAt: number;
-}
-
 interface MetricsCacheEntry {
   data: ForecastMetricsLite;
   expiresAt: number;
@@ -79,7 +75,9 @@ interface CampaignOpportunityCacheEntry {
   expiresAt: number;
 }
 
-const forecastCache = new Map<string, ForecastCacheEntry>();
+// metricsCache has dynamic TTL (10m-6h based on data cadence) to avoid unnecessary Merkl API calls.
+// forecastCache was removed because with cron-write pattern (every 10m), it provided no benefit.
+// Forecast computation is fast; metrics fetching is the expensive operation.
 const inFlight = new Map<string, Promise<MerklForecastState>>();
 const metricsCache = new Map<string, MetricsCacheEntry>();
 let campaignOpportunityCache: CampaignOpportunityCacheEntry | null = null;
@@ -346,17 +344,72 @@ const estimateDistributedSoFar = (
   return Math.max(distributed, 0);
 };
 
-const fetchJson = async (url: string): Promise<unknown> => {
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      accept: 'application/json',
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`Merkl API ${response.status} for ${url}`);
+// ---------------------------------------------------------------------------
+// Concurrency limiter for Merkl API (rate limit: 10 req/s)
+// ---------------------------------------------------------------------------
+let activeCount = 0;
+const waitQueue: Array<() => void> = [];
+
+const acquireConcurrencySlot = (): Promise<void> => {
+  if (activeCount < merklFetchConfig.maxConcurrency) {
+    activeCount++;
+    return Promise.resolve();
   }
-  return response.json() as Promise<unknown>;
+  return new Promise<void>((resolve) => waitQueue.push(resolve));
+};
+
+const releaseConcurrencySlot = (): void => {
+  const next = waitQueue.shift();
+  if (next) {
+    next();   // hand slot directly to next waiter (activeCount stays the same)
+  } else {
+    activeCount--;
+  }
+};
+
+const isTransientError = (error: unknown): boolean => {
+  if (error instanceof TypeError && error.message === 'fetch failed') {
+    const cause = (error as { cause?: { code?: string } }).cause;
+    return cause?.code === 'ECONNRESET' || cause?.code === 'ETIMEDOUT' || cause?.code === 'UND_ERR_SOCKET';
+  }
+  return false;
+};
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const fetchJson = async (url: string): Promise<unknown> => {
+  await acquireConcurrencySlot();
+  try {
+    for (let attempt = 0; attempt <= merklFetchConfig.maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: { accept: 'application/json' },
+        });
+        if (response.status === 429 || response.status >= 500) {
+          throw new Error(`Merkl API ${response.status} for ${url}`);
+        }
+        if (!response.ok) {
+          throw new Error(`Merkl API ${response.status} for ${url}`);
+        }
+        return response.json() as Promise<unknown>;
+      } catch (error) {
+        const retryable =
+          isTransientError(error) ||
+          (error instanceof Error && /Merkl API (429|5\d\d)/.test(error.message));
+        if (!retryable || attempt >= merklFetchConfig.maxRetries) throw error;
+        const delay = Math.min(
+          merklFetchConfig.baseDelayMs * Math.pow(2, attempt),
+          merklFetchConfig.maxDelayMs
+        );
+        logger.warn(`⏳ Merkl fetch retry ${attempt + 1}/${merklFetchConfig.maxRetries} for ${url} in ${delay}ms`);
+        await sleep(delay);
+      }
+    }
+    throw new Error(`Merkl fetch exhausted retries for ${url}`);
+  } finally {
+    releaseConcurrencySlot();
+  }
 };
 
 const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, CampaignOpportunityMeta> | null> => {
@@ -534,12 +587,7 @@ export const extractNormalizedTotalBudget = (campaign: unknown, campaignId: stri
 };
 
 export const getMerklForecastState = async (campaignId: string): Promise<MerklForecastState> => {
-  const now = Date.now();
-  const cached = forecastCache.get(campaignId);
-  if (cached && cached.expiresAt > now) {
-    return cached.data;
-  }
-
+  // Use inFlight map to deduplicate concurrent requests for the same campaign
   const existingRequest = inFlight.get(campaignId);
   if (existingRequest) {
     return existingRequest;
@@ -556,6 +604,7 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         );
       }
 
+      // metricsCache has dynamic TTL, so this may return cached data without API call
       const campaignPromise =
         campaignOpportunityMeta.campaignSnapshot &&
         canComputeForecastFromSnapshot(campaignOpportunityMeta.campaignSnapshot)
@@ -592,7 +641,7 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
           : null;
       const latestTvl = campaignOpportunityMeta?.tvl ?? extractLatestTvl(metrics);
 
-      const state = buildForecastState({
+      return buildForecastState({
         campaignId,
         campaignType,
         totalBudget,
@@ -604,12 +653,6 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         latestTvl,
         computedUntil: extractComputedUntil(campaign),
       });
-
-      forecastCache.set(campaignId, {
-        data: state,
-        expiresAt: Date.now() + FORECAST_CACHE_TTL_MS,
-      });
-      return state;
     } catch (error) {
       logger.error(`❌ Failed to compute Merkl forecast state for ${campaignId}:`, error);
       throw error;
