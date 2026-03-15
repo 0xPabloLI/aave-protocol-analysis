@@ -50,11 +50,11 @@ jobs:
           npm ci
           npm --prefix backend ci
 
-      - name: Audit runtime dependencies (High/Critical)
+      - name: Audit runtime dependencies (root high, backend moderate)
         run: |
           set -e
           npm audit --omit=dev --audit-level=high || exit 1
-          npm --prefix backend audit --omit=dev --audit-level=high || exit 1
+          npm --prefix backend audit --omit=dev --audit-level=moderate || exit 1
 
   # NOTE: Auto-remediation is handled by ci-auto-remediation.yml workflow
   # (triggered via workflow_run event when this workflow fails)

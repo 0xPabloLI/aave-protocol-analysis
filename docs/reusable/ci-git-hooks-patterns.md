@@ -71,8 +71,8 @@ npm run ci:remote
 {
   "scripts": {
     "ci": "npm ci && npm run build && npm run lint && npm run test",
-    "ci:remote": "npm run ci && npm audit --omit=dev --audit-level=high",
-    "ci:auto-fix": "npm audit fix --omit=dev || true"
+    "ci:remote": "npm run ci && npm audit --omit=dev --audit-level=high && npm --prefix backend audit --omit=dev --audit-level=moderate",
+    "ci:auto-fix": "npm audit fix --omit=dev || true && npm --prefix backend audit fix --omit=dev || true"
   }
 }
 ```
@@ -303,7 +303,7 @@ npm --prefix backend ci
 npm run build
 npm --prefix backend run build
 npm audit --omit=dev --audit-level=high
-npm --prefix backend audit --omit=dev --audit-level=high
+npm --prefix backend audit --omit=dev --audit-level=moderate
 ```
 
 ```bash
