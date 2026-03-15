@@ -22,8 +22,18 @@
 | `variableRateSlope1` | `uint256`，RAY（10²⁷） | `string`，RAY（如 `"90000000000000000000000000"` = 9%，API 里 `decimals: 27`） | ✅ 一致 |
 | `variableRateSlope2` | `uint256`，RAY（10²⁷） | `string`，RAY，`decimals: 27` | ✅ 一致 |
 | `optimalUsageRate` | `uint256`，RAY（10²⁷） | `string`，RAY，`decimals: 27` | ✅ 一致 |
-| `baseVariableBorrowRate` | `uint256`，RAY（10²⁷），链上读 | 仍由 **On-chain RPC** 提供，`string` RAY | ✅ 未改来源，精度不变 |
+| `baseVariableBorrowRate` | `uint256`，RAY（10²⁷），链上读 | 仍由 **On-chain RPC** 提供；缺失时用 **fallback 反推**（见下） | ✅ 未改来源，精度不变 |
 | `deficit` | `uint256`，raw 代币单位，链上读 | 仍由 **On-chain RPC** 提供，`string` raw | ✅ 未改来源，精度不变 |
+
+### baseVariableBorrowRate Fallback（RPC 缺失时）
+
+当链上无法获取 `baseVariableBorrowRate` 时，用 SDK 参数反推：
+
+- **输入**：SDK 的 `borrowApy`（APY %）、`utilizationPct`、`optimalUsageRate`、`variableRateSlope1`、`variableRateSlope2`。
+- **APY → APR**：链上 ratePerSecond = rateRay/RAY / SECONDS_PER_YEAR，按秒复利 (1+ratePerSecond)^exp，故 1+APY = (1+APR/SECONDS_PER_YEAR)^SECONDS_PER_YEAR，即 **APR = SECONDS_PER_YEAR×((1+APY)^(1/SECONDS_PER_YEAR)−1)**，再转 RAY。
+- **Util**：`utilizationPct` 即 borrow usage = `totalDebt / (availableLiquidity + totalDebt)`，**不含 deficit**，与链上 `borrowUsageRatio` 一致。
+- **未使用**：计算中**不使用** reserve size；只用 utilization 与利率参数反推 base。
+- **链上复利**：variableBorrowIndex 按秒复利，ratePerSecond = rate/RAY/SECONDS_PER_YEAR，一年后 (1+APR/SECONDS_PER_YEAR)^SECONDS_PER_YEAR = 1+APY，故需用上式做 APY→APR。
 
 ### 小结
 
@@ -84,7 +94,7 @@ deficit: "0"                    // Raw token units (从 RPC 获取)
 | 使用 `totalScaledVariableDebt` | ❌ 字段已移除 | 改用 `totalVariableDebt` |
 | 使用 `variableBorrowIndex` | ❌ 字段已移除 | 不再需要 |
 | 计算实际债务 | ✅ 简化 | 直接使用 `totalVariableDebt` |
-| `baseVariableBorrowRate` 缺失 | ⚠️ 可能缺失 | 使用 fallback 值 "0" |
+| `baseVariableBorrowRate` 缺失 | ⚠️ 可能缺失 | 后端用 APY→APR 反推 fallback；前端可沿用 "0" 或 API 提供的 fallback |
 
 ---
 

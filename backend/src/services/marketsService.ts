@@ -81,10 +81,9 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       let mergedCount = 0;
       let fallbackCount = 0;
 
-      // Merge on-chain data + apply fallback calculation
+      // Merge on-chain data by reserveId (marketName:chainId:tokenAddress)
       for (const reserve of payload.data) {
-        const key = `${reserve.chainId}:${reserve.tokenAddress.toLowerCase()}`;
-        const onchainData = onchainMap.get(key);
+        const onchainData = onchainMap.get(reserve.reserveId);
         
         if (onchainData) {
           // Merge on-chain data
@@ -103,7 +102,8 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
             reserve.borrowApy,
             reserve.utilizationPct,
             reserve.optimalUsageRate,
-            reserve.variableRateSlope1
+            reserve.variableRateSlope1,
+            reserve.variableRateSlope2
           );
           if (fallbackBaseRate !== null) {
             (reserve as any).baseVariableBorrowRate = fallbackBaseRate;
@@ -123,7 +123,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       logger.info(
         `✅ Markets refresh: ${payload.data.length} reserves in ${elapsed}ms ` +
         `(on-chain: ${mergedCount} merged, ${fallbackCount} fallback, ` +
-        `cache: ${cacheStatus.freshChains}/${cacheStatus.chainCount} fresh)`
+        `cache: ${cacheStatus.freshPools}/${cacheStatus.poolCount} fresh)`
       );
 
       return newSnapshot;
