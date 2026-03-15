@@ -24,8 +24,8 @@ This repository has four related workflows:
 1. `CI` (`.github/workflows/ci.yml`)
    - Triggered by `push` and `pull_request`
    - Runs build + prune checks
-   - Runs `npm audit --omit=dev --audit-level=high`
-   - Result: blocks merge when High/Critical runtime vulnerabilities exist
+   - Audit: root `npm audit --omit=dev --audit-level=high`; backend `npm --prefix backend audit --omit=dev --audit-level=moderate` (see `ci:remote` in root `package.json`)
+   - Result: root blocks on High/Critical; backend blocks on Moderate and above (low-only vulns allowed for transitive deps with no fix, e.g. elliptic)
 
 2. `Security Moderate Report` (`.github/workflows/security-moderate-report.yml`)
    - Triggered every Monday at 04:00 UTC and by manual run
