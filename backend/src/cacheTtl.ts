@@ -15,38 +15,50 @@ export const BACKEND_FETCH_TIMING_MS = {
   coingeckoBaseDelay: 2 * 1000,
   coingeckoMinRequestInterval: 2500,
   coingeckoMinRequestIntervalFloor: 1000,
+  merklRetryBaseDelay: 1000,
+  merklRetryMaxDelay: 10 * 1000,
 } as const;
 
 // Node-cron 6-field format (includes seconds): at second 0, every minute.
 export const BACKEND_SCHEDULE_CRON = {
-  eachMinuteAtSecondZero: '0 * * * * *',
-  eachTenMinutesAtSecondFive: '5 */10 * * * *',
+  marketsBackupEveryMinuteAtSecond0: '0 * * * * *',
+  // On-chain data refresh: every 1 min at second 10 (per-chain concurrent, 30-min TTL)
+  onchainDataWarmEveryMinuteAtSecond10: '10 * * * * *',
+  coingeckoFdvWarmEveryFiveMinutesAtSecond5: '5 */5 * * * *',
+  coingeckoCategoriesWarmEverySixHoursAtSecond10: '10 0 */6 * * *',
+  // Aligned with merklForecastResultDefault (10 min) for cron-write/API-read-only pattern.
+  campaignForecastWarmEveryTenMinutesAtSecond30: '30 */10 * * * *',
 } as const;
 
 export const BACKEND_CACHE_TTL_MS = {
-  // Same-source near-realtime family.
+  // Markets near-realtime family.
   realtimeFamily: BACKEND_TIME_MS.oneMinute,
-  rateInputsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
   marketsDataStaleThreshold: BACKEND_TIME_MS.oneMinute,
-  merklLiteFileMaxAge: BACKEND_TIME_MS.oneMinute,
-  merklForecastResultDefault: BACKEND_TIME_MS.oneMinute,
-  merklForecastOpportunityMetaDefault: BACKEND_TIME_MS.oneMinute,
-  merklOpportunitiesDefault: BACKEND_TIME_MS.oneMinute,
+  marketsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
+  // On-chain data TTL: 30 min (deficit/baseVariableBorrowRate change infrequently)
+  onchainCacheTtl: BACKEND_TIME_MS.thirtyMinutes,
+
+  // Merkl forecast family.
+  // forecastResult aligned with metricsMin since underlying metrics data won't change faster.
+  merklForecastResultDefault: BACKEND_TIME_MS.tenMinutes,
+  // opportunityMeta/liteFile/opportunities are metadata lookups, can be shorter.
+  merklForecastOpportunityMetaDefault: BACKEND_TIME_MS.fiveMinutes,
+  merklLiteFileMaxAge: BACKEND_TIME_MS.fiveMinutes,
+  merklOpportunitiesDefault: BACKEND_TIME_MS.fiveMinutes,
 
   // CoinGecko family.
   coingeckoSlowFamily: BACKEND_TIME_MS.sixHours,
   coingeckoFastFamily: BACKEND_TIME_MS.tenMinutes,
   coingeckoCategories: BACKEND_TIME_MS.sixHours,
-  coingeckoFdv: BACKEND_TIME_MS.tenMinutes,
+  /** FDV cache TTL; matches FDV warm cron interval (5 min) so cron and request path share same freshness rule. */
+  coingeckoFdv: BACKEND_TIME_MS.fiveMinutes,
   coingeckoFdvMonitor: BACKEND_TIME_MS.sixHours,
 
-  // Merkl metrics family.
+  // Merkl metrics family (underlying data for forecast computation).
+  // Dynamic TTL = observed cadence / 4, clamped to [min, max].
   merklMetricsDefault: BACKEND_TIME_MS.thirtyMinutes,
   merklMetricsMin: BACKEND_TIME_MS.tenMinutes,
   merklMetricsMax: BACKEND_TIME_MS.sixHours,
-  merklMetricsEmpty: BACKEND_TIME_MS.fiveMinutes,
-} as const;
-
-export const BACKEND_TIMEOUT_MS = {
-  update: 3 * BACKEND_TIME_MS.oneMinute,
+  // Empty = no dailyRewardsRecords yet; retry more frequently (below clamp min is intentional).
+  merklMetricsEmpty: BACKEND_TIME_MS.tenMinutes,
 } as const;

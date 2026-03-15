@@ -1,9 +1,10 @@
 import type { Request, Response } from 'express';
-import { getMerklForecastState } from '../services/merklForecastService.js';
-import { dataService } from '../services/dataService.js';
+import { FORECAST_CACHE_TTL_MS, getMerklForecastState } from '../services/merklForecastService.js';
+import { getMarketsSnapshot } from '../services/marketsService.js';
+import { logger } from '../logger.js';
 import type { MarketWithSpread } from '../types/index.js';
 
-const toResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>) => ({
+export const toForecastResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>) => ({
   campaignId: state.campaignId,
   campaignType: state.campaignType,
   plannedDaily: state.plannedDaily,
@@ -14,6 +15,14 @@ const toResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>
   latestTvl: state.latestTvl,
   endTimestamp: state.endTimestamp,
 });
+
+export type ForecastResponseItem = ReturnType<typeof toForecastResponseItem>;
+
+export interface ForecastSnapshot {
+  items: ForecastResponseItem[];
+  errors: Array<{ campaignId: string; message: string }>;
+  staleTimeMs: number;
+}
 
 const inferErrorStatus = (error: unknown): number => {
   const message = error instanceof Error ? error.message : String(error);
@@ -27,72 +36,119 @@ const inferErrorStatus = (error: unknown): number => {
 
 const collectCampaignIdsFromMarkets = (markets: MarketWithSpread[]): string[] => {
   const ids = new Set<string>();
-
-  const collectFromBreakdowns = (
-    groups:
-      | MarketWithSpread['merklSupplys']
-      | MarketWithSpread['merklBorrows']
-      | MarketWithSpread['merklHolds']
-      | undefined
-  ) => {
-    if (!groups) return;
-    groups.forEach((group) => {
-      group.breakdowns?.forEach((breakdown) => {
+  for (const market of markets) {
+    for (const group of [...(market.merklSupplys ?? []), ...(market.merklBorrows ?? []), ...(market.merklHolds ?? [])]) {
+      for (const breakdown of group.breakdowns ?? []) {
         const id = String(breakdown.campaignId || '').trim();
         if (id) ids.add(id);
-      });
-    });
-  };
+      }
+    }
+  }
+  return Array.from(ids);
+};
 
-  markets.forEach((market) => {
-    collectFromBreakdowns(market.merklSupplys);
-    collectFromBreakdowns(market.merklBorrows);
-    collectFromBreakdowns(market.merklHolds);
+// Global snapshot cache (cron-write, API-read-only pattern).
+interface SnapshotCacheEntry {
+  snapshot: ForecastSnapshot;
+  generatedAt: number;
+}
+let snapshotCache: SnapshotCacheEntry | null = null;
+
+/**
+ * Fetch fresh forecast data from Merkl API and update the global snapshot cache.
+ * Called by cron scheduler only.
+ */
+export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> => {
+  const marketsSnapshot = getMarketsSnapshot();
+  if (!marketsSnapshot) {
+    logger.warn('Markets snapshot not available for forecast refresh; returning empty snapshot');
+    return { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
+  }
+  const campaignIds = [...new Set(collectCampaignIdsFromMarkets(marketsSnapshot.payload.data))];
+  if (campaignIds.length === 0) {
+    const emptySnapshot: ForecastSnapshot = { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
+    snapshotCache = { snapshot: emptySnapshot, generatedAt: Date.now() };
+    return emptySnapshot;
+  }
+
+  const results = await Promise.allSettled(campaignIds.map((id) => getMerklForecastState(id)));
+  const items: ForecastResponseItem[] = [];
+  const errors: ForecastSnapshot['errors'] = [];
+
+  results.forEach((result, i) => {
+    if (result.status === 'fulfilled') {
+      items.push(toForecastResponseItem(result.value));
+    } else {
+      errors.push({
+        campaignId: campaignIds[i],
+        message: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
+    }
   });
 
-  return Array.from(ids);
+  const snapshot: ForecastSnapshot = { items, errors, staleTimeMs: FORECAST_CACHE_TTL_MS };
+  snapshotCache = { snapshot, generatedAt: Date.now() };
+  return snapshot;
+};
+
+/**
+ * Get forecast snapshot from cache (API-read-only).
+ * Returns cached snapshot if available, or empty snapshot with warning if cache not yet populated.
+ */
+export const getForecastSnapshot = async (): Promise<ForecastSnapshot> => {
+  if (snapshotCache) {
+    return snapshotCache.snapshot;
+  }
+  // Cache not yet populated (server just started, cron hasn't run yet).
+  // Return empty snapshot instead of triggering fetch.
+  logger.warn('Forecast snapshot cache not yet populated; returning empty snapshot');
+  return { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
 };
 
 export const getCampaignForecastStates = async (req: Request, res: Response): Promise<void> => {
   const idsRaw = typeof req.query.ids === 'string' ? req.query.ids : '';
-  const idsFromQuery = idsRaw
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
+  const idsFromQuery = idsRaw.split(',').map((s) => s.trim()).filter(Boolean);
 
   if (idsFromQuery.length > 100) {
-    res.status(400).json({
-      error: 'Bad request',
-      message: 'Too many campaign ids. Maximum allowed is 100 per request.',
-    });
+    res.status(400).json({ error: 'Bad request', message: 'Too many campaign ids. Maximum allowed is 100.' });
     return;
   }
 
-  const campaignIds =
-    idsFromQuery.length > 0
-      ? idsFromQuery
-      : collectCampaignIdsFromMarkets(await dataService.getData());
+  if (idsFromQuery.length === 0) {
+    const snapshot = await getForecastSnapshot();
+    res.json({ requested: snapshot.items.length + snapshot.errors.length, ...snapshot });
+    return;
+  }
 
-  const dedupedCampaignIds = Array.from(new Set(campaignIds));
-  const results = await Promise.allSettled(dedupedCampaignIds.map((campaignId) => getMerklForecastState(campaignId)));
-
-  const items: Array<ReturnType<typeof toResponseItem>> = [];
+  const campaignIds = [...new Set(idsFromQuery)];
+  const results = await Promise.allSettled(campaignIds.map((id) => getMerklForecastState(id)));
+  const items: ForecastResponseItem[] = [];
   const errors: Array<{ campaignId: string; status: number; message: string }> = [];
 
-  results.forEach((result, index) => {
-    const campaignId = dedupedCampaignIds[index];
+  results.forEach((result, i) => {
     if (result.status === 'fulfilled') {
-      items.push(toResponseItem(result.value));
-      return;
+      items.push(toForecastResponseItem(result.value));
+    } else {
+      errors.push({
+        campaignId: campaignIds[i],
+        status: inferErrorStatus(result.reason),
+        message: result.reason instanceof Error ? result.reason.message : String(result.reason),
+      });
     }
-    const status = inferErrorStatus(result.reason);
-    const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
-    errors.push({ campaignId, status, message });
   });
 
-  res.json({
-    requested: dedupedCampaignIds.length,
-    items,
-    errors,
-  });
+  res.json({ requested: campaignIds.length, items, errors, staleTimeMs: FORECAST_CACHE_TTL_MS });
 };
+
+/**
+ * Warm the forecast snapshot cache by fetching fresh data from Merkl API.
+ * Called by cron scheduler and server startup.
+ */
+export async function warmCampaignForecastStatesCache(): Promise<{ requested: number; fulfilled: number; failed: number }> {
+  const snapshot = await refreshForecastSnapshotCache();
+  return {
+    requested: snapshot.items.length + snapshot.errors.length,
+    fulfilled: snapshot.items.length,
+    failed: snapshot.errors.length,
+  };
+}

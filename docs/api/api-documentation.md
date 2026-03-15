@@ -7,11 +7,16 @@
 ## 基础信息
 
 - **服务地址**: `http://localhost:3001` (开发环境)
-- **API 基础路径**: 
-  - `/api/markets` - 市场数据相关接口
-  - `/api/coingecko-categories` - CoinGecko 分类数据接口
+- **API 基础路径**:
+  - `/api/markets` - 市场数据（含 on-chain 字段）
+  - `/api/coingecko-categories` - CoinGecko 分类数据
+  - `/api/coingecko-fdv` - CoinGecko FDV 数据
+  - `/api/meta/side-data` - 低频侧数据聚合（categories + fdv）
+  - `/api/campaigns/forecast-states` - Merkl 活动预测状态（批量）
+  - `/health`、`/api/health` - 健康检查
 - **数据格式**: JSON
 - **字符编码**: UTF-8
+- **端点总数**: **7 个**（7 条 URL；若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 6 个逻辑端点）
 
 ## 数据模型
 
@@ -22,6 +27,7 @@
 ```typescript
 interface FormattedReserveData {
   // 基础信息
+  reserveId: string;                     // 储备 ID（唯一标识符）
   marketName: string;                    // 市场名称，如 "AaveV3Arbitrum"
   chainName: string;                     // 链名称，如 "Arbitrum"
   chainId: number;                       // 链 ID，如 42161
@@ -31,13 +37,22 @@ interface FormattedReserveData {
   aTokenAddress: string | null;          // aToken 地址
   vTokenAddress: string | null;          // variableDebtToken 地址
   
-  // 基础 APY
-  supplyApy?: number;                    // Supply APY（百分比数值，如 2.07 表示 2.07%），如果为 undefined 则在 JSON 中不出现
-  borrowApy?: number;                    // Borrow APY（百分比数值，如 3.97 表示 3.97%），如果为 undefined 则在 JSON 中不出现
+  // 价格与规模（单位已说明）
+  tokenPrice?: number;                   // 【单位: USD】每个 token 的美元价格
+  reserveSizeUsd?: number;                // 【单位: USD】市场总供应量（TVL = total supply），美元计价
+  utilizationPct?: number;               // 【单位: 百分比 0-100】资金利用率，如 45.5 表示 45.5%
   
-  // 协议激励（来自 Aave 协议）
-  supplyIncentives?: number[];           // Protocol supply incentives（百分比数值数组），如果为空数组则在 JSON 中不出现
-  borrowIncentives?: number[];           // Protocol borrow incentives（百分比数值数组），如果为空数组则在 JSON 中不出现
+  // 基础 APY 与禁用状态（单位: 百分比）
+  supplyApy?: number;                    // 【单位: 百分比】Supply APY，如 2.07 表示 2.07%
+  supplyDisabled?: boolean;              // 供应是否被禁用（仅当 true 时出现），原因：isFrozen、isPaused 或 supplyCap=1
+  supplyCapUsd?: number;                 // 【单位: USD】供应上限金额
+  borrowApy?: number;                    // 【单位: 百分比】Borrow APY，如 3.97 表示 3.97%（即使禁用也返回真实值）
+  borrowDisabled?: boolean;              // 借贷是否被禁用（仅当 true 时出现），原因：borrowingState=DISABLED 或 borrowCap=1
+  borrowCapUsd?: number;                 // 【单位: USD】借贷上限金额，与 supplyCapUsd 对称
+  
+  // 协议激励（来自 Aave 协议，单位: 百分比）
+  supplyIncentives?: number[];           // 【单位: 百分比数组】Protocol supply incentives
+  borrowIncentives?: number[];           // 【单位: 百分比数组】Protocol borrow incentives
   
   // Merit APR 激励（可选字段，仅在存在数据时出现）
   meritSupplys?: Array<{
@@ -81,6 +96,19 @@ interface FormattedReserveData {
     endDate: string;                      // 活动结束日期
     name: string;                        // 活动名称
   }>;
+  
+  // On-chain & SDK fields（用于 APR 模拟计算，可选字段，扁平化到 reserve 中）
+  // 所有值为 BigNumber 字符串（RAY = 10^27 用于利率，token decimals 用于金额）
+  decimals?: number;                     // 代币精度
+  availableLiquidity?: string;           // 【单位: raw token】可用流动性
+  reserveFactor?: string;                // 【单位: RAY】储备因子
+  variableRateSlope1?: string;           // 【单位: RAY】利率曲线斜率1
+  variableRateSlope2?: string;           // 【单位: RAY】利率曲线斜率2
+  optimalUsageRate?: string;             // 【单位: RAY】最优利用率（如 920000000000000000000000000 = 92%）
+  // On-chain only fields (from UiPoolDataProvider.getReservesHumanized())
+  // Cached for 5 min on RPC failure; absent if no data available
+  baseVariableBorrowRate?: string;       // 【单位: RAY】基础可变借款利率（用于模拟利率计算）
+  deficit?: string;                      // 【单位: raw token】储备赤字（坏账），用于计算准确的 Supply APY
 }
 ```
 
@@ -112,7 +140,7 @@ interface MerklCampaignBreakdown {
 
 **端点**: `GET /api/markets`
 
-**描述**: 获取所有市场数据，包含完整的激励信息。如果数据超过 1 分钟未更新，会自动触发后台更新。
+**描述**: 获取 markets 快照（`markets-v2`），返回 `snapshot + reserves`。其中 `reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `reserveSizeUsd` / `utilizationPct` 以支持前端展示。如果数据超过 1 分钟未更新，会自动触发后台更新。若更新持续失败且快照陈旧时间超过硬上限（默认 5 分钟），接口会返回 `503`，避免长期返回过旧数据。
 
 **请求参数**: 无
 
@@ -120,127 +148,119 @@ interface MerklCampaignBreakdown {
 
 ```typescript
 interface MarketsResponse {
-  data: MarketWithSpread[];            // 市场数据数组
-  lastUpdated: string;                  // 最后更新时间（ISO 8601）
-  isStale: boolean;                     // 数据是否过期（超过 1 分钟）
-  updateInProgress: boolean;           // 是否正在更新中
+  snapshot: {
+    lastUpdated: string;               // 最后更新时间（ISO 8601）
+    version: 'markets-v2';
+    staleTimeMs: number;               // 认为数据过期的阈值（毫秒），默认 60 秒
+  };
+  reserves: MarketWithSpread[];        // 保留原全量字段 + 新增展示字段 + 可选 on-chain 字段
 }
 ```
+
+**Token 价格返回策略**：
+
+- 每条 `reserves` 记录新增 `tokenPrice`（优先用于前端渲染，避免额外 join）
+- Merkl reward token 价格当前**不在 `/api/markets` 输出**
+- 若 reward token 恰好是某个 reserve 的 `aTokenAddress`，其价格按 underlying token 对待，不单独输出
+- **来源字段**：`aave` 来源的价格来自 Aave markets 数据里的 `reserve.size.usdPerToken`（若缺失则回退 `reserve.usdExchangeRate`）。
+- **缺省行为**：极少数 token 若本轮 Aave/Merkl 均未返回价格，则会沿用上一轮文件中该 token 的价格**仅当**上一轮文件的 `_metadata.timestamp` 在 3 倍正常更新周期内（3× backend stale 阈值，即 3 分钟）；超过则不沿用，避免长期保留已不再出现的 token 的过期价格。
+
+**市场筛选列表**：请从 `reserves` 中按 `{ marketName, chainName }` 去重推导，不要再引入额外市场列表接口。
 
 **响应示例**:
 
 ```json
 {
-  "data": [
+  "snapshot": {
+    "lastUpdated": "2026-01-13T11:00:06.895Z",
+    "version": "markets-v2"
+  },
+  "reserves": [
     {
-      "marketName": "AaveV3Arbitrum",
-      "chainName": "Arbitrum",
-      "chainId": 42161,
-      "tokenName": "Dai Stablecoin",
-      "tokenSymbol": "DAI",
-      "tokenAddress": "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1",
-      "aTokenAddress": "0x82E64f49Ed5EC1bC6e43DAD4FC8Af9bb3A2312EE",
-      "vTokenAddress": "0x8619d80FB0141ba7F184CbF22fd724116D9f7ffC",
-      "supplyApy": 2.07,
-      "borrowApy": 3.97,
-      "supplyIncentives": [0.5, 1.2],
-      "borrowIncentives": [0.3],
-      "meritSupplys": [
-        {
-          "apr": 5.2,
-          "selfApr": 2.1,
-          "link": "https://apps.aavechan.com/merit/arbitrum-supply-dai",
-          "startDate": "Thu Jan 01 2026",
-          "endDate": "Thu Jan 15 2026"
-        }
-      ],
-      "meritBorrows": [
-        {
-          "apr": 3.5,
-          "link": "https://apps.aavechan.com/merit/arbitrum-borrow-dai",
-          "startDate": "Thu Jan 01 2026",
-          "endDate": "Thu Jan 15 2026",
-          "requiredSupplyTokens": ["USDC"]
-        }
-      ],
-      "merklSupplys": [
-        {
-          "link": "https://app.merkl.xyz/opportunities/arbitrum/MULTILOG_DUTCH/0xe0b9e069b0cb46329e7d37e87e635a84ea772fcf",
-          "name": "MultiLog Dutch Auction",
-          "breakdowns": [
-            {
-              "campaignApr": 0.329,
-              "campaignStartedAt": "2026-01-07T13:00:00.000Z",
-              "campaignEndedAt": "2026-01-21T13:00:00.000Z",
-              "campaignId": "9692233454321271392"
-            }
-          ]
-        }
-      ],
-      "merklBorrows": [],
-      "brevisSupplys": [
-        {
-          "apr": 1.5,
-          "link": "https://brevis.network/linea-surge",
-          "startDate": "Thu Jan 01 2026",
-          "endDate": "Thu Jan 31 2026",
-          "name": "Linea Surge Supply"
-        }
-      ]
+      "reserveId": "AaveV3Ethereum:1:0xbe9895146f7af43049ca1c1ae358b0541ea49704",
+      "marketName": "AaveV3Ethereum",
+      "chainName": "Ethereum",
+      "chainId": 1,
+      "tokenName": "Coinbase Wrapped Staked ETH",
+      "tokenSymbol": "cbETH",
+      "tokenAddress": "0xBe9895146f7AF43049ca1c1AE358B0541Ea49704",
+      "aTokenAddress": "0x977b6fc5dE62598B08C85AC8Cf2b745874E8b78c",
+      "vTokenAddress": "0x0c91bcA95b5FE69164cE583A2ec9429A569798Ed",
+      "supplyApy": 0.183795381577371,
+      "tokenPrice": 3942.52,
+      "reserveSizeUsd": 1083255123.44,
+      "utilizationPct": 61.08
     }
-  ],
-  "lastUpdated": "2026-01-13T11:00:06.895Z",
-  "isStale": false,
-  "updateInProgress": false
+  ]
 }
 ```
 
 **状态码**:
 - `200`: 成功
+- `503`: 数据快照超过硬过期上限（默认 5 分钟），服务拒绝返回过旧数据（`errorCode = "MARKETS_SNAPSHOT_HARD_STALE"`）
 - `500`: 服务器错误
 
 **注意事项**:
 - 所有排序和过滤逻辑应在客户端处理
-- 如果数据过期，会自动触发后台更新，但响应会立即返回当前缓存数据
-- 响应中的 `updateInProgress` 字段表示是否有更新正在进行
+- 如果数据过期，会自动触发后台更新；在硬过期上限内可继续返回缓存
+- 一旦快照年龄超过硬过期上限（默认 5 分钟），将返回 `503`（不再无限返回旧缓存）
+- `tokenPrice` 已直接放在 `reserves` 行内，前端无需再做额外 price join
 
 ---
 
-### 2. 获取市场列表
+### `/api/markets` 最终字段契约（前端）
 
-**端点**: `GET /api/markets/list`
+当前前端仅需依赖以下稳定字段：
 
-**描述**: 获取所有市场列表（用于前端过滤器），返回去重后的市场-链组合。
+- `snapshot.lastUpdated`
+- `reserves[].reserveId`
+- `reserves[].marketName`
+- `reserves[].chainName`
+- `reserves[].chainId`
+- `reserves[].tokenName`
+- `reserves[].tokenSymbol`
+- `reserves[].tokenAddress`
+- `reserves[].tokenPrice`
+- `reserves[].reserveSizeUsd`
+- `reserves[].utilizationPct`
+- 以及原有激励字段（`supplyIncentives` / `borrowIncentives` / `merit*` / `merkl*` / `brevis*`）
 
-**请求参数**: 无
+不再依赖：
 
-**响应格式**:
-
-```json
-[
-  {
-    "marketName": "AaveV3Arbitrum",
-    "chainName": "Arbitrum"
-  },
-  {
-    "marketName": "AaveV3Avalanche",
-    "chainName": "Avalanche"
-  }
-]
-```
-
-**状态码**:
-- `200`: 成功
-- `500`: 服务器错误
+- 根级 `tokenPrices`
+- 行内 `tokenPriceKey`
 
 ---
 
-### 3. 批量获取 Merkl Forecast States
+### 2. 批量获取 Merkl Forecast States
 
 **端点**: `GET /api/campaigns/forecast-states`
 
 **请求参数**:
 - `ids` (可选): 逗号分隔 campaignId 列表；省略时默认返回当前 markets 中全部 campaign 的状态。
+
+**`ids` 获取方式**:
+- 方式 1（推荐）：先请求 `GET /api/markets`，从 `reserves[].merklSupplys[]/merklBorrows[]/merklHolds[]` 的 `breakdowns[].campaignId` 提取并去重。
+- 方式 2：直接使用你已知的 campaignId（例如来自业务配置或历史记录），按逗号拼接传入 `ids`。
+
+示例（从 `/api/markets` 自动提取 ids）：
+
+```bash
+IDS=$(curl -s "http://localhost:3001/api/markets" | jq -r '
+  .reserves[]
+  | (.merklSupplys // []) + (.merklBorrows // []) + (.merklHolds // [])
+  | .[]
+  | (.breakdowns // [])[].campaignId
+' | sort -u | paste -sd, -)
+
+curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=${IDS}" | jq
+```
+
+示例（手动指定 ids）：
+
+```bash
+curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campaignB,campaignC" | jq
+```
 
 **响应格式**:
 
@@ -248,13 +268,15 @@ interface MarketsResponse {
 {
   "requested": 23,
   "items": [],
-  "errors": []
+  "errors": [],
+  "staleTimeMs": 600000
 }
 ```
 
 其中：
 - `items` 为成功计算的 campaign 状态数组（字段同单个接口）。
 - `errors` 为失败项数组：`{ campaignId, status, message }`。
+- `staleTimeMs` 为 Merkl forecast 结果缓存 TTL（毫秒），默认 10 分钟（与 `merklMetricsMin` 对齐，可通过环境变量 `MERKL_FORECAST_RESULT_CACHE_TTL_MS` 覆盖）。
 
 **状态码**:
 - `200`: 成功（部分失败也返回 200，失败体现在 `errors`）
@@ -271,11 +293,11 @@ interface MarketsResponse {
 
 以上均来自 Merkl API，不从 Aave SDK 直接读取 campaign 级 TVL。
 
-### 4. 健康检查
+### 3. 健康检查
 
-**端点**: `GET /health`
+**端点**: `GET /health` 或 `GET /api/health`
 
-**描述**: 检查服务健康状态，返回服务状态和环境配置信息。
+**描述**: 检查服务健康状态，返回服务状态和环境配置信息。两路径使用同一处理逻辑。
 
 **请求参数**: 无
 
@@ -310,7 +332,43 @@ interface MarketsResponse {
 
 ---
 
-### 6. 获取 CoinGecko 分类数据
+### 4. 获取 CoinGecko FDV 数据
+
+**端点**: `GET /api/coingecko-fdv`
+
+**描述**: 获取指定代币的完全稀释估值（FDV）。优先使用 CoinMarketCap API，失败时回退到 CoinGecko。缓存 TTL 与 FDV 预热 cron 一致（默认 5 分钟）。
+
+**请求参数**: 无
+
+**响应格式**:
+
+```json
+{
+  "items": [
+    {
+      "id": "binancecoin",
+      "symbol": "bnb",
+      "name": "BNB",
+      "fdvUsd": 123456789012,
+      "source": "coinmarketcap"
+    }
+  ],
+  "fetchedAt": "2026-03-09T12:00:00.000Z",
+  "staleTimeMs": 300000
+}
+```
+
+- `items`: FDV 条目数组（id、symbol、name、fdvUsd、source）
+- `fetchedAt`: 数据获取时间（ISO 8601）
+- `source`: `"coinmarketcap"` 或 `"coingecko_fallback"`
+
+**状态码**: `200` 成功，`500` 服务端错误
+
+**注意**: 需配置 `COINMARKETCAP_API_KEY` 使用 CoinMarketCap；否则仅使用 CoinGecko 回退。
+
+---
+
+### 5. 获取 CoinGecko 分类数据
 
 **端点**: `GET /api/coingecko-categories`
 
@@ -323,7 +381,9 @@ interface MarketsResponse {
 ```json
 {
   "uniqueSymbolsStablecoins": ["USDT", "USDC", "DAI", "BUSD", ...],
-  "uniqueSymbolsEth": ["WETH", "STETH", "RETH", "CBETH", ...]
+  "uniqueSymbolsEth": ["WETH", "STETH", "RETH", "CBETH", ...],
+  "fetchedAt": "2026-03-09T12:00:00.000Z",
+  "staleTimeMs": 21600000
 }
 ```
 
@@ -344,12 +404,101 @@ interface MarketsResponse {
 
 ---
 
+### 6. 获取侧数据聚合（Meta Side Data）
+
+**端点**: `GET /api/meta/side-data`
+
+**描述**: 聚合返回低频侧数据，用于前端一次性获取 CoinGecko 分类、FDV 快照和 Merkl forecast 状态。内部组合了：
+
+- `GET /api/coingecko-categories` 的最新快照元信息（6h TTL）
+- `GET /api/coingecko-fdv` 的最新快照元信息（5m TTL）
+- `GET /api/campaigns/forecast-states` 的全量 forecast 数据（10m TTL）
+
+不会触发市场数据刷新，仅依赖各自缓存与 TTL。
+
+**请求参数**: 无
+
+**响应格式**:
+
+```json
+{
+  "generatedAt": "2026-03-09T12:00:00.000Z",
+  "partial": false,
+  "categories": {
+    "uniqueSymbolsStablecoins": ["USDT", "USDC", "DAI"],
+    "uniqueSymbolsEth": ["WETH", "STETH", "RETH"],
+    "fetchedAt": "2026-03-09T12:00:00.000Z",
+    "staleTimeMs": 21600000
+  },
+  "fdv": {
+    "items": [
+      {
+        "id": "binancecoin",
+        "symbol": "BNB",
+        "name": "BNB",
+        "fdvUsd": 123456789012,
+        "source": "coinmarketcap"
+      }
+    ],
+    "fetchedAt": "2026-03-09T12:00:00.000Z",
+    "staleTimeMs": 300000
+  },
+  "forecast": {
+    "items": [
+      {
+        "campaignId": "0x...",
+        "campaignType": "DUTCH_AUCTION",
+        "plannedDaily": 1000,
+        "requiredDaily": 1200,
+        "aprCap": null,
+        "totalBudget": 100000,
+        "distributedSoFar": 45000,
+        "latestTvl": 5000000,
+        "endTimestamp": 1710000000
+      }
+    ],
+    "errors": [],
+    "staleTimeMs": 600000
+  },
+  "errors": {
+    "categories": "optional error message when categories snapshot fails",
+    "fdv": "optional error message when fdv snapshot fails",
+    "forecast": "optional error message when forecast snapshot fails"
+  }
+}
+```
+
+字段说明：
+
+- `generatedAt`: 当前 meta 响应生成时间（ISO 8601）。
+- `partial`: 当 categories、fdv、forecast 其中之一失败时为 `true`。
+- `categories`: 当分类快照可用时存在，结构同 `GET /api/coingecko-categories`，附加：
+  - `fetchedAt`: 分类数据上次刷新时间。
+  - `staleTimeMs`: 分类缓存 TTL（毫秒），默认 6 小时。
+- `fdv`: 当 FDV 快照可用时存在，结构同 `GET /api/coingecko-fdv`，附加：
+  - `fetchedAt`: FDV 数据上次刷新时间。
+  - `staleTimeMs`: FDV 缓存 TTL（毫秒），默认 5 分钟。
+- `forecast`: 当 forecast 快照可用时存在，结构：
+  - `items`: forecast 状态数组，字段同 `GET /api/campaigns/forecast-states`。
+  - `errors`: 部分 campaign 计算失败的错误数组（`{ campaignId, message }`）。
+  - `staleTimeMs`: forecast 缓存 TTL（毫秒），默认 10 分钟。
+- `errors`: 可选对象，键为 `categories`/`fdv`/`forecast`，值为对应子任务整体失败时的错误信息。
+
+**状态码**:
+
+- `200`: 至少有一块数据成功（`partial` 可能为 `true`）。
+- `500`: categories、fdv、forecast 均失败（无可用侧数据）。
+
+---
+
 ## 数据说明
 
 ### 字段类型说明
 
 1. **APY/APR 格式**:
-   - `supplyApy` / `borrowApy`: 数值格式的百分比（如 `2.07` 表示 2.07%），如果为 `undefined` 则在 JSON 中不出现
+   - `supplyApy`: 数值格式的百分比（如 `2.07` 表示 2.07%），如果为 `undefined` 则在 JSON 中不出现
+   - `borrowApy`: 数值格式的百分比（如 `3.97` 表示 3.97%），即使借贷被禁用也会返回真实值
+   - `borrowDisabled`: 布尔值，仅当借贷被禁用时出现且为 `true`（节约带宽）
    - `supplyIncentives` / `borrowIncentives`: 数值数组，每个元素为百分比数值（如 `[0.5, 1.2]` 表示 0.5% 和 1.2%），如果为空数组则在 JSON 中不出现
    - `meritSupplys` / `meritBorrows`: 对象数组，每个对象包含：
      - `apr`: 数值格式的百分比（如 `5.2` 表示 5.2%）
@@ -369,6 +518,7 @@ interface MarketsResponse {
    - **重要**：数值 `0` 是有效值，会保留在 JSON 中（不会被省略）
    - 所有激励相关字段都是可选的，包括：
      - `supplyApy` / `borrowApy`
+     - `borrowDisabled`（仅当 `true` 时出现）
      - `supplyIncentives` / `borrowIncentives`
      - `meritSupplys` / `meritBorrows`
      - `merklSupplys` / `merklBorrows` / `merklHolds`
@@ -379,7 +529,8 @@ interface MarketsResponse {
      - `merklSupplys` / `merklBorrows` / `merklHolds`（空数组时）
      - `brevisSupplys` / `brevisBorrows`（空数组时）
      - `aTokenAddress` / `vTokenAddress`（null 时）
-     - `supplyApy` / `borrowApy`（undefined 时）
+     - `supplyApy`（undefined 时）
+     - `borrowDisabled`（`false` 或 undefined 时，即借贷启用时不出现）
 
 3. **Merit 数据结构说明**:
    - `meritSupplys` 和 `meritBorrows` 是数组，每个元素代表一个 Merit 激励活动
@@ -391,6 +542,119 @@ interface MarketsResponse {
      - 如果 `meritBorrows` 条目包含 `requiredSupplyTokens`，表示需要先 supply 指定的 token 才能获得该 borrow APR
      - `'multiple'` 表示任意 token 都可以满足条件
 
+4. **供应禁用状态 (`supplyDisabled`)**:
+   - Aave 协议有三种方式禁用供应：
+     1. 储备冻结：`isFrozen === true`
+     2. 储备暂停：`isPaused === true`
+     3. Cap 设为 1：`supplyCap === 1`（实际上无法供应）
+   - 当上述任一条件满足时，`supplyDisabled: true` 会出现在响应中
+   - `supplyCapUsd` 始终返回（如果有值），表示供应上限的美元金额
+   - 前端处理建议：
+     ```typescript
+     // 判断是否可供应
+     const canSupply = !reserve.supplyDisabled;
+     
+     // 显示供应上限
+     if (reserve.supplyCapUsd) {
+       console.log(`Supply cap: $${reserve.supplyCapUsd.toLocaleString()}`);
+     }
+     ```
+
+5. **借贷禁用状态 (`borrowDisabled`)**:
+   - Aave 协议有两种方式禁用借贷：
+     1. 直接禁用：`borrowingState === "DISABLED"`
+     2. Cap 设为 1：`borrowCap === 1`（实际上无法借贷）
+   - 当上述任一条件满足时，`borrowDisabled: true` 会出现在响应中
+   - 即使借贷被禁用，`borrowApy` 仍返回真实的利率值（供展示或分析用途）
+   - 前端处理建议：
+     ```typescript
+     // 判断是否可借贷
+     const canBorrow = !reserve.borrowDisabled;
+     
+     // 显示借贷利率（可加禁用标记）
+     if (reserve.borrowDisabled) {
+       displayRate(reserve.borrowApy, { disabled: true });
+     } else {
+       displayRate(reserve.borrowApy);
+     }
+     ```
+
+6. **数值单位说明**:
+
+   #### `/api/markets` 响应字段单位
+
+   | 字段 | 单位 | 说明 |
+   |------|------|------|
+   | `tokenPrice` | USD | 每个 token 的美元价格 |
+   | `reserveSizeUsd` | USD | 市场总供应量（TVL），美元计价 |
+   | `supplyCapUsd` | USD | 供应上限，美元计价 |
+   | `utilizationPct` | 百分比 (0-100) | 资金利用率，如 `45.5` 表示 45.5% |
+   | `supplyApy` | 百分比 | 供应 APY，如 `2.07` 表示 2.07% |
+   | `borrowApy` | 百分比 | 借贷 APY，如 `3.97` 表示 3.97% |
+   | `supplyIncentives` | 百分比数组 | 协议供应激励 APR |
+   | `borrowIncentives` | 百分比数组 | 协议借贷激励 APR |
+   | `meritSupplys[].apr` | 百分比 | Merit 供应 APR |
+   | `merklSupplys[].breakdowns[].campaignApr` | 百分比 | Merkl campaign APR |
+
+   #### On-chain & SDK 字段单位（位于 `/api/markets` 的 `reserves[]` 中）
+
+   **重要**：这些字段为链上或 SDK 原始数据，需要前端自行转换。这些字段可选（若 RPC 获取失败则 on-chain 字段不存在）。
+
+   | 字段 | 原始单位 | 转换说明 |
+   |------|----------|----------|
+   | `decimals` | 整数 | token 精度（用于其他字段的换算） |
+   | `availableLiquidity` | **token 原始单位** (string) | 可用流动性。换算：`BigInt(value) / 10^decimals` 得到 token 数量 |
+   | `reserveFactor` | **BPS** (4 decimals) | 储备金率。换算：`value / 10000` 得到小数（如 2000 → 0.20 = 20%） |
+   | `variableRateSlope1` | **RAY** (27 decimals) | 利率曲线斜率 1。换算：`BigInt(value) / 10^27` 得到小数 |
+   | `variableRateSlope2` | **RAY** (27 decimals) | 利率曲线斜率 2。换算同上 |
+   | `optimalUsageRate` | **RAY** (27 decimals) | 最优使用率。换算：`BigInt(value) / 10^27`（如 450000...000 → 0.45 = 45%） |
+   | `baseVariableBorrowRate` | **RAY** (27 decimals) | 基础可变借款利率（on-chain only），用于模拟利率计算 |
+   | `deficit` | **token 原始单位** (string) | 坏账缺口（on-chain only），用于计算准确的 Supply APY |
+
+   **On-chain 字段说明**：`baseVariableBorrowRate` 和 `deficit` 仅从 RPC 获取（UiPoolDataProvider.getReservesHumanized）。如 RPC 失败，使用 5 分钟内的缓存数据；超过缓存期或无缓存时字段缺失。
+
+   #### 常用单位定义
+
+   | 单位名称 | 精度 | 说明 |
+   |----------|------|------|
+   | **RAY** | 27 decimals | Aave 协议标准精度单位，`1 RAY = 10^27` |
+   | **BPS** | 4 decimals | 基点（Basis Points），`10000 BPS = 100%` |
+   | **WAD** | 18 decimals | 常见 ERC20 精度，`1 WAD = 10^18` |
+
+   #### 前端转换示例
+
+   ```typescript
+   const RAY = BigInt(10) ** BigInt(27);
+   const BPS_DIVISOR = 10000;
+
+   // 转换 availableLiquidity 为 token 数量
+   function toTokenAmount(raw: string, decimals: number): number {
+     return Number(BigInt(raw)) / Math.pow(10, decimals);
+   }
+
+   // 转换 RAY 单位为小数
+   function fromRay(raw: string): number {
+     return Number(BigInt(raw)) / Number(RAY);
+   }
+
+   // 转换 BPS 为小数
+   function fromBps(raw: string): number {
+     return Number(raw) / BPS_DIVISOR;
+   }
+
+   // 计算实际可变债务
+   function getActualVariableDebt(
+     scaledDebt: string,
+     borrowIndex: string,
+     decimals: number
+   ): number {
+     const scaled = BigInt(scaledDebt);
+     const index = BigInt(borrowIndex);
+     const actualRaw = (scaled * index) / RAY;
+     return Number(actualRaw) / Math.pow(10, decimals);
+   }
+   ```
+
 ### 数据来源
 
 - **基础 APY**: 来自 Aave 协议 API
@@ -398,14 +662,21 @@ interface MarketsResponse {
 - **Merit APR**: 来自 `https://apps.aavechan.com/api/merit/aprs`
 - **Merkl APR**: 来自 `https://api.merkl.xyz/v4/opportunities`
 - **Brevis APR**: 来自 Brevis Network Linea Surge API
+- **Token 价格（/api/markets）**: 当前仅在 `reserves[].tokenPrice` 行内返回，不再输出 Merkl reward token 的单独价格补充。
+
+**Aave SDK（@aave/client）与 token price**：本项目从 SDK 返回的 reserve 里读取 USD 价格（优先 `reserve.size.usdPerToken`，缺失时回退 `reserve.usdExchangeRate`），用于 `reserves[].tokenPrice`。
+
+**data 文件夹中的价格**：
+- **`data/runtime/aave-formatted-data.json`**：当前以 `data + _metadata` 为主，不再依赖根级 token price 补充索引供 `/api/markets` 使用。
+- **`data/debug/aave-all-markets-data.json`**：为 Aave SDK 的原始响应（`markets`、`timestamp` 等），其中包含 reserve 的 `usdPerToken` / `usdExchangeRate` 等价格字段（如果上游返回）。
 
 ### 数据更新机制
 
-- 所有 API 端点会自动检查数据新鲜度
-- 如果数据超过 1 分钟未更新，会自动触发后台更新
-- 使用锁机制防止并发更新
-- 更新过程中，API 会立即返回当前缓存数据
-- 响应中的 `isStale` 和 `updateInProgress` 字段可用于判断数据状态
+- **仅 `GET /api/markets`** 会触发市场数据新鲜度检查：若数据超过 1 分钟未更新，该请求会触发后台刷新（带并发锁），其他端点不触发市场数据刷新。
+- 其他端点（`/api/coingecko-*`、`/api/campaigns/forecast-states`）使用各自缓存与 TTL。
+- On-chain 数据（deficit, baseVariableBorrowRate）与 markets 并行获取，合并到 `/api/markets` 响应中。
+- 使用锁机制防止并发更新；更新进行中时，请求会等待约 1 秒再返回。
+- `/api/markets` 返回 `snapshot + reserves`；`isStale` / `updateInProgress` 不在该接口响应中。
 
 ## 错误处理
 
@@ -437,9 +708,9 @@ interface MarketsResponse {
 // 获取所有市场数据
 const response = await fetch('http://localhost:3001/api/markets');
 const data = await response.json();
-console.log(data.data); // 市场数据数组
-console.log(data.lastUpdated); // 最后更新时间
-console.log(data.isStale); // 是否过期
+console.log(data.snapshot.lastUpdated); // 最后更新时间
+console.log(data.reserves.length); // reserve 数量
+console.log(data.reserves[0]?.tokenPrice); // 行内 token 价格
 ```
 
 ### cURL
@@ -448,21 +719,23 @@ console.log(data.isStale); // 是否过期
 # 获取所有市场数据
 curl http://localhost:3001/api/markets
 
-# 获取市场列表
-curl http://localhost:3001/api/markets/list
-
 # 健康检查
 curl http://localhost:3001/health
 
 # 获取 CoinGecko 分类数据
 curl http://localhost:3001/api/coingecko-categories
+
+# 获取 CoinGecko FDV 数据
+curl http://localhost:3001/api/coingecko-fdv
 ```
 
 ## 版本信息
 
-- **API 版本**: 2.1
-- **文档更新时间**: 2026-01-13
-- **最后更新**: 
+- **API 版本**: 3.1
+- **文档更新时间**: 2026-03-14
+- **最后更新**:
+  - 补充端点：`GET /api/health`、`GET /api/coingecko-fdv`
+  - 基础路径说明更新为完整 API 列表
   - 重构 Merit 数据结构：统一为 `meritSupplys` 和 `meritBorrows` 数组，每个条目包含完整的活动信息（apr, selfApr, link, startDate, endDate, startBlock, endBlock）
   - 统一命名：所有激励字段使用复数形式（meritSupplys, meritBorrows, merklSupplys, merklBorrows, merklHolds）
   - 数据类型优化：APY/APR 值统一为 `number` 类型（百分比数值），不再使用字符串
@@ -472,6 +745,16 @@ curl http://localhost:3001/api/coingecko-categories
   - Brevis 数据结构重构：从单个 `brevisSupplyApr`/`brevisBorrowApr` 字段改为 `brevisSupplys`/`brevisBorrows` 数组，支持多个活动
   - 新增 CoinGecko 分类接口：`/api/coingecko-categories` 提供稳定币和以太坊相关代币分类
   - 健康检查接口增强：返回详细的环境配置信息
+  - **2026-03-11**：明确仅 `GET /api/markets` 触发市场数据新鲜度检查与自动刷新；其他端点使用各自缓存/TTL
+  - **2026-03-11（breaking）**：`GET /api/markets` 响应结构切换为 `snapshot + reserves`（`markets-v2`）
+  - **2026-03-11**：`reserves` 保留原全量字段，并新增 `tokenPrice`、`reserveSizeUsd`、`utilizationPct`
+  - **2026-03-11**：Merkl reward token 价格先不在 `/api/markets` 输出；若 reward token 为某 reserve 的 aToken，也不单独输出
+  - **2026-03-13**：为 `/api/markets`、`/api/coingecko-*`、`/api/campaigns/forecast-states` 增加 `staleTimeMs` 字段说明
+  - **2026-03-13**：新增 `/api/meta/side-data` 端点文档，并描述 categories/fdv 子快照的 `fetchedAt` 与 `staleTimeMs`
+  - **2026-03-13（breaking）**：`/api/markets` 字段 `marketSizeUsd` 更名为 `reserveSizeUsd`
+  - **2026-03-14**：新增 `borrowCapUsd` 字段，与 `supplyCapUsd` 对称
+  - **2026-03-14（breaking）**：移除独立的 `/api/rate-inputs` 端点，rate-input 字段扁平化合并到 `/api/markets` 的 `reserves[]` 中（`decimals`、`deficit`、`availableLiquidity` 等）
+  - **2026-03-14**：移除 `deficitAvailable` 标志；deficit 来自 `UiPoolDataProvider.getReservesHumanized()`（Aave v3.3.0+），RPC 失败时使用 5 分钟内的缓存，超时则字段缺失
 
 ## 注意事项
 
@@ -483,18 +766,11 @@ curl http://localhost:3001/api/coingecko-categories
    - `null` 和 `undefined` 在 JSON 中都不会出现（通过 replacer 函数处理）
    - 空数组会被转换为 `undefined` 并省略
    - 数值 `0` 是有效值，会保留在 JSON 中
-4. **Merit 数据结构**:
-   - `meritSupplys` 和 `meritBorrows` 是数组，可能包含多个激励活动
-   - 每个条目都包含完整的活动信息（链接、时间范围等）
-   - 如果活动有 self 版本，会在同一条目中通过 `selfApr` 字段表示
-5. **Merkl 数据结构**:
-   - 不再提供 APR 总和字段，所有数据都在 `merklSupplys`、`merklBorrows`、`merklHolds` 数组中
-   - 每个 opportunity 包含 `link`、可选的 `name` 和 `message` 字段，以及多个 `breakdowns`（活动详情）
-6. **Brevis 数据结构**:
-   - 已从单个 APR 字段改为数组结构：`brevisSupplys` 和 `brevisBorrows`
-   - 每个条目包含完整的活动信息：`apr`、`link`、`startDate`、`endDate`、`name`
-   - 支持多个 Brevis 活动同时存在
-7. **数据新鲜度**: 建议根据 `isStale` 和 `lastUpdated` 字段判断数据是否可用
-8. **更新机制**: 数据更新是异步的，更新过程中会返回缓存数据
-9. **过滤逻辑**: 所有排序和过滤应在客户端完成，API 不提供查询参数
-10. **CoinGecko 分类数据**: `/api/coingecko-categories` 接口提供稳定币和以太坊相关代币的分类信息，数据缓存 6 小时
+4. **`/api/markets` 字段变化（breaking）**:
+   - 结构：`snapshot + reserves`
+   - `reserves` 中保留原全量字段，并新增 `tokenPrice`、`reserveSizeUsd`、`utilizationPct`、`reserveId`
+   - `rate-inputs` 新增 `deficit`，前端在 utilization 分母中应与 `availableLiquidity + totalVariableDebt` 合并使用
+5. **数据新鲜度**: 建议根据 `snapshot.lastUpdated` 字段判断数据是否可用
+6. **更新机制**: 数据更新是异步的，更新过程中会返回缓存数据
+7. **过滤逻辑**: 所有排序和过滤应在客户端完成，API 不提供查询参数
+8. **CoinGecko 分类数据**: `/api/coingecko-categories` 接口提供稳定币和以太坊相关代币的分类信息，数据缓存 6 小时

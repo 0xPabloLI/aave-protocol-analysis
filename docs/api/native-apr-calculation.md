@@ -29,180 +29,204 @@ supplyUsageRatio = totalDebt / (availableLiquidity + totalDebt + deficit);
 - Flash loans temporarily reduce `availableLiquidity` but do not reduce `virtualUnderlyingBalance`.
 - `deficit` affects `supplyUsageRatio`, not `borrowUsageRatio`.
 
-### Can we "just fetch one more field" (`deficit`) from The Graph?
+### Reserve Size Composition (SDK fields)
 
-Not always.
+The Aave SDK returns `reserve.size` which equals the **total supply** of the reserve:
 
-- In Aave protocol subgraph schema (`protocol-subgraphs/schemas/v3.schema.graphql`), reserve entity does **not** expose a direct `deficit` field.
-- So in many deployments, `deficit` cannot be added to the existing reserve query by simply selecting one extra field.
-- If a specific deployment exposes an equivalent field, adding it is low cost.
-- If not exposed, fallback is on-chain/RPC reads (`pool.getReserveDeficit(asset)`), which increases RPC calls and complexity.
+```
+reserve.size.raw = availableLiquidity + totalVariableDebt
+```
 
-**Conclusion:** keep Phase 1 without `deficit`, then add optional Phase 2 `deficit` source for high-accuracy mode.
+Where `totalVariableDebt` is calculated from scaled debt:
+
+```
+totalVariableDebt = totalScaledVariableDebt × variableBorrowIndex ÷ 10²⁷
+```
+
+**Verification example (ENS on Ethereum Mainnet):**
+
+| Source | Field | Value (raw, 18 decimals) |
+|--------|-------|--------------------------|
+| Aave SDK | `reserve.size.amount.raw` | `22357926998021311743149` |
+| Aave SDK | `availableLiquidity` | `20104153613733729749180` |
+| Aave SDK | `borrowInfo.total.amount.raw` | `2253773384287581993969` |
+| On-chain RPC | `deficit` | `5768310051222005613888` |
+
+Calculation:
+```
+reserve.size.raw  = availableLiquidity + totalVariableDebt
+                  = 20104153613733729749180 + 2253773384287581993969
+                  = 22357926998021311743149  ✓ (matches SDK output)
+```
+
+> Note: Aave SDK returns `borrowInfo.total` which is already the actual debt (not scaled), so no index calculation needed.
+
+**Key insight:** `deficit` (bad debt) is **not** included in `reserve.size`. It represents recorded bad debt and is tracked separately for rate calculation purposes (affects `supplyUsageRatio` only).
+
+### On-chain vs API Data Availability
+
+| Field | On-chain RPC | Aave API | Notes |
+|-------|:------------:|:--------:|-------|
+| `availableLiquidity` | ✅ | ✅ | |
+| `reserveFactor` | ✅ | ✅ | |
+| `variableRateSlope1/2` | ✅ | ✅ | |
+| `optimalUsageRate` | ✅ | ✅ | |
+| **`baseVariableBorrowRate`** | ✅ | ❌ | **仅 on-chain 可获取**，用于模拟利率计算 |
+| **`deficit`** | ✅ | ❌ | **仅 on-chain 可获取**，用于 Supply APY 计算 |
+
+**结论**：
+- `deficit` 必须通过 on-chain RPC 获取
+- `baseVariableBorrowRate` 优先从 on-chain 获取；**缺失时**后端用 fallback 反推：链上按秒复利，APR = SECONDS_PER_YEAR×((1+APY)^(1/SECONDS_PER_YEAR)−1)，再用该 reserve 的 `utilizationPct`、slopes、optimal 反算 base。计算中**不使用** reserve size。
+- 其他字段均可从 Aave API 获取
 
 ---
 
 ## 1. Architecture
 
 ```text
+On-chain RPC (primary, deficit-aware)
+  UiPoolDataProvider.getReservesHumanized() + pool.getReserveDeficit()
+        |
+        v  fallback if RPC fails
+Aave API (api.v3.aave.com/graphql)
+        |
+        v  last resort if API fails
 The Graph Subgraph (per chain)
-        |  independent pipeline, parallel fetch
-        v
-Backend (aave-protocol-analysis)
-  - NEW: /api/rate-inputs endpoint (separate from /api/markets)
-  - Rate inputs stored in a separate file and refresh cycle
-  - /api/markets is not blocked by subgraph failures
         |
         v
-Frontend (aaveapy / feature-merkl-forecast)
-  - Fetches reserve rate inputs via separate hook
+Backend (aave-protocol-analysis)
+  - /api/markets endpoint (unified)
+  - Parallel fetch: Aave SDK + On-chain RPC
+  - On-chain data has 5-min cache fallback
+        |
+        v
+Frontend (aaveapy)
+  - useMarketsData hook
   - interestRateCalculator.ts (Aave V3 formula + APY conversion)
-  - Simulator UI (expandable row or dedicated card)
+  - Simulator UI (with fallback for missing on-chain fields)
 ```
 
 ---
 
-## 1.1 Backend: Subgraph Reserve Rate Inputs Service
+## 1.1 Backend: Data Sources
 
-**New file:** `src/subgraph-service.ts`
+**Implementation:**
+- `src/index.ts` - Markets data fetcher (Aave SDK)
+- `backend/src/services/onchainDataService.ts` - On-chain data fetcher (RPC)
 
-### Endpoint format
+### Data Source Architecture
 
-```text
-Primary (recommended):
-https://gateway.thegraph.com/api/{apiKey}/subgraphs/id/{deploymentId}
+| Source | Fields | Fallback |
+|--------|--------|----------|
+| Aave SDK | Most market data (`supplyApy`, `borrowApy`, `availableLiquidity`, `reserveFactor`, etc.) | Required - API fails if unavailable |
+| On-chain RPC | `deficit`, `baseVariableBorrowRate` | Optional - fields absent if RPC fails, 5-min cache on failure |
 
-Legacy (only when deployment still has a name endpoint):
-https://gateway.thegraph.com/api/{apiKey}/subgraphs/name/aave/{slug}
-```
+### On-chain Data via UiPoolDataProvider
 
-- `deploymentId` / `slug` is **not** `chainId`.
-- For current Aave production deployments, `id/{deploymentId}` is the stable format.
-- Use explicit mapping: `chainId -> queryPath` (for example `id/<deploymentId>`).
+- On-chain config resolved dynamically from `@bgd-labs/aave-address-book` (`AaveV3*` exports with `CHAIN_ID`, `UI_POOL_DATA_PROVIDER`, `POOL_ADDRESSES_PROVIDER`).
+- Reference: `docs/backend/HARDCODE-AND-EXTERNAL-IMPORTS.md`
 
-### Where to find valid deployment IDs / slugs
+### Fields Fetched (On-chain Primary Source)
 
-- Aave `protocol-subgraphs` repo Active Deployments list.
-- The Graph Explorer pages for each Aave subgraph (can inspect deployment id directly there).
-- The Graph Explorer publisher pages (Subgraphs tab) can be used as an index entry, but there is no single guaranteed "Aave all chains" API endpoint.
-- Keep mapping in code/config and update when Aave migrates deployments.
-- Local sync script: `npm run subgraphs:sync` (writes `docs/api/aave-subgraph-deployments.snapshot.json`).
-
-### Sync source behavior
-
-- `npm run subgraphs:sync` first tries remote GitHub README:
-  `https://raw.githubusercontent.com/aave/protocol-subgraphs/master/README.md`.
-- If remote is unreachable, it falls back to local mirror path:
-  `/Users/pabloli/Documents/protocol-subgraphs/README.md`.
-- Snapshot `source` field shows which one was used.
-
-### Fallback chains (runtime-resolved)
-
-- Fallback is no longer a fixed hardcoded chain list.
-- Backend resolves fallback capability dynamically from `@bgd-labs/aave-address-book` (`AaveV3*` exports with `CHAIN_ID`, `UI_POOL_DATA_PROVIDER`, `POOL_ADDRESSES_PROVIDER`).
-- If subgraph fails or returns partial token coverage, backend uses on-chain reads to补齐 missing reserves when fallback config is resolvable for that chain.
-
-Implementation location: `backend/src/services/rateInputsService.ts` (`resolveOnchainFallbackConfig`).
-Hardcode/reference policy: `docs/backend/HARDCODE-AND-EXTERNAL-IMPORTS.md`.
-
-### GraphQL query (per chain)
-
-```graphql
-{
-  reserves(first: 100) {
-    underlyingAsset
-    symbol
-    decimals
-    availableLiquidity
-    totalScaledVariableDebt
-    variableBorrowIndex
-    reserveFactor
-    optimalUtilisationRate
-    variableRateSlope1
-    variableRateSlope2
-    baseVariableBorrowRate
-    liquidityRate
-    variableBorrowRate
-  }
+```solidity
+// From UiPoolDataProvider.getReservesHumanized():
+struct ReserveData {
+  address underlyingAsset;     // token address
+  uint256 decimals;            // token decimals
+  uint256 availableLiquidity;  // real ERC20 balance in aToken contract
+  uint256 totalScaledVariableDebt;  // scaled debt (needs index multiplication)
+  uint256 variableBorrowIndex; // ray index for debt calculation
+  uint256 reserveFactor;       // protocol fee (basis points)
+  uint256 variableRateSlope1;  // rate curve parameter (ray)
+  uint256 variableRateSlope2;  // rate curve parameter (ray)
+  uint256 baseVariableBorrowRate;   // base rate (ray)
+  uint256 optimalUsageRatio;   // optimal utilization (ray)
 }
+
+// Separately fetched via direct contract call:
+pool.getReserveDeficit(asset) → uint256 deficit  // bad debt (raw token units)
 ```
 
-### Reliability requirements
+### API Response Fields (in `/api/markets` reserves)
 
-- Fetch all chains concurrently via `Promise.allSettled`.
-- Add retry with exponential backoff per chain (recommended: 2-3 retries).
-- If one chain fails, return remaining chains successfully (failure isolation).
+Fields available in each reserve object:
 
-### Polling behavior clarification
+| Field | Type | Source | Description |
+|-------|------|--------|-------------|
+| `decimals` | number | Aave SDK | Token decimals |
+| `availableLiquidity` | string | Aave SDK | Raw token units |
+| `reserveFactor` | string | Aave SDK | Basis points (4 decimals) |
+| `variableRateSlope1` | string | Aave SDK | Ray (27 decimals) |
+| `variableRateSlope2` | string | Aave SDK | Ray (27 decimals) |
+| `optimalUsageRate` | string | Aave SDK | Ray (27 decimals) |
+| `deficit` | string | On-chain RPC | Bad debt in raw token units (**optional**) |
+| `baseVariableBorrowRate` | string | On-chain RPC | Ray (27 decimals) (**optional**) |
 
-- Yes: each scheduled poll reruns all configured chains.
-- So a chain that failed in poll N will be retried automatically in poll N+1.
-- In-cycle retry still matters: it reduces stale window for transient failures within the same poll.
+**Important:** On-chain fields (`deficit`, `baseVariableBorrowRate`) may be absent if RPC fails. Frontend should implement fallback (e.g., assume `deficit = "0"`, `baseVariableBorrowRate = "0"`).
 
----
+### Reliability
 
-## 1.2 Backend Route + Storage
-
-**New files:**
-- `backend/src/routes/rateInputs.ts`
-- `backend/src/controllers/rateInputsController.ts`
-
-### API
-
-- `GET /api/rate-inputs` returns normalized reserve rate input data.
-- Default behavior: one response includes all available chains.
-- Keep `?chainId=` for targeted chain fetch.
-- Keep `?chainId=&asset=` for targeted reserve fetch.
-- Add `?marketName=` to disambiguate same-chain same-asset multi-market cases (for example `AaveV3Ethereum` vs `AaveV3EthereumLido` on wstETH).
-
-### Naming (two-word max, aligned with existing variables)
-
-Decision:
-- API path: `/api/rate-inputs`
-- Data file: `rate-inputs.json`
-- Code variable: `rateInputs`
-
-Short alternatives if renaming is needed later:
-1. `rate-inputs`
-2. `rate-data`
-3. `apr-inputs`
-
-### Storage
-
-- File: `data/runtime/rate-inputs.json`
-- Name rationale: this dataset is reserve-level rate formula inputs, not "strategy" metadata.
-
-> Note: data originates from The Graph and is normalized before write.
+- Markets + on-chain fetched in parallel via `Promise.allSettled`
+- On-chain data has 5-min cache for graceful degradation
+- If on-chain fails beyond cache TTL, fields are simply absent
+- Markets data is required; on-chain data is optional
 
 ---
 
-## 1.3 Scheduler Integration and API Impact
+## 1.2 Backend API
 
-In backend API, `GET /api/rate-inputs` is served by `rateInputsService`:
+### Endpoint
 
-- Uses in-memory snapshot cache with unified TTL.
-- Subgraph is primary source; on-chain UiPoolDataProvider is fallback for marked chains.
-- Never blocks `/api/markets` if subgraph is slow/down.
+`GET /api/markets` — 返回所有链的 reserves 数据（含 on-chain 字段）
 
-### API impact summary
+### Cache
 
-- `/api/markets` payload stays lean (no extra rate inputs).
-- New endpoint adds simulator-only read path.
-- Better resilience: subgraph partial failures do not cascade to markets API.
-- Mild extra backend resource usage (network + parse + storage), bounded by refresh interval.
+- 内存缓存，60s TTL（`BACKEND_CACHE_TTL_MS.realtimeFamily`）
+- Cron 每分钟刷新
+- On-chain 数据有独立 5 分钟缓存（RPC 失败时使用）
 
 ---
 
-## 1.4 Env Config
+## 1.3 Env Config
 
-- Required for gateway-based subgraph chains:
-  - `THE_GRAPH_API_KEY`
-- On-chain fallback RPC URLs are sourced from shared config:
-  - package: `@internal/aave-shared-config`
-  - path: `packages/aave-shared-config`
-- TTL:
-  - `BACKEND_CACHE_TTL_MS.realtimeFamily`
-  - rate-inputs follows the same 60s same-source bucket as other near-realtime APR snapshot data.
+| 变量 | 说明 |
+|------|------|
+| RPC URLs | 来自 `@internal/aave-shared-config`（详见 `docs/backend/rpc-endpoints.md`） |
+
+---
+
+## 1.4 Derived Calculations (Frontend)
+
+Some values can be derived from existing `/api/markets` fields without additional API calls:
+
+### Total Borrowed (USD)
+
+```typescript
+// Frontend calculation - no API change needed
+const totalBorrowedUsd = reserveSizeUsd * (utilizationPct / 100);
+```
+
+Where:
+- `reserveSizeUsd` = total supply in USD (from `reserves[].reserveSizeUsd`)
+- `utilizationPct` = utilization percentage (from `reserves[].utilizationPct`)
+
+### Available Liquidity (USD)
+
+```typescript
+const availableLiquidityUsd = reserveSizeUsd - totalBorrowedUsd;
+// or equivalently:
+const availableLiquidityUsd = reserveSizeUsd * (1 - utilizationPct / 100);
+```
+
+### Borrow Cap Headroom
+
+Using `borrowCapUsd` from API (analogous to existing `supplyCapUsd`):
+
+```typescript
+// borrowCapUsd is available in reserves[].borrowCapUsd
+const borrowHeadroomUsd = borrowCapUsd - totalBorrowedUsd;
+const borrowCapUsedPct = (totalBorrowedUsd / borrowCapUsd) * 100;
+```
 
 ---
 
@@ -234,33 +258,33 @@ Implements:
 - APR conversion.
 - APY conversion aligned with Aave ray compounding behavior.
 
-### 2.2 Type updates: `src/types/aave.ts`
+### 2.2 Fields for Rate Simulation
+
+All fields are now in the `/api/markets` response under each reserve:
 
 ```ts
-export interface ReserveRateInput {
-  marketName: string;
-  chainId: number;
-  tokenAddress: string;
-  availableLiquidity: string;
-  totalScaledVariableDebt: string;
-  variableBorrowIndex: string;
-  reserveFactor: string;
-  optimalUsageRate: string;
-  variableRateSlope1: string;
-  variableRateSlope2: string;
-  baseVariableBorrowRate: string;
-  decimals: number;
-  source: 'subgraph' | 'onchain';
-  sourceDetail: string;
-}
+// Fields from Aave SDK (always present)
+decimals: number;
+availableLiquidity: string;
+reserveFactor: string;
+variableRateSlope1: string;
+variableRateSlope2: string;
+optimalUsageRate: string;
+
+// Fields from On-chain RPC (may be absent)
+deficit?: string;
+baseVariableBorrowRate?: string;
 ```
 
-### 2.3 Hook: `src/hooks/useReserveRateInputs.ts`
+### 2.3 Frontend Fallback Handling
 
-- `useReserveRateInput()` now reads from one shared snapshot query (`GET /api/rate-inputs`) and selects by:
-  - `chainId + tokenAddress + marketName`
-- The home page prefetches this snapshot after markets load, so first tooltip open avoids cold fetch latency.
-- This fixes cross-market mismatch on duplicated assets (same chain + same token in multiple Aave markets).
+On-chain fields may be absent if RPC fails. Frontend must implement fallbacks:
+
+```ts
+// Fallback for missing on-chain fields
+const deficit = reserve.deficit ?? '0';
+const baseRate = reserve.baseVariableBorrowRate ?? '0';
+```
 
 ---
 
@@ -268,53 +292,39 @@ export interface ReserveRateInput {
 
 ### Functional impact
 
-- No impact on existing main table ranking/sorting logic if simulator path is isolated.
-- Simulator can degrade gracefully when rate-input data is missing.
+- All rate simulation fields now in `/api/markets` response
+- On-chain fields (`deficit`, `baseVariableBorrowRate`) are optional
+- Simulator should degrade gracefully when on-chain data is missing
 
 ### UX impact
 
-- Keep market table instantly available from `/api/markets`.
-- Warm rate-input snapshot in background right after markets load.
-- Tooltip uses prefetched snapshot first, then follows normal stale-time refetch policy.
-- Show skeleton/placeholder for simulator panel while loading.
+- Single API call (`/api/markets`) provides all data
+- No separate prefetch needed
+- Show warning/indicator when using fallback values for simulation
 
-### Performance impact
+### Fallback strategy
 
-- Additional query cost exists, but isolated from core page data.
-- Calculation is lightweight (`BigInt` arithmetic on small input set).
-- One shared snapshot query avoids duplicate requests from multiple tooltip opens.
-- Optional filters remain available for debug/integration (`?chainId=`, `?asset=`, `?marketName=`).
+| Field | Fallback Value | Impact |
+|-------|---------------|--------|
+| `deficit` | `"0"` | Supply APY slightly higher (ignores bad debt) |
+| `baseVariableBorrowRate` | `"0"` | Works for most reserves (base rate is typically 0) |
 
-### Payload measurement (external fetch)
+### Failure scenarios
 
-Sample query (13 fields, `reserves(first:100)`) against live subgraphs:
-
-- Successful chains sampled: 18
-- Total reserves returned: 230
-- Total payload size: 122,168 bytes (~119.3 KB)
-- Average per chain: ~6.8 KB
-- Largest observed: ETH Mainnet V3 ≈ 32.9 KB (63 reserves)
-
-Interpretation:
-
-- Chain-level payload is generally small-to-moderate.
-- `?chainId=` should be default frontend path.
-- Keep all-chain endpoint for admin/debug or warm cache flows.
-
-### Failure impact
-
-- If `/api/rate-inputs` fails, only simulator feature degrades.
-- Core markets dashboard remains usable.
+- If Aave SDK fails: entire `/api/markets` fails (503)
+- If RPC fails: markets data available, on-chain fields absent
+- Frontend should handle both cases gracefully
 
 ---
 
 ## 4. Frontend Business Logic Recommendation
 
-Recommended interaction model:
+Recommended approach:
 
-1. Keep simulator UI hidden until user opens tooltip/panel.
-2. Home page loads `/markets` first, then background-prefetches `/rate-inputs`.
-3. Tooltip reads `chainId + tokenAddress + marketName` from the shared snapshot.
+1. Load `/api/markets` for all data (single call)
+2. Check if on-chain fields exist before using them
+3. Apply fallback values when fields are missing
+4. Show UI indicator when simulation uses fallback data
 4. Recompute output on each input change locally (no extra backend call while typing amount).
 5. If data unavailable, show fallback message and keep default APY display intact.
 
@@ -336,66 +346,20 @@ This keeps first paint fast and bounds failure blast radius.
 
 ---
 
-## 5. Reuse Opportunities (Avoid Re-implementation)
+## 5. Implementation Reference
 
-### Backend reuse
+### Backend
 
-- Reuse existing scheduler/status pattern from `marketsController` + `updateScheduler`.
-- Reuse retry/backoff utility style from `coingeckoController.fetchJsonWithRetry`.
-- Reuse data file caching pattern from `DataService` (runtime file + cache refresh).
+| 文件 | 说明 |
+|------|------|
+| `src/index.ts` | Markets data fetcher (Aave SDK) |
+| `backend/src/services/onchainDataService.ts` | On-chain data fetcher (deficit, baseVariableBorrowRate) |
+| `backend/src/services/marketsService.ts` | Unified markets + on-chain data service |
 
-### Should be abstracted now
+### Frontend (aaveapy)
 
-| Module | Scope | Suggested location |
-|---|---|---|
-| `subgraphClient` (fetch/retry/timeout) | backend-only | `backend/src/services/subgraphClient.ts` |
-| `subgraphRegistry` (`chainId -> queryPath`, prefer `id/<deploymentId>`) | backend-only (source), frontend read-only mirror optional | `backend/src/config/subgraphRegistry.ts` |
-| `rateInputCacheService` (single cache, multi-shape reads) | backend-only | `backend/src/services/rateInputCacheService.ts` |
-| `rateMathAdapter` (`@aave/math-utils` wrapper) | frontend-only | `src/lib/rateMathAdapter.ts` |
-
-Guideline:
-- Do not force frontend and backend to share runtime modules when dependencies differ.
-- Share schema/contracts (`types` or JSON shape), not network/service code.
-
-### Frontend reuse
-
-- Reuse `useAaveMarkets` fetch+cache fallback pattern for new hook.
-- Reuse existing APR/APY formatting and display helpers in `src/lib/formatters.ts`.
-- Reuse existing table row UI conventions in `PoolsTable.tsx` for expandable simulator.
-
-### Math reuse
-
-- Reuse `@aave/math-utils` reference behavior (`rayPow`, `calculateCompoundedRate`) to avoid formula drift.
-
----
-
-## 6. Performance and Data Separation
-
-| Concern | Solution |
-|---|---|
-| Rate-input data bloat `/api/markets` | Keep separate endpoint: `/api/rate-inputs` |
-| Subgraph latency affects market API | Independent pipeline/timer + `Promise.allSettled` |
-| Extra fields per pool | Fetch/use rate inputs only when simulator is used |
-| Token prices | Keep existing `tokenPrices` behavior unchanged |
-| All-chain vs chain endpoint overhead | Keep both `/api/rate-inputs` and `/api/rate-inputs?chainId=` but serve from one shared cache snapshot (filter at read time, no duplicate upstream fetch) |
-
----
-
-## 7. Files to Change
-
-| Project | File | Change |
-|---|---|---|
-| `aave-protocol-analysis` | `src/subgraph-service.ts` | NEW: subgraph query service |
-| `aave-protocol-analysis` | `src/index.ts` | Add `fetchReserveRateInputs()` export |
-| `aave-protocol-analysis` | `backend/src/routes/rateInputs.ts` | NEW route |
-| `aave-protocol-analysis` | `backend/src/controllers/rateInputsController.ts` | NEW controller |
-| `aave-protocol-analysis` | `backend/src/services/rateInputsService.ts` | NEW data service |
-| `aave-protocol-analysis` | `backend/src/server.ts` | Register new route |
-| `aave-protocol-analysis` | `backend/src/services/updateScheduler.ts` | Add reserve-rate-input refresh timer |
-| `aave-protocol-analysis` | `.env`, `.env.example` | Add `THE_GRAPH_API_KEY` |
-| `aaveapy` (worktree) | `src/lib/interestRateCalculator.ts` | NEW simulation + APY conversion |
-| `aaveapy` (worktree) | `src/types/aave.ts` | Add `ReserveRateInput` (with `marketName`) |
-| `aaveapy` (worktree) | `src/hooks/useReserveRateInputs.ts` | NEW fetch hook |
-| `aaveapy` (worktree) | `src/components/dashboard/PoolsTable.tsx` | Option A expandable simulator |
-| `aaveapy` (worktree) | `src/components/dashboard/SupplySimulator.tsx` | NEW option B card |
-| `aaveapy` (worktree) | `src/pages/Index.tsx` | Wire simulator card |
+| 文件 | 说明 |
+|------|------|
+| `src/lib/interestRateCalculator.ts` | Aave V3 利率模拟计算 |
+| `src/hooks/useMarketsData.ts` | Markets 数据 hook (含 on-chain 字段) |
+| `src/types/aave.ts` | Reserve 类型定义 |

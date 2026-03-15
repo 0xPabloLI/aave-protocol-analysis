@@ -13,7 +13,7 @@ import {
   type MeritDynamicInfo,
 } from './cloudflare-browser.js';
 import { meritKeyAliases } from './config.js';
-import { getAavePublicRpcUrlsByChainName } from '@internal/aave-shared-config';
+import { getAaveRpcUrlsByChainName } from '@internal/aave-shared-config';
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
@@ -693,7 +693,7 @@ export function parseChainKey(parts: string[]): string {
  * 根据链名获取 RPC URL
  */
 function getRpcUrlsFromChainName(chainName: string): string[] {
-  return getAavePublicRpcUrlsByChainName(chainName);
+  return getAaveRpcUrlsByChainName(chainName);
 }
 
 /**
@@ -745,105 +745,6 @@ async function getCurrentBlockNumber(chainName: string): Promise<number | null> 
   } catch (error) {
     return null;
   }
-}
-
-/**
- * 检查 campaign 是否需要更新非 APR 数据（timeRanges、message 等）
- * 只有在 campaign 结束时（当前时间 >= endDate 或当前区块 >= endBlock）才需要更新
- * 
- * 规则：
- * 1. 如果没有缓存数据 → 需要更新
- * 2. 如果有缓存数据但没有 endBlock 和 endDate（无法判断是否结束）→ 需要更新
- * 3. 如果有 endDate 且当前时间 >= endDate → 需要更新（campaign 已结束）
- * 4. 如果有 endBlock 且当前区块 >= endBlock → 需要更新（campaign 已结束）
- * 5. 其他情况（campaign 进行中）→ 不需要更新
- */
-async function evaluateTimeRangeUpdate(
-  cachedTimeRange: { endDate?: string; endBlock?: string; link?: string } | undefined,
-  key: string
-): Promise<{ needsUpdate: boolean; reasons: string[] }> {
-  const reasons: string[] = [];
-
-  // 如果没有缓存数据，需要更新
-  if (!cachedTimeRange) {
-    reasons.push('missing-cache');
-    return { needsUpdate: true, reasons };
-  }
-  
-  // 如果既没有 endBlock 也没有 endDate，无法判断是否结束，需要更新
-  if (!cachedTimeRange.endBlock && !cachedTimeRange.endDate) {
-    reasons.push('missing-endDate-and-endBlock');
-    return { needsUpdate: true, reasons };
-  }
-  
-  // 检查 endDate
-  if (cachedTimeRange.endDate) {
-    try {
-      // 尝试解析各种日期格式
-      let endDate: Date | null = null;
-      
-      // 尝试直接解析
-      endDate = new Date(cachedTimeRange.endDate);
-      if (isNaN(endDate.getTime())) {
-        // 如果直接解析失败，尝试解析 "Wed Jan 21 2026" 格式
-        const dateMatch = cachedTimeRange.endDate.match(/(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\w+)\s+(\d+)\s+(\d+)/);
-        if (dateMatch) {
-          endDate = new Date(cachedTimeRange.endDate);
-        }
-      }
-      
-      if (endDate && !isNaN(endDate.getTime())) {
-        const now = new Date();
-        // 如果当前时间已经超过结束时间，需要更新（campaign 已结束，可能有新数据）
-        if (now >= endDate) {
-          reasons.push('endDate-passed');
-          return { needsUpdate: true, reasons };
-        }
-        // 如果当前时间 < 结束时间，campaign 还在进行中，不需要更新
-        return { needsUpdate: false, reasons };
-      }
-    } catch (e) {
-      // 日期解析失败，需要更新
-      reasons.push('endDate-parse-error');
-      return { needsUpdate: true, reasons };
-    }
-  }
-  
-  // 检查 endBlock（如果提供了结束区块号）
-  if (cachedTimeRange.endBlock) {
-    try {
-      const endBlock = parseInt(cachedTimeRange.endBlock, 10);
-      if (!isNaN(endBlock)) {
-        // 从 key 中提取链名
-        const parts = key.split('-');
-        const chainName = parts[0];
-        
-        // 获取当前区块号
-        const currentBlock = await getCurrentBlockNumber(chainName);
-        if (currentBlock !== null) {
-          // 如果当前区块已经超过结束区块，需要更新
-          if (currentBlock >= endBlock) {
-            reasons.push('endBlock-passed');
-            return { needsUpdate: true, reasons };
-          }
-          // 如果当前区块 < 结束区块，campaign 还在进行中，不需要更新
-          return { needsUpdate: false, reasons };
-        } else {
-          // 无法获取当前区块号，为了安全起见，需要更新
-          reasons.push('current-block-null');
-          return { needsUpdate: true, reasons };
-        }
-      }
-    } catch (e) {
-      // 区块号解析失败，需要更新
-      reasons.push('endBlock-parse-error');
-      return { needsUpdate: true, reasons };
-    }
-  }
-  
-  // 如果到这里，说明有缓存数据但无法判断状态，为了安全起见，需要更新
-  reasons.push('unknown-state');
-  return { needsUpdate: true, reasons };
 }
 
 function parseMeritEndDate(endDateRaw?: string): Date | null {
@@ -952,7 +853,7 @@ async function loadCachedMeritCampaignMetadata(): Promise<Record<string, MeritCa
         startBlock?: string; 
         endBlock?: string; 
         name?: string; 
-        message?: MeritCampaignInfo[] 
+        message?: MeritCampaignInfo[];
       };
       
       // 检查所有必填字段：link, startDate, endDate（必须存在且非空）
@@ -1003,14 +904,14 @@ async function loadCachedMeritCampaignMetadata(): Promise<Record<string, MeritCa
           }
         }
         
-        validatedTimeRanges[key] = timeRange as { 
-          link: string; 
-          startDate: string; 
-          endDate: string; 
-          startBlock?: string; 
-          endBlock?: string; 
-          name?: string; 
-          message?: MeritCampaignInfo[] 
+        validatedTimeRanges[key] = {
+          link: timeRange.link!,
+          startDate: timeRange.startDate!,
+          endDate: timeRange.endDate!,
+          ...(timeRange.startBlock ? { startBlock: timeRange.startBlock } : {}),
+          ...(timeRange.endBlock ? { endBlock: timeRange.endBlock } : {}),
+          ...(timeRange.name ? { name: timeRange.name } : {}),
+          ...(timeRange.message ? { message: timeRange.message } : {}),
         };
       } else {
         // 记录缺失的字段，便于调试
@@ -1513,7 +1414,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     await writeJsonAtomic(MERIT_CAMPAIGN_METADATA_CACHE_PATH, {
       timestamp: new Date().toISOString(),
       campaignMetadataByKey: timeRanges,
-    });
+    }, { space: 0 });
     meritCampaignMetadataMemoryCache = timeRanges;
     meritCampaignMetadataLoadedFromDisk = true;
     logger.info(`💾 Merit campaign metadata cache saved to ${MERIT_CAMPAIGN_METADATA_CACHE_PATH}`);
@@ -1545,13 +1446,13 @@ export async function fetchAllMeritTimeRanges(
   meritAPRs: Record<string, number | null>,
   options: { 
     maxConcurrent?: number;
-    cachedTimeRanges?: Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }>;
+    cachedTimeRanges?: Record<string, MeritCampaignMetadataEntry>;
   } = {}
-): Promise<Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }>> {
+): Promise<Record<string, MeritCampaignMetadataEntry>> {
   const { maxConcurrent = 1, cachedTimeRanges = {} } = options;
   
   // 从缓存开始，只更新需要更新的部分
-  const timeRanges: Record<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] }> = { ...cachedTimeRanges };
+  const timeRanges: Record<string, MeritCampaignMetadataEntry> = { ...cachedTimeRanges };
   const uniqueKeys = Object.keys(meritAPRs);
   
   if (uniqueKeys.length === 0) {
@@ -1578,7 +1479,6 @@ export async function fetchAllMeritTimeRanges(
   // 并发检查所有 key 是否需要更新
   // Canonical-key support: some keys redirect to another key page (e.g. sonic-supply-usdce -> sonic-supply-usdc).
   // We keep only canonical keys in fetch list, but we will alias duplicates to the canonical result.
-  const canonicalMap = new Map<string, string>();
   const canonicalToAliases = new Map<string, Set<string>>();
 
   // Use aliases from config file
@@ -1587,23 +1487,17 @@ export async function fetchAllMeritTimeRanges(
   const updateChecks = await Promise.all(
     allKeysToCheck.map(async (key) => {
       const canonicalKey = getCanonicalKey(key);
-      canonicalMap.set(key, canonicalKey);
       if (!canonicalToAliases.has(canonicalKey)) canonicalToAliases.set(canonicalKey, new Set());
       canonicalToAliases.get(canonicalKey)!.add(key);
 
       const cached = cachedTimeRanges[key] ?? cachedTimeRanges[canonicalKey];
       const hasSelfAuth = getHasSelfAuthForKey(meritAPRs, canonicalKey);
       const completeness = isCachedTimeRangeComplete({ key: canonicalKey, cached, hasSelfAuth });
-      const needsUpdateByCompleteness = !completeness.isComplete;
-
-      const { needsUpdate: needsUpdateByEndState, reasons: endStateReasons } = await evaluateTimeRangeUpdate(cached, canonicalKey);
-      // 如果缺少 self-auth，即使 campaign 还在进行中，也需要更新
-      // 这确保当 API 中新增了 self- 前缀的 key 时，能够获取到 self-auth 数据
-      const needsUpdateForSelfAuth = hasSelfAuth && completeness.missing.includes('self-auth');
-      const needsUpdate = needsUpdateByEndState || needsUpdateByCompleteness || needsUpdateForSelfAuth;
-      
-      if (needsUpdateForSelfAuth && !needsUpdateByEndState && !needsUpdateByCompleteness) {
-        logger.info(`🔄 Force update for ${canonicalKey}: missing self-auth data (campaign still active, API has self-${canonicalKey})`);
+      // Absolute priority: if cache is complete, skip refresh regardless of active/ended state.
+      // This includes ended campaigns.
+      const needsUpdate = !completeness.isComplete;
+      if (completeness.isComplete) {
+        logger.debug(`📦 Skip refresh for ${canonicalKey}: cached metadata is complete`);
       }
 
       return {
@@ -1613,14 +1507,13 @@ export async function fetchAllMeritTimeRanges(
         cached,
         debug: {
           completenessMissing: completeness.missing,
-          endStateReasons,
         },
       };
     })
   );
   
   const canonicalNeedsUpdate = new Map<string, boolean>();
-  const canonicalCached = new Map<string, { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] } | undefined>();
+  const canonicalCached = new Map<string, MeritCampaignMetadataEntry | undefined>();
 
   for (const { canonicalKey, needsUpdate, cached, debug } of updateChecks) {
     canonicalNeedsUpdate.set(canonicalKey, (canonicalNeedsUpdate.get(canonicalKey) ?? false) || needsUpdate);
@@ -1632,7 +1525,6 @@ export async function fetchAllMeritTimeRanges(
       const logParts = [
         `key=${canonicalKey}`,
         debug?.completenessMissing?.length ? `missing=[${debug.completenessMissing.join(',')}]` : 'missing=[]',
-        debug?.endStateReasons?.length ? `endState=[${debug.endStateReasons.join(',')}]` : 'endState=[]',
       ];
       logger.info(`🧭 Merit timeRange refresh: ${logParts.join(' | ')}`);
     }
@@ -1647,7 +1539,9 @@ export async function fetchAllMeritTimeRanges(
       keysToFetch.push(canonicalKey);
     } else {
       keysToSkip.push(canonicalKey);
-      if (cached) timeRanges[canonicalKey] = cached;
+      if (cached) {
+        timeRanges[canonicalKey] = cached;
+      }
     }
   }
   
@@ -1676,7 +1570,7 @@ export async function fetchAllMeritTimeRanges(
   
   // 使用并发控制来避免过多请求
   const semaphore = { count: 0 };
-  const results: Array<{ key: string; data: { link: string; startDate: string; endDate: string; startBlock?: string; endBlock?: string; name?: string; message?: MeritCampaignInfo[] } }> = [];
+  const results: Array<{ key: string; data: MeritCampaignMetadataEntry }> = [];
   
   const fetchWithLimit = async (key: string) => {
     while (semaphore.count >= maxConcurrent) {

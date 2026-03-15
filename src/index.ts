@@ -15,7 +15,6 @@ import {
   MerklCampaignBreakdown,
   MerklOpportunityData,
   MerklOpportunityGroup,
-  TokenPricesIndex,
   processMerklData,
   findMatchingMerklOpportunities,
   formatMerklBreakdown
@@ -47,19 +46,58 @@ interface MarketData {
   errors: string[];
 }
 
+function toFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof value === 'bigint') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof value === 'object') {
+    // Common Aave client pattern: DecimalValue { value: string }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const maybeValue = (value as any).value;
+    if (typeof maybeValue === 'string' || typeof maybeValue === 'number' || typeof maybeValue === 'bigint') {
+      return toFiniteNumber(maybeValue);
+    }
+  }
+  return null;
+}
+
 interface FormattedReserveData {
+  reserveId: string;
   marketName: string;
   chainName: string;
   chainId: number;
   tokenName: string;
   tokenSymbol: string;
   tokenAddress: string; // underlying token address
+  tokenPrice?: number;
+  reserveSizeUsd?: number;
+  utilizationPct?: number;
   aTokenAddress: string | null; // aToken address
   vTokenAddress: string | null; // variableDebtToken address
   supplyApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
+  supplyDisabled?: boolean; // true when isFrozen, isPaused, or supplyCap is 1
+  supplyCapUsd?: number; // 供应上限（USD）
   borrowApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
+  borrowDisabled?: boolean; // true when borrowingState is DISABLED or borrowCap is 1
+  borrowCapUsd?: number; // 借款上限（USD），与 supplyCapUsd 对称
   supplyIncentives: number[]; // Protocol supply incentives 百分比值数组
   borrowIncentives: number[]; // Protocol borrow incentives 百分比值数组
+  // Rate-input fields for manual APR calculation (raw strings for precision)
+  decimals?: number;
+  availableLiquidity?: string;
+  totalVariableDebt?: string; // Total borrowed (raw token units)
+  reserveFactor?: string;
+  variableRateSlope1?: string;
+  variableRateSlope2?: string;
+  optimalUsageRate?: string;
+  // Note: baseVariableBorrowRate is NOT available from Aave API
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
   merklSupplys?: MerklOpportunityGroup[];
@@ -67,6 +105,147 @@ interface FormattedReserveData {
   merklHolds?: MerklOpportunityGroup[];
   brevisSupplys?: BrevisCampaignItem[];
   brevisBorrows?: BrevisCampaignItem[];
+}
+
+interface RuntimeReserveData {
+  reserveId: string;
+  marketName: string;
+  chainName: string;
+  chainId: number;
+  tokenName: string;
+  tokenSymbol: string;
+  tokenAddress: string;
+  tokenPrice?: number;
+  reserveSizeUsd?: number;
+  utilizationPct?: number;
+  aTokenAddress?: string;
+  vTokenAddress?: string;
+  supplyApy?: number;
+  supplyDisabled?: boolean;
+  supplyCapUsd?: number;
+  borrowApy?: number;
+  borrowDisabled?: boolean;
+  borrowCapUsd?: number;
+  supplyIncentives?: number[];
+  borrowIncentives?: number[];
+  // Rate-input fields for manual APR calculation
+  decimals?: number;
+  availableLiquidity?: string;
+  totalVariableDebt?: string; // Total borrowed (raw token units)
+  reserveFactor?: string;
+  variableRateSlope1?: string;
+  variableRateSlope2?: string;
+  optimalUsageRate?: string;
+  deficit?: string; // from on-chain RPC
+  baseVariableBorrowRate?: string; // from on-chain RPC
+  meritSupplys?: MeritAprEntry[];
+  meritBorrows?: MeritAprEntry[];
+  merklSupplys?: MerklOpportunityGroup[];
+  merklBorrows?: MerklOpportunityGroup[];
+  merklHolds?: MerklOpportunityGroup[];
+  brevisSupplys?: BrevisCampaignItem[];
+  brevisBorrows?: BrevisCampaignItem[];
+}
+
+// Payload interface for backend to import (cron-write/API-read-only pattern)
+// ts-prune-ignore-next
+export interface MarketsPayload {
+  _metadata: {
+    timestamp: string;
+    version: string;
+    dataCount: number;
+    profile: string;
+  };
+  data: RuntimeReserveData[];
+}
+
+// Re-export for backend type usage
+// ts-prune-ignore-next
+export type { RuntimeReserveData };
+
+function pruneMeritEntryForRuntime(entry: MeritAprEntry): MeritAprEntry {
+  return {
+    apr: entry.apr,
+    ...(entry.selfApr !== undefined ? { selfApr: entry.selfApr } : {}),
+    link: entry.link,
+    ...(entry.name ? { name: entry.name } : {}),
+    ...(entry.message ? { message: entry.message } : {}),
+    startDate: entry.startDate,
+    endDate: entry.endDate,
+    ...(entry.lastRoundRewardUsd !== undefined ? { lastRoundRewardUsd: entry.lastRoundRewardUsd } : {}),
+  };
+}
+
+function pruneMerklBreakdownForRuntime(breakdown: MerklCampaignBreakdown): MerklCampaignBreakdown {
+  return {
+    campaignApr: breakdown.campaignApr,
+    campaignStartedAt: breakdown.campaignStartedAt,
+    campaignEndedAt: breakdown.campaignEndedAt,
+    campaignId: breakdown.campaignId,
+    ...(breakdown.whitelistOnly !== undefined ? { whitelistOnly: breakdown.whitelistOnly } : {}),
+    ...(breakdown.pointsPerThousandUsd !== undefined
+      ? { pointsPerThousandUsd: breakdown.pointsPerThousandUsd }
+      : {}),
+  };
+}
+
+function pruneMerklGroupForRuntime(group: MerklOpportunityGroup): MerklOpportunityGroup {
+  return {
+    link: group.link,
+    ...(group.name ? { name: group.name } : {}),
+    ...(group.message ? { message: group.message } : {}),
+    breakdowns: (group.breakdowns ?? []).map(pruneMerklBreakdownForRuntime),
+  };
+}
+
+function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData {
+  return {
+    reserveId: item.reserveId,
+    marketName: item.marketName,
+    chainName: item.chainName,
+    chainId: item.chainId,
+    tokenName: item.tokenName,
+    tokenSymbol: item.tokenSymbol,
+    tokenAddress: item.tokenAddress,
+    ...(item.tokenPrice !== undefined ? { tokenPrice: item.tokenPrice } : {}),
+    ...(item.reserveSizeUsd !== undefined ? { reserveSizeUsd: item.reserveSizeUsd } : {}),
+    ...(item.utilizationPct !== undefined ? { utilizationPct: item.utilizationPct } : {}),
+    ...(item.aTokenAddress ? { aTokenAddress: item.aTokenAddress } : {}),
+    ...(item.vTokenAddress ? { vTokenAddress: item.vTokenAddress } : {}),
+    ...(item.supplyApy !== undefined ? { supplyApy: item.supplyApy } : {}),
+    ...(item.supplyDisabled ? { supplyDisabled: true } : {}),
+    ...(item.supplyCapUsd !== undefined ? { supplyCapUsd: item.supplyCapUsd } : {}),
+    ...(item.borrowApy !== undefined ? { borrowApy: item.borrowApy } : {}),
+    ...(item.borrowDisabled ? { borrowDisabled: true } : {}),
+    ...(item.borrowCapUsd !== undefined ? { borrowCapUsd: item.borrowCapUsd } : {}),
+    ...(item.supplyIncentives && item.supplyIncentives.length > 0 ? { supplyIncentives: item.supplyIncentives } : {}),
+    ...(item.borrowIncentives && item.borrowIncentives.length > 0 ? { borrowIncentives: item.borrowIncentives } : {}),
+    ...(item.meritSupplys && item.meritSupplys.length > 0
+      ? { meritSupplys: item.meritSupplys.map(pruneMeritEntryForRuntime) }
+      : {}),
+    ...(item.meritBorrows && item.meritBorrows.length > 0
+      ? { meritBorrows: item.meritBorrows.map(pruneMeritEntryForRuntime) }
+      : {}),
+    ...(item.merklSupplys && item.merklSupplys.length > 0
+      ? { merklSupplys: item.merklSupplys.map(pruneMerklGroupForRuntime) }
+      : {}),
+    ...(item.merklBorrows && item.merklBorrows.length > 0
+      ? { merklBorrows: item.merklBorrows.map(pruneMerklGroupForRuntime) }
+      : {}),
+    ...(item.merklHolds && item.merklHolds.length > 0
+      ? { merklHolds: item.merklHolds.map(pruneMerklGroupForRuntime) }
+      : {}),
+    ...(item.brevisSupplys && item.brevisSupplys.length > 0 ? { brevisSupplys: item.brevisSupplys } : {}),
+    ...(item.brevisBorrows && item.brevisBorrows.length > 0 ? { brevisBorrows: item.brevisBorrows } : {}),
+    // Rate-input fields for manual APR calculation
+    ...(item.decimals !== undefined ? { decimals: item.decimals } : {}),
+    ...(item.availableLiquidity ? { availableLiquidity: item.availableLiquidity } : {}),
+    ...(item.totalVariableDebt ? { totalVariableDebt: item.totalVariableDebt } : {}),
+    ...(item.reserveFactor ? { reserveFactor: item.reserveFactor } : {}),
+    ...(item.variableRateSlope1 ? { variableRateSlope1: item.variableRateSlope1 } : {}),
+    ...(item.variableRateSlope2 ? { variableRateSlope2: item.variableRateSlope2 } : {}),
+    ...(item.optimalUsageRate ? { optimalUsageRate: item.optimalUsageRate } : {}),
+  };
 }
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
@@ -231,12 +410,30 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
 
         const tokenSymbol = reserve.underlyingToken?.symbol || 'Unknown';
         const tokenAddress = reserve.underlyingToken?.address || '';
+        const tokenAddressLower = tokenAddress.toLowerCase();
+        const reserveId = `${marketName}:${chainId}:${tokenAddressLower}`;
+        const tokenPrice =
+          toFiniteNumber(reserve?.size?.usdPerToken) ??
+          toFiniteNumber(reserve?.usdExchangeRate) ??
+          undefined;
+        const reserveSizeUsd = toFiniteNumber(reserve?.size?.usd) ?? undefined;
+        const utilizationRaw = toFiniteNumber(reserve?.borrowInfo?.utilizationRate?.value);
+        const utilizationPct =
+          utilizationRaw !== null && utilizationRaw >= 0 ? utilizationRaw * 100 : undefined;
         const aTokenAddress = reserve.aToken?.address ?? null;
         const vTokenAddress = reserve.vToken?.address ?? null;
         
-        // 检查 supplyCap，如果为 1 则将 supplyApy 设置为 undefined（因为对用户没有意义）
+        // 检查 supply 是否被禁用：isFrozen、isPaused、supplyCap=1
+        const isFrozen = reserve.isFrozen === true;
+        const isPaused = reserve.isPaused === true;
         const supplyCapValue = reserve.supplyInfo?.supplyCap?.amount?.value;
         const supplyCapIsOne = supplyCapValue !== undefined && parseFloat(supplyCapValue) === 1;
+        const isSupplyDisabled = isFrozen || isPaused || supplyCapIsOne;
+        
+        // 提取 supplyCapUsd（单位：USD）
+        const supplyCapUsdRaw = reserve.supplyInfo?.supplyCap?.usd;
+        const supplyCapUsd = supplyCapUsdRaw ? parseFloat(supplyCapUsdRaw) : undefined;
+        
         // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
         const supplyApyValue = reserve.supplyInfo?.apy?.value;
         const supplyApy = supplyCapIsOne || !supplyApyValue
@@ -246,15 +443,30 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         // 检查 borrowingState 是否为 "DISABLED"，如果是则表示该 token 不能被 borrow
         const isBorrowDisabledByState = reserve.borrowInfo?.borrowingState === "DISABLED";
         
-        // 检查 borrowCap，如果为 1 则将 borrowApy 设置为 undefined（因为对用户没有意义）
+        // 检查 borrowCap，如果为 1 也视为 disabled（因为对用户没有实际意义）
         const borrowCapValue = reserve.borrowInfo?.borrowCap?.amount?.value;
         const borrowCapIsOne = borrowCapValue !== undefined && parseFloat(borrowCapValue) === 1;
         const isBorrowDisabled = isBorrowDisabledByState || borrowCapIsOne;
+        
+        // 提取 borrowCapUsd（单位：USD），与 supplyCapUsd 对称
+        const borrowCapUsdRaw = reserve.borrowInfo?.borrowCap?.usd;
+        const borrowCapUsd = borrowCapUsdRaw ? parseFloat(borrowCapUsdRaw) : undefined;
+        
         // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
+        // 即使 disabled 也传递真实的 borrowApy（前端可能需要展示参考值）
         const borrowApyValue = reserve.borrowInfo?.apy?.value;
-        const borrowApy = isBorrowDisabled || !borrowApyValue
-          ? undefined 
-          : parseFloat(borrowApyValue) * 100;
+        const borrowApy = borrowApyValue ? parseFloat(borrowApyValue) * 100 : undefined;
+        
+        // Rate-input fields for manual APR calculation (from Aave SDK)
+        // All raw values are strings to preserve precision for on-chain math
+        const decimals = reserve.underlyingToken?.decimals ?? undefined;
+        const availableLiquidity = reserve.borrowInfo?.availableLiquidity?.amount?.raw ?? undefined;
+        const totalVariableDebt = reserve.borrowInfo?.total?.amount?.raw ?? undefined; // Total borrowed
+        const reserveFactorRaw = reserve.borrowInfo?.reserveFactor?.raw ?? undefined;
+        const variableRateSlope1 = reserve.borrowInfo?.variableRateSlope1?.raw ?? undefined;
+        const variableRateSlope2 = reserve.borrowInfo?.variableRateSlope2?.raw ?? undefined;
+        const optimalUsageRate = reserve.borrowInfo?.optimalUsageRate?.raw ?? undefined;
+        // Note: baseVariableBorrowRate is NOT available from Aave API
         
         // 从 reserve.incentives 中提取 protocol supply 和 borrow incentives
         // 使用 value*100 转换为百分比值数组
@@ -281,19 +493,39 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         // 创建完整的结构化数据，包含所有激励字段
         // 空值初始化为 undefined，以便在 JSON 序列化时省略
         baseDataset.push({
+          reserveId,
           marketName,
           chainName,
           chainId,
           tokenName: reserve.underlyingToken?.name || 'Unknown',
           tokenSymbol,
           tokenAddress,
+          tokenPrice,
+          reserveSizeUsd,
+          utilizationPct,
           aTokenAddress,
           vTokenAddress,
           supplyApy,
+          // 仅当 supply 被禁用时才添加此标志（节约带宽）
+          ...(isSupplyDisabled ? { supplyDisabled: true } : {}),
+          // supplyCapUsd 始终传递（如果有值）
+          ...(supplyCapUsd !== undefined ? { supplyCapUsd } : {}),
           borrowApy,
+          // 仅当 borrowing 被禁用时才添加此标志（节约带宽）
+          ...(isBorrowDisabled ? { borrowDisabled: true } : {}),
+          // borrowCapUsd 始终传递（如果有值），与 supplyCapUsd 对称
+          ...(borrowCapUsd !== undefined ? { borrowCapUsd } : {}),
           // Protocol incentives - 从 reserve.incentives 提取
           supplyIncentives: protocolSupplyIncentives.length > 0 ? protocolSupplyIncentives : undefined as any,
-          borrowIncentives: protocolBorrowIncentives.length > 0 ? protocolBorrowIncentives : undefined as any
+          borrowIncentives: protocolBorrowIncentives.length > 0 ? protocolBorrowIncentives : undefined as any,
+          // Rate-input fields for manual APR calculation (raw strings for precision)
+          ...(decimals !== undefined ? { decimals } : {}),
+          ...(availableLiquidity ? { availableLiquidity } : {}),
+          ...(totalVariableDebt ? { totalVariableDebt } : {}),
+          ...(reserveFactorRaw ? { reserveFactor: reserveFactorRaw } : {}),
+          ...(variableRateSlope1 ? { variableRateSlope1 } : {}),
+          ...(variableRateSlope2 ? { variableRateSlope2 } : {}),
+          ...(optimalUsageRate ? { optimalUsageRate } : {}),
         });
       });
     }
@@ -307,7 +539,7 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
 type MeritDataIndex = Record<string, MeritDataItem>;
 type MerklDataIndex = Record<string, MerklOpportunityData[]>;
 type BrevisDataIndex = Record<string, BrevisDataItem>;
-type MerklProcessedData = { index: MerklDataIndex; tokenPrices: TokenPricesIndex };
+type MerklProcessedData = { index: MerklDataIndex };
 
 function enrichDatasetWithIncentiveData(
   baseDataset: FormattedReserveData[],
@@ -766,7 +998,7 @@ async function fetchAaveMarkets(): Promise<void> {
     });
     const merklPromise = processMerklData().catch((error) => {
       logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-      return { index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex } as MerklProcessedData;
+      return { index: {} as MerklDataIndex } as MerklProcessedData;
     });
     const brevisPromise = fetchBrevisAprs(baseDataset).catch((error) => {
       logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -778,7 +1010,7 @@ async function fetchAaveMarkets(): Promise<void> {
     const INCENTIVE_DATA_TIMEOUT_MS = 10 * 60 * 1000; // 10 分钟
     
     // 创建一个包装函数，用于在超时后提取已完成的结果
-    const getCompletedResults = async (): Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex; tokenPrices: TokenPricesIndex }> => {
+    const getCompletedResults = async (): Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex }> => {
       // 等待所有任务完成或超时
       const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
       
@@ -786,9 +1018,8 @@ async function fetchAaveMarkets(): Promise<void> {
       const merklResult: MerklProcessedData =
         results[1].status === 'fulfilled'
           ? (results[1].value as MerklProcessedData)
-          : { index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex };
+          : { index: {} as MerklDataIndex };
       const merklData: MerklDataIndex = merklResult.index;
-      const merklTokenPrices: TokenPricesIndex = merklResult.tokenPrices;
       const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
       
       if (results[0].status === 'rejected') {
@@ -801,23 +1032,21 @@ async function fetchAaveMarkets(): Promise<void> {
         logger.warn(`⚠️ Brevis data fetching was rejected, using empty data`);
       }
       
-      return { merit: meritData, merkl: merklData, brevis: brevisData, tokenPrices: merklTokenPrices };
+      return { merit: meritData, merkl: merklData, brevis: brevisData };
     };
     
-    // 创建超时 Promise
-    const timeoutPromise = new Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex; tokenPrices: TokenPricesIndex }>((resolve) => {
-      setTimeout(async () => {
+    // 创建超时 Promise（带取消功能）
+    let timeoutId: NodeJS.Timeout | null = null;
+    let mainTaskCompleted = false;
+    
+    const timeoutPromise = new Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex }>((resolve) => {
+      timeoutId = setTimeout(async () => {
+        // 如果主任务已完成，不输出警告
+        if (mainTaskCompleted) return;
+        
         logger.warn(`⏱️ Incentive data fetching timeout after ${INCENTIVE_DATA_TIMEOUT_MS / 1000}s, extracting completed results...`);
         
-        // 超时后，检查哪些任务已完成，使用已完成的结果
-        const results = await Promise.allSettled([
-          Promise.race([meritPromise, Promise.resolve({} as MeritDataIndex)]),
-          Promise.race([merklPromise, Promise.resolve({ index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex } as MerklProcessedData)]),
-          Promise.race([brevisPromise, Promise.resolve({} as BrevisDataIndex)]),
-        ]);
-        
         // 使用一个很短的超时（100ms）来检查每个 Promise 是否已完成
-        // 如果已完成，获取结果；如果还在 pending，使用空对象
         const checkCompleted = async <T>(promise: Promise<T>, defaultValue: T): Promise<{ completed: boolean; value: T }> => {
           try {
             const result = await Promise.race([
@@ -834,13 +1063,12 @@ async function fetchAaveMarkets(): Promise<void> {
         
         const [meritCheck, merklCheck, brevisCheck] = await Promise.all([
           checkCompleted(meritPromise, {} as MeritDataIndex),
-          checkCompleted(merklPromise, { index: {} as MerklDataIndex, tokenPrices: {} as TokenPricesIndex } as MerklProcessedData),
+          checkCompleted(merklPromise, { index: {} as MerklDataIndex } as MerklProcessedData),
           checkCompleted(brevisPromise, {} as BrevisDataIndex),
         ]);
         
         const meritData: MeritDataIndex = meritCheck.completed ? meritCheck.value : {};
         const merklData: MerklDataIndex = merklCheck.completed ? merklCheck.value.index : {};
-        const merklTokenPrices: TokenPricesIndex = merklCheck.completed ? merklCheck.value.tokenPrices : {};
         const brevisData: BrevisDataIndex = brevisCheck.completed ? brevisCheck.value : {};
         
         logger.warn(`   • Merit: ${meritCheck.completed ? 'completed' : 'timeout/empty'}`);
@@ -848,13 +1076,17 @@ async function fetchAaveMarkets(): Promise<void> {
         logger.warn(`   • Brevis: ${brevisCheck.completed ? 'completed' : 'timeout/empty'}`);
         logger.warn(`   • Using available results, unfinished tasks continue in background`);
         
-        resolve({ merit: meritData, merkl: merklData, brevis: brevisData, tokenPrices: merklTokenPrices });
+        resolve({ merit: meritData, merkl: merklData, brevis: brevisData });
       }, INCENTIVE_DATA_TIMEOUT_MS);
     });
     
     // 使用 Promise.race，取先完成的（任务完成或超时）
-    const { merit: meritData, merkl: merklData, brevis: brevisData, tokenPrices: merklTokenPrices } = await Promise.race([
-      getCompletedResults(),
+    const { merit: meritData, merkl: merklData, brevis: brevisData } = await Promise.race([
+      getCompletedResults().then(result => {
+        mainTaskCompleted = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        return result;
+      }),
       timeoutPromise,
     ]);
     
@@ -866,28 +1098,36 @@ async function fetchAaveMarkets(): Promise<void> {
     
     logger.info(`🎯 Final dataset contains ${enrichedData.length} token combinations`);
     
-    // 保存格式化的JSON数据（包含时间戳元数据）
-    // 使用从 fetchAaveMarketData 返回的时间戳，而不是重新生成
+    // 保存格式化 JSON 数据（runtime 最小可用 + debug 全量）
     const formattedJsonPath = join(RUNTIME_DATA_DIR, 'aave-formatted-data.json');
-    const dataWithMetadata = {
+    const debugFormattedJsonPath = join(DEBUG_DATA_DIR, 'aave-formatted-data.full.json');
+    const runtimeData = enrichedData.map(pruneReserveForRuntime);
+    const runtimePayload = {
       _metadata: {
-        timestamp: marketData.timestamp, // 使用从 fetchAaveMarketData 返回的时间戳
-        version: '1.0',
-        dataCount: enrichedData.length,
+        timestamp: marketData.timestamp,
+        version: '2.0-runtime-minimal',
+        dataCount: runtimeData.length,
+        profile: 'runtime-minimal',
       },
-      tokenPrices: merklTokenPrices,
+      data: runtimeData,
+    };
+    const debugPayload = {
+      _metadata: {
+        timestamp: marketData.timestamp,
+        version: '2.0-debug-full',
+        dataCount: enrichedData.length,
+        profile: 'debug-full',
+      },
       data: enrichedData,
     };
-    // 使用自定义 replacer 函数，确保 undefined 字段被完全省略，null 也会被转换为 undefined 并省略
-    await writeJsonAtomic(formattedJsonPath, dataWithMetadata, { replacer: (key: string, value: unknown) => {
-      // 将 null 转换为 undefined，这样会被省略（JSON.stringify 默认会省略 undefined）
-      // 注意：JSON.stringify 默认行为：
-      // - undefined: 被省略（不序列化）
-      // - null: 序列化为 "null"（会出现在 JSON 中）
-      // 所以我们把 null 也转换为 undefined 来省略它
-      return value === null ? undefined : (value === undefined ? undefined : value);
-    }});
-    
+    // Runtime: minimal JSON (no pretty-print) and omit null/undefined for smaller file.
+    await writeJsonAtomic(formattedJsonPath, runtimePayload, {
+      replacer: (key: string, value: unknown) =>
+        value === null ? undefined : (value === undefined ? undefined : value),
+      space: 0,
+    });
+    await writeJsonAtomic(debugFormattedJsonPath, debugPayload);
+
     // 生成CSV格式
     const csvData = generateCSV(enrichedData);
     await mkdir(EXPORT_DATA_DIR, { recursive: true });
@@ -896,7 +1136,8 @@ async function fetchAaveMarkets(): Promise<void> {
     
     const outputPath = join(DEBUG_DATA_DIR, 'aave-all-markets-data.json');
     logger.info(`💾 Original data saved to ${outputPath}`);
-    logger.info(`📊 Formatted JSON saved to ${formattedJsonPath}`);
+    logger.info(`📊 Runtime minimal JSON saved to ${formattedJsonPath}`);
+    logger.info(`🧪 Debug full JSON saved to ${debugFormattedJsonPath}`);
     logger.info(`📈 CSV data saved to ${csvPath}`);
     logger.info(`📁 Runtime data dir: ${RUNTIME_DATA_DIR}`);
     logger.info(`📁 Debug data dir: ${DEBUG_DATA_DIR}`);
@@ -935,6 +1176,66 @@ async function fetchAaveMarkets(): Promise<void> {
       logger.error('❌ Failed to save error data:', writeError);
     }
   }
+}
+
+// 导出数据获取函数供 backend 内化使用（cron-write/API-read-only 模式）
+// 返回内存中的 payload，不写文件
+// ts-prune-ignore-next
+export async function fetchMarketsPayload(): Promise<MarketsPayload> {
+  // 🧹 启动时检查并清理 Cloudflare browser sessions
+  logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
+  await checkAndReportSessionStatus();
+
+  // 从所有链获取市场数据
+  const marketData = await fetchAaveMarketData();
+  
+  // 格式化数据
+  logger.info('\n📊 Formatting market data...');
+  const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
+  logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
+
+  // 并发获取 Merit、Merkl 和 Brevis 数据
+  logger.info('🚀 Starting incentive data fetching concurrently...');
+  
+  const meritPromise = fetchMeritData().catch((error) => {
+    logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return {} as MeritDataIndex;
+  });
+  const merklPromise = processMerklData().catch((error) => {
+    logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { index: {} as MerklDataIndex } as MerklProcessedData;
+  });
+  const brevisPromise = fetchBrevisAprs(baseDataset).catch((error) => {
+    logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return {} as BrevisDataIndex;
+  });
+
+  const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
+  
+  const meritData: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
+  const merklResult: MerklProcessedData =
+    results[1].status === 'fulfilled'
+      ? (results[1].value as MerklProcessedData)
+      : { index: {} as MerklDataIndex };
+  const merklData: MerklDataIndex = merklResult.index;
+  const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
+
+  // Enrich with incentive data
+  logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
+  const enrichedData = enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
+  const runtimeData = enrichedData.map(pruneReserveForRuntime);
+
+  logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves`);
+
+  return {
+    _metadata: {
+      timestamp: marketData.timestamp,
+      version: '2.0-runtime-minimal',
+      dataCount: runtimeData.length,
+      profile: 'runtime-minimal',
+    },
+    data: runtimeData,
+  };
 }
 
 // 导出主函数,以便其他模块可以调用（backend 通过 dist 引用）

@@ -203,19 +203,6 @@ export interface MerklOpportunityData {
   description?: string; // Opportunity 描述（内部使用，最终会转换为 message）
 }
 
-export type TokenPriceSource = 'opportunity' | 'reward';
-
-export interface TokenPriceEntry {
-  chainId: number;
-  address: string;
-  symbol: string;
-  price: number;
-  updatedAt: number;
-  source: TokenPriceSource;
-}
-
-export type TokenPricesIndex = Record<string, TokenPriceEntry>;
-
 type ForecastCampaignTypeLite =
   | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   | 'DUTCH_AUCTION'
@@ -467,66 +454,6 @@ export function parseMarketNameFromOpportunityName(opportunityName: string | und
   return 'Unknown';
 }
 
-const buildTokenKey = (chainId: number, address: string): string =>
-  `${chainId}:${address.toLowerCase()}`;
-
-const addTokenPrice = (
-  tokenPrices: TokenPricesIndex,
-  token: { address?: string; symbol?: string; chainId?: number; price?: number; updatedAt?: number } | undefined,
-  fallbackChainId: number,
-  source: TokenPriceSource
-): void => {
-  if (!token?.address || token.price === undefined || token.price === null) return;
-  const chainId = token.chainId ?? fallbackChainId;
-  if (!chainId) return;
-
-  const key = buildTokenKey(chainId, token.address);
-  const existing = tokenPrices[key];
-  const priceValue = Number(token.price);
-  if (!Number.isFinite(priceValue)) return;
-
-  const updatedAt = token.updatedAt ? Number(token.updatedAt) : Date.now();
-  const entry: TokenPriceEntry = {
-    chainId,
-    address: token.address,
-    symbol: token.symbol || 'Unknown',
-    price: priceValue,
-    updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
-    source,
-  };
-
-  if (!existing) {
-    tokenPrices[key] = entry;
-    return;
-  }
-
-  const sourcePriority: Record<TokenPriceSource, number> = {
-    opportunity: 1,
-    reward: 2,
-  };
-
-  if (sourcePriority[entry.source] >= sourcePriority[existing.source]) {
-    tokenPrices[key] = entry;
-  }
-};
-
-const extractTokenPrices = (opportunities: MerklOpportunity[]): TokenPricesIndex => {
-  const tokenPrices: TokenPricesIndex = {};
-
-  opportunities.forEach((opp) => {
-    if (opp.tokens && Array.isArray(opp.tokens)) {
-      opp.tokens.forEach((token) => addTokenPrice(tokenPrices, token, opp.chainId, 'opportunity'));
-    }
-
-    if (opp.rewardsRecord?.breakdowns) {
-      opp.rewardsRecord.breakdowns.forEach((breakdown) => {
-        addTokenPrice(tokenPrices, breakdown.token, opp.chainId, 'reward');
-      });
-    }
-  });
-
-  return tokenPrices;
-};
 
 /**
  * 处理 Merkl 数据，构建索引并返回
@@ -534,13 +461,12 @@ const extractTokenPrices = (opportunities: MerklOpportunity[]): TokenPricesIndex
  * 对于 chainId === 1，使用 marketName-chainId-explorerAddress 作为 key
  * 对于其他 chainId，使用 chainId-explorerAddress 作为 key
  */
-export async function processMerklData(): Promise<{ index: Record<string, MerklOpportunityData[]>; tokenPrices: TokenPricesIndex }> {
+export async function processMerklData(): Promise<{ index: Record<string, MerklOpportunityData[]> }> {
   const opportunities = await fetchMerklOpportunities();
   const merklData: Record<string, MerklOpportunityData[]> = {};
   logger.info('🔍 Processing Merkl opportunities...');
   // fetchMerklOpportunities 已在 API 层过滤 status=LIVE
   const liveOpportunities = opportunities;
-  const tokenPrices = extractTokenPrices(liveOpportunities);
   const tydroCount = liveOpportunities.filter(opp => opp.protocol?.id === 'tydro').length;
   const aaveCount = liveOpportunities.length - tydroCount;
   logger.info(`Processing ${liveOpportunities.length} live opportunities (${aaveCount} Aave, ${tydroCount} Tydro)`);
@@ -718,7 +644,6 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
     rawOpportunities: opportunities, // 保存所有原始数据（包括非 live 的）
     liveOpportunities: liveOpportunities, // 保存过滤后的 live opportunities
     processedData,
-    tokenPrices,
     index: merklData
   });
   logger.info(`💾 Merkl raw data saved to ${merklRawDataPath}`);
@@ -727,10 +652,10 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   await writeJsonAtomic(merklForecastLitePath, {
     timestamp: new Date().toISOString(),
     campaigns: forecastCampaignMetaLite,
-  });
+  }, { space: 0 });
   logger.info(`💾 Merkl forecast lite data saved to ${merklForecastLitePath}`);
   
-  return { index: merklData, tokenPrices };
+  return { index: merklData };
 }
 
 /**
