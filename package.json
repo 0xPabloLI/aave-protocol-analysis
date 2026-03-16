@@ -25,12 +25,12 @@
     "prune": "ts-prune -i '.*aave-shared-config/index\\.d\\.ts' 2>&1 | (grep -v '(used in module)' | grep -q . && exit 1 || exit 0)"
   },
   "dependencies": {
-    "@aave/client": "^0.6.1",
+    "@aave/client": "^0.9.2",
     "@bgd-labs/aave-address-book": "^4.44.22",
     "@internal/aave-shared-config": "file:packages/aave-shared-config",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@types/puppeteer": "^5.4.7",
-    "cheerio": "^1.1.2",
+    "cheerio": "^1.2.0",
     "dotenv": "^17.3.1",
     "node-fetch": "^3.3.2",
     "puppeteer": "^24.35.0",
@@ -44,10 +44,10 @@
     "preact": "^10.28.3"
   },
   "devDependencies": {
-    "@types/cheerio": "^0.22.35",
-    "@types/node": "^25.4.0",
+    "@types/cheerio": "^1.0.0",
+    "@types/node": "^25.5.0",
     "ts-prune": "^0.10.3",
-    "tsx": "^4.0.0",
-    "typescript": "^5.0.0"
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   }
 }
