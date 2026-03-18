@@ -64,6 +64,8 @@ The backend requires runtime data files before serving requests:
 - If checks still fail after auto-fix, stop the commit/push and fix the root cause before retrying.
 - Do not bypass hooks as a normal workflow.
 - If local checks fail repeatedly, rely on CI remediation PR flow as a fallback path, then merge validated fixes back to the working branch.
+- Do not merge feature/dependency branches into `main` locally. Use remote merge via GitHub PR only (merge button / auto-merge / `gh pr merge`).
+- Preferred flow: push branch → open PR against target branch → wait CI green → remote merge.
 
 **Lock File Drift Prevention**:
 - `pre-commit` auto-stages any unstaged `package-lock.json` / `backend/package-lock.json` changes to prevent local/CI audit drift.
