@@ -111,7 +111,7 @@ jobs:
               }
             }
 
-  # Job 2: Dependabot PRs — auto-merge patch/minor + GitHub Actions major
+  # Job 2: Dependabot PRs — auto-merge security updates only
   approve-dependabot-pr:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
@@ -122,11 +122,9 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Auto-approve and merge safe updates
+      - name: Auto-approve and merge security updates
         if: >
-          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
-          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
-          steps.metadata.outputs.package-ecosystem == 'github_actions'
+          steps.metadata.outputs.is-security-update == 'true'
         uses: actions/github-script@v8
         with:
           script: |

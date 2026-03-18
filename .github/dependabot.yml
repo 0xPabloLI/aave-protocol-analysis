@@ -7,7 +7,8 @@ updates:
       day: monday
       time: "03:00"
       timezone: UTC
-    open-pull-requests-limit: 10
+    # Disable regular version-update PRs; keep security updates enabled.
+    open-pull-requests-limit: 0
     labels:
       - dependencies
     commit-message:
@@ -29,7 +30,8 @@ updates:
       day: monday
       time: "03:10"
       timezone: UTC
-    open-pull-requests-limit: 10
+    # Disable regular version-update PRs; keep security updates enabled.
+    open-pull-requests-limit: 0
     labels:
       - dependencies
     commit-message:
@@ -51,7 +53,8 @@ updates:
       day: monday
       time: "03:20"
       timezone: UTC
-    open-pull-requests-limit: 10
+    # Disable regular version-update PRs; keep security updates enabled.
+    open-pull-requests-limit: 0
     labels:
       - dependencies
     commit-message:
