@@ -184,6 +184,17 @@ curl http://localhost:3001/health
 - Winston 日志自动轮转：每个文件最大 5MB，保留 5 个文件
 - PM2 日志轮转：通过 `pm2-logrotate` 模块管理（50MB，保留 2 个文件）
 
+## Railway 单服务部署（Dockerfile）
+
+从仓库根目录用根目录的 `Dockerfile` 部署时，**必须使用仓库根作为构建上下文**。
+
+- 在 Railway 项目里，该服务的 **Root Directory** 必须为**空**或 **`.`**（仓库根）。
+- 若 Root Directory 设为 `backend`，构建上下文只有 `backend/` 目录，会出现 `"/backend/tsconfig.json": not found` 等错误，因为 Dockerfile 里使用了 `COPY package*.json`、`COPY packages/`、`COPY backend/...`，这些都相对于**仓库根**。
+
+**修改方式**：Railway 项目 → 选择该服务 → **Settings** → **Build** → 将 **Root Directory** 清空或设为 `.`，保存后重新部署。
+
+**若 Staging 能成功而 Production 失败**：多半是两边 **Root Directory** 不一致。Staging 若「指向 backend」仍能成功，通常是 Staging 的 Root Directory 实际为**仓库根**（空或 `.`），只是部署出来的*应用*是 backend；而失败的环境把 Root Directory 设成了 `backend`，导致构建上下文只有 `backend/`、根目录 `railway.json` 又指定了 DOCKERFILE，于是用根目录的 Dockerfile 配只有 backend 的上下文，报错。请在 Railway 里对比 **Staging** 与 **Production** 该服务的 **Settings → Build → Root Directory**，将失败环境改为与 Staging 一致（仓库根）。
+
 ## 故障排查
 
 ### 服务无法启动
