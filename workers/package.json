@@ -15,7 +15,7 @@
     "@cloudflare/workers-types": "^4.20240101.0",
     "typescript": "^5.0.0",
     "workerd": "^1.20241218.0",
-    "wrangler": "^3.59.3"
+    "wrangler": "^4.75.0"
   },
   "optionalDependencies": {
     "@cloudflare/workerd-darwin-arm64": "^1.20260123.0"
