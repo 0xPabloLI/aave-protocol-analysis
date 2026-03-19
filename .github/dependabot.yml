@@ -16,13 +16,10 @@ updates:
       prefix: "chore"
       include: scope
     groups:
-      patch-minor:
-        update-types:
-          - "patch"
-          - "minor"
-      major:
-        update-types:
-          - "major"
+      security-all:
+        applies-to: security-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: npm
     directory: "/backend"
@@ -40,13 +37,10 @@ updates:
       prefix: "chore"
       include: scope
     groups:
-      patch-minor:
-        update-types:
-          - "patch"
-          - "minor"
-      major:
-        update-types:
-          - "major"
+      security-all:
+        applies-to: security-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: npm
     directory: "/workers"
@@ -64,13 +58,10 @@ updates:
       prefix: "chore"
       include: scope
     groups:
-      patch-minor:
-        update-types:
-          - "patch"
-          - "minor"
-      major:
-        update-types:
-          - "major"
+      security-all:
+        applies-to: security-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: github-actions
     directory: "/"
@@ -88,6 +79,7 @@ updates:
       prefix: "chore"
       include: scope
     groups:
-      actions-all:
+      security-all:
+        applies-to: security-updates
         patterns:
           - "*"
