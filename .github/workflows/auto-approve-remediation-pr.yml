@@ -111,7 +111,7 @@ jobs:
               }
             }
 
-  # Job 2: Dependabot PRs — auto-merge security updates only
+  # Job 2: Dependabot PRs — auto-approve security updates (no auto-merge)
   approve-dependabot-pr:
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
@@ -122,7 +122,7 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      - name: Auto-approve and merge security updates
+      - name: Auto-approve security updates
         if: >
           steps.metadata.outputs.is-security-update == 'true'
         uses: actions/github-script@v8
@@ -144,32 +144,6 @@ jobs:
               event: 'APPROVE',
               body: `${label}: auto-approved.`,
             });
-
-            // Retry enableAutoMerge — CI checks may still be pending
-            const maxAttempts = 5;
-            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-              try {
-                await github.graphql(
-                  `
-                  mutation EnableAutoMerge($pullRequestId: ID!) {
-                    enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
-                      pullRequest { number }
-                    }
-                  }
-                  `,
-                  { pullRequestId: context.payload.pull_request.node_id }
-                );
-                core.info(`Auto-merge enabled on attempt ${attempt}`);
-                break;
-              } catch (error) {
-                if (attempt === maxAttempts) {
-                  core.warning(`Enable auto-merge failed after ${maxAttempts} attempts: ${error.message}`);
-                } else {
-                  core.info(`Attempt ${attempt} failed (${error.message}), retrying in 30s...`);
-                  await new Promise(r => setTimeout(r, 30000));
-                }
-              }
-            }
 
       - name: Comment on major npm updates
         if: >
