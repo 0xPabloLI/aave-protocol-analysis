@@ -1,27 +1,55 @@
 version: 2
-multi-ecosystem-groups:
-  security-rollup:
-    schedule:
-      interval: weekly
-      day: monday
-      time: "03:00"
-      timezone: UTC
-
 updates:
   - package-ecosystem: npm
-    directories:
-      - "/"
-      - "/backend"
-      - "/workers"
+    directory: "/"
     target-branch: "railway"
     schedule:
       interval: weekly
       day: monday
       time: "03:00"
       timezone: UTC
-    multi-ecosystem-group: security-rollup
-    patterns:
-      - "*"
+    # Disable regular version-update PRs; keep security updates enabled.
+    open-pull-requests-limit: 0
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore"
+      include: scope
+    groups:
+      security-all:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: "/backend"
+    target-branch: "railway"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:10"
+      timezone: UTC
+    # Disable regular version-update PRs; keep security updates enabled.
+    open-pull-requests-limit: 0
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "chore"
+      include: scope
+    groups:
+      security-all:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: "/workers"
+    target-branch: "railway"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:15"
+      timezone: UTC
     # Disable regular version-update PRs; keep security updates enabled.
     open-pull-requests-limit: 0
     labels:
@@ -43,9 +71,6 @@ updates:
       day: monday
       time: "03:20"
       timezone: UTC
-    multi-ecosystem-group: security-rollup
-    patterns:
-      - "*"
     # Disable regular version-update PRs; keep security updates enabled.
     open-pull-requests-limit: 0
     labels:
