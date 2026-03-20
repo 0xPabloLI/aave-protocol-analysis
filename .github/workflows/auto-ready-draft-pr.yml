@@ -20,12 +20,15 @@ jobs:
 
       - name: Find and mark draft PRs as ready
         uses: actions/github-script@v8
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
-            const headSha = '${{ github.event.workflow_run.head_sha }}';
-            const headBranch = '${{ github.event.workflow_run.head_branch }}';
+            const headSha = process.env.HEAD_SHA ?? '';
+            const headBranch = process.env.HEAD_BRANCH ?? '';
             
             core.info(`Looking for draft PRs with head SHA: ${headSha}, branch: ${headBranch}`);
             

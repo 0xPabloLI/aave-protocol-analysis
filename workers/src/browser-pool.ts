@@ -83,6 +83,32 @@ function getRetryAfterMs(error: unknown, defaultMs: number): number {
   return defaultMs;
 }
 
+function secureRandomIndex(maxExclusive: number): number {
+  if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
+    throw new Error(`secureRandomIndex: invalid maxExclusive=${maxExclusive}`);
+  }
+
+  // Rejection sampling avoids modulo bias.
+  const maxUint32 = 0x100000000; // 2^32
+  const limit = maxUint32 - (maxUint32 % maxExclusive);
+  const buf = new Uint32Array(1);
+
+  while (true) {
+    globalThis.crypto.getRandomValues(buf);
+    const r = buf[0];
+    if (r < limit) return r % maxExclusive;
+  }
+}
+
+function secureRandomAlphaNum(length: number): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let out = '';
+  for (let i = 0; i < length; i++) {
+    out += alphabet[secureRandomIndex(alphabet.length)];
+  }
+  return out;
+}
+
 export class BrowserPool {
   private state: DurableObjectState;
   private env: Env;
@@ -150,7 +176,7 @@ export class BrowserPool {
         return null;
       }
 
-      const session = sessions[Math.floor(Math.random() * sessions.length)];
+      const session = sessions[secureRandomIndex(sessions.length)];
       const sessionId = (session as any).sessionId || (session as any).id;
       if (!sessionId) return null;
 
@@ -340,7 +366,7 @@ export class BrowserPool {
       return new Response('Method not allowed', { status: 405 });
     }
 
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const requestId = `${Date.now()}-${secureRandomAlphaNum(6)}`;
     const body = await request.json() as RequestBody;
     const { action, key } = body;
 
@@ -402,9 +428,12 @@ export class BrowserPool {
         }), { headers: { 'Content-Type': 'application/json' } });
       } catch (error) {
         this.totalErrors++;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`[browser-pool] ⚠️ debugSessions failed: ${errorMessage}`);
         return new Response(JSON.stringify({
           success: false,
-          error: error instanceof Error ? error.message : String(error),
+          // Avoid returning potentially sensitive error details to clients.
+          error: 'Internal server error',
         }), { status: 500, headers: { 'Content-Type': 'application/json' } });
       }
     }
@@ -434,12 +463,12 @@ export class BrowserPool {
       browser = await this.getBrowser();
     } catch (error) {
       const rawError = error instanceof Error ? error.message : String(error);
-      console.log(`[browser-pool] ❌ Cloudflare Launch Error: ${rawError}`);
-      
-      // Return raw error directly to debug
+      console.error(`[browser-pool] ❌ Cloudflare Launch Error: ${rawError}`);
+
       return new Response(JSON.stringify({
         success: false,
-        error: rawError,
+        // Avoid returning potentially sensitive error details to clients.
+        error: 'Browser launch failed',
         isRateLimit: isRateLimitError(error),
       }), { 
         status: isRateLimitError(error) ? 429 : 500, 
@@ -538,6 +567,11 @@ export class BrowserPool {
       // 检查是否是未知 action 错误，返回 400 而不是 500
       const isUnknownAction = errorMessage.includes('Unknown action');
       const statusCode = isUnknownAction ? 400 : 500;
+      const safeError = isUnknownAction
+        ? 'Unknown action'
+        : requestTimedOut
+          ? 'Request timeout'
+          : 'Internal server error';
       
       // 如果是超时错误，记录更详细的信息
       if (requestTimedOut) {
@@ -546,9 +580,12 @@ export class BrowserPool {
         console.log(`[browser-pool] ⚠️ This request will be cleaned up in finally block to prevent browserRefCount leak`);
       }
       
+      // Log full error details server-side, but don't return them to clients.
+      console.warn(`[browser-pool] ⚠️ Request ${requestId} failed: ${errorMessage}`);
+
       return new Response(JSON.stringify({
         success: false,
-        error: errorMessage,
+        error: safeError,
         timedOut: requestTimedOut,
       }), { status: statusCode, headers: { 'Content-Type': 'application/json' } });
     } finally {
