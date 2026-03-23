@@ -426,36 +426,34 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         // 检查 supply 是否被禁用：isFrozen、isPaused、supplyCap=1
         const isFrozen = reserve.isFrozen === true;
         const isPaused = reserve.isPaused === true;
-        const supplyCapValue = reserve.supplyInfo?.supplyCap?.amount?.value;
-        const supplyCapIsOne = supplyCapValue !== undefined && parseFloat(supplyCapValue) === 1;
+        const supplyCapValue = toFiniteNumber(reserve.supplyInfo?.supplyCap?.amount?.value);
+        const supplyCapIsOne = supplyCapValue === 1;
         const isSupplyDisabled = isFrozen || isPaused || supplyCapIsOne;
         
         // 提取 supplyCapUsd（单位：USD）
-        const supplyCapUsdRaw = reserve.supplyInfo?.supplyCap?.usd;
-        const supplyCapUsd = supplyCapUsdRaw ? parseFloat(supplyCapUsdRaw) : undefined;
+        const supplyCapUsd = toFiniteNumber(reserve.supplyInfo?.supplyCap?.usd) ?? undefined;
         
         // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
-        const supplyApyValue = reserve.supplyInfo?.apy?.value;
-        const supplyApy = supplyCapIsOne || !supplyApyValue
+        const supplyApyValue = toFiniteNumber(reserve.supplyInfo?.apy?.value);
+        const supplyApy = supplyCapIsOne || supplyApyValue === null
           ? undefined
-          : parseFloat(supplyApyValue) * 100;
+          : supplyApyValue * 100;
         
         // 检查 borrowingState 是否为 "DISABLED"，如果是则表示该 token 不能被 borrow
         const isBorrowDisabledByState = reserve.borrowInfo?.borrowingState === "DISABLED";
         
         // 检查 borrowCap，如果为 1 也视为 disabled（因为对用户没有实际意义）
-        const borrowCapValue = reserve.borrowInfo?.borrowCap?.amount?.value;
-        const borrowCapIsOne = borrowCapValue !== undefined && parseFloat(borrowCapValue) === 1;
+        const borrowCapValue = toFiniteNumber(reserve.borrowInfo?.borrowCap?.amount?.value);
+        const borrowCapIsOne = borrowCapValue === 1;
         const isBorrowDisabled = isBorrowDisabledByState || borrowCapIsOne;
         
         // 提取 borrowCapUsd（单位：USD），与 supplyCapUsd 对称
-        const borrowCapUsdRaw = reserve.borrowInfo?.borrowCap?.usd;
-        const borrowCapUsd = borrowCapUsdRaw ? parseFloat(borrowCapUsdRaw) : undefined;
+        const borrowCapUsd = toFiniteNumber(reserve.borrowInfo?.borrowCap?.usd) ?? undefined;
         
         // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
         // 即使 disabled 也传递真实的 borrowApy（前端可能需要展示参考值）
-        const borrowApyValue = reserve.borrowInfo?.apy?.value;
-        const borrowApy = borrowApyValue ? parseFloat(borrowApyValue) * 100 : undefined;
+        const borrowApyValue = toFiniteNumber(reserve.borrowInfo?.apy?.value);
+        const borrowApy = borrowApyValue === null ? undefined : borrowApyValue * 100;
         
         // Rate-input fields for manual APR calculation (from Aave SDK)
         // All raw values are strings to preserve precision for on-chain math
@@ -476,15 +474,15 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         if (reserve.incentives && Array.isArray(reserve.incentives)) {
           reserve.incentives.forEach((incentive: any) => {
             if (incentive.__typename === 'AaveSupplyIncentive') {
-              const aprValue = incentive.extraSupplyApr?.value || incentive.supplyApr?.value;
-              if (aprValue) {
-                protocolSupplyIncentives.push(parseFloat(aprValue) * 100);
+              const aprValue = toFiniteNumber(incentive.extraSupplyApr?.value ?? incentive.supplyApr?.value);
+              if (aprValue !== null) {
+                protocolSupplyIncentives.push(aprValue * 100);
               }
             } else if (incentive.__typename === 'AaveBorrowIncentive') {
               // AaveBorrowIncentive 可能使用 extraBorrowApr 或其他字段名
-              const aprValue = incentive.extraBorrowApr?.value || incentive.borrowApr?.value;
-              if (aprValue) {
-                protocolBorrowIncentives.push(parseFloat(aprValue) * 100);
+              const aprValue = toFiniteNumber(incentive.extraBorrowApr?.value ?? incentive.borrowApr?.value);
+              if (aprValue !== null) {
+                protocolBorrowIncentives.push(aprValue * 100);
               }
             }
           });
