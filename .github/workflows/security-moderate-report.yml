@@ -27,42 +27,54 @@ jobs:
 
       - name: Build moderate audit summary
         id: summary
-        run: |
-          npm audit --omit=dev --json > audit-report.json || true
-          node <<'NODE'
-          const fs = require('fs');
-          const report = JSON.parse(fs.readFileSync('audit-report.json', 'utf8'));
-          const vulnerabilities = report.vulnerabilities || {};
-          const moderate = Object.entries(vulnerabilities)
-            .filter(([, detail]) => detail && detail.severity === 'moderate')
-            .map(([name, detail]) => {
-              const via = Array.isArray(detail.via)
-                ? detail.via.find((item) => item && typeof item === 'object' && item.title)
-                : null;
-              return {
-                name,
-                range: detail.range || 'unknown',
-                title: via?.title || 'Moderate severity advisory',
-                url: via?.url || '',
-              };
-            });
-          const now = new Date().toISOString();
-          let markdown = `## Moderate dependency vulnerabilities\\n\\nGenerated at: ${now}\\n\\n`;
-          if (moderate.length === 0) {
-            markdown += 'No moderate vulnerabilities found in runtime dependencies.\\n';
-          } else {
-            markdown += `Found **${moderate.length}** moderate vulnerabilities.\\n\\n`;
-            markdown += '| Package | Affected Range | Advisory |\\n';
-            markdown += '| --- | --- | --- |\\n';
-            for (const item of moderate) {
-              const advisory = item.url ? `[${item.title}](${item.url})` : item.title;
-              markdown += `| ${item.name} | ${item.range} | ${advisory} |\\n`;
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+
+            try {
+              execSync('npm audit --omit=dev --json > audit-report.json || true', {
+                stdio: 'inherit',
+                shell: '/bin/bash',
+              });
+            } catch (error) {
+              // Keep workflow resilient: npm audit non-zero exits are expected when vulnerabilities exist.
             }
-          }
-          fs.writeFileSync('moderate-report.md', markdown);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `count=${moderate.length}\\n`);
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `report_path=moderate-report.md\\n`);
-          NODE
+
+            const report = JSON.parse(fs.readFileSync('audit-report.json', 'utf8'));
+            const vulnerabilities = report.vulnerabilities || {};
+            const moderate = Object.entries(vulnerabilities)
+              .filter(([, detail]) => detail && detail.severity === 'moderate')
+              .map(([name, detail]) => {
+                const via = Array.isArray(detail.via)
+                  ? detail.via.find((item) => item && typeof item === 'object' && item.title)
+                  : null;
+                return {
+                  name,
+                  range: detail.range || 'unknown',
+                  title: via?.title || 'Moderate severity advisory',
+                  url: via?.url || '',
+                };
+              });
+
+            const now = new Date().toISOString();
+            let markdown = `## Moderate dependency vulnerabilities\n\nGenerated at: ${now}\n\n`;
+            if (moderate.length === 0) {
+              markdown += 'No moderate vulnerabilities found in runtime dependencies.\n';
+            } else {
+              markdown += `Found **${moderate.length}** moderate vulnerabilities.\n\n`;
+              markdown += '| Package | Affected Range | Advisory |\n';
+              markdown += '| --- | --- | --- |\n';
+              for (const item of moderate) {
+                const advisory = item.url ? `[${item.title}](${item.url})` : item.title;
+                markdown += `| ${item.name} | ${item.range} | ${advisory} |\n`;
+              }
+            }
+
+            fs.writeFileSync('moderate-report.md', markdown);
+            core.setOutput('count', String(moderate.length));
+            core.setOutput('report_path', 'moderate-report.md');
 
       - name: Create or update tracking issue
         if: steps.summary.outputs.count != '0'
