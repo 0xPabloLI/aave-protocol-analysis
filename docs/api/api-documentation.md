@@ -11,7 +11,7 @@
   - `/api/markets` - 市场数据（含 on-chain 字段）
   - `/api/coingecko-categories` - CoinGecko 分类数据
   - `/api/coingecko-fdv` - CoinGecko FDV 数据
-  - `/api/meta/side-data` - 低频侧数据聚合（categories + fdv）
+  - `/api/meta/side-data` - 侧数据聚合（categories + fdv + forecast）
   - `/api/campaigns/forecast-states` - Merkl 活动预测状态（批量）
   - `/health`、`/api/health` - 健康检查
 - **数据格式**: JSON
@@ -197,13 +197,12 @@ interface MarketsResponse {
 
 **状态码**:
 - `200`: 成功
-- `503`: 数据快照超过硬过期上限（默认 5 分钟），服务拒绝返回过旧数据（`errorCode = "MARKETS_SNAPSHOT_HARD_STALE"`）
+- `503`: 仅当内存快照尚未就绪（冷启动未完成预热）时，`errorCode = "MARKETS_SNAPSHOT_NOT_READY"`
 - `500`: 服务器错误
 
 **注意事项**:
 - 所有排序和过滤逻辑应在客户端处理
-- 如果数据过期，会自动触发后台更新；在硬过期上限内可继续返回缓存
-- 一旦快照年龄超过硬过期上限（默认 5 分钟），将返回 `503`（不再无限返回旧缓存）
+- 数据由后端 cron 刷新；`snapshot.staleTimeMs` 供前端缓存提示，**请求不会触发**后端重新拉取
 - `tokenPrice` 已直接放在 `reserves` 行内，前端无需再做额外 price join
 
 ---
@@ -285,13 +284,45 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 ---
 
-## Merkl TVL 与分发进度口径
+## Merkl Forecast：上游数据与派生字段
 
-- Forecast 的 `latestTvl` 优先取 Merkl opportunities 的 `tvl`。
-- 如果 opportunities 中没有可用 TVL，则回退到 `/v4/campaigns/{id}/metrics` 的 `tvlRecords`，并取**最新时间戳**对应的 `total`。
-- `distributedSoFar` 使用 metrics 的 `dailyRewardsRecords` 做时间积分估算（按时间段累积 daily rate）。
+实现见 `backend/src/services/merklForecastService.ts`、`backend/src/services/merklForecastModel.ts`。以下为「Merkl / 本地快照输入」与「本服务计算」的划分；**campaign 级数据不从 Aave SDK 读取**。
 
-以上均来自 Merkl API，不从 Aave SDK 直接读取 campaign 级 TVL。
+### 上游（原始）数据
+
+| 来源 | 用途 |
+|------|------|
+| **Merkl `GET /v4/campaigns/{id}`**（或 opportunities / `merkl-opportunity-meta-lite.json` 中的轻量 `campaignSnapshot`） | `amount`、`startTimestamp`、`endTimestamp`、`campaignStatus.computedUntil`、奖励代币 `price`/`decimals`、APR 相关 `params` 等；用于预算上限、时间窗、类型与 APR cap |
+| **Merkl `GET /v4/campaigns/{id}/metrics`** | 时间序列 `tvlRecords`、`dailyRewardsRecords`（各点含 `timestamp`、`total`） |
+| **`data/runtime/merkl-opportunity-meta-lite.json` 或 live `/v4/opportunities`** | 每 campaign 的 `tvl`、`campaignTypeHint`（规范化后的活动类型）、`distributionTypeRaw`、以及可用的 `campaignSnapshot`（lite 新鲜时优先） |
+
+### 派生 / 二次计算
+
+| 项目 | 说明 |
+|------|------|
+| **`totalBudget`** | `extractNormalizedTotalBudget`：`amount` 按 `decimals` 做单位换算（大整数 → 可读数量）；若存在 **`rewardToken.price` > 0** 则乘以价格得到 **USD 口径**，否则为代币数量口径。 |
+| **`distributedSoFar`** | `estimateDistributedSoFar`：仅用 **`dailyRewardsRecords`**，在 `[start, min(now,end)]` 上按阶梯速率对「日发放率」做**时间积分**；再与 `totalBudget` 取 `min`。Merkl 不直接返回该标量。 |
+| **`latestTvl`** | 优先用 opportunities / lite 中的 **`tvl`**；否则从 **`tvlRecords`** 按时间排序取**最后一条**的 `total`。 |
+| **`aprCap`** | `extractMaxApr` + `normalizeApr`：从 campaign 对象多路径读取 APR；若值 `> 1` 则按百分数除以 100。仅 `MAX_REWARD_*` / `FIX_REWARD_*` 类型需要。 |
+| **`plannedDaily` / `requiredDaily` / `remainingBudget` / `remainingDays` / `expectedByNow`** | `buildForecastState`：`plannedDaily = totalBudget / totalDays`；`requiredDaily` 在 `DUTCH_AUCTION` 时等于 `plannedDaily`，否则为 `remainingBudget / remainingDays`；`remainingBudget = totalBudget - distributedSoFar`；`expectedByNow` 为按活动时长线性插值的「到当前应已发」参考值。 |
+| **metrics 缓存 TTL** | **按 campaign 独立**：`metricsCache` 以 `campaignId` 为键；每个 campaign 用自己的 `dailyRewardsRecords` 时间戳间隔**中位数**作 cadence，`TTL ≈ cadence / 4` 并夹在 `[merklMetricsMin, merklMetricsMax]`（默认 **10 分钟～6 小时**）。**不同 campaign 的刷新间隔可以不同**；与业务 forecast 公式无关，仅决定何时再请求 `GET /metrics`。 |
+
+### Opportunity 元数据与 metrics 的缓存节奏
+
+- **metrics（按 campaign）**：每个 id 单独算 TTL、单独过期；过期后**仅该 id**再拉 `/v4/campaigns/{id}/metrics`。未过期则复用内存，即使 forecast **cron 每 10 分钟**重算快照也不会为该 id 打 Merkl。
+- **opportunity 元数据（整表）**：`campaignOpportunityCache` 为**一张**全量 map（来源：`merkl-opportunity-meta-lite.json` 若足够新鲜，否则 `/v4/opportunities`），默认 **约 5 分钟** TTL；过期后**整表**重建。与 metrics 的 per-id TTL **相互独立**。
+- **对外语义**：`GET /api/campaigns/forecast-states` 的 `staleTimeMs`（默认 10 分钟）表示 **snapshotCache** 的发布节奏；**不**表示「每个 campaign 的 metrics 都在 10 分钟内从 Merkl 更新一次」。
+
+### TVL 与 `distributedSoFar` 口径（摘要）
+
+- `latestTvl`：**优先** opportunities（含 lite 索引）的 `tvl`；否则回退 metrics 的 `tvlRecords` **最新时间戳**对应的 `total`。
+- **`distributedSoFar`**：**仅**来自对 `dailyRewardsRecords` 的积分估算，**不是** Merkl 某单一原始字段。
+
+### HTTP `items[]` 实际暴露的字段
+
+`merklForecastController.toForecastResponseItem` 只序列化：`campaignId`、`campaignType`、`plannedDaily`、`requiredDaily`、`aprCap`、`totalBudget`、`distributedSoFar`、`latestTvl`、`endTimestamp`。
+
+内部完整状态 `MerklForecastState` 另有 `remainingBudget`、`remainingDays`、`expectedByNow`、`startTimestamp`、`computedUntil`、`asOf` 等；**当前 REST 响应未包含**这些字段。
 
 ### 3. 健康检查
 
@@ -666,17 +697,16 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 **Aave SDK（@aave/client）与 token price**：本项目从 SDK 返回的 reserve 里读取 USD 价格（优先 `reserve.size.usdPerToken`，缺失时回退 `reserve.usdExchangeRate`），用于 `reserves[].tokenPrice`。
 
-**data 文件夹中的价格**：
-- **`data/runtime/aave-formatted-data.json`**：当前以 `data + _metadata` 为主，不再依赖根级 token price 补充索引供 `/api/markets` 使用。
-- **`data/debug/aave-all-markets-data.json`**：为 Aave SDK 的原始响应（`markets`、`timestamp` 等），其中包含 reserve 的 `usdPerToken` / `usdExchangeRate` 等价格字段（如果上游返回）。
+**data 文件夹中的价格（调试/对照用，非 API 数据源）**：
+- **`data/runtime/aave-formatted-data.json`**：仅当在仓库根目录**单独运行 fetcher** 时落盘；与 `fetchMarketsPayload()` 管线形状相近，但 **`GET /api/markets` 从不读此文件**，价格以内存快照中的 `reserves[].tokenPrice` 为准。
+- **`data/debug/aave-all-markets-data.json`**：Aave SDK 的原始响应（`markets`、`timestamp` 等），含 reserve 的 `usdPerToken` / `usdExchangeRate` 等（若上游返回），用于字段校验与对照。
 
 ### 数据更新机制
 
-- **仅 `GET /api/markets`** 会触发市场数据新鲜度检查：若数据超过 1 分钟未更新，该请求会触发后台刷新（带并发锁），其他端点不触发市场数据刷新。
-- 其他端点（`/api/coingecko-*`、`/api/campaigns/forecast-states`）使用各自缓存与 TTL。
-- On-chain 数据（deficit, baseVariableBorrowRate）与 markets 并行获取，合并到 `/api/markets` 响应中。
-- 使用锁机制防止并发更新；更新进行中时，请求会等待约 1 秒再返回。
-- `/api/markets` 返回 `snapshot + reserves`；`isStale` / `updateInProgress` 不在该接口响应中。
+- **`GET /api/markets`**：cron-write/API-read-only；由定时任务与启动预热刷新内存快照，**请求不触发**外部拉取。on-chain 字段在 `refreshMarketsSnapshot` 写入时从 `onchainDataService` 缓存合并。
+- **`/api/coingecko-categories`**、**`/api/coingecko-fdv`**：缓存未过期则直出；过期或无效时**请求路径会触发**刷新（与 cron 预热共用同一套缓存逻辑）。
+- **`/api/campaigns/forecast-states`**（无 `ids`）：读 cron 预热的 forecast 快照；带 `?ids=` 时对指定 id 现算（仍受 Merkl 侧内存缓存约束）。
+- `/api/markets` 返回 `snapshot + reserves`；无 `isStale` / `updateInProgress` 字段。
 
 ## 错误处理
 
@@ -732,7 +762,7 @@ curl http://localhost:3001/api/coingecko-fdv
 ## 版本信息
 
 - **API 版本**: 3.1
-- **文档更新时间**: 2026-03-14
+- **文档更新时间**: 2026-03-24
 - **最后更新**:
   - 补充端点：`GET /api/health`、`GET /api/coingecko-fdv`
   - 基础路径说明更新为完整 API 列表
@@ -755,6 +785,8 @@ curl http://localhost:3001/api/coingecko-fdv
   - **2026-03-14**：新增 `borrowCapUsd` 字段，与 `supplyCapUsd` 对称
   - **2026-03-14（breaking）**：移除独立的 `/api/rate-inputs` 端点，rate-input 字段扁平化合并到 `/api/markets` 的 `reserves[]` 中（`decimals`、`deficit`、`availableLiquidity` 等）
   - **2026-03-14**：移除 `deficitAvailable` 标志；deficit 来自 `UiPoolDataProvider.getReservesHumanized()`（Aave v3.3.0+），RPC 失败时使用 5 分钟内的缓存，超时则字段缺失
+  - **2026-03-24**：新增「Merkl Forecast：上游数据与派生字段」：区分 Merkl 原始输入、服务端二次计算与 HTTP `items[]` 暴露字段
+  - **2026-03-24**：补充 **per-campaign metrics TTL**、opportunity 整表缓存与 10 分钟 forecast 快照的关系（各 campaign metrics 更新频率可不同）
 
 ## 注意事项
 

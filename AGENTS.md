@@ -6,7 +6,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 Two-service TypeScript codebase that fetches and serves Aave V3 market data across 17+ chains, 20+ markets, and 229+ token reserves. Integrates incentive data from Merit, Merkl, and Brevis protocols.
 
-**Architecture**: Data Fetcher (root `src/`) → JSON snapshots (`data/runtime` + `data/debug`) → Backend API (`backend/`) → REST clients
+**Architecture**: Backend API (`backend/`) runs `fetchMarketsPayload()` (from packaged root `dist/index.js`) on a cron + startup warmup and keeps markets in **memory**; `GET /api/markets` reads that snapshot only. The optional root Data Fetcher (`npm run dev` at repo root) **writes** `data/runtime` / `data/debug` files for exports and debugging; the backend does **not** read `data/runtime/aave-formatted-data.json` to serve the API.
 
 ## Development Commands
 
@@ -44,11 +44,8 @@ pm2 restart aave-backend # Restart service
 pm2 stop aave-backend    # Stop service
 ```
 
-### Data Workflow
-The backend requires runtime data files before serving requests:
-1. Run data fetcher: `npm run dev` (root directory)
-2. Verify output in `data/runtime/aave-formatted-data.json`
-3. Start backend: `cd backend && npm run dev`
+### Data Workflow (Backend)
+Serving `/api/markets` does **not** depend on any pre-generated `data/runtime/*.json` file. Start the backend and wait for startup warmup (`refreshMarketsSnapshot()` + other caches). Optional: run the root fetcher (`npm run dev` at repo root) only when you need on-disk exports (`aave-formatted-data.json`, CSV, debug snapshots).
 
 ### Architecture Notes (Read Before Cache/Data-Flow Changes)
 - `docs/merkl-merit-cache-architecture.md` — Merkl/Merit cache layers, file roles, fallback chains
@@ -114,7 +111,7 @@ External APIs → Backend Cron Jobs → In-Memory Snapshots → REST Clients
 - `services/merklForecastService.ts` - Merkl forecast data processor; metricsCache (dynamic TTL 10m-6h) + campaignOpportunityCache (5m)
 
 **Request Handlers**:
-- `controllers/marketsController.ts` - Primary controller; implements `checkAndUpdateDataIfStale()` with concurrency control
+- `controllers/marketsController.ts` - `GET /api/markets` reads in-memory snapshot only (cron-write/API-read-only)
 - `controllers/coingeckoController.ts` - CoinGecko categories data handler
 - `controllers/merklForecastController.ts` - Merkl forecast endpoints
 
@@ -141,20 +138,8 @@ Backend uses custom JSON serialization to omit `undefined` values and empty arra
 #### 3. APR to APY Conversion
 `convertAprToApy()` uses monthly compounding: `(1 + APR/12)^12 - 1`
 
-#### 4. Update Concurrency Control Pattern
-```typescript
-// Global state machine prevents duplicate updates
-let updateStatus: 'idle' | 'updating' | 'error';
-let activeUpdatePromise: Promise<void> | null = null;
-let updateGeneration: number = 0;  // Detects if newer update started
-
-// In checkAndUpdateDataIfStale():
-if (isStale && !activeUpdatePromise && status !== 'updating') {
-  updateStatus = 'updating';
-  activeUpdatePromise = performUpdate();  // Track promise
-  // Callers wait via: if (activeUpdatePromise) await activeUpdatePromise;
-}
-```
+#### 4. Refresh concurrency (markets snapshot)
+`marketsService.refreshMarketsSnapshot()` uses a single `refreshInProgress` promise so concurrent cron/handlers await the same in-flight refresh instead of stacking fetches.
 
 #### 5. Metadata-Based Timestamps
 Data files include `_metadata.timestamp` (written by fetcher). Backend prioritizes this over file mtime, ensuring accurate staleness detection even if file is copied/touched.
@@ -173,12 +158,11 @@ GET /api/campaigns/forecast-states # Merkl campaign forecast states (optional id
 GET /api/meta/side-data            # Aggregated side data (categories + fdv + forecast)
 ```
 
-**Markets 数据新鲜度**（仅以下端点会触发 `checkAndUpdateDataIfStale()`）:
-- `GET /api/markets` — 响应含 `{ snapshot, reserves }`；每个 reserve 包含可选 `deficit` 字段
-  - 前端通过 `reserve.deficit !== undefined` 判断是否有 on-chain deficit 数据
-  - 若数据超过 1 分钟未更新会自动触发刷新并受并发控制
-  - Deficit 获取失败时优雅降级：markets 仍可用，只是没有 deficit 字段
-- 其他端点（coingecko、campaigns）使用各自缓存/TTL，不触发市场数据刷新。
+**Markets 数据新鲜度**（cron-write/API-read-only）:
+- `GET /api/markets` — 响应含 `{ snapshot, reserves }`；`staleTimeMs` 提示前端缓存窗口；服务端由 cron 每分钟刷新，**请求不触发拉取**
+  - 每个 reserve 含可选 `deficit` / `baseVariableBorrowRate`（来自 on-chain 缓存合并或回退）
+  - Deficit 获取失败时优雅降级：仍可有 `deficit: "0"` 等回退行为（见 `marketsService`）
+- 其他端点（coingecko、campaigns、forecast）使用各自缓存/TTL，不触发 markets 刷新。
 
 ## Configuration
 
@@ -205,8 +189,8 @@ Both use `"module": "ESNext"` with `"target": "ES2022"`.
 
 ### Data Files (`data/`, gitignored)
 ```
-runtime/aave-formatted-data.json          # Primary: market data + metadata (backend reads this)
-runtime/merkl-opportunity-meta-lite.json  # Merkl forecast runtime-lite snapshot
+runtime/aave-formatted-data.json          # Written by root fetcher; same pipeline shape as API payload, but API uses memory (not this file)
+runtime/merkl-opportunity-meta-lite.json  # Merkl forecast runtime-lite snapshot (backend reads for forecast)
 runtime/merit-campaign-metadata-cache.json # Merit campaign metadata cache (time/message/link)
 exports/aave-formatted-data.csv           # CSV export
 debug/aave-all-markets-data.json          # Raw Aave SDK response
@@ -264,9 +248,6 @@ Uses `@bgd-labs/aave-address-book` to auto-discover AaveV3 networks. Excludes te
 - See `docs/backend/data-freshness-mechanism.md` for detailed TTL tables and staleness thresholds
 - See `docs/deploy/cloudflare-complete-guide.md` for API cache headers and Cloudflare rules
 
-### Update Timeout Protection
-Updates have timeout protection (configurable via `UPDATE_TIMEOUT_MS`). If update exceeds max time, lock is cleared to prevent permanent blocking, but original promise continues in background.
-
 ### PM2 Production Config
 `ecosystem.config.cjs` at root defines PM2 settings:
 - Memory limit: 500MB
@@ -277,22 +258,21 @@ Updates have timeout protection (configurable via `UPDATE_TIMEOUT_MS`). If updat
 ## Testing & Validation
 
 No formal test framework. Manual validation:
-1. Run fetcher: `npm run dev` → check `data/aave-formatted-data.json`
-2. Check logs: `tail -f logs/combined.log`
-3. Start backend: `cd backend && npm run dev`
-4. Test endpoints:
+1. Start backend: `cd backend && npm run dev`
+2. Test endpoints (API serves from memory after warmup):
    ```bash
    curl http://localhost:3001/health
-   curl http://localhost:3001/api/markets | jq '.data | length'
+   curl http://localhost:3001/api/markets | jq '.reserves | length'
    ```
+3. Optional root fetcher: `npm run dev` at repo root → inspect `data/runtime/` if you need on-disk artifacts; check `tail -f logs/combined.log`
 
 ## Important Implementation Notes
 
 ### When Adding New Endpoints
-Always call `checkAndUpdateDataIfStale()` at the start of controller handlers to maintain data freshness guarantee.
+Follow the same cache pattern as sibling endpoints: cron-warmed snapshot + read-only handler, or document explicit TTL if adding a new external source.
 
 ### When Modifying Update Logic
-Be careful with the concurrency control mechanism. The `activeUpdatePromise` and `updateGeneration` work together to prevent race conditions. Never bypass the lock without understanding the flow.
+For markets, respect `refreshInProgress` in `marketsService` and avoid triggering `fetchMarketsPayload()` from request paths.
 
 ### When Changing Data Schema
 Update both:
@@ -328,3 +308,5 @@ Don't set secrets in `ecosystem.config.cjs`—they'll override Doppler.
 - RPC order in `packages/aave-shared-config`: public RPC first, private (Infura/Ankr/Alchemy) last
 - `totalVariableDebt` from Aave SDK replaces `totalScaledVariableDebt` + `variableBorrowIndex`; precision (raw token units, BPS, RAY) aligned with former on-chain source
 - CORS `FRONTEND_URL` uses exact-origin matching only (no subdomains or wildcards); list each allowed origin comma-separated with full URL including protocol (e.g. `https://aaveapy.com,https://www.aaveapy.com`)
+- Merkl forecast `totalBudget` / `plannedDaily` / `requiredDaily` / `distributedSoFar` are USD when `rewardToken.price` is present on the campaign snapshot; otherwise they follow token units after amount scaling (same as `extractNormalizedTotalBudget` without a price)
+- `merkl-opportunity-meta-lite.json` is written by the root fetcher from Merkl opportunities; forecast lite keys campaigns by `rewardsRecord.breakdowns[].campaignId`, and the forecast cron uses IDs from markets merkl breakdowns, not Merkl's full live catalog—keep markets runtime and lite snapshots refreshed together to avoid stale campaign ID mismatches

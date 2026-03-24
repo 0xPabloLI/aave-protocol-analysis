@@ -1,6 +1,6 @@
 # Merkl / Merit Data Flow & Cache Architecture
 
-Last updated: 2026-02-24
+Last updated: 2026-03-24
 
 This document explains how Merkl + Merit data moves through the codebase, which files are for debugging vs runtime, and which caches are in memory.
 
@@ -26,7 +26,7 @@ flowchart LR
   FCS["backend/merklForecastService (forecast compute + caches)"]
   MOC["backend/merklOpportunityClient (forecast Merkl opportunities fetcher)"]
   MKLITE["data/runtime/merkl-opportunity-meta-lite.json"]
-  MARKETS["data/runtime/aave-formatted-data.json"]
+  MARKETS["aave-formatted-data.json (root fetcher writes; backend does not read)"]
   TIMER["data/runtime/merit-campaign-metadata-cache.json"]
   MERKLAPI["Merkl API"]
 
@@ -38,7 +38,7 @@ flowchart LR
   IDX -- "writes" --> MARKETS
   MERIT -- "writes" --> TIMER
 
-  MKS -- "cron-write" --> MARKETS
+  IDX -. "exports fetchMarketsPayload" .-> MKS
   FCS -- "reads" --> MKLITE
   FCS -. "uses data" .-> MOC
   MOC -. "uses data" .-> SHARED
@@ -86,11 +86,13 @@ flowchart LR
 
 **Key change**: API requests **never** call Merkl API. They only read from the global snapshot cache populated by cron.
 
+**Field lineage** (which values come straight from Merkl vs computed in `merklForecastService` / `merklForecastModel`): see `docs/api/api-documentation.md` → **Merkl Forecast：上游数据与派生字段**.
+
 ## 1) Big Picture (Backend)
 
 ```mermaid
 flowchart TD
-  A["Scheduler / API-triggered refresh"] --> B["/src/index.ts fetchAaveMarketsData()"]
+  A["Root CLI: fetchAaveMarketsData()"] --> B["/src/index.ts pipeline"]
   B --> C["Merit: /src/merit-api.ts"]
   B --> D["Merkl: /src/merkl-api.ts"]
   B --> E["Brevis"]
@@ -101,13 +103,14 @@ flowchart TD
   D --> J["data/runtime/merkl-opportunity-meta-lite.json (runtime-lite)"]
   D --> R["@internal/aave-shared-config snapshot (memory)"]
   B --> K["data/runtime/aave-formatted-data.json"]
-  L["backend /api/markets"] --> M["marketsService (memory snapshot)"]
-  M -- "cron-write" --> K
+  CRON["Backend cron: refreshMarketsSnapshot"] --> MP["fetchMarketsPayload() same pipeline, in-memory"]
+  MP --> MS["marketsService memory snapshot"]
+  L["backend GET /api/markets"] --> MS
   N["backend /api/campaigns/forecast-states"] --> O["merklForecastService"]
   O --> P["campaignOpportunityCache (memory)"]
   O --> J
   O --> Q["merklOpportunityClient"]
-  Q --> R["@internal/aave-shared-config snapshot (memory)"]
+  Q --> R
   R --> S["Merkl /v4/opportunities"]
   O --> T["Merkl /v4/campaigns/{id} + /metrics"]
 ```
@@ -116,7 +119,7 @@ flowchart TD
 
 ### Runtime-facing (program reads)
 - `data/runtime/aave-formatted-data.json`
-  - Main `/api/markets` source (via `marketsService` cron-write)
+  - Written when the **root** fetcher runs (`fetchAaveMarketsData` / CLI); not read by `GET /api/markets`. The backend serves markets from `marketsService` memory via `fetchMarketsPayload()` (same pipeline, no file read on the request path).
 - `data/runtime/merkl-opportunity-meta-lite.json`
   - Forecast service preferred file source (campaign-level lightweight meta)
 - `data/runtime/merit-campaign-metadata-cache.json`
@@ -165,6 +168,7 @@ Example shape:
 
 ### D) `metricsCache` (`backend/src/services/merklForecastService.ts`)
 - Per-campaign cache for **forecast-trimmed** Merkl `/metrics` data (`dailyRewardsRecords`, `tvlRecords` latest-only)
+- **Each `campaignId` has its own TTL** (cadence inferred from that campaign’s `dailyRewardsRecords` only), so **metrics refetch intervals can differ across campaigns**; see `docs/backend/data-freshness-mechanism.md` → Merkl Metrics 动态 TTL
 - TTL is derived from observed metrics record cadence (with default/min/max bounds)
 - **This is the key optimization** - metrics API calls are expensive; forecast computation is fast
 - Cadence inference uses `dailyRewardsRecords` timestamps (same series used for `distributedSoFar` integration)

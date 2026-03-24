@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { merklFetchConfig } from '../config.js';
+import { createMerklConcurrencyLimitedFetch } from '@internal/aave-shared-config';
 import {
   buildForecastState,
   normalizeCampaignType,
@@ -13,6 +14,8 @@ import {
 import { fetchMerklOpportunities } from './merklOpportunityClient.js';
 
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
+/** Shared with opportunities + root fetcher: `MERKL_FETCH_MAX_CONCURRENCY` in `aave-shared-config`. */
+const merklLimitedFetch = createMerklConcurrencyLimitedFetch(fetch);
 const SECONDS_PER_DAY = 86400;
 const MERKL_LITE_FILE_MAX_AGE_MS = BACKEND_CACHE_TTL_MS.merklLiteFileMaxAge;
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
@@ -344,29 +347,6 @@ const estimateDistributedSoFar = (
   return Math.max(distributed, 0);
 };
 
-// ---------------------------------------------------------------------------
-// Concurrency limiter for Merkl API (rate limit: 10 req/s)
-// ---------------------------------------------------------------------------
-let activeCount = 0;
-const waitQueue: Array<() => void> = [];
-
-const acquireConcurrencySlot = (): Promise<void> => {
-  if (activeCount < merklFetchConfig.maxConcurrency) {
-    activeCount++;
-    return Promise.resolve();
-  }
-  return new Promise<void>((resolve) => waitQueue.push(resolve));
-};
-
-const releaseConcurrencySlot = (): void => {
-  const next = waitQueue.shift();
-  if (next) {
-    next();   // hand slot directly to next waiter (activeCount stays the same)
-  } else {
-    activeCount--;
-  }
-};
-
 const isTransientError = (error: unknown): boolean => {
   if (error instanceof TypeError && error.message === 'fetch failed') {
     const cause = (error as { cause?: { code?: string } }).cause;
@@ -378,38 +358,33 @@ const isTransientError = (error: unknown): boolean => {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const fetchJson = async (url: string): Promise<unknown> => {
-  await acquireConcurrencySlot();
-  try {
-    for (let attempt = 0; attempt <= merklFetchConfig.maxRetries; attempt++) {
-      try {
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: { accept: 'application/json' },
-        });
-        if (response.status === 429 || response.status >= 500) {
-          throw new Error(`Merkl API ${response.status} for ${url}`);
-        }
-        if (!response.ok) {
-          throw new Error(`Merkl API ${response.status} for ${url}`);
-        }
-        return response.json() as Promise<unknown>;
-      } catch (error) {
-        const retryable =
-          isTransientError(error) ||
-          (error instanceof Error && /Merkl API (429|5\d\d)/.test(error.message));
-        if (!retryable || attempt >= merklFetchConfig.maxRetries) throw error;
-        const delay = Math.min(
-          merklFetchConfig.baseDelayMs * Math.pow(2, attempt),
-          merklFetchConfig.maxDelayMs
-        );
-        logger.warn(`⏳ Merkl fetch retry ${attempt + 1}/${merklFetchConfig.maxRetries} for ${url} in ${delay}ms`);
-        await sleep(delay);
+  for (let attempt = 0; attempt <= merklFetchConfig.maxRetries; attempt++) {
+    try {
+      const response = await merklLimitedFetch(url, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+      });
+      if (response.status === 429 || response.status >= 500) {
+        throw new Error(`Merkl API ${response.status} for ${url}`);
       }
+      if (!response.ok) {
+        throw new Error(`Merkl API ${response.status} for ${url}`);
+      }
+      return response.json() as Promise<unknown>;
+    } catch (error) {
+      const retryable =
+        isTransientError(error) ||
+        (error instanceof Error && /Merkl API (429|5\d\d)/.test(error.message));
+      if (!retryable || attempt >= merklFetchConfig.maxRetries) throw error;
+      const delay = Math.min(
+        merklFetchConfig.baseDelayMs * Math.pow(2, attempt),
+        merklFetchConfig.maxDelayMs
+      );
+      logger.warn(`⏳ Merkl fetch retry ${attempt + 1}/${merklFetchConfig.maxRetries} for ${url} in ${delay}ms`);
+      await sleep(delay);
     }
-    throw new Error(`Merkl fetch exhausted retries for ${url}`);
-  } finally {
-    releaseConcurrencySlot();
   }
+  throw new Error(`Merkl fetch exhausted retries for ${url}`);
 };
 
 const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, CampaignOpportunityMeta> | null> => {

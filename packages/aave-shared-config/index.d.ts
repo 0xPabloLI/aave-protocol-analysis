@@ -31,6 +31,15 @@ export declare const DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY: DefaultAaveTydroOpp
 
 export declare const resolveCacheTtlMs: (raw: unknown, fallbackMs?: number) => number;
 
+/**
+ * Wraps any fetch-like function (global `fetch`, node-fetch, etc.) with a shared
+ * process-wide concurrency pool. Callers that use node-fetch should cast:
+ * `createMerklConcurrencyLimitedFetch(fetch as typeof globalThis.fetch) as typeof fetch`.
+ */
+export declare function createMerklConcurrencyLimitedFetch(
+  fetchImpl?: typeof globalThis.fetch
+): typeof globalThis.fetch;
+
 export declare const fetchMerklOpportunitiesShortPage: (
   options: FetchMerklOpportunitiesShortPageOptions
 ) => Promise<unknown[]>;

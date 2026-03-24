@@ -2,6 +2,51 @@ const DEFAULT_ITEMS_PER_PAGE = 100;
 const MAX_ITEMS_PER_PAGE = 100;
 const DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS = 60 * 1000;
 
+/** `MERKL_FETCH_MAX_CONCURRENCY` (default 5): one shared pool for all Merkl HTTP in a process. */
+const readMerklFetchMaxConcurrency = () => {
+  const raw = process.env.MERKL_FETCH_MAX_CONCURRENCY;
+  const defaultValue = 5;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 1 ? n : defaultValue;
+};
+
+let merklFetchActiveCount = 0;
+const merklFetchWaitQueue = [];
+
+const acquireMerklFetchSlot = () => {
+  const max = readMerklFetchMaxConcurrency();
+  if (merklFetchActiveCount < max) {
+    merklFetchActiveCount++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => merklFetchWaitQueue.push(resolve));
+};
+
+const releaseMerklFetchSlot = () => {
+  const next = merklFetchWaitQueue.shift();
+  if (next) {
+    next();
+  } else {
+    merklFetchActiveCount--;
+  }
+};
+
+/**
+ * Wraps `fetch` so every Merkl HTTP call shares one process-wide concurrency pool
+ * (opportunities pagination, campaign/metrics, merit Merkl probes, etc.).
+ */
+export function createMerklConcurrencyLimitedFetch(fetchImpl = fetch) {
+  return async (input, init) => {
+    await acquireMerklFetchSlot();
+    try {
+      return await fetchImpl(input, init);
+    } finally {
+      releaseMerklFetchSlot();
+    }
+  };
+}
+
 const opportunitiesSnapshotCache = new Map();
 
 const {
@@ -334,7 +379,8 @@ const buildQuery = (query) => {
 };
 
 const fetchJson = async ({ fetchImpl, url }) => {
-  const response = await fetchImpl(url, {
+  const limitedFetch = createMerklConcurrencyLimitedFetch(fetchImpl);
+  const response = await limitedFetch(url, {
     method: 'GET',
     headers: {
       accept: 'application/json',

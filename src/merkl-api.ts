@@ -7,9 +7,14 @@ import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
 import { merklFetchConfig } from './config.js';
 import {
+  createMerklConcurrencyLimitedFetch,
   fetchMerklOpportunitiesSnapshot,
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
+
+const merklLimitedFetch = createMerklConcurrencyLimitedFetch(
+  fetch as unknown as typeof globalThis.fetch
+) as unknown as typeof fetch;
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
@@ -40,7 +45,7 @@ async function fetchWithRetry(
 
   while (attempt <= merklFetchConfig.maxRetries) {
     try {
-      const response = await fetch(url, init);
+      const response = await merklLimitedFetch(url, init);
       if (response.ok) {
         return response;
       }

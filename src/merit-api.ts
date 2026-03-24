@@ -13,7 +13,14 @@ import {
   type MeritDynamicInfo,
 } from './cloudflare-browser.js';
 import { meritKeyAliases } from './config.js';
-import { getAaveRpcUrlsByChainName } from '@internal/aave-shared-config';
+import {
+  createMerklConcurrencyLimitedFetch,
+  getAaveRpcUrlsByChainName,
+} from '@internal/aave-shared-config';
+
+const merklLimitedFetch = createMerklConcurrencyLimitedFetch(
+  fetch as unknown as typeof globalThis.fetch
+) as unknown as typeof fetch;
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
@@ -386,10 +393,10 @@ const fetchMeritRoundEstimates = async (
       if (scanChainId !== null) {
         params.set('chainId', String(scanChainId));
       }
-      let response = await fetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
+      let response = await merklLimitedFetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
       if (!response.ok) {
         params.delete('creatorSlug');
-        response = await fetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
+        response = await merklLimitedFetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
         if (response.ok && !creatorSlugFallbackUsed) {
           creatorSlugFallbackUsed = true;
           logger.warn(
