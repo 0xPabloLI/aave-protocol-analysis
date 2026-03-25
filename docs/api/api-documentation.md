@@ -114,7 +114,7 @@ interface FormattedReserveData {
 
 ### MerklOpportunityGroup
 
-Merkl 机会分组数据，用于 JSON 输出，避免重复。
+Merkl 机会分组数据，用于 JSON 输出，避免重复。Merkl `GET /v4/opportunities` 响应里哪些字段参与构建，见 `docs/merkl-merit-cache-architecture.md` 中章节 **Merkl `/v4/opportunities[]` item: which fields `merkl-api.ts` reads**（含字段表与 Mermaid 图）。
 
 ```typescript
 interface MerklOpportunityGroup {
