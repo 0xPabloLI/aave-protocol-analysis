@@ -93,8 +93,8 @@ app.get('/api/health', healthHandler);
 // 所有 API 数据现在使用 cron-write/API-read-only 模式
 logger.info('🔄 Starting cache warmup (all data will be fetched before server accepts requests)...');
 
+// Phase 1: independent caches (can run in parallel)
 Promise.allSettled([
-  // Warm on-chain cache first (markets will read from it)
   refreshOnchainCache()
     .then(() => logger.info('✅ On-chain cache (deficit, baseRate) warmed on startup'))
     .catch((error) => logger.warn('⚠️  Failed to warm on-chain cache on startup:', error)),
@@ -107,11 +107,16 @@ Promise.allSettled([
   warmCoingeckoFdvCache()
     .then(() => logger.info('✅ Coingecko FDV cache warmed on startup'))
     .catch((error) => logger.warn('⚠️  Failed to warm coingecko FDV on startup:', error)),
-  warmCampaignForecastStatesCache()
-    .then((summary) => logger.info(`✅ Forecast snapshot cache warmed on startup: requested=${summary.requested}, fulfilled=${summary.fulfilled}, failed=${summary.failed}`))
-    .catch((error) => logger.warn('⚠️  Failed to warm forecast snapshot on startup:', error)),
 ])
-  .then(() => {
+  .then(async () => {
+    // Phase 2: forecast depends on markets snapshot being ready
+    try {
+      const summary = await warmCampaignForecastStatesCache();
+      logger.info(`✅ Forecast snapshot cache warmed on startup: requested=${summary.requested}, fulfilled=${summary.fulfilled}, failed=${summary.failed}`);
+    } catch (error) {
+      logger.warn('⚠️  Failed to warm forecast snapshot on startup:', error);
+    }
+
     logger.info('✅ All caches warmed');
     
     // 启动定时更新任务

@@ -87,8 +87,16 @@ export interface MerklCampaignBreakdown {
   campaignId: string;
   whitelistOnly?: boolean;
   distributionType?: string;
-  pointsPerThousandUsd?: number; // Tydro 协议的 points/1000USD 值
-  dailyPoints?: number; // Tydro 协议的每日 points
+  /** 见 `merklBreakdownUsesPointsIntensityFields`；为真且 `value` 可解析时 = value÷TVL×1000 */
+  pointsPerThousandUsd?: number;
+  /** 与上游 `breakdown.value` 对齐；仅强度类 breakdown 输出 */
+  dailyPoints?: number;
+  // Opportunity-only forecast fields (no metrics dependency, refreshes with markets)
+  campaignType?: ForecastCampaignTypeLite;
+  totalBudget?: number;
+  aprCap?: number | null;
+  latestTvl?: number;
+  plannedDaily?: number;
 }
 
 /**
@@ -119,7 +127,7 @@ export interface MerklOpportunity {
   status?: string; // "LIVE" or other statuses
   tvl?: number; // TVL 值，用于计算 points/1000USD
   protocol?: {
-    id: string; // 协议 ID，用于识别 tydro
+    id: string;
   };
   tokens?: Array<{
     address: string;
@@ -134,10 +142,12 @@ export interface MerklOpportunity {
       campaignId: string; // 实际使用的字段
       distributionType?: string;
       distributionMethod?: string;
-      value?: number; // points 值，用于 tydro 协议
+      value?: number;
       token?: {
         address?: string;
         symbol?: string;
+        name?: string;
+        type?: string;
         chainId?: number;
         price?: number;
         updatedAt?: number;
@@ -347,6 +357,91 @@ const buildForecastCampaignMetaLiteMap = (
   return result;
 };
 
+const toFiniteNumberForForecast = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+};
+
+const normalizeAprForForecast = (raw: number): number => {
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return raw > 1 ? raw / 100 : raw;
+};
+
+interface ForecastFieldsFlat {
+  campaignType: ForecastCampaignTypeLite;
+  totalBudget: number;
+  aprCap: number | null;
+  latestTvl: number;
+  plannedDaily: number;
+}
+
+/**
+ * Compute opportunity-only forecast fields for a campaign.
+ * Uses only data available from the opportunity snapshot (no metrics API needed).
+ */
+const buildForecastFieldsFromOpportunity = (
+  meta: ForecastCampaignMetaLite
+): ForecastFieldsFlat | null => {
+  const snapshot = meta.campaignSnapshot;
+  if (!snapshot) return null;
+
+  const amountRaw = snapshot.amount;
+  const amount = toFiniteNumberForForecast(amountRaw);
+  if (amount === null) return null;
+
+  const startTs = toFiniteNumberForForecast(snapshot.startTimestamp);
+  const endTs = toFiniteNumberForForecast(snapshot.endTimestamp);
+  if (startTs === null || endTs === null || endTs <= startTs) return null;
+
+  // Normalize total budget (same logic as extractNormalizedTotalBudget in merklForecastService)
+  const decimals =
+    toFiniteNumberForForecast(snapshot.rewardToken?.decimals) ??
+    toFiniteNumberForForecast(snapshot.params?.decimalsRewardToken);
+
+  let rewardAmount = amount;
+  if (decimals !== null && decimals >= 0) {
+    if (typeof amountRaw === 'string' && !amountRaw.includes('.')) {
+      rewardAmount = amount / Math.pow(10, decimals);
+    }
+  }
+
+  const rewardTokenPrice = toFiniteNumberForForecast(snapshot.rewardToken?.price);
+  const totalBudget =
+    rewardTokenPrice !== null && rewardTokenPrice > 0
+      ? rewardAmount * rewardTokenPrice
+      : rewardAmount;
+
+  if (totalBudget <= 0) return null;
+
+  const totalDays = Math.max((endTs - startTs) / 86400, 0.0001);
+  const plannedDaily = totalBudget / totalDays;
+
+  // APR cap (only for MAX/FIX reward types)
+  let aprCap: number | null = null;
+  if (
+    meta.campaignTypeHint === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
+    meta.campaignTypeHint === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  ) {
+    const rawApr = snapshot.params?.distributionMethodParameters?.distributionSettings?.apr;
+    const aprValue = toFiniteNumberForForecast(rawApr);
+    if (aprValue !== null && aprValue > 0) {
+      aprCap = normalizeAprForForecast(aprValue);
+    }
+  }
+
+  return {
+    campaignType: meta.campaignTypeHint,
+    totalBudget,
+    aprCap,
+    latestTvl: meta.tvl,
+    plannedDaily,
+  };
+};
+
 /**
  * 获取 Merkl opportunities（使用 mainProtocolId 参数，返回 Aave 和 Tydro 相关的数据）
  */
@@ -466,15 +561,47 @@ export function parseMarketNameFromOpportunityName(opportunityName: string | und
  * 对于 chainId === 1，使用 marketName-chainId-explorerAddress 作为 key
  * 对于其他 chainId，使用 chainId-explorerAddress 作为 key
  */
+/**
+ * 当 Merkl breakdown 提供 `value` 且可解析为有限数时，推导 daily 量与每千刀 TVL 强度。
+ * `dailyPoints` 为上游 `value` 的数值化副本；语义依活动而定（积分、代币日量等）。
+ */
+export function merklPointsFieldsFromBreakdownValue(
+  opp: MerklOpportunity,
+  rewardsBreakdown: { value?: number }
+): { dailyPoints: number; pointsPerThousandUsd: number } | undefined {
+  if (rewardsBreakdown.value === undefined) {
+    return undefined;
+  }
+  const dailyPoints = Number(rewardsBreakdown.value);
+  if (!Number.isFinite(dailyPoints)) {
+    return undefined;
+  }
+  const tvl = Number(opp.tvl) || 0;
+  const pointsPerThousandUsd = tvl > 0 ? (dailyPoints / tvl) * 1000 : 0;
+  return { dailyPoints, pointsPerThousandUsd };
+}
+
+export type MerklRewardsBreakdownForIntensity = {
+  token?: { type?: string; symbol?: string; name?: string };
+};
+
+/**
+ * 是否应为该 breakdown 输出 `dailyPoints` / `pointsPerThousandUsd`（由 `value`÷TVL 推导）。
+ * 仅当 Merkl 在 breakdown 上把奖励标为 **`token.type === 'PRETGE'`**（pre-TGE 类积分）时启用；其它 TOKEN、协议名、Tydro 等均不特殊处理。
+ */
+export function merklBreakdownUsesPointsIntensityFields(
+  breakdown: MerklRewardsBreakdownForIntensity
+): boolean {
+  return String(breakdown.token?.type || '').trim().toUpperCase() === 'PRETGE';
+}
+
 export async function processMerklData(): Promise<{ index: Record<string, MerklOpportunityData[]> }> {
   const opportunities = await fetchMerklOpportunities();
   const merklData: Record<string, MerklOpportunityData[]> = {};
   logger.info('🔍 Processing Merkl opportunities...');
   // fetchMerklOpportunities 已在 API 层过滤 status=LIVE
   const liveOpportunities = opportunities;
-  const tydroCount = liveOpportunities.filter(opp => opp.protocol?.id === 'tydro').length;
-  const aaveCount = liveOpportunities.length - tydroCount;
-  logger.info(`Processing ${liveOpportunities.length} live opportunities (${aaveCount} Aave, ${tydroCount} Tydro)`);
+  logger.info(`Processing ${liveOpportunities.length} live Merkl opportunities`);
   
   const campaignDetailsCache = new Map<string, MerklCampaignDetails | null>();
   for (const opp of liveOpportunities) {
@@ -516,16 +643,16 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
     await Promise.all(campaignPromises);
   }
   logger.info(`✅ Campaign details cache ready: ${campaignDetailsCache.size} items`);
-  
+
+  // Build forecast meta map early so breakdowns can be enriched with opportunity-only forecast data
+  const forecastCampaignMetaLite = buildForecastCampaignMetaLiteMap(liveOpportunities);
+
   // 处理所有 live opportunities（现在可以快速从缓存中获取数据）
   for (const opp of liveOpportunities) {
     if (!opp.explorerAddress) {
       logger.warn(`   ⚠️ No explorerAddress found for opportunity ${opp.id}`);
       continue;
     }
-    
-    // 检查是否是 tydro 协议
-    const isTydro = opp.protocol?.id === 'tydro';
     
     // 只有在 chainId === 1 时才需要解析 marketName
     const marketName = opp.chainId === 1 
@@ -540,58 +667,55 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
       logger.warn(`   ⚠️ Could not generate link for opportunity ${opp.id}: missing identifier, type, or chain.name`);
     }
     
-    // 处理 campaign breakdowns（从缓存中快速获取）
     const breakdowns: MerklCampaignBreakdown[] = [];
-    
-    if (isTydro) {
-      // Tydro 协议特殊处理：逐条 breakdown 记录 points 信息（APR 由前端计算）
+    const rewardsBreakdowns = opp.rewardsRecord?.breakdowns;
+    if (!rewardsBreakdowns?.length) {
+      continue;
+    }
+
+    for (const rewardBreakdown of rewardsBreakdowns) {
+      const campaignId = String(rewardBreakdown.campaignId || '').trim();
+      if (!campaignId) {
+        logger.warn(`   ⚠️ Skipping breakdown without campaignId on opportunity ${opp.id}`);
+        continue;
+      }
+
+      const campaignDetails = campaignDetailsCache.get(campaignId);
+      if (!campaignDetails) {
+        continue;
+      }
+
+      const useIntensity = merklBreakdownUsesPointsIntensityFields(rewardBreakdown);
+      const pointsFields = useIntensity
+        ? merklPointsFieldsFromBreakdownValue(opp, rewardBreakdown)
+        : undefined;
+
+      breakdowns.push({
+        campaignApr: campaignDetails.apr,
+        campaignStartedAt: campaignDetails.startedAt,
+        campaignEndedAt: campaignDetails.endedAt,
+        campaignId,
+        whitelistOnly: campaignDetails.whitelistOnly,
+        distributionType:
+          rewardBreakdown.distributionType || rewardBreakdown.distributionMethod || opp.distributionType,
+        ...(pointsFields ?? {})
+      });
+    }
+
+    const intensityCount = breakdowns.filter((b) => b.dailyPoints !== undefined).length;
+    if (intensityCount > 0) {
       const tvl = Number(opp.tvl) || 0;
+      logger.info(
+        `   📊 Opportunity ${opp.id}: ${intensityCount} breakdown(s) with reward-intensity fields, TVL: ${tvl}`
+      );
+    }
 
-      for (const rewardsBreakdown of opp.rewardsRecord.breakdowns) {
-        if (rewardsBreakdown.value === undefined) {
-          continue;
-        }
-
-        const dailyPoints = Number(rewardsBreakdown.value);
-        const pointsPerThousandUsd = tvl > 0 ? (dailyPoints / tvl) * 1000 : 0;
-
-        // 对于 tydro，我们需要从 campaign details 获取时间信息，如果没有则使用默认值
-        const campaignDetails = rewardsBreakdown.campaignId
-          ? campaignDetailsCache.get(rewardsBreakdown.campaignId)
-          : null;
-
-        breakdowns.push({
-          campaignApr: 0,
-          campaignStartedAt: campaignDetails?.startedAt || '',
-          campaignEndedAt: campaignDetails?.endedAt || '',
-          campaignId: rewardsBreakdown.campaignId || opp.id,
-          whitelistOnly: campaignDetails?.whitelistOnly || false,
-          distributionType:
-            rewardsBreakdown.distributionType || rewardsBreakdown.distributionMethod || opp.distributionType,
-          pointsPerThousandUsd: pointsPerThousandUsd,
-          dailyPoints: dailyPoints
-        });
-      }
-
-      if (breakdowns.length > 0) {
-        const totalDailyPoints = breakdowns.reduce((sum, b) => sum + (b.dailyPoints || 0), 0);
-        logger.info(`   📊 Tydro opportunity ${opp.id}: ${breakdowns.length} breakdown(s), total daily points: ${totalDailyPoints}, TVL: ${tvl}`);
-      }
-    } else {
-      // Aave 协议：使用原有的处理逻辑
-      for (const rewardBreakdown of opp.rewardsRecord.breakdowns) {
-        const campaignDetails = campaignDetailsCache.get(rewardBreakdown.campaignId);
-        if (campaignDetails) {
-          breakdowns.push({
-            campaignApr: campaignDetails.apr,
-            campaignStartedAt: campaignDetails.startedAt,
-            campaignEndedAt: campaignDetails.endedAt,
-            campaignId: rewardBreakdown.campaignId,
-            whitelistOnly: campaignDetails.whitelistOnly,
-            distributionType:
-              rewardBreakdown.distributionType || rewardBreakdown.distributionMethod || opp.distributionType
-          });
-        }
+    // Enrich breakdowns with opportunity-only forecast fields
+    for (const bd of breakdowns) {
+      const meta = forecastCampaignMetaLite[bd.campaignId];
+      if (meta) {
+        const fields = buildForecastFieldsFromOpportunity(meta);
+        if (fields) Object.assign(bd, fields);
       }
     }
 
@@ -636,7 +760,6 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   
   // 从索引中提取所有 opportunities 用于保存
   const processedData = Object.values(merklData).flat();
-  const forecastCampaignMetaLite = buildForecastCampaignMetaLiteMap(liveOpportunities);
   
   logger.info(`✅ Processed ${processedData.length} Merkl opportunities`);
   logger.info(`📊 Created index with ${Object.keys(merklData).length} token keys`);

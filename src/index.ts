@@ -186,6 +186,14 @@ function pruneMerklBreakdownForRuntime(breakdown: MerklCampaignBreakdown): Merkl
     ...(breakdown.pointsPerThousandUsd !== undefined
       ? { pointsPerThousandUsd: breakdown.pointsPerThousandUsd }
       : {}),
+    ...(breakdown.dailyPoints !== undefined ? { dailyPoints: breakdown.dailyPoints } : {}),
+    ...(breakdown.campaignType ? {
+      campaignType: breakdown.campaignType,
+      totalBudget: breakdown.totalBudget,
+      aprCap: breakdown.aprCap,
+      latestTvl: breakdown.latestTvl,
+      plannedDaily: breakdown.plannedDaily,
+    } : {}),
   };
 }
 

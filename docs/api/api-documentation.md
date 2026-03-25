@@ -124,13 +124,15 @@ interface MerklOpportunityGroup {
   breakdowns: MerklCampaignBreakdown[]; // 该 opportunity 的所有 breakdowns
 }
 
+// `dailyPoints` / `pointsPerThousandUsd`：仅当 breakdown 上 `reward token.type === 'PRETGE'` 时输出（见 `src/merkl-api.ts`）。
+
 interface MerklCampaignBreakdown {
-  campaignApr: number;                  // 活动 APR（百分比数值）
+  campaignApr: number;                  // 活动 APR（百分比数值，来自 Merkl campaign）
   campaignStartedAt: string;            // 活动开始时间（ISO 8601）
   campaignEndedAt: string;              // 活动结束时间（ISO 8601）
   campaignId: string;                   // 活动 ID
-  pointsPerThousandUsd?: number;        // Tydro 协议的 points/1000USD 值（可选）
-  dailyPoints?: number;                 // Tydro 协议的每日 points（可选）
+  pointsPerThousandUsd?: number;        // breakdown.value / opportunity TVL × 1000（与 dailyPoints 同条件出现）
+  dailyPoints?: number;                 // 与 Merkl breakdown.value 对齐的日量（可选）
 }
 ```
 

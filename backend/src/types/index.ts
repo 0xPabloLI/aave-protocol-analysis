@@ -65,6 +65,12 @@ export interface MarketWithSpread {
       campaignId: string;
       whitelistOnly?: boolean;
       pointsPerThousandUsd?: number;
+      dailyPoints?: number;
+      campaignType?: string;
+      totalBudget?: number;
+      aprCap?: number | null;
+      latestTvl?: number;
+      plannedDaily?: number;
     }>;
   }>;
   merklBorrows?: Array<{
@@ -78,6 +84,12 @@ export interface MarketWithSpread {
       campaignId: string;
       whitelistOnly?: boolean;
       pointsPerThousandUsd?: number;
+      dailyPoints?: number;
+      campaignType?: string;
+      totalBudget?: number;
+      aprCap?: number | null;
+      latestTvl?: number;
+      plannedDaily?: number;
     }>;
   }>;
   merklHolds?: Array<{
@@ -91,6 +103,12 @@ export interface MarketWithSpread {
       campaignId: string;
       whitelistOnly?: boolean;
       pointsPerThousandUsd?: number;
+      dailyPoints?: number;
+      campaignType?: string;
+      totalBudget?: number;
+      aprCap?: number | null;
+      latestTvl?: number;
+      plannedDaily?: number;
     }>;
   }>;
   brevisSupplys?: Array<{

@@ -1,6 +1,6 @@
 # Merkl / Merit Data Flow & Cache Architecture
 
-Last updated: 2026-03-24
+Last updated: 2026-03-25
 
 This document explains how Merkl + Merit data moves through the codebase, which files are for debugging vs runtime, and which caches are in memory.
 
@@ -134,6 +134,12 @@ flowchart TD
   - Merit last-round reward estimation debug (Merkl JSON_AIRDROP history scan)
 - `data/debug/brevis-raw-data.json`
   - Brevis debug snapshot
+
+### Merkl → `/api/markets` reserve fields: `dailyPoints` / `pointsPerThousandUsd`
+
+Implemented in `src/merkl-api.ts` (`merklBreakdownUsesPointsIntensityFields` + `merklPointsFieldsFromBreakdownValue`). Emitted **only** when `rewardsRecord.breakdowns[].token.type === 'PRETGE'` (Merkl pre-TGE reward token). Other tokens, protocols, or opportunity names are not special-cased; consumers use `campaignApr` and the rest of the breakdown for normal TOKEN rewards.
+
+Optional script `scripts/merkl-pretge-points-overlap.mjs` compares PRETGE rows vs symbol/name containing the word `points` on a debug snapshot (historically identical sets; re-run if Merkl’s schema changes).
 
 ## 3) In-Memory Caches (Runtime)
 

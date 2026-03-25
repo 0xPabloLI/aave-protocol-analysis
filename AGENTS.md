@@ -295,18 +295,20 @@ Don't set secrets in `ecosystem.config.cjs`—they'll override Doppler.
 - Prefer merging API endpoints when data is pre-fetched together with the same TTL/staleness; flatten nested objects when possible
 - Verify changes appear in API response after implementation; rebuild `dist/` if backend imports from it
 - When adding new reserve fields to fetcher output, also add them to `pruneReserveForRuntime()` or they will not appear in runtime/API; then rebuild root so backend sees updates
+- For small pure helpers that shape API output (e.g. Merkl breakdown derivations), add focused `backend` unit tests when the module can be imported without live network calls
 - Organize reusable patterns into `docs/reusable/` for cross-project portability
+- When describing refresh cadence or cache freshness, name the subsystem (markets vs Merkl forecast vs Merkl metrics) and align statements with `backend/src/cacheTtl.ts` and `updateScheduler.ts` so labels like `realtimeFamily` are not applied to Merkl forecast paths
 
 ## Learned Workspace Facts
 
-- Backend imports from `dist/index.js` — changes to `src/index.ts` require `npm run build` before backend sees updates
-- New reserve-level fields must be listed in `pruneReserveForRuntime()` (src/index.ts) or they are dropped from runtime JSON and API response
-- On-chain data (`deficit`, `baseVariableBorrowRate`) from `UiPoolDataProvider.getReservesHumanized()`; per-chain cache with 30-min TTL; no overall timeout (each chain tries all RPCs with 15s per attempt)
-- Only `deficit` requires on-chain RPC; other rate-input fields are available from Aave API (total vs scaledDebt handled in code)
-- Markets cron at :00 and on-chain cron at :10 every minute; markets read from on-chain cache at merge time
+- Backend imports from `dist/index.js` — changes to `src/index.ts` require `npm run build` before backend sees updates; new reserve-level fields must be listed in `pruneReserveForRuntime()` (src/index.ts) or they are dropped from runtime JSON and API response
+- On-chain data (`deficit`, `baseVariableBorrowRate`) from `UiPoolDataProvider.getReservesHumanized()`; per-chain cache with 30-min TTL; no overall timeout (each chain tries all RPCs with 15s per attempt). Only `deficit` requires on-chain RPC; other rate-input fields come from the Aave API (total vs scaledDebt handled in code). Markets cron at :00 and on-chain cron at :10 every minute; markets read from on-chain cache at merge time
 - `/api/rate-inputs` removed; all rate-input fields live in `/api/markets` reserves; frontend must fallback when `deficit` or `baseVariableBorrowRate` are absent
-- RPC order in `packages/aave-shared-config`: public RPC first, private (Infura/Ankr/Alchemy) last
-- `totalVariableDebt` from Aave SDK replaces `totalScaledVariableDebt` + `variableBorrowIndex`; precision (raw token units, BPS, RAY) aligned with former on-chain source
+- RPC order in `packages/aave-shared-config`: public RPC first, private (Infura/Ankr/Alchemy) last. `totalVariableDebt` from Aave SDK replaces `totalScaledVariableDebt` + `variableBorrowIndex`; precision (raw token units, BPS, RAY) aligned with former on-chain source
 - CORS `FRONTEND_URL` uses exact-origin matching only (no subdomains or wildcards); list each allowed origin comma-separated with full URL including protocol (e.g. `https://aaveapy.com,https://www.aaveapy.com`)
 - Merkl forecast `totalBudget` / `plannedDaily` / `requiredDaily` / `distributedSoFar` are USD when `rewardToken.price` is present on the campaign snapshot; otherwise they follow token units after amount scaling (same as `extractNormalizedTotalBudget` without a price)
 - `merkl-opportunity-meta-lite.json` is written by the root fetcher from Merkl opportunities; forecast lite keys campaigns by `rewardsRecord.breakdowns[].campaignId`, and the forecast cron uses IDs from markets merkl breakdowns, not Merkl's full live catalog—keep markets runtime and lite snapshots refreshed together to avoid stale campaign ID mismatches
+- `BACKEND_CACHE_TTL_MS.realtimeFamily` and markets cron cadence apply to `/api/markets` staleness only; Merkl forecast uses separate defaults (for example `merklForecastResultDefault` 10m, `merklForecastOpportunityMetaDefault` and `merklOpportunitiesDefault` 5m, plus dynamic metrics TTL)—do not conflate them when comparing intervals
+- Raw Merkl payloads may include non-empty `params.whitelist` (surfaced as `whitelistOnly` on breakdowns); a given snapshot's observed distribution types may omit `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` even though normalization and forecast code support that type
+- Merkl reserve breakdown `dailyPoints` / `pointsPerThousandUsd` only when `rewardsRecord.breakdowns[].token.type === 'PRETGE'` (`merklBreakdownUsesPointsIntensityFields` in `src/merkl-api.ts`); values from `breakdown.value` and `tvl`. Optional overlap sanity check: `scripts/merkl-pretge-points-overlap.mjs`; see `docs/merkl-merit-cache-architecture.md`
+- Startup warmup in `backend/src/server.ts` runs Phase 1 `Promise.allSettled` (on-chain, markets, CoinGecko categories, FDV) then Phase 2 `warmCampaignForecastStatesCache()` so forecast can use the markets snapshot
