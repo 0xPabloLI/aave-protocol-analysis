@@ -4,15 +4,13 @@ import { getMarketsSnapshot } from '../services/marketsService.js';
 import { logger } from '../logger.js';
 import type { MarketWithSpread } from '../types/index.js';
 
+// Only metrics-dependent fields (require Merkl metrics API / dailyRewardsRecords).
+// Opportunity-only fields (campaignType, totalBudget, aprCap, latestTvl, plannedDaily)
+// are served from the markets endpoint breakdowns for 1-min freshness.
 export const toForecastResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>) => ({
   campaignId: state.campaignId,
-  campaignType: state.campaignType,
-  plannedDaily: state.plannedDaily,
   requiredDaily: state.requiredDaily,
-  aprCap: state.aprCap,
-  totalBudget: state.totalBudget,
   distributedSoFar: state.distributedSoFar,
-  latestTvl: state.latestTvl,
   endTimestamp: state.endTimestamp,
 });
 
