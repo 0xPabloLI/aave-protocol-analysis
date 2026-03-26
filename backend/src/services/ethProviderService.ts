@@ -10,6 +10,7 @@ type EndpointHealth = {
   suppressedUntil: number;
   lastError: string;
   lastFailureAt: number;
+  lastSuccessAt: number;
 };
 
 type UnhealthyEndpoint = {
@@ -61,18 +62,20 @@ export class EthProviderService {
       suppressedUntil: shouldSuppress ? now + this.suppressionMs : (current?.suppressedUntil ?? 0),
       lastError: errorMessage,
       lastFailureAt: now,
+      lastSuccessAt: current?.lastSuccessAt ?? 0,
     });
   }
 
   reportProviderSuccess(chainId: number, rpcUrl: string): void {
     const key = this.endpointKey(chainId, rpcUrl);
     const current = this.endpointHealthByKey.get(key);
-    if (!current) return;
+    const now = this.now();
     this.endpointHealthByKey.set(key, {
       consecutiveFailures: 0,
       suppressedUntil: 0,
-      lastError: current.lastError,
-      lastFailureAt: current.lastFailureAt,
+      lastError: current?.lastError ?? '',
+      lastFailureAt: current?.lastFailureAt ?? 0,
+      lastSuccessAt: now,
     });
   }
 
@@ -97,10 +100,11 @@ export class EthProviderService {
 
   getProvidersForChain(chainId: number, fallbackUrls: string[]): ProviderCandidate[] {
     const urls = fallbackUrls;
-    const healthyCandidates: ProviderCandidate[] = [];
+    const healthyCandidates: Array<ProviderCandidate & { lastSuccessAt: number; index: number }> = [];
     const suppressedCandidates: ProviderCandidate[] = [];
 
-    for (const rpcUrl of urls) {
+    for (let index = 0; index < urls.length; index++) {
+      const rpcUrl = urls[index];
       const key = `${chainId}:${rpcUrl}`;
       let provider = this.providerByKey.get(key);
       if (!provider) {
@@ -112,12 +116,26 @@ export class EthProviderService {
       if (this.isSuppressed(health)) {
         suppressedCandidates.push(candidate);
       } else {
-        healthyCandidates.push(candidate);
+        healthyCandidates.push({
+          ...candidate,
+          lastSuccessAt: health?.lastSuccessAt ?? 0,
+          index,
+        });
       }
     }
 
+    healthyCandidates.sort((a, b) => {
+      if (b.lastSuccessAt !== a.lastSuccessAt) {
+        return b.lastSuccessAt - a.lastSuccessAt;
+      }
+      return a.index - b.index;
+    });
+
     // Try healthy endpoints first. If all are currently suppressed, keep suppressed as a last resort.
-    return [...healthyCandidates, ...suppressedCandidates];
+    return [
+      ...healthyCandidates.map(({ rpcUrl, provider }) => ({ rpcUrl, provider })),
+      ...suppressedCandidates,
+    ];
   }
 }
 

@@ -41,6 +41,30 @@ test('restores endpoint priority after success', () => {
   assert.deepEqual(candidates, urls);
 });
 
+test('prefers most recently successful healthy endpoint', () => {
+  let currentNow = 1_000;
+  const service = new EthProviderService({
+    failureThreshold: 2,
+    suppressionMs: 60_000,
+    now: () => currentNow,
+  });
+
+  const chainId = 1;
+  const urls = ['https://rpc-a.example', 'https://rpc-b.example', 'https://rpc-c.example'];
+
+  let candidates = service.getProvidersForChain(chainId, urls).map((item) => item.rpcUrl);
+  assert.deepEqual(candidates, urls);
+
+  service.reportProviderSuccess(chainId, urls[1]);
+  candidates = service.getProvidersForChain(chainId, urls).map((item) => item.rpcUrl);
+  assert.deepEqual(candidates, [urls[1], urls[0], urls[2]]);
+
+  currentNow = 2_000;
+  service.reportProviderSuccess(chainId, urls[2]);
+  candidates = service.getProvidersForChain(chainId, urls).map((item) => item.rpcUrl);
+  assert.deepEqual(candidates, [urls[2], urls[1], urls[0]]);
+});
+
 test('surfaces unhealthy endpoint diagnostics', () => {
   const now = 10_000;
   const service = new EthProviderService({

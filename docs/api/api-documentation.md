@@ -693,28 +693,28 @@ Brevis 对外 contract 已收口到下面这组字段：
 - 在当前阶段，`/sdk/v1/aaveCampaigns` 不能直接替代项目中的 gRPC Aave 拉取路径。
 - 建议策略：继续以 gRPC 为主源，REST 作为旁路探测与后续切换候选。
 
-#### Brevis type code（官方文档枚举 + 本项目实测口径）
+#### Brevis type code（证据分级：官方文档 / 外部接口实测 / 项目代码映射）
 
 > Source: Incentra docs `Get Campaigns` / 各协议 campaign API / reward batch API（见文末链接）。
 
-| Type code | 语义 | 口径 | 来源页 |
+| Type code | 语义 | 证据等级 | 证据来源 |
 |---|---|---|---|
-| `1` | Liquidity campaign (Uniswap v3) | 官方 | Get Campaigns / Liquidity |
-| `2` | Liquidity campaign (Uniswap v4) | 官方 | Get Campaigns / Liquidity |
-| `3` | Liquidity campaign (PancakeSwap v3) | 官方 | Get Campaigns / Liquidity |
-| `4` | Liquidity campaign (PancakeSwap v4) | 官方 | Get Campaigns / Liquidity |
-| `5` | Liquidity campaign (QuickSwap v3) | 官方 | Get Campaigns / Liquidity |
-| `6` | Liquidity campaign (KoalaSwap) | 官方 | Get Campaigns / Liquidity |
-| `8` | Liquidity campaign (Pancake v4 CL) | 官方 | Get Campaigns / Liquidity |
-| `9` | Liquidity campaign (Pancake v4 BIN) | 官方 | Get Campaigns / Liquidity |
-| `1001` | Token holding campaign | 官方 | Reward batch APIs (`types`) |
-| `2001` | Euler borrow action | 官方 | Euler campaigns (`action`) |
-| `2002` | Euler lend action | 官方 | Euler campaigns (`action`) |
-| `5001` | Aave lend action | 官方 | Aave campaigns (`action`) |
-| `5002` | Aave borrow action | 官方 | Aave campaigns (`action`) |
-| `5003` | Aave lend_net action | 官方 | Aave campaigns (`action`) |
-| `6001` | Morpho lend action | 官方 | Morpho campaigns (`action`) |
-| `3001` | Aave campaign（当前项目实测为 both） | 项目实测 | `data/debug/brevis-raw-data.json` + `src/brevis-api.ts` |
+| `1` | Liquidity campaign (Uniswap v3) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
+| `2` | Liquidity campaign (Uniswap v4) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
+| `3` | Liquidity campaign (PancakeSwap v3) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
+| `4` | Liquidity campaign (PancakeSwap v4) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
+| `5` | Liquidity campaign (QuickSwap v3) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
+| `6` | Liquidity campaign (KoalaSwap) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
+| `8` | Liquidity campaign (Pancake v4 CL) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
+| `9` | Liquidity campaign (Pancake v4 BIN) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
+| `1001` | Token holding campaign | 官方文档 | Incentra docs: reward batch APIs (`types`) |
+| `2001` | Euler borrow action | 官方文档 | Incentra docs: Euler campaigns (`action`) |
+| `2002` | Euler lend action | 官方文档 | Incentra docs: Euler campaigns (`action`) |
+| `5001` | Aave lend action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
+| `5002` | Aave borrow action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
+| `5003` | Aave lend_net action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
+| `6001` | Morpho lend action | 官方文档 | Incentra docs: Morpho campaigns (`action`) |
+| `3001` | Aave campaign（当前项目实测为 both） | 外部接口实测 + 项目代码映射 | `data/debug/brevis-raw-data.json` + `src/brevis-api.ts` (`mapActionType`) |
 
 本项目当前 `/api/markets` 的 Brevis 解析逻辑中，`actionType` 映射为：
 
@@ -734,16 +734,16 @@ Brevis 对外 contract 已收口到下面这组字段：
 - `https://incentra-docs.brevis.network/developer-sdk/get-campaigns`
 - `https://incentra-docs.brevis.network/print.html`
 
-#### Brevis campaign status code（官方枚举 + 本项目代码口径）
+#### Brevis campaign status code（证据分级：官方文档 / 外部接口实测 / 项目代码映射）
 
-| Status code | 标签 | 口径 | 来源 |
+| Status code | 标签 | 证据等级 | 证据来源 |
 |---|---|---|---|
-| `1` | `DEPLOYING` | 项目代码口径 | `src/brevis-api.ts` (`mapStatusLabel`) |
-| `2` | `CREATING_FAILED` | 项目代码口径 | `src/brevis-api.ts` (`mapStatusLabel`) |
-| `3` | `INACTIVE` | 官方 + 项目代码口径 | Incentra docs + `mapStatusLabel` |
-| `4` | `ACTIVE` | 官方 + 项目代码口径 | Incentra docs + `mapStatusLabel` |
-| `5` | `ENDED` | 官方 + 项目代码口径 | Incentra docs + `mapStatusLabel` |
-| `6` | `DEACTIVATED` | 项目代码口径（官方文档列出标签但未统一给数字） | `src/brevis-api.ts` (`mapStatusLabel`) |
+| `1` | `DEPLOYING` | 项目代码映射（暂无官方数字佐证） | `src/brevis-api.ts` (`mapStatusLabel`) |
+| `2` | `CREATING_FAILED` | 项目代码映射（暂无官方数字佐证） | `src/brevis-api.ts` (`mapStatusLabel`) |
+| `3` | `INACTIVE` | 官方文档 + 项目代码映射 | Incentra docs + `mapStatusLabel` |
+| `4` | `ACTIVE` | 官方文档 + 项目代码映射 | Incentra docs + `mapStatusLabel` |
+| `5` | `ENDED` | 官方文档 + 项目代码映射 | Incentra docs + `mapStatusLabel` |
+| `6` | `DEACTIVATED` | 项目代码映射（官方仅列标签，未给数字） | `src/brevis-api.ts` (`mapStatusLabel`) |
 
 补充说明：
 
