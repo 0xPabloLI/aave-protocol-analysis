@@ -4,35 +4,23 @@
 
 **Scope**: Root fetcher (`src/`), backend Merkl forecast (`backend/src/services/merklForecast*`, `merklForecastController`), and `merkl-opportunity-meta-lite` / reserve pruning. Does not claim to cover every file in the repo.
 
-**Last updated**: 2025-03-25
+**Last updated**: 2026-03-26
 
 ---
 
 ## 1. Merkl forecast model and API (`merklForecastModel`, `merklForecastService`, `toForecastResponseItem`)
 
-### 1.1 Computed but never read (dead output)
-
-| Item | Location | Notes |
-|------|----------|--------|
-| **`expectedByNow`** | `buildForecastState()` in `backend/src/services/merklForecastModel.ts` | Linear “expected distribution by now” is computed and stored on `MerklForecastState`. No other module reads it. `toForecastResponseItem` does not expose it. Unit tests do not assert it. |
-
-### 1.2 Passed through, not used in formulas
+### 1.1 In model output but not used inside `buildForecastState` math
 
 | Item | Notes |
 |------|--------|
-| **`computedUntil`** | Taken from `campaignStatus.computedUntil` / snapshot, stored on `MerklForecastState`. Does not feed `plannedDaily`, `requiredDaily`, `distributedSoFar`, or any other calculation. |
+| **`latestTvl`** | Normalized and returned on state; **not** used in any formula inside `buildForecastState`. Current forecast endpoint (`/api/campaigns/forecast-states`) does **not** expose it. It remains useful via `/api/markets` Merkl breakdown fields (opportunity-only forecast fields). |
 
-### 1.3 In model output but not used inside `buildForecastState` math
+### 1.2 Full state vs HTTP response
 
-| Item | Notes |
-|------|--------|
-| **`latestTvl`** | Normalized and returned on state; **not** used in any formula inside `buildForecastState`. Forecast HTTP responses **do** include `latestTvl`, so it is not dead for API consumers—only “unused inside the model’s math.” |
+`getMerklForecastState()` returns full `MerklForecastState`. `toForecastResponseItem()` currently maps only: `campaignId`, `requiredDaily`, `distributedSoFar`, `endTimestamp`.
 
-### 1.4 Full state vs HTTP response
-
-`getMerklForecastState()` returns full `MerklForecastState`. `toForecastResponseItem()` maps only: `campaignId`, `campaignType`, `plannedDaily`, `requiredDaily`, `aprCap`, `totalBudget`, `distributedSoFar`, `latestTvl`, `endTimestamp`.
-
-Fields such as **`remainingBudget`**, **`remainingDays`**, **`asOf`**, **`startTimestamp`**, **`computedUntil`**, **`expectedByNow`** are either omitted or only exist on the internal object. Some of these (**`remainingBudget` / `remainingDays`**) **are** used internally to derive **`requiredDaily`** (non–DUTCH paths); they are not “dead,” only not exposed on the public forecast JSON.
+Fields such as **`campaignType`**, **`plannedDaily`**, **`aprCap`**, **`totalBudget`**, **`latestTvl`**, **`remainingBudget`**, **`remainingDays`**, **`asOf`**, **`startTimestamp`** are omitted from forecast JSON. Some are still used internally (e.g. **`remainingBudget` / `remainingDays`** derive **`requiredDaily`** for non–DUTCH paths), and opportunity-only fields are intentionally served via `/api/markets` breakdowns for fresher cadence.
 
 ---
 
@@ -60,12 +48,12 @@ When opportunity metadata always supplies TVL (normal path), **`extractLatestTvl
 
 | Field | Notes |
 |-------|--------|
-| **`campaignSnapshot.campaignStatus.computedUntil`** | Persisted in lite snapshots. Forecast math does not use it; public forecast JSON does not expose it (see §1). |
-| **`distributionTypeRaw`** | Stored next to **`campaignTypeHint`**. Backend forecast logic uses **`campaignTypeHint`** only; **`distributionTypeRaw`** is never read in code paths reviewed for this audit. |
+| **`campaignTypeHint`** | Required by backend forecast typing when loading lite snapshots (used as canonical campaign type). |
+| **`campaignSnapshot`** | Optional fast path source for budget/time/APR-cap fields; when unavailable backend falls back to `GET /v4/campaigns/{id}`. |
 
 ### 3.2 Root fetcher alignment
 
-`src/merkl-api.ts` builds the same conceptual meta (`buildForecastCampaignMetaLiteMap`, `distributionTypeRaw`, `computedUntil` on snapshot) for the lite file written by the root fetcher.
+`src/merkl-api.ts` builds the same conceptual meta (`buildForecastCampaignMetaLiteMap`, `campaignTypeHint`, `campaignSnapshot`) for the lite file written by the root fetcher.
 
 ---
 
@@ -98,17 +86,17 @@ When opportunity metadata always supplies TVL (normal path), **`extractLatestTvl
 
 Priority is subjective; align with product/API contracts before deleting fields.
 
-1. **Remove or stop computing `expectedByNow`** unless a consumer (API, tests, or ops) will use it.
-2. **Slim `MetricsCacheEntry`**: drop stored **`ttlMs` / `cadenceSeconds`**, or log **`cadenceSeconds`** once when refreshing cache instead of retaining on the entry.
-3. **Lite file**: stop persisting **`computedUntil`** and/or **`distributionTypeRaw`** if no external reader or debugging workflow depends on them.
-4. **Shared module**: factor **normalized total budget** (and related decimal/price rules) into a small shared helper used by both `merkl-api` and `merklForecastService` to avoid drift.
-5. **Breakdown `distributionType`**: if runtime API will never expose it, consider avoiding attaching it to objects that are only consumed after prune (reduces confusion only—behavior unchanged).
+1. **Slim `MetricsCacheEntry`**: drop stored **`ttlMs` / `cadenceSeconds`**, or log **`cadenceSeconds`** once when refreshing cache instead of retaining on the entry.
+2. **Lite file schema**: keep minimal fields required by forecast (`tvl`, `campaignTypeHint`, optional `campaignSnapshot`) and avoid re-adding non-consumed metadata.
+3. **Shared module**: factor **normalized total budget** (and related decimal/price rules) into a small shared helper used by both `merkl-api` and `merklForecastService` to avoid drift.
+4. **Breakdown `distributionType`**: if runtime API will never expose it, consider avoiding attaching it to objects that are only consumed after prune (reduces confusion only—behavior unchanged).
 
 ---
 
 ## 8. References in repo
 
 - Forecast response shaping: `backend/src/controllers/merklForecastController.ts` (`toForecastResponseItem`).
+- Opportunity-only forecast fields on markets payload: `src/merkl-api.ts` (`buildForecastFieldsFromOpportunity`) + `src/index.ts` (`pruneMerklBreakdownForRuntime`).
 - Internal state vs REST: `docs/api/api-documentation.md` (Merkl forecast / `MerklForecastState` notes).
 - Cache layers: `docs/merkl-merit-cache-architecture.md`, `docs/backend/data-freshness-mechanism.md`.
 

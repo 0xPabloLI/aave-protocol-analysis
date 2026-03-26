@@ -345,6 +345,45 @@ export const resolveCacheTtlMs = (
   return Number.isFinite(parsed) && parsed > 0 ? parsed : safeFallback;
 };
 
+const toFiniteNumber = (value) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+/**
+ * Normalize a Merkl campaign budget to the effective unit used by forecast:
+ * - If reward token price is available and positive: USD
+ * - Otherwise: reward token units (after decimals normalization when needed)
+ *
+ * Returns `null` when amount cannot be parsed.
+ */
+export const normalizeMerklCampaignTotalBudget = (campaign) => {
+  const amountRaw = campaign?.amount;
+  const amount = toFiniteNumber(amountRaw);
+  if (amount === null) return null;
+
+  const decimals =
+    toFiniteNumber(campaign?.rewardToken?.decimals) ??
+    toFiniteNumber(campaign?.params?.decimalsRewardToken);
+
+  let rewardAmount = amount;
+  if (decimals !== null && decimals >= 0) {
+    if (typeof amountRaw === 'string' && !amountRaw.includes('.')) {
+      rewardAmount = amount / Math.pow(10, decimals);
+    }
+  }
+
+  const rewardTokenPrice = toFiniteNumber(campaign?.rewardToken?.price);
+  if (rewardTokenPrice !== null && rewardTokenPrice > 0) {
+    return rewardAmount * rewardTokenPrice;
+  }
+  return rewardAmount;
+};
+
 const withDefaultAaveTydroQuery = ({
   mainProtocolId,
   status,

@@ -250,7 +250,7 @@ flowchart LR
 
 #### Forecast lite snapshot (from embedded campaign), used for `buildForecastFieldsFromOpportunity`
 
-Additional fields read **only** inside `buildCampaignSnapshotLiteForForecastFile` for matching `campaignId`: `amount`, `campaignStatus.computedUntil`, `rewardToken.price`, `rewardToken.decimals`, plus `params` branches above. If a breakdown’s `campaignId` has no embedded campaign object, the code may **fetch** `GET /v4/campaigns/{campaignId}` to fill the same `MerklCampaignDetails` used for markets breakdowns (dates, APR, whitelist) — that response is **not** part of the opportunities array; document it as a sibling API.
+Additional fields read **only** inside `buildCampaignSnapshotLiteForForecastFile` for matching `campaignId`: `amount`, `rewardToken.price`, `rewardToken.decimals`, plus `params` branches above. If a breakdown’s `campaignId` has no embedded campaign object, the code may **fetch** `GET /v4/campaigns/{campaignId}` to fill the same `MerklCampaignDetails` used for markets breakdowns (dates, APR, whitelist) — that response is **not** part of the opportunities array; document it as a sibling API.
 
 #### Not used by current `merkl-api` logic
 
@@ -265,7 +265,7 @@ Additional fields read **only** inside `buildCampaignSnapshotLiteForForecastFile
 
 ### B) `campaignOpportunityCache` (`backend/src/services/merklForecastService.ts`)
 - Forecast-only campaign meta index:
-  - `campaignId -> { tvl, campaignTypeHint, distributionTypeRaw, campaignSnapshot }`
+  - `campaignId -> { tvl, campaignTypeHint, campaignSnapshot }`
 - Rebuilt on demand when expired
 - TTL (current): 5 minutes (default), configurable independently from forecast result cache
 

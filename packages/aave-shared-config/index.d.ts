@@ -30,6 +30,7 @@ export declare const getAaveRpcUrlsByChainId: (chainId: unknown) => string[];
 export declare const DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY: DefaultAaveTydroOpportunitiesQuery;
 
 export declare const resolveCacheTtlMs: (raw: unknown, fallbackMs?: number) => number;
+export declare const normalizeMerklCampaignTotalBudget: (campaign: unknown) => number | null;
 
 /**
  * Wraps any fetch-like function (global `fetch`, node-fetch, etc.) with a shared

@@ -9,6 +9,7 @@ import { merklFetchConfig } from './config.js';
 import {
   createMerklConcurrencyLimitedFetch,
   fetchMerklOpportunitiesSnapshot,
+  normalizeMerklCampaignTotalBudget,
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
 
@@ -86,7 +87,6 @@ export interface MerklCampaignBreakdown {
   campaignEndedAt: string;
   campaignId: string;
   whitelistOnly?: boolean;
-  distributionType?: string;
   /** 见 `merklBreakdownUsesPointsIntensityFields`；为真且 `value` 可解析时 = value÷TVL×1000 */
   pointsPerThousandUsd?: number;
   /** 与上游 `breakdown.value` 对齐；仅强度类 breakdown 输出 */
@@ -228,9 +228,6 @@ interface CampaignSnapshotLiteForForecastFile {
   amount?: unknown;
   startTimestamp?: unknown;
   endTimestamp?: unknown;
-  campaignStatus?: {
-    computedUntil?: unknown;
-  };
   rewardToken?: {
     price?: unknown;
     decimals?: unknown;
@@ -248,7 +245,6 @@ interface CampaignSnapshotLiteForForecastFile {
 interface ForecastCampaignMetaLite {
   tvl: number;
   campaignTypeHint: ForecastCampaignTypeLite;
-  distributionTypeRaw: string | null;
   campaignSnapshot: CampaignSnapshotLiteForForecastFile | null;
 }
 
@@ -276,9 +272,6 @@ const buildCampaignSnapshotLiteForForecastFile = (campaign: any): CampaignSnapsh
   if (campaign?.amount !== undefined) snapshot.amount = campaign.amount;
   if (campaign?.startTimestamp !== undefined) snapshot.startTimestamp = campaign.startTimestamp;
   if (campaign?.endTimestamp !== undefined) snapshot.endTimestamp = campaign.endTimestamp;
-  if (campaign?.campaignStatus?.computedUntil !== undefined) {
-    snapshot.campaignStatus = { computedUntil: campaign.campaignStatus.computedUntil };
-  }
   if (campaign?.rewardToken) {
     const rewardToken: CampaignSnapshotLiteForForecastFile['rewardToken'] = {};
     if (campaign.rewardToken.price !== undefined) rewardToken.price = campaign.rewardToken.price;
@@ -339,7 +332,6 @@ const buildForecastCampaignMetaLiteMap = (
         result[campaignId] = {
           tvl,
           campaignTypeHint,
-          distributionTypeRaw: rawType,
           campaignSnapshot,
         };
         continue;
@@ -348,7 +340,6 @@ const buildForecastCampaignMetaLiteMap = (
       result[campaignId] = {
         tvl: existing.tvl > 0 ? existing.tvl : tvl,
         campaignTypeHint: existing.campaignTypeHint,
-        distributionTypeRaw: existing.distributionTypeRaw ?? rawType,
         campaignSnapshot: existing.campaignSnapshot ?? campaignSnapshot,
       };
     }
@@ -389,32 +380,12 @@ const buildForecastFieldsFromOpportunity = (
   const snapshot = meta.campaignSnapshot;
   if (!snapshot) return null;
 
-  const amountRaw = snapshot.amount;
-  const amount = toFiniteNumberForForecast(amountRaw);
-  if (amount === null) return null;
-
   const startTs = toFiniteNumberForForecast(snapshot.startTimestamp);
   const endTs = toFiniteNumberForForecast(snapshot.endTimestamp);
   if (startTs === null || endTs === null || endTs <= startTs) return null;
 
-  // Normalize total budget (same logic as extractNormalizedTotalBudget in merklForecastService)
-  const decimals =
-    toFiniteNumberForForecast(snapshot.rewardToken?.decimals) ??
-    toFiniteNumberForForecast(snapshot.params?.decimalsRewardToken);
-
-  let rewardAmount = amount;
-  if (decimals !== null && decimals >= 0) {
-    if (typeof amountRaw === 'string' && !amountRaw.includes('.')) {
-      rewardAmount = amount / Math.pow(10, decimals);
-    }
-  }
-
-  const rewardTokenPrice = toFiniteNumberForForecast(snapshot.rewardToken?.price);
-  const totalBudget =
-    rewardTokenPrice !== null && rewardTokenPrice > 0
-      ? rewardAmount * rewardTokenPrice
-      : rewardAmount;
-
+  const totalBudget = normalizeMerklCampaignTotalBudget(snapshot);
+  if (totalBudget === null) return null;
   if (totalBudget <= 0) return null;
 
   const totalDays = Math.max((endTs - startTs) / 86400, 0.0001);
@@ -696,8 +667,6 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
         campaignEndedAt: campaignDetails.endedAt,
         campaignId,
         whitelistOnly: campaignDetails.whitelistOnly,
-        distributionType:
-          rewardBreakdown.distributionType || rewardBreakdown.distributionMethod || opp.distributionType,
         ...(pointsFields ?? {})
       });
     }

@@ -294,9 +294,42 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 | 来源 | 用途 |
 |------|------|
-| **Merkl `GET /v4/campaigns/{id}`**（或 opportunities / `merkl-opportunity-meta-lite.json` 中的轻量 `campaignSnapshot`） | `amount`、`startTimestamp`、`endTimestamp`、`campaignStatus.computedUntil`、奖励代币 `price`/`decimals`、APR 相关 `params` 等；用于预算上限、时间窗、类型与 APR cap |
+| **Merkl `GET /v4/campaigns/{id}`**（或 opportunities / `merkl-opportunity-meta-lite.json` 中的轻量 `campaignSnapshot`） | `amount`、`startTimestamp`、`endTimestamp`、奖励代币 `price`/`decimals`、APR 相关 `params` 等；用于预算上限、时间窗、类型与 APR cap |
 | **Merkl `GET /v4/campaigns/{id}/metrics`** | 时间序列 `tvlRecords`、`dailyRewardsRecords`（各点含 `timestamp`、`total`） |
-| **`data/runtime/merkl-opportunity-meta-lite.json` 或 live `/v4/opportunities`** | 每 campaign 的 `tvl`、`campaignTypeHint`（规范化后的活动类型）、`distributionTypeRaw`、以及可用的 `campaignSnapshot`（lite 新鲜时优先） |
+| **`data/runtime/merkl-opportunity-meta-lite.json` 或 live `/v4/opportunities`** | 每 campaign 的 `tvl`、`campaignTypeHint`（规范化后的活动类型）、以及可用的 `campaignSnapshot`（lite 新鲜时优先） |
+
+### `distributionType` 与 `distributionMethod` 的对应关系
+
+Merkl 返回里历史上存在两套命名：
+
+- 较新的（本项目主用）：`distributionType`
+- 兼容/参数侧常见：`distributionMethod`
+
+业务含义对应如下：
+
+| `distributionMethod`（短名） | `distributionType`（长名） | 说明（本项目 forecast 语义） |
+|------|------|------|
+| `MAX_APR` | `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` | 有 APR 上限；当需要追赶发放进度时仍受 cap 约束 |
+| `FIX_APR` | `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` | 固定 APR 速率优先；预算用尽前按目标速率发放 |
+| `DUTCH_AUCTION` | `DUTCH_AUCTION` | 以计划日发放为主，不走 APR cap 限速 |
+
+字段优先级（当前实现）：
+
+- `breakdown.distributionType`
+- `breakdown.distributionMethod`
+- `opportunity.distributionType`
+
+为什么优先 `distributionType`：
+
+- 在当前线上数据中覆盖更稳定（breakdown 级别几乎总是有 `distributionType`）。
+- 可直接对接 forecast 的 canonical 三类型，减少额外短名到长名的映射分支。
+- 降低因上游字段混用导致的类型识别歧义。
+
+外部参考（Merkl 官方）：
+
+- [Incentive Mechanisms](https://docs.merkl.xyz/merkl-mechanisms/incentive-mechanisms)
+- [Distribution Types](https://docs.merkl.xyz/merkl-mechanisms/distributions)
+- [Integrate Merkl API (V4)](https://docs.merkl.xyz/integrate-merkl/app)
 
 ### 派生 / 二次计算
 
@@ -306,7 +339,7 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 | **`distributedSoFar`** | `estimateDistributedSoFar`：仅用 **`dailyRewardsRecords`**，在 `[start, min(now,end)]` 上按阶梯速率对「日发放率」做**时间积分**；再与 `totalBudget` 取 `min`。Merkl 不直接返回该标量。 |
 | **`latestTvl`** | 优先用 opportunities / lite 中的 **`tvl`**；否则从 **`tvlRecords`** 按时间排序取**最后一条**的 `total`。 |
 | **`aprCap`** | `extractMaxApr` + `normalizeApr`：从 campaign 对象多路径读取 APR；若值 `> 1` 则按百分数除以 100。仅 `MAX_REWARD_*` / `FIX_REWARD_*` 类型需要。 |
-| **`plannedDaily` / `requiredDaily` / `remainingBudget` / `remainingDays` / `expectedByNow`** | `buildForecastState`：`plannedDaily = totalBudget / totalDays`；`requiredDaily` 在 `DUTCH_AUCTION` 时等于 `plannedDaily`，否则为 `remainingBudget / remainingDays`；`remainingBudget = totalBudget - distributedSoFar`；`expectedByNow` 为按活动时长线性插值的「到当前应已发」参考值。 |
+| **`plannedDaily` / `requiredDaily` / `remainingBudget` / `remainingDays`** | `buildForecastState`：`plannedDaily = totalBudget / totalDays`；`requiredDaily` 在 `DUTCH_AUCTION` 时等于 `plannedDaily`，否则为 `remainingBudget / remainingDays`；`remainingBudget = totalBudget - distributedSoFar`。 |
 | **metrics 缓存 TTL** | **按 campaign 独立**：`metricsCache` 以 `campaignId` 为键；每个 campaign 用自己的 `dailyRewardsRecords` 时间戳间隔**中位数**作 cadence，`TTL ≈ cadence / 4` 并夹在 `[merklMetricsMin, merklMetricsMax]`（默认 **10 分钟～6 小时**）。**不同 campaign 的刷新间隔可以不同**；与业务 forecast 公式无关，仅决定何时再请求 `GET /metrics`。 |
 
 ### Opportunity 元数据与 metrics 的缓存节奏
@@ -322,9 +355,9 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 ### HTTP `items[]` 实际暴露的字段
 
-`merklForecastController.toForecastResponseItem` 只序列化：`campaignId`、`campaignType`、`plannedDaily`、`requiredDaily`、`aprCap`、`totalBudget`、`distributedSoFar`、`latestTvl`、`endTimestamp`。
+`merklForecastController.toForecastResponseItem` 只序列化：`campaignId`、`requiredDaily`、`distributedSoFar`、`endTimestamp`。
 
-内部完整状态 `MerklForecastState` 另有 `remainingBudget`、`remainingDays`、`expectedByNow`、`startTimestamp`、`computedUntil`、`asOf` 等；**当前 REST 响应未包含**这些字段。
+内部完整状态 `MerklForecastState` 另有 `remainingBudget`、`remainingDays`、`startTimestamp`、`asOf` 等；**当前 REST 响应未包含**这些字段。
 
 ### 3. 健康检查
 
