@@ -146,15 +146,12 @@ Data files include `_metadata.timestamp` (written by fetcher). Backend prioritiz
 
 ### API Endpoints
 
-**共 8 个端点**（完整列表与详细说明见 `docs/api/api-documentation.md`）。`GET /api/markets` 使用 `markets-v2` 结构：根级 `snapshot + reserves`；价格主字段在 `reserves[].tokenPrice`。
+**公开 API 共 4 条 URL / 3 个逻辑端点**（完整列表与详细说明见 `docs/api/api-documentation.md`）。`GET /api/markets` 使用 `markets-v2` 结构：根级 `snapshot + reserves`；价格主字段在 `reserves[].tokenPrice`。
 
 ```
 GET /health                        # Health check with environment info
 GET /api/health                    # Same handler as /health (API namespace)
 GET /api/markets                   # markets-v2 snapshot + full reserves (no query params)
-GET /api/coingecko-categories      # CoinGecko category data (stablecoins, ETH-related)
-GET /api/coingecko-fdv             # CoinGecko FDV data (CMC primary, CG fallback)
-GET /api/campaigns/forecast-states # Merkl campaign forecast states (optional ids=...)
 GET /api/meta/side-data            # Aggregated side data (categories + fdv + forecast)
 ```
 
@@ -162,7 +159,7 @@ GET /api/meta/side-data            # Aggregated side data (categories + fdv + fo
 - `GET /api/markets` — 响应含 `{ snapshot, reserves }`；`staleTimeMs` 提示前端缓存窗口；服务端由 cron 每分钟刷新，**请求不触发拉取**
   - 每个 reserve 含可选 `deficit` / `baseVariableBorrowRate`（来自 on-chain 缓存合并或回退）
   - Deficit 获取失败时优雅降级：仍可有 `deficit: "0"` 等回退行为（见 `marketsService`）
-- 其他端点（coingecko、campaigns、forecast）使用各自缓存/TTL，不触发 markets 刷新。
+- `GET /api/meta/side-data` 聚合 categories / fdv / forecast 三类内部缓存快照；这些子缓存仍各自按独立 cadence 预热，但不再单独对外暴露。
 
 ## Configuration
 
@@ -291,6 +288,7 @@ Don't set secrets in `ecosystem.config.cjs`—they'll override Doppler.
 ## Learned User Preferences
 
 - Keep documentation concise; remove outdated/superseded content rather than accumulating
+- Prefer direct runtime/script verification over speculative root-cause explanations when debugging production behavior
 - Question redundant boolean flags when data comes from the same source (e.g., if all rate-input fields exist, a separate flag adds no value)
 - Prefer merging API endpoints when data is pre-fetched together with the same TTL/staleness; flatten nested objects when possible
 - Verify changes appear in API response after implementation; rebuild `dist/` if backend imports from it
@@ -298,10 +296,12 @@ Don't set secrets in `ecosystem.config.cjs`—they'll override Doppler.
 - For small pure helpers that shape API output (e.g. Merkl breakdown derivations), add focused `backend` unit tests when the module can be imported without live network calls
 - Organize reusable patterns into `docs/reusable/` for cross-project portability
 - When describing refresh cadence or cache freshness, name the subsystem (markets vs Merkl forecast vs Merkl metrics) and align statements with `backend/src/cacheTtl.ts` and `updateScheduler.ts` so labels like `realtimeFamily` are not applied to Merkl forecast paths
+- Prefer schema convergence across incentive sources (especially Brevis↔Merkl field naming/types) and ask frontend cleanup to remove newly added fields that are not actually used
 
 ## Learned Workspace Facts
 
 - Backend imports from `dist/index.js` — rebuild root (`npm run build`) after `src/index.ts` changes; new reserve-level fields must be listed in `pruneReserveForRuntime()` or they are dropped from runtime/API. On-chain `deficit` / `baseVariableBorrowRate` from `UiPoolDataProvider.getReservesHumanized()`; per-chain cache 30m TTL; each chain tries RPCs with 15s per attempt; only `deficit` needs on-chain RPC; other rate-input fields from Aave API. Markets cron :00, on-chain cron :10 each minute; markets merge reads on-chain cache at merge time
+- Merit campaign metadata `endBlock` from upstream can diverge from chain-local block-height expectations (for example Celo campaigns carrying Ethereum-like block ranges); treat `endDate` as primary expiry signal and refresh stale metadata rounds instead of relying on `endBlock` priority
 - `/api/rate-inputs` removed; all rate-input fields live in `/api/markets` reserves; frontend must fallback when `deficit` or `baseVariableBorrowRate` are absent
 - RPC order in `packages/aave-shared-config`: public RPC first, private (Infura/Ankr/Alchemy) last. `totalVariableDebt` from Aave SDK replaces `totalScaledVariableDebt` + `variableBorrowIndex`; precision (raw token units, BPS, RAY) aligned with former on-chain source
 - CORS `FRONTEND_URL` uses exact-origin matching only (no subdomains or wildcards); list each allowed origin comma-separated with full URL including protocol (e.g. `https://aaveapy.com,https://www.aaveapy.com`)
@@ -309,5 +309,6 @@ Don't set secrets in `ecosystem.config.cjs`—they'll override Doppler.
 - `merkl-opportunity-meta-lite.json` is written by the root fetcher from Merkl opportunities; forecast lite keys campaigns by `rewardsRecord.breakdowns[].campaignId`, and the forecast cron uses IDs from markets merkl breakdowns, not Merkl's full live catalog—keep markets runtime and lite snapshots refreshed together to avoid stale campaign ID mismatches
 - `BACKEND_CACHE_TTL_MS.realtimeFamily` and markets cron cadence apply to `/api/markets` staleness only; Merkl forecast uses separate defaults (for example `merklForecastResultDefault` 10m, `merklForecastOpportunityMetaDefault` and `merklOpportunitiesDefault` 5m, plus dynamic metrics TTL)—do not conflate them when comparing intervals
 - Raw Merkl payloads may include non-empty `params.whitelist` (surfaced as `whitelistOnly` on breakdowns); a given snapshot's observed distribution types may omit `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` even though normalization and forecast code support that type
-- Merkl `rewardsRecord.breakdowns[].value` is the same upstream daily-scalar field across Aave and Tydro opportunities; `dailyPoints` / `pointsPerThousandUsd` are attached only when `token.type === 'PRETGE'` (`merklBreakdownUsesPointsIntensityFields` in `src/merkl-api.ts`), using `value` and `tvl`. Optional overlap check: `scripts/merkl-pretge-points-overlap.mjs`; opportunities field mapping: `docs/merkl-merit-cache-architecture.md`
+- Merkl `rewardsRecord.breakdowns[].value` is the same upstream daily-scalar field across Aave and Tydro opportunities; `pointsPerThousandUsd` is attached only when `token.type === 'PRETGE'` (`merklBreakdownUsesPointsIntensityFields` in `src/merkl-api.ts`), using `value` and `tvl`. Optional overlap check: `scripts/merkl-pretge-points-overlap.mjs`; opportunities field mapping: `docs/merkl-merit-cache-architecture.md`
 - Startup warmup in `backend/src/server.ts` runs Phase 1 `Promise.allSettled` (on-chain, markets, CoinGecko categories, FDV) then Phase 2 `warmCampaignForecastStatesCache()` so forecast can use the markets snapshot
+- For Brevis rewards, treat `tvl` as USD; reward USD resolution should prefer backend snapshot prices, then CoinGecko fallback (`/asset_platforms` → `/simple/token_price/{platform}` → `/simple/price`) only when price is missing, and only pass contract address when it is confirmed to be a token address (not a pool address)

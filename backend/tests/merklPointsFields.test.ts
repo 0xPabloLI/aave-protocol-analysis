@@ -37,7 +37,6 @@ test('merklPointsFieldsFromBreakdownValue scales by TVL when value is present', 
     value: 11_312,
   });
   assert.ok(out);
-  assert.equal(out!.dailyPoints, 11_312);
   assert.ok(Math.abs(out!.pointsPerThousandUsd - 0.477069) < 1e-4);
 });
 
@@ -57,11 +56,9 @@ test('merklPointsFieldsFromBreakdownValue uses zero rate when TVL is zero or mis
     value: 100,
   });
   assert.ok(outMissing);
-  assert.equal(outMissing!.dailyPoints, 100);
   assert.equal(outMissing!.pointsPerThousandUsd, 0);
 
   const outZero = merklPointsFieldsFromBreakdownValue(oppWithTvl(0), { value: 50 });
   assert.ok(outZero);
-  assert.equal(outZero!.dailyPoints, 50);
   assert.equal(outZero!.pointsPerThousandUsd, 0);
 });

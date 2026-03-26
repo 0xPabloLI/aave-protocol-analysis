@@ -4,9 +4,6 @@ import compression from 'compression';
 import { corsMiddleware } from './middleware/cors.js';
 import { apiCacheHeadersMiddleware } from './middleware/cacheHeaders.js';
 import marketsRouter from './routes/markets.js';
-import coingeckoRouter from './routes/coingecko.js';
-import coingeckoFdvRouter from './routes/coingeckoFdv.js';
-import campaignsRouter from './routes/campaigns.js';
 import metaRouter from './routes/meta.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controllers/coingeckoController.js';
@@ -14,6 +11,7 @@ import { warmCampaignForecastStatesCache } from './controllers/merklForecastCont
 import { warmMarketsCache } from './services/marketsService.js';
 import { refreshOnchainCache } from './services/onchainDataService.js';
 import { logger } from './logger.js';
+import { explainServerListenError } from './startup.js';
 
 const app = express();
 app.set('etag', 'weak');
@@ -60,10 +58,7 @@ app.get('/favicon.ico', (req, res) => {
 
 // Routes
 app.use('/api/markets', marketsRouter);
-app.use('/api/coingecko-categories', coingeckoRouter);
-app.use('/api/coingecko-fdv', coingeckoFdvRouter);
 app.use('/api/meta', metaRouter);
-app.use('/api/campaigns', campaignsRouter);
 // Note: /api/rate-inputs endpoint removed - rate-inputs are now merged into /api/markets
 
 const healthHandler = (req: express.Request, res: express.Response) => {
@@ -123,8 +118,18 @@ Promise.allSettled([
     startUpdateScheduler();
     
     // 启动服务器
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       logger.info(`🚀 Server ready on http://localhost:${PORT}`);
+    });
+
+    server.on('error', (error: NodeJS.ErrnoException) => {
+      const explanation = explainServerListenError(error, PORT);
+      if (explanation) {
+        logger.error(explanation);
+      } else {
+        logger.error('❌ Failed to start HTTP server:', error);
+      }
+      process.exit(1);
     });
   })
   .catch((error) => {

@@ -89,8 +89,6 @@ export interface MerklCampaignBreakdown {
   whitelistOnly?: boolean;
   /** 见 `merklBreakdownUsesPointsIntensityFields`；为真且 `value` 可解析时 = value÷TVL×1000 */
   pointsPerThousandUsd?: number;
-  /** 与上游 `breakdown.value` 对齐；仅强度类 breakdown 输出 */
-  dailyPoints?: number;
   // Opportunity-only forecast fields (no metrics dependency, refreshes with markets)
   campaignType?: ForecastCampaignTypeLite;
   totalBudget?: number;
@@ -246,6 +244,7 @@ interface ForecastCampaignMetaLite {
   tvl: number;
   campaignTypeHint: ForecastCampaignTypeLite;
   campaignSnapshot: CampaignSnapshotLiteForForecastFile | null;
+  useTokenRateInMetrics: boolean;
 }
 
 const normalizeForecastCampaignTypeLite = (value: unknown): ForecastCampaignTypeLite | null => {
@@ -327,12 +326,14 @@ const buildForecastCampaignMetaLiteMap = (
 
       const existing = result[campaignId];
       const campaignSnapshot = campaignSnapshotById.get(campaignId) ?? null;
+      const useTokenRateInMetrics = merklBreakdownUsesPointsIntensityFields(breakdown);
 
       if (!existing) {
         result[campaignId] = {
           tvl,
           campaignTypeHint,
           campaignSnapshot,
+          useTokenRateInMetrics,
         };
         continue;
       }
@@ -341,6 +342,7 @@ const buildForecastCampaignMetaLiteMap = (
         tvl: existing.tvl > 0 ? existing.tvl : tvl,
         campaignTypeHint: existing.campaignTypeHint,
         campaignSnapshot: existing.campaignSnapshot ?? campaignSnapshot,
+        useTokenRateInMetrics: existing.useTokenRateInMetrics || useTokenRateInMetrics,
       };
     }
   }
@@ -533,23 +535,22 @@ export function parseMarketNameFromOpportunityName(opportunityName: string | und
  * 对于其他 chainId，使用 chainId-explorerAddress 作为 key
  */
 /**
- * 当 Merkl breakdown 提供 `value` 且可解析为有限数时，推导 daily 量与每千刀 TVL 强度。
- * `dailyPoints` 为上游 `value` 的数值化副本；语义依活动而定（积分、代币日量等）。
+ * 当 Merkl breakdown 提供 `value` 且可解析为有限数时，推导每千刀 TVL 强度。
  */
 export function merklPointsFieldsFromBreakdownValue(
   opp: MerklOpportunity,
   rewardsBreakdown: { value?: number }
-): { dailyPoints: number; pointsPerThousandUsd: number } | undefined {
+): { pointsPerThousandUsd: number } | undefined {
   if (rewardsBreakdown.value === undefined) {
     return undefined;
   }
-  const dailyPoints = Number(rewardsBreakdown.value);
-  if (!Number.isFinite(dailyPoints)) {
+  const rewardUnits = Number(rewardsBreakdown.value);
+  if (!Number.isFinite(rewardUnits)) {
     return undefined;
   }
   const tvl = Number(opp.tvl) || 0;
-  const pointsPerThousandUsd = tvl > 0 ? (dailyPoints / tvl) * 1000 : 0;
-  return { dailyPoints, pointsPerThousandUsd };
+  const pointsPerThousandUsd = tvl > 0 ? (rewardUnits / tvl) * 1000 : 0;
+  return { pointsPerThousandUsd };
 }
 
 export type MerklRewardsBreakdownForIntensity = {
@@ -557,8 +558,10 @@ export type MerklRewardsBreakdownForIntensity = {
 };
 
 /**
- * 是否应为该 breakdown 输出 `dailyPoints` / `pointsPerThousandUsd`（由 `value`÷TVL 推导）。
- * 仅当 Merkl 在 breakdown 上把奖励标为 **`token.type === 'PRETGE'`**（pre-TGE 类积分）时启用；其它 TOKEN、协议名、Tydro 等均不特殊处理。
+ * 是否应为该 breakdown 输出 `pointsPerThousandUsd`（由 `value`÷TVL 推导）。
+ * 仅当 Merkl 在 breakdown 上把奖励标为 **`token.type === 'PRETGE'`**（pre-TGE 类积分）时启用。
+ * 这只决定是否输出 points/intensity 字段，不决定 forecast 规则；forecast 仍按实际
+ * `distributionType` / 规范化后的 `campaignType` 处理，不对 Tydro points 预设单独机制。
  */
 export function merklBreakdownUsesPointsIntensityFields(
   breakdown: MerklRewardsBreakdownForIntensity
@@ -671,7 +674,7 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
       });
     }
 
-    const intensityCount = breakdowns.filter((b) => b.dailyPoints !== undefined).length;
+    const intensityCount = breakdowns.filter((b) => b.pointsPerThousandUsd !== undefined).length;
     if (intensityCount > 0) {
       const tvl = Number(opp.tvl) || 0;
       logger.info(

@@ -754,12 +754,36 @@ async function getCurrentBlockNumber(chainName: string): Promise<number | null> 
   }
 }
 
+const MERIT_BLOCK_NUMBER_CACHE_TTL_MS = 60_000;
+
+const meritCurrentBlockNumberCache = new Map<string, { fetchedAtMs: number; blockNumber: number | null }>();
+
+async function getCurrentBlockNumberCached(chainName: string): Promise<number | null> {
+  const nowMs = Date.now();
+  const cached = meritCurrentBlockNumberCache.get(chainName);
+  if (cached && nowMs - cached.fetchedAtMs < MERIT_BLOCK_NUMBER_CACHE_TTL_MS) {
+    return cached.blockNumber;
+  }
+
+  const blockNumber = await getCurrentBlockNumber(chainName);
+  meritCurrentBlockNumberCache.set(chainName, { fetchedAtMs: nowMs, blockNumber });
+  return blockNumber;
+}
+
 function parseMeritEndDate(endDateRaw?: string): Date | null {
   if (!endDateRaw || endDateRaw.trim() === '') {
     return null;
   }
   const parsed = new Date(endDateRaw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isMeritCampaignMetadataEnded(endDateRaw?: string): boolean {
+  const parsedEndDate = parseMeritEndDate(endDateRaw);
+  if (!parsedEndDate) {
+    return false;
+  }
+  return parsedEndDate.getTime() < Date.now();
 }
 
 async function isMeritCampaignExpired(
@@ -770,30 +794,35 @@ async function isMeritCampaignExpired(
 ): Promise<boolean> {
   const now = new Date();
   const parsedEndDate = parseMeritEndDate(endDateRaw);
+  const hasEndBlock = typeof endBlockRaw === 'string' && endBlockRaw.trim() !== '';
+
+  // endBlock values from upstream metadata can drift from live chain height semantics.
+  // Use endBlock+RPC only as a fallback when endDate is missing/unparseable.
+  const shouldUseEndBlock = hasEndBlock && !parsedEndDate;
+
+  if (shouldUseEndBlock) {
+    const endBlock = parseInt(endBlockRaw!, 10);
+    if (!Number.isNaN(endBlock)) {
+      // Merit campaign block ranges are aligned to Ethereum mainnet block height,
+      // not the reserve's chain-specific height (for example Celo).
+      const meritBlockReferenceChain = 'ethereum';
+      if (!currentBlockCache.has(meritBlockReferenceChain)) {
+        const currentBlock = await getCurrentBlockNumberCached(meritBlockReferenceChain);
+        currentBlockCache.set(meritBlockReferenceChain, currentBlock);
+      }
+
+      const currentBlock = currentBlockCache.get(meritBlockReferenceChain);
+      if (currentBlock !== null && currentBlock !== undefined) {
+        return currentBlock >= endBlock;
+      }
+    }
+  }
+
   if (parsedEndDate) {
     return parsedEndDate < now;
   }
 
-  if (!endBlockRaw) {
-    return false;
-  }
-
-  const endBlock = parseInt(endBlockRaw, 10);
-  if (Number.isNaN(endBlock)) {
-    return false;
-  }
-
-  if (!currentBlockCache.has(chainKey)) {
-    const currentBlock = await getCurrentBlockNumber(chainKey);
-    currentBlockCache.set(chainKey, currentBlock);
-  }
-
-  const currentBlock = currentBlockCache.get(chainKey);
-  if (currentBlock === null || currentBlock === undefined) {
-    return false;
-  }
-
-  return currentBlock >= endBlock;
+  return false;
 }
 
 /**
@@ -1500,9 +1529,10 @@ export async function fetchAllMeritTimeRanges(
       const cached = cachedTimeRanges[key] ?? cachedTimeRanges[canonicalKey];
       const hasSelfAuth = getHasSelfAuthForKey(meritAPRs, canonicalKey);
       const completeness = isCachedTimeRangeComplete({ key: canonicalKey, cached, hasSelfAuth });
-      // Absolute priority: if cache is complete, skip refresh regardless of active/ended state.
-      // This includes ended campaigns.
-      const needsUpdate = !completeness.isComplete;
+      // Cache completeness is necessary but not sufficient:
+      // once a campaign end date has passed, we must refetch to pick up renewed rounds.
+      const cachedCampaignEnded = isMeritCampaignMetadataEnded(cached?.endDate);
+      const needsUpdate = !completeness.isComplete || cachedCampaignEnded;
       if (completeness.isComplete) {
         logger.debug(`📦 Skip refresh for ${canonicalKey}: cached metadata is complete`);
       }
@@ -1514,6 +1544,7 @@ export async function fetchAllMeritTimeRanges(
         cached,
         debug: {
           completenessMissing: completeness.missing,
+          cachedCampaignEnded,
         },
       };
     })
@@ -1532,6 +1563,7 @@ export async function fetchAllMeritTimeRanges(
       const logParts = [
         `key=${canonicalKey}`,
         debug?.completenessMissing?.length ? `missing=[${debug.completenessMissing.join(',')}]` : 'missing=[]',
+        `cachedEnded=${debug?.cachedCampaignEnded ? 'yes' : 'no'}`,
       ];
       logger.info(`🧭 Merit timeRange refresh: ${logParts.join(' | ')}`);
     }

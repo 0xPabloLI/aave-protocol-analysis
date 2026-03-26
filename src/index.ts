@@ -10,7 +10,8 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
-import { brevisApi } from './brevis-api.js';
+import { brevisApi, stripDeprecatedBrevisFields } from './brevis-api.js';
+import { resolveTokenPriceWithBackup } from './token-price-resolver.js';
 import {
   MerklCampaignBreakdown,
   MerklOpportunityData,
@@ -186,7 +187,6 @@ function pruneMerklBreakdownForRuntime(breakdown: MerklCampaignBreakdown): Merkl
     ...(breakdown.pointsPerThousandUsd !== undefined
       ? { pointsPerThousandUsd: breakdown.pointsPerThousandUsd }
       : {}),
-    ...(breakdown.dailyPoints !== undefined ? { dailyPoints: breakdown.dailyPoints } : {}),
     ...(breakdown.campaignType ? {
       campaignType: breakdown.campaignType,
       totalBudget: breakdown.totalBudget,
@@ -368,6 +368,68 @@ async function fetchBrevisAprs(
     // 获取所有 Aave campaign 数据（包含原始响应数据）
     const brevisResult = await brevisApi.getAaveCampaignsData();
     const brevisIndex: BrevisDataIndex = brevisResult.index;
+
+    // 用于 reward token 价格解析：优先后端快照 tokenPrice，缺失时再走 CoinGecko fallback。
+    const tokenPriceByChainAndAddress = new Map<string, number>();
+    baseDataset.forEach((reserve) => {
+      const price = toFiniteNumber(reserve.tokenPrice);
+      if (price === null) return;
+      const address = reserve.tokenAddress?.toLowerCase();
+      if (!address) return;
+      tokenPriceByChainAndAddress.set(`${reserve.chainId}:${address}`, price);
+    });
+
+    for (const [indexKey, campaigns] of Object.entries(brevisIndex)) {
+      const dashIdx = indexKey.indexOf('-');
+      if (dashIdx <= 0) continue;
+      const chainId = Number(indexKey.slice(0, dashIdx));
+      const rewardTokenAddress = indexKey.slice(dashIdx + 1).toLowerCase();
+      if (!Number.isFinite(chainId) || !rewardTokenAddress) continue;
+
+      const enrichCampaignUsd = async (
+        campaign: BrevisCampaignItem & {
+          rewardAddressType?: 'token' | 'pool';
+          totalRewardAmount?: number;
+          totalRewardTokenSymbol?: string;
+        },
+      ): Promise<BrevisCampaignItem> => {
+        const totalRewardAmount = toFiniteNumber(campaign.totalRewardAmount);
+        if (totalRewardAmount === null || totalRewardAmount < 0) {
+          return stripDeprecatedBrevisFields(campaign);
+        }
+
+        const reservePriceKey = `${chainId}:${rewardTokenAddress}`;
+        const fromSnapshot = tokenPriceByChainAndAddress.get(reservePriceKey);
+        if (fromSnapshot !== undefined) {
+          return stripDeprecatedBrevisFields({
+            ...campaign,
+            totalBudget: totalRewardAmount * fromSnapshot,
+          });
+        }
+
+        const fallbackPrice = await resolveTokenPriceWithBackup({
+          chainId,
+          tokenAddress: campaign.rewardAddressType === 'token' ? rewardTokenAddress : undefined,
+          tokenSymbol: campaign.totalRewardTokenSymbol,
+          snapshotPrice: undefined,
+        });
+
+        if (fallbackPrice !== undefined) {
+          return stripDeprecatedBrevisFields({
+            ...campaign,
+            totalBudget: totalRewardAmount * fallbackPrice,
+          });
+        }
+        return stripDeprecatedBrevisFields(campaign);
+      };
+
+      campaigns.brevisSupplys = await Promise.all(
+        campaigns.brevisSupplys.map((campaign) => enrichCampaignUsd(campaign as Parameters<typeof enrichCampaignUsd>[0]))
+      );
+      campaigns.brevisBorrows = await Promise.all(
+        campaigns.brevisBorrows.map((campaign) => enrichCampaignUsd(campaign as Parameters<typeof enrichCampaignUsd>[0]))
+      );
+    }
     
     // 输出原始 Brevis 数据（包括原始 API 响应），方便查看和调试
     await mkdir(DEBUG_DATA_DIR, { recursive: true });

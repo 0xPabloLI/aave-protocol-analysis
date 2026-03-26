@@ -71,6 +71,7 @@ interface CampaignOpportunityMeta {
   tvl: number;
   campaignTypeHint: CampaignForecastType;
   campaignSnapshot: CampaignSnapshotLite | null;
+  useTokenRateInMetrics: boolean;
 }
 
 interface CampaignOpportunityCacheEntry {
@@ -111,7 +112,7 @@ interface MerklOpportunityMetaLiteFile {
 
 interface ForecastMetricsLite {
   tvlRecords?: Array<{ timestamp?: unknown; total?: unknown }>;
-  dailyRewardsRecords?: Array<{ timestamp?: unknown; total?: unknown }>;
+  dailyRewardsRecords?: Array<{ timestamp?: unknown; total?: unknown; totalInToken?: unknown }>;
 }
 
 const toNumber = (value: unknown): number | null => {
@@ -216,14 +217,20 @@ const extractLatestTvl = (metrics: unknown): number => {
   return 0;
 };
 
-const extractDailyRewardsRecords = (metrics: unknown): TimeSeriesPoint[] => {
+export const extractDailyRewardsRecords = (
+  metrics: unknown,
+  useTokenRateInMetrics = false
+): TimeSeriesPoint[] => {
   const raw = getAtPath(metrics, ['dailyRewardsRecords']);
   if (!Array.isArray(raw)) return [];
 
   return raw
     .map((entry) => ({
       timestamp: toNumber(getAtPath(entry, ['timestamp'])) || 0,
-      total: toNumber(getAtPath(entry, ['total'])) || 0,
+      total:
+        (useTokenRateInMetrics
+          ? toNumber(getAtPath(entry, ['totalInToken'])) ?? toNumber(getAtPath(entry, ['total']))
+          : toNumber(getAtPath(entry, ['total'])) ?? toNumber(getAtPath(entry, ['totalInToken']))) || 0,
     }))
     .filter((entry) => entry.timestamp > 0 && entry.total >= 0)
     .sort((a, b) => a.timestamp - b.timestamp);
@@ -285,10 +292,17 @@ const trimMetricsForForecast = (metrics: unknown): ForecastMetricsLite => {
   return {
     tvlRecords: latestTvlRecord ? [latestTvlRecord] : [],
     dailyRewardsRecords: Array.isArray(getAtPath(metrics, ['dailyRewardsRecords']))
-      ? (getAtPath(metrics, ['dailyRewardsRecords']) as Array<{ timestamp?: unknown; total?: unknown }>)
+      ? (getAtPath(metrics, ['dailyRewardsRecords']) as Array<{
+          timestamp?: unknown;
+          total?: unknown;
+          totalInToken?: unknown;
+        }>)
       : [],
   };
 };
+
+const campaignUsesTokenRateInMetrics = (breakdown: unknown): boolean =>
+  String(getAtPath(breakdown, ['token', 'type']) || '').trim().toUpperCase() === 'PRETGE';
 
 const estimateDistributedSoFar = (
   dailyRewardsRecords: TimeSeriesPoint[],
@@ -414,6 +428,7 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
         tvl,
         campaignTypeHint,
         campaignSnapshot,
+        useTokenRateInMetrics: Boolean(getAtPath(value, ['useTokenRateInMetrics'])),
       });
     }
 
@@ -447,6 +462,7 @@ const buildCampaignOpportunityMetaMapFromOpportunities = (
       const campaignId = getAtPath(breakdown, ['campaignId']);
       if (typeof campaignId !== 'string' || !campaignId) return;
       const campaignSnapshot = campaignSnapshotById.get(campaignId) ?? null;
+      const useTokenRateInMetrics = campaignUsesTokenRateInMetrics(breakdown);
 
       const breakdownDistributionTypeRaw =
         getAtPath(breakdown, ['distributionType']) ?? getAtPath(breakdown, ['distributionMethod']);
@@ -463,6 +479,7 @@ const buildCampaignOpportunityMetaMapFromOpportunities = (
           tvl,
           campaignTypeHint: hintType,
           campaignSnapshot,
+          useTokenRateInMetrics,
         });
         return;
       }
@@ -471,6 +488,7 @@ const buildCampaignOpportunityMetaMapFromOpportunities = (
         tvl: previous.tvl > 0 ? previous.tvl : tvl,
         campaignTypeHint: previous.campaignTypeHint,
         campaignSnapshot: previous.campaignSnapshot ?? campaignSnapshot,
+        useTokenRateInMetrics: previous.useTokenRateInMetrics || useTokenRateInMetrics,
       });
     });
   });
@@ -563,7 +581,10 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
 
       const totalBudget = extractNormalizedTotalBudget(campaign, campaignId);
       const nowTs = Math.floor(Date.now() / 1000);
-      const dailyRewardsRecords = extractDailyRewardsRecords(metrics);
+      const dailyRewardsRecords = extractDailyRewardsRecords(
+        metrics,
+        campaignOpportunityMeta.useTokenRateInMetrics
+      );
       if (dailyRewardsRecords.length === 0) {
         throw new Error(`Metrics unavailable for campaign ${campaignId}; forecast disabled`);
       }

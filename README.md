@@ -118,19 +118,16 @@ The server uses environment variables for configuration (see [AGENTS.md](AGENTS.
 
 ### API Endpoints
 
-The backend API server runs on `http://localhost:3001` by default. **8 endpoints** in total:
+The backend API server runs on `http://localhost:3001` by default. Public clients should rely on **4 URL paths / 3 logical endpoints**:
 
 | Method & Path | Description |
 |--------------|-------------|
 | `GET /health` | Health check with environment info |
 | `GET /api/health` | Same as `/health` (API namespace) |
 | `GET /api/markets` | `markets-v2`: root `snapshot` + `reserves` (prices on `reserves[].tokenPrice`); cron-warmed memory snapshot, request does not trigger fetches |
-| `GET /api/coingecko-categories` | CoinGecko categories (stablecoins, ETH-related) |
-| `GET /api/coingecko-fdv` | FDV data (CoinMarketCap primary, CoinGecko fallback) |
-| `GET /api/meta/side-data` | Low-frequency side-data meta payload (`coingecko-categories` + `coingecko-fdv`) |
-| `GET /api/campaigns/forecast-states` | Merkl campaign forecast states (optional `ids=...`) |
+| `GET /api/meta/side-data` | Aggregated side-data payload (`categories` + `fdv` + `forecast`) |
 
-**Data freshness**: Markets (and forecast list-without-ids) use **cron-write / API-read-only**—HTTP handlers read memory only; refresh is on the scheduler + startup warmup. Other endpoints use their own cache/TTL. See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
+**Data freshness**: Public data endpoints use **cron-write / API-read-only**. `meta/side-data` still reads the same internal category/FDV/forecast caches, but the standalone public routes for those caches are no longer exposed. See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
 
 **Filter market derivation**: Clients should derive unique `{ marketName, chainName }` filter options from `GET /api/markets` response data. The backend no longer exposes a separate market-list endpoint for that UI concern.
 

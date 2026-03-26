@@ -65,7 +65,6 @@ export interface MarketWithSpread {
       campaignId: string;
       whitelistOnly?: boolean;
       pointsPerThousandUsd?: number;
-      dailyPoints?: number;
       campaignType?: string;
       totalBudget?: number;
       aprCap?: number | null;
@@ -84,7 +83,6 @@ export interface MarketWithSpread {
       campaignId: string;
       whitelistOnly?: boolean;
       pointsPerThousandUsd?: number;
-      dailyPoints?: number;
       campaignType?: string;
       totalBudget?: number;
       aprCap?: number | null;
@@ -103,7 +101,6 @@ export interface MarketWithSpread {
       campaignId: string;
       whitelistOnly?: boolean;
       pointsPerThousandUsd?: number;
-      dailyPoints?: number;
       campaignType?: string;
       totalBudget?: number;
       aprCap?: number | null;
@@ -117,6 +114,14 @@ export interface MarketWithSpread {
     startDate: string;
     endDate: string;
     name: string;
+    campaignApr?: number;
+    campaignStartedAt?: string;
+    campaignEndedAt?: string;
+    message?: string;
+    totalBudget?: number;
+    latestTvl?: number;
+    perUserRewardCapUsd?: number;
+    sharedCapGroupId?: string;
   }>;
   brevisBorrows?: Array<{
     apr: number;
@@ -124,6 +129,14 @@ export interface MarketWithSpread {
     startDate: string;
     endDate: string;
     name: string;
+    campaignApr?: number;
+    campaignStartedAt?: string;
+    campaignEndedAt?: string;
+    message?: string;
+    totalBudget?: number;
+    latestTvl?: number;
+    perUserRewardCapUsd?: number;
+    sharedCapGroupId?: string;
   }>;
 }
 

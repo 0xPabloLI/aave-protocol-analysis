@@ -135,7 +135,7 @@ flowchart TD
 - `data/debug/brevis-raw-data.json`
   - Brevis debug snapshot
 
-### Merkl → `/api/markets` reserve fields: `dailyPoints` / `pointsPerThousandUsd`
+### Merkl → `/api/markets` reserve fields: `pointsPerThousandUsd`
 
 Implemented in `src/merkl-api.ts` (`merklBreakdownUsesPointsIntensityFields` + `merklPointsFieldsFromBreakdownValue`). Emitted **only** when `rewardsRecord.breakdowns[].token.type === 'PRETGE'` (Merkl pre-TGE reward token). Other tokens, protocols, or opportunity names are not special-cased; consumers use `campaignApr` and the rest of the breakdown for normal TOKEN rewards.
 
@@ -236,7 +236,7 @@ flowchart LR
 |-------|------|
 | `campaignId` | Join key to embedded `campaigns[]` and to optional `GET /v4/campaigns/{id}`; forecast map key |
 | `distributionType` / `distributionMethod` | Output `distributionType`; raw input to `normalizeForecastCampaignTypeLite` (with opportunity fallbacks) |
-| `value` | With `tvl`, drives `dailyPoints` / `pointsPerThousandUsd` **only if** `token.type === 'PRETGE'` |
+| `value` | With `tvl`, drives `pointsPerThousandUsd` **only if** `token.type === 'PRETGE'` |
 | `token.type` | Must be `PRETGE` to emit intensity fields; other token fields are not read for markets output |
 
 #### Table — embedded `campaigns[]` (per campaign object)

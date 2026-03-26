@@ -220,6 +220,7 @@ Forecast cron 刷新时会为每个 campaign 并发请求 `campaigns/{id}` + `ca
 ```
 Cron / startup warmup → refreshMarketsSnapshot() → 内存 snapshot
 GET /api/markets      → 只读 snapshot（不触发 fetch）
+GET /api/meta/side-data → 聚合读取 categories / fdv / forecast 内部缓存
 ```
 
 ## 配置参数（入口）
