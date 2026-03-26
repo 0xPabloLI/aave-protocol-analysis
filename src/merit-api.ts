@@ -778,12 +778,24 @@ function parseMeritEndDate(endDateRaw?: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function isMeritCampaignMetadataEnded(endDateRaw?: string): boolean {
+function hasEndedByMeritEndDate(endDateRaw: string | undefined, nowMs = Date.now()): boolean {
   const parsedEndDate = parseMeritEndDate(endDateRaw);
   if (!parsedEndDate) {
     return false;
   }
-  return parsedEndDate.getTime() < Date.now();
+  return parsedEndDate.getTime() < nowMs;
+}
+
+function isSameUtcDay(a: Date, b: Date): boolean {
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
+}
+
+function isMeritCampaignMetadataEnded(endDateRaw?: string): boolean {
+  return hasEndedByMeritEndDate(endDateRaw);
 }
 
 async function isMeritCampaignExpired(
@@ -796,9 +808,11 @@ async function isMeritCampaignExpired(
   const parsedEndDate = parseMeritEndDate(endDateRaw);
   const hasEndBlock = typeof endBlockRaw === 'string' && endBlockRaw.trim() !== '';
 
-  // endBlock values from upstream metadata can drift from live chain height semantics.
-  // Use endBlock+RPC only as a fallback when endDate is missing/unparseable.
-  const shouldUseEndBlock = hasEndBlock && !parsedEndDate;
+  // Use endBlock in two cases:
+  // 1) endDate missing/unparseable (fallback path)
+  // 2) endDate is today (final-day precision)
+  const shouldUseEndBlock =
+    hasEndBlock && (!parsedEndDate || isSameUtcDay(parsedEndDate, now));
 
   if (shouldUseEndBlock) {
     const endBlock = parseInt(endBlockRaw!, 10);
@@ -818,9 +832,7 @@ async function isMeritCampaignExpired(
     }
   }
 
-  if (parsedEndDate) {
-    return parsedEndDate < now;
-  }
+  if (hasEndedByMeritEndDate(endDateRaw, now.getTime())) return true;
 
   return false;
 }

@@ -7,6 +7,16 @@ interface ResolveTokenPriceWithBackupParams {
   snapshotPrice?: unknown;
 }
 
+export type UsdPriceSource = 'snapshot' | 'reserve' | 'coingecko' | 'missing';
+
+interface ResolveUsdPriceWithPriorityParams {
+  chainId: number;
+  tokenAddress?: string;
+  tokenSymbol?: string;
+  snapshotPrice?: unknown;
+  reservePrice?: number;
+}
+
 const COINGECKO_API_BASE = 'https://api.coingecko.com/api/v3';
 const COINGECKO_PLATFORM_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const HARDCODED_PLATFORM_BY_CHAIN_ID: Record<number, string> = {
@@ -238,4 +248,33 @@ export async function resolveTokenPriceWithBackup({
   } finally {
     tokenPriceResolveInFlight.delete(cacheKey);
   }
+}
+
+export async function resolveUsdPriceWithPriority({
+  chainId,
+  tokenAddress,
+  tokenSymbol,
+  snapshotPrice,
+  reservePrice,
+}: ResolveUsdPriceWithPriorityParams): Promise<{ price?: number; source: UsdPriceSource }> {
+  const normalizedSnapshot = toFiniteNumber(snapshotPrice);
+  if (normalizedSnapshot !== null && normalizedSnapshot > 0) {
+    return { price: normalizedSnapshot, source: 'snapshot' };
+  }
+
+  if (typeof reservePrice === 'number' && Number.isFinite(reservePrice) && reservePrice > 0) {
+    return { price: reservePrice, source: 'reserve' };
+  }
+
+  const coingeckoPrice = await resolveTokenPriceWithBackup({
+    chainId,
+    tokenAddress,
+    tokenSymbol,
+    snapshotPrice: undefined,
+  });
+
+  if (coingeckoPrice !== undefined && coingeckoPrice > 0) {
+    return { price: coingeckoPrice, source: 'coingecko' };
+  }
+  return { source: 'missing' };
 }

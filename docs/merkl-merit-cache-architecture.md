@@ -325,13 +325,22 @@ Map<string, {
 `fetchMeritData()` needs `timeRanges` because they carry:
 - Merkl/Merit campaign link
 - `startDate` / `endDate`
-- `startBlock` / `endBlock` (fallback end-state signal)
+- `startBlock` / `endBlock` (fallback end-state signal; compared against Ethereum mainnet block height when needed)
 - campaign `name`
 - `message` (including self-auth hints)
 
 Without cached `timeRanges`, the code would re-crawl campaign pages on every refresh.  
 Now it uses a module-level in-memory cache first (process lifetime), then reads `data/runtime/merit-campaign-metadata-cache.json`, then falls back to `data/debug/merit-raw-data.json` for compatibility.
 This cache is intentionally event-driven (new key / refetch path / process restart) rather than TTL-driven.
+
+### Merit expiry decision (current behavior)
+
+- Primary signal: `endDate` from campaign metadata.
+- Date comparison uses `parsedEndDate <= now` as expired.
+- On the `endDate` day, `endBlock` is used to determine precise cutoff time.
+- If `endDate` is missing/unparseable, `endBlock` is used as fallback.
+- `endBlock` fallback is checked against **Ethereum mainnet** latest block height (not reserve chain height such as Celo).
+- If cached metadata is complete but `endDate` is already in the past, the key is forced into refetch to pick up renewed rounds.
 
 ## 5) Refresh Cadence vs Freshness (Important Pattern)
 

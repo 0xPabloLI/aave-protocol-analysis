@@ -109,14 +109,10 @@ export interface MarketWithSpread {
     }>;
   }>;
   brevisSupplys?: Array<{
-    apr: number;
     link: string;
-    startDate: string;
-    endDate: string;
-    name: string;
-    campaignApr?: number;
-    campaignStartedAt?: string;
-    campaignEndedAt?: string;
+    campaignApr: number;
+    campaignStartedAt: string;
+    campaignEndedAt: string;
     message?: string;
     totalBudget?: number;
     latestTvl?: number;
@@ -124,14 +120,10 @@ export interface MarketWithSpread {
     campaignId?: string;
   }>;
   brevisBorrows?: Array<{
-    apr: number;
     link: string;
-    startDate: string;
-    endDate: string;
-    name: string;
-    campaignApr?: number;
-    campaignStartedAt?: string;
-    campaignEndedAt?: string;
+    campaignApr: number;
+    campaignStartedAt: string;
+    campaignEndedAt: string;
     message?: string;
     totalBudget?: number;
     latestTvl?: number;

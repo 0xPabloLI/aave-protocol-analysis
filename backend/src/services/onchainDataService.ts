@@ -113,7 +113,10 @@ let refreshInProgress: Promise<void> | null = null;
  */
 async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
   const rpcCandidates = ethProviderService.getProvidersForChain(config.chainId, config.defaultRpcUrls);
-  
+  logger.debug(
+    `On-chain RPC order for ${config.poolKey}: ${rpcCandidates.map((candidate) => candidate.rpcUrl).join(' -> ')}`
+  );
+
   for (const { rpcUrl, provider } of rpcCandidates) {
     try {
       const uiPoolDataProvider = new UiPoolDataProvider({
@@ -160,6 +163,7 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
       });
 
       ethProviderService.reportProviderSuccess(config.chainId, rpcUrl);
+      logger.debug(`On-chain fetch succeeded for ${config.poolKey} via ${rpcUrl}`);
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

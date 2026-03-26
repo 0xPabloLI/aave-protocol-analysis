@@ -12,6 +12,7 @@ import {
   normalizeMerklCampaignTotalBudget,
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
+import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
 const merklLimitedFetch = createMerklConcurrencyLimitedFetch(
   fetch as unknown as typeof globalThis.fetch
@@ -227,6 +228,8 @@ interface CampaignSnapshotLiteForForecastFile {
   startTimestamp?: unknown;
   endTimestamp?: unknown;
   rewardToken?: {
+    address?: unknown;
+    symbol?: unknown;
     price?: unknown;
     decimals?: unknown;
   };
@@ -241,10 +244,16 @@ interface CampaignSnapshotLiteForForecastFile {
 }
 
 interface ForecastCampaignMetaLite {
+  chainId: number;
   tvl: number;
   campaignTypeHint: ForecastCampaignTypeLite;
   campaignSnapshot: CampaignSnapshotLiteForForecastFile | null;
   useTokenRateInMetrics: boolean;
+}
+
+interface ProcessMerklDataOptions {
+  reserveTokenPriceByChainAndAddress?: Map<string, number>;
+  priceSourceStats?: Record<UsdPriceSource, number>;
 }
 
 const normalizeForecastCampaignTypeLite = (value: unknown): ForecastCampaignTypeLite | null => {
@@ -273,6 +282,8 @@ const buildCampaignSnapshotLiteForForecastFile = (campaign: any): CampaignSnapsh
   if (campaign?.endTimestamp !== undefined) snapshot.endTimestamp = campaign.endTimestamp;
   if (campaign?.rewardToken) {
     const rewardToken: CampaignSnapshotLiteForForecastFile['rewardToken'] = {};
+    if (campaign.rewardToken.address !== undefined) rewardToken.address = campaign.rewardToken.address;
+    if (campaign.rewardToken.symbol !== undefined) rewardToken.symbol = campaign.rewardToken.symbol;
     if (campaign.rewardToken.price !== undefined) rewardToken.price = campaign.rewardToken.price;
     if (campaign.rewardToken.decimals !== undefined) rewardToken.decimals = campaign.rewardToken.decimals;
     if (Object.keys(rewardToken).length > 0) snapshot.rewardToken = rewardToken;
@@ -330,6 +341,7 @@ const buildForecastCampaignMetaLiteMap = (
 
       if (!existing) {
         result[campaignId] = {
+          chainId: opp.chainId,
           tvl,
           campaignTypeHint,
           campaignSnapshot,
@@ -339,6 +351,7 @@ const buildForecastCampaignMetaLiteMap = (
       }
 
       result[campaignId] = {
+        chainId: existing.chainId > 0 ? existing.chainId : opp.chainId,
         tvl: existing.tvl > 0 ? existing.tvl : tvl,
         campaignTypeHint: existing.campaignTypeHint,
         campaignSnapshot: existing.campaignSnapshot ?? campaignSnapshot,
@@ -376,9 +389,10 @@ interface ForecastFieldsFlat {
  * Compute opportunity-only forecast fields for a campaign.
  * Uses only data available from the opportunity snapshot (no metrics API needed).
  */
-const buildForecastFieldsFromOpportunity = (
-  meta: ForecastCampaignMetaLite
-): ForecastFieldsFlat | null => {
+const buildForecastFieldsFromOpportunity = async (
+  meta: ForecastCampaignMetaLite,
+  options?: ProcessMerklDataOptions
+): Promise<ForecastFieldsFlat | null> => {
   const snapshot = meta.campaignSnapshot;
   if (!snapshot) return null;
 
@@ -386,9 +400,86 @@ const buildForecastFieldsFromOpportunity = (
   const endTs = toFiniteNumberForForecast(snapshot.endTimestamp);
   if (startTs === null || endTs === null || endTs <= startTs) return null;
 
-  const totalBudget = normalizeMerklCampaignTotalBudget(snapshot);
+  const rawPrice =
+    snapshot.rewardToken?.price !== undefined
+      ? Number(snapshot.rewardToken.price)
+      : undefined;
+  const normalizedPrice = Number.isFinite(rawPrice) && rawPrice! > 0 ? rawPrice : undefined;
+  if (!meta.useTokenRateInMetrics && normalizedPrice !== undefined && options?.priceSourceStats) {
+    options.priceSourceStats.snapshot += 1;
+  }
+
+  let effectiveSnapshot = snapshot;
+  if (!meta.useTokenRateInMetrics && normalizedPrice === undefined) {
+    const reserveTokenAddress =
+      typeof snapshot.rewardToken?.address === 'string' ? snapshot.rewardToken.address.toLowerCase() : '';
+    const reservePriceKey = `${meta.chainId}:${reserveTokenAddress}`;
+    const reserveTokenPrice =
+      reserveTokenAddress && options?.reserveTokenPriceByChainAndAddress
+        ? options.reserveTokenPriceByChainAndAddress.get(reservePriceKey)
+        : undefined;
+    const normalizedReserveTokenPrice =
+      typeof reserveTokenPrice === 'number' && Number.isFinite(reserveTokenPrice) && reserveTokenPrice > 0
+        ? reserveTokenPrice
+        : undefined;
+
+    if (normalizedReserveTokenPrice !== undefined) {
+      effectiveSnapshot = {
+        ...snapshot,
+        rewardToken: {
+          ...(snapshot.rewardToken ?? {}),
+          price: normalizedReserveTokenPrice,
+        },
+      };
+    }
+  }
+
+  if (!meta.useTokenRateInMetrics && normalizedPrice === undefined) {
+    const resolved = await resolveUsdPriceWithPriority({
+      chainId: meta.chainId,
+      tokenAddress:
+        typeof snapshot.rewardToken?.address === 'string' ? snapshot.rewardToken.address : undefined,
+      tokenSymbol:
+        typeof snapshot.rewardToken?.symbol === 'string' ? snapshot.rewardToken.symbol : undefined,
+      snapshotPrice: undefined,
+      reservePrice:
+        typeof effectiveSnapshot.rewardToken?.price === 'number' &&
+        Number.isFinite(effectiveSnapshot.rewardToken.price) &&
+        effectiveSnapshot.rewardToken.price > 0
+          ? effectiveSnapshot.rewardToken.price
+          : undefined,
+    });
+    if (options?.priceSourceStats) {
+      options.priceSourceStats[resolved.source] += 1;
+    }
+
+    if (resolved.price !== undefined && resolved.price > 0) {
+      effectiveSnapshot = {
+        ...snapshot,
+        rewardToken: {
+          ...(snapshot.rewardToken ?? {}),
+          price: resolved.price,
+        },
+      };
+    }
+  }
+
+  const totalBudget = normalizeMerklCampaignTotalBudget(effectiveSnapshot);
   if (totalBudget === null) return null;
   if (totalBudget <= 0) return null;
+
+  // For non-PRETGE (non-points) campaigns, do not emit token-unit fallback values.
+  if (!meta.useTokenRateInMetrics) {
+    const resolvedPrice = Number(effectiveSnapshot.rewardToken?.price);
+    if (!Number.isFinite(resolvedPrice) || resolvedPrice <= 0) {
+      logger.warn(
+        `⚠️ Skipping forecast budget fields for campaign ${snapshot.id}: missing USD price (chainId=${meta.chainId}, token=${String(
+          effectiveSnapshot.rewardToken?.symbol || ''
+        )})`
+      );
+      return null;
+    }
+  }
 
   const totalDays = Math.max((endTs - startTs) / 86400, 0.0001);
   const plannedDaily = totalBudget / totalDays;
@@ -569,8 +660,20 @@ export function merklBreakdownUsesPointsIntensityFields(
   return String(breakdown.token?.type || '').trim().toUpperCase() === 'PRETGE';
 }
 
-export async function processMerklData(): Promise<{ index: Record<string, MerklOpportunityData[]> }> {
+export async function processMerklData(
+  options?: ProcessMerklDataOptions
+): Promise<{ index: Record<string, MerklOpportunityData[]> }> {
+  const priceSourceStats: Record<UsdPriceSource, number> = {
+    snapshot: 0,
+    reserve: 0,
+    coingecko: 0,
+    missing: 0,
+  };
   const opportunities = await fetchMerklOpportunities();
+  const mergedOptions: ProcessMerklDataOptions = {
+    ...options,
+    priceSourceStats,
+  };
   const merklData: Record<string, MerklOpportunityData[]> = {};
   logger.info('🔍 Processing Merkl opportunities...');
   // fetchMerklOpportunities 已在 API 层过滤 status=LIVE
@@ -686,7 +789,7 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
     for (const bd of breakdowns) {
       const meta = forecastCampaignMetaLite[bd.campaignId];
       if (meta) {
-        const fields = buildForecastFieldsFromOpportunity(meta);
+        const fields = await buildForecastFieldsFromOpportunity(meta, mergedOptions);
         if (fields) Object.assign(bd, fields);
       }
     }
@@ -735,6 +838,9 @@ export async function processMerklData(): Promise<{ index: Record<string, MerklO
   
   logger.info(`✅ Processed ${processedData.length} Merkl opportunities`);
   logger.info(`📊 Created index with ${Object.keys(merklData).length} token keys`);
+  logger.info(
+    `📈 Merkl budget price source usage (non-PRETGE): snapshot=${priceSourceStats.snapshot}, reserve=${priceSourceStats.reserve}, coingecko=${priceSourceStats.coingecko}, missing=${priceSourceStats.missing}`
+  );
   
   // 保存 Merkl 原始数据
   await mkdir(DEBUG_DATA_DIR, { recursive: true });

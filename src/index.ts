@@ -10,8 +10,8 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
-import { brevisApi, stripDeprecatedBrevisFields } from './brevis-api.js';
-import { resolveTokenPriceWithBackup } from './token-price-resolver.js';
+import { brevisApi } from './brevis-api.js';
+import { resolveUsdPriceWithPriority } from './token-price-resolver.js';
 import {
   MerklCampaignBreakdown,
   MerklOpportunityData,
@@ -368,6 +368,7 @@ async function fetchBrevisAprs(
     // 获取所有 Aave campaign 数据（包含原始响应数据）
     const brevisResult = await brevisApi.getAaveCampaignsData();
     const brevisIndex: BrevisDataIndex = brevisResult.index;
+    const rewardBudgetHintsByCampaignId = brevisResult.rewardBudgetHintsByCampaignId;
 
     // 用于 reward token 价格解析：优先后端快照 tokenPrice，缺失时再走 CoinGecko fallback。
     const tokenPriceByChainAndAddress = new Map<string, number>();
@@ -379,6 +380,13 @@ async function fetchBrevisAprs(
       tokenPriceByChainAndAddress.set(`${reserve.chainId}:${address}`, price);
     });
 
+    const brevisPriceSourceStats = {
+      snapshot: 0,
+      reserve: 0,
+      coingecko: 0,
+      missing: 0,
+    };
+
     for (const [indexKey, campaigns] of Object.entries(brevisIndex)) {
       const dashIdx = indexKey.indexOf('-');
       if (dashIdx <= 0) continue;
@@ -386,49 +394,33 @@ async function fetchBrevisAprs(
       const rewardTokenAddress = indexKey.slice(dashIdx + 1).toLowerCase();
       if (!Number.isFinite(chainId) || !rewardTokenAddress) continue;
 
-      const enrichCampaignUsd = async (
-        campaign: BrevisCampaignItem & {
-          rewardAddressType?: 'token' | 'pool';
-          totalRewardAmount?: number;
-          totalRewardTokenSymbol?: string;
-        },
-      ): Promise<BrevisCampaignItem> => {
-        const totalRewardAmount = toFiniteNumber(campaign.totalRewardAmount);
-        if (totalRewardAmount === null || totalRewardAmount < 0) {
-          return stripDeprecatedBrevisFields(campaign);
+      const enrichCampaignUsd = async (campaign: BrevisCampaignItem): Promise<BrevisCampaignItem> => {
+        const hint = campaign.campaignId ? rewardBudgetHintsByCampaignId[campaign.campaignId] : undefined;
+        if (!hint) return campaign;
+        const normalizedAmount = toFiniteNumber(hint.normalizedAmount);
+        if (normalizedAmount === null || normalizedAmount < 0) {
+          return campaign;
         }
 
         const reservePriceKey = `${chainId}:${rewardTokenAddress}`;
-        const fromSnapshot = tokenPriceByChainAndAddress.get(reservePriceKey);
-        if (fromSnapshot !== undefined) {
-          return stripDeprecatedBrevisFields({
-            ...campaign,
-            totalBudget: totalRewardAmount * fromSnapshot,
-          });
-        }
-
-        const fallbackPrice = await resolveTokenPriceWithBackup({
+        const reserveTokenPrice = tokenPriceByChainAndAddress.get(reservePriceKey);
+        const resolved = await resolveUsdPriceWithPriority({
           chainId,
-          tokenAddress: campaign.rewardAddressType === 'token' ? rewardTokenAddress : undefined,
-          tokenSymbol: campaign.totalRewardTokenSymbol,
+          tokenAddress: hint.rewardAddressType === 'token' ? rewardTokenAddress : undefined,
+          tokenSymbol: hint.tokenSymbol,
           snapshotPrice: undefined,
+          reservePrice: reserveTokenPrice,
         });
+        brevisPriceSourceStats[resolved.source] += 1;
 
-        if (fallbackPrice !== undefined) {
-          return stripDeprecatedBrevisFields({
-            ...campaign,
-            totalBudget: totalRewardAmount * fallbackPrice,
-          });
+        if (resolved.price !== undefined) {
+          return { ...campaign, totalBudget: normalizedAmount * resolved.price };
         }
-        return stripDeprecatedBrevisFields(campaign);
+        return campaign;
       };
 
-      campaigns.brevisSupplys = await Promise.all(
-        campaigns.brevisSupplys.map((campaign) => enrichCampaignUsd(campaign as Parameters<typeof enrichCampaignUsd>[0]))
-      );
-      campaigns.brevisBorrows = await Promise.all(
-        campaigns.brevisBorrows.map((campaign) => enrichCampaignUsd(campaign as Parameters<typeof enrichCampaignUsd>[0]))
-      );
+      campaigns.brevisSupplys = await Promise.all(campaigns.brevisSupplys.map((c) => enrichCampaignUsd(c)));
+      campaigns.brevisBorrows = await Promise.all(campaigns.brevisBorrows.map((c) => enrichCampaignUsd(c)));
     }
     
     // 输出原始 Brevis 数据（包括原始 API 响应），方便查看和调试
@@ -442,6 +434,7 @@ async function fetchBrevisAprs(
       totalSupplyCampaigns: totalSupply,
       totalBorrowCampaigns: totalBorrow,
       indexedBy: 'chainId-tokenAddress',
+      rewardBudgetHintsByCampaignId: brevisResult.rewardBudgetHintsByCampaignId,
       // 原始 API 响应数据（用于调试和问题排查）
       rawProtocolsList: brevisResult.rawProtocolsList,
       rawProtocolDetails: brevisResult.rawProtocolDetails,
@@ -452,6 +445,9 @@ async function fetchBrevisAprs(
     
     logger.info(`✅ Indexed Brevis campaign data for ${Object.keys(brevisIndex).length} chain-token combinations`);
     logger.info(`   Supply campaigns: ${totalSupply}, Borrow campaigns: ${totalBorrow}`);
+    logger.info(
+      `   Price source usage (Brevis totalBudget): snapshot=${brevisPriceSourceStats.snapshot}, reserve=${brevisPriceSourceStats.reserve}, coingecko=${brevisPriceSourceStats.coingecko}, missing=${brevisPriceSourceStats.missing}`
+    );
     
     return brevisIndex;
   } catch (error) {
@@ -610,6 +606,18 @@ type MeritDataIndex = Record<string, MeritDataItem>;
 type MerklDataIndex = Record<string, MerklOpportunityData[]>;
 type BrevisDataIndex = Record<string, BrevisDataItem>;
 type MerklProcessedData = { index: MerklDataIndex };
+
+function buildReserveTokenPriceMap(baseDataset: FormattedReserveData[]): Map<string, number> {
+  const map = new Map<string, number>();
+  baseDataset.forEach((reserve) => {
+    const price = toFiniteNumber(reserve.tokenPrice);
+    if (price === null || price <= 0) return;
+    const address = reserve.tokenAddress?.toLowerCase();
+    if (!address) return;
+    map.set(`${reserve.chainId}:${address}`, price);
+  });
+  return map;
+}
 
 function enrichDatasetWithIncentiveData(
   baseDataset: FormattedReserveData[],
@@ -876,14 +884,26 @@ function generateCSV(data: FormattedReserveData[]): string {
       // Brevis Supplys：格式为 "APR1:link1:startDate1:endDate1:name1;APR2:link2:startDate2:endDate2:name2"
       (row.brevisSupplys && row.brevisSupplys.length > 0) 
         ? `"${row.brevisSupplys.map(c => {
-            const parts = [c.apr.toString(), c.link, c.startDate, c.endDate, c.name || ''];
+            const parts = [
+              c.campaignApr.toString(),
+              c.link,
+              c.campaignStartedAt,
+              c.campaignEndedAt,
+              c.message || '',
+            ];
             return parts.join(':');
           }).join(';')}"` 
         : '',
       // Brevis Borrows：格式同上
       (row.brevisBorrows && row.brevisBorrows.length > 0) 
         ? `"${row.brevisBorrows.map(c => {
-            const parts = [c.apr.toString(), c.link, c.startDate, c.endDate, c.name || ''];
+            const parts = [
+              c.campaignApr.toString(),
+              c.link,
+              c.campaignStartedAt,
+              c.campaignEndedAt,
+              c.message || '',
+            ];
             return parts.join(':');
           }).join(';')}"` 
         : ''
@@ -1054,6 +1074,7 @@ async function fetchAaveMarkets(): Promise<void> {
     // 第一步：从 Aave 市场数据创建基础数据集
     logger.info('📊 Creating base dataset from Aave markets...');
     const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
+    const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
     logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
 
     // 并发获取 Merit、Merkl 和 Brevis 数据（它们之间没有依赖关系）
@@ -1066,7 +1087,9 @@ async function fetchAaveMarkets(): Promise<void> {
       logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
       return {} as MeritDataIndex;
     });
-    const merklPromise = processMerklData().catch((error) => {
+    const merklPromise = processMerklData({
+      reserveTokenPriceByChainAndAddress,
+    }).catch((error) => {
       logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
       return { index: {} as MerklDataIndex } as MerklProcessedData;
     });
@@ -1262,6 +1285,7 @@ export async function fetchMarketsPayload(): Promise<MarketsPayload> {
   // 格式化数据
   logger.info('\n📊 Formatting market data...');
   const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
+  const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
   logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
 
   // 并发获取 Merit、Merkl 和 Brevis 数据
@@ -1271,7 +1295,9 @@ export async function fetchMarketsPayload(): Promise<MarketsPayload> {
     logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
     return {} as MeritDataIndex;
   });
-  const merklPromise = processMerklData().catch((error) => {
+  const merklPromise = processMerklData({
+    reserveTokenPriceByChainAndAddress,
+  }).catch((error) => {
     logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
     return { index: {} as MerklDataIndex } as MerklProcessedData;
   });
