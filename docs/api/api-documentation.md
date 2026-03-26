@@ -81,30 +81,28 @@ interface FormattedReserveData {
   // Brevis APR 激励（可选字段，仅在存在数据时出现）
   brevisSupplys?: Array<{
     apr: number;                         // APR 百分比值（如 1.5 表示 1.5%）
-    campaignApr?: number;               // Merkl-like 对齐字段，通常等于 apr
     link: string;                        // Brevis 活动详情页链接
     startDate: string;                    // 活动开始日期
-    campaignStartedAt?: string;          // Merkl-like 对齐字段，通常等于 startDate
     endDate: string;                      // 活动结束日期
-    campaignEndedAt?: string;            // Merkl-like 对齐字段，通常等于 endDate
     name: string;                        // 活动名称
-    message?: string;                    // 活动描述（Merkl-like 对齐）
-    latestTvl?: number;                  // 当前 TVL（USD）
-    totalBudget?: number;                // 活动总奖励预算（USD）
+    totalRewardAmount?: string;          // 总奖励额度（按 reward token decimals 归一化后的字符串）
+    totalRewardTokenSymbol?: string;     // 总奖励 token 符号（如 USDC）
+    tvlUsd?: number;                     // 活动 TVL（USD，来自 Brevis）
+    totalRewardUsd?: number;             // 总奖励额度（USD，当前使用 reserve.tokenPrice 估算）
+    description?: string;                // 活动描述（目前主要来自 MetaMask campaign 的前端文案提取）
     perUserRewardCapUsd?: number;        // 每用户奖励上限（USD，当前主要针对 MetaMask campaign）
   }>;
   brevisBorrows?: Array<{
     apr: number;                         // APR 百分比值（如 1.5 表示 1.5%）
-    campaignApr?: number;               // Merkl-like 对齐字段，通常等于 apr
     link: string;                        // Brevis 活动详情页链接
     startDate: string;                    // 活动开始日期
-    campaignStartedAt?: string;          // Merkl-like 对齐字段，通常等于 startDate
     endDate: string;                      // 活动结束日期
-    campaignEndedAt?: string;            // Merkl-like 对齐字段，通常等于 endDate
     name: string;                        // 活动名称
-    message?: string;                    // 活动描述（Merkl-like 对齐）
-    latestTvl?: number;                  // 当前 TVL（USD）
-    totalBudget?: number;                // 活动总奖励预算（USD）
+    totalRewardAmount?: string;          // 总奖励额度（按 reward token decimals 归一化后的字符串）
+    totalRewardTokenSymbol?: string;     // 总奖励 token 符号（如 USDC）
+    tvlUsd?: number;                     // 活动 TVL（USD，来自 Brevis）
+    totalRewardUsd?: number;             // 总奖励额度（USD，当前使用 reserve.tokenPrice 估算）
+    description?: string;                // 活动描述（目前主要来自 MetaMask campaign 的前端文案提取）
     perUserRewardCapUsd?: number;        // 每用户奖励上限（USD，当前主要针对 MetaMask campaign）
   }>;
   
@@ -667,14 +665,92 @@ Brevis 对外 contract 已收口到下面这组字段：
 
 | 语义 | 字段 | 说明 |
 |------|------|------|
-| APR | `campaignApr` + `apr` | `campaignApr` 为 canonical；`apr` 仍保留为基础 APR 字段 |
-| Start time | `campaignStartedAt` + `startDate` | `campaignStartedAt` 为 canonical；`startDate` 仍保留为基础起始时间 |
-| End time | `campaignEndedAt` + `endDate` | `campaignEndedAt` 为 canonical；`endDate` 仍保留为基础结束时间 |
-| Message | `message` | 活动描述 |
-| TVL | `latestTvl` | 当前 TVL（USD） |
-| Total budget | `totalBudget` | 活动总奖励预算（USD） |
-| Per-user reward cap | `perUserRewardCapUsd` | 当前 simulation 直接消费这个字段 |
-| Shared cap group | `sharedCapGroupId` | supply/borrow 共享 ceiling 时使用 |
+| APR | `apr` | 百分比数值（例如 `2.4` 表示 2.4%） |
+| Link | `link` | Brevis 前端活动页链接（由后端拼接） |
+| Start / End | `startDate` / `endDate` | ISO 时间字符串（由 gRPC `config.start/end` 转换） |
+| Name | `name` | 活动名称 |
+| Total reward amount | `totalRewardAmount` | `totalAmt` 按 reward token decimals 归一化后的字符串 |
+| Reward token symbol | `totalRewardTokenSymbol` | 奖励 token 符号 |
+| TVL (USD) | `tvlUsd` | 来自 Brevis `protocol.tvl`（文档定义为 USD value） |
+| Total reward (USD est.) | `totalRewardUsd` | 当前按 `reserve.tokenPrice * totalRewardAmount` 估算 |
+| Description (optional) | `description` | 目前主要用于 MetaMask campaign |
+| Per-user cap (USD) | `perUserRewardCapUsd` | 从描述文案中提取（若可提取） |
+
+补充说明：
+- `totalRewardUsd` 当前是估算值：当 reward token 与 reserve token 不一致时可能存在偏差。
+- 后续若接入 Brevis `reward_usd_price`，应优先使用上游价格替代该估算。
+
+#### Brevis 数据源对比（gRPC vs REST `/sdk/v1/aaveCampaigns`）
+
+当前项目的 Aave Brevis 数据主路径是 gRPC（`/IncentiveProvider/GetAllProtocols` + `/IncentiveProvider/GetAllProtocolDetail`）。
+
+2026-03-26 本项目实测（同环境、同时间窗口）：
+- gRPC 可稳定返回 Aave Linea 活动（样本包含 `type=3001`）。
+- REST `POST /sdk/v1/aaveCampaigns` 在多种 payload 下均返回 `200` + `campaigns: []`（包括 `action=[5001,5002,5003]`、`status` 组合、`campaign_id`、`atoken_address` 等）。
+- 其他 REST 端点如 `/sdk/v1/eulerCampaigns`、`/sdk/v1/liquidityCampaigns` 同时有数据，说明不是整体网络问题。
+
+结论：
+- 在当前阶段，`/sdk/v1/aaveCampaigns` 不能直接替代项目中的 gRPC Aave 拉取路径。
+- 建议策略：继续以 gRPC 为主源，REST 作为旁路探测与后续切换候选。
+
+#### Brevis type code（官方文档枚举 + 本项目实测口径）
+
+> Source: Incentra docs `Get Campaigns` / 各协议 campaign API / reward batch API（见文末链接）。
+
+| Type code | 语义 | 口径 | 来源页 |
+|---|---|---|---|
+| `1` | Liquidity campaign (Uniswap v3) | 官方 | Get Campaigns / Liquidity |
+| `2` | Liquidity campaign (Uniswap v4) | 官方 | Get Campaigns / Liquidity |
+| `3` | Liquidity campaign (PancakeSwap v3) | 官方 | Get Campaigns / Liquidity |
+| `4` | Liquidity campaign (PancakeSwap v4) | 官方 | Get Campaigns / Liquidity |
+| `5` | Liquidity campaign (QuickSwap v3) | 官方 | Get Campaigns / Liquidity |
+| `6` | Liquidity campaign (KoalaSwap) | 官方 | Get Campaigns / Liquidity |
+| `8` | Liquidity campaign (Pancake v4 CL) | 官方 | Get Campaigns / Liquidity |
+| `9` | Liquidity campaign (Pancake v4 BIN) | 官方 | Get Campaigns / Liquidity |
+| `1001` | Token holding campaign | 官方 | Reward batch APIs (`types`) |
+| `2001` | Euler borrow action | 官方 | Euler campaigns (`action`) |
+| `2002` | Euler lend action | 官方 | Euler campaigns (`action`) |
+| `5001` | Aave lend action | 官方 | Aave campaigns (`action`) |
+| `5002` | Aave borrow action | 官方 | Aave campaigns (`action`) |
+| `5003` | Aave lend_net action | 官方 | Aave campaigns (`action`) |
+| `6001` | Morpho lend action | 官方 | Morpho campaigns (`action`) |
+| `3001` | Aave campaign（当前项目实测为 both） | 项目实测 | `data/debug/brevis-raw-data.json` + `src/brevis-api.ts` |
+
+本项目当前 `/api/markets` 的 Brevis 解析逻辑中，`actionType` 映射为：
+
+- `2002 -> supply`
+- `2001 -> borrow`
+- `3001 -> both`
+
+当前实现未将 `5001/5002/5003` 直接映射到 `/api/markets` 的 Brevis actionType；这三类目前主要出现在官方 REST `aaveCampaigns` 文档语义中。
+
+补充说明（统一口径）：
+
+- 对官方 SDK 文档：Aave `action` 定义为 `5001/5002/5003`。
+- 对本项目当前抓取路径（`GetAllProtocolDetail` + 运行时数据）：Aave 样本中可见 `type=3001`，并在代码中映射为 `both`（即不再拆分成独立 lend/borrow code）。
+
+官方文档入口：
+- `https://incentra-docs.brevis.network`
+- `https://incentra-docs.brevis.network/developer-sdk/get-campaigns`
+- `https://incentra-docs.brevis.network/print.html`
+
+#### Brevis campaign status code（官方枚举 + 本项目代码口径）
+
+| Status code | 标签 | 口径 | 来源 |
+|---|---|---|---|
+| `1` | `DEPLOYING` | 项目代码口径 | `src/brevis-api.ts` (`mapStatusLabel`) |
+| `2` | `CREATING_FAILED` | 项目代码口径 | `src/brevis-api.ts` (`mapStatusLabel`) |
+| `3` | `INACTIVE` | 官方 + 项目代码口径 | Incentra docs + `mapStatusLabel` |
+| `4` | `ACTIVE` | 官方 + 项目代码口径 | Incentra docs + `mapStatusLabel` |
+| `5` | `ENDED` | 官方 + 项目代码口径 | Incentra docs + `mapStatusLabel` |
+| `6` | `DEACTIVATED` | 项目代码口径（官方文档列出标签但未统一给数字） | `src/brevis-api.ts` (`mapStatusLabel`) |
+
+补充说明：
+
+- Incentra 文档在 rewards batch API 中明确给出 `INACTIVE=3`、`ACTIVE=4`、`ENDED=5`。
+- 其余状态标签（`DEPLOYING`、`CREATING_FAILED`、`DEACTIVATED`）在官方文档中有列举，但未在同一处统一给出数字；本项目目前按 `mapStatusLabel` 的映射处理。
+
+维护约定：当 `data/debug/brevis-raw-data.json` 出现新的 `type` 或 `status` 数值时，必须在本节同步更新 type/status 对照表（并同时更新 `src/brevis-api.ts` 映射逻辑，如有需要）。
 
 ### 4. 推荐的对外 canonical 命名
 
@@ -682,7 +758,7 @@ Brevis 对外 contract 已收口到下面这组字段：
 
 - Merkl markets breakdown: `campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`campaignId`、`campaignType`、`totalBudget`、`aprCap`、`latestTvl`、`plannedDaily`
 - Merkl forecast side-data: `campaignId`、`requiredDaily`、`distributedSoFar`、`endTimestamp`
-- Brevis incentives: `campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`、`sharedCapGroupId`
+- Brevis incentives: `apr`、`link`、`startDate`、`endDate`、`name`、`totalRewardAmount`、`totalRewardTokenSymbol`、`tvlUsd`、`totalRewardUsd`、`description`、`perUserRewardCapUsd`
 - Merkl upstream source naming: `distributionType` / `distributionMethod` 是上游字段名；对外仍建议统一看 `campaignType`
 - Forecast error item: `status` 仍是 optional，不能假设所有返回路径都有
 
@@ -705,7 +781,7 @@ Brevis 对外 contract 已收口到下面这组字段：
      - `startBlock` / `endBlock`: 可选的区块范围
      - `requiredBorrowTokens` / `requiredSupplyTokens`: 可选的条件要求 token 列表
    - `merklSupplys` / `merklBorrows` / `merklHolds`: 对象数组，每个对象包含 `link`、`name`（可选）、`message`（可选）和 `breakdowns` 数组
-  - `brevisSupplys` / `brevisBorrows`: 对象数组，基础字段为 `apr`、`link`、`startDate`、`endDate`、`name`，并新增 Merkl-like 对齐字段（如 `campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`message`、`latestTvl`、`totalBudget`）
+  - `brevisSupplys` / `brevisBorrows`: 对象数组，字段为 `apr`、`link`、`startDate`、`endDate`、`name`，以及可选扩展字段 `totalRewardAmount`、`totalRewardTokenSymbol`、`tvlUsd`、`totalRewardUsd`、`description`、`perUserRewardCapUsd`
 
 2. **可选字段和空值处理**:
    - 标记为 `?` 的字段为可选字段
@@ -953,8 +1029,8 @@ curl http://localhost:3001/api/coingecko-fdv
   - **2026-03-14**：移除 `deficitAvailable` 标志；deficit 来自 `UiPoolDataProvider.getReservesHumanized()`（Aave v3.3.0+），RPC 失败时使用 5 分钟内的缓存，超时则字段缺失
   - **2026-03-24**：新增「Merkl Forecast：上游数据与派生字段」：区分 Merkl 原始输入、服务端二次计算与 HTTP `items[]` 暴露字段
   - **2026-03-24**：补充 **per-campaign metrics TTL**、opportunity 整表缓存与 10 分钟 forecast 快照的关系（各 campaign metrics 更新频率可不同）
-  - **2026-03-26**：Brevis 字段向 Merkl 风格对齐：新增 `campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`
-  - **2026-03-26（breaking, staging）**：Brevis 移除 deprecated 字段：`rewardAddressType`、`totalRewardAmount`、`totalRewardTokenSymbol`、`description`、`tvlUsd`、`totalRewardUsd`
+  - **2026-03-26**：Brevis 字段更新为当前 runtime contract：新增/确认 `totalRewardAmount`、`totalRewardTokenSymbol`、`tvlUsd`、`totalRewardUsd`、`description`、`perUserRewardCapUsd`
+  - **2026-03-26**：补充 Brevis 数据源对比结论：`/sdk/v1/aaveCampaigns` 在当前环境实测为空，Aave 仍以 gRPC 路径为主
 
 ## 注意事项
 

@@ -53,7 +53,7 @@ export interface BrevisCampaignItem {
   totalBudget?: number;
   latestTvl?: number;
   perUserRewardCapUsd?: number; // Per-user reward cap（美元），从描述文字解析
-  sharedCapGroupId?: string; // 当 supply/borrow 共享同一 per-user cap 时的分组 ID
+  campaignId?: string; // Brevis campaign ID，supply/borrow 同 ID 则共享同一 perUserRewardCapUsd
 }
 
 type BrevisCampaignPricingFields = {
@@ -768,11 +768,8 @@ export class BrevisApiClient {
                 message: metaMaskDesc.description,
                 ...(metaMaskDesc.perUserRewardCapUsd != null ? { perUserRewardCapUsd: metaMaskDesc.perUserRewardCapUsd } : {}),
               } : {}),
-              // actionType === 'both' 时，supply 和 borrow 共享同一 per-user cap
-              // 前端可通过 sharedCapGroupId 关联两条记录
-              ...(actionType === 'both' ? {
-                sharedCapGroupId: `${protocol.chainId}-${protocol.id}-${campaign.id}`,
-              } : {}),
+              // campaignId: 前端用于判断 supply/borrow 是否共享同一 perUserRewardCapUsd
+              ...(campaign.id ? { campaignId: String(campaign.id) } : {}),
             };
 
             // 使用 chainId + tokenAddress 作为索引（如果 tokenAddress 存在）

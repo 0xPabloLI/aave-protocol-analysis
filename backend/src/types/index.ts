@@ -121,7 +121,7 @@ export interface MarketWithSpread {
     totalBudget?: number;
     latestTvl?: number;
     perUserRewardCapUsd?: number;
-    sharedCapGroupId?: string;
+    campaignId?: string;
   }>;
   brevisBorrows?: Array<{
     apr: number;
@@ -136,7 +136,7 @@ export interface MarketWithSpread {
     totalBudget?: number;
     latestTvl?: number;
     perUserRewardCapUsd?: number;
-    sharedCapGroupId?: string;
+    campaignId?: string;
   }>;
 }
 
