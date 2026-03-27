@@ -16,7 +16,6 @@ export interface BuildForecastStateInput {
   nowTimestamp: number;
   distributedSoFar: number;
   latestTvl: number;
-  computedUntil: number | null;
 }
 
 export interface MerklForecastState {
@@ -30,13 +29,11 @@ export interface MerklForecastState {
   remainingBudget: number;
   remainingDays: number;
   aprCap: number | null;
-  computedUntil: number | null;
   asOf: number;
   distributedSoFar: number;
   latestTvl: number;
   startTimestamp: number;
   endTimestamp: number;
-  expectedByNow: number;
 }
 
 const safeNumber = (value: unknown, fallback = 0): number => {
@@ -100,9 +97,6 @@ export const buildForecastState = (input: BuildForecastStateInput): MerklForecas
     input.campaignType === 'DUTCH_AUCTION'
       ? plannedDaily
       : remainingBudget / remainingDays;
-  const duration = Math.max(endTs - startTs, 1);
-  const elapsed = Math.min(Math.max(nowTs - startTs, 0), duration);
-  const expectedByNow = totalBudget * (elapsed / duration);
 
   return {
     campaignId: input.campaignId,
@@ -113,12 +107,10 @@ export const buildForecastState = (input: BuildForecastStateInput): MerklForecas
     remainingBudget,
     remainingDays,
     aprCap,
-    computedUntil: input.computedUntil,
     asOf: nowTs,
     distributedSoFar,
     latestTvl,
     startTimestamp: startTs,
     endTimestamp: endTs,
-    expectedByNow,
   };
 };

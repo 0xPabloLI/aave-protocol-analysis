@@ -1,4 +1,3 @@
-import type { Request, Response } from 'express';
 import { logger } from '../logger.js';
 import { coingeckoFetchConfig } from '../config.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
@@ -403,20 +402,6 @@ async function getOrRefreshCoingeckoCategoriesData(source: 'request' | 'startup'
   return cachedResponse?.data || data;
 }
 
-export const getCoingeckoCategories = async (_req: Request, res: Response) => {
-  try {
-    const snapshot = await getCoingeckoCategoriesSnapshot('request');
-    return res.status(200).json({
-      ...snapshot.data,
-      fetchedAt: snapshot.fetchedAt,
-      staleTimeMs: snapshot.staleTimeMs,
-    });
-  } catch (error) {
-    logger.error('Coingecko categories proxy error:', error);
-    return res.status(500).json({ error: 'Internal server error', details: String(error) });
-  }
-};
-
 export async function warmCoingeckoCategoriesCache(): Promise<void> {
   await getOrRefreshCoingeckoCategoriesData('startup');
 }
@@ -499,16 +484,3 @@ export async function getCoingeckoFdvSnapshot(
     staleTimeMs: FDV_CACHE_TTL_MS,
   };
 }
-
-export const getCoingeckoFdv = async (req: Request, res: Response) => {
-  try {
-    const data = await getOrRefreshFdvData('request');
-    return res.status(200).json({
-      ...data,
-      staleTimeMs: FDV_CACHE_TTL_MS,
-    });
-  } catch (error) {
-    logger.error('FDV proxy error:', error);
-    return res.status(500).json({ error: 'Internal server error', details: String(error) });
-  }
-};

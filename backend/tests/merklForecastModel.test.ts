@@ -31,7 +31,6 @@ test('buildForecastState supports DUTCH_AUCTION without apr cap', () => {
     nowTimestamp: 1_000 + 5 * 86400,
     distributedSoFar: 400,
     latestTvl: 2_000_000,
-    computedUntil: null,
   });
 
   assert.equal(state.campaignType, 'DUTCH_AUCTION');
@@ -55,7 +54,6 @@ test('buildForecastState requires apr cap for MAX_REWARD_VALUE_PER_LIQUIDITY_VAL
         nowTimestamp: 1_000 + 5 * 86400,
         distributedSoFar: 500,
         latestTvl: 1_000_000,
-        computedUntil: null,
       }),
     /Missing APR cap/
   );
@@ -74,7 +72,6 @@ test('buildForecastState requires apr cap input for FIX campaigns and stores it 
         nowTimestamp: 1_000 + 5 * 86400,
         distributedSoFar: 300,
         latestTvl: 1_000_000,
-        computedUntil: null,
       }),
     /Missing APR cap/
   );
@@ -89,7 +86,6 @@ test('buildForecastState requires apr cap input for FIX campaigns and stores it 
     nowTimestamp: 1_000 + 5 * 86400,
     distributedSoFar: 300,
     latestTvl: 1_000_000,
-    computedUntil: null,
   });
   assert.equal(state.aprCap, 0.005);
   assert.equal(state.plannedDaily, 100);

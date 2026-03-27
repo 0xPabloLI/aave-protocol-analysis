@@ -5,6 +5,10 @@ import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { merklFetchConfig } from '../config.js';
 import {
+  createMerklConcurrencyLimitedFetch,
+  normalizeMerklCampaignTotalBudget,
+} from '@internal/aave-shared-config';
+import {
   buildForecastState,
   normalizeCampaignType,
   type CampaignForecastType,
@@ -13,6 +17,8 @@ import {
 import { fetchMerklOpportunities } from './merklOpportunityClient.js';
 
 const MERKL_BASE_URL = 'https://api.merkl.xyz/v4';
+/** Shared with opportunities + root fetcher: `MERKL_FETCH_MAX_CONCURRENCY` in `aave-shared-config`. */
+const merklLimitedFetch = createMerklConcurrencyLimitedFetch(fetch);
 const SECONDS_PER_DAY = 86400;
 const MERKL_LITE_FILE_MAX_AGE_MS = BACKEND_CACHE_TTL_MS.merklLiteFileMaxAge;
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
@@ -59,15 +65,13 @@ const METRICS_CACHE_EMPTY_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsEmpty;
 interface MetricsCacheEntry {
   data: ForecastMetricsLite;
   expiresAt: number;
-  ttlMs: number;
-  cadenceSeconds: number | null;
 }
 
 interface CampaignOpportunityMeta {
   tvl: number;
   campaignTypeHint: CampaignForecastType;
-  distributionTypeRaw: string | null;
   campaignSnapshot: CampaignSnapshotLite | null;
+  useTokenRateInMetrics: boolean;
 }
 
 interface CampaignOpportunityCacheEntry {
@@ -87,9 +91,6 @@ interface CampaignSnapshotLite {
   amount?: unknown;
   startTimestamp?: unknown;
   endTimestamp?: unknown;
-  campaignStatus?: {
-    computedUntil?: unknown;
-  };
   rewardToken?: {
     price?: unknown;
     decimals?: unknown;
@@ -111,7 +112,7 @@ interface MerklOpportunityMetaLiteFile {
 
 interface ForecastMetricsLite {
   tvlRecords?: Array<{ timestamp?: unknown; total?: unknown }>;
-  dailyRewardsRecords?: Array<{ timestamp?: unknown; total?: unknown }>;
+  dailyRewardsRecords?: Array<{ timestamp?: unknown; total?: unknown; totalInToken?: unknown }>;
 }
 
 const toNumber = (value: unknown): number | null => {
@@ -140,30 +141,19 @@ const getAtPath = (obj: unknown, path: string[]): unknown => {
   return current;
 };
 
-const normalizeApr = (raw: number): number => {
-  if (!Number.isFinite(raw) || raw <= 0) return 0;
-  return raw > 1 ? raw / 100 : raw;
-};
-
 const extractMaxApr = (campaign: unknown): number | null => {
   const directCandidates: Array<string[]> = [
     ['params', 'distributionMethodParameters', 'distributionSettings', 'apr'],
     ['distributionMethodParameters', 'distributionSettings', 'apr'],
     ['distributionSettings', 'apr'],
-    ['apr'],
   ];
 
   for (const path of directCandidates) {
     const value = toNumber(getAtPath(campaign, path));
-    if (value !== null) return normalizeApr(value);
+    if (value !== null && value > 0) return value;
   }
 
   return null;
-};
-
-const extractComputedUntil = (campaign: unknown): number | null => {
-  const value = toNumber(getAtPath(campaign, ['campaignStatus', 'computedUntil']));
-  return value !== null ? value : null;
 };
 
 const buildCampaignSnapshotLite = (campaign: unknown): CampaignSnapshotLite | null => {
@@ -173,7 +163,6 @@ const buildCampaignSnapshotLite = (campaign: unknown): CampaignSnapshotLite | nu
   const amount = getAtPath(campaign, ['amount']);
   const startTimestamp = getAtPath(campaign, ['startTimestamp']);
   const endTimestamp = getAtPath(campaign, ['endTimestamp']);
-  const computedUntil = getAtPath(campaign, ['campaignStatus', 'computedUntil']);
   const rewardTokenPrice = getAtPath(campaign, ['rewardToken', 'price']);
   const rewardTokenDecimals = getAtPath(campaign, ['rewardToken', 'decimals']);
   const apr = getAtPath(campaign, ['params', 'distributionMethodParameters', 'distributionSettings', 'apr']);
@@ -184,9 +173,6 @@ const buildCampaignSnapshotLite = (campaign: unknown): CampaignSnapshotLite | nu
   if (amount !== undefined) snapshot.amount = amount;
   if (startTimestamp !== undefined) snapshot.startTimestamp = startTimestamp;
   if (endTimestamp !== undefined) snapshot.endTimestamp = endTimestamp;
-  if (computedUntil !== undefined) {
-    snapshot.campaignStatus = { computedUntil };
-  }
   if (rewardTokenPrice !== undefined || rewardTokenDecimals !== undefined) {
     snapshot.rewardToken = {
       ...(rewardTokenPrice !== undefined ? { price: rewardTokenPrice } : {}),
@@ -225,14 +211,20 @@ const extractLatestTvl = (metrics: unknown): number => {
   return 0;
 };
 
-const extractDailyRewardsRecords = (metrics: unknown): TimeSeriesPoint[] => {
+export const extractDailyRewardsRecords = (
+  metrics: unknown,
+  useTokenRateInMetrics = false
+): TimeSeriesPoint[] => {
   const raw = getAtPath(metrics, ['dailyRewardsRecords']);
   if (!Array.isArray(raw)) return [];
 
   return raw
     .map((entry) => ({
       timestamp: toNumber(getAtPath(entry, ['timestamp'])) || 0,
-      total: toNumber(getAtPath(entry, ['total'])) || 0,
+      total:
+        (useTokenRateInMetrics
+          ? toNumber(getAtPath(entry, ['totalInToken'])) ?? toNumber(getAtPath(entry, ['total']))
+          : toNumber(getAtPath(entry, ['total'])) ?? toNumber(getAtPath(entry, ['totalInToken']))) || 0,
     }))
     .filter((entry) => entry.timestamp > 0 && entry.total >= 0)
     .sort((a, b) => a.timestamp - b.timestamp);
@@ -294,10 +286,17 @@ const trimMetricsForForecast = (metrics: unknown): ForecastMetricsLite => {
   return {
     tvlRecords: latestTvlRecord ? [latestTvlRecord] : [],
     dailyRewardsRecords: Array.isArray(getAtPath(metrics, ['dailyRewardsRecords']))
-      ? (getAtPath(metrics, ['dailyRewardsRecords']) as Array<{ timestamp?: unknown; total?: unknown }>)
+      ? (getAtPath(metrics, ['dailyRewardsRecords']) as Array<{
+          timestamp?: unknown;
+          total?: unknown;
+          totalInToken?: unknown;
+        }>)
       : [],
   };
 };
+
+const campaignUsesTokenRateInMetrics = (breakdown: unknown): boolean =>
+  String(getAtPath(breakdown, ['token', 'type']) || '').trim().toUpperCase() === 'PRETGE';
 
 const estimateDistributedSoFar = (
   dailyRewardsRecords: TimeSeriesPoint[],
@@ -344,29 +343,6 @@ const estimateDistributedSoFar = (
   return Math.max(distributed, 0);
 };
 
-// ---------------------------------------------------------------------------
-// Concurrency limiter for Merkl API (rate limit: 10 req/s)
-// ---------------------------------------------------------------------------
-let activeCount = 0;
-const waitQueue: Array<() => void> = [];
-
-const acquireConcurrencySlot = (): Promise<void> => {
-  if (activeCount < merklFetchConfig.maxConcurrency) {
-    activeCount++;
-    return Promise.resolve();
-  }
-  return new Promise<void>((resolve) => waitQueue.push(resolve));
-};
-
-const releaseConcurrencySlot = (): void => {
-  const next = waitQueue.shift();
-  if (next) {
-    next();   // hand slot directly to next waiter (activeCount stays the same)
-  } else {
-    activeCount--;
-  }
-};
-
 const isTransientError = (error: unknown): boolean => {
   if (error instanceof TypeError && error.message === 'fetch failed') {
     const cause = (error as { cause?: { code?: string } }).cause;
@@ -378,38 +354,33 @@ const isTransientError = (error: unknown): boolean => {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const fetchJson = async (url: string): Promise<unknown> => {
-  await acquireConcurrencySlot();
-  try {
-    for (let attempt = 0; attempt <= merklFetchConfig.maxRetries; attempt++) {
-      try {
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: { accept: 'application/json' },
-        });
-        if (response.status === 429 || response.status >= 500) {
-          throw new Error(`Merkl API ${response.status} for ${url}`);
-        }
-        if (!response.ok) {
-          throw new Error(`Merkl API ${response.status} for ${url}`);
-        }
-        return response.json() as Promise<unknown>;
-      } catch (error) {
-        const retryable =
-          isTransientError(error) ||
-          (error instanceof Error && /Merkl API (429|5\d\d)/.test(error.message));
-        if (!retryable || attempt >= merklFetchConfig.maxRetries) throw error;
-        const delay = Math.min(
-          merklFetchConfig.baseDelayMs * Math.pow(2, attempt),
-          merklFetchConfig.maxDelayMs
-        );
-        logger.warn(`⏳ Merkl fetch retry ${attempt + 1}/${merklFetchConfig.maxRetries} for ${url} in ${delay}ms`);
-        await sleep(delay);
+  for (let attempt = 0; attempt <= merklFetchConfig.maxRetries; attempt++) {
+    try {
+      const response = await merklLimitedFetch(url, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+      });
+      if (response.status === 429 || response.status >= 500) {
+        throw new Error(`Merkl API ${response.status} for ${url}`);
       }
+      if (!response.ok) {
+        throw new Error(`Merkl API ${response.status} for ${url}`);
+      }
+      return response.json() as Promise<unknown>;
+    } catch (error) {
+      const retryable =
+        isTransientError(error) ||
+        (error instanceof Error && /Merkl API (429|5\d\d)/.test(error.message));
+      if (!retryable || attempt >= merklFetchConfig.maxRetries) throw error;
+      const delay = Math.min(
+        merklFetchConfig.baseDelayMs * Math.pow(2, attempt),
+        merklFetchConfig.maxDelayMs
+      );
+      logger.warn(`⏳ Merkl fetch retry ${attempt + 1}/${merklFetchConfig.maxRetries} for ${url} in ${delay}ms`);
+      await sleep(delay);
     }
-    throw new Error(`Merkl fetch exhausted retries for ${url}`);
-  } finally {
-    releaseConcurrencySlot();
   }
+  throw new Error(`Merkl fetch exhausted retries for ${url}`);
 };
 
 const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, CampaignOpportunityMeta> | null> => {
@@ -441,10 +412,6 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
       const campaignTypeHint = normalizeCampaignType(rawHint);
       if (!campaignTypeHint) continue;
 
-      const distributionTypeRawValue = getAtPath(value, ['distributionTypeRaw']);
-      const distributionTypeRaw =
-        typeof distributionTypeRawValue === 'string' ? distributionTypeRawValue : null;
-
       const campaignSnapshotRaw = getAtPath(value, ['campaignSnapshot']);
       const campaignSnapshot =
         campaignSnapshotRaw && typeof campaignSnapshotRaw === 'object'
@@ -454,8 +421,8 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
       map.set(campaignId, {
         tvl,
         campaignTypeHint,
-        distributionTypeRaw,
         campaignSnapshot,
+        useTokenRateInMetrics: Boolean(getAtPath(value, ['useTokenRateInMetrics'])),
       });
     }
 
@@ -489,6 +456,7 @@ const buildCampaignOpportunityMetaMapFromOpportunities = (
       const campaignId = getAtPath(breakdown, ['campaignId']);
       if (typeof campaignId !== 'string' || !campaignId) return;
       const campaignSnapshot = campaignSnapshotById.get(campaignId) ?? null;
+      const useTokenRateInMetrics = campaignUsesTokenRateInMetrics(breakdown);
 
       const breakdownDistributionTypeRaw =
         getAtPath(breakdown, ['distributionType']) ?? getAtPath(breakdown, ['distributionMethod']);
@@ -504,8 +472,8 @@ const buildCampaignOpportunityMetaMapFromOpportunities = (
         map.set(campaignId, {
           tvl,
           campaignTypeHint: hintType,
-          distributionTypeRaw: rawType,
           campaignSnapshot,
+          useTokenRateInMetrics,
         });
         return;
       }
@@ -513,8 +481,8 @@ const buildCampaignOpportunityMetaMapFromOpportunities = (
       map.set(campaignId, {
         tvl: previous.tvl > 0 ? previous.tvl : tvl,
         campaignTypeHint: previous.campaignTypeHint,
-        distributionTypeRaw: previous.distributionTypeRaw ?? rawType,
         campaignSnapshot: previous.campaignSnapshot ?? campaignSnapshot,
+        useTokenRateInMetrics: previous.useTokenRateInMetrics || useTokenRateInMetrics,
       });
     });
   });
@@ -529,13 +497,11 @@ const getCachedOrFetchMetrics = async (campaignId: string): Promise<unknown> => 
   }
 
   const rawMetrics = await fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`);
-  const { ttlMs, cadenceSeconds } = deriveMetricsCacheTtlMs(rawMetrics);
+  const { ttlMs } = deriveMetricsCacheTtlMs(rawMetrics);
   const metrics = trimMetricsForForecast(rawMetrics);
   metricsCache.set(campaignId, {
     data: metrics,
     expiresAt: now + ttlMs,
-    ttlMs,
-    cadenceSeconds,
   });
   return metrics;
 };
@@ -562,28 +528,11 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
 };
 
 export const extractNormalizedTotalBudget = (campaign: unknown, campaignId: string): number => {
-  const amountRaw = getAtPath(campaign, ['amount']);
-  const amount = toNumber(amountRaw);
-  if (amount === null) {
+  const totalBudget = normalizeMerklCampaignTotalBudget(campaign);
+  if (totalBudget === null) {
     throw new Error(`Missing campaign budget for campaign ${campaignId}`);
   }
-
-  const decimals =
-    toNumber(getAtPath(campaign, ['rewardToken', 'decimals'])) ??
-    toNumber(getAtPath(campaign, ['params', 'decimalsRewardToken']));
-
-  let rewardAmount = amount;
-  if (decimals !== null && decimals >= 0) {
-    if (typeof amountRaw === 'string' && !amountRaw.includes('.')) {
-      rewardAmount = amount / Math.pow(10, decimals);
-    }
-  }
-
-  const rewardTokenPrice = toNumber(getAtPath(campaign, ['rewardToken', 'price']));
-  if (rewardTokenPrice !== null && rewardTokenPrice > 0) {
-    return rewardAmount * rewardTokenPrice;
-  }
-  return rewardAmount;
+  return totalBudget;
 };
 
 export const getMerklForecastState = async (campaignId: string): Promise<MerklForecastState> => {
@@ -626,7 +575,10 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
 
       const totalBudget = extractNormalizedTotalBudget(campaign, campaignId);
       const nowTs = Math.floor(Date.now() / 1000);
-      const dailyRewardsRecords = extractDailyRewardsRecords(metrics);
+      const dailyRewardsRecords = extractDailyRewardsRecords(
+        metrics,
+        campaignOpportunityMeta.useTokenRateInMetrics
+      );
       if (dailyRewardsRecords.length === 0) {
         throw new Error(`Metrics unavailable for campaign ${campaignId}; forecast disabled`);
       }
@@ -651,7 +603,6 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         nowTimestamp: nowTs,
         distributedSoFar,
         latestTvl,
-        computedUntil: extractComputedUntil(campaign),
       });
     } catch (error) {
       logger.error(`❌ Failed to compute Merkl forecast state for ${campaignId}:`, error);

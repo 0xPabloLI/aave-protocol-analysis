@@ -10,7 +10,8 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
-import { brevisApi } from './brevis-api.js';
+import { brevisApi, pruneBrevisCampaignForRuntime } from './brevis-api.js';
+import { resolveUsdPriceWithPriority } from './token-price-resolver.js';
 import {
   MerklCampaignBreakdown,
   MerklOpportunityData,
@@ -81,14 +82,14 @@ interface FormattedReserveData {
   utilizationPct?: number;
   aTokenAddress: string | null; // aToken address
   vTokenAddress: string | null; // variableDebtToken address
-  supplyApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
+  supplyApy: number | undefined; // APY 比例值（如 0.052 = 5.2%/年）；CSV 与 HTTP 展示再 ×100
   supplyDisabled?: boolean; // true when isFrozen, isPaused, or supplyCap is 1
   supplyCapUsd?: number; // 供应上限（USD）
-  borrowApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
+  borrowApy: number | undefined; // APY 比例值；CSV 与 GET /api/markets 为百分值
   borrowDisabled?: boolean; // true when borrowingState is DISABLED or borrowCap is 1
   borrowCapUsd?: number; // 借款上限（USD），与 supplyCapUsd 对称
-  supplyIncentives: number[]; // Protocol supply incentives 百分比值数组
-  borrowIncentives: number[]; // Protocol borrow incentives 百分比值数组
+  supplyIncentives: number[]; // Protocol supply incentives 比例值数组
+  borrowIncentives: number[]; // Protocol borrow incentives 比例值数组
   // Rate-input fields for manual APR calculation (raw strings for precision)
   decimals?: number;
   availableLiquidity?: string;
@@ -186,6 +187,13 @@ function pruneMerklBreakdownForRuntime(breakdown: MerklCampaignBreakdown): Merkl
     ...(breakdown.pointsPerThousandUsd !== undefined
       ? { pointsPerThousandUsd: breakdown.pointsPerThousandUsd }
       : {}),
+    ...(breakdown.campaignType ? {
+      campaignType: breakdown.campaignType,
+      totalBudget: breakdown.totalBudget,
+      aprCap: breakdown.aprCap,
+      latestTvl: breakdown.latestTvl,
+      plannedDaily: breakdown.plannedDaily,
+    } : {}),
   };
 }
 
@@ -360,6 +368,60 @@ async function fetchBrevisAprs(
     // 获取所有 Aave campaign 数据（包含原始响应数据）
     const brevisResult = await brevisApi.getAaveCampaignsData();
     const brevisIndex: BrevisDataIndex = brevisResult.index;
+
+    // 用于 reward token 价格解析：优先后端快照 tokenPrice，缺失时再走 CoinGecko fallback。
+    const tokenPriceByChainAndAddress = new Map<string, number>();
+    baseDataset.forEach((reserve) => {
+      const price = toFiniteNumber(reserve.tokenPrice);
+      if (price === null) return;
+      const address = reserve.tokenAddress?.toLowerCase();
+      if (!address) return;
+      tokenPriceByChainAndAddress.set(`${reserve.chainId}:${address}`, price);
+    });
+
+    const brevisPriceSourceStats = {
+      snapshot: 0,
+      reserve: 0,
+      coingecko: 0,
+      missing: 0,
+    };
+
+    for (const [indexKey, campaigns] of Object.entries(brevisIndex)) {
+      const dashIdx = indexKey.indexOf('-');
+      if (dashIdx <= 0) continue;
+      const chainId = Number(indexKey.slice(0, dashIdx));
+      const rewardTokenAddress = indexKey.slice(dashIdx + 1).toLowerCase();
+      if (!Number.isFinite(chainId) || !rewardTokenAddress) continue;
+
+      const enrichCampaignUsd = async (campaign: BrevisCampaignItem): Promise<BrevisCampaignItem> => {
+        const normalizedAmount = toFiniteNumber(campaign.budgetNormalizedAmount);
+        if (normalizedAmount === null || normalizedAmount < 0) {
+          return pruneBrevisCampaignForRuntime(campaign);
+        }
+
+        const reservePriceKey = `${chainId}:${rewardTokenAddress}`;
+        const reserveTokenPrice = tokenPriceByChainAndAddress.get(reservePriceKey);
+        const resolved = await resolveUsdPriceWithPriority({
+          chainId,
+          tokenAddress: rewardTokenAddress,
+          tokenSymbol: campaign.budgetTokenSymbol,
+          snapshotPrice: undefined,
+          reservePrice: reserveTokenPrice,
+        });
+        brevisPriceSourceStats[resolved.source] += 1;
+
+        if (resolved.price !== undefined) {
+          return pruneBrevisCampaignForRuntime({
+            ...campaign,
+            totalBudget: normalizedAmount * resolved.price,
+          });
+        }
+        return pruneBrevisCampaignForRuntime(campaign);
+      };
+
+      campaigns.brevisSupplys = await Promise.all(campaigns.brevisSupplys.map((c) => enrichCampaignUsd(c)));
+      campaigns.brevisBorrows = await Promise.all(campaigns.brevisBorrows.map((c) => enrichCampaignUsd(c)));
+    }
     
     // 输出原始 Brevis 数据（包括原始 API 响应），方便查看和调试
     await mkdir(DEBUG_DATA_DIR, { recursive: true });
@@ -382,6 +444,9 @@ async function fetchBrevisAprs(
     
     logger.info(`✅ Indexed Brevis campaign data for ${Object.keys(brevisIndex).length} chain-token combinations`);
     logger.info(`   Supply campaigns: ${totalSupply}, Borrow campaigns: ${totalBorrow}`);
+    logger.info(
+      `   Price source usage (Brevis totalBudget): snapshot=${brevisPriceSourceStats.snapshot}, reserve=${brevisPriceSourceStats.reserve}, coingecko=${brevisPriceSourceStats.coingecko}, missing=${brevisPriceSourceStats.missing}`
+    );
     
     return brevisIndex;
   } catch (error) {
@@ -434,11 +499,10 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         const supplyCapUsdRaw = reserve.supplyInfo?.supplyCap?.usd;
         const supplyCapUsd = supplyCapUsdRaw ? parseFloat(supplyCapUsdRaw) : undefined;
         
-        // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
         const supplyApyValue = reserve.supplyInfo?.apy?.value;
         const supplyApy = supplyCapIsOne || !supplyApyValue
           ? undefined
-          : parseFloat(supplyApyValue) * 100;
+          : parseFloat(supplyApyValue);
         
         // 检查 borrowingState 是否为 "DISABLED"，如果是则表示该 token 不能被 borrow
         const isBorrowDisabledByState = reserve.borrowInfo?.borrowingState === "DISABLED";
@@ -452,10 +516,8 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         const borrowCapUsdRaw = reserve.borrowInfo?.borrowCap?.usd;
         const borrowCapUsd = borrowCapUsdRaw ? parseFloat(borrowCapUsdRaw) : undefined;
         
-        // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
-        // 即使 disabled 也传递真实的 borrowApy（前端可能需要展示参考值）
         const borrowApyValue = reserve.borrowInfo?.apy?.value;
-        const borrowApy = borrowApyValue ? parseFloat(borrowApyValue) * 100 : undefined;
+        const borrowApy = borrowApyValue ? parseFloat(borrowApyValue) : undefined;
         
         // Rate-input fields for manual APR calculation (from Aave SDK)
         // All raw values are strings to preserve precision for on-chain math
@@ -468,23 +530,20 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         const optimalUsageRate = reserve.borrowInfo?.optimalUsageRate?.raw ?? undefined;
         // Note: baseVariableBorrowRate is NOT available from Aave API
         
-        // 从 reserve.incentives 中提取 protocol supply 和 borrow incentives
-        // 使用 value*100 转换为百分比值数组
         const protocolSupplyIncentives: number[] = [];
         const protocolBorrowIncentives: number[] = [];
-        
+
         if (reserve.incentives && Array.isArray(reserve.incentives)) {
           reserve.incentives.forEach((incentive: any) => {
             if (incentive.__typename === 'AaveSupplyIncentive') {
               const aprValue = incentive.extraSupplyApr?.value || incentive.supplyApr?.value;
               if (aprValue) {
-                protocolSupplyIncentives.push(parseFloat(aprValue) * 100);
+                protocolSupplyIncentives.push(parseFloat(aprValue));
               }
             } else if (incentive.__typename === 'AaveBorrowIncentive') {
-              // AaveBorrowIncentive 可能使用 extraBorrowApr 或其他字段名
               const aprValue = incentive.extraBorrowApr?.value || incentive.borrowApr?.value;
               if (aprValue) {
-                protocolBorrowIncentives.push(parseFloat(aprValue) * 100);
+                protocolBorrowIncentives.push(parseFloat(aprValue));
               }
             }
           });
@@ -540,6 +599,18 @@ type MeritDataIndex = Record<string, MeritDataItem>;
 type MerklDataIndex = Record<string, MerklOpportunityData[]>;
 type BrevisDataIndex = Record<string, BrevisDataItem>;
 type MerklProcessedData = { index: MerklDataIndex };
+
+function buildReserveTokenPriceMap(baseDataset: FormattedReserveData[]): Map<string, number> {
+  const map = new Map<string, number>();
+  baseDataset.forEach((reserve) => {
+    const price = toFiniteNumber(reserve.tokenPrice);
+    if (price === null || price <= 0) return;
+    const address = reserve.tokenAddress?.toLowerCase();
+    if (!address) return;
+    map.set(`${reserve.chainId}:${address}`, price);
+  });
+  return map;
+}
 
 function enrichDatasetWithIncentiveData(
   baseDataset: FormattedReserveData[],
@@ -685,6 +756,10 @@ const tokenAliases: Record<string, string[]> = {
 };*/
 
 
+function ratioToPercentString(value: number): string {
+  return String(value * 100);
+}
+
 function generateCSV(data: FormattedReserveData[]): string {
   if (data.length === 0) return '';
 
@@ -719,16 +794,20 @@ function generateCSV(data: FormattedReserveData[]): string {
       `"${row.tokenName}"`,
       `"${row.tokenSymbol}"`,
       `"${row.tokenAddress}"`,
-      row.supplyApy !== undefined ? row.supplyApy.toString() : '',
-      row.borrowApy !== undefined ? row.borrowApy.toString() : '',
-      (row.supplyIncentives && row.supplyIncentives.length > 0) ? `"${row.supplyIncentives.join(';')}"` : '',
-      (row.borrowIncentives && row.borrowIncentives.length > 0) ? `"${row.borrowIncentives.join(';')}"` : '',
+      row.supplyApy !== undefined ? ratioToPercentString(row.supplyApy) : '',
+      row.borrowApy !== undefined ? ratioToPercentString(row.borrowApy) : '',
+      (row.supplyIncentives && row.supplyIncentives.length > 0)
+        ? `"${row.supplyIncentives.map(ratioToPercentString).join(';')}"`
+        : '',
+      (row.borrowIncentives && row.borrowIncentives.length > 0)
+        ? `"${row.borrowIncentives.map(ratioToPercentString).join(';')}"`
+        : '',
       // 格式化 meritSupplys：平铺所有数据，格式为 "APR1:selfApr1:link1:startDate1:endDate1:startBlock1:endBlock1:name1:message1;APR2:..."
       // message 格式为 "action1|description1;action2|description2"（多条用分号分隔，action和description用竖线分隔）
       (row.meritSupplys && row.meritSupplys.length > 0) 
         ? `"${row.meritSupplys.map(e => {
-            const parts = [e.apr.toString()];
-            if (e.selfApr !== undefined) parts.push(e.selfApr.toString());
+            const parts = [ratioToPercentString(e.apr)];
+            if (e.selfApr !== undefined) parts.push(ratioToPercentString(e.selfApr));
             parts.push(e.link, e.startDate, e.endDate);
             if (e.startBlock) parts.push(e.startBlock);
             if (e.endBlock) parts.push(e.endBlock);
@@ -744,8 +823,8 @@ function generateCSV(data: FormattedReserveData[]): string {
       // 格式化 meritBorrows：平铺所有数据，格式同上
       (row.meritBorrows && row.meritBorrows.length > 0) 
         ? `"${row.meritBorrows.map(e => {
-            const parts = [e.apr.toString()];
-            if (e.selfApr !== undefined) parts.push(e.selfApr.toString());
+            const parts = [ratioToPercentString(e.apr)];
+            if (e.selfApr !== undefined) parts.push(ratioToPercentString(e.selfApr));
             parts.push(e.link, e.startDate, e.endDate);
             if (e.startBlock) parts.push(e.startBlock);
             if (e.endBlock) parts.push(e.endBlock);
@@ -806,14 +885,26 @@ function generateCSV(data: FormattedReserveData[]): string {
       // Brevis Supplys：格式为 "APR1:link1:startDate1:endDate1:name1;APR2:link2:startDate2:endDate2:name2"
       (row.brevisSupplys && row.brevisSupplys.length > 0) 
         ? `"${row.brevisSupplys.map(c => {
-            const parts = [c.apr.toString(), c.link, c.startDate, c.endDate, c.name || ''];
+            const parts = [
+              ratioToPercentString(c.campaignApr),
+              c.link,
+              c.campaignStartedAt,
+              c.campaignEndedAt,
+              c.message || '',
+            ];
             return parts.join(':');
           }).join(';')}"` 
         : '',
       // Brevis Borrows：格式同上
       (row.brevisBorrows && row.brevisBorrows.length > 0) 
         ? `"${row.brevisBorrows.map(c => {
-            const parts = [c.apr.toString(), c.link, c.startDate, c.endDate, c.name || ''];
+            const parts = [
+              ratioToPercentString(c.campaignApr),
+              c.link,
+              c.campaignStartedAt,
+              c.campaignEndedAt,
+              c.message || '',
+            ];
             return parts.join(':');
           }).join(';')}"` 
         : ''
@@ -984,6 +1075,7 @@ async function fetchAaveMarkets(): Promise<void> {
     // 第一步：从 Aave 市场数据创建基础数据集
     logger.info('📊 Creating base dataset from Aave markets...');
     const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
+    const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
     logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
 
     // 并发获取 Merit、Merkl 和 Brevis 数据（它们之间没有依赖关系）
@@ -996,7 +1088,9 @@ async function fetchAaveMarkets(): Promise<void> {
       logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
       return {} as MeritDataIndex;
     });
-    const merklPromise = processMerklData().catch((error) => {
+    const merklPromise = processMerklData({
+      reserveTokenPriceByChainAndAddress,
+    }).catch((error) => {
       logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
       return { index: {} as MerklDataIndex } as MerklProcessedData;
     });
@@ -1192,6 +1286,7 @@ export async function fetchMarketsPayload(): Promise<MarketsPayload> {
   // 格式化数据
   logger.info('\n📊 Formatting market data...');
   const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
+  const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
   logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
 
   // 并发获取 Merit、Merkl 和 Brevis 数据
@@ -1201,7 +1296,9 @@ export async function fetchMarketsPayload(): Promise<MarketsPayload> {
     logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
     return {} as MeritDataIndex;
   });
-  const merklPromise = processMerklData().catch((error) => {
+  const merklPromise = processMerklData({
+    reserveTokenPriceByChainAndAddress,
+  }).catch((error) => {
     logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
     return { index: {} as MerklDataIndex } as MerklProcessedData;
   });

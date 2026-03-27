@@ -7,7 +7,8 @@
  */
 
 import { Request, Response } from 'express';
-import { getMarketsData } from '../services/marketsService.js';
+import { getMarketsData, type RuntimeReserveData } from '../services/marketsService.js';
+import { serializeMarketsReservesForApi } from '../services/marketsApiSerialize.js';
 import { MarketsResponse, MarketWithSpread } from '../types/index.js';
 import { logger } from '../logger.js';
 
@@ -33,7 +34,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
     }
 
     // Filter invalid entries (deficit already merged at write time)
-    const reserves: MarketWithSpread[] = payload.data.filter((item) => {
+    const filtered = payload.data.filter((item) => {
       return (
         item.marketName &&
         item.marketName.trim() !== '' &&
@@ -43,6 +44,8 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
         item.tokenSymbol.trim() !== ''
       );
     });
+
+    const reserves: MarketWithSpread[] = serializeMarketsReservesForApi(filtered as RuntimeReserveData[]);
 
     const response: MarketsResponse = {
       snapshot: {

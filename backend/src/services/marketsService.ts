@@ -7,8 +7,8 @@
  * - Startup warmup ensures data is available before server accepts requests
  * 
  * Architecture:
- * - Markets: fetched from Aave API every 1 minute
- * - On-chain data: fetched async every 5 minutes into separate cache (30-min TTL)
+ * - Markets: cron every 1 minute (see updateScheduler) calls refreshMarketsSnapshot()
+ * - On-chain data: separate cron every 1 minute at :10; per-pool cache TTL 30m (onchainCacheTtl)
  * - At merge time, on-chain cache is read (never blocks markets fetch)
  * - If on-chain data missing, fallback calculation for baseVariableBorrowRate
  */

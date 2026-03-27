@@ -30,6 +30,16 @@ export declare const getAaveRpcUrlsByChainId: (chainId: unknown) => string[];
 export declare const DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY: DefaultAaveTydroOpportunitiesQuery;
 
 export declare const resolveCacheTtlMs: (raw: unknown, fallbackMs?: number) => number;
+export declare const normalizeMerklCampaignTotalBudget: (campaign: unknown) => number | null;
+
+/**
+ * Wraps any fetch-like function (global `fetch`, node-fetch, etc.) with a shared
+ * process-wide concurrency pool. Callers that use node-fetch should cast:
+ * `createMerklConcurrencyLimitedFetch(fetch as typeof globalThis.fetch) as typeof fetch`.
+ */
+export declare function createMerklConcurrencyLimitedFetch(
+  fetchImpl?: typeof globalThis.fetch
+): typeof globalThis.fetch;
 
 export declare const fetchMerklOpportunitiesShortPage: (
   options: FetchMerklOpportunitiesShortPageOptions

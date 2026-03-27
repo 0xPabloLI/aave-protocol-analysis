@@ -49,8 +49,8 @@ aave/
 │   │   ├── routes/       # API routes
 │   │   └── middleware/   # Express middleware
 │   └── package.json      # Backend dependencies
-├── data/                 # Output data folder (git ignored)
-│   ├── runtime/          # Runtime-consumed snapshots
+├── data/                 # Output data folder (git ignored); API markets come from backend memory, not these files
+│   ├── runtime/          # Fetcher/runtime files (e.g. Merkl forecast lite)
 │   ├── debug/            # Debug/troubleshoot snapshots
 │   └── exports/          # CSV and export files
 ├── logs/                 # Log files folder (git ignored)
@@ -118,19 +118,16 @@ The server uses environment variables for configuration (see [AGENTS.md](AGENTS.
 
 ### API Endpoints
 
-The backend API server runs on `http://localhost:3001` by default. **8 endpoints** in total:
+The backend API server runs on `http://localhost:3001` by default. Public clients should rely on **4 URL paths / 3 logical endpoints**:
 
 | Method & Path | Description |
 |--------------|-------------|
 | `GET /health` | Health check with environment info |
 | `GET /api/health` | Same as `/health` (API namespace) |
-| `GET /api/markets` | All market data; includes `data`, `lastUpdated`, `isStale`, `updateInProgress`, **`tokenPrices`** (token prices only here) |
-| `GET /api/coingecko-categories` | CoinGecko categories (stablecoins, ETH-related) |
-| `GET /api/coingecko-fdv` | FDV data (CoinMarketCap primary, CoinGecko fallback) |
-| `GET /api/meta/side-data` | Low-frequency side-data meta payload (`coingecko-categories` + `coingecko-fdv`) |
-| `GET /api/campaigns/forecast-states` | Merkl campaign forecast states (optional `ids=...`) |
+| `GET /api/markets` | `markets-v2`: root `snapshot` + `reserves` (prices on `reserves[].tokenPrice`); cron-warmed memory snapshot, request does not trigger fetches |
+| `GET /api/meta/side-data` | Aggregated side-data payload (`categories` + `fdv` + `forecast`) |
 
-**Data freshness**: Only `GET /api/markets` triggers automatic market data refresh when stale (1-minute window). Other endpoints use their own cache/TTL. See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
+**Data freshness**: Public data endpoints use **cron-write / API-read-only**. `meta/side-data` still reads the same internal category/FDV/forecast caches, but the standalone public routes for those caches are no longer exposed. See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
 
 **Filter market derivation**: Clients should derive unique `{ marketName, chainName }` filter options from `GET /api/markets` response data. The backend no longer exposes a separate market-list endpoint for that UI concern.
 
@@ -142,10 +139,10 @@ Merkl opportunities are paginated upstream (default 20, max 100 per page). The s
 
 ## Output Files
 
-After successful execution, files are generated under `data/` subfolders:
+When you run the **root** data fetcher (`npm run dev` / `npm start` at repo root), files are generated under `data/` subfolders. The **backend API** does not read `aave-formatted-data.json`; it builds the same pipeline in memory via `fetchMarketsPayload()`.
 
-- `data/runtime/aave-formatted-data.json` - Formatted JSON data with all incentive information (backend `/api/markets` source)
-- `data/runtime/merkl-opportunity-meta-lite.json` - Forecast runtime-lite snapshot (campaign meta)
+- `data/runtime/aave-formatted-data.json` - Pruned runtime JSON (optional on-disk mirror of the pipeline; not the API backing store)
+- `data/runtime/merkl-opportunity-meta-lite.json` - Forecast runtime-lite snapshot (campaign meta; **read by backend** forecast path when present/fresh)
 - `data/runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
 - `data/debug/aave-all-markets-data.json` - Complete raw market data for all supported networks
 - `data/debug/brevis-raw-data.json` - Brevis Network raw activity/API debug snapshot
@@ -315,8 +312,8 @@ All log files are saved in the `logs/` directory:
 
 ### Data File Descriptions
 
-Generated data files are located under `data/` (paths relative to repo root):
-- `data/runtime/aave-formatted-data.json` - Formatted complete data (backend `/api/markets` source; includes all incentive information)
+When the root fetcher runs, data files are written under `data/` (paths relative to repo root). **`GET /api/markets` is served from the backend in-memory snapshot**, not from these files.
+- `data/runtime/aave-formatted-data.json` - Pruned formatted output from the root fetcher (optional artifact; not read by the API)
 - `data/runtime/merkl-opportunity-meta-lite.json` - Forecast campaign meta (runtime-lite)
 - `data/runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
 - `data/debug/aave-all-markets-data.json` - Raw Aave SDK market data
