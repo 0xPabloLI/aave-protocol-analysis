@@ -218,15 +218,25 @@ export async function resolveTokenPriceWithBackup({
 
   const promise = (async (): Promise<number | undefined> => {
     let resolvedPrice: number | undefined;
-    try {
-      const contractPrice = normalizedAddress
-        ? await fetchCoingeckoTokenPriceUsd(chainId, normalizedAddress)
-        : undefined;
-      const symbolPrice = await fetchCoingeckoCoinPriceBySymbolUsd(tokenSymbol);
-      resolvedPrice = contractPrice ?? symbolPrice;
-    } catch {
-      // Treat transient provider/network errors as a short-lived miss.
-      resolvedPrice = undefined;
+    let contractPrice: number | undefined;
+    if (normalizedAddress) {
+      try {
+        contractPrice = await fetchCoingeckoTokenPriceUsd(chainId, normalizedAddress);
+      } catch {
+        // Contract lookup errors should not block symbol fallback.
+        contractPrice = undefined;
+      }
+    }
+
+    if (contractPrice !== undefined) {
+      resolvedPrice = contractPrice;
+    } else {
+      try {
+        resolvedPrice = await fetchCoingeckoCoinPriceBySymbolUsd(tokenSymbol);
+      } catch {
+        // Treat transient provider/network errors as a short-lived miss.
+        resolvedPrice = undefined;
+      }
     }
 
     const cacheTtlMs =
