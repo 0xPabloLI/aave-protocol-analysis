@@ -7,6 +7,8 @@ import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
 import { merklFetchConfig } from './config.js';
 import {
+  type BaseCampaignBreakdown,
+  type CampaignGroup,
   createMerklConcurrencyLimitedFetch,
   fetchMerklOpportunitiesSnapshot,
   normalizeMerklCampaignTotalBudget,
@@ -82,11 +84,8 @@ async function fetchWithRetry(
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-export interface MerklCampaignBreakdown {
+export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   /** Annual yield ratio (upstream Merkl `campaign.apr` is percent). */
-  campaignApr: number;
-  campaignStartedAt: string;
-  campaignEndedAt: string;
   campaignId: string;
   whitelistOnly?: boolean;
   /** 见 `merklBreakdownUsesPointsIntensityFields`；为真且 `value` 可解析时 = value÷TVL×1000 */
@@ -104,12 +103,7 @@ export interface MerklCampaignBreakdown {
  * Merkl Opportunity 分组数据（用于 JSON 输出，避免重复）
  * 一个 opportunity 包含一个链接和多个 breakdowns
  */
-export interface MerklOpportunityGroup {
-  link: string; // Opportunity 链接
-  name?: string; // Opportunity 名称
-  message?: string; // Opportunity 描述
-  breakdowns: MerklCampaignBreakdown[]; // 该 opportunity 的所有 breakdowns
-}
+export interface MerklOpportunityGroup extends CampaignGroup<MerklCampaignBreakdown> {}
 
 // API 响应的完整类型（用于类型断言）
 export interface MerklOpportunity {

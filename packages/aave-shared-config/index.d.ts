@@ -20,6 +20,20 @@ export interface DefaultAaveTydroOpportunitiesQuery {
   itemsPerPage: number;
 }
 
+export interface BaseCampaignBreakdown {
+  campaignApr: number;
+  campaignStartedAt: string;
+  campaignEndedAt: string;
+  campaignId?: string;
+}
+
+export interface CampaignGroup<TBreakdown extends BaseCampaignBreakdown = BaseCampaignBreakdown> {
+  link: string;
+  name?: string;
+  message?: string;
+  breakdowns: TBreakdown[];
+}
+
 export declare const AAVE_RPC_URLS_BY_CHAIN_KEY: Readonly<Record<string, readonly string[]>>;
 export declare const AAVE_CHAIN_KEY_ALIASES: Readonly<Record<string, string>>;
 export declare const AAVE_CHAIN_ID_TO_RPC_KEY: Readonly<Record<number, string>>;

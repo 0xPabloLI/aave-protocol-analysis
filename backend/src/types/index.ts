@@ -1,5 +1,23 @@
 // 复用现有的 FormattedReserveData 类型定义
 // 注意：这个文件需要从主项目的 src/index.ts 中导出类型
+import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
+
+type MerklMarketBreakdown = BaseCampaignBreakdown & {
+  campaignId: string;
+  whitelistOnly?: boolean;
+  pointsPerThousandUsd?: number;
+  campaignType?: string;
+  totalBudget?: number;
+  aprCap?: number | null;
+  latestTvl?: number;
+  plannedDaily?: number;
+};
+
+type BrevisMarketBreakdown = BaseCampaignBreakdown & {
+  totalBudget?: number;
+  latestTvl?: number;
+  perUserRewardCapUsd?: number;
+};
 
 /** GET /api/markets 响应形状；收益率类数字为百分数（序列化层由比例 ×100）。 */
 export interface MarketWithSpread {
@@ -55,82 +73,11 @@ export interface MarketWithSpread {
     endDate: string;
     lastRoundRewardUsd?: number;
   }>;
-  merklSupplys?: Array<{
-    link: string;
-    name?: string;
-    message?: string;
-    breakdowns: Array<{
-      campaignApr: number;
-      campaignStartedAt: string;
-      campaignEndedAt: string;
-      campaignId: string;
-      whitelistOnly?: boolean;
-      pointsPerThousandUsd?: number;
-      campaignType?: string;
-      totalBudget?: number;
-      aprCap?: number | null;
-      latestTvl?: number;
-      plannedDaily?: number;
-    }>;
-  }>;
-  merklBorrows?: Array<{
-    link: string;
-    name?: string;
-    message?: string;
-    breakdowns: Array<{
-      campaignApr: number;
-      campaignStartedAt: string;
-      campaignEndedAt: string;
-      campaignId: string;
-      whitelistOnly?: boolean;
-      pointsPerThousandUsd?: number;
-      campaignType?: string;
-      totalBudget?: number;
-      aprCap?: number | null;
-      latestTvl?: number;
-      plannedDaily?: number;
-    }>;
-  }>;
-  merklHolds?: Array<{
-    link: string;
-    name?: string;
-    message?: string;
-    breakdowns: Array<{
-      campaignApr: number;
-      campaignStartedAt: string;
-      campaignEndedAt: string;
-      campaignId: string;
-      whitelistOnly?: boolean;
-      pointsPerThousandUsd?: number;
-      campaignType?: string;
-      totalBudget?: number;
-      aprCap?: number | null;
-      latestTvl?: number;
-      plannedDaily?: number;
-    }>;
-  }>;
-  brevisSupplys?: Array<{
-    link: string;
-    campaignApr: number;
-    campaignStartedAt: string;
-    campaignEndedAt: string;
-    message?: string;
-    totalBudget?: number;
-    latestTvl?: number;
-    perUserRewardCapUsd?: number;
-    campaignId?: string;
-  }>;
-  brevisBorrows?: Array<{
-    link: string;
-    campaignApr: number;
-    campaignStartedAt: string;
-    campaignEndedAt: string;
-    message?: string;
-    totalBudget?: number;
-    latestTvl?: number;
-    perUserRewardCapUsd?: number;
-    campaignId?: string;
-  }>;
+  merklSupplys?: CampaignGroup<MerklMarketBreakdown>[];
+  merklBorrows?: CampaignGroup<MerklMarketBreakdown>[];
+  merklHolds?: CampaignGroup<MerklMarketBreakdown>[];
+  brevisSupplys?: CampaignGroup<BrevisMarketBreakdown>[];
+  brevisBorrows?: CampaignGroup<BrevisMarketBreakdown>[];
 }
 
 export interface MarketsResponse {
