@@ -82,14 +82,14 @@ interface FormattedReserveData {
   utilizationPct?: number;
   aTokenAddress: string | null; // aToken address
   vTokenAddress: string | null; // variableDebtToken address
-  supplyApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
+  supplyApy: number | undefined; // APY 比例值（如 0.052 = 5.2%/年）；CSV 与 HTTP 展示再 ×100
   supplyDisabled?: boolean; // true when isFrozen, isPaused, or supplyCap is 1
   supplyCapUsd?: number; // 供应上限（USD）
-  borrowApy: number | undefined; // APY 百分比值（如 5.2 表示 5.2%）
+  borrowApy: number | undefined; // APY 比例值；CSV 与 GET /api/markets 为百分值
   borrowDisabled?: boolean; // true when borrowingState is DISABLED or borrowCap is 1
   borrowCapUsd?: number; // 借款上限（USD），与 supplyCapUsd 对称
-  supplyIncentives: number[]; // Protocol supply incentives 百分比值数组
-  borrowIncentives: number[]; // Protocol borrow incentives 百分比值数组
+  supplyIncentives: number[]; // Protocol supply incentives 比例值数组
+  borrowIncentives: number[]; // Protocol borrow incentives 比例值数组
   // Rate-input fields for manual APR calculation (raw strings for precision)
   decimals?: number;
   availableLiquidity?: string;
@@ -499,11 +499,10 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         const supplyCapUsdRaw = reserve.supplyInfo?.supplyCap?.usd;
         const supplyCapUsd = supplyCapUsdRaw ? parseFloat(supplyCapUsdRaw) : undefined;
         
-        // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
         const supplyApyValue = reserve.supplyInfo?.apy?.value;
         const supplyApy = supplyCapIsOne || !supplyApyValue
           ? undefined
-          : parseFloat(supplyApyValue) * 100;
+          : parseFloat(supplyApyValue);
         
         // 检查 borrowingState 是否为 "DISABLED"，如果是则表示该 token 不能被 borrow
         const isBorrowDisabledByState = reserve.borrowInfo?.borrowingState === "DISABLED";
@@ -517,10 +516,8 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         const borrowCapUsdRaw = reserve.borrowInfo?.borrowCap?.usd;
         const borrowCapUsd = borrowCapUsdRaw ? parseFloat(borrowCapUsdRaw) : undefined;
         
-        // 使用 value*100 转换为百分比值，不使用 formatted（会截断精度）
-        // 即使 disabled 也传递真实的 borrowApy（前端可能需要展示参考值）
         const borrowApyValue = reserve.borrowInfo?.apy?.value;
-        const borrowApy = borrowApyValue ? parseFloat(borrowApyValue) * 100 : undefined;
+        const borrowApy = borrowApyValue ? parseFloat(borrowApyValue) : undefined;
         
         // Rate-input fields for manual APR calculation (from Aave SDK)
         // All raw values are strings to preserve precision for on-chain math
@@ -533,23 +530,20 @@ function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
         const optimalUsageRate = reserve.borrowInfo?.optimalUsageRate?.raw ?? undefined;
         // Note: baseVariableBorrowRate is NOT available from Aave API
         
-        // 从 reserve.incentives 中提取 protocol supply 和 borrow incentives
-        // 使用 value*100 转换为百分比值数组
         const protocolSupplyIncentives: number[] = [];
         const protocolBorrowIncentives: number[] = [];
-        
+
         if (reserve.incentives && Array.isArray(reserve.incentives)) {
           reserve.incentives.forEach((incentive: any) => {
             if (incentive.__typename === 'AaveSupplyIncentive') {
               const aprValue = incentive.extraSupplyApr?.value || incentive.supplyApr?.value;
               if (aprValue) {
-                protocolSupplyIncentives.push(parseFloat(aprValue) * 100);
+                protocolSupplyIncentives.push(parseFloat(aprValue));
               }
             } else if (incentive.__typename === 'AaveBorrowIncentive') {
-              // AaveBorrowIncentive 可能使用 extraBorrowApr 或其他字段名
               const aprValue = incentive.extraBorrowApr?.value || incentive.borrowApr?.value;
               if (aprValue) {
-                protocolBorrowIncentives.push(parseFloat(aprValue) * 100);
+                protocolBorrowIncentives.push(parseFloat(aprValue));
               }
             }
           });
@@ -762,6 +756,10 @@ const tokenAliases: Record<string, string[]> = {
 };*/
 
 
+function ratioToPercentString(value: number): string {
+  return String(value * 100);
+}
+
 function generateCSV(data: FormattedReserveData[]): string {
   if (data.length === 0) return '';
 
@@ -796,16 +794,20 @@ function generateCSV(data: FormattedReserveData[]): string {
       `"${row.tokenName}"`,
       `"${row.tokenSymbol}"`,
       `"${row.tokenAddress}"`,
-      row.supplyApy !== undefined ? row.supplyApy.toString() : '',
-      row.borrowApy !== undefined ? row.borrowApy.toString() : '',
-      (row.supplyIncentives && row.supplyIncentives.length > 0) ? `"${row.supplyIncentives.join(';')}"` : '',
-      (row.borrowIncentives && row.borrowIncentives.length > 0) ? `"${row.borrowIncentives.join(';')}"` : '',
+      row.supplyApy !== undefined ? ratioToPercentString(row.supplyApy) : '',
+      row.borrowApy !== undefined ? ratioToPercentString(row.borrowApy) : '',
+      (row.supplyIncentives && row.supplyIncentives.length > 0)
+        ? `"${row.supplyIncentives.map(ratioToPercentString).join(';')}"`
+        : '',
+      (row.borrowIncentives && row.borrowIncentives.length > 0)
+        ? `"${row.borrowIncentives.map(ratioToPercentString).join(';')}"`
+        : '',
       // 格式化 meritSupplys：平铺所有数据，格式为 "APR1:selfApr1:link1:startDate1:endDate1:startBlock1:endBlock1:name1:message1;APR2:..."
       // message 格式为 "action1|description1;action2|description2"（多条用分号分隔，action和description用竖线分隔）
       (row.meritSupplys && row.meritSupplys.length > 0) 
         ? `"${row.meritSupplys.map(e => {
-            const parts = [e.apr.toString()];
-            if (e.selfApr !== undefined) parts.push(e.selfApr.toString());
+            const parts = [ratioToPercentString(e.apr)];
+            if (e.selfApr !== undefined) parts.push(ratioToPercentString(e.selfApr));
             parts.push(e.link, e.startDate, e.endDate);
             if (e.startBlock) parts.push(e.startBlock);
             if (e.endBlock) parts.push(e.endBlock);
@@ -821,8 +823,8 @@ function generateCSV(data: FormattedReserveData[]): string {
       // 格式化 meritBorrows：平铺所有数据，格式同上
       (row.meritBorrows && row.meritBorrows.length > 0) 
         ? `"${row.meritBorrows.map(e => {
-            const parts = [e.apr.toString()];
-            if (e.selfApr !== undefined) parts.push(e.selfApr.toString());
+            const parts = [ratioToPercentString(e.apr)];
+            if (e.selfApr !== undefined) parts.push(ratioToPercentString(e.selfApr));
             parts.push(e.link, e.startDate, e.endDate);
             if (e.startBlock) parts.push(e.startBlock);
             if (e.endBlock) parts.push(e.endBlock);
@@ -884,7 +886,7 @@ function generateCSV(data: FormattedReserveData[]): string {
       (row.brevisSupplys && row.brevisSupplys.length > 0) 
         ? `"${row.brevisSupplys.map(c => {
             const parts = [
-              c.campaignApr.toString(),
+              ratioToPercentString(c.campaignApr),
               c.link,
               c.campaignStartedAt,
               c.campaignEndedAt,
@@ -897,7 +899,7 @@ function generateCSV(data: FormattedReserveData[]): string {
       (row.brevisBorrows && row.brevisBorrows.length > 0) 
         ? `"${row.brevisBorrows.map(c => {
             const parts = [
-              c.campaignApr.toString(),
+              ratioToPercentString(c.campaignApr),
               c.link,
               c.campaignStartedAt,
               c.campaignEndedAt,

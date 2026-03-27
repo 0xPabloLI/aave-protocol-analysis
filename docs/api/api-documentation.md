@@ -402,7 +402,7 @@ Merkl 返回里历史上存在两套命名：
 | **`totalBudget`** | `extractNormalizedTotalBudget`：`amount` 按 `decimals` 做单位换算（大整数 → 可读数量）；若存在 **`rewardToken.price` > 0** 则乘以价格得到 **USD 口径**，否则为代币数量口径。 |
 | **`distributedSoFar`** | `estimateDistributedSoFar`：仅用 **`dailyRewardsRecords`**，在 `[start, min(now,end)]` 上按阶梯速率对「日发放率」做**时间积分**；再与 `totalBudget` 取 `min`。Merkl 不直接返回该标量。 |
 | **`latestTvl`** | 优先用 opportunities / lite 中的 **`tvl`**；否则从 **`tvlRecords`** 按时间排序取**最后一条**的 `total`。 |
-| **`aprCap`** | `extractMaxApr` + `normalizeApr`：从 campaign 对象多路径读取 APR；若值 `> 1` 则按百分数除以 100。仅 `MAX_REWARD_*` / `FIX_REWARD_*` 类型需要。 |
+| **`aprCap`** | `extractMaxApr`：仅从 `distributionSettings.apr` 等多路径读取（年化**比例**）；不用顶层 `campaign.apr`（该字段为百分数，语义是活动 APR）。仅 `MAX_REWARD_*` / `FIX_REWARD_*` 需要。`GET /api/markets` 对客户端输出百分值（×100）。 |
 | **`plannedDaily` / `requiredDaily` / `remainingBudget` / `remainingDays`** | `buildForecastState`：`plannedDaily = totalBudget / totalDays`；`requiredDaily` 在 `DUTCH_AUCTION` 时等于 `plannedDaily`，否则为 `remainingBudget / remainingDays`；`remainingBudget = totalBudget - distributedSoFar`。 |
 | **metrics 缓存 TTL** | **按 campaign 独立**：`metricsCache` 以 `campaignId` 为键；每个 campaign 用自己的 `dailyRewardsRecords` 时间戳间隔**中位数**作 cadence，`TTL ≈ cadence / 4` 并夹在 `[merklMetricsMin, merklMetricsMax]`（默认 **10 分钟～6 小时**）。**不同 campaign 的刷新间隔可以不同**；与业务 forecast 公式无关，仅决定何时再请求 `GET /metrics`。 |
 
@@ -722,8 +722,8 @@ Brevis 对外 contract 已收口到下面这组字段：
 
 ### 字段类型说明
 
-1. **APY/APR 格式**:
-   - `supplyApy`: 数值格式的百分比（如 `2.07` 表示 2.07%），如果为 `undefined` 则在 JSON 中不出现
+1. **APY/APR 格式**（`GET /api/markets` 响应）：均为**百分数值**（如 `2.07` = 2.07%）。服务端内存快照与 cron 合并路径使用**年化比例**（如 `0.0207`），仅在序列化响应时 ×100。
+   - `supplyApy`: 如果为 `undefined` 则在 JSON 中不出现
    - `borrowApy`: 数值格式的百分比（如 `3.97` 表示 3.97%），即使借贷被禁用也会返回真实值
    - `borrowDisabled`: 布尔值，仅当借贷被禁用时出现且为 `true`（节约带宽）
    - `supplyIncentives` / `borrowIncentives`: 数值数组，每个元素为百分比数值（如 `[0.5, 1.2]` 表示 0.5% 和 1.2%），如果为空数组则在 JSON 中不出现
@@ -734,8 +734,8 @@ Brevis 对外 contract 已收口到下面这组字段：
      - `startDate` / `endDate`: 活动时间范围
      - `startBlock` / `endBlock`: 可选的区块范围
      - `requiredBorrowTokens` / `requiredSupplyTokens`: 可选的条件要求 token 列表
-   - `merklSupplys` / `merklBorrows` / `merklHolds`: 对象数组，每个对象包含 `link`、`name`（可选）、`message`（可选）和 `breakdowns` 数组
-  - `brevisSupplys` / `brevisBorrows`: 对象数组，字段为 `link`、`campaignApr`、`campaignStartedAt`、`campaignEndedAt`，以及可选字段 `message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`、`campaignId`
+   - `merklSupplys` / `merklBorrows` / `merklHolds`: 对象数组，每个对象包含 `link`、`name`（可选）、`message`（可选）和 `breakdowns` 数组；`breakdowns[].campaignApr` / `aprCap` 在 JSON 中亦为**百分数值**（与 `supplyApy` 一致）
+   - `brevisSupplys` / `brevisBorrows`: 对象数组，字段为 `link`、`campaignApr`（百分数）、`campaignStartedAt`、`campaignEndedAt`，以及可选字段 `message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`、`campaignId`
 
 2. **可选字段和空值处理**:
    - 标记为 `?` 的字段为可选字段

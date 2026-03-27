@@ -141,22 +141,16 @@ const getAtPath = (obj: unknown, path: string[]): unknown => {
   return current;
 };
 
-const normalizeApr = (raw: number): number => {
-  if (!Number.isFinite(raw) || raw <= 0) return 0;
-  return raw > 1 ? raw / 100 : raw;
-};
-
 const extractMaxApr = (campaign: unknown): number | null => {
   const directCandidates: Array<string[]> = [
     ['params', 'distributionMethodParameters', 'distributionSettings', 'apr'],
     ['distributionMethodParameters', 'distributionSettings', 'apr'],
     ['distributionSettings', 'apr'],
-    ['apr'],
   ];
 
   for (const path of directCandidates) {
     const value = toNumber(getAtPath(campaign, path));
-    if (value !== null) return normalizeApr(value);
+    if (value !== null && value > 0) return value;
   }
 
   return null;

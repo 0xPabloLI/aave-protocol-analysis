@@ -1,6 +1,7 @@
 // 复用现有的 FormattedReserveData 类型定义
 // 注意：这个文件需要从主项目的 src/index.ts 中导出类型
 
+/** GET /api/markets 响应形状；收益率类数字为百分数（序列化层由比例 ×100）。 */
 export interface MarketWithSpread {
   reserveId: string;
   marketName: string;

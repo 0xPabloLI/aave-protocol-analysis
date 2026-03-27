@@ -7,7 +7,7 @@ import { pruneBrevisCampaignForRuntime } from '../../src/brevis-api.ts';
 test('BrevisCampaignItem API-facing shape omits legacy raw reward field names', () => {
   const item: BrevisCampaignItem = {
     link: 'https://incentra.brevis.network/campaign/',
-    campaignApr: 2.4,
+    campaignApr: 0.024,
     campaignStartedAt: '2025-08-13T13:00:00.000Z',
     campaignEndedAt: '2026-08-08T00:00:00.000Z',
     campaignId: '1754995104',
@@ -23,7 +23,7 @@ test('BrevisCampaignItem API-facing shape omits legacy raw reward field names', 
 test('pruneBrevisCampaignForRuntime removes transient budget parse fields', () => {
   const withBudget: BrevisCampaignItem = {
     link: 'x',
-    campaignApr: 1,
+    campaignApr: 0.01,
     campaignStartedAt: '2020-01-01T00:00:00.000Z',
     campaignEndedAt: '2030-01-01T00:00:00.000Z',
     budgetNormalizedAmount: 1_000_000,

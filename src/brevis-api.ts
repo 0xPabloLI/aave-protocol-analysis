@@ -20,6 +20,7 @@ import { logger } from './logger.js';
 // Brevis Campaign Item（API 对外不含 budget*；gRPC 拉取后暂挂 budget*，`fetchBrevisAprs` 算完 totalBudget 后剥离）
 export interface BrevisCampaignItem {
   link: string; // Campaign URL
+  /** Annual yield ratio (gRPC `protocol.apr`). GET /api/markets multiplies by 100 for display. */
   campaignApr: number;
   campaignStartedAt: string;
   campaignEndedAt: string;
@@ -606,11 +607,8 @@ export class BrevisApiClient {
               ? `${this.frontendUrl}/campaign/?pool_id=${protocol.id}&type=${type}&chainId=${protocol.chainId}`
               : '';
 
-            // 使用 protocol.apr（从 getAllProtocolsList 返回的 protocol 对象）
-            // 注意：不使用 response.protocol.apr（来自 getAllProtocolDetailFromGrpc），
-            // 因为两个接口返回的 APR 值可能不同（response.protocol.apr 可能不准确或含义不同）
-            // protocol.apr 是小数形式（如 0.024 表示 2.4%），需要 * 100 转换为百分比
-            const apr = (protocol?.apr || 0) * 100;
+            // protocol.apr 为年化比例（如 0.024 = 2.4%/年）；与 Aave/Merkl 内存口径一致
+            const apr = protocol?.apr || 0;
             const endTime = config?.end || 0;
             const now = Math.floor(Date.now() / 1000);
 

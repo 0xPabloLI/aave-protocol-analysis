@@ -83,6 +83,7 @@ async function fetchWithRetry(
 }
 
 export interface MerklCampaignBreakdown {
+  /** Annual yield ratio (upstream Merkl `campaign.apr` is percent). */
   campaignApr: number;
   campaignStartedAt: string;
   campaignEndedAt: string;
@@ -93,6 +94,7 @@ export interface MerklCampaignBreakdown {
   // Opportunity-only forecast fields (no metrics dependency, refreshes with markets)
   campaignType?: ForecastCampaignTypeLite;
   totalBudget?: number;
+  /** Annual yield cap as ratio from `distributionSettings.apr`. */
   aprCap?: number | null;
   latestTvl?: number;
   plannedDaily?: number;
@@ -170,6 +172,7 @@ export interface MerklCampaignDetails {
   startedAt: string;
   endedAt: string;
   id: string;
+  /** Annual yield ratio; upstream `campaign.apr` is percent → divided by 100 when cached. */
   apr: number;
   whitelistOnly: boolean;
 }
@@ -372,11 +375,6 @@ const toFiniteNumberForForecast = (value: unknown): number | null => {
   return null;
 };
 
-const normalizeAprForForecast = (raw: number): number => {
-  if (!Number.isFinite(raw) || raw <= 0) return 0;
-  return raw > 1 ? raw / 100 : raw;
-};
-
 interface ForecastFieldsFlat {
   campaignType: ForecastCampaignTypeLite;
   totalBudget: number;
@@ -493,7 +491,7 @@ const buildForecastFieldsFromOpportunity = async (
     const rawApr = snapshot.params?.distributionMethodParameters?.distributionSettings?.apr;
     const aprValue = toFiniteNumberForForecast(rawApr);
     if (aprValue !== null && aprValue > 0) {
-      aprCap = normalizeAprForForecast(aprValue);
+      aprCap = aprValue;
     }
   }
 
@@ -551,11 +549,12 @@ export async function fetchMerklCampaignDetails(campaignId: string): Promise<Mer
       new Date(campaign.endTimestamp * 1000).toISOString() : 
       '';
     
+    const aprPercent = Number(campaign.apr || 0);
     return {
       startedAt,
       endedAt,
       id: campaignId,
-      apr: campaign.apr || 0,
+      apr: aprPercent / 100,
       whitelistOnly: isCampaignWhitelistOnly(campaign),
     };
   } catch (error) {
@@ -691,7 +690,7 @@ export async function processMerklData(
         startedAt: toIsoFromUnixLike(campaign.startTimestamp),
         endedAt: toIsoFromUnixLike(campaign.endTimestamp),
         id,
-        apr: Number(campaign.apr || 0),
+        apr: Number(campaign.apr || 0) / 100,
         whitelistOnly: isCampaignWhitelistOnly(campaign),
       });
     });
@@ -974,7 +973,7 @@ export function formatMerklBreakdown(breakdowns: Array<MerklCampaignBreakdown & 
         hour12: true
       });
     }
-    return `${b.campaignApr}% (${startDate} - ${endDate}, ${b.campaignId})`;
+    return `${b.campaignApr * 100}% (${startDate} - ${endDate}, ${b.campaignId})`;
   };
   
   // 构建分组后的字符串

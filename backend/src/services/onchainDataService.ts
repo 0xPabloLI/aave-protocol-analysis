@@ -308,13 +308,14 @@ const RAY = BigInt('1000000000000000000000000000'); // 1e27
 const SECONDS_PER_YEAR = 365 * 24 * 60 * 60;
 
 /**
- * Convert SDK borrow APY (%) to APR in RAY using the inverse of chain per-second compounding.
+ * Convert borrow APY (annual yield as ratio, e.g. 0.052 = 5.2%) to APR in RAY using the inverse
+ * of chain per-second compounding.
  * On-chain: ratePerSecond = rateRay/RAY / SECONDS_PER_YEAR; index compounds as
  * (1 + ratePerSecond)^exp over exp seconds, so 1+APY = (1 + APR/SECONDS_PER_YEAR)^SECONDS_PER_YEAR.
  * Hence APR = SECONDS_PER_YEAR * ((1+APY)^(1/SECONDS_PER_YEAR) - 1).
  */
-function apyPercentToAprRay(apyPercent: number): bigint {
-  const apyDecimal = apyPercent / 100;
+function apyRatioToAprRay(apyRatio: number): bigint {
+  const apyDecimal = apyRatio;
   if (!Number.isFinite(apyDecimal) || apyDecimal <= -1) return 0n;
   const onePlusApy = 1 + apyDecimal;
   const aprDecimal =
@@ -328,7 +329,7 @@ function apyPercentToAprRay(apyPercent: number): bigint {
  * Used when RPC data is unavailable.
  *
  * Inputs:
- * - borrowApyPercent: SDK borrow APY (%). Converted to APR in RAY via inverse of per-second compounding: APR = SECONDS_PER_YEAR*((1+APY)^(1/SECONDS_PER_YEAR)-1).
+ * - borrowApyRatio: borrow APY as annual yield ratio (e.g. 0.052). Converted to APR in RAY via inverse of per-second compounding.
  * - utilizationPct: borrow usage in % = totalDebt / (availableLiquidity + totalDebt). Same as chain; deficit is not included.
  * - This function does not use reserve size; only utilization and rate params. Uses this reserve's slopes/optimal (same market).
  *
@@ -340,17 +341,17 @@ function apyPercentToAprRay(apyPercent: number): bigint {
  *     variableBorrowRate = baseRate + slope1 + slope2 * excessRatio
  */
 export function calculateBaseRateFallback(
-  borrowApyPercent: number | null | undefined,
+  borrowApyRatio: number | null | undefined,
   utilizationPct: number | null | undefined,
   optimalUsageRateRay: string | undefined,
   variableRateSlope1Ray: string | undefined,
   variableRateSlope2Ray?: string
 ): string | null {
-  if (borrowApyPercent === null || borrowApyPercent === undefined) {
+  if (borrowApyRatio === null || borrowApyRatio === undefined) {
     return null;
   }
 
-  const borrowRateRay = apyPercentToAprRay(borrowApyPercent);
+  const borrowRateRay = apyRatioToAprRay(borrowApyRatio);
 
   if (
     utilizationPct !== null &&
