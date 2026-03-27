@@ -34,8 +34,11 @@ export interface BrevisCampaignItem {
   budgetTokenSymbol?: string;
 }
 
-/** 去掉 enrich 前暂存的预算解析字段，避免进入 runtime/API/CSV */
-export function stripBrevisBudgetParseFields(campaign: BrevisCampaignItem): BrevisCampaignItem {
+/**
+ * 去掉 Brevis campaign 上仅供 enrich 的预算解析字段，使对象符合对外 / runtime 形状。
+ * 在 `fetchBrevisAprs` 中于算出 `totalBudget` 后调用；命名与 `pruneMeritEntryForRuntime` 等一致。
+ */
+export function pruneBrevisCampaignForRuntime(campaign: BrevisCampaignItem): BrevisCampaignItem {
   const { budgetNormalizedAmount: _n, budgetTokenSymbol: _s, ...rest } = campaign;
   return rest;
 }

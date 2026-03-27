@@ -10,7 +10,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
-import { brevisApi, stripBrevisBudgetParseFields } from './brevis-api.js';
+import { brevisApi, pruneBrevisCampaignForRuntime } from './brevis-api.js';
 import { resolveUsdPriceWithPriority } from './token-price-resolver.js';
 import {
   MerklCampaignBreakdown,
@@ -396,7 +396,7 @@ async function fetchBrevisAprs(
       const enrichCampaignUsd = async (campaign: BrevisCampaignItem): Promise<BrevisCampaignItem> => {
         const normalizedAmount = toFiniteNumber(campaign.budgetNormalizedAmount);
         if (normalizedAmount === null || normalizedAmount < 0) {
-          return stripBrevisBudgetParseFields(campaign);
+          return pruneBrevisCampaignForRuntime(campaign);
         }
 
         const reservePriceKey = `${chainId}:${rewardTokenAddress}`;
@@ -411,12 +411,12 @@ async function fetchBrevisAprs(
         brevisPriceSourceStats[resolved.source] += 1;
 
         if (resolved.price !== undefined) {
-          return stripBrevisBudgetParseFields({
+          return pruneBrevisCampaignForRuntime({
             ...campaign,
             totalBudget: normalizedAmount * resolved.price,
           });
         }
-        return stripBrevisBudgetParseFields(campaign);
+        return pruneBrevisCampaignForRuntime(campaign);
       };
 
       campaigns.brevisSupplys = await Promise.all(campaigns.brevisSupplys.map((c) => enrichCampaignUsd(c)));

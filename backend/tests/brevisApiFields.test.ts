@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { BrevisCampaignItem } from '../../src/brevis-api.ts';
-import { stripBrevisBudgetParseFields } from '../../src/brevis-api.ts';
+import { pruneBrevisCampaignForRuntime } from '../../src/brevis-api.ts';
 
 test('BrevisCampaignItem API-facing shape omits legacy raw reward field names', () => {
   const item: BrevisCampaignItem = {
@@ -20,7 +20,7 @@ test('BrevisCampaignItem API-facing shape omits legacy raw reward field names', 
   assert.equal('totalRewardTokenSymbol' in item, false);
 });
 
-test('stripBrevisBudgetParseFields removes transient budget parse fields', () => {
+test('pruneBrevisCampaignForRuntime removes transient budget parse fields', () => {
   const withBudget: BrevisCampaignItem = {
     link: 'x',
     campaignApr: 1,
@@ -30,9 +30,9 @@ test('stripBrevisBudgetParseFields removes transient budget parse fields', () =>
     budgetTokenSymbol: 'USDC',
     totalBudget: 999,
   };
-  const stripped = stripBrevisBudgetParseFields(withBudget);
-  assert.equal('budgetNormalizedAmount' in stripped, false);
-  assert.equal('budgetTokenSymbol' in stripped, false);
-  assert.equal(stripped.totalBudget, 999);
-  assert.equal(stripped.link, 'x');
+  const pruned = pruneBrevisCampaignForRuntime(withBudget);
+  assert.equal('budgetNormalizedAmount' in pruned, false);
+  assert.equal('budgetTokenSymbol' in pruned, false);
+  assert.equal(pruned.totalBudget, 999);
+  assert.equal(pruned.link, 'x');
 });
