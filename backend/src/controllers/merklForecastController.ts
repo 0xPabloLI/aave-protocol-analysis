@@ -1,7 +1,6 @@
 import { FORECAST_CACHE_TTL_MS, getMerklForecastState } from '../services/merklForecastService.js';
-import { getMarketsSnapshot } from '../services/marketsService.js';
+import { getMarketsSnapshot, type RuntimeReserveData } from '../services/marketsService.js';
 import { logger } from '../logger.js';
-import type { MarketWithSpread } from '../types/index.js';
 
 // Only metrics-dependent fields (require Merkl metrics API / dailyRewardsRecords).
 // Opportunity-only fields (campaignType, totalBudget, aprCap, latestTvl, plannedDaily)
@@ -21,7 +20,8 @@ export interface ForecastSnapshot {
   staleTimeMs: number;
 }
 
-const collectCampaignIdsFromMarkets = (markets: MarketWithSpread[]): string[] => {
+/** In-memory/cron snapshot reserves (`RuntimeReserveData`); yield fields are ratios, not GET /api/markets percents. */
+const collectCampaignIdsFromMarkets = (markets: RuntimeReserveData[]): string[] => {
   const ids = new Set<string>();
   for (const market of markets) {
     for (const group of [...(market.merklSupplys ?? []), ...(market.merklBorrows ?? []), ...(market.merklHolds ?? [])]) {
