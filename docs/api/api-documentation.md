@@ -4,6 +4,8 @@
 
 本文档描述了 Aave 市场数据服务的 API 接口和数据格式。服务提供 Aave V3 协议的市场数据，包括基础 APY、协议激励、Merit APR、Merkl APR 和 Brevis APR 等激励信息。
 
+**相关**：Brevis Incentra 非核心参考（已删 client API、type/status 全表、REST 补证）见 [brevis-supplement.md](./brevis-supplement.md)。
+
 ## 基础信息
 
 - **服务地址**: `http://localhost:3001` (开发环境)
@@ -684,7 +686,7 @@ Brevis 对外 contract 已收口到下面这组字段：
 
 补充说明：
 - 对外已不再暴露旧基础字段：`apr`、`startDate`、`endDate`、`name`。
-- 对外 Brevis 条目不携带原始预算解析输入（例如 `totalRewardAmount`、`totalRewardTokenSymbol`、`rewardAddressType`）；`totalBudget` 由 fetcher 在合并阶段用 `reserve.tokenPrice` 等价格源解析后写入。调试快照 `data/debug/brevis-raw-data.json` 顶层另含 `rewardBudgetHintsByCampaignId`（按 `campaignId` 索引），便于对照上游 gRPC 与 USD 换算。
+- 对外 Brevis 条目不携带原始预算解析输入（例如 `totalRewardAmount`、`totalRewardTokenSymbol`），也不暴露 gRPC enrich 用的 `budgetNormalizedAmount` / `budgetTokenSymbol`（仅在拉取～`fetchBrevisAprs` 算 `totalBudget` 之间存在，随后剥离）。`totalBudget` 由 fetcher 用 `reserve.tokenPrice` 等价格源解析后写入。调试快照 `data/debug/brevis-raw-data.json` 仍含 `rawProtocolsList` / `rawProtocolDetails` 便于对照上游。仅含奖励代币 `addr` 的活动会进入索引并与 reserve 按 `chainId-token` 合并。
 - 前端按同 reserve + 同 `campaignId` 识别 supply/borrow 是否为同一个 campaign；若 canonical 字段不一致，则视为脏数据并跳过 shared-cap simulation。
 
 #### Brevis 数据源对比（gRPC vs REST `/sdk/v1/aaveCampaigns`）
@@ -700,81 +702,9 @@ Brevis 对外 contract 已收口到下面这组字段：
 - 在当前阶段，`/sdk/v1/aaveCampaigns` 不能直接替代项目中的 gRPC Aave 拉取路径。
 - 建议策略：继续以 gRPC 为主源，REST 作为旁路探测与后续切换候选。
 
-#### Brevis type code（证据分级：官方文档 / 外部接口实测 / 项目代码映射）
+#### Brevis 延伸阅读
 
-> Source: Incentra docs `Get Campaigns` / 各协议 campaign API / reward batch API（见文末链接）。
-
-| Type code | 语义 | 证据等级 | 证据来源 |
-|---|---|---|---|
-| `1` | Liquidity campaign (Uniswap v3) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `2` | Liquidity campaign (Uniswap v4) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `3` | Liquidity campaign (PancakeSwap v3) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `4` | Liquidity campaign (PancakeSwap v4) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `5` | Liquidity campaign (QuickSwap v3) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `6` | Liquidity campaign (KoalaSwap) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `8` | Liquidity campaign (Pancake v4 CL) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `9` | Liquidity campaign (Pancake v4 BIN) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `1001` | Token holding campaign | 官方文档 | Incentra docs: reward batch APIs (`types`) |
-| `2001` | Euler borrow action | 官方文档 | Incentra docs: Euler campaigns (`action`) |
-| `2002` | Euler lend action | 官方文档 | Incentra docs: Euler campaigns (`action`) |
-| `5001` | Aave lend action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
-| `5002` | Aave borrow action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
-| `5003` | Aave lend_net action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
-| `6001` | Morpho lend action | 官方文档 | Incentra docs: Morpho campaigns (`action`) |
-| `3001` | Aave campaign（当前项目实测为 both） | 外部接口实测 + 项目代码映射 | `data/debug/brevis-raw-data.json` + `src/brevis-api.ts` (`mapActionType`) |
-
-本项目当前 `/api/markets` 的 Brevis 解析逻辑中，`actionType` 映射为：
-
-- `2002 -> supply`
-- `2001 -> borrow`
-- `3001 -> both`
-
-当前实现未将 `5001/5002/5003` 直接映射到 `/api/markets` 的 Brevis actionType；这三类目前主要出现在官方 REST `aaveCampaigns` 文档语义中。
-
-补充说明（统一口径）：
-
-- 对官方 SDK 文档：Aave `action` 定义为 `5001/5002/5003`。
-- 对本项目当前抓取路径（`GetAllProtocolDetail` + 运行时数据）：Aave 样本中可见 `type=3001`，并在代码中映射为 `both`（即不再拆分成独立 lend/borrow code）。
-
-官方文档入口：
-- `https://incentra-docs.brevis.network`
-- `https://incentra-docs.brevis.network/developer-sdk/get-campaigns`
-- `https://incentra-docs.brevis.network/print.html`
-
-#### Brevis campaign status code（证据分级：官方文档 / 外部接口实测 / 项目代码映射）
-
-| Status code | 标签 | 证据等级 | 证据来源 |
-|---|---|---|---|
-| `1` | `DEPLOYING` | 定向补证未观察到活样本 + 项目代码映射 | 见下文「定向补证」；`mapStatusLabel` |
-| `2` | `CREATING_FAILED` | 外部接口实测 + 项目代码映射（暂无官方数字佐证） | Brevis REST `/sdk/v1/{liquidityCampaigns,tokenholdingCampaigns,eulerCampaigns}` + `mapStatusLabel` |
-| `3` | `INACTIVE` | 官方文档 + 项目代码映射 | Incentra docs + `mapStatusLabel` |
-| `4` | `ACTIVE` | 官方文档 + 项目代码映射 | Incentra docs + `mapStatusLabel` |
-| `5` | `ENDED` | 官方文档 + 项目代码映射 | Incentra docs + `mapStatusLabel` |
-| `6` | `DEACTIVATED` | 定向补证未观察到活样本 + 项目代码映射 | 见下文「定向补证」；官方仅列标签未给数字；`mapStatusLabel` |
-
-补充说明：
-
-- Incentra 文档在 rewards batch API 中明确给出 `INACTIVE=3`、`ACTIVE=4`、`ENDED=5`。
-- 其余状态标签（`DEPLOYING`、`CREATING_FAILED`、`DEACTIVATED`）在官方文档中有列举，但未在同一处统一给出数字；本项目目前按 `mapStatusLabel` 的映射处理。
-- 2026-03-26 外部接口补证：`status=2` 在 `liquidityCampaigns` / `tokenholdingCampaigns` / `eulerCampaigns` 可返回非空样本，且响应标签为 `CREATING_FAILED`。
-
-##### 定向补证（`status=1` DEPLOYING / `status=6` DEACTIVATED）
-
-方法（对生产 host `incentra-prd.brevis.network`）：
-
-1. **按状态过滤**：`POST /sdk/v1/{liquidityCampaigns,tokenholdingCampaigns,eulerCampaigns}`，body 含 `"status":[1]` 或 `"status":[6]`，其余 filter 置空；再追加 `chain_id: [1,59144,42161,10,8453,88811]` 复测一轮。
-2. **全量去重**：同上三端点在**不传 `status` 约束**时拉全表，对返回的 `campaigns[].status` 字符串去重。
-
-结果：
-
-- `status=1` 与 `status=6`：两轮请求下 **`campaigns` 均为空数组**（计数 0），**未拿到**带 `DEPLOYING` / `DEACTIVATED` 标签的活样本。
-- 全量去重：REST 侧仅观察到 `ACTIVE`、`CREATING_FAILED`、`ENDED`（**未出现** `DEPLOYING`、`DEACTIVATED` 字符串）。
-- gRPC 调试快照 `data/debug/brevis-raw-data.json`：当前样本里 **campaign 级** `campaign.status` 仅为 `4`；协议行上的 **`protocolStatus` 为 4 或 5**（与 campaign `status` 不同字段，勿混用）。
-- 链上仓库 [brevis-network/incentra-contracts](https://github.com/brevis-network/incentra-contracts) 的 Solidity 接口**未暴露**与后端 gRPC 一致的数字枚举定义，**不能**作为 `1/2/6` 数字含义的链上佐证。
-
-结论：`1` / `6` 仍**仅**能依赖 `mapStatusLabel` 的约定映射；若日后 raw 或外部 API 出现新数值，按维护约定更新本表与映射。
-
-维护约定：当 `data/debug/brevis-raw-data.json` 出现新的 `type` 或 `status` 数值时，必须在本节同步更新 type/status 对照表（并同时更新 `src/brevis-api.ts` 映射逻辑，如有需要）。
+已删除的按-pool 客户端 API、Incentra **type / status 全表**、REST 补证笔记与维护约定见 **[brevis-supplement.md](./brevis-supplement.md)**，避免本文过长。
 
 ### 4. 推荐的对外 canonical 命名
 

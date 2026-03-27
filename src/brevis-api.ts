@@ -14,32 +14,10 @@ import { logger } from './logger.js';
  * - Action 类型（用于区分 supply/borrow/both）
  * - Campaign 链接
  * - Campaign 描述信息（message）
+ *
+ * 按单个 pool 调试用的旧 client 形状与解析逻辑已迁出代码，见 `docs/api/brevis-supplement.md`。
  */
-export interface BrevisCampaignInfo {
-  chainId: number;
-  poolAddress: string; // pool_id from URL
-  tokenAddress: string | null; // token address if available
-  action: number; // campaign type (e.g. 2001/2002/3001)
-  actionType: 'supply' | 'borrow' | 'both' | 'unknown';
-  campaignId: string;
-  campaignName: string;
-  startTime: number; // Unix timestamp
-  endTime: number; // Unix timestamp
-  apr: number; // APR as decimal (e.g., 0.024 for 2.4%)
-  link: string; // Campaign URL
-  message: string; // Campaign description/message
-  status: string; // Campaign status (string label)
-  rewardInfo?: {
-    tokenAddress: string;
-    tokenSymbol: string;
-    rewardAmt: string;
-    rewardUsdPrice: string;
-    apr: number;
-    tvl: number;
-  };
-}
-
-// Brevis Campaign Item（用于 FormattedReserveData / API：仅对外字段，不含中间计价输入）
+// Brevis Campaign Item（API 对外不含 budget*；gRPC 拉取后暂挂 budget*，`fetchBrevisAprs` 算完 totalBudget 后剥离）
 export interface BrevisCampaignItem {
   link: string; // Campaign URL
   campaignApr: number;
@@ -50,13 +28,16 @@ export interface BrevisCampaignItem {
   latestTvl?: number;
   perUserRewardCapUsd?: number; // Per-user reward cap（美元），从描述文字解析
   campaignId?: string; // Brevis campaign ID，supply/borrow 同 ID 则共享同一 perUserRewardCapUsd
+  /** gRPC totalAmt 按 decimals 归一化后的数量；enrich 后删除 */
+  budgetNormalizedAmount?: number;
+  /** 奖励代币 symbol；enrich 后删除 */
+  budgetTokenSymbol?: string;
 }
 
-/** 仅用于在 fetch 层把 totalAmt 转为 USD totalBudget，不写入对外对象 */
-export interface BrevisRewardBudgetHint {
-  normalizedAmount?: number;
-  tokenSymbol?: string;
-  rewardAddressType: 'token' | 'pool';
+/** 去掉 enrich 前暂存的预算解析字段，避免进入 runtime/API/CSV */
+export function stripBrevisBudgetParseFields(campaign: BrevisCampaignItem): BrevisCampaignItem {
+  const { budgetNormalizedAmount: _n, budgetTokenSymbol: _s, ...rest } = campaign;
+  return rest;
 }
 
 // Brevis 数据项结构（类似 MeritDataItem）
@@ -391,90 +372,6 @@ export class BrevisApiClient {
     return 'unknown';
   }
 
-  private mapStatusLabel(status: number | string): string {
-    if (typeof status === 'string') return status;
-    switch (status) {
-      case 1: return 'DEPLOYING';
-      case 2: return 'CREATING_FAILED';
-      case 3: return 'INACTIVE';
-      case 4: return 'ACTIVE';
-      case 5: return 'ENDED';
-      case 6: return 'DEACTIVATED';
-      default: return 'UNKNOWN';
-    }
-  }
-
-
-
-  /**
-   * 从 gRPC GetAllProtocolDetail 响应解析 campaign 数据
-   */
-  private parseCampaignsFromGrpcResponse(response: any): BrevisCampaignInfo[] {
-    const campaigns: BrevisCampaignInfo[] = [];
-    const protocol = response?.protocol;
-    const details = response?.campaignDetailsList || [];
-
-    for (const detail of details) {
-      const campaign = detail?.campaign || {};
-      const config = campaign?.config || {};
-      const type = campaign?.type ?? config?.type ?? 0;
-      const actionType = this.mapActionType(type);
-      const token = config?.tokenAmtList?.[0]?.token;
-      const link = protocol?.id && protocol?.chainId && type
-        ? `${this.frontendUrl}/campaign/?pool_id=${protocol.id}&type=${type}&chainId=${protocol.chainId}`
-        : '';
-
-      campaigns.push({
-        chainId: protocol?.chainId || campaign?.chainId || 0,
-        poolAddress: protocol?.id || detail?.protocolId || '',
-        tokenAddress: token?.addr || null,
-        action: type,
-        actionType,
-        campaignId: campaign?.id ? String(campaign.id) : '',
-        campaignName: config?.name || '',
-        startTime: config?.start || 0,
-        endTime: config?.end || 0,
-        apr: protocol?.apr || 0,
-        link,
-        message: config?.name || '',
-        status: this.mapStatusLabel(campaign?.status || 'UNKNOWN'),
-        rewardInfo: token ? {
-          tokenAddress: token.addr || '',
-          tokenSymbol: token.symbol || '',
-          rewardAmt: config?.tokenAmtList?.[0]?.totalAmt || '0',
-          rewardUsdPrice: '',
-          apr: protocol?.apr || 0,
-          tvl: protocol?.tvl || 0,
-        } : undefined,
-      });
-    }
-
-    return campaigns;
-  }
-
-  /**
-   * 直接从 gRPC 获取单个 pool 的 campaign 详情（用于页面数据）
-   * 注意：API 不支持数组参数，只支持单个值
-   */
-  async getCampaignDetailByPool(params: {
-    chainId?: number;
-    type?: number;
-    poolId?: string;
-  } = {}): Promise<{ raw: any; rawCampaigns: any[]; campaigns: BrevisCampaignInfo[] }> {
-    // 确保参数是单个值（不支持数组）
-    const response = await this.getAllProtocolDetailFromGrpc({
-      chainId: params.chainId,
-      type: params.type,
-      id: params.poolId,
-    });
-
-    return {
-      raw: response,
-      rawCampaigns: response?.campaignDetailsList || [],
-      campaigns: this.parseCampaignsFromGrpcResponse(response),
-    };
-  }
-
   /**
    * 获取全部 protocol/pool 列表（gRPC）
    */
@@ -644,8 +541,6 @@ export class BrevisApiClient {
     index: Record<string, BrevisDataItem>;
     rawProtocolsList: any;
     rawProtocolDetails: Array<{ protocol: any; response: any }>;
-    /** key = String(campaign.id)；供 fetch 层计算 totalBudget，不进入 BrevisCampaignItem */
-    rewardBudgetHintsByCampaignId: Record<string, BrevisRewardBudgetHint>;
   }> {
     try {
       logger.info('📡 从 gRPC 获取所有 protocols 列表...');
@@ -668,7 +563,6 @@ export class BrevisApiClient {
       // 3. 对每个 Aave protocol 获取详情（保存原始响应）
       const metaMaskDesc = await metaMaskDescPromise;
       const campaignsIndex: Record<string, BrevisDataItem> = {};
-      const rewardBudgetHintsByCampaignId: Record<string, BrevisRewardBudgetHint> = {};
       const rawProtocolDetails: Array<{ protocol: any; response: any }> = [];
 
       for (const protocol of aaveProtocols) {
@@ -727,18 +621,14 @@ export class BrevisApiClient {
               continue;
             }
 
-            if (campaign.id != null && campaign.id !== '') {
-              const idKey = String(campaign.id);
-              rewardBudgetHintsByCampaignId[idKey] = {
-                ...(normalizedTotalRewardNumber !== undefined && Number.isFinite(normalizedTotalRewardNumber)
-                  ? { normalizedAmount: normalizedTotalRewardNumber }
-                  : {}),
-                ...(token?.symbol ? { tokenSymbol: token.symbol } : {}),
-                rewardAddressType: token?.addr ? 'token' : 'pool',
-              };
+            const tokenAddressLower =
+              typeof token?.addr === 'string' ? token.addr.trim().toLowerCase() : '';
+            // 与 Aave reserve 合并只按 underlying token 地址匹配，无 addr 则跳过（不用 pool id 占位）
+            if (!tokenAddressLower) {
+              continue;
             }
 
-            // 构建 campaign item（仅对外字段）
+            // 构建 campaign item；budget* 仅供 fetchBrevisAprs 算 totalBudget，enrich 后剥离
             const campaignItem: BrevisCampaignItem = {
               link,
               campaignApr: apr,
@@ -753,19 +643,13 @@ export class BrevisApiClient {
                 ...(metaMaskDesc.perUserRewardCapUsd != null ? { perUserRewardCapUsd: metaMaskDesc.perUserRewardCapUsd } : {}),
               } : {}),
               ...(campaign.id ? { campaignId: String(campaign.id) } : {}),
+              ...(normalizedTotalRewardNumber !== undefined && Number.isFinite(normalizedTotalRewardNumber)
+                ? { budgetNormalizedAmount: normalizedTotalRewardNumber }
+                : {}),
+              ...(token?.symbol ? { budgetTokenSymbol: token.symbol } : {}),
             };
 
-            // 使用 chainId + tokenAddress 作为索引（如果 tokenAddress 存在）
-            // 否则使用 chainId + poolAddress
-            const tokenAddress = token?.addr?.toLowerCase() || null;
-            const poolAddress = protocol.id?.toLowerCase() || '';
-            
-            let indexKey: string;
-            if (tokenAddress) {
-              indexKey = `${protocol.chainId}-${tokenAddress}`;
-            } else {
-              indexKey = `${protocol.chainId}-${poolAddress}`;
-            }
+            const indexKey = `${protocol.chainId}-${tokenAddressLower}`;
 
             if (!campaignsIndex[indexKey]) {
               campaignsIndex[indexKey] = { brevisSupplys: [], brevisBorrows: [] };
@@ -795,7 +679,6 @@ export class BrevisApiClient {
         index: campaignsIndex,
         rawProtocolsList: rawProtocolsList,
         rawProtocolDetails: rawProtocolDetails,
-        rewardBudgetHintsByCampaignId,
       };
     } catch (error: any) {
       logger.error(`❌ 获取 Aave campaign 数据失败: ${error.message}`);

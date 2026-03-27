@@ -10,7 +10,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
-import { brevisApi } from './brevis-api.js';
+import { brevisApi, stripBrevisBudgetParseFields } from './brevis-api.js';
 import { resolveUsdPriceWithPriority } from './token-price-resolver.js';
 import {
   MerklCampaignBreakdown,
@@ -368,7 +368,6 @@ async function fetchBrevisAprs(
     // 获取所有 Aave campaign 数据（包含原始响应数据）
     const brevisResult = await brevisApi.getAaveCampaignsData();
     const brevisIndex: BrevisDataIndex = brevisResult.index;
-    const rewardBudgetHintsByCampaignId = brevisResult.rewardBudgetHintsByCampaignId;
 
     // 用于 reward token 价格解析：优先后端快照 tokenPrice，缺失时再走 CoinGecko fallback。
     const tokenPriceByChainAndAddress = new Map<string, number>();
@@ -395,28 +394,29 @@ async function fetchBrevisAprs(
       if (!Number.isFinite(chainId) || !rewardTokenAddress) continue;
 
       const enrichCampaignUsd = async (campaign: BrevisCampaignItem): Promise<BrevisCampaignItem> => {
-        const hint = campaign.campaignId ? rewardBudgetHintsByCampaignId[campaign.campaignId] : undefined;
-        if (!hint) return campaign;
-        const normalizedAmount = toFiniteNumber(hint.normalizedAmount);
+        const normalizedAmount = toFiniteNumber(campaign.budgetNormalizedAmount);
         if (normalizedAmount === null || normalizedAmount < 0) {
-          return campaign;
+          return stripBrevisBudgetParseFields(campaign);
         }
 
         const reservePriceKey = `${chainId}:${rewardTokenAddress}`;
         const reserveTokenPrice = tokenPriceByChainAndAddress.get(reservePriceKey);
         const resolved = await resolveUsdPriceWithPriority({
           chainId,
-          tokenAddress: hint.rewardAddressType === 'token' ? rewardTokenAddress : undefined,
-          tokenSymbol: hint.tokenSymbol,
+          tokenAddress: rewardTokenAddress,
+          tokenSymbol: campaign.budgetTokenSymbol,
           snapshotPrice: undefined,
           reservePrice: reserveTokenPrice,
         });
         brevisPriceSourceStats[resolved.source] += 1;
 
         if (resolved.price !== undefined) {
-          return { ...campaign, totalBudget: normalizedAmount * resolved.price };
+          return stripBrevisBudgetParseFields({
+            ...campaign,
+            totalBudget: normalizedAmount * resolved.price,
+          });
         }
-        return campaign;
+        return stripBrevisBudgetParseFields(campaign);
       };
 
       campaigns.brevisSupplys = await Promise.all(campaigns.brevisSupplys.map((c) => enrichCampaignUsd(c)));
@@ -434,7 +434,6 @@ async function fetchBrevisAprs(
       totalSupplyCampaigns: totalSupply,
       totalBorrowCampaigns: totalBorrow,
       indexedBy: 'chainId-tokenAddress',
-      rewardBudgetHintsByCampaignId: brevisResult.rewardBudgetHintsByCampaignId,
       // 原始 API 响应数据（用于调试和问题排查）
       rawProtocolsList: brevisResult.rawProtocolsList,
       rawProtocolDetails: brevisResult.rawProtocolDetails,

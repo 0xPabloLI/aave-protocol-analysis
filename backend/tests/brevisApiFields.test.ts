@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { BrevisCampaignItem, BrevisRewardBudgetHint } from '../../src/brevis-api.ts';
+import type { BrevisCampaignItem } from '../../src/brevis-api.ts';
+import { stripBrevisBudgetParseFields } from '../../src/brevis-api.ts';
 
-test('BrevisCampaignItem wire shape does not carry raw reward amount inputs', () => {
+test('BrevisCampaignItem API-facing shape omits legacy raw reward field names', () => {
   const item: BrevisCampaignItem = {
     link: 'https://incentra.brevis.network/campaign/',
     campaignApr: 2.4,
@@ -17,16 +18,21 @@ test('BrevisCampaignItem wire shape does not carry raw reward amount inputs', ()
   };
   assert.equal('totalRewardAmount' in item, false);
   assert.equal('totalRewardTokenSymbol' in item, false);
-  assert.equal('rewardAddressType' in item, false);
 });
 
-test('BrevisRewardBudgetHint holds pricing inputs separate from public campaign', () => {
-  const hint: BrevisRewardBudgetHint = {
-    normalizedAmount: 10_000_000,
-    tokenSymbol: 'USDC',
-    rewardAddressType: 'token',
+test('stripBrevisBudgetParseFields removes transient budget parse fields', () => {
+  const withBudget: BrevisCampaignItem = {
+    link: 'x',
+    campaignApr: 1,
+    campaignStartedAt: '2020-01-01T00:00:00.000Z',
+    campaignEndedAt: '2030-01-01T00:00:00.000Z',
+    budgetNormalizedAmount: 1_000_000,
+    budgetTokenSymbol: 'USDC',
+    totalBudget: 999,
   };
-  assert.equal(hint.normalizedAmount, 10_000_000);
-  assert.equal(hint.tokenSymbol, 'USDC');
-  assert.equal(hint.rewardAddressType, 'token');
+  const stripped = stripBrevisBudgetParseFields(withBudget);
+  assert.equal('budgetNormalizedAmount' in stripped, false);
+  assert.equal('budgetTokenSymbol' in stripped, false);
+  assert.equal(stripped.totalBudget, 999);
+  assert.equal(stripped.link, 'x');
 });
