@@ -1,6 +1,6 @@
 # Merkl / Merit Data Flow & Cache Architecture
 
-Last updated: 2026-02-24
+Last updated: 2026-03-25 (field map expanded)
 
 This document explains how Merkl + Merit data moves through the codebase, which files are for debugging vs runtime, and which caches are in memory.
 
@@ -26,7 +26,7 @@ flowchart LR
   FCS["backend/merklForecastService (forecast compute + caches)"]
   MOC["backend/merklOpportunityClient (forecast Merkl opportunities fetcher)"]
   MKLITE["data/runtime/merkl-opportunity-meta-lite.json"]
-  MARKETS["data/runtime/aave-formatted-data.json"]
+  MARKETS["aave-formatted-data.json (root fetcher writes; backend does not read)"]
   TIMER["data/runtime/merit-campaign-metadata-cache.json"]
   MERKLAPI["Merkl API"]
 
@@ -38,7 +38,7 @@ flowchart LR
   IDX -- "writes" --> MARKETS
   MERIT -- "writes" --> TIMER
 
-  MKS -- "cron-write" --> MARKETS
+  IDX -. "exports fetchMarketsPayload" .-> MKS
   FCS -- "reads" --> MKLITE
   FCS -. "uses data" .-> MOC
   MOC -. "uses data" .-> SHARED
@@ -86,11 +86,13 @@ flowchart LR
 
 **Key change**: API requests **never** call Merkl API. They only read from the global snapshot cache populated by cron.
 
+**Field lineage** (which values come straight from Merkl vs computed in `merklForecastService` / `merklForecastModel`): see `docs/api/api-documentation.md` → **Merkl Forecast：上游数据与派生字段**.
+
 ## 1) Big Picture (Backend)
 
 ```mermaid
 flowchart TD
-  A["Scheduler / API-triggered refresh"] --> B["/src/index.ts fetchAaveMarketsData()"]
+  A["Root CLI: fetchAaveMarketsData()"] --> B["/src/index.ts pipeline"]
   B --> C["Merit: /src/merit-api.ts"]
   B --> D["Merkl: /src/merkl-api.ts"]
   B --> E["Brevis"]
@@ -101,13 +103,14 @@ flowchart TD
   D --> J["data/runtime/merkl-opportunity-meta-lite.json (runtime-lite)"]
   D --> R["@internal/aave-shared-config snapshot (memory)"]
   B --> K["data/runtime/aave-formatted-data.json"]
-  L["backend /api/markets"] --> M["marketsService (memory snapshot)"]
-  M -- "cron-write" --> K
+  CRON["Backend cron: refreshMarketsSnapshot"] --> MP["fetchMarketsPayload() same pipeline, in-memory"]
+  MP --> MS["marketsService memory snapshot"]
+  L["backend GET /api/markets"] --> MS
   N["backend /api/campaigns/forecast-states"] --> O["merklForecastService"]
   O --> P["campaignOpportunityCache (memory)"]
   O --> J
   O --> Q["merklOpportunityClient"]
-  Q --> R["@internal/aave-shared-config snapshot (memory)"]
+  Q --> R
   R --> S["Merkl /v4/opportunities"]
   O --> T["Merkl /v4/campaigns/{id} + /metrics"]
 ```
@@ -116,7 +119,7 @@ flowchart TD
 
 ### Runtime-facing (program reads)
 - `data/runtime/aave-formatted-data.json`
-  - Main `/api/markets` source (via `marketsService` cron-write)
+  - Written when the **root** fetcher runs (`fetchAaveMarketsData` / CLI); not read by `GET /api/markets`. The backend serves markets from `marketsService` memory via `fetchMarketsPayload()` (same pipeline, no file read on the request path).
 - `data/runtime/merkl-opportunity-meta-lite.json`
   - Forecast service preferred file source (campaign-level lightweight meta)
 - `data/runtime/merit-campaign-metadata-cache.json`
@@ -132,6 +135,127 @@ flowchart TD
 - `data/debug/brevis-raw-data.json`
   - Brevis debug snapshot
 
+### Merkl → `/api/markets` reserve fields: `pointsPerThousandUsd`
+
+Implemented in `src/merkl-api.ts` (`merklBreakdownUsesPointsIntensityFields` + `merklPointsFieldsFromBreakdownValue`). Emitted **only** when `rewardsRecord.breakdowns[].token.type === 'PRETGE'` (Merkl pre-TGE reward token). Other tokens, protocols, or opportunity names are not special-cased; consumers use `campaignApr` and the rest of the breakdown for normal TOKEN rewards.
+
+Optional script `scripts/merkl-pretge-points-overlap.mjs` compares PRETGE rows vs symbol/name containing the word `points` on a debug snapshot (historically identical sets; re-run if Merkl’s schema changes).
+
+### Merkl `/v4/opportunities[]` item: which fields `merkl-api.ts` reads
+
+Source: `src/merkl-api.ts` (markets merge + forecast-lite enrichment + link building). Types in code list extra fields (e.g. `protocol`, `tokens[]`); **those are not used in current pipeline logic** unless noted below.
+
+#### Diagram — three pipelines from one opportunity row
+
+```mermaid
+flowchart TB
+  subgraph API["GET /v4/opportunities"]
+    O["opportunity item"]
+  end
+
+  subgraph P1["processMerklData"]
+    I["Index: chainId + explorerAddress"]
+    B["Per-breakdown output: campaignApr, dates, distributionType, optional PRETGE intensity"]
+  end
+
+  subgraph P2["buildForecastCampaignMetaLiteMap"]
+    M["Per campaignId: tvl, campaignTypeHint, campaignSnapshot lite"]
+  end
+
+  subgraph P3["generateMerklOpportunityLink"]
+    L["app.merkl.xyz/opportunities/…"]
+  end
+
+  O --> P1
+  O --> P2
+  O --> P3
+```
+
+#### Diagram — field groups → sinks
+
+```mermaid
+flowchart LR
+  subgraph root["Opportunity root"]
+    id["id"]
+    nm["name"]
+    dsc["description"]
+    act["action"]
+    cid["chainId"]
+    chn["chain.name"]
+    ex["explorerAddress"]
+    idf["identifier"]
+    typ["type"]
+    dt["distributionType"]
+    tvl["tvl"]
+  end
+
+  subgraph rr["rewardsRecord.breakdowns[]"]
+    bc["campaignId"]
+    bd["distributionType / distributionMethod"]
+    val["value"]
+    tok["token.type"]
+  end
+
+  subgraph emb["campaigns[]"]
+    eid["id"]
+    st["startTimestamp / endTimestamp"]
+    apr["apr"]
+    par["params.*"]
+  end
+
+  root --> P1
+  rr --> P1
+  emb --> P1
+  root --> P2
+  rr --> P2
+  emb --> P2
+  chn --> P3
+  idf --> P3
+  typ --> P3
+```
+
+#### Table — opportunity root
+
+| Field | Role in this repo |
+|-------|-------------------|
+| `id` | Diagnostics / logs when skipping or warning |
+| `name` | Ethereum-only market guess via `parseMarketNameFromOpportunityName`; copied to output group as `name` |
+| `description` | Copied to output as `description` when present |
+| `action` | Routes breakdowns to `supply` / `borrow` / `hold` (`LEND` / `BORROW` / `HOLD`) |
+| `chainId` | Index key segment; whether to parse market name (only `1` uses name-based market) |
+| `chain.name` | Required for Merkl opportunity URL (lowercased) |
+| `explorerAddress` | Index key (lowercased); must exist or opportunity is skipped |
+| `identifier` | Merkl opportunity URL path segment |
+| `type` | Merkl opportunity URL path segment (e.g. `AAVE_NET_LENDING`) |
+| `distributionType` | Fallback when a breakdown omits its own distribution type/method; also feeds forecast type normalization when breakdown-level string is missing |
+| `tvl` | Opportunity TVL for `pointsPerThousandUsd`; forecast meta `latestTvl`; intensity log line |
+
+#### Table — `rewardsRecord.breakdowns[]`
+
+| Field | Role |
+|-------|------|
+| `campaignId` | Join key to embedded `campaigns[]` and to optional `GET /v4/campaigns/{id}`; forecast map key |
+| `distributionType` / `distributionMethod` | Output `distributionType`; raw input to `normalizeForecastCampaignTypeLite` (with opportunity fallbacks) |
+| `value` | With `tvl`, drives `pointsPerThousandUsd` **only if** `token.type === 'PRETGE'` |
+| `token.type` | Must be `PRETGE` to emit intensity fields; other token fields are not read for markets output |
+
+#### Table — embedded `campaigns[]` (per campaign object)
+
+| Field | Role |
+|-------|------|
+| `id` | Must match `rewardsRecord.breakdowns[].campaignId` for cache lookup |
+| `startTimestamp` / `endTimestamp` | Converted to ISO strings on each output breakdown |
+| `apr` | Output as `campaignApr` |
+| `params` | `isCampaignWhitelistOnly` reads `params.whitelist` and nested `composedCampaigns[].campaignParameters.whitelist`; forecast lite snapshot also reads `params.decimalsRewardToken` and `params.distributionMethodParameters.distributionSettings.apr` when building `campaignSnapshot` |
+
+#### Forecast lite snapshot (from embedded campaign), used for `buildForecastFieldsFromOpportunity`
+
+Additional fields read **only** inside `buildCampaignSnapshotLiteForForecastFile` for matching `campaignId`: `amount`, `rewardToken.price`, `rewardToken.decimals`, plus `params` branches above. If a breakdown’s `campaignId` has no embedded campaign object, the code may **fetch** `GET /v4/campaigns/{campaignId}` to fill the same `MerklCampaignDetails` used for markets breakdowns (dates, APR, whitelist) — that response is **not** part of the opportunities array; document it as a sibling API.
+
+#### Not used by current `merkl-api` logic
+
+`protocol`, `tokens[]`, `status` on the opportunity (may appear in JSON; pipeline ignores them for computation).
+
 ## 3) In-Memory Caches (Runtime)
 
 ### A) `marketsService` snapshot (`backend/src/services/marketsService.ts`)
@@ -141,7 +265,7 @@ flowchart TD
 
 ### B) `campaignOpportunityCache` (`backend/src/services/merklForecastService.ts`)
 - Forecast-only campaign meta index:
-  - `campaignId -> { tvl, campaignTypeHint, distributionTypeRaw, campaignSnapshot }`
+  - `campaignId -> { tvl, campaignTypeHint, campaignSnapshot }`
 - Rebuilt on demand when expired
 - TTL (current): 5 minutes (default), configurable independently from forecast result cache
 
@@ -165,6 +289,7 @@ Example shape:
 
 ### D) `metricsCache` (`backend/src/services/merklForecastService.ts`)
 - Per-campaign cache for **forecast-trimmed** Merkl `/metrics` data (`dailyRewardsRecords`, `tvlRecords` latest-only)
+- **Each `campaignId` has its own TTL** (cadence inferred from that campaign’s `dailyRewardsRecords` only), so **metrics refetch intervals can differ across campaigns**; see `docs/backend/data-freshness-mechanism.md` → Merkl Metrics 动态 TTL
 - TTL is derived from observed metrics record cadence (with default/min/max bounds)
 - **This is the key optimization** - metrics API calls are expensive; forecast computation is fast
 - Cadence inference uses `dailyRewardsRecords` timestamps (same series used for `distributedSoFar` integration)
@@ -200,13 +325,22 @@ Map<string, {
 `fetchMeritData()` needs `timeRanges` because they carry:
 - Merkl/Merit campaign link
 - `startDate` / `endDate`
-- `startBlock` / `endBlock` (fallback end-state signal)
+- `startBlock` / `endBlock` (fallback end-state signal; compared against Ethereum mainnet block height when needed)
 - campaign `name`
 - `message` (including self-auth hints)
 
 Without cached `timeRanges`, the code would re-crawl campaign pages on every refresh.  
 Now it uses a module-level in-memory cache first (process lifetime), then reads `data/runtime/merit-campaign-metadata-cache.json`, then falls back to `data/debug/merit-raw-data.json` for compatibility.
 This cache is intentionally event-driven (new key / refetch path / process restart) rather than TTL-driven.
+
+### Merit expiry decision (current behavior)
+
+- Primary signal: `endDate` from campaign metadata.
+- Date comparison uses `parsedEndDate <= now` as expired.
+- On the `endDate` day, `endBlock` is used to determine precise cutoff time.
+- If `endDate` is missing/unparseable, `endBlock` is used as fallback.
+- `endBlock` fallback is checked against **Ethereum mainnet** latest block height (not reserve chain height such as Celo).
+- If cached metadata is complete but `endDate` is already in the past, the key is forced into refetch to pick up renewed rounds.
 
 ## 5) Refresh Cadence vs Freshness (Important Pattern)
 

@@ -4,19 +4,25 @@
 
 本文档描述了 Aave 市场数据服务的 API 接口和数据格式。服务提供 Aave V3 协议的市场数据，包括基础 APY、协议激励、Merit APR、Merkl APR 和 Brevis APR 等激励信息。
 
+**相关**：Brevis Incentra 非核心参考（已删 client API、type/status 全表、REST 补证）见 [brevis-supplement.md](./brevis-supplement.md)。
+
+**收益率字段口径（重要）**：
+
+- **`GET /api/markets` 的 JSON 响应**：`supplyApy`、`borrowApy`、协议激励数组、Merit / Merkl / Brevis 等与收益率相关的数字均为 **百分数**（例如 `5.2` 表示 5.2%/年），由服务端在响应序列化时从内存中的 **年化比例（ratio）** 乘以 100 得到。
+- **服务端内存快照、cron 合并路径、root fetcher 写入的 `data/runtime/*.json`（及同结构的中间数据）**：上述字段为 **比例**（例如 `0.052` = 5.2%/年）。依赖磁盘文件或内存结构的脚本/集成须按 ratio 读取，勿与 HTTP 响应混用。
+
+下文「数据模型」中的百分比说明 **指 `GET /api/markets` 对外 JSON**，除非另行注明。
+
 ## 基础信息
 
 - **服务地址**: `http://localhost:3001` (开发环境)
 - **API 基础路径**:
   - `/api/markets` - 市场数据（含 on-chain 字段）
-  - `/api/coingecko-categories` - CoinGecko 分类数据
-  - `/api/coingecko-fdv` - CoinGecko FDV 数据
-  - `/api/meta/side-data` - 低频侧数据聚合（categories + fdv）
-  - `/api/campaigns/forecast-states` - Merkl 活动预测状态（批量）
+  - `/api/meta/side-data` - 侧数据聚合（categories + fdv + forecast）
   - `/health`、`/api/health` - 健康检查
 - **数据格式**: JSON
 - **字符编码**: UTF-8
-- **端点总数**: **7 个**（7 条 URL；若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 6 个逻辑端点）
+- **端点总数**: **4 条 URL**（若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 3 个逻辑端点）
 
 ## 数据模型
 
@@ -83,18 +89,26 @@ interface FormattedReserveData {
   
   // Brevis APR 激励（可选字段，仅在存在数据时出现）
   brevisSupplys?: Array<{
-    apr: number;                         // APR 百分比值（如 1.5 表示 1.5%）
     link: string;                        // Brevis 活动详情页链接
-    startDate: string;                    // 活动开始日期
-    endDate: string;                      // 活动结束日期
-    name: string;                        // 活动名称
+    campaignApr: number;                 // Canonical APR（百分比数值）
+    campaignStartedAt: string;           // Canonical 开始时间（ISO 8601）
+    campaignEndedAt: string;             // Canonical 结束时间（ISO 8601）
+    message?: string;                    // 活动说明文案
+    latestTvl?: number;                  // 活动 TVL（USD）
+    totalBudget?: number;                // 活动总预算（USD）
+    perUserRewardCapUsd?: number;        // 每用户奖励上限（USD，当前主要针对 MetaMask campaign）
+    campaignId?: string;                 // supply/borrow 两侧同 ID 代表同一个 Brevis campaign
   }>;
   brevisBorrows?: Array<{
-    apr: number;                         // APR 百分比值（如 1.5 表示 1.5%）
     link: string;                        // Brevis 活动详情页链接
-    startDate: string;                    // 活动开始日期
-    endDate: string;                      // 活动结束日期
-    name: string;                        // 活动名称
+    campaignApr: number;                 // Canonical APR（百分比数值）
+    campaignStartedAt: string;           // Canonical 开始时间（ISO 8601）
+    campaignEndedAt: string;             // Canonical 结束时间（ISO 8601）
+    message?: string;                    // 活动说明文案
+    latestTvl?: number;                  // 活动 TVL（USD）
+    totalBudget?: number;                // 活动总预算（USD）
+    perUserRewardCapUsd?: number;        // 每用户奖励上限（USD，当前主要针对 MetaMask campaign）
+    campaignId?: string;                 // supply/borrow 两侧同 ID 代表同一个 Brevis campaign
   }>;
   
   // On-chain & SDK fields（用于 APR 模拟计算，可选字段，扁平化到 reserve 中）
@@ -114,7 +128,7 @@ interface FormattedReserveData {
 
 ### MerklOpportunityGroup
 
-Merkl 机会分组数据，用于 JSON 输出，避免重复。
+Merkl 机会分组数据，用于 JSON 输出，避免重复。Merkl `GET /v4/opportunities` 响应里哪些字段参与构建，见 `docs/merkl-merit-cache-architecture.md` 中章节 **Merkl `/v4/opportunities[]` item: which fields `merkl-api.ts` reads**（含字段表与 Mermaid 图）。
 
 ```typescript
 interface MerklOpportunityGroup {
@@ -124,13 +138,14 @@ interface MerklOpportunityGroup {
   breakdowns: MerklCampaignBreakdown[]; // 该 opportunity 的所有 breakdowns
 }
 
+// `pointsPerThousandUsd`：仅当 breakdown 上 `reward token.type === 'PRETGE'` 时输出（见 `src/merkl-api.ts`）。
+
 interface MerklCampaignBreakdown {
-  campaignApr: number;                  // 活动 APR（百分比数值）
+  campaignApr: number;                  // 活动 APR（百分比数值，来自 Merkl campaign）
   campaignStartedAt: string;            // 活动开始时间（ISO 8601）
   campaignEndedAt: string;              // 活动结束时间（ISO 8601）
   campaignId: string;                   // 活动 ID
-  pointsPerThousandUsd?: number;        // Tydro 协议的 points/1000USD 值（可选）
-  dailyPoints?: number;                 // Tydro 协议的每日 points（可选）
+  pointsPerThousandUsd?: number;        // breakdown.value / opportunity TVL × 1000（仅 PRETGE points campaign 输出）
 }
 ```
 
@@ -197,13 +212,12 @@ interface MarketsResponse {
 
 **状态码**:
 - `200`: 成功
-- `503`: 数据快照超过硬过期上限（默认 5 分钟），服务拒绝返回过旧数据（`errorCode = "MARKETS_SNAPSHOT_HARD_STALE"`）
+- `503`: 仅当内存快照尚未就绪（冷启动未完成预热）时，`errorCode = "MARKETS_SNAPSHOT_NOT_READY"`
 - `500`: 服务器错误
 
 **注意事项**:
 - 所有排序和过滤逻辑应在客户端处理
-- 如果数据过期，会自动触发后台更新；在硬过期上限内可继续返回缓存
-- 一旦快照年龄超过硬过期上限（默认 5 分钟），将返回 `503`（不再无限返回旧缓存）
+- 数据由后端 cron 刷新；`snapshot.staleTimeMs` 供前端缓存提示，**请求不会触发**后端重新拉取
 - `tokenPrice` 已直接放在 `reserves` 行内，前端无需再做额外 price join
 
 ---
@@ -232,7 +246,53 @@ interface MarketsResponse {
 
 ---
 
-### 2. 批量获取 Merkl Forecast States
+### 2. 获取侧数据聚合快照
+
+**端点**: `GET /api/meta/side-data`
+
+**描述**: 返回前端低频侧数据聚合快照，包含：
+- categories：稳定币与 ETH 相关 token 分类
+- fdv：FDV 数据（CoinMarketCap 优先，CoinGecko 回退）
+- forecast：Merkl campaign forecast 快照
+
+这些子数据仍由各自内部缓存和 cron 预热维护，但不再通过独立公开 endpoint 暴露。
+
+**请求参数**: 无
+
+**响应特性**:
+- `partial`: 某个子块失败时仍可返回部分成功结果
+- `errors`: 按子块返回失败原因
+- 各子块保留自己的 `fetchedAt` / `staleTimeMs`
+
+**说明**:
+- categories / fdv / forecast 的独立公开 URL 已移除
+- 客户端若需要 campaign forecast，应从本端点的 `forecast.items` 读取，而不是请求单独 forecast route
+
+---
+
+### 3. 健康检查
+
+**端点**: `GET /health` / `GET /api/health`
+
+**描述**: 返回基础运行状态与环境信息。
+
+---
+
+## 已移除的公开端点
+
+以下端点已从公开 API surface 移除，相关数据请改从 `GET /api/meta/side-data` 获取：
+
+- `GET /api/coingecko-categories`
+- `GET /api/coingecko-fdv`
+- `GET /api/campaigns/forecast-states`
+
+---
+
+### 历史说明
+
+下述旧章节保留为历史背景时，请以本页顶部的“API 基础路径”与“已移除的公开端点”为准。
+
+### 4. 批量获取 Merkl Forecast States（历史）
 
 **端点**: `GET /api/campaigns/forecast-states`
 
@@ -266,16 +326,28 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 ```json
 {
-  "requested": 23,
-  "items": [],
-  "errors": [],
+  "requested": 2,
+  "items": [
+    {
+      "campaignId": "campaignA",
+      "requiredDaily": 1200,
+      "distributedSoFar": 45000,
+      "endTimestamp": 1710000000
+    }
+  ],
+  "errors": [
+    {
+      "campaignId": "campaignB",
+      "message": "campaign not found"
+    }
+  ],
   "staleTimeMs": 600000
 }
 ```
 
 其中：
-- `items` 为成功计算的 campaign 状态数组（字段同单个接口）。
-- `errors` 为失败项数组：`{ campaignId, status, message }`。
+- `items` 为成功计算的 campaign 状态数组；当前稳定字段为 `campaignId`、`requiredDaily`、`distributedSoFar`、`endTimestamp`。
+- `errors` 为失败项数组；稳定字段为 `{ campaignId, message }`，现算路径可能额外附带 `status`。
 - `staleTimeMs` 为 Merkl forecast 结果缓存 TTL（毫秒），默认 10 分钟（与 `merklMetricsMin` 对齐，可通过环境变量 `MERKL_FORECAST_RESULT_CACHE_TTL_MS` 覆盖）。
 
 **状态码**:
@@ -285,13 +357,78 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 ---
 
-## Merkl TVL 与分发进度口径
+## Merkl Forecast：上游数据与派生字段
 
-- Forecast 的 `latestTvl` 优先取 Merkl opportunities 的 `tvl`。
-- 如果 opportunities 中没有可用 TVL，则回退到 `/v4/campaigns/{id}/metrics` 的 `tvlRecords`，并取**最新时间戳**对应的 `total`。
-- `distributedSoFar` 使用 metrics 的 `dailyRewardsRecords` 做时间积分估算（按时间段累积 daily rate）。
+实现见 `backend/src/services/merklForecastService.ts`、`backend/src/services/merklForecastModel.ts`。以下为「Merkl / 本地快照输入」与「本服务计算」的划分；**campaign 级数据不从 Aave SDK 读取**。
 
-以上均来自 Merkl API，不从 Aave SDK 直接读取 campaign 级 TVL。
+### 上游（原始）数据
+
+| 来源 | 用途 |
+|------|------|
+| **Merkl `GET /v4/campaigns/{id}`**（或 opportunities / `merkl-opportunity-meta-lite.json` 中的轻量 `campaignSnapshot`） | `amount`、`startTimestamp`、`endTimestamp`、奖励代币 `price`/`decimals`、APR 相关 `params` 等；用于预算上限、时间窗、类型与 APR cap |
+| **Merkl `GET /v4/campaigns/{id}/metrics`** | 时间序列 `tvlRecords`、`dailyRewardsRecords`（各点含 `timestamp`、`total`） |
+| **`data/runtime/merkl-opportunity-meta-lite.json` 或 live `/v4/opportunities`** | 每 campaign 的 `tvl`、`campaignTypeHint`（规范化后的活动类型）、以及可用的 `campaignSnapshot`（lite 新鲜时优先） |
+
+### `distributionType` 与 `distributionMethod` 的对应关系
+
+Merkl 返回里历史上存在两套命名：
+
+- 较新的（本项目主用）：`distributionType`
+- 兼容/参数侧常见：`distributionMethod`
+
+业务含义对应如下：
+
+| `distributionMethod`（短名） | `distributionType`（长名） | 说明（本项目 forecast 语义） |
+|------|------|------|
+| `MAX_APR` | `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` | 有 APR 上限；当需要追赶发放进度时仍受 cap 约束 |
+| `FIX_APR` | `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` | 固定 APR 速率优先；预算用尽前按目标速率发放 |
+| `DUTCH_AUCTION` | `DUTCH_AUCTION` | 以计划日发放为主，不走 APR cap 限速 |
+
+字段优先级（当前实现）：
+
+- `breakdown.distributionType`
+- `breakdown.distributionMethod`
+- `opportunity.distributionType`
+
+为什么优先 `distributionType`：
+
+- 在当前线上数据中覆盖更稳定（breakdown 级别几乎总是有 `distributionType`）。
+- 可直接对接 forecast 的 canonical 三类型，减少额外短名到长名的映射分支。
+- 降低因上游字段混用导致的类型识别歧义。
+
+外部参考（Merkl 官方）：
+
+- [Incentive Mechanisms](https://docs.merkl.xyz/merkl-mechanisms/incentive-mechanisms)
+- [Distribution Types](https://docs.merkl.xyz/merkl-mechanisms/distributions)
+- [Integrate Merkl API (V4)](https://docs.merkl.xyz/integrate-merkl/app)
+
+### 派生 / 二次计算
+
+| 项目 | 说明 |
+|------|------|
+| **`totalBudget`** | `extractNormalizedTotalBudget`：`amount` 按 `decimals` 做单位换算（大整数 → 可读数量）；若存在 **`rewardToken.price` > 0** 则乘以价格得到 **USD 口径**，否则为代币数量口径。 |
+| **`distributedSoFar`** | `estimateDistributedSoFar`：仅用 **`dailyRewardsRecords`**，在 `[start, min(now,end)]` 上按阶梯速率对「日发放率」做**时间积分**；再与 `totalBudget` 取 `min`。Merkl 不直接返回该标量。 |
+| **`latestTvl`** | 优先用 opportunities / lite 中的 **`tvl`**；否则从 **`tvlRecords`** 按时间排序取**最后一条**的 `total`。 |
+| **`aprCap`** | `extractMaxApr`：仅从 `distributionSettings.apr` 等多路径读取（年化**比例**）；不用顶层 `campaign.apr`（该字段为百分数，语义是活动 APR）。仅 `MAX_REWARD_*` / `FIX_REWARD_*` 需要。`GET /api/markets` 对客户端输出百分值（×100）。 |
+| **`plannedDaily` / `requiredDaily` / `remainingBudget` / `remainingDays`** | `buildForecastState`：`plannedDaily = totalBudget / totalDays`；`requiredDaily` 在 `DUTCH_AUCTION` 时等于 `plannedDaily`，否则为 `remainingBudget / remainingDays`；`remainingBudget = totalBudget - distributedSoFar`。 |
+| **metrics 缓存 TTL** | **按 campaign 独立**：`metricsCache` 以 `campaignId` 为键；每个 campaign 用自己的 `dailyRewardsRecords` 时间戳间隔**中位数**作 cadence，`TTL ≈ cadence / 4` 并夹在 `[merklMetricsMin, merklMetricsMax]`（默认 **10 分钟～6 小时**）。**不同 campaign 的刷新间隔可以不同**；与业务 forecast 公式无关，仅决定何时再请求 `GET /metrics`。 |
+
+### Opportunity 元数据与 metrics 的缓存节奏
+
+- **metrics（按 campaign）**：每个 id 单独算 TTL、单独过期；过期后**仅该 id**再拉 `/v4/campaigns/{id}/metrics`。未过期则复用内存，即使 forecast **cron 每 10 分钟**重算快照也不会为该 id 打 Merkl。
+- **opportunity 元数据（整表）**：`campaignOpportunityCache` 为**一张**全量 map（来源：`merkl-opportunity-meta-lite.json` 若足够新鲜，否则 `/v4/opportunities`），默认 **约 5 分钟** TTL；过期后**整表**重建。与 metrics 的 per-id TTL **相互独立**。
+- **对外语义**：`GET /api/campaigns/forecast-states` 的 `staleTimeMs`（默认 10 分钟）表示 **snapshotCache** 的发布节奏；**不**表示「每个 campaign 的 metrics 都在 10 分钟内从 Merkl 更新一次」。
+
+### TVL 与 `distributedSoFar` 口径（摘要）
+
+- `latestTvl`：**优先** opportunities（含 lite 索引）的 `tvl`；否则回退 metrics 的 `tvlRecords` **最新时间戳**对应的 `total`。
+- **`distributedSoFar`**：**仅**来自对 `dailyRewardsRecords` 的积分估算，**不是** Merkl 某单一原始字段。
+
+### HTTP `items[]` 实际暴露的字段
+
+`merklForecastController.toForecastResponseItem` 只序列化：`campaignId`、`requiredDaily`、`distributedSoFar`、`endTimestamp`。
+
+内部完整状态 `MerklForecastState` 另有 `remainingBudget`、`remainingDays`、`startTimestamp`、`asOf` 等；**当前 REST 响应未包含**这些字段。
 
 ### 3. 健康检查
 
@@ -480,7 +617,7 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
   - `staleTimeMs`: FDV 缓存 TTL（毫秒），默认 5 分钟。
 - `forecast`: 当 forecast 快照可用时存在，结构：
   - `items`: forecast 状态数组，字段同 `GET /api/campaigns/forecast-states`。
-  - `errors`: 部分 campaign 计算失败的错误数组（`{ campaignId, message }`）。
+  - `errors`: 部分 campaign 计算失败的错误数组（稳定字段为 `{ campaignId, message }`；某些现算路径可能额外带 `status`）。
   - `staleTimeMs`: forecast 缓存 TTL（毫秒），默认 10 分钟。
 - `errors`: 可选对象，键为 `categories`/`fdv`/`forecast`，值为对应子任务整体失败时的错误信息。
 
@@ -491,12 +628,109 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 ---
 
+## Incentive Contract 现状表
+
+这一节只关注**前后端实际对外 contract**，不展开内部抓取结构。状态含义：
+
+- `已统一`: 后端输出名、前端主消费名一致。
+- `兼容双写`: API 同时保留 canonical 字段和历史/兼容字段，前端允许二选一。
+- `类型放宽`: 前端 TypeScript 类型比当前 wire contract 更宽，用于兼容或本地合并，不应视为后端保证。
+
+### 1. Merkl `/api/markets` breakdown contract
+
+| 语义 | 后端对外字段 | 前端主消费字段 | 状态 | 说明 |
+|------|--------------|----------------|------|------|
+| Campaign APR | `campaignApr` | `campaignApr` | 已统一 | Merkl 市场 breakdown 的主 APR 字段 |
+| Campaign start | `campaignStartedAt` | `campaignStartedAt` | 已统一 | ISO 8601 |
+| Campaign end | `campaignEndedAt` | `campaignEndedAt` | 已统一 | ISO 8601 |
+| Campaign id | `campaignId` | `campaignId` | 已统一 | forecast join key |
+| Whitelist flag | `whitelistOnly` | `whitelistOnly` | 已统一 | `true` 表示 whitelist-only campaign |
+| Points intensity | `pointsPerThousandUsd` | `pointsPerThousandUsd` | 已统一 | 仅 `token.type === 'PRETGE'` 时输出 |
+| Forecast regime | `campaignType` | `campaignType` | 已统一 | 这是对外 canonical 名；上游原始字段名是 `distributionType`，必要时回退 `distributionMethod` |
+| Forecast budget | `totalBudget` | `totalBudget` | 已统一 | 与 forecast 模型一致 |
+| APR cap | `aprCap` | `aprCap` | 已统一 | 仅部分 campaign type 有意义 |
+| Latest TVL | `latestTvl` | `latestTvl` | 已统一 | forecast 输入之一 |
+| Planned daily | `plannedDaily` | `plannedDaily` | 已统一 | 由后端 forecast 模型计算后回填到 breakdown |
+
+### 2. Merkl forecast side-data contract
+
+`GET /api/campaigns/forecast-states` 和 `GET /api/meta/side-data` 中的 `forecast.items[]` 当前**实际稳定返回**的是 metrics 依赖字段：
+
+| 字段 | 后端当前返回 | 前端类型声明 | 状态 | 说明 |
+|------|--------------|--------------|------|------|
+| `campaignId` | 是 | 是 | 已统一 | join key |
+| `requiredDaily` | 是 | 是 | 已统一 | remaining-budget 驱动的目标日预算 |
+| `distributedSoFar` | 是 | 是 | 已统一 | points campaign 现在按 `totalInToken` 口径累计 |
+| `endTimestamp` | 是 | 是 | 已统一 | Unix seconds |
+| `campaignType` | 否 | 是 | 类型放宽 | 前端类型保留此字段，但当前 API 不保证在 forecast items 返回 |
+| `plannedDaily` | 否 | 是 | 类型放宽 | 实际由 `/api/markets` breakdown 提供 |
+| `aprCap` | 否 | 是 | 类型放宽 | 实际由 `/api/markets` breakdown 提供 |
+| `totalBudget` | 否 | 是 | 类型放宽 | 实际由 `/api/markets` breakdown 提供 |
+| `latestTvl` | 否 | 是 | 类型放宽 | 实际由 `/api/markets` breakdown 提供 |
+
+`errors[]` 结构也有一个兼容点：
+
+| 字段 | 当前情况 | 状态 | 说明 |
+|------|----------|------|------|
+| `campaignId` | 始终存在 | 已统一 |  |
+| `message` | 始终存在 | 已统一 |  |
+| `status` | 仅部分路径存在 | 类型放宽 | `?ids=` 现算路径可能有 `status`；snapshot 路径通常只有 `{ campaignId, message }` |
+
+### 3. Brevis `/api/markets` incentive contract
+
+Brevis 对外 contract 已收口到下面这组字段：
+
+| 语义 | 字段 | 说明 |
+|------|------|------|
+| Link | `link` | Brevis 前端活动页链接（由后端拼接） |
+| APR | `campaignApr` | Canonical APR（百分比数值） |
+| Start / End | `campaignStartedAt` / `campaignEndedAt` | Canonical 活动时间（ISO 8601） |
+| Message | `message` | 活动说明文案 |
+| Latest TVL | `latestTvl` | 当前活动 TVL（USD） |
+| Total budget | `totalBudget` | 当前活动总预算（USD） |
+| Per-user cap (USD) | `perUserRewardCapUsd` | 从描述文案中提取（若可提取） |
+| Campaign id | `campaignId` | supply/borrow 两侧同 ID 代表同一个 Brevis campaign |
+
+补充说明：
+- 对外已不再暴露旧基础字段：`apr`、`startDate`、`endDate`、`name`。
+- 对外 Brevis 条目不携带原始预算解析输入（例如 `totalRewardAmount`、`totalRewardTokenSymbol`），也不暴露 gRPC enrich 用的 `budgetNormalizedAmount` / `budgetTokenSymbol`（仅在拉取～`fetchBrevisAprs` 算 `totalBudget` 之间存在，随后由 `pruneBrevisCampaignForRuntime` 去掉）。`totalBudget` 由 fetcher 用 `reserve.tokenPrice` 等价格源解析后写入。调试快照 `data/debug/brevis-raw-data.json` 仍含 `rawProtocolsList` / `rawProtocolDetails` 便于对照上游。仅含奖励代币 `addr` 的活动会进入索引并与 reserve 按 `chainId-token` 合并。
+- 前端按同 reserve + 同 `campaignId` 识别 supply/borrow 是否为同一个 campaign；若 canonical 字段不一致，则视为脏数据并跳过 shared-cap simulation。
+
+#### Brevis 数据源对比（gRPC vs REST `/sdk/v1/aaveCampaigns`）
+
+当前项目的 Aave Brevis 数据主路径是 gRPC（`/IncentiveProvider/GetAllProtocols` + `/IncentiveProvider/GetAllProtocolDetail`）。
+
+2026-03-26 本项目实测（同环境、同时间窗口）：
+- gRPC 可稳定返回 Aave Linea 活动（样本包含 `type=3001`）。
+- REST `POST /sdk/v1/aaveCampaigns` 在多种 payload 下均返回 `200` + `campaigns: []`（包括 `action=[5001,5002,5003]`、`status` 组合、`campaign_id`、`atoken_address` 等）。
+- 其他 REST 端点如 `/sdk/v1/eulerCampaigns`、`/sdk/v1/liquidityCampaigns` 同时有数据，说明不是整体网络问题。
+
+结论：
+- 在当前阶段，`/sdk/v1/aaveCampaigns` 不能直接替代项目中的 gRPC Aave 拉取路径。
+- 建议策略：继续以 gRPC 为主源，REST 作为旁路探测与后续切换候选。
+
+#### Brevis 延伸阅读
+
+已删除的按-pool 客户端 API、Incentra **type / status 全表**、REST 补证笔记与维护约定见 **[brevis-supplement.md](./brevis-supplement.md)**，避免本文过长。
+
+### 4. 推荐的对外 canonical 命名
+
+当前建议把下面这组字段视为稳定的前后端 contract 主名：
+
+- Merkl markets breakdown: `campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`campaignId`、`campaignType`、`totalBudget`、`aprCap`、`latestTvl`、`plannedDaily`
+- Merkl forecast side-data: `campaignId`、`requiredDaily`、`distributedSoFar`、`endTimestamp`
+- Brevis incentives: `campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`、`campaignId`
+- Merkl upstream source naming: `distributionType` / `distributionMethod` 是上游字段名；对外仍建议统一看 `campaignType`
+- Forecast error item: `status` 仍是 optional，不能假设所有返回路径都有
+
+---
+
 ## 数据说明
 
 ### 字段类型说明
 
-1. **APY/APR 格式**:
-   - `supplyApy`: 数值格式的百分比（如 `2.07` 表示 2.07%），如果为 `undefined` 则在 JSON 中不出现
+1. **APY/APR 格式**（`GET /api/markets` 响应）：均为**百分数值**（如 `2.07` = 2.07%）。服务端内存快照与 cron 合并路径使用**年化比例**（如 `0.0207`），仅在序列化响应时 ×100。
+   - `supplyApy`: 如果为 `undefined` 则在 JSON 中不出现
    - `borrowApy`: 数值格式的百分比（如 `3.97` 表示 3.97%），即使借贷被禁用也会返回真实值
    - `borrowDisabled`: 布尔值，仅当借贷被禁用时出现且为 `true`（节约带宽）
    - `supplyIncentives` / `borrowIncentives`: 数值数组，每个元素为百分比数值（如 `[0.5, 1.2]` 表示 0.5% 和 1.2%），如果为空数组则在 JSON 中不出现
@@ -507,8 +741,8 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
      - `startDate` / `endDate`: 活动时间范围
      - `startBlock` / `endBlock`: 可选的区块范围
      - `requiredBorrowTokens` / `requiredSupplyTokens`: 可选的条件要求 token 列表
-   - `merklSupplys` / `merklBorrows` / `merklHolds`: 对象数组，每个对象包含 `link`、`name`（可选）、`message`（可选）和 `breakdowns` 数组
-   - `brevisSupplys` / `brevisBorrows`: 对象数组，每个对象包含 `apr`、`link`、`startDate`、`endDate` 和 `name`
+   - `merklSupplys` / `merklBorrows` / `merklHolds`: 对象数组，每个对象包含 `link`、`name`（可选）、`message`（可选）和 `breakdowns` 数组；`breakdowns[].campaignApr` / `aprCap` 在 JSON 中亦为**百分数值**（与 `supplyApy` 一致）
+   - `brevisSupplys` / `brevisBorrows`: 对象数组，字段为 `link`、`campaignApr`（百分数）、`campaignStartedAt`、`campaignEndedAt`，以及可选字段 `message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`、`campaignId`
 
 2. **可选字段和空值处理**:
    - 标记为 `?` 的字段为可选字段
@@ -522,7 +756,7 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
      - `supplyIncentives` / `borrowIncentives`
      - `meritSupplys` / `meritBorrows`
      - `merklSupplys` / `merklBorrows` / `merklHolds`
-     - `brevisSupplyApr` / `brevisBorrowApr`
+    - `brevisSupplys` / `brevisBorrows`
    - 以下字段如果为空（空数组或 undefined），会在 JSON 中被省略：
      - `supplyIncentives` / `borrowIncentives`（空数组时）
      - `meritSupplys` / `meritBorrows`（空数组时）
@@ -541,6 +775,11 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
      - 如果 `meritSupplys` 条目包含 `requiredBorrowTokens`，表示需要先 borrow 指定的 token 才能获得该 supply APR
      - 如果 `meritBorrows` 条目包含 `requiredSupplyTokens`，表示需要先 supply 指定的 token 才能获得该 borrow APR
      - `'multiple'` 表示任意 token 都可以满足条件
+   - Merit 活动有效期判定（后端过滤逻辑）：
+     - 主要依据 `endDate`，当 `parsedEndDate <= now` 视为过期
+     - 在 `endDate` 当天会结合 `endBlock` 做更精确的截止判断
+     - 若 `endDate` 缺失或不可解析，则回退使用 `endBlock`
+     - `endBlock` 回退比较使用 Ethereum mainnet 最新块高（不是 Celo 等 reserve 所在链的块高）
 
 4. **供应禁用状态 (`supplyDisabled`)**:
    - Aave 协议有三种方式禁用供应：
@@ -666,17 +905,16 @@ curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campa
 
 **Aave SDK（@aave/client）与 token price**：本项目从 SDK 返回的 reserve 里读取 USD 价格（优先 `reserve.size.usdPerToken`，缺失时回退 `reserve.usdExchangeRate`），用于 `reserves[].tokenPrice`。
 
-**data 文件夹中的价格**：
-- **`data/runtime/aave-formatted-data.json`**：当前以 `data + _metadata` 为主，不再依赖根级 token price 补充索引供 `/api/markets` 使用。
-- **`data/debug/aave-all-markets-data.json`**：为 Aave SDK 的原始响应（`markets`、`timestamp` 等），其中包含 reserve 的 `usdPerToken` / `usdExchangeRate` 等价格字段（如果上游返回）。
+**data 文件夹中的价格（调试/对照用，非 API 数据源）**：
+- **`data/runtime/aave-formatted-data.json`**：仅当在仓库根目录**单独运行 fetcher** 时落盘；与 `fetchMarketsPayload()` 管线形状相近，但 **`GET /api/markets` 从不读此文件**，价格以内存快照中的 `reserves[].tokenPrice` 为准。
+- **`data/debug/aave-all-markets-data.json`**：Aave SDK 的原始响应（`markets`、`timestamp` 等），含 reserve 的 `usdPerToken` / `usdExchangeRate` 等（若上游返回），用于字段校验与对照。
 
 ### 数据更新机制
 
-- **仅 `GET /api/markets`** 会触发市场数据新鲜度检查：若数据超过 1 分钟未更新，该请求会触发后台刷新（带并发锁），其他端点不触发市场数据刷新。
-- 其他端点（`/api/coingecko-*`、`/api/campaigns/forecast-states`）使用各自缓存与 TTL。
-- On-chain 数据（deficit, baseVariableBorrowRate）与 markets 并行获取，合并到 `/api/markets` 响应中。
-- 使用锁机制防止并发更新；更新进行中时，请求会等待约 1 秒再返回。
-- `/api/markets` 返回 `snapshot + reserves`；`isStale` / `updateInProgress` 不在该接口响应中。
+- **`GET /api/markets`**：cron-write/API-read-only；由定时任务与启动预热刷新内存快照，**请求不触发**外部拉取。on-chain 字段在 `refreshMarketsSnapshot` 写入时从 `onchainDataService` 缓存合并。
+- **`/api/coingecko-categories`**、**`/api/coingecko-fdv`**：缓存未过期则直出；过期或无效时**请求路径会触发**刷新（与 cron 预热共用同一套缓存逻辑）。
+- **`/api/campaigns/forecast-states`**（无 `ids`）：读 cron 预热的 forecast 快照；带 `?ids=` 时对指定 id 现算（仍受 Merkl 侧内存缓存约束）。
+- `/api/markets` 返回 `snapshot + reserves`；无 `isStale` / `updateInProgress` 字段。
 
 ## 错误处理
 
@@ -732,7 +970,7 @@ curl http://localhost:3001/api/coingecko-fdv
 ## 版本信息
 
 - **API 版本**: 3.1
-- **文档更新时间**: 2026-03-14
+- **文档更新时间**: 2026-03-24
 - **最后更新**:
   - 补充端点：`GET /api/health`、`GET /api/coingecko-fdv`
   - 基础路径说明更新为完整 API 列表
@@ -755,6 +993,10 @@ curl http://localhost:3001/api/coingecko-fdv
   - **2026-03-14**：新增 `borrowCapUsd` 字段，与 `supplyCapUsd` 对称
   - **2026-03-14（breaking）**：移除独立的 `/api/rate-inputs` 端点，rate-input 字段扁平化合并到 `/api/markets` 的 `reserves[]` 中（`decimals`、`deficit`、`availableLiquidity` 等）
   - **2026-03-14**：移除 `deficitAvailable` 标志；deficit 来自 `UiPoolDataProvider.getReservesHumanized()`（Aave v3.3.0+），RPC 失败时使用 5 分钟内的缓存，超时则字段缺失
+  - **2026-03-24**：新增「Merkl Forecast：上游数据与派生字段」：区分 Merkl 原始输入、服务端二次计算与 HTTP `items[]` 暴露字段
+  - **2026-03-24**：补充 **per-campaign metrics TTL**、opportunity 整表缓存与 10 分钟 forecast 快照的关系（各 campaign metrics 更新频率可不同）
+  - **2026-03-26（breaking）**：Brevis 对外 contract 收口为 canonical 字段：`campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`、`campaignId`；不再暴露 `apr`、`startDate`、`endDate`、`name` 及其他 deprecated 别名
+  - **2026-03-26**：补充 Brevis 数据源对比结论：`/sdk/v1/aaveCampaigns` 在当前环境实测为空，Aave 仍以 gRPC 路径为主
 
 ## 注意事项
 

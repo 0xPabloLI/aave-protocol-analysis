@@ -133,9 +133,9 @@ Merkl 预测相关（可选，有默认值）：`MERKL_FORECAST_RESULT_CACHE_TTL
 
 ## 数据更新
 
-- **市场数据**：仅 `GET /api/markets` 会触发市场数据新鲜度检查；若数据超过 1 分钟未更新，该请求会触发自动刷新（带并发控制）。后端另有每分钟定时任务作为兜底。
-- **其他端点**：`/api/coingecko-*`、`/api/campaigns/forecast-states` 使用各自缓存/TTL，不触发市场数据刷新。
-- **FDV**：FDV 缓存由后端定时任务每 **5 分钟**预热一次，请求路径与 cron 共用同一 TTL（5 分钟），过期时请求也可触发刷新。
+- **市场数据**：`GET /api/markets` 为 **cron-write/API-read-only**（每分钟 cron + 启动预热）；HTTP 请求不触发拉取。详见 `docs/backend/data-freshness-mechanism.md`。
+- **CoinGecko（categories / FDV）**：内存缓存 + cron 预热；缓存过期时 **请求可触发**刷新（与 `coingeckoController` 实现一致）。
+- **Forecast**：默认快照由 cron 每 10 分钟写入；无 `ids` 时 API 只读快照。
 
 ## 健康检查
 
@@ -163,13 +163,11 @@ curl http://localhost:3001/health
 
 ## API 端点
 
-共 7 个端点，完整说明见 [docs/api/api-documentation.md](../api/api-documentation.md)：
+公开 API 共 4 条 URL，完整说明见 [docs/api/api-documentation.md](../api/api-documentation.md)：
 
 - `GET /health`、`GET /api/health` - 健康检查（含环境信息）
 - `GET /api/markets` - 市场数据（`markets-v2`：`snapshot + reserves`；**仅此端点**会触发市场数据新鲜度检查与自动刷新）
-- `GET /api/coingecko-categories` - CoinGecko 分类（稳定币、ETH 相关）
-- `GET /api/coingecko-fdv` - FDV 数据（CoinMarketCap 优先，CoinGecko 回退）
-- `GET /api/campaigns/forecast-states` - Merkl 活动预测状态（可选 `ids=...`）
+- `GET /api/meta/side-data` - 侧数据聚合（内部 categories / fdv / forecast 缓存的公开出口）
 
 ## 日志
 
@@ -204,10 +202,7 @@ curl http://localhost:3001/health
    lsof -i :3001
    ```
 
-2. 检查数据文件是否存在：
-   ```bash
-   ls -la data/runtime/aave-formatted-data.json
-   ```
+2. 后端不依赖 `data/runtime/aave-formatted-data.json` 启动；若需核对可选 fetcher 产物可 `ls data/runtime/`。确认根目录已 `npm run build`（backend 通过 `dist/index.js` 调用 `fetchMarketsPayload()`）。
 
 3. 查看日志：
    ```bash

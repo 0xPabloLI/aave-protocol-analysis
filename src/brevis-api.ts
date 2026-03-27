@@ -14,38 +14,34 @@ import { logger } from './logger.js';
  * - Action 类型（用于区分 supply/borrow/both）
  * - Campaign 链接
  * - Campaign 描述信息（message）
+ *
+ * 按单个 pool 调试用的旧 client 形状与解析逻辑已迁出代码，见 `docs/api/brevis-supplement.md`。
  */
-export interface BrevisCampaignInfo {
-  chainId: number;
-  poolAddress: string; // pool_id from URL
-  tokenAddress: string | null; // token address if available
-  action: number; // campaign type (e.g. 2001/2002/3001)
-  actionType: 'supply' | 'borrow' | 'both' | 'unknown';
-  campaignId: string;
-  campaignName: string;
-  startTime: number; // Unix timestamp
-  endTime: number; // Unix timestamp
-  apr: number; // APR as decimal (e.g., 0.024 for 2.4%)
+// Brevis Campaign Item（API 对外不含 budget*；gRPC 拉取后暂挂 budget*，`fetchBrevisAprs` 算完 totalBudget 后剥离）
+export interface BrevisCampaignItem {
   link: string; // Campaign URL
-  message: string; // Campaign description/message
-  status: string; // Campaign status (string label)
-  rewardInfo?: {
-    tokenAddress: string;
-    tokenSymbol: string;
-    rewardAmt: string;
-    rewardUsdPrice: string;
-    apr: number;
-    tvl: number;
-  };
+  /** Annual yield ratio (gRPC `protocol.apr`). GET /api/markets multiplies by 100 for display. */
+  campaignApr: number;
+  campaignStartedAt: string;
+  campaignEndedAt: string;
+  message?: string;
+  totalBudget?: number;
+  latestTvl?: number;
+  perUserRewardCapUsd?: number; // Per-user reward cap（美元），从描述文字解析
+  campaignId?: string; // Brevis campaign ID，supply/borrow 同 ID 则共享同一 perUserRewardCapUsd
+  /** gRPC totalAmt 按 decimals 归一化后的数量；enrich 后删除 */
+  budgetNormalizedAmount?: number;
+  /** 奖励代币 symbol；enrich 后删除 */
+  budgetTokenSymbol?: string;
 }
 
-// Brevis Campaign Item（用于 FormattedReserveData）
-export interface BrevisCampaignItem {
-  apr: number; // APR 百分比值
-  link: string; // Campaign URL
-  startDate: string; // ISO date string
-  endDate: string; // ISO date string
-  name: string; // Campaign description/name
+/**
+ * 去掉 Brevis campaign 上仅供 enrich 的预算解析字段，使对象符合对外 / runtime 形状。
+ * 在 `fetchBrevisAprs` 中于算出 `totalBudget` 后调用；命名与 `pruneMeritEntryForRuntime` 等一致。
+ */
+export function pruneBrevisCampaignForRuntime(campaign: BrevisCampaignItem): BrevisCampaignItem {
+  const { budgetNormalizedAmount: _n, budgetTokenSymbol: _s, ...rest } = campaign;
+  return rest;
 }
 
 // Brevis 数据项结构（类似 MeritDataItem）
@@ -61,6 +57,22 @@ export class BrevisApiClient {
     getAllProtocolDetail: '/IncentiveProvider/GetAllProtocolDetail',
     getAllProtocols: '/IncentiveProvider/GetAllProtocols',
   };
+
+  private normalizeTokenAmount(rawAmount: string | undefined, decimals: number | undefined): string | undefined {
+    if (!rawAmount || typeof rawAmount !== 'string') return undefined;
+    if (decimals === undefined || decimals < 0 || !Number.isInteger(decimals)) return undefined;
+    if (!/^\d+$/.test(rawAmount)) return undefined;
+
+    const value = BigInt(rawAmount);
+    const scale = 10n ** BigInt(decimals);
+    const integerPart = value / scale;
+    const fractionPart = value % scale;
+    if (fractionPart === 0n) return integerPart.toString();
+
+    const fractionRaw = fractionPart.toString().padStart(decimals, '0');
+    const trimmedFraction = fractionRaw.replace(/0+$/, '');
+    return `${integerPart.toString()}.${trimmedFraction}`;
+  }
 
 
   private getGrpcHeaders(): Record<string, string> {
@@ -364,90 +376,6 @@ export class BrevisApiClient {
     return 'unknown';
   }
 
-  private mapStatusLabel(status: number | string): string {
-    if (typeof status === 'string') return status;
-    switch (status) {
-      case 1: return 'DEPLOYING';
-      case 2: return 'CREATING_FAILED';
-      case 3: return 'INACTIVE';
-      case 4: return 'ACTIVE';
-      case 5: return 'ENDED';
-      case 6: return 'DEACTIVATED';
-      default: return 'UNKNOWN';
-    }
-  }
-
-
-
-  /**
-   * 从 gRPC GetAllProtocolDetail 响应解析 campaign 数据
-   */
-  private parseCampaignsFromGrpcResponse(response: any): BrevisCampaignInfo[] {
-    const campaigns: BrevisCampaignInfo[] = [];
-    const protocol = response?.protocol;
-    const details = response?.campaignDetailsList || [];
-
-    for (const detail of details) {
-      const campaign = detail?.campaign || {};
-      const config = campaign?.config || {};
-      const type = campaign?.type ?? config?.type ?? 0;
-      const actionType = this.mapActionType(type);
-      const token = config?.tokenAmtList?.[0]?.token;
-      const link = protocol?.id && protocol?.chainId && type
-        ? `${this.frontendUrl}/campaign/?pool_id=${protocol.id}&type=${type}&chainId=${protocol.chainId}`
-        : '';
-
-      campaigns.push({
-        chainId: protocol?.chainId || campaign?.chainId || 0,
-        poolAddress: protocol?.id || detail?.protocolId || '',
-        tokenAddress: token?.addr || null,
-        action: type,
-        actionType,
-        campaignId: campaign?.id ? String(campaign.id) : '',
-        campaignName: config?.name || '',
-        startTime: config?.start || 0,
-        endTime: config?.end || 0,
-        apr: protocol?.apr || 0,
-        link,
-        message: config?.name || '',
-        status: this.mapStatusLabel(campaign?.status || 'UNKNOWN'),
-        rewardInfo: token ? {
-          tokenAddress: token.addr || '',
-          tokenSymbol: token.symbol || '',
-          rewardAmt: config?.tokenAmtList?.[0]?.totalAmt || '0',
-          rewardUsdPrice: '',
-          apr: protocol?.apr || 0,
-          tvl: protocol?.tvl || 0,
-        } : undefined,
-      });
-    }
-
-    return campaigns;
-  }
-
-  /**
-   * 直接从 gRPC 获取单个 pool 的 campaign 详情（用于页面数据）
-   * 注意：API 不支持数组参数，只支持单个值
-   */
-  async getCampaignDetailByPool(params: {
-    chainId?: number;
-    type?: number;
-    poolId?: string;
-  } = {}): Promise<{ raw: any; rawCampaigns: any[]; campaigns: BrevisCampaignInfo[] }> {
-    // 确保参数是单个值（不支持数组）
-    const response = await this.getAllProtocolDetailFromGrpc({
-      chainId: params.chainId,
-      type: params.type,
-      id: params.poolId,
-    });
-
-    return {
-      raw: response,
-      rawCampaigns: response?.campaignDetailsList || [],
-      campaigns: this.parseCampaignsFromGrpcResponse(response),
-    };
-  }
-
   /**
    * 获取全部 protocol/pool 列表（gRPC）
    */
@@ -491,6 +419,124 @@ export class BrevisApiClient {
 
 
   /**
+   * 从 Brevis 前端 JS bundle 动态提取 MetaMask campaign 描述文字
+   * 用于监控 per-user reward cap 等关键参数变化
+   *
+   * 原理：该描述文字不在 gRPC API 中返回，而是硬编码在前端 _app JS chunk 中，
+   * 条件为 campaign.type === CampaignType.METAMASK (3001)。
+   * 我们通过 fetch HTML → 找到 _app chunk → 正则提取描述文字。
+   */
+  async fetchMetaMaskCampaignDescription(): Promise<{
+    description: string;
+    perUserRewardCapUsd: number | null;
+  } | null> {
+    try {
+      // 1. Fetch 页面 HTML，找到 _app chunk 文件名（含构建 hash）
+      const pageResponse = await fetch(`${this.frontendUrl}/campaign/`);
+      if (!pageResponse.ok) {
+        logger.warn(`⚠️ Brevis 页面请求失败: ${pageResponse.status}`);
+        return null;
+      }
+      const html = await pageResponse.text();
+
+      const appChunkMatch = html.match(/src="(\/_next\/static\/chunks\/pages\/_app-[^"]+\.js)"/);
+      if (!appChunkMatch) {
+        logger.warn('⚠️ 未找到 Brevis _app JS chunk URL');
+        return null;
+      }
+
+      // 2. Fetch JS chunk
+      const chunkUrl = `${this.frontendUrl}${appChunkMatch[1]}`;
+      const chunkResponse = await fetch(chunkUrl);
+      if (!chunkResponse.ok) {
+        logger.warn(`⚠️ Brevis JS chunk 请求失败: ${chunkResponse.status}`);
+        return null;
+      }
+      const jsContent = await chunkResponse.text();
+
+      // 3. 定位 METAMASK 描述文字块
+      const startMarker = 'Eligible MetaMask';
+      const idx = jsContent.indexOf(startMarker);
+      if (idx < 0) {
+        logger.warn('⚠️ JS bundle 中未找到 MetaMask campaign 描述');
+        return null;
+      }
+
+      // 提取从 "Eligible MetaMask" 到 'per user."' 的 JSX 块
+      // 需要包含结尾的闭合引号，否则最后一段文字无法被 regex 捕获
+      const endMarker = 'per user."';
+      const endIdx = jsContent.indexOf(endMarker, idx);
+      if (endIdx < 0) {
+        logger.warn('⚠️ JS bundle 中未找到描述文字结尾');
+        return null;
+      }
+      const block = jsContent.substring(idx, endIdx + endMarker.length);
+
+      // 4. 从 JSX 块中提取可读文字
+      //    在 minified JSX 中，文本字符串出现在三种位置：
+      //    A) children:"text"              → span 子节点单值
+      //    B) children:["t1","t2"]         → span 子节点数组
+      //    C) }),"text"  或  ,"text",      → 顶层 children 数组中的独立字符串
+      //    注意：C 中 ,"text" 与 A 中 children:"text" 的 :"text" 会重叠，
+      //          所以用 children 模式优先的 OR 正则按顺序扫描
+      const textParts: string[] = [];
+
+      // block 起始是 'Eligible MetaMask Card users"}),...'
+      // 提取开头文字（在第一个 " 之前的部分）
+      const leadingTextEnd = block.indexOf('"');
+      if (leadingTextEnd > 0) {
+        const leadingText = block.substring(0, leadingTextEnd).trim();
+        if (leadingText.length > 0) {
+          textParts.push(leadingText);
+        }
+      }
+
+      // 逐段扫描 block，按位置提取所有文字：
+      // 用 OR 正则一次性匹配所有类型，保证位置顺序且不重叠
+      // Group 1: children:"text"
+      // Group 2: children:["text","text",...] (整个数组内容)
+      // Group 3: 独立字符串 — 出现在 }), 或 ], 或 ", 之后的 "text"
+      // Group 4: 紧跟在 ,"text" 后的下一个 ,"text"（无 })\]" 前导）
+      const contentRe = /children:"([^"]*)"|children:\[([^\]]*)\]|[})\]"],\s*"([^"]*)"|,"([^"]+)"/g;
+      let m;
+      while ((m = contentRe.exec(block)) !== null) {
+        if (m[1] !== undefined) {
+          const t = m[1].trim();
+          if (t.length > 0) textParts.push(t);
+        } else if (m[2] !== undefined) {
+          for (const im of m[2].matchAll(/"([^"]*)"/g)) {
+            const t = im[1].trim();
+            if (t.length > 0) textParts.push(t);
+          }
+        } else if (m[3] !== undefined) {
+          const t = m[3].trim();
+          if (t.length > 0) textParts.push(t);
+        } else if (m[4] !== undefined) {
+          // 过滤 JSX 语法噪音（如 (0,n.jsx)( 或 className 等）
+          const t = m[4].trim();
+          if (t.length > 0 && !t.includes('(0,') && !t.includes('className')) {
+            textParts.push(t);
+          }
+        }
+      }
+
+      const description = textParts.join(' ').replace(/\s+/g, ' ').trim();
+
+      // 5. 从描述文字中解析 per-user cap 金额
+      const capMatch = description.match(/up to ([\d,]+)\s*(USDC|USD)/i);
+      const perUserRewardCapUsd = capMatch ? parseInt(capMatch[1].replace(/,/g, ''), 10) : null;
+
+      logger.info(`📋 MetaMask campaign 描述提取成功: perUserRewardCapUsd=${perUserRewardCapUsd}`);
+      logger.debug(`📋 完整描述: ${description}`);
+
+      return { description, perUserRewardCapUsd };
+    } catch (error: any) {
+      logger.warn(`⚠️ 提取 MetaMask campaign 描述失败: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
    * 获取所有 Aave 相关的 campaign 数据
    * 从 getAllProtocols 获取所有 protocols，过滤出 Aave 的，然后获取每个的详情
    * 返回格式：Record<`${chainId}-${tokenAddress}`, BrevisDataItem>
@@ -502,6 +548,9 @@ export class BrevisApiClient {
   }> {
     try {
       logger.info('📡 从 gRPC 获取所有 protocols 列表...');
+
+      // 0. 并行获取 MetaMask campaign 描述（不阻塞主流程）
+      const metaMaskDescPromise = this.fetchMetaMaskCampaignDescription();
 
       // 1. 获取所有 protocols（保存原始响应）
       const protocolsResult = await this.getAllProtocolsList();
@@ -516,6 +565,7 @@ export class BrevisApiClient {
       logger.info(`🔍 找到 ${aaveProtocols.length} 个 Aave protocols（共 ${allProtocols.length} 个 protocols）`);
 
       // 3. 对每个 Aave protocol 获取详情（保存原始响应）
+      const metaMaskDesc = await metaMaskDescPromise;
       const campaignsIndex: Record<string, BrevisDataItem> = {};
       const rawProtocolDetails: Array<{ protocol: any; response: any }> = [];
 
@@ -548,45 +598,59 @@ export class BrevisApiClient {
             const actionType = this.mapActionType(type);
             const token = config?.tokenAmtList?.[0]?.token;
             const tokenAmt = config?.tokenAmtList?.[0];
+            const normalizedTotalReward = this.normalizeTokenAmount(tokenAmt?.totalAmt, token?.decimals);
+            const normalizedTotalRewardNumber = normalizedTotalReward ? Number(normalizedTotalReward) : undefined;
+            const campaignStatus = typeof campaign?.status === 'number' ? campaign.status : 0;
 
             // 构建 link
             const link = protocol.id && protocol.chainId && type
               ? `${this.frontendUrl}/campaign/?pool_id=${protocol.id}&type=${type}&chainId=${protocol.chainId}`
               : '';
 
-            // 使用 protocol.apr（从 getAllProtocolsList 返回的 protocol 对象）
-            // 注意：不使用 response.protocol.apr（来自 getAllProtocolDetailFromGrpc），
-            // 因为两个接口返回的 APR 值可能不同（response.protocol.apr 可能不准确或含义不同）
-            // protocol.apr 是小数形式（如 0.024 表示 2.4%），需要 * 100 转换为百分比
-            const apr = (protocol?.apr || 0) * 100;
+            // protocol.apr 为年化比例（如 0.024 = 2.4%/年）；与 Aave/Merkl 内存口径一致
+            const apr = protocol?.apr || 0;
             const endTime = config?.end || 0;
             const now = Math.floor(Date.now() / 1000);
+
+            // 仅保留 ACTIVE 活动（status = 4）
+            if (campaignStatus !== 4) {
+              continue;
+            }
 
             // 过滤掉已经结束的活动（保留进行中和未来活动）
             if (endTime > 0 && endTime < now) {
               continue;
             }
 
-            // 构建 campaign item
+            const tokenAddressLower =
+              typeof token?.addr === 'string' ? token.addr.trim().toLowerCase() : '';
+            // 与 Aave reserve 合并只按 underlying token 地址匹配，无 addr 则跳过（不用 pool id 占位）
+            if (!tokenAddressLower) {
+              continue;
+            }
+
+            // 构建 campaign item；budget* 仅供 fetchBrevisAprs 算 totalBudget，enrich 后剥离
             const campaignItem: BrevisCampaignItem = {
-              apr: apr,
               link,
-              startDate: new Date((config?.start || 0) * 1000).toISOString(),
-              endDate: new Date((config?.end || 0) * 1000).toISOString(),
-              name: config?.name || protocol?.name || '',
+              campaignApr: apr,
+              campaignStartedAt: new Date((config?.start || 0) * 1000).toISOString(),
+              campaignEndedAt: new Date((config?.end || 0) * 1000).toISOString(),
+              ...(typeof protocol?.tvl === 'number' && Number.isFinite(protocol.tvl)
+                ? { latestTvl: protocol.tvl }
+                : {}),
+              // METAMASK (3001) campaigns: 附加从前端 JS bundle 提取的描述和 per-user cap
+              ...(type === 3001 && metaMaskDesc ? {
+                message: metaMaskDesc.description,
+                ...(metaMaskDesc.perUserRewardCapUsd != null ? { perUserRewardCapUsd: metaMaskDesc.perUserRewardCapUsd } : {}),
+              } : {}),
+              ...(campaign.id ? { campaignId: String(campaign.id) } : {}),
+              ...(normalizedTotalRewardNumber !== undefined && Number.isFinite(normalizedTotalRewardNumber)
+                ? { budgetNormalizedAmount: normalizedTotalRewardNumber }
+                : {}),
+              ...(token?.symbol ? { budgetTokenSymbol: token.symbol } : {}),
             };
 
-            // 使用 chainId + tokenAddress 作为索引（如果 tokenAddress 存在）
-            // 否则使用 chainId + poolAddress
-            const tokenAddress = token?.addr?.toLowerCase() || null;
-            const poolAddress = protocol.id?.toLowerCase() || '';
-            
-            let indexKey: string;
-            if (tokenAddress) {
-              indexKey = `${protocol.chainId}-${tokenAddress}`;
-            } else {
-              indexKey = `${protocol.chainId}-${poolAddress}`;
-            }
+            const indexKey = `${protocol.chainId}-${tokenAddressLower}`;
 
             if (!campaignsIndex[indexKey]) {
               campaignsIndex[indexKey] = { brevisSupplys: [], brevisBorrows: [] };

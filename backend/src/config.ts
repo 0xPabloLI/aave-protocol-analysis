@@ -1,19 +1,17 @@
 import { BACKEND_FETCH_TIMING_MS, BACKEND_TIME_MS, BACKEND_TIME_SECONDS } from './cacheTtl.js';
 
-// Merkl API 请求的重试/并发配置
+// Merkl API 重试/退避（forecast `/campaigns/{id}`、`/metrics`）
+// 出站并发：`MERKL_FETCH_MAX_CONCURRENCY`（默认 5）由 `@internal/aave-shared-config`
+// 的 `createMerklConcurrencyLimitedFetch` 统一约束（opportunities、campaign、merit 侧 Merkl 等）。
+//
 // Rate Limit 参考：https://docs.merkl.xyz/integrate-merkl/app#api-rate-limit
 // - 默认限制：10 requests/second
 // - 可通过申请 API Key（X-API-Key header）提升限额
 //
 // 当前配置：
-// - 最大并发 5（留一半给 opportunities 等其他请求）
 // - 3 次重试 + 指数退避（1s → 2s → 4s，最大 10s）
 // - 覆盖 ECONNRESET / 429 / 5xx 等瞬态错误
 export const merklFetchConfig = {
-  maxConcurrency: readNumberEnv('MERKL_FETCH_MAX_CONCURRENCY', {
-    defaultValue: 5,
-    min: 1,
-  }),
   maxRetries: readNumberEnv('MERKL_FETCH_MAX_RETRIES', {
     defaultValue: 3,
     min: 0,

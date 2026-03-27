@@ -13,7 +13,14 @@ import {
   type MeritDynamicInfo,
 } from './cloudflare-browser.js';
 import { meritKeyAliases } from './config.js';
-import { getAaveRpcUrlsByChainName } from '@internal/aave-shared-config';
+import {
+  createMerklConcurrencyLimitedFetch,
+  getAaveRpcUrlsByChainName,
+} from '@internal/aave-shared-config';
+
+const merklLimitedFetch = createMerklConcurrencyLimitedFetch(
+  fetch as unknown as typeof globalThis.fetch
+) as unknown as typeof fetch;
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
@@ -41,8 +48,8 @@ export interface MeritCampaignInfo {
 
 // Merit APR 条目（扁平化结构，timeRange 直接作为字段）
 export interface MeritAprEntry {
-  apr: number; // APR 百分比值（如 5.2 表示 5.2%）
-  selfApr?: number; // Self APR 百分比值（如果有对应的 self- 前缀的 key）
+  apr: number; // 年化比例（上游 Merit 为百分数，入库时已 /100）
+  selfApr?: number;
   link: string;
   startDate: string;
   endDate: string;
@@ -59,6 +66,11 @@ export interface MeritAprEntry {
 export interface MeritDataItem {
   meritSupplys: MeritAprEntry[];
   meritBorrows: MeritAprEntry[];
+}
+
+/** Merit `actionsAPR` is percent; pipeline / snapshot use annual yield ratio. */
+function meritAprPercentToRatio(percent: number): number {
+  return percent / 100;
 }
 
 type MeritAction = 'supply' | 'borrow';
@@ -386,10 +398,10 @@ const fetchMeritRoundEstimates = async (
       if (scanChainId !== null) {
         params.set('chainId', String(scanChainId));
       }
-      let response = await fetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
+      let response = await merklLimitedFetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
       if (!response.ok) {
         params.delete('creatorSlug');
-        response = await fetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
+        response = await merklLimitedFetch(`${MERKL_BASE_URL}/opportunities?${params.toString()}`);
         if (response.ok && !creatorSlugFallbackUsed) {
           creatorSlugFallbackUsed = true;
           logger.warn(
@@ -747,12 +759,48 @@ async function getCurrentBlockNumber(chainName: string): Promise<number | null> 
   }
 }
 
+const MERIT_BLOCK_NUMBER_CACHE_TTL_MS = 60_000;
+
+const meritCurrentBlockNumberCache = new Map<string, { fetchedAtMs: number; blockNumber: number | null }>();
+
+async function getCurrentBlockNumberCached(chainName: string): Promise<number | null> {
+  const nowMs = Date.now();
+  const cached = meritCurrentBlockNumberCache.get(chainName);
+  if (cached && nowMs - cached.fetchedAtMs < MERIT_BLOCK_NUMBER_CACHE_TTL_MS) {
+    return cached.blockNumber;
+  }
+
+  const blockNumber = await getCurrentBlockNumber(chainName);
+  meritCurrentBlockNumberCache.set(chainName, { fetchedAtMs: nowMs, blockNumber });
+  return blockNumber;
+}
+
 function parseMeritEndDate(endDateRaw?: string): Date | null {
   if (!endDateRaw || endDateRaw.trim() === '') {
     return null;
   }
   const parsed = new Date(endDateRaw);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function hasEndedByMeritEndDate(endDateRaw: string | undefined, nowMs = Date.now()): boolean {
+  const parsedEndDate = parseMeritEndDate(endDateRaw);
+  if (!parsedEndDate) {
+    return false;
+  }
+  return parsedEndDate.getTime() < nowMs;
+}
+
+function isSameUtcDay(a: Date, b: Date): boolean {
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
+}
+
+function isMeritCampaignMetadataEnded(endDateRaw?: string): boolean {
+  return hasEndedByMeritEndDate(endDateRaw);
 }
 
 async function isMeritCampaignExpired(
@@ -763,30 +811,35 @@ async function isMeritCampaignExpired(
 ): Promise<boolean> {
   const now = new Date();
   const parsedEndDate = parseMeritEndDate(endDateRaw);
-  if (parsedEndDate) {
-    return parsedEndDate < now;
+  const hasEndBlock = typeof endBlockRaw === 'string' && endBlockRaw.trim() !== '';
+
+  // Use endBlock in two cases:
+  // 1) endDate missing/unparseable (fallback path)
+  // 2) endDate is today (final-day precision)
+  const shouldUseEndBlock =
+    hasEndBlock && (!parsedEndDate || isSameUtcDay(parsedEndDate, now));
+
+  if (shouldUseEndBlock) {
+    const endBlock = parseInt(endBlockRaw!, 10);
+    if (!Number.isNaN(endBlock)) {
+      // Merit campaign block ranges are aligned to Ethereum mainnet block height,
+      // not the reserve's chain-specific height (for example Celo).
+      const meritBlockReferenceChain = 'ethereum';
+      if (!currentBlockCache.has(meritBlockReferenceChain)) {
+        const currentBlock = await getCurrentBlockNumberCached(meritBlockReferenceChain);
+        currentBlockCache.set(meritBlockReferenceChain, currentBlock);
+      }
+
+      const currentBlock = currentBlockCache.get(meritBlockReferenceChain);
+      if (currentBlock !== null && currentBlock !== undefined) {
+        return currentBlock >= endBlock;
+      }
+    }
   }
 
-  if (!endBlockRaw) {
-    return false;
-  }
+  if (hasEndedByMeritEndDate(endDateRaw, now.getTime())) return true;
 
-  const endBlock = parseInt(endBlockRaw, 10);
-  if (Number.isNaN(endBlock)) {
-    return false;
-  }
-
-  if (!currentBlockCache.has(chainKey)) {
-    const currentBlock = await getCurrentBlockNumber(chainKey);
-    currentBlockCache.set(chainKey, currentBlock);
-  }
-
-  const currentBlock = currentBlockCache.get(chainKey);
-  if (currentBlock === null || currentBlock === undefined) {
-    return false;
-  }
-
-  return currentBlock >= endBlock;
+  return false;
 }
 
 /**
@@ -1248,8 +1301,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               bt
             );
             const entry: MeritAprEntry = {
-              apr: aprValue!,
-              selfApr: selfAprValue,
+              apr: meritAprPercentToRatio(aprValue!),
+              ...(selfAprValue != null && Number.isFinite(selfAprValue)
+                ? { selfApr: meritAprPercentToRatio(selfAprValue) }
+                : {}),
               requiredSupplyTokens: supplyTokens,
               link,
               startDate,
@@ -1270,8 +1325,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               bt
             );
             const entry: MeritAprEntry = {
-              apr: aprValue!,
-              selfApr: selfAprValue,
+              apr: meritAprPercentToRatio(aprValue!),
+              ...(selfAprValue != null && Number.isFinite(selfAprValue)
+                ? { selfApr: meritAprPercentToRatio(selfAprValue) }
+                : {}),
               link,
               startDate,
               endDate,
@@ -1297,8 +1354,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               st
             );
             const entry: MeritAprEntry = {
-              apr: aprValue!,
-              selfApr: selfAprValue,
+              apr: meritAprPercentToRatio(aprValue!),
+              ...(selfAprValue != null && Number.isFinite(selfAprValue)
+                ? { selfApr: meritAprPercentToRatio(selfAprValue) }
+                : {}),
               requiredBorrowTokens: borrowTokens,
               link,
               startDate,
@@ -1327,8 +1386,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             st
           );
           const entry: MeritAprEntry = {
-            apr: aprValue!,
-            selfApr: selfAprValue,
+            apr: meritAprPercentToRatio(aprValue!),
+            ...(selfAprValue != null && Number.isFinite(selfAprValue)
+              ? { selfApr: meritAprPercentToRatio(selfAprValue) }
+              : {}),
             requiredBorrowTokens: ['multiple'],
             link,
             startDate,
@@ -1355,8 +1416,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             st
           );
           const entry: MeritAprEntry = {
-            apr: aprValue!,
-            selfApr: selfAprValue,
+            apr: meritAprPercentToRatio(aprValue!),
+            ...(selfAprValue != null && Number.isFinite(selfAprValue)
+              ? { selfApr: meritAprPercentToRatio(selfAprValue) }
+              : {}),
             link,
             startDate,
             endDate,
@@ -1493,9 +1556,10 @@ export async function fetchAllMeritTimeRanges(
       const cached = cachedTimeRanges[key] ?? cachedTimeRanges[canonicalKey];
       const hasSelfAuth = getHasSelfAuthForKey(meritAPRs, canonicalKey);
       const completeness = isCachedTimeRangeComplete({ key: canonicalKey, cached, hasSelfAuth });
-      // Absolute priority: if cache is complete, skip refresh regardless of active/ended state.
-      // This includes ended campaigns.
-      const needsUpdate = !completeness.isComplete;
+      // Cache completeness is necessary but not sufficient:
+      // once a campaign end date has passed, we must refetch to pick up renewed rounds.
+      const cachedCampaignEnded = isMeritCampaignMetadataEnded(cached?.endDate);
+      const needsUpdate = !completeness.isComplete || cachedCampaignEnded;
       if (completeness.isComplete) {
         logger.debug(`📦 Skip refresh for ${canonicalKey}: cached metadata is complete`);
       }
@@ -1507,6 +1571,7 @@ export async function fetchAllMeritTimeRanges(
         cached,
         debug: {
           completenessMissing: completeness.missing,
+          cachedCampaignEnded,
         },
       };
     })
@@ -1525,6 +1590,7 @@ export async function fetchAllMeritTimeRanges(
       const logParts = [
         `key=${canonicalKey}`,
         debug?.completenessMissing?.length ? `missing=[${debug.completenessMissing.join(',')}]` : 'missing=[]',
+        `cachedEnded=${debug?.cachedCampaignEnded ? 'yes' : 'no'}`,
       ];
       logger.info(`🧭 Merit timeRange refresh: ${logParts.join(' | ')}`);
     }

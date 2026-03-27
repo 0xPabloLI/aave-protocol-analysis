@@ -366,7 +366,7 @@ ssh -A -t "$TARGET_HOST" bash -s "$DOPPLER_TOKEN_B64" << 'REMOTE_SCRIPT'
   mkdir -p data
   node dist/index.js || echo "⚠️  Initial data fetch failed, but continuing deployment..."
   
-  # Ensure data file is in the correct location (data service expects it in /root/aave/data/)
+  # Legacy layout: optional copy for old scripts; backend serves markets from memory (fetchMarketsPayload), not this file
   if [ -f "backend/data/aave-formatted-data.json" ] && [ ! -f "data/aave-formatted-data.json" ]; then
     echo "Copying data file to correct location..."
     cp backend/data/aave-formatted-data.json data/

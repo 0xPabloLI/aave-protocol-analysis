@@ -1,0 +1,93 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { serializeReserveForApi } from '../src/services/marketsApiSerialize.js';
+import type { RuntimeReserveData } from '../src/services/marketsService.js';
+
+test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xabc',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Test',
+    tokenSymbol: 'TST',
+    tokenAddress: '0xabc',
+    supplyApy: 0.052,
+    borrowApy: 0.04,
+    supplyIncentives: [0.01, 0.002],
+    borrowIncentives: [0.005],
+    meritSupplys: [
+      {
+        apr: 0.03,
+        selfApr: 0.01,
+        link: 'https://merit.example/s',
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      },
+    ],
+    merklSupplys: [
+      {
+        link: 'https://merkl.example/o',
+        breakdowns: [
+          {
+            campaignApr: 0.04,
+            aprCap: 0.06,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'cmp-1',
+          },
+        ],
+      },
+    ],
+    brevisSupplys: [
+      {
+        link: 'https://brevis.example/c',
+        campaignApr: 0.024,
+        campaignStartedAt: '2025-08-13T13:00:00.000Z',
+        campaignEndedAt: '2026-08-08T00:00:00.000Z',
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+
+  assert.equal(api.supplyApy, 5.2);
+  assert.equal(api.borrowApy, 4);
+  assert.deepEqual(api.supplyIncentives, [1, 0.2]);
+  assert.deepEqual(api.borrowIncentives, [0.5]);
+  assert.equal(api.meritSupplys?.[0]?.apr, 3);
+  assert.equal(api.meritSupplys?.[0]?.selfApr, 1);
+  const bd = api.merklSupplys?.[0]?.breakdowns?.[0];
+  assert.equal(bd?.campaignApr, 4);
+  assert.equal(bd?.aprCap, 6);
+  assert.equal(api.brevisSupplys?.[0]?.campaignApr, 2.4);
+});
+
+test('serializeReserveForApi preserves null aprCap on Merkl breakdown', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'x',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    merklBorrows: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            aprCap: null,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'id',
+          },
+        ],
+      },
+    ],
+  };
+  const api = serializeReserveForApi(reserve);
+  assert.equal(api.merklBorrows?.[0]?.breakdowns?.[0]?.aprCap, null);
+});

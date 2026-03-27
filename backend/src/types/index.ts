@@ -1,6 +1,7 @@
 // 复用现有的 FormattedReserveData 类型定义
 // 注意：这个文件需要从主项目的 src/index.ts 中导出类型
 
+/** GET /api/markets 响应形状；收益率类数字为百分数（序列化层由比例 ×100）。 */
 export interface MarketWithSpread {
   reserveId: string;
   marketName: string;
@@ -65,6 +66,11 @@ export interface MarketWithSpread {
       campaignId: string;
       whitelistOnly?: boolean;
       pointsPerThousandUsd?: number;
+      campaignType?: string;
+      totalBudget?: number;
+      aprCap?: number | null;
+      latestTvl?: number;
+      plannedDaily?: number;
     }>;
   }>;
   merklBorrows?: Array<{
@@ -78,6 +84,11 @@ export interface MarketWithSpread {
       campaignId: string;
       whitelistOnly?: boolean;
       pointsPerThousandUsd?: number;
+      campaignType?: string;
+      totalBudget?: number;
+      aprCap?: number | null;
+      latestTvl?: number;
+      plannedDaily?: number;
     }>;
   }>;
   merklHolds?: Array<{
@@ -91,21 +102,34 @@ export interface MarketWithSpread {
       campaignId: string;
       whitelistOnly?: boolean;
       pointsPerThousandUsd?: number;
+      campaignType?: string;
+      totalBudget?: number;
+      aprCap?: number | null;
+      latestTvl?: number;
+      plannedDaily?: number;
     }>;
   }>;
   brevisSupplys?: Array<{
-    apr: number;
     link: string;
-    startDate: string;
-    endDate: string;
-    name: string;
+    campaignApr: number;
+    campaignStartedAt: string;
+    campaignEndedAt: string;
+    message?: string;
+    totalBudget?: number;
+    latestTvl?: number;
+    perUserRewardCapUsd?: number;
+    campaignId?: string;
   }>;
   brevisBorrows?: Array<{
-    apr: number;
     link: string;
-    startDate: string;
-    endDate: string;
-    name: string;
+    campaignApr: number;
+    campaignStartedAt: string;
+    campaignEndedAt: string;
+    message?: string;
+    totalBudget?: number;
+    latestTvl?: number;
+    perUserRewardCapUsd?: number;
+    campaignId?: string;
   }>;
 }
 

@@ -2,6 +2,51 @@ const DEFAULT_ITEMS_PER_PAGE = 100;
 const MAX_ITEMS_PER_PAGE = 100;
 const DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS = 60 * 1000;
 
+/** `MERKL_FETCH_MAX_CONCURRENCY` (default 5): one shared pool for all Merkl HTTP in a process. */
+const readMerklFetchMaxConcurrency = () => {
+  const raw = process.env.MERKL_FETCH_MAX_CONCURRENCY;
+  const defaultValue = 5;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 1 ? n : defaultValue;
+};
+
+let merklFetchActiveCount = 0;
+const merklFetchWaitQueue = [];
+
+const acquireMerklFetchSlot = () => {
+  const max = readMerklFetchMaxConcurrency();
+  if (merklFetchActiveCount < max) {
+    merklFetchActiveCount++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => merklFetchWaitQueue.push(resolve));
+};
+
+const releaseMerklFetchSlot = () => {
+  const next = merklFetchWaitQueue.shift();
+  if (next) {
+    next();
+  } else {
+    merklFetchActiveCount--;
+  }
+};
+
+/**
+ * Wraps `fetch` so every Merkl HTTP call shares one process-wide concurrency pool
+ * (opportunities pagination, campaign/metrics, merit Merkl probes, etc.).
+ */
+export function createMerklConcurrencyLimitedFetch(fetchImpl = fetch) {
+  return async (input, init) => {
+    await acquireMerklFetchSlot();
+    try {
+      return await fetchImpl(input, init);
+    } finally {
+      releaseMerklFetchSlot();
+    }
+  };
+}
+
 const opportunitiesSnapshotCache = new Map();
 
 const {
@@ -300,6 +345,45 @@ export const resolveCacheTtlMs = (
   return Number.isFinite(parsed) && parsed > 0 ? parsed : safeFallback;
 };
 
+const toFiniteNumber = (value) => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+/**
+ * Normalize a Merkl campaign budget to the effective unit used by forecast:
+ * - If reward token price is available and positive: USD
+ * - Otherwise: reward token units (after decimals normalization when needed)
+ *
+ * Returns `null` when amount cannot be parsed.
+ */
+export const normalizeMerklCampaignTotalBudget = (campaign) => {
+  const amountRaw = campaign?.amount;
+  const amount = toFiniteNumber(amountRaw);
+  if (amount === null) return null;
+
+  const decimals =
+    toFiniteNumber(campaign?.rewardToken?.decimals) ??
+    toFiniteNumber(campaign?.params?.decimalsRewardToken);
+
+  let rewardAmount = amount;
+  if (decimals !== null && decimals >= 0) {
+    if (typeof amountRaw === 'string' && !amountRaw.includes('.')) {
+      rewardAmount = amount / Math.pow(10, decimals);
+    }
+  }
+
+  const rewardTokenPrice = toFiniteNumber(campaign?.rewardToken?.price);
+  if (rewardTokenPrice !== null && rewardTokenPrice > 0) {
+    return rewardAmount * rewardTokenPrice;
+  }
+  return rewardAmount;
+};
+
 const withDefaultAaveTydroQuery = ({
   mainProtocolId,
   status,
@@ -334,7 +418,8 @@ const buildQuery = (query) => {
 };
 
 const fetchJson = async ({ fetchImpl, url }) => {
-  const response = await fetchImpl(url, {
+  const limitedFetch = createMerklConcurrencyLimitedFetch(fetchImpl);
+  const response = await limitedFetch(url, {
     method: 'GET',
     headers: {
       accept: 'application/json',

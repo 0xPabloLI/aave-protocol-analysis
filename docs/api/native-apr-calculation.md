@@ -166,10 +166,10 @@ Fields available in each reserve object:
 
 ### Reliability
 
-- Markets + on-chain fetched in parallel via `Promise.allSettled`
-- On-chain data has 5-min cache for graceful degradation
-- If on-chain fails beyond cache TTL, fields are simply absent
-- Markets data is required; on-chain data is optional
+- Markets refresh (`fetchMarketsPayload`) merges on-chain fields from `onchainDataService` cache at write time (not a parallel `Promise.allSettled` to the HTTP client path).
+- On-chain data uses **30-minute** per-pool cache TTL (`BACKEND_CACHE_TTL_MS.onchainCacheTtl`); RPC failure within TTL reuses cached values.
+- If on-chain data is missing and cache expired, reserves still get fallbacks (`deficit` default `"0"`, `baseVariableBorrowRate` calculated when possible).
+- Markets payload is required for a successful refresh; on-chain fields are best-effort.
 
 ---
 
@@ -181,9 +181,8 @@ Fields available in each reserve object:
 
 ### Cache
 
-- 内存缓存，60s TTL（`BACKEND_CACHE_TTL_MS.realtimeFamily`）
-- Cron 每分钟刷新
-- On-chain 数据有独立 5 分钟缓存（RPC 失败时使用）
+- 内存快照 + `staleTimeMs` 60s（`marketsDataStaleThreshold` / `realtimeFamily`）；cron 每分钟刷新
+- On-chain：独立 cron + **30 分钟** per-pool 缓存（`onchainCacheTtl`），RPC 失败时在 TTL 内复用
 
 ---
 

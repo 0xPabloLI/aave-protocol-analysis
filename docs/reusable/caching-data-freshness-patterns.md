@@ -8,7 +8,7 @@ Universal patterns for caching, TTL management, and data freshness. Apply to any
 
 | Concept | Definition | Example |
 |---------|------------|---------|
-| **Write frequency** | How often producer updates data | Upstream API updates every 5 min |
+| **Write frequency** | How often producer updates data | Varies by source (e.g. cron every 1 min vs every 10 min) |
 | **Freshness window** | How stale consumer tolerates | UI acceptable with 1 min stale |
 | **TTL** | Cache expiration time | Set based on both factors |
 
@@ -58,8 +58,8 @@ Request
 ```
 data/
 ├── runtime/                    # Hot path, small, purpose-built
-│   ├── markets.json           # Production API reads this
-│   └── forecast-meta-lite.json
+│   ├── aave-formatted-data.json   # Example: optional fetcher artifact (this repo: API uses memory, not this file)
+│   └── forecast-meta-lite.json    # Example: auxiliary file some services read (e.g. Merkl forecast lite)
 └── debug/                      # Large, verbose, troubleshooting only
     ├── raw-api-response.json
     └── full-scan-results.json
@@ -171,6 +171,8 @@ if (dataAge > HARD_STALE_CAP_MS) {
   throw new ServiceUnavailableError('Data too stale');
 }
 ```
+
+Optional hard cap: **this** codebase’s markets handler does **not** return 503 by snapshot age (only not-ready on cold start); see `docs/backend/data-freshness-mechanism.md`.
 
 - Short TTL (1-5 min)
 - Hard cap with 503 response
