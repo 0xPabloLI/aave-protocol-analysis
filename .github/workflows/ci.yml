@@ -52,6 +52,8 @@ jobs:
           npm ci
           npm --prefix backend ci
 
+      # Backend uses moderate: catches Express path-to-regexp 0.x advisories; elliptic/ethers may
+      # still appear in npm audit output as low/informational when no upstream fix exists.
       - name: Audit runtime dependencies (root high, backend moderate)
         run: |
           set -e
