@@ -53,6 +53,38 @@ This repository has four related workflows:
      - auto-merge is enabled (squash)
    - Result: remediation PR can merge automatically after required checks pass
 
+### Third-party actions: SHA pinning
+
+Workflows pin third-party actions with a **full 40-character commit SHA** in `uses:` (not a floating tag like `@v6`). Each line includes a trailing comment with the human-readable release, for example:
+
+```yaml
+uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+```
+
+**Why**: a tag can be moved to a different commit; a SHA selects one immutable snapshot of the action’s code.
+
+**Triggers and behavior**: pinning does **not** change `on:` (push, PR, schedule, `workflow_run`). CI still runs the same way; only the resolved action bundle is fixed until you edit the workflow.
+
+### How to upgrade a pinned action
+
+The **goal** is the same as with tags—run a newer release—but you edit the **SHA** (and the `# …` comment), not only `@v5` → `@v6`.
+
+1. Open the action’s GitHub repo → **Releases** (or **Tags**) and pick the version you want.
+2. Resolve that tag to a commit SHA:
+   - In the UI: open the tag → note the commit hash, or  
+   - API: `GET https://api.github.com/repos/<owner>/<repo>/commits/<tag>` and use the `sha` field (full 40 characters).
+3. Update every `uses: <owner>/<repo>@<old-sha> # …` in `.github/workflows/*.yml` to the new SHA and update the comment (e.g. `# v6` → `# v7`).
+
+**Dependabot**: this repo includes `package-ecosystem: github-actions` in `.github/dependabot.yml`. With `open-pull-requests-limit: 0` (same idea as for npm), **routine** version-update PRs for actions are suppressed; **security-related** updates may still arrive via Dependabot depending on GitHub’s classification. Do not rely only on Dependabot for feature upgrades of pinned actions—use the steps above when you intentionally bump versions.
+
+### SHA pins vs tags only
+
+| | Tags only (`@v6`) | SHA + comment |
+|--|-------------------|---------------|
+| **What changes when you upgrade** | Bump the tag in `uses:` | Replace the 40-char SHA and refresh the `# vN` comment |
+| **Immutability** | Same tag name might point to a different commit later | Same SHA always means the same action code |
+| **CI still automatic?** | Yes | Yes |
+
 ## How to use
 
 - Normal daily flow:
