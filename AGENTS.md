@@ -96,6 +96,7 @@ External APIs → Backend Cron Jobs → In-Memory Snapshots → REST Clients
 - `merit-api.ts` - Merit APR fetcher; groups by supply/borrow requirements and self-supply/borrow patterns
 - `merkl-api.ts` - Merkl opportunities fetcher; processes campaign breakdowns and calculates aggregate APRs
 - `brevis-api.ts` - Brevis Linea Surge fetcher; builds `chainId-tokenAddress` index for matching
+- `token-price-resolver.ts` - CoinGecko USD fallback for reward tokens; chain→platform ids live in generated `src/generated/coingecko-platform-by-chain-id.ts` (refresh: `npm run sync:coingecko-platform-map`; CI runs `--check`; weekly PR workflow `coingecko-platform-sync.yml`)
 - `logger.ts` - Winston logger (console + rotating file logs to `logs/`)
 
 **Matching Strategy**: Each API uses different identifiers:
