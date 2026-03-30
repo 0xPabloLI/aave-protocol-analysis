@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
 import { logger } from './logger.js';
+import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
 
 /**
  * Brevis Incentra API 客户端
@@ -17,14 +18,8 @@ import { logger } from './logger.js';
  *
  * 按单个 pool 调试用的旧 client 形状与解析逻辑已迁出代码，见 `docs/api/brevis-supplement.md`。
  */
-// Brevis Campaign Item（API 对外不含 budget*；gRPC 拉取后暂挂 budget*，`fetchBrevisAprs` 算完 totalBudget 后剥离）
-export interface BrevisCampaignItem {
-  link: string; // Campaign URL
+export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
   /** Annual yield ratio (gRPC `protocol.apr`). GET /api/markets multiplies by 100 for display. */
-  campaignApr: number;
-  campaignStartedAt: string;
-  campaignEndedAt: string;
-  message?: string;
   totalBudget?: number;
   latestTvl?: number;
   perUserRewardCapUsd?: number; // Per-user reward cap（美元），从描述文字解析
@@ -35,13 +30,21 @@ export interface BrevisCampaignItem {
   budgetTokenSymbol?: string;
 }
 
+// Brevis Campaign Item（按 campaign group 对外；细节放到 breakdowns 内）
+export interface BrevisCampaignItem extends CampaignGroup<BrevisCampaignBreakdown> {}
+
 /**
  * 去掉 Brevis campaign 上仅供 enrich 的预算解析字段，使对象符合对外 / runtime 形状。
  * 在 `fetchBrevisAprs` 中于算出 `totalBudget` 后调用；命名与 `pruneMeritEntryForRuntime` 等一致。
  */
 export function pruneBrevisCampaignForRuntime(campaign: BrevisCampaignItem): BrevisCampaignItem {
-  const { budgetNormalizedAmount: _n, budgetTokenSymbol: _s, ...rest } = campaign;
-  return rest;
+  return {
+    ...campaign,
+    breakdowns: (campaign.breakdowns ?? []).map((breakdown) => {
+      const { budgetNormalizedAmount: _n, budgetTokenSymbol: _s, ...rest } = breakdown;
+      return rest;
+    }),
+  };
 }
 
 // Brevis 数据项结构（类似 MeritDataItem）
@@ -632,22 +635,31 @@ export class BrevisApiClient {
             // 构建 campaign item；budget* 仅供 fetchBrevisAprs 算 totalBudget，enrich 后剥离
             const campaignItem: BrevisCampaignItem = {
               link,
-              campaignApr: apr,
-              campaignStartedAt: new Date((config?.start || 0) * 1000).toISOString(),
-              campaignEndedAt: new Date((config?.end || 0) * 1000).toISOString(),
-              ...(typeof protocol?.tvl === 'number' && Number.isFinite(protocol.tvl)
-                ? { latestTvl: protocol.tvl }
+              ...(typeof config?.name === 'string' && config.name.trim().length > 0
+                ? { name: config.name.trim() }
                 : {}),
               // METAMASK (3001) campaigns: 附加从前端 JS bundle 提取的描述和 per-user cap
               ...(type === 3001 && metaMaskDesc ? {
                 message: metaMaskDesc.description,
-                ...(metaMaskDesc.perUserRewardCapUsd != null ? { perUserRewardCapUsd: metaMaskDesc.perUserRewardCapUsd } : {}),
               } : {}),
-              ...(campaign.id ? { campaignId: String(campaign.id) } : {}),
-              ...(normalizedTotalRewardNumber !== undefined && Number.isFinite(normalizedTotalRewardNumber)
-                ? { budgetNormalizedAmount: normalizedTotalRewardNumber }
-                : {}),
-              ...(token?.symbol ? { budgetTokenSymbol: token.symbol } : {}),
+              breakdowns: [
+                {
+                  campaignApr: apr,
+                  campaignStartedAt: new Date((config?.start || 0) * 1000).toISOString(),
+                  campaignEndedAt: new Date((config?.end || 0) * 1000).toISOString(),
+                  ...(typeof protocol?.tvl === 'number' && Number.isFinite(protocol.tvl)
+                    ? { latestTvl: protocol.tvl }
+                    : {}),
+                  ...(type === 3001 && metaMaskDesc?.perUserRewardCapUsd != null
+                    ? { perUserRewardCapUsd: metaMaskDesc.perUserRewardCapUsd }
+                    : {}),
+                  ...(campaign.id ? { campaignId: String(campaign.id) } : {}),
+                  ...(normalizedTotalRewardNumber !== undefined && Number.isFinite(normalizedTotalRewardNumber)
+                    ? { budgetNormalizedAmount: normalizedTotalRewardNumber }
+                    : {}),
+                  ...(token?.symbol ? { budgetTokenSymbol: token.symbol } : {}),
+                },
+              ],
             };
 
             const indexKey = `${protocol.chainId}-${tokenAddressLower}`;

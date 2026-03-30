@@ -43,9 +43,19 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
     brevisSupplys: [
       {
         link: 'https://brevis.example/c',
-        campaignApr: 0.024,
-        campaignStartedAt: '2025-08-13T13:00:00.000Z',
-        campaignEndedAt: '2026-08-08T00:00:00.000Z',
+        name: 'MetaMask Card',
+        message: 'Eligible MetaMask Card users',
+        breakdowns: [
+          {
+            campaignApr: 0.024,
+            campaignStartedAt: '2025-08-13T13:00:00.000Z',
+            campaignEndedAt: '2026-08-08T00:00:00.000Z',
+            campaignId: '1754995104',
+            latestTvl: 4_151_203.07,
+            totalBudget: 9_998_600,
+            perUserRewardCapUsd: 5000,
+          },
+        ],
       },
     ],
   };
@@ -61,7 +71,10 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
   const bd = api.merklSupplys?.[0]?.breakdowns?.[0];
   assert.equal(bd?.campaignApr, 4);
   assert.equal(bd?.aprCap, 6);
-  assert.equal(api.brevisSupplys?.[0]?.campaignApr, 2.4);
+  assert.equal(api.brevisSupplys?.[0]?.name, 'MetaMask Card');
+  assert.equal(api.brevisSupplys?.[0]?.message, 'Eligible MetaMask Card users');
+  assert.equal(api.brevisSupplys?.[0]?.breakdowns?.[0]?.campaignApr, 2.4);
+  assert.equal(api.brevisSupplys?.[0]?.breakdowns?.[0]?.perUserRewardCapUsd, 5000);
 });
 
 test('serializeReserveForApi preserves null aprCap on Merkl breakdown', () => {
