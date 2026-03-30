@@ -25,8 +25,19 @@ function scaleMerklBreakdown<
   return next;
 }
 
-function scaleBrevisCampaign<T extends { campaignApr: number }>(c: T): T {
-  return { ...c, campaignApr: c.campaignApr * 100 };
+function scaleBrevisBreakdown<T extends { campaignApr: number }>(b: T): T {
+  return { ...b, campaignApr: b.campaignApr * 100 };
+}
+
+function scaleGroupedCampaigns<
+  TBreakdown extends { campaignApr: number },
+  TGroup extends { breakdowns: TBreakdown[] },
+>(groups: TGroup[] | undefined, scaleBreakdown: (breakdown: TBreakdown) => TBreakdown): TGroup[] | undefined {
+  if (!groups?.length) return undefined;
+  return groups.map((group) => ({
+    ...group,
+    breakdowns: group.breakdowns.map(scaleBreakdown),
+  }));
 }
 
 export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithSpread {
@@ -73,34 +84,19 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
       ? { meritBorrows: reserve.meritBorrows.map(scaleMeritEntry) }
       : {}),
     ...(reserve.merklSupplys?.length
-      ? {
-          merklSupplys: reserve.merklSupplys.map((g) => ({
-            ...g,
-            breakdowns: g.breakdowns.map(scaleMerklBreakdown),
-          })),
-        }
+      ? { merklSupplys: scaleGroupedCampaigns(reserve.merklSupplys, scaleMerklBreakdown) }
       : {}),
     ...(reserve.merklBorrows?.length
-      ? {
-          merklBorrows: reserve.merklBorrows.map((g) => ({
-            ...g,
-            breakdowns: g.breakdowns.map(scaleMerklBreakdown),
-          })),
-        }
+      ? { merklBorrows: scaleGroupedCampaigns(reserve.merklBorrows, scaleMerklBreakdown) }
       : {}),
     ...(reserve.merklHolds?.length
-      ? {
-          merklHolds: reserve.merklHolds.map((g) => ({
-            ...g,
-            breakdowns: g.breakdowns.map(scaleMerklBreakdown),
-          })),
-        }
+      ? { merklHolds: scaleGroupedCampaigns(reserve.merklHolds, scaleMerklBreakdown) }
       : {}),
     ...(reserve.brevisSupplys?.length
-      ? { brevisSupplys: reserve.brevisSupplys.map(scaleBrevisCampaign) }
+      ? { brevisSupplys: scaleGroupedCampaigns(reserve.brevisSupplys, scaleBrevisBreakdown) }
       : {}),
     ...(reserve.brevisBorrows?.length
-      ? { brevisBorrows: reserve.brevisBorrows.map(scaleBrevisCampaign) }
+      ? { brevisBorrows: scaleGroupedCampaigns(reserve.brevisBorrows, scaleBrevisBreakdown) }
       : {}),
   };
   return out;

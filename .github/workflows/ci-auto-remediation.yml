@@ -4,10 +4,12 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
+    # Include dependabot/* so security PRs (e.g. path-to-regexp) trigger remediation too.
     branches:
       - main
       - railway
       - feature/**
+      - dependabot/**
   workflow_dispatch:
     inputs:
       branch:
@@ -24,7 +26,8 @@ jobs:
   remediate:
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.event == 'push')
+      (github.event.workflow_run.conclusion == 'failure' &&
+       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'pull_request'))
     runs-on: ubuntu-latest
     steps:
       - name: Resolve target branch
@@ -89,7 +92,7 @@ jobs:
       - name: Create remediation PR
         id: cpr
         if: steps.verify.outputs.ok == 'true' && steps.diff.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8
         with:
           commit-message: "chore: auto-remediate dependency issues after CI failure"
           branch: "bot/ci-auto-remediation-${{ github.run_id }}"

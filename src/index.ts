@@ -26,7 +26,7 @@ import {
   fetchMeritData,
   getMeritDataFromMarket
 } from './merit-api.js';
-import type { BrevisCampaignItem, BrevisDataItem } from './brevis-api.js';
+import type { BrevisCampaignBreakdown, BrevisCampaignItem, BrevisDataItem } from './brevis-api.js';
 import {
   checkAndReportSessionStatus,
   closeBrowserInstances
@@ -206,6 +206,29 @@ function pruneMerklGroupForRuntime(group: MerklOpportunityGroup): MerklOpportuni
   };
 }
 
+function pruneBrevisBreakdownForRuntime(breakdown: BrevisCampaignBreakdown): BrevisCampaignBreakdown {
+  return {
+    campaignApr: breakdown.campaignApr,
+    campaignStartedAt: breakdown.campaignStartedAt,
+    campaignEndedAt: breakdown.campaignEndedAt,
+    ...(breakdown.latestTvl !== undefined ? { latestTvl: breakdown.latestTvl } : {}),
+    ...(breakdown.totalBudget !== undefined ? { totalBudget: breakdown.totalBudget } : {}),
+    ...(breakdown.perUserRewardCapUsd !== undefined
+      ? { perUserRewardCapUsd: breakdown.perUserRewardCapUsd }
+      : {}),
+    ...(breakdown.campaignId ? { campaignId: breakdown.campaignId } : {}),
+  };
+}
+
+function pruneBrevisGroupForRuntime(group: BrevisCampaignItem): BrevisCampaignItem {
+  return {
+    link: group.link,
+    ...(group.name ? { name: group.name } : {}),
+    ...(group.message ? { message: group.message } : {}),
+    breakdowns: (group.breakdowns ?? []).map(pruneBrevisBreakdownForRuntime),
+  };
+}
+
 function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData {
   return {
     reserveId: item.reserveId,
@@ -243,8 +266,12 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.merklHolds && item.merklHolds.length > 0
       ? { merklHolds: item.merklHolds.map(pruneMerklGroupForRuntime) }
       : {}),
-    ...(item.brevisSupplys && item.brevisSupplys.length > 0 ? { brevisSupplys: item.brevisSupplys } : {}),
-    ...(item.brevisBorrows && item.brevisBorrows.length > 0 ? { brevisBorrows: item.brevisBorrows } : {}),
+    ...(item.brevisSupplys && item.brevisSupplys.length > 0
+      ? { brevisSupplys: item.brevisSupplys.map(pruneBrevisGroupForRuntime) }
+      : {}),
+    ...(item.brevisBorrows && item.brevisBorrows.length > 0
+      ? { brevisBorrows: item.brevisBorrows.map(pruneBrevisGroupForRuntime) }
+      : {}),
     // Rate-input fields for manual APR calculation
     ...(item.decimals !== undefined ? { decimals: item.decimals } : {}),
     ...(item.availableLiquidity ? { availableLiquidity: item.availableLiquidity } : {}),
@@ -394,29 +421,40 @@ async function fetchBrevisAprs(
       if (!Number.isFinite(chainId) || !rewardTokenAddress) continue;
 
       const enrichCampaignUsd = async (campaign: BrevisCampaignItem): Promise<BrevisCampaignItem> => {
-        const normalizedAmount = toFiniteNumber(campaign.budgetNormalizedAmount);
-        if (normalizedAmount === null || normalizedAmount < 0) {
-          return pruneBrevisCampaignForRuntime(campaign);
-        }
-
         const reservePriceKey = `${chainId}:${rewardTokenAddress}`;
         const reserveTokenPrice = tokenPriceByChainAndAddress.get(reservePriceKey);
-        const resolved = await resolveUsdPriceWithPriority({
-          chainId,
-          tokenAddress: rewardTokenAddress,
-          tokenSymbol: campaign.budgetTokenSymbol,
-          snapshotPrice: undefined,
-          reservePrice: reserveTokenPrice,
-        });
-        brevisPriceSourceStats[resolved.source] += 1;
 
-        if (resolved.price !== undefined) {
-          return pruneBrevisCampaignForRuntime({
-            ...campaign,
-            totalBudget: normalizedAmount * resolved.price,
-          });
-        }
-        return pruneBrevisCampaignForRuntime(campaign);
+        const breakdowns = await Promise.all(
+          (campaign.breakdowns ?? []).map(async (breakdown) => {
+            const normalizedAmount = toFiniteNumber(breakdown.budgetNormalizedAmount);
+            if (normalizedAmount === null || normalizedAmount < 0) {
+              return breakdown;
+            }
+
+            const resolved = await resolveUsdPriceWithPriority({
+              chainId,
+              tokenAddress: rewardTokenAddress,
+              tokenSymbol: breakdown.budgetTokenSymbol,
+              snapshotPrice: undefined,
+              reservePrice: reserveTokenPrice,
+            });
+            brevisPriceSourceStats[resolved.source] += 1;
+
+            if (resolved.price !== undefined) {
+              return {
+                ...breakdown,
+                totalBudget: normalizedAmount * resolved.price,
+              };
+            }
+
+            return breakdown;
+          })
+        );
+
+        return pruneBrevisCampaignForRuntime({
+          ...campaign,
+          breakdowns,
+        });
       };
 
       campaigns.brevisSupplys = await Promise.all(campaigns.brevisSupplys.map((c) => enrichCampaignUsd(c)));
@@ -882,30 +920,44 @@ function generateCSV(data: FormattedReserveData[]): string {
             return parts.join('|');
           }).join(';')}"`
         : '',
-      // Brevis Supplys：格式为 "APR1:link1:startDate1:endDate1:name1;APR2:link2:startDate2:endDate2:name2"
+      // Brevis Supplys：与 Merkl 对齐，包含 group-level name/message + breakdowns
       (row.brevisSupplys && row.brevisSupplys.length > 0) 
-        ? `"${row.brevisSupplys.map(c => {
-            const parts = [
-              ratioToPercentString(c.campaignApr),
-              c.link,
-              c.campaignStartedAt,
-              c.campaignEndedAt,
-              c.message || '',
-            ];
-            return parts.join(':');
+        ? `"${row.brevisSupplys.map(g => {
+            const parts: string[] = [];
+            if (g.name) parts.push(`name:${g.name}`);
+            if (g.message) parts.push(`msg:${g.message}`);
+            const breakdownStr = (g.breakdowns ?? []).map((b) => {
+              const fields = [
+                ratioToPercentString(b.campaignApr),
+                b.campaignStartedAt,
+                b.campaignEndedAt,
+                b.campaignId || '',
+              ];
+              return fields.join(':');
+            }).join(';');
+            if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
+            parts.push(`link:${g.link}`);
+            return parts.join('|');
           }).join(';')}"` 
         : '',
       // Brevis Borrows：格式同上
       (row.brevisBorrows && row.brevisBorrows.length > 0) 
-        ? `"${row.brevisBorrows.map(c => {
-            const parts = [
-              ratioToPercentString(c.campaignApr),
-              c.link,
-              c.campaignStartedAt,
-              c.campaignEndedAt,
-              c.message || '',
-            ];
-            return parts.join(':');
+        ? `"${row.brevisBorrows.map(g => {
+            const parts: string[] = [];
+            if (g.name) parts.push(`name:${g.name}`);
+            if (g.message) parts.push(`msg:${g.message}`);
+            const breakdownStr = (g.breakdowns ?? []).map((b) => {
+              const fields = [
+                ratioToPercentString(b.campaignApr),
+                b.campaignStartedAt,
+                b.campaignEndedAt,
+                b.campaignId || '',
+              ];
+              return fields.join(':');
+            }).join(';');
+            if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
+            parts.push(`link:${g.link}`);
+            return parts.join('|');
           }).join(';')}"` 
         : ''
     ].join(','))

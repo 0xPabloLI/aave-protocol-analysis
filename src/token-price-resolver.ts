@@ -1,3 +1,5 @@
+import { COINGECKO_PLATFORM_BY_CHAIN_ID_SYNCED } from './generated/coingecko-platform-by-chain-id.js';
+
 type AssetPlatform = { id?: string; chain_identifier?: number | null };
 
 interface ResolveTokenPriceWithBackupParams {
@@ -19,21 +21,9 @@ interface ResolveUsdPriceWithPriorityParams {
 
 const COINGECKO_API_BASE = 'https://api.coingecko.com/api/v3';
 const COINGECKO_PLATFORM_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const HARDCODED_PLATFORM_BY_CHAIN_ID: Record<number, string> = {
-  1: 'ethereum',
-  10: 'optimistic-ethereum',
-  56: 'binance-smart-chain',
-  100: 'xdai',
-  137: 'polygon-pos',
-  146: 'sonic',
-  250: 'fantom',
-  324: 'zksync',
-  8453: 'base',
-  42161: 'arbitrum-one',
-  43114: 'avalanche',
-  59144: 'linea',
-  534352: 'scroll',
-};
+
+/** Use only when synced map or live /asset_platforms is wrong for `simple/token_price/{platform}`. */
+const COINGECKO_PLATFORM_BY_CHAIN_ID_OVERRIDES: Partial<Record<number, string>> = {};
 const COINGECKO_COIN_ID_BY_SYMBOL: Record<string, string> = {
   usdt: 'tether',
   usdc: 'usd-coin',
@@ -140,7 +130,11 @@ async function getCoingeckoAssetPlatformMap(forceRefresh = false): Promise<Map<n
 }
 
 function resolveCoingeckoPlatformId(chainId: number, map: Map<number, string>): string | undefined {
-  return HARDCODED_PLATFORM_BY_CHAIN_ID[chainId] ?? map.get(chainId);
+  return (
+    COINGECKO_PLATFORM_BY_CHAIN_ID_OVERRIDES[chainId] ??
+    COINGECKO_PLATFORM_BY_CHAIN_ID_SYNCED[chainId] ??
+    map.get(chainId)
+  );
 }
 
 async function fetchCoingeckoTokenPriceUsd(chainId: number, tokenAddress: string): Promise<number | undefined> {
@@ -218,15 +212,25 @@ export async function resolveTokenPriceWithBackup({
 
   const promise = (async (): Promise<number | undefined> => {
     let resolvedPrice: number | undefined;
-    try {
-      const contractPrice = normalizedAddress
-        ? await fetchCoingeckoTokenPriceUsd(chainId, normalizedAddress)
-        : undefined;
-      const symbolPrice = await fetchCoingeckoCoinPriceBySymbolUsd(tokenSymbol);
-      resolvedPrice = contractPrice ?? symbolPrice;
-    } catch {
-      // Treat transient provider/network errors as a short-lived miss.
-      resolvedPrice = undefined;
+    let contractPrice: number | undefined;
+    if (normalizedAddress) {
+      try {
+        contractPrice = await fetchCoingeckoTokenPriceUsd(chainId, normalizedAddress);
+      } catch {
+        // Contract lookup errors should not block symbol fallback.
+        contractPrice = undefined;
+      }
+    }
+
+    if (contractPrice !== undefined) {
+      resolvedPrice = contractPrice;
+    } else {
+      try {
+        resolvedPrice = await fetchCoingeckoCoinPriceBySymbolUsd(tokenSymbol);
+      } catch {
+        // Treat transient provider/network errors as a short-lived miss.
+        resolvedPrice = undefined;
+      }
     }
 
     const cacheTtlMs =

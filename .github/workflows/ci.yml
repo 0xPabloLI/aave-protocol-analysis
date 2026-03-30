@@ -33,6 +33,8 @@ jobs:
       - name: CI (root + backend)
         run: npm run ci
 
+      - name: CoinGecko platform map matches address book
+        run: npm run sync:coingecko-platform-map -- --check
 
   security-audit:
     runs-on: ubuntu-latest
@@ -50,6 +52,8 @@ jobs:
           npm ci
           npm --prefix backend ci
 
+      # Backend uses moderate: catches Express path-to-regexp 0.x advisories; elliptic/ethers may
+      # still appear in npm audit output as low/informational when no upstream fix exists.
       - name: Audit runtime dependencies (root high, backend moderate)
         run: |
           set -e
