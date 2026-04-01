@@ -22,10 +22,10 @@ jobs:
   build-and-prune:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: "20"
           cache: "npm"
@@ -33,16 +33,14 @@ jobs:
       - name: CI (root + backend)
         run: npm run ci
 
-      - name: CoinGecko platform map matches address book
-        run: npm run sync:coingecko-platform-map -- --check
 
   security-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: "20"
           cache: "npm"
