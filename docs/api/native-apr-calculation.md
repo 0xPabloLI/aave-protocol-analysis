@@ -231,8 +231,7 @@ const borrowCapUsedPct = (totalBorrowedUsd / borrowCapUsd) * 100;
 
 ## 2. Frontend: Interest Rate Calculator
 
-Working directory:
-`/Users/pabloli/Documents/aaveapy/.worktrees/feature-merkl-forecast/` (`feature/merkl-forecast`)
+Working directory (example): a clone or git worktree of this repo, e.g. `.worktrees/merkl-forecast/` on branch `merkl-forecast`.
 
 ### 2.1 APY conversion implementation choice
 
