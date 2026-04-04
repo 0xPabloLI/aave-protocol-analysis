@@ -29,7 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Map branch → API base URL
-      API_BASE_URL: ${{ github.ref_name == 'main' && 'https://api.aaveapy.com' || 'https://staging.aaveapy.com' }}
+      # Staging API lives on staging-api.* (staging.aaveapy.com is the site / returns 404 for /health).
+      API_BASE_URL: ${{ github.ref_name == 'main' && 'https://api.aaveapy.com' || 'https://staging-api.aaveapy.com' }}
       SITE_URL: ${{ github.ref_name == 'main' && 'https://aaveapy.com' || 'https://staging.aaveapy.com' }}
       ENV_LABEL: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
 
@@ -228,11 +229,11 @@ jobs:
             -H "Authorization: Bearer $RAILWAY_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{
-              "query": "mutation($id: String!) { deploymentRollback(id: $id) { id status } }",
+              "query": "mutation($id: String!) { deploymentRollback(id: $id) }",
               "variables": { "id": "'"$ROLLBACK_ID"'" }
             }')
 
-          if echo "$ROLLBACK_RESULT" | jq -e '.data.deploymentRollback.id' > /dev/null 2>&1; then
+          if echo "$ROLLBACK_RESULT" | jq -e '.data.deploymentRollback == true' > /dev/null 2>&1; then
             echo "✅ Railway ${{ env.ENV_LABEL }} rolled back successfully"
           else
             echo "❌ Rollback failed:"
