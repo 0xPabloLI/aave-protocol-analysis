@@ -98,13 +98,19 @@ npm run ci:remote
 
 ### CI Workflow (Read-Only)
 
+Branch filters should match the branches where you want CI to run (this repo: `main` and `railway` on push and PR).
+
 ```yaml
 name: CI
 on:
   push:
-    branches: [main, develop, feature/**]
+    branches:
+      - main
+      - railway
   pull_request:
-    branches: [main, develop]
+    branches:
+      - main
+      - railway
 
 permissions:
   contents: read
@@ -145,7 +151,11 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    branches: [main, develop, feature/**]
+    # Must align with branches that actually run CI (otherwise workflow_run never fires for those heads).
+    branches:
+      - main
+      - railway
+      - dependabot/**
   workflow_dispatch:
     inputs:
       branch:

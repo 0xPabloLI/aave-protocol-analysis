@@ -8,7 +8,6 @@ on:
     branches:
       - main
       - railway
-      - feature/**
       - dependabot/**
   workflow_dispatch:
     inputs:

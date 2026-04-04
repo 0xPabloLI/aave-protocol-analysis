@@ -129,7 +129,7 @@ Single remediation PR
 `ci-auto-remediation.yml` only triggers when:
 1. `CI` workflow completes with `conclusion == 'failure'`
 2. The triggering event was `push` (not PR)
-3. Branch matches configured list (main, railway, feature/**)
+3. Branch matches configured list (main, railway, dependabot/**)
 
 This prevents:
 - Duplicate runs on PR events (PRs don't need auto-remediation PRs)
