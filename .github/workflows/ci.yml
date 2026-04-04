@@ -8,12 +8,10 @@ on:
     branches:
       - main
       - railway
-      - feature/**
   pull_request:
     branches:
       - main
       - railway
-      - feature/**
 
 permissions:
   contents: read
@@ -60,3 +58,22 @@ jobs:
 
   # NOTE: Auto-remediation is handled by ci-auto-remediation.yml workflow
   # (triggered via workflow_run event when this workflow fails)
+
+  socket-firewall:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Socket Firewall
+        uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
+        with:
+          mode: firewall-free
+
+      - name: Install dependencies via Socket Firewall
+        run: sfw npm ci
