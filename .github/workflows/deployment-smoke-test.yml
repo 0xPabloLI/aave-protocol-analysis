@@ -185,11 +185,13 @@ jobs:
             echo "   RAILWAY_API_TOKEN"
             echo "   RAILWAY_STAGING_PROJECT_ID, RAILWAY_STAGING_SERVICE_ID, RAILWAY_STAGING_ENVIRONMENT_ID"
             echo "   RAILWAY_PRODUCTION_PROJECT_ID, RAILWAY_PRODUCTION_SERVICE_ID, RAILWAY_PRODUCTION_ENVIRONMENT_ID"
+            echo "rollback_executed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           if [ -z "$RAILWAY_PROJECT_ID" ] || [ -z "$RAILWAY_SERVICE_ID" ] || [ -z "$RAILWAY_ENVIRONMENT_ID" ]; then
             echo "⚠️ Railway ${{ env.ENV_LABEL }} secrets not configured — skipping auto-rollback"
+            echo "rollback_executed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -242,9 +244,11 @@ jobs:
 
           if echo "$ROLLBACK_RESULT" | jq -e '.data.deploymentRollback == true' > /dev/null 2>&1; then
             echo "✅ Railway ${{ env.ENV_LABEL }} rolled back successfully"
+            echo "rollback_executed=true" >> "$GITHUB_OUTPUT"
           else
             echo "❌ Rollback failed:"
             echo "$ROLLBACK_RESULT" | jq . 2>/dev/null || echo "$ROLLBACK_RESULT"
+            echo "rollback_executed=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
@@ -256,10 +260,13 @@ jobs:
             const env = '${{ env.ENV_LABEL }}';
             const sha = '${{ github.sha }}';
             const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+            const rollbackExecuted = '${{ steps.rollback.outputs.rollback_executed }}';
             const rollbackOutcome = '${{ steps.rollback.outcome }}' || 'unknown';
-            const rollbackStatus = rollbackOutcome === 'success'
+            const rollbackStatus = rollbackExecuted === 'true'
               ? '✅ Auto-rollback succeeded — previous deployment restored'
-              : '❌ Auto-rollback failed — manual intervention required';
+              : rollbackOutcome === 'success'
+                ? '⚠️ Rollback skipped — secrets not configured, manual intervention required'
+                : '❌ Auto-rollback failed — manual intervention required';
 
             await github.rest.issues.create({
               owner: context.repo.owner,
