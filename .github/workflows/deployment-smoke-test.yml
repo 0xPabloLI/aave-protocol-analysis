@@ -213,10 +213,17 @@ jobs:
           echo "Deployments:"
           echo "$DEPLOYMENTS" | jq '.data.deployments.edges[].node | {id: .id[0:8], status, createdAt, canRollback}' 2>/dev/null
 
-          # Skip index 0 (current/broken), find first canRollback=true
-          ROLLBACK_ID=$(echo "$DEPLOYMENTS" | jq -r '
-            [.data.deployments.edges[].node | select(.canRollback == true)] | .[1].id // empty
+          # Prefer the newest rollback-eligible deploy that is not the list head (typical broken in-flight head has canRollback false).
+          # If only one eligible target exists, use it — do not skip .[0] with .[1] (Codex P1).
+          HEAD_ID=$(echo "$DEPLOYMENTS" | jq -r '.data.deployments.edges[0].node.id // empty')
+          ROLLBACK_ID=$(echo "$DEPLOYMENTS" | jq -r --arg head "$HEAD_ID" '
+            [.data.deployments.edges[].node | select(.canRollback == true and .id != $head)] | .[0].id // empty
           ')
+          if [ -z "$ROLLBACK_ID" ]; then
+            ROLLBACK_ID=$(echo "$DEPLOYMENTS" | jq -r '
+              [.data.deployments.edges[].node | select(.canRollback == true)] | .[0].id // empty
+            ')
+          fi
 
           if [ -z "$ROLLBACK_ID" ]; then
             echo "❌ No rollback-eligible deployment found for ${{ env.ENV_LABEL }}"
