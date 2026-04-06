@@ -54,10 +54,9 @@ This repository has five related workflows:
    - Result: remediation PR can merge automatically after required checks pass
 
 5. `Deployment Smoke Test` (`.github/workflows/deployment-smoke-test.yml`)
-   - Triggered via `workflow_run` after `CI` completes successfully on `main` / `railway`
+   - Triggered via `deployment_status` when Railway reports a successful deployment on `main` / `railway`
    - **Not** triggered by `push` — avoids deadlock with Railway's "Wait for CI" (see below)
-   - Polls `/health` until the new commit SHA appears (up to 10 min)
-   - Validates: health check, `/api/markets` (≥50 reserves + snapshot), `/api/meta/side-data`, frontend accessibility
+   - Runs right after Railway reports deploy success: health check, `/api/markets` (≥50 reserves + snapshot), `/api/meta/side-data`, frontend accessibility (curl retries only; no long poll for `commitSha`)
    - On failure: auto-rollback via Railway GraphQL `deploymentRollback` mutation, then creates a GitHub issue with `smoke-test-failure` label
    - Rollback target: newest `canRollback == true` deployment that is not the current broken head
    - Branch → environment mapping: `main` → production (`api.aaveapy.com`), `railway` → staging (`staging-api.aaveapy.com`)
@@ -141,19 +140,20 @@ Railway's "Wait for CI" blocks deployment until **all** push-triggered GitHub ch
 push → smoke test polls /health for new SHA → Railway waits for smoke test to pass → never deploys → deadlock
 ```
 
-**Solution**: The smoke test uses `workflow_run` (triggered after `CI` completes), not `push`. This removes it from Railway's check suite scope:
+**Solution**: The smoke test uses `deployment_status` (sent by Railway after deploying), not `push`. This removes it from Railway's check suite scope:
 
 ```
 push → CI (push-triggered, Railway waits for this)
          ↓ CI passes
-         ├→ Railway deploys (only waited for CI)
-         └→ workflow_run triggers Deployment Smoke Test
-              ↓ polls /health until new SHA appears
+         Railway deploys new commit
+         ↓ Railway sends deployment_status: success
+         Smoke test triggers (deployment_status event)
+              ↓ health + API checks on live backend
               ├→ all checks pass → done
               └→ any check fails → auto-rollback + GitHub issue
 ```
 
-The smoke test also gates on `github.event.workflow_run.conclusion == 'success'` so it skips entirely when CI fails (Railway also skips deployment in that case).
+Context fields come from `github.event.deployment.sha` / `.ref` (not `github.sha` / `github.ref_name`). The `if:` condition gates on `deployment_status.state == 'success'` and `deployment.ref` matching `main` or `railway`.
 
 ### Workflow Run Trigger Conditions
 
