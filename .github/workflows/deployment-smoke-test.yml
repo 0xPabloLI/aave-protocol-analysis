@@ -21,9 +21,9 @@ permissions:
   contents: read
   issues: write
 
-# Cancel in-progress runs on same branch (only latest deployment matters)
+# Cancel in-progress runs for the same deployment target environment.
 concurrency:
-  group: smoke-test-${{ github.event.deployment.ref || github.event.deployment.environment || github.event.deployment.sha }}
+  group: smoke-test-${{ github.event.deployment.environment || github.event.deployment.ref || github.event.deployment.sha }}
   cancel-in-progress: true
 
 jobs:
