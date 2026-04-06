@@ -59,6 +59,7 @@ This repository has five related workflows:
    - Runs right after Railway reports deploy success: health check, `/api/markets` (≥50 reserves + snapshot), `/api/meta/side-data`, frontend accessibility (curl retries only; no long poll for `commitSha`)
    - On failure: auto-rollback via Railway GraphQL `deploymentRollback` mutation, then creates a GitHub issue with `smoke-test-failure` label
    - Rollback target: newest `canRollback == true` deployment that is not the current broken head
+   - Rollback secret selection is branch-specific with no production→staging fallback when the chosen environment secret is empty; notification issue titles also reflect rollback succeeded/skipped/failed state
    - Branch → environment mapping: `main` → production (`api.aaveapy.com`), `railway` → staging (`staging-api.aaveapy.com`)
 
 ### Third-party actions: SHA pinning
