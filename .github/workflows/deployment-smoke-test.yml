@@ -220,7 +220,7 @@ jobs:
         run: |
           TARGET_JSON=$(node --input-type=module -e "
             import { selectRailwayRollbackTarget } from './.github/scripts/deployment-smoke-test-helpers.mjs';
-            const target = selectRailwayRollbackTarget(process.env.DEPLOY_BRANCH, {
+            const target = selectRailwayRollbackTarget(process.env.ENV_LABEL, {
               production: {
                 projectId: process.env.RAILWAY_PRODUCTION_PROJECT_ID,
                 serviceId: process.env.RAILWAY_PRODUCTION_SERVICE_ID,

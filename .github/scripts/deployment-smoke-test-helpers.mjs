@@ -39,8 +39,9 @@ export function resolveDeploymentTarget({ ref, sha, environment }) {
   };
 }
 
-export function selectRailwayRollbackTarget(branch, secrets) {
-  const useProduction = branch === 'main';
+export function selectRailwayRollbackTarget(targetEnvironment, secrets) {
+  const normalizedTargetEnvironment = normalizeValue(targetEnvironment).toLowerCase();
+  const useProduction = normalizedTargetEnvironment === 'production';
   const selected = useProduction ? secrets.production : secrets.staging;
 
   return {
