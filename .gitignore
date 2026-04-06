@@ -23,7 +23,10 @@ env.example
 # IDE files
 .vscode/
 .idea/
-.cursor/
+# Track shared Cursor slash commands; ignore the rest of .cursor/
+.cursor/*
+!.cursor/commands/
+!.cursor/commands/**
 *.swp
 *.swo
 

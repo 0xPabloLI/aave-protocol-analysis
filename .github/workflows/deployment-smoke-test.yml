@@ -1,11 +1,11 @@
-# Post-deployment smoke test: verify live APIs return healthy data
-# Polls /health until the new commit SHA appears, then runs data checks.
+# Post-deployment smoke test: verify live APIs return healthy data after Railway deploy.
+# Runs health + API checks once Railway reports deploy success (no long SHA wait loop).
 # On failure: auto-rollback via Railway GraphQL API (both staging and production).
 #
-# Trigger: workflow_run (after CI passes), NOT push — avoids deadlock with
-# Railway's "Wait for CI" which blocks deploy until all push-triggered
-# check suites pass. This workflow runs *after* CI passes → Railway deploys
-# → smoke test verifies the live deployment → rolls back on failure.
+# Trigger: deployment_status (after Railway deploys), NOT push — avoids deadlock
+# with Railway's "Wait for CI" which blocks deploy until all push-triggered
+# check suites pass. Railway deploys after CI passes, sends deployment_status
+# to GitHub, then this workflow runs as post-deploy verification.
 #
 # Required GitHub secrets (per environment):
 #   RAILWAY_API_TOKEN                    (shared)
@@ -15,66 +15,83 @@
 name: Deployment Smoke Test
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches:
-      - main
-      - railway
+  deployment_status:
 
 permissions:
   contents: read
   issues: write
 
-# Cancel in-progress runs on same branch (only latest push matters)
+# Cancel in-progress runs on same branch (only latest deployment matters)
 concurrency:
-  group: smoke-test-${{ github.event.workflow_run.head_branch }}
+  group: smoke-test-${{ github.event.deployment.ref || github.event.deployment.environment || github.event.deployment.sha }}
   cancel-in-progress: true
 
 jobs:
   smoke-test:
-    # Only run after a successful CI — skip if CI failed or was cancelled
-    if: github.event.workflow_run.conclusion == 'success'
+    # Only run on successful Railway deployments; target environment is resolved in-step
+    if: github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
-    env:
-      # workflow_run context: branch/sha come from the triggering workflow
-      DEPLOY_BRANCH: ${{ github.event.workflow_run.head_branch }}
-      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
-      # Map branch → API base URL
-      # Staging API lives on staging-api.* (staging.aaveapy.com is the site / returns 404 for /health).
-      API_BASE_URL: ${{ github.event.workflow_run.head_branch == 'main' && 'https://api.aaveapy.com' || 'https://staging-api.aaveapy.com' }}
-      SITE_URL: ${{ github.event.workflow_run.head_branch == 'main' && 'https://aaveapy.com' || 'https://staging.aaveapy.com' }}
-      ENV_LABEL: ${{ github.event.workflow_run.head_branch == 'main' && 'production' || 'staging' }}
+    outputs:
+      should_run: ${{ steps.target.outputs.should_run }}
+      deploy_branch: ${{ steps.target.outputs.deploy_branch }}
+      deploy_sha: ${{ steps.target.outputs.deploy_sha }}
+      environment_label: ${{ steps.target.outputs.environment_label }}
+      api_base_url: ${{ steps.target.outputs.api_base_url }}
+      site_url: ${{ steps.target.outputs.site_url }}
 
     steps:
-      - name: Wait for new deployment (poll commit SHA)
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Resolve deployment target
+        id: target
+        env:
+          DEPLOYMENT_REF: ${{ github.event.deployment.ref }}
+          DEPLOYMENT_SHA: ${{ github.event.deployment.sha }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.deployment.environment }}
         run: |
-          EXPECTED_SHA="${{ env.DEPLOY_SHA }}"
-          MAX_WAIT=600   # 10 minutes
-          INTERVAL=15
-          ELAPSED=0
+          TARGET_JSON=$(node --input-type=module -e "
+            import { resolveDeploymentTarget } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+            const target = resolveDeploymentTarget({
+              ref: process.env.DEPLOYMENT_REF,
+              sha: process.env.DEPLOYMENT_SHA,
+              environment: process.env.DEPLOYMENT_ENVIRONMENT,
+            });
+            console.log(JSON.stringify(target));
+          ")
 
-          echo "⏳ Waiting for ${{ env.ENV_LABEL }} to deploy commit ${EXPECTED_SHA:0:7}..."
+          SHOULD_RUN=$(echo "$TARGET_JSON" | jq -r '.shouldRun')
+          DEPLOY_BRANCH=$(echo "$TARGET_JSON" | jq -r '.deployBranch')
+          DEPLOY_SHA=$(echo "$TARGET_JSON" | jq -r '.deploySha')
+          ENV_LABEL=$(echo "$TARGET_JSON" | jq -r '.environmentLabel')
+          API_BASE_URL=$(echo "$TARGET_JSON" | jq -r '.apiBaseUrl')
+          SITE_URL=$(echo "$TARGET_JSON" | jq -r '.siteUrl')
 
-          while [ $ELAPSED -lt $MAX_WAIT ]; do
-            LIVE_SHA=$(curl -s --max-time 10 "${{ env.API_BASE_URL }}/health" | jq -r '.commitSha // empty' 2>/dev/null || true)
+          {
+            echo "should_run=$SHOULD_RUN"
+            echo "deploy_branch=$DEPLOY_BRANCH"
+            echo "deploy_sha=$DEPLOY_SHA"
+            echo "environment_label=$ENV_LABEL"
+            echo "api_base_url=$API_BASE_URL"
+            echo "site_url=$SITE_URL"
+          } >> "$GITHUB_OUTPUT"
 
-            if [ "$LIVE_SHA" = "$EXPECTED_SHA" ]; then
-              echo "✅ New deployment detected after ${ELAPSED}s (SHA: ${EXPECTED_SHA:0:7})"
-              exit 0
-            fi
+          {
+            echo "DEPLOY_BRANCH=$DEPLOY_BRANCH"
+            echo "DEPLOY_SHA=$DEPLOY_SHA"
+            echo "ENV_LABEL=$ENV_LABEL"
+            echo "API_BASE_URL=$API_BASE_URL"
+            echo "SITE_URL=$SITE_URL"
+          } >> "$GITHUB_ENV"
 
-            echo "   ${ELAPSED}s — live SHA: ${LIVE_SHA:-(not available)}"
-            sleep $INTERVAL
-            ELAPSED=$((ELAPSED + INTERVAL))
-          done
-
-          echo "❌ Timeout: deployment did not reach commit ${EXPECTED_SHA:0:7} within ${MAX_WAIT}s"
-          echo "   Last live SHA: ${LIVE_SHA:-(not available)}"
-          exit 1
+      - name: Skip unsupported deployment target
+        if: steps.target.outputs.should_run != 'true'
+        run: |
+          echo "Skipping deployment_status event for non-target deployment."
+          echo "ref='${{ github.event.deployment.ref }}' environment='${{ github.event.deployment.environment }}'"
 
       - name: Health check
         id: health
+        if: steps.target.outputs.should_run == 'true'
         run: |
           echo "🏥 Checking ${{ env.ENV_LABEL }} health endpoint..."
           HTTP_CODE=$(curl -s -o /tmp/health.json -w "%{http_code}" \
@@ -92,6 +109,7 @@ jobs:
 
       - name: API /api/markets data check
         id: markets
+        if: steps.target.outputs.should_run == 'true'
         run: |
           echo "📊 Checking ${{ env.ENV_LABEL }} /api/markets..."
           HTTP_CODE=$(curl -s -o /tmp/markets.json -w "%{http_code}" \
@@ -126,6 +144,7 @@ jobs:
 
       - name: API /api/meta/side-data check
         id: sidedata
+        if: steps.target.outputs.should_run == 'true'
         run: |
           echo "📦 Checking ${{ env.ENV_LABEL }} /api/meta/side-data..."
           HTTP_CODE=$(curl -s -o /tmp/sidedata.json -w "%{http_code}" \
@@ -143,6 +162,7 @@ jobs:
 
       - name: Frontend accessibility check
         id: frontend
+        if: steps.target.outputs.should_run == 'true'
         run: |
           echo "🌐 Checking ${{ env.ENV_LABEL }} frontend (${{ env.SITE_URL }})..."
           HTTP_CODE=$(curl -s -o /tmp/frontend.html -w "%{http_code}" \
@@ -177,22 +197,47 @@ jobs:
   # ── Auto-rollback on smoke test failure (both staging and production) ──
   rollback:
     needs: smoke-test
-    if: failure()
+    if: failure() && needs.smoke-test.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     env:
       RAILWAY_API_URL: https://backboard.railway.com/graphql/v2
-      DEPLOY_BRANCH: ${{ github.event.workflow_run.head_branch }}
-      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
-      ENV_LABEL: ${{ github.event.workflow_run.head_branch == 'main' && 'production' || 'staging' }}
+      DEPLOY_BRANCH: ${{ needs.smoke-test.outputs.deploy_branch }}
+      DEPLOY_SHA: ${{ needs.smoke-test.outputs.deploy_sha }}
+      ENV_LABEL: ${{ needs.smoke-test.outputs.environment_label }}
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
       - name: Rollback Railway deployment
         id: rollback
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ github.event.workflow_run.head_branch == 'main' && secrets.RAILWAY_PRODUCTION_PROJECT_ID || secrets.RAILWAY_STAGING_PROJECT_ID }}
-          RAILWAY_SERVICE_ID: ${{ github.event.workflow_run.head_branch == 'main' && secrets.RAILWAY_PRODUCTION_SERVICE_ID || secrets.RAILWAY_STAGING_SERVICE_ID }}
-          RAILWAY_ENVIRONMENT_ID: ${{ github.event.workflow_run.head_branch == 'main' && secrets.RAILWAY_PRODUCTION_ENVIRONMENT_ID || secrets.RAILWAY_STAGING_ENVIRONMENT_ID }}
+          RAILWAY_PRODUCTION_PROJECT_ID: ${{ secrets.RAILWAY_PRODUCTION_PROJECT_ID }}
+          RAILWAY_PRODUCTION_SERVICE_ID: ${{ secrets.RAILWAY_PRODUCTION_SERVICE_ID }}
+          RAILWAY_PRODUCTION_ENVIRONMENT_ID: ${{ secrets.RAILWAY_PRODUCTION_ENVIRONMENT_ID }}
+          RAILWAY_STAGING_PROJECT_ID: ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}
+          RAILWAY_STAGING_SERVICE_ID: ${{ secrets.RAILWAY_STAGING_SERVICE_ID }}
+          RAILWAY_STAGING_ENVIRONMENT_ID: ${{ secrets.RAILWAY_STAGING_ENVIRONMENT_ID }}
         run: |
+          TARGET_JSON=$(node --input-type=module -e "
+            import { selectRailwayRollbackTarget } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+            const target = selectRailwayRollbackTarget(process.env.ENV_LABEL, {
+              production: {
+                projectId: process.env.RAILWAY_PRODUCTION_PROJECT_ID,
+                serviceId: process.env.RAILWAY_PRODUCTION_SERVICE_ID,
+                environmentId: process.env.RAILWAY_PRODUCTION_ENVIRONMENT_ID,
+              },
+              staging: {
+                projectId: process.env.RAILWAY_STAGING_PROJECT_ID,
+                serviceId: process.env.RAILWAY_STAGING_SERVICE_ID,
+                environmentId: process.env.RAILWAY_STAGING_ENVIRONMENT_ID,
+              },
+            });
+            console.log(JSON.stringify(target));
+          ")
+          RAILWAY_PROJECT_ID=$(echo "$TARGET_JSON" | jq -r '.projectId')
+          RAILWAY_SERVICE_ID=$(echo "$TARGET_JSON" | jq -r '.serviceId')
+          RAILWAY_ENVIRONMENT_ID=$(echo "$TARGET_JSON" | jq -r '.environmentId')
+
           if [ -z "$RAILWAY_TOKEN" ]; then
             echo "⚠️ RAILWAY_API_TOKEN secret not configured — skipping auto-rollback"
             echo "💡 To enable auto-rollback, add these GitHub repo secrets:"
@@ -268,35 +313,29 @@ jobs:
 
       - name: Create rollback notification issue
         if: always()
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
+            const { pathToFileURL } = require('node:url');
+            const helperUrl = pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.github/scripts/deployment-smoke-test-helpers.mjs`).href;
+            const { createSmokeTestIssuePayload } = await import(helperUrl);
             const env = '${{ env.ENV_LABEL }}';
             const sha = '${{ env.DEPLOY_SHA }}';
             const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
             const rollbackExecuted = '${{ steps.rollback.outputs.rollback_executed }}';
             const rollbackOutcome = '${{ steps.rollback.outcome }}' || 'unknown';
-            const rollbackStatus = rollbackExecuted === 'true'
-              ? '✅ Auto-rollback succeeded — previous deployment restored'
-              : rollbackOutcome === 'success'
-                ? '⚠️ Rollback skipped — secrets not configured, manual intervention required'
-                : '❌ Auto-rollback failed — manual intervention required';
+            const payload = createSmokeTestIssuePayload({
+              environment: env,
+              sha,
+              runUrl,
+              rollbackExecuted,
+              rollbackOutcome,
+            });
 
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `🚨 ${env} smoke test failed — deployment rolled back`,
-              body: [
-                `## Smoke Test Failure (${env})`,
-                '',
-                `| Field | Value |`,
-                `|-------|-------|`,
-                `| Environment | **${env}** |`,
-                `| Commit | \`${sha.slice(0, 7)}\` |`,
-                `| Rollback | ${rollbackStatus} |`,
-                `| Workflow Run | [View logs](${runUrl}) |`,
-                '',
-                'Check the workflow logs for details on which check failed.',
-              ].join('\n'),
+              title: payload.title,
+              body: payload.body,
               labels: ['smoke-test-failure'],
             });
