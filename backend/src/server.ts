@@ -65,6 +65,9 @@ const healthHandler = (req: express.Request, res: express.Response) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
+    // Railway injects RAILWAY_GIT_COMMIT_SHA at runtime; smoke tests poll this
+    // to confirm the new deployment is live before running checks.
+    ...(process.env.RAILWAY_GIT_COMMIT_SHA && { commitSha: process.env.RAILWAY_GIT_COMMIT_SHA }),
     environment: {
       nodeEnv: process.env.NODE_ENV || 'development',
       port: PORT,

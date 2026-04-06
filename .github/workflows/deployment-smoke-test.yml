@@ -1,0 +1,302 @@
+# Post-deployment smoke test: verify live APIs return healthy data
+# Polls /health until the new commit SHA appears, then runs data checks.
+# On failure: auto-rollback via Railway GraphQL API (both staging and production).
+#
+# Trigger: workflow_run (after CI passes), NOT push — avoids deadlock with
+# Railway's "Wait for CI" which blocks deploy until all push-triggered
+# check suites pass. This workflow runs *after* CI passes → Railway deploys
+# → smoke test verifies the live deployment → rolls back on failure.
+#
+# Required GitHub secrets (per environment):
+#   RAILWAY_API_TOKEN                    (shared)
+#   RAILWAY_STAGING_PROJECT_ID           RAILWAY_PRODUCTION_PROJECT_ID
+#   RAILWAY_STAGING_SERVICE_ID           RAILWAY_PRODUCTION_SERVICE_ID
+#   RAILWAY_STAGING_ENVIRONMENT_ID       RAILWAY_PRODUCTION_ENVIRONMENT_ID
+name: Deployment Smoke Test
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches:
+      - main
+      - railway
+
+permissions:
+  contents: read
+  issues: write
+
+# Cancel in-progress runs on same branch (only latest push matters)
+concurrency:
+  group: smoke-test-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-test:
+    # Only run after a successful CI — skip if CI failed or was cancelled
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      # workflow_run context: branch/sha come from the triggering workflow
+      DEPLOY_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+      # Map branch → API base URL
+      # Staging API lives on staging-api.* (staging.aaveapy.com is the site / returns 404 for /health).
+      API_BASE_URL: ${{ github.event.workflow_run.head_branch == 'main' && 'https://api.aaveapy.com' || 'https://staging-api.aaveapy.com' }}
+      SITE_URL: ${{ github.event.workflow_run.head_branch == 'main' && 'https://aaveapy.com' || 'https://staging.aaveapy.com' }}
+      ENV_LABEL: ${{ github.event.workflow_run.head_branch == 'main' && 'production' || 'staging' }}
+
+    steps:
+      - name: Wait for new deployment (poll commit SHA)
+        run: |
+          EXPECTED_SHA="${{ env.DEPLOY_SHA }}"
+          MAX_WAIT=600   # 10 minutes
+          INTERVAL=15
+          ELAPSED=0
+
+          echo "⏳ Waiting for ${{ env.ENV_LABEL }} to deploy commit ${EXPECTED_SHA:0:7}..."
+
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            LIVE_SHA=$(curl -s --max-time 10 "${{ env.API_BASE_URL }}/health" | jq -r '.commitSha // empty' 2>/dev/null || true)
+
+            if [ "$LIVE_SHA" = "$EXPECTED_SHA" ]; then
+              echo "✅ New deployment detected after ${ELAPSED}s (SHA: ${EXPECTED_SHA:0:7})"
+              exit 0
+            fi
+
+            echo "   ${ELAPSED}s — live SHA: ${LIVE_SHA:-(not available)}"
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "❌ Timeout: deployment did not reach commit ${EXPECTED_SHA:0:7} within ${MAX_WAIT}s"
+          echo "   Last live SHA: ${LIVE_SHA:-(not available)}"
+          exit 1
+
+      - name: Health check
+        id: health
+        run: |
+          echo "🏥 Checking ${{ env.ENV_LABEL }} health endpoint..."
+          HTTP_CODE=$(curl -s -o /tmp/health.json -w "%{http_code}" \
+            --max-time 30 --retry 3 --retry-delay 10 --retry-all-errors \
+            "${{ env.API_BASE_URL }}/health")
+
+          echo "HTTP status: $HTTP_CODE"
+          cat /tmp/health.json | jq . 2>/dev/null || cat /tmp/health.json
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "❌ Health check failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "✅ Health check passed"
+
+      - name: API /api/markets data check
+        id: markets
+        run: |
+          echo "📊 Checking ${{ env.ENV_LABEL }} /api/markets..."
+          HTTP_CODE=$(curl -s -o /tmp/markets.json -w "%{http_code}" \
+            --max-time 60 --retry 3 --retry-delay 30 --retry-all-errors \
+            "${{ env.API_BASE_URL }}/api/markets")
+
+          echo "HTTP status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "❌ /api/markets returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          # Validate response structure: must have reserves array with data
+          RESERVE_COUNT=$(jq '.reserves | length' /tmp/markets.json 2>/dev/null || echo "0")
+          echo "Reserve count: $RESERVE_COUNT"
+
+          if [ "$RESERVE_COUNT" -lt 50 ]; then
+            echo "❌ Too few reserves ($RESERVE_COUNT < 50), data may be incomplete"
+            jq '{snapshot: .snapshot, reserveCount: (.reserves | length)}' /tmp/markets.json 2>/dev/null
+            exit 1
+          fi
+
+          # Check snapshot metadata exists
+          HAS_SNAPSHOT=$(jq 'has("snapshot")' /tmp/markets.json 2>/dev/null || echo "false")
+          if [ "$HAS_SNAPSHOT" != "true" ]; then
+            echo "❌ Missing snapshot metadata in response"
+            exit 1
+          fi
+
+          echo "✅ /api/markets OK — $RESERVE_COUNT reserves"
+
+      - name: API /api/meta/side-data check
+        id: sidedata
+        run: |
+          echo "📦 Checking ${{ env.ENV_LABEL }} /api/meta/side-data..."
+          HTTP_CODE=$(curl -s -o /tmp/sidedata.json -w "%{http_code}" \
+            --max-time 30 --retry 3 --retry-delay 30 --retry-all-errors \
+            "${{ env.API_BASE_URL }}/api/meta/side-data")
+
+          echo "HTTP status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "❌ /api/meta/side-data returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+
+          echo "✅ /api/meta/side-data OK"
+
+      - name: Frontend accessibility check
+        id: frontend
+        run: |
+          echo "🌐 Checking ${{ env.ENV_LABEL }} frontend (${{ env.SITE_URL }})..."
+          HTTP_CODE=$(curl -s -o /tmp/frontend.html -w "%{http_code}" \
+            --max-time 30 --retry 3 --retry-delay 30 --retry-all-errors \
+            -L "${{ env.SITE_URL }}")
+
+          echo "HTTP status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "⚠️ Frontend returned HTTP $HTTP_CODE (may be expected if frontend deploys separately)"
+          else
+            echo "✅ Frontend accessible"
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo ""
+          echo "========================================"
+          echo "  Smoke Test Summary (${{ env.ENV_LABEL }})"
+          echo "========================================"
+          echo "  Branch:     ${{ env.DEPLOY_BRANCH }}"
+          echo "  Commit:     ${{ env.DEPLOY_SHA }}"
+          echo "  API URL:    ${{ env.API_BASE_URL }}"
+          echo "  Site URL:   ${{ env.SITE_URL }}"
+          echo "  Health:     ${{ steps.health.outcome }}"
+          echo "  Markets:    ${{ steps.markets.outcome }}"
+          echo "  Side Data:  ${{ steps.sidedata.outcome }}"
+          echo "  Frontend:   ${{ steps.frontend.outcome }}"
+          echo "========================================"
+
+  # ── Auto-rollback on smoke test failure (both staging and production) ──
+  rollback:
+    needs: smoke-test
+    if: failure()
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_API_URL: https://backboard.railway.com/graphql/v2
+      DEPLOY_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+      ENV_LABEL: ${{ github.event.workflow_run.head_branch == 'main' && 'production' || 'staging' }}
+    steps:
+      - name: Rollback Railway deployment
+        id: rollback
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ github.event.workflow_run.head_branch == 'main' && secrets.RAILWAY_PRODUCTION_PROJECT_ID || secrets.RAILWAY_STAGING_PROJECT_ID }}
+          RAILWAY_SERVICE_ID: ${{ github.event.workflow_run.head_branch == 'main' && secrets.RAILWAY_PRODUCTION_SERVICE_ID || secrets.RAILWAY_STAGING_SERVICE_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ github.event.workflow_run.head_branch == 'main' && secrets.RAILWAY_PRODUCTION_ENVIRONMENT_ID || secrets.RAILWAY_STAGING_ENVIRONMENT_ID }}
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "⚠️ RAILWAY_API_TOKEN secret not configured — skipping auto-rollback"
+            echo "💡 To enable auto-rollback, add these GitHub repo secrets:"
+            echo "   RAILWAY_API_TOKEN"
+            echo "   RAILWAY_STAGING_PROJECT_ID, RAILWAY_STAGING_SERVICE_ID, RAILWAY_STAGING_ENVIRONMENT_ID"
+            echo "   RAILWAY_PRODUCTION_PROJECT_ID, RAILWAY_PRODUCTION_SERVICE_ID, RAILWAY_PRODUCTION_ENVIRONMENT_ID"
+            echo "rollback_executed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z "$RAILWAY_PROJECT_ID" ] || [ -z "$RAILWAY_SERVICE_ID" ] || [ -z "$RAILWAY_ENVIRONMENT_ID" ]; then
+            echo "⚠️ Railway ${{ env.ENV_LABEL }} secrets not configured — skipping auto-rollback"
+            echo "rollback_executed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "🔍 Fetching recent deployments for ${{ env.ENV_LABEL }}..."
+
+          DEPLOYMENTS=$(curl -s -X POST "${{ env.RAILWAY_API_URL }}" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "query": "query($input: DeploymentListInput!, $first: Int) { deployments(input: $input, first: $first) { edges { node { id status createdAt canRollback } } } }",
+              "variables": {
+                "input": {
+                  "projectId": "'"$RAILWAY_PROJECT_ID"'",
+                  "serviceId": "'"$RAILWAY_SERVICE_ID"'",
+                  "environmentId": "'"$RAILWAY_ENVIRONMENT_ID"'"
+                },
+                "first": 5
+              }
+            }')
+
+          echo "Deployments:"
+          echo "$DEPLOYMENTS" | jq '.data.deployments.edges[].node | {id: .id[0:8], status, createdAt, canRollback}' 2>/dev/null
+
+          # Prefer the newest rollback-eligible deploy that is not the list head (typical broken in-flight head has canRollback false).
+          # If only one eligible target exists, use it — do not skip .[0] with .[1] (Codex P1).
+          HEAD_ID=$(echo "$DEPLOYMENTS" | jq -r '.data.deployments.edges[0].node.id // empty')
+          ROLLBACK_ID=$(echo "$DEPLOYMENTS" | jq -r --arg head "$HEAD_ID" '
+            [.data.deployments.edges[].node | select(.canRollback == true and .id != $head)] | .[0].id // empty
+          ')
+          if [ -z "$ROLLBACK_ID" ]; then
+            ROLLBACK_ID=$(echo "$DEPLOYMENTS" | jq -r '
+              [.data.deployments.edges[].node | select(.canRollback == true)] | .[0].id // empty
+            ')
+          fi
+
+          if [ -z "$ROLLBACK_ID" ]; then
+            echo "❌ No rollback-eligible deployment found for ${{ env.ENV_LABEL }}"
+            exit 1
+          fi
+
+          echo "🔄 Rolling back ${{ env.ENV_LABEL }} to deployment: ${ROLLBACK_ID:0:8}..."
+
+          ROLLBACK_RESULT=$(curl -s -X POST "${{ env.RAILWAY_API_URL }}" \
+            -H "Authorization: Bearer $RAILWAY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "query": "mutation($id: String!) { deploymentRollback(id: $id) }",
+              "variables": { "id": "'"$ROLLBACK_ID"'" }
+            }')
+
+          if echo "$ROLLBACK_RESULT" | jq -e '.data.deploymentRollback == true' > /dev/null 2>&1; then
+            echo "✅ Railway ${{ env.ENV_LABEL }} rolled back successfully"
+            echo "rollback_executed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ Rollback failed:"
+            echo "$ROLLBACK_RESULT" | jq . 2>/dev/null || echo "$ROLLBACK_RESULT"
+            echo "rollback_executed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Create rollback notification issue
+        if: always()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        with:
+          script: |
+            const env = '${{ env.ENV_LABEL }}';
+            const sha = '${{ env.DEPLOY_SHA }}';
+            const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+            const rollbackExecuted = '${{ steps.rollback.outputs.rollback_executed }}';
+            const rollbackOutcome = '${{ steps.rollback.outcome }}' || 'unknown';
+            const rollbackStatus = rollbackExecuted === 'true'
+              ? '✅ Auto-rollback succeeded — previous deployment restored'
+              : rollbackOutcome === 'success'
+                ? '⚠️ Rollback skipped — secrets not configured, manual intervention required'
+                : '❌ Auto-rollback failed — manual intervention required';
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 ${env} smoke test failed — deployment rolled back`,
+              body: [
+                `## Smoke Test Failure (${env})`,
+                '',
+                `| Field | Value |`,
+                `|-------|-------|`,
+                `| Environment | **${env}** |`,
+                `| Commit | \`${sha.slice(0, 7)}\` |`,
+                `| Rollback | ${rollbackStatus} |`,
+                `| Workflow Run | [View logs](${runUrl}) |`,
+                '',
+                'Check the workflow logs for details on which check failed.',
+              ].join('\n'),
+              labels: ['smoke-test-failure'],
+            });
