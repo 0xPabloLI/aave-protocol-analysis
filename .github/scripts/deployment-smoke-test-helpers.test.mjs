@@ -41,8 +41,8 @@ test('resolveDeploymentTarget skips deployments that are not staging or producti
   });
 });
 
-test('selectRailwayRollbackTarget keeps production selection on main without falling back to staging secrets', () => {
-  const target = selectRailwayRollbackTarget('main', {
+test('selectRailwayRollbackTarget uses production secrets when target environment is production', () => {
+  const target = selectRailwayRollbackTarget('production', {
     production: {
       projectId: '',
       serviceId: 'prod-service',
