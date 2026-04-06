@@ -2,6 +2,11 @@
 # Polls /health until the new commit SHA appears, then runs data checks.
 # On failure: auto-rollback via Railway GraphQL API (both staging and production).
 #
+# Trigger: workflow_run (after CI passes), NOT push — avoids deadlock with
+# Railway's "Wait for CI" which blocks deploy until all push-triggered
+# check suites pass. This workflow runs *after* CI passes → Railway deploys
+# → smoke test verifies the live deployment → rolls back on failure.
+#
 # Required GitHub secrets (per environment):
 #   RAILWAY_API_TOKEN                    (shared)
 #   RAILWAY_STAGING_PROJECT_ID           RAILWAY_PRODUCTION_PROJECT_ID
@@ -10,7 +15,9 @@
 name: Deployment Smoke Test
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches:
       - main
       - railway
@@ -21,23 +28,28 @@ permissions:
 
 # Cancel in-progress runs on same branch (only latest push matters)
 concurrency:
-  group: smoke-test-${{ github.ref_name }}
+  group: smoke-test-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 jobs:
   smoke-test:
+    # Only run after a successful CI — skip if CI failed or was cancelled
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
+      # workflow_run context: branch/sha come from the triggering workflow
+      DEPLOY_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
       # Map branch → API base URL
       # Staging API lives on staging-api.* (staging.aaveapy.com is the site / returns 404 for /health).
-      API_BASE_URL: ${{ github.ref_name == 'main' && 'https://api.aaveapy.com' || 'https://staging-api.aaveapy.com' }}
-      SITE_URL: ${{ github.ref_name == 'main' && 'https://aaveapy.com' || 'https://staging.aaveapy.com' }}
-      ENV_LABEL: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+      API_BASE_URL: ${{ github.event.workflow_run.head_branch == 'main' && 'https://api.aaveapy.com' || 'https://staging-api.aaveapy.com' }}
+      SITE_URL: ${{ github.event.workflow_run.head_branch == 'main' && 'https://aaveapy.com' || 'https://staging.aaveapy.com' }}
+      ENV_LABEL: ${{ github.event.workflow_run.head_branch == 'main' && 'production' || 'staging' }}
 
     steps:
       - name: Wait for new deployment (poll commit SHA)
         run: |
-          EXPECTED_SHA="${{ github.sha }}"
+          EXPECTED_SHA="${{ env.DEPLOY_SHA }}"
           MAX_WAIT=600   # 10 minutes
           INTERVAL=15
           ELAPSED=0
@@ -152,8 +164,8 @@ jobs:
           echo "========================================"
           echo "  Smoke Test Summary (${{ env.ENV_LABEL }})"
           echo "========================================"
-          echo "  Branch:     ${{ github.ref_name }}"
-          echo "  Commit:     ${{ github.sha }}"
+          echo "  Branch:     ${{ env.DEPLOY_BRANCH }}"
+          echo "  Commit:     ${{ env.DEPLOY_SHA }}"
           echo "  API URL:    ${{ env.API_BASE_URL }}"
           echo "  Site URL:   ${{ env.SITE_URL }}"
           echo "  Health:     ${{ steps.health.outcome }}"
@@ -169,15 +181,17 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RAILWAY_API_URL: https://backboard.railway.com/graphql/v2
-      ENV_LABEL: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+      DEPLOY_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+      ENV_LABEL: ${{ github.event.workflow_run.head_branch == 'main' && 'production' || 'staging' }}
     steps:
       - name: Rollback Railway deployment
         id: rollback
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ github.ref_name == 'main' && secrets.RAILWAY_PRODUCTION_PROJECT_ID || secrets.RAILWAY_STAGING_PROJECT_ID }}
-          RAILWAY_SERVICE_ID: ${{ github.ref_name == 'main' && secrets.RAILWAY_PRODUCTION_SERVICE_ID || secrets.RAILWAY_STAGING_SERVICE_ID }}
-          RAILWAY_ENVIRONMENT_ID: ${{ github.ref_name == 'main' && secrets.RAILWAY_PRODUCTION_ENVIRONMENT_ID || secrets.RAILWAY_STAGING_ENVIRONMENT_ID }}
+          RAILWAY_PROJECT_ID: ${{ github.event.workflow_run.head_branch == 'main' && secrets.RAILWAY_PRODUCTION_PROJECT_ID || secrets.RAILWAY_STAGING_PROJECT_ID }}
+          RAILWAY_SERVICE_ID: ${{ github.event.workflow_run.head_branch == 'main' && secrets.RAILWAY_PRODUCTION_SERVICE_ID || secrets.RAILWAY_STAGING_SERVICE_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ github.event.workflow_run.head_branch == 'main' && secrets.RAILWAY_PRODUCTION_ENVIRONMENT_ID || secrets.RAILWAY_STAGING_ENVIRONMENT_ID }}
         run: |
           if [ -z "$RAILWAY_TOKEN" ]; then
             echo "⚠️ RAILWAY_API_TOKEN secret not configured — skipping auto-rollback"
@@ -258,7 +272,7 @@ jobs:
         with:
           script: |
             const env = '${{ env.ENV_LABEL }}';
-            const sha = '${{ github.sha }}';
+            const sha = '${{ env.DEPLOY_SHA }}';
             const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
             const rollbackExecuted = '${{ steps.rollback.outputs.rollback_executed }}';
             const rollbackOutcome = '${{ steps.rollback.outcome }}' || 'unknown';
