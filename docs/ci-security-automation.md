@@ -56,7 +56,7 @@ This repository has five related workflows:
 5. `Deployment Smoke Test` (`.github/workflows/deployment-smoke-test.yml`)
    - Triggered via `deployment_status` when Railway reports a successful deployment on `main` / `railway`
    - **Not** triggered by `push` — avoids deadlock with Railway's "Wait for CI" (see below)
-   - Runs right after Railway reports deploy success: health check, `/api/markets` (≥50 reserves + snapshot), `/api/meta/side-data`, frontend accessibility (curl retries only; no long poll for `commitSha`)
+   - Runs right after Railway reports deploy success: resolve target from `deployment.ref` with fallback to deployment environment, then health check, `/api/markets` (≥50 reserves + snapshot), `/api/meta/side-data`, frontend accessibility (curl retries only; no long poll for `commitSha`)
    - On failure: auto-rollback via Railway GraphQL `deploymentRollback` mutation, then creates a GitHub issue with `smoke-test-failure` label
    - Rollback target: newest `canRollback == true` deployment that is not the current broken head
    - Rollback secret selection is branch-specific with no production→staging fallback when the chosen environment secret is empty; notification issue titles also reflect rollback succeeded/skipped/failed state
@@ -154,7 +154,7 @@ push → CI (push-triggered, Railway waits for this)
               └→ any check fails → auto-rollback + GitHub issue
 ```
 
-Context fields come from `github.event.deployment.sha` / `.ref` (not `github.sha` / `github.ref_name`). The `if:` condition gates on `deployment_status.state == 'success'` and `deployment.ref` matching `main` or `railway`.
+Context fields come from `github.event.deployment.*` (not `github.sha` / `github.ref_name`). The workflow gates on `deployment_status.state == 'success'`, then resolves target branch/environment from `deployment.ref` with fallback to `deployment.environment` so commit-SHA deployments do not skip smoke tests when `ref` is empty.
 
 ### Workflow Run Trigger Conditions
 
