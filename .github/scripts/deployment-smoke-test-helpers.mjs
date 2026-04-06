@@ -2,6 +2,43 @@ function normalizeValue(value) {
   return value ?? '';
 }
 
+export function resolveDeploymentTarget({ ref, sha, environment }) {
+  const normalizedRef = normalizeValue(ref);
+  const normalizedEnvironment = normalizeValue(environment).toLowerCase();
+  const deploySha = normalizeValue(sha);
+
+  if (normalizedRef === 'main' || normalizedEnvironment === 'production') {
+    return {
+      shouldRun: true,
+      deployBranch: normalizedRef || 'main',
+      deploySha,
+      environmentLabel: 'production',
+      apiBaseUrl: 'https://api.aaveapy.com',
+      siteUrl: 'https://aaveapy.com',
+    };
+  }
+
+  if (normalizedRef === 'railway' || normalizedEnvironment === 'staging') {
+    return {
+      shouldRun: true,
+      deployBranch: normalizedRef || 'railway',
+      deploySha,
+      environmentLabel: 'staging',
+      apiBaseUrl: 'https://staging-api.aaveapy.com',
+      siteUrl: 'https://staging.aaveapy.com',
+    };
+  }
+
+  return {
+    shouldRun: false,
+    deployBranch: normalizedRef,
+    deploySha,
+    environmentLabel: '',
+    apiBaseUrl: '',
+    siteUrl: '',
+  };
+}
+
 export function selectRailwayRollbackTarget(branch, secrets) {
   const useProduction = branch === 'main';
   const selected = useProduction ? secrets.production : secrets.staging;

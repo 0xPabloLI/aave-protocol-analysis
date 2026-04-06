@@ -23,29 +23,75 @@ permissions:
 
 # Cancel in-progress runs on same branch (only latest deployment matters)
 concurrency:
-  group: smoke-test-${{ github.event.deployment.ref }}
+  group: smoke-test-${{ github.event.deployment.ref || github.event.deployment.environment || github.event.deployment.sha }}
   cancel-in-progress: true
 
 jobs:
   smoke-test:
-    # Only run when Railway reports a successful deployment on main or railway
-    if: >-
-      github.event.deployment_status.state == 'success' &&
-      (github.event.deployment.ref == 'main' || github.event.deployment.ref == 'railway')
+    # Only run on successful Railway deployments; target environment is resolved in-step
+    if: github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
-    env:
-      # deployment_status context: branch/sha come from the deployment object
-      DEPLOY_BRANCH: ${{ github.event.deployment.ref }}
-      DEPLOY_SHA: ${{ github.event.deployment.sha }}
-      # Map branch → API base URL
-      # Staging API lives on staging-api.* (staging.aaveapy.com is the site / returns 404 for /health).
-      API_BASE_URL: ${{ github.event.deployment.ref == 'main' && 'https://api.aaveapy.com' || 'https://staging-api.aaveapy.com' }}
-      SITE_URL: ${{ github.event.deployment.ref == 'main' && 'https://aaveapy.com' || 'https://staging.aaveapy.com' }}
-      ENV_LABEL: ${{ github.event.deployment.ref == 'main' && 'production' || 'staging' }}
+    outputs:
+      should_run: ${{ steps.target.outputs.should_run }}
+      deploy_branch: ${{ steps.target.outputs.deploy_branch }}
+      deploy_sha: ${{ steps.target.outputs.deploy_sha }}
+      environment_label: ${{ steps.target.outputs.environment_label }}
+      api_base_url: ${{ steps.target.outputs.api_base_url }}
+      site_url: ${{ steps.target.outputs.site_url }}
 
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Resolve deployment target
+        id: target
+        env:
+          DEPLOYMENT_REF: ${{ github.event.deployment.ref }}
+          DEPLOYMENT_SHA: ${{ github.event.deployment.sha }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.deployment.environment }}
+        run: |
+          TARGET_JSON=$(node --input-type=module -e "
+            import { resolveDeploymentTarget } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+            const target = resolveDeploymentTarget({
+              ref: process.env.DEPLOYMENT_REF,
+              sha: process.env.DEPLOYMENT_SHA,
+              environment: process.env.DEPLOYMENT_ENVIRONMENT,
+            });
+            console.log(JSON.stringify(target));
+          ")
+
+          SHOULD_RUN=$(echo "$TARGET_JSON" | jq -r '.shouldRun')
+          DEPLOY_BRANCH=$(echo "$TARGET_JSON" | jq -r '.deployBranch')
+          DEPLOY_SHA=$(echo "$TARGET_JSON" | jq -r '.deploySha')
+          ENV_LABEL=$(echo "$TARGET_JSON" | jq -r '.environmentLabel')
+          API_BASE_URL=$(echo "$TARGET_JSON" | jq -r '.apiBaseUrl')
+          SITE_URL=$(echo "$TARGET_JSON" | jq -r '.siteUrl')
+
+          {
+            echo "should_run=$SHOULD_RUN"
+            echo "deploy_branch=$DEPLOY_BRANCH"
+            echo "deploy_sha=$DEPLOY_SHA"
+            echo "environment_label=$ENV_LABEL"
+            echo "api_base_url=$API_BASE_URL"
+            echo "site_url=$SITE_URL"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "DEPLOY_BRANCH=$DEPLOY_BRANCH"
+            echo "DEPLOY_SHA=$DEPLOY_SHA"
+            echo "ENV_LABEL=$ENV_LABEL"
+            echo "API_BASE_URL=$API_BASE_URL"
+            echo "SITE_URL=$SITE_URL"
+          } >> "$GITHUB_ENV"
+
+      - name: Skip unsupported deployment target
+        if: steps.target.outputs.should_run != 'true'
+        run: |
+          echo "Skipping deployment_status event for non-target deployment."
+          echo "ref='${{ github.event.deployment.ref }}' environment='${{ github.event.deployment.environment }}'"
+
       - name: Health check
         id: health
+        if: steps.target.outputs.should_run == 'true'
         run: |
           echo "🏥 Checking ${{ env.ENV_LABEL }} health endpoint..."
           HTTP_CODE=$(curl -s -o /tmp/health.json -w "%{http_code}" \
@@ -63,6 +109,7 @@ jobs:
 
       - name: API /api/markets data check
         id: markets
+        if: steps.target.outputs.should_run == 'true'
         run: |
           echo "📊 Checking ${{ env.ENV_LABEL }} /api/markets..."
           HTTP_CODE=$(curl -s -o /tmp/markets.json -w "%{http_code}" \
@@ -97,6 +144,7 @@ jobs:
 
       - name: API /api/meta/side-data check
         id: sidedata
+        if: steps.target.outputs.should_run == 'true'
         run: |
           echo "📦 Checking ${{ env.ENV_LABEL }} /api/meta/side-data..."
           HTTP_CODE=$(curl -s -o /tmp/sidedata.json -w "%{http_code}" \
@@ -114,6 +162,7 @@ jobs:
 
       - name: Frontend accessibility check
         id: frontend
+        if: steps.target.outputs.should_run == 'true'
         run: |
           echo "🌐 Checking ${{ env.ENV_LABEL }} frontend (${{ env.SITE_URL }})..."
           HTTP_CODE=$(curl -s -o /tmp/frontend.html -w "%{http_code}" \
@@ -148,13 +197,13 @@ jobs:
   # ── Auto-rollback on smoke test failure (both staging and production) ──
   rollback:
     needs: smoke-test
-    if: failure()
+    if: failure() && needs.smoke-test.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     env:
       RAILWAY_API_URL: https://backboard.railway.com/graphql/v2
-      DEPLOY_BRANCH: ${{ github.event.deployment.ref }}
-      DEPLOY_SHA: ${{ github.event.deployment.sha }}
-      ENV_LABEL: ${{ github.event.deployment.ref == 'main' && 'production' || 'staging' }}
+      DEPLOY_BRANCH: ${{ needs.smoke-test.outputs.deploy_branch }}
+      DEPLOY_SHA: ${{ needs.smoke-test.outputs.deploy_sha }}
+      ENV_LABEL: ${{ needs.smoke-test.outputs.environment_label }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 

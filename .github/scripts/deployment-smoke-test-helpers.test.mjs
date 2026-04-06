@@ -3,8 +3,43 @@ import assert from 'node:assert/strict';
 
 import {
   createSmokeTestIssuePayload,
+  resolveDeploymentTarget,
   selectRailwayRollbackTarget,
 } from './deployment-smoke-test-helpers.mjs';
+
+test('resolveDeploymentTarget falls back to production environment when deployment ref is empty', () => {
+  const target = resolveDeploymentTarget({
+    ref: '',
+    sha: '1234567890abcdef',
+    environment: 'production',
+  });
+
+  assert.deepEqual(target, {
+    shouldRun: true,
+    deployBranch: 'main',
+    deploySha: '1234567890abcdef',
+    environmentLabel: 'production',
+    apiBaseUrl: 'https://api.aaveapy.com',
+    siteUrl: 'https://aaveapy.com',
+  });
+});
+
+test('resolveDeploymentTarget skips deployments that are not staging or production', () => {
+  const target = resolveDeploymentTarget({
+    ref: '',
+    sha: '1234567890abcdef',
+    environment: 'preview',
+  });
+
+  assert.deepEqual(target, {
+    shouldRun: false,
+    deployBranch: '',
+    deploySha: '1234567890abcdef',
+    environmentLabel: '',
+    apiBaseUrl: '',
+    siteUrl: '',
+  });
+});
 
 test('selectRailwayRollbackTarget keeps production selection on main without falling back to staging secrets', () => {
   const target = selectRailwayRollbackTarget('main', {
