@@ -156,14 +156,39 @@ jobs:
       DEPLOY_SHA: ${{ github.event.deployment.sha }}
       ENV_LABEL: ${{ github.event.deployment.ref == 'main' && 'production' || 'staging' }}
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
       - name: Rollback Railway deployment
         id: rollback
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ github.event.deployment.ref == 'main' && secrets.RAILWAY_PRODUCTION_PROJECT_ID || secrets.RAILWAY_STAGING_PROJECT_ID }}
-          RAILWAY_SERVICE_ID: ${{ github.event.deployment.ref == 'main' && secrets.RAILWAY_PRODUCTION_SERVICE_ID || secrets.RAILWAY_STAGING_SERVICE_ID }}
-          RAILWAY_ENVIRONMENT_ID: ${{ github.event.deployment.ref == 'main' && secrets.RAILWAY_PRODUCTION_ENVIRONMENT_ID || secrets.RAILWAY_STAGING_ENVIRONMENT_ID }}
+          RAILWAY_PRODUCTION_PROJECT_ID: ${{ secrets.RAILWAY_PRODUCTION_PROJECT_ID }}
+          RAILWAY_PRODUCTION_SERVICE_ID: ${{ secrets.RAILWAY_PRODUCTION_SERVICE_ID }}
+          RAILWAY_PRODUCTION_ENVIRONMENT_ID: ${{ secrets.RAILWAY_PRODUCTION_ENVIRONMENT_ID }}
+          RAILWAY_STAGING_PROJECT_ID: ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}
+          RAILWAY_STAGING_SERVICE_ID: ${{ secrets.RAILWAY_STAGING_SERVICE_ID }}
+          RAILWAY_STAGING_ENVIRONMENT_ID: ${{ secrets.RAILWAY_STAGING_ENVIRONMENT_ID }}
         run: |
+          TARGET_JSON=$(node --input-type=module -e "
+            import { selectRailwayRollbackTarget } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+            const target = selectRailwayRollbackTarget(process.env.DEPLOY_BRANCH, {
+              production: {
+                projectId: process.env.RAILWAY_PRODUCTION_PROJECT_ID,
+                serviceId: process.env.RAILWAY_PRODUCTION_SERVICE_ID,
+                environmentId: process.env.RAILWAY_PRODUCTION_ENVIRONMENT_ID,
+              },
+              staging: {
+                projectId: process.env.RAILWAY_STAGING_PROJECT_ID,
+                serviceId: process.env.RAILWAY_STAGING_SERVICE_ID,
+                environmentId: process.env.RAILWAY_STAGING_ENVIRONMENT_ID,
+              },
+            });
+            console.log(JSON.stringify(target));
+          ")
+          RAILWAY_PROJECT_ID=$(echo "$TARGET_JSON" | jq -r '.projectId')
+          RAILWAY_SERVICE_ID=$(echo "$TARGET_JSON" | jq -r '.serviceId')
+          RAILWAY_ENVIRONMENT_ID=$(echo "$TARGET_JSON" | jq -r '.environmentId')
+
           if [ -z "$RAILWAY_TOKEN" ]; then
             echo "⚠️ RAILWAY_API_TOKEN secret not configured — skipping auto-rollback"
             echo "💡 To enable auto-rollback, add these GitHub repo secrets:"
@@ -242,32 +267,26 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
+            const { pathToFileURL } = require('node:url');
+            const helperUrl = pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.github/scripts/deployment-smoke-test-helpers.mjs`).href;
+            const { createSmokeTestIssuePayload } = await import(helperUrl);
             const env = '${{ env.ENV_LABEL }}';
             const sha = '${{ env.DEPLOY_SHA }}';
             const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
             const rollbackExecuted = '${{ steps.rollback.outputs.rollback_executed }}';
             const rollbackOutcome = '${{ steps.rollback.outcome }}' || 'unknown';
-            const rollbackStatus = rollbackExecuted === 'true'
-              ? '✅ Auto-rollback succeeded — previous deployment restored'
-              : rollbackOutcome === 'success'
-                ? '⚠️ Rollback skipped — secrets not configured, manual intervention required'
-                : '❌ Auto-rollback failed — manual intervention required';
+            const payload = createSmokeTestIssuePayload({
+              environment: env,
+              sha,
+              runUrl,
+              rollbackExecuted,
+              rollbackOutcome,
+            });
 
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `🚨 ${env} smoke test failed — deployment rolled back`,
-              body: [
-                `## Smoke Test Failure (${env})`,
-                '',
-                `| Field | Value |`,
-                `|-------|-------|`,
-                `| Environment | **${env}** |`,
-                `| Commit | \`${sha.slice(0, 7)}\` |`,
-                `| Rollback | ${rollbackStatus} |`,
-                `| Workflow Run | [View logs](${runUrl}) |`,
-                '',
-                'Check the workflow logs for details on which check failed.',
-              ].join('\n'),
+              title: payload.title,
+              body: payload.body,
               labels: ['smoke-test-failure'],
             });
