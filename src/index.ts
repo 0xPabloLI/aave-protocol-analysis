@@ -1244,19 +1244,8 @@ async function fetchAaveMarkets(): Promise<void> {
     
     logger.info(`🎯 Final dataset contains ${enrichedData.length} token combinations`);
     
-    // 保存格式化 JSON 数据（runtime 最小可用 + debug 全量）
-    const formattedJsonPath = join(RUNTIME_DATA_DIR, 'aave-formatted-data.json');
-    const debugFormattedJsonPath = join(DEBUG_DATA_DIR, 'aave-formatted-data.full.json');
-    const runtimeData = enrichedData.map(pruneReserveForRuntime);
-    const runtimePayload = {
-      _metadata: {
-        timestamp: marketData.timestamp,
-        version: '2.0-runtime-minimal',
-        dataCount: runtimeData.length,
-        profile: 'runtime-minimal',
-      },
-      data: runtimeData,
-    };
+    // 保存格式化 JSON 数据（完整 debug 全量）
+    const debugFormattedJsonFullPath = join(DEBUG_DATA_DIR, 'aave-formatted-data.full.json');
     const debugPayload = {
       _metadata: {
         timestamp: marketData.timestamp,
@@ -1266,13 +1255,7 @@ async function fetchAaveMarkets(): Promise<void> {
       },
       data: enrichedData,
     };
-    // Runtime: minimal JSON (no pretty-print) and omit null/undefined for smaller file.
-    await writeJsonAtomic(formattedJsonPath, runtimePayload, {
-      replacer: (key: string, value: unknown) =>
-        value === null ? undefined : (value === undefined ? undefined : value),
-      space: 0,
-    });
-    await writeJsonAtomic(debugFormattedJsonPath, debugPayload);
+    await writeJsonAtomic(debugFormattedJsonFullPath, debugPayload);
 
     // 生成CSV格式
     const csvData = generateCSV(enrichedData);
@@ -1282,10 +1265,8 @@ async function fetchAaveMarkets(): Promise<void> {
     
     const outputPath = join(DEBUG_DATA_DIR, 'aave-all-markets-data.json');
     logger.info(`💾 Original data saved to ${outputPath}`);
-    logger.info(`📊 Runtime minimal JSON saved to ${formattedJsonPath}`);
-    logger.info(`🧪 Debug full JSON saved to ${debugFormattedJsonPath}`);
+    logger.info(`🧪 Debug full JSON saved to ${debugFormattedJsonFullPath}`);
     logger.info(`📈 CSV data saved to ${csvPath}`);
-    logger.info(`📁 Runtime data dir: ${RUNTIME_DATA_DIR}`);
     logger.info(`📁 Debug data dir: ${DEBUG_DATA_DIR}`);
     logger.info(`📁 Export data dir: ${EXPORT_DATA_DIR}`);
     logger.info(`📈 Total markets: ${marketData.markets.length}`);

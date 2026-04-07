@@ -58,7 +58,7 @@ Request
 ```
 data/
 ├── runtime/                    # Hot path, small, purpose-built
-│   ├── aave-formatted-data.json   # Example: optional fetcher artifact (this repo: API uses memory, not this file)
+│   ├── aave-formatted-data.full.json   # Example: optional fetcher artifact (this repo: API uses memory, not this file)
 │   └── forecast-meta-lite.json    # Example: auxiliary file some services read (e.g. Merkl forecast lite)
 └── debug/                      # Large, verbose, troubleshooting only
     ├── raw-api-response.json

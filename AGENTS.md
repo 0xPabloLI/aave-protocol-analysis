@@ -6,7 +6,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 Two-service TypeScript codebase that fetches and serves Aave V3 market data across 17+ chains, 20+ markets, and 229+ token reserves. Integrates incentive data from Merit, Merkl, and Brevis protocols.
 
-**Architecture**: Backend API (`backend/`) runs `fetchMarketsPayload()` (from packaged root `dist/index.js`) on a cron + startup warmup and keeps markets in **memory**; `GET /api/markets` reads that snapshot only. The optional root Data Fetcher (`npm run dev` at repo root) **writes** `data/runtime` / `data/debug` files for exports and debugging; the backend does **not** read `data/runtime/aave-formatted-data.json` to serve the API.
+**Architecture**: Backend API (`backend/`) runs `fetchMarketsPayload()` (from packaged root `dist/index.js`) on a cron + startup warmup and keeps markets in **memory**; `GET /api/markets` reads that snapshot only. The optional root Data Fetcher (`npm run dev` at repo root) **writes** `data/runtime` / `data/debug` files for exports and debugging; the backend does **not** read `data/debug/aave-formatted-data.full.json` to serve the API.
 
 ## Development Commands
 
@@ -45,7 +45,7 @@ pm2 stop aave-backend    # Stop service
 ```
 
 ### Data Workflow (Backend)
-Serving `/api/markets` does **not** depend on any pre-generated `data/runtime/*.json` file. Start the backend and wait for startup warmup (`refreshMarketsSnapshot()` + other caches). Optional: run the root fetcher (`npm run dev` at repo root) only when you need on-disk exports (`aave-formatted-data.json`, CSV, debug snapshots).
+Serving `/api/markets` does **not** depend on any pre-generated `data/runtime/*.json` file. Start the backend and wait for startup warmup (`refreshMarketsSnapshot()` + other caches). Optional: run the root fetcher (`npm run dev` at repo root) only when you need on-disk exports (`aave-formatted-data.full.json`, CSV, debug snapshots).
 
 ### Architecture Notes (Read Before Cache/Data-Flow Changes)
 - `docs/merkl-merit-cache-architecture.md` — Merkl/Merit cache layers, file roles, fallback chains; includes **which `GET /v4/opportunities` fields `merkl-api.ts` reads** (tables + Mermaid diagrams)
@@ -188,7 +188,7 @@ Both use `"module": "ESNext"` with `"target": "ES2022"`.
 
 ### Data Files (`data/`, gitignored)
 ```
-runtime/aave-formatted-data.json          # Written by root fetcher; same pipeline shape as API payload, but API uses memory (not this file)
+debug/aave-formatted-data.full.json       # Written by root fetcher; same pipeline shape as API payload, but API uses memory (not this file)
 runtime/merkl-opportunity-meta-lite.json  # Merkl forecast runtime-lite snapshot (backend reads for forecast)
 runtime/merit-campaign-metadata-cache.json # Merit campaign metadata cache (time/message/link)
 exports/aave-formatted-data.csv           # CSV export

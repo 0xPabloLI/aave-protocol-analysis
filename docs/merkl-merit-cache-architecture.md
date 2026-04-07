@@ -26,7 +26,7 @@ flowchart LR
   FCS["backend/merklForecastService (forecast compute + caches)"]
   MOC["backend/merklOpportunityClient (forecast Merkl opportunities fetcher)"]
   MKLITE["data/runtime/merkl-opportunity-meta-lite.json"]
-  MARKETS["aave-formatted-data.json (root fetcher writes; backend does not read)"]
+  MARKETS["aave-formatted-data.full.json (root fetcher writes; backend does not read)"]
   TIMER["data/runtime/merit-campaign-metadata-cache.json"]
   MERKLAPI["Merkl API"]
 
@@ -35,7 +35,7 @@ flowchart LR
   MERKL -. "uses data" .-> SHARED
   SHARED -. "uses data" .-> MERKLAPI
   MERKL -- "writes" --> MKLITE
-  IDX -- "writes" --> MARKETS
+   IDX -- "writes" --> MARKETS
   MERIT -- "writes" --> TIMER
 
   IDX -. "exports fetchMarketsPayload" .-> MKS
@@ -58,7 +58,7 @@ flowchart LR
   G -- "writes" --> H["data/runtime/merit-campaign-metadata-cache.json"]
   G -- "writes" --> I["data/debug/merit-raw-data.json"]
   G -- "writes" --> J["data/debug/merit-merkl-raw-data.json"]
-  A -- "writes" --> K["data/runtime/aave-formatted-data.json"]
+   A -- "writes" --> K["data/debug/aave-formatted-data.full.json"]
 ```
 
 ### B) Forecast data path (`/api/campaigns/forecast-states`)
@@ -102,7 +102,7 @@ flowchart TD
   D --> I["data/debug/merkl-raw-data.json (debug)"]
   D --> J["data/runtime/merkl-opportunity-meta-lite.json (runtime-lite)"]
   D --> R["@internal/aave-shared-config snapshot (memory)"]
-  B --> K["data/runtime/aave-formatted-data.json"]
+   B --> K["data/debug/aave-formatted-data.full.json"]
   CRON["Backend cron: refreshMarketsSnapshot"] --> MP["fetchMarketsPayload() same pipeline, in-memory"]
   MP --> MS["marketsService memory snapshot"]
   L["backend GET /api/markets"] --> MS
@@ -118,14 +118,14 @@ flowchart TD
 ## 2) File Responsibilities (Disk)
 
 ### Runtime-facing (program reads)
-- `data/runtime/aave-formatted-data.json`
-  - Written when the **root** fetcher runs (`fetchAaveMarketsData` / CLI); not read by `GET /api/markets`. The backend serves markets from `marketsService` memory via `fetchMarketsPayload()` (same pipeline, no file read on the request path).
 - `data/runtime/merkl-opportunity-meta-lite.json`
   - Forecast service preferred file source (campaign-level lightweight meta)
 - `data/runtime/merit-campaign-metadata-cache.json`
   - Merit campaign metadata cache (time ranges/message/link) for `fetchMeritData()`
 
 ### Debug / Troubleshoot (human-facing first)
+- `data/debug/aave-formatted-data.full.json`
+  - Written when the **root** fetcher runs (`fetchAaveMarketsData` / CLI); not read by `GET /api/markets`. The backend serves markets from `marketsService` memory via `fetchMarketsPayload()` (same pipeline, no file read on the request path).
 - `data/debug/merkl-raw-data.json`
   - Full Merkl debug snapshot (raw/live opportunities + processed/index)
 - `data/debug/merit-raw-data.json`
@@ -297,6 +297,9 @@ Example shape:
   - default TTL: 30m
   - empty-record TTL: 10m (aligned with clamp min)
   - dynamic TTL clamp: 10m .. 6h
+
+Debug snapshots for comparison are written separately under `data/debug/merkl/metrics/{campaignId}.json` and `data/debug/merkl/campaigns/{campaignId}.json`.
+These files store the latest raw responses only when that content is not already covered by the existing runtime/debug artifacts.
 
 **Note**: `forecastCache` was removed because with cron-write pattern (every 10m), it provided no benefit.
 The forecast computation is fast; the `metricsCache` with dynamic TTL is what actually saves API calls.

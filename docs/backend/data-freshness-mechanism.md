@@ -105,7 +105,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 
 前端若需要市场筛选列表，应从 `GET /api/markets` 的 `reserves` 中去重推导 `{ marketName, chainName }`。
 
-**数据从哪来**：`refreshMarketsSnapshot()` 调用根目录打包的 `fetchMarketsPayload()`（`dist/index.js`），在进程内拉取 Aave + 激励并返回内存结构；**不**通过读取 `data/runtime/aave-formatted-data.json` 提供 API。该 JSON 仍由单独跑根目录 fetcher 时落盘，供文件落地、调试或与旧流程对齐。
+**数据从哪来**：`refreshMarketsSnapshot()` 调用根目录打包的 `fetchMarketsPayload()`（`dist/index.js`），在进程内拉取 Aave + 激励并返回内存结构；**不**通过读取 `data/debug/aave-formatted-data.full.json` 提供 API。该文件仍由单独跑根目录 fetcher 时落盘，供文件落地、调试或与旧流程对齐。
 
 **激励拉取容错**：`fetchMarketsPayload()` 在 `src/index.ts` 中对 Merit、Merkl、Brevis **并发**拉取；单路失败时记日志并降级为**空索引**，不阻断整轮返回。**仅当 Aave 市场数据（`fetchAaveMarketData`）失败时**，整轮 `fetchMarketsPayload` 抛错，本轮不更新内存 `snapshot`（若已有历史快照则 API 仍可读上一轮）。链上 `deficit` / `baseVariableBorrowRate` 不在此阶段打 RPC，而在 `marketsService` 写入时从 `onchainDataService` 缓存合并（见上文「On-chain」）。
 
