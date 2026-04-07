@@ -906,7 +906,7 @@ Brevis 对外 contract 已收口到下面这组字段：
 **Aave SDK（@aave/client）与 token price**：本项目从 SDK 返回的 reserve 里读取 USD 价格（优先 `reserve.size.usdPerToken`，缺失时回退 `reserve.usdExchangeRate`），用于 `reserves[].tokenPrice`。
 
 **data 文件夹中的价格（调试/对照用，非 API 数据源）**：
-- **`data/runtime/aave-formatted-data.json`**：仅当在仓库根目录**单独运行 fetcher** 时落盘；与 `fetchMarketsPayload()` 管线形状相近，但 **`GET /api/markets` 从不读此文件**，价格以内存快照中的 `reserves[].tokenPrice` 为准。
+- **`data/debug/aave-formatted-data.full.json`**：仅当在仓库根目录**单独运行 fetcher** 时落盘；与 `fetchMarketsPayload()` 管线形状一致的完整调试快照，但 **`GET /api/markets` 从不读此文件**，价格以内存快照中的 `reserves[].tokenPrice` 为准。
 - **`data/debug/aave-all-markets-data.json`**：Aave SDK 的原始响应（`markets`、`timestamp` 等），含 reserve 的 `usdPerToken` / `usdExchangeRate` 等（若上游返回），用于字段校验与对照。
 
 ### 数据更新机制

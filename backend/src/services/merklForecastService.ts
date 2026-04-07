@@ -1,4 +1,4 @@
-import { readFile } from 'fs/promises';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../logger.js';
@@ -23,6 +23,10 @@ const SECONDS_PER_DAY = 86400;
 const MERKL_LITE_FILE_MAX_AGE_MS = BACKEND_CACHE_TTL_MS.merklLiteFileMaxAge;
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
+const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
+const MERKL_DEBUG_DATA_DIR = join(DEBUG_DATA_DIR, 'merkl');
+const MERKL_METRICS_DEBUG_DIR = join(MERKL_DEBUG_DATA_DIR, 'metrics');
+const MERKL_CAMPAIGN_DEBUG_DIR = join(MERKL_DEBUG_DATA_DIR, 'campaigns');
 const MERKL_OPPORTUNITY_META_LITE_PATH = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
 const LEGACY_MERKL_OPPORTUNITY_META_LITE_PATH = join(DATA_DIR, 'merkl-opportunity-meta-lite.json');
 
@@ -63,6 +67,7 @@ const METRICS_CACHE_MAX_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsMax;
 const METRICS_CACHE_EMPTY_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsEmpty;
 
 interface MetricsCacheEntry {
+  raw: unknown;
   data: ForecastMetricsLite;
   expiresAt: number;
 }
@@ -114,6 +119,54 @@ interface ForecastMetricsLite {
   tvlRecords?: Array<{ timestamp?: unknown; total?: unknown }>;
   dailyRewardsRecords?: Array<{ timestamp?: unknown; total?: unknown; totalInToken?: unknown }>;
 }
+
+const persistMerklDebugSnapshot = async (params: {
+  campaignId: string;
+  campaign?: unknown;
+  metrics: unknown;
+}): Promise<void> => {
+  try {
+    await mkdir(MERKL_METRICS_DEBUG_DIR, { recursive: true });
+    await mkdir(MERKL_CAMPAIGN_DEBUG_DIR, { recursive: true });
+
+    const fetchedAt = new Date().toISOString();
+    await writeFile(
+      join(MERKL_METRICS_DEBUG_DIR, `${params.campaignId}.json`),
+      JSON.stringify(
+        {
+          fetchedAt,
+          campaignId: params.campaignId,
+          metrics: params.metrics,
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
+
+    if (params.campaign !== undefined) {
+      await writeFile(
+        join(MERKL_CAMPAIGN_DEBUG_DIR, `${params.campaignId}.json`),
+        JSON.stringify(
+          {
+            fetchedAt,
+            campaignId: params.campaignId,
+            campaign: params.campaign,
+          },
+          null,
+          2
+        ),
+        'utf-8'
+      );
+    }
+  } catch (error) {
+    logger.warn(
+      `⚠️ Failed to persist Merkl debug snapshot for ${params.campaignId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+};
 
 const toNumber = (value: unknown): number | null => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -489,21 +542,24 @@ const buildCampaignOpportunityMetaMapFromOpportunities = (
   return map;
 };
 
-const getCachedOrFetchMetrics = async (campaignId: string): Promise<unknown> => {
+const getCachedOrFetchMetrics = async (
+  campaignId: string
+): Promise<{ raw: unknown; data: ForecastMetricsLite }> => {
   const now = Date.now();
   const cached = metricsCache.get(campaignId);
   if (cached && cached.expiresAt > now) {
-    return cached.data;
+    return { raw: cached.raw, data: cached.data };
   }
 
   const rawMetrics = await fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`);
   const { ttlMs } = deriveMetricsCacheTtlMs(rawMetrics);
   const metrics = trimMetricsForForecast(rawMetrics);
   metricsCache.set(campaignId, {
+    raw: rawMetrics,
     data: metrics,
     expiresAt: now + ttlMs,
   });
-  return metrics;
+  return { raw: rawMetrics, data: metrics };
 };
 
 const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOpportunityMeta>> => {
@@ -553,6 +609,11 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         );
       }
 
+      const campaignFromNetwork = !(
+        campaignOpportunityMeta.campaignSnapshot &&
+        canComputeForecastFromSnapshot(campaignOpportunityMeta.campaignSnapshot)
+      );
+
       // metricsCache has dynamic TTL, so this may return cached data without API call
       const campaignPromise =
         campaignOpportunityMeta.campaignSnapshot &&
@@ -560,7 +621,14 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         ? Promise.resolve(campaignOpportunityMeta.campaignSnapshot)
         : fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}`);
       const metricsPromise = getCachedOrFetchMetrics(campaignId);
-      const [campaign, metrics] = await Promise.all([campaignPromise, metricsPromise]);
+      const [campaign, metricsResult] = await Promise.all([campaignPromise, metricsPromise]);
+      const metrics = metricsResult.data;
+
+      await persistMerklDebugSnapshot({
+        campaignId,
+        ...(campaignFromNetwork ? { campaign } : {}),
+        metrics: metricsResult.raw,
+      });
 
       const campaignType = campaignOpportunityMeta.campaignTypeHint;
 
