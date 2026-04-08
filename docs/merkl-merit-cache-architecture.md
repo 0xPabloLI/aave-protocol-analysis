@@ -61,7 +61,7 @@ flowchart LR
    A -- "writes" --> K["data/debug/aave-formatted-data.full.json"]
 ```
 
-### B) Forecast data path (`/api/campaigns/forecast-states`)
+### B) Forecast data path（公开入口：`/api/meta/side-data` → `forecast.items`）
 
 **Cron-write, API-read-only pattern** (changed 2026-03-14):
 
@@ -106,7 +106,7 @@ flowchart TD
   CRON["Backend cron: refreshMarketsSnapshot"] --> MP["fetchMarketsPayload() same pipeline, in-memory"]
   MP --> MS["marketsService memory snapshot"]
   L["backend GET /api/markets"] --> MS
-  N["backend /api/campaigns/forecast-states"] --> O["merklForecastService"]
+  N["backend /api/meta/side-data (forecast.items)"] --> O["merklForecastService"]
   O --> P["campaignOpportunityCache (memory)"]
   O --> J
   O --> Q["merklOpportunityClient"]

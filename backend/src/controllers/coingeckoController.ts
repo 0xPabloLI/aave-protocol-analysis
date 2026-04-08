@@ -10,6 +10,20 @@ const CACHE_TTL_MS = COINGECKO_SLOW_TTL_MS;
 const FDV_CACHE_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoFdv;
 const FDV_MONITOR_TTL_MS = COINGECKO_SLOW_TTL_MS;
 const FDV_DIFF_ALERT_THRESHOLD_PCT = 5;
+const CATEGORIES_FALLBACK_MAX_STALE_MS = (() => {
+  const raw = process.env.COINGECKO_CATEGORIES_FALLBACK_MAX_STALE_MS;
+  const fallback = Math.max(CACHE_TTL_MS * 3, 30 * 60 * 1000);
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+})();
+const FDV_FALLBACK_MAX_STALE_MS = (() => {
+  const raw = process.env.COINGECKO_FDV_FALLBACK_MAX_STALE_MS;
+  const fallback = Math.max(FDV_CACHE_TTL_MS * 3, 30 * 60 * 1000);
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+})();
 const FDV_COINS = [
   { id: 'crypto-com-chain', cmcSymbol: 'CRO' },
   { id: 'gatechain-token', cmcSymbol: 'GT' },
@@ -76,6 +90,11 @@ let inFlightFdvFetch: Promise<{ items: FdvItem[]; fetchedAt: string }> | null = 
 // 跟踪最后一次 API 请求的时间，用于 rate limit 控制（Free tier: 30 次/分钟 = 每 2 秒一次）
 let lastApiRequestTime: number = 0;
 let lastFdvMonitorCheckTime = 0;
+
+function isWithinFallbackMaxStale(fetchedAt: number, maxStaleMs: number): boolean {
+  const ageMs = Math.max(0, Date.now() - fetchedAt);
+  return ageMs <= maxStaleMs;
+}
 
 const getHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { accept: 'application/json' };
@@ -323,6 +342,7 @@ async function getOrRefreshCoingeckoCategoriesData(source: 'request' | 'startup'
   }
 
   const fetchPromise: Promise<CoingeckoCategoriesData> = (async () => {
+    const previous = cachedResponse;
     // Free tier rate limit: 30 次/分钟 = 每 2 秒一次
     // 为了安全，在请求之间添加间隔，确保不会超过 rate limit
     // 使用串行请求而不是并发，在请求之间添加间隔（略大于 2 秒，留有余量）
@@ -386,6 +406,20 @@ async function getOrRefreshCoingeckoCategoriesData(source: 'request' | 'startup'
     const uniqueSymbolsEth = Array.from(new Set([...ethSymbols, 'WETH'])).sort();
 
     const result = { uniqueSymbolsStablecoins, uniqueSymbolsEth };
+
+    const isEmpty = result.uniqueSymbolsStablecoins.length === 0 && result.uniqueSymbolsEth.length === 0;
+    if (isEmpty) {
+      if (previous && isWithinFallbackMaxStale(previous.fetchedAt, CATEGORIES_FALLBACK_MAX_STALE_MS)) {
+        logger.warn(
+          `⚠️ Coingecko categories refresh returned empty; keeping previous cache (age=${Math.round(
+            (Date.now() - previous.fetchedAt) / 1000
+          )}s, max=${Math.round(CATEGORIES_FALLBACK_MAX_STALE_MS / 1000)}s)`
+        );
+        return previous.data;
+      }
+      throw new Error('Coingecko categories refresh returned empty and no fresh fallback cache is available');
+    }
+
     cachedResponse = { data: result, fetchedAt: Date.now() };
     logger.info(`✅ Coingecko categories refreshed (${source})`);
     return result;
@@ -443,6 +477,7 @@ async function getOrRefreshFdvData(
   }
 
   const fetchPromise: Promise<{ items: FdvItem[]; fetchedAt: string }> = (async () => {
+    const previous = cachedFdvResponse;
     let items: FdvItem[];
     try {
       items = await fetchCoinMarketCapFdvItems();
@@ -455,6 +490,19 @@ async function getOrRefreshFdvData(
     }
 
     const result = { items, fetchedAt: new Date().toISOString() };
+
+    if (result.items.length === 0) {
+      if (previous && isWithinFallbackMaxStale(previous.fetchedAt, FDV_FALLBACK_MAX_STALE_MS)) {
+        logger.warn(
+          `⚠️ FDV refresh returned empty items; keeping previous cache (age=${Math.round(
+            (Date.now() - previous.fetchedAt) / 1000
+          )}s, max=${Math.round(FDV_FALLBACK_MAX_STALE_MS / 1000)}s)`
+        );
+        return previous.data;
+      }
+      throw new Error('FDV refresh returned empty items and no fresh fallback cache is available');
+    }
+
     cachedFdvResponse = { data: result, fetchedAt: Date.now() };
     logger.info(`✅ FDV cache updated at ${result.fetchedAt}`);
     return result;

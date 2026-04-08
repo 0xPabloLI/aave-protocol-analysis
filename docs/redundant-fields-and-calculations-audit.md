@@ -14,7 +14,7 @@
 
 | Item | Notes |
 |------|--------|
-| **`latestTvl`** | Normalized and returned on state; **not** used in any formula inside `buildForecastState`. Current forecast endpoint (`/api/campaigns/forecast-states`) does **not** expose it. It remains useful via `/api/markets` Merkl breakdown fields (opportunity-only forecast fields). |
+| **`latestTvl`** | Normalized and returned on state; **not** used in any formula inside `buildForecastState`. Current public forecast snapshot（`/api/meta/side-data` 的 `forecast.items`）does **not** expose it. It remains useful via `/api/markets` Merkl breakdown fields (opportunity-only forecast fields). |
 
 ### 1.2 Full state vs HTTP response
 

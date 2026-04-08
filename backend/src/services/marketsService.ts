@@ -73,6 +73,24 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         'Markets fetch timeout'
       );
 
+      if (payload.data.length === 0) {
+        const previous = snapshot;
+        if (previous) {
+          const ageMs = Date.now() - previous.fetchedAt;
+          if (ageMs <= BACKEND_CACHE_TTL_MS.marketsServeStaleMax) {
+            logger.warn(
+              `⚠️ Markets refresh returned empty dataset; keeping previous snapshot ` +
+              `(age=${Math.round(ageMs / 1000)}s, maxServeStale=${Math.round(
+                BACKEND_CACHE_TTL_MS.marketsServeStaleMax / 1000
+              )}s)`
+            );
+            return previous;
+          }
+        }
+
+        throw new Error('Markets refresh returned empty dataset and no fresh fallback snapshot is available');
+      }
+
       // Read on-chain data from cache (async, non-blocking)
       // Cache is maintained by separate cron job
       const onchainMap = getOnchainDataFromCache();
@@ -151,21 +169,37 @@ export function getMarketsSnapshot(): MarketsSnapshot | null {
 export function getMarketsData(): {
   payload: MarketsPayload | null;
   staleTimeMs: number;
+  maxServeStaleMs: number;
   ageMs: number | null;
+  isTooStale: boolean;
 } {
   if (!snapshot) {
     logger.warn('Markets snapshot not yet populated; returning null');
     return {
       payload: null,
       staleTimeMs: BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold,
+      maxServeStaleMs: BACKEND_CACHE_TTL_MS.marketsServeStaleMax,
       ageMs: null,
+      isTooStale: false,
     };
   }
 
+  const ageMs = Date.now() - snapshot.fetchedAt;
+  const isTooStale = ageMs > BACKEND_CACHE_TTL_MS.marketsServeStaleMax;
+  if (isTooStale) {
+    logger.warn(
+      `Markets snapshot too stale to serve (age=${Math.round(ageMs / 1000)}s, max=${Math.round(
+        BACKEND_CACHE_TTL_MS.marketsServeStaleMax / 1000
+      )}s)`
+    );
+  }
+
   return {
-    payload: snapshot.payload,
+    payload: isTooStale ? null : snapshot.payload,
     staleTimeMs: BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold,
-    ageMs: Date.now() - snapshot.fetchedAt,
+    maxServeStaleMs: BACKEND_CACHE_TTL_MS.marketsServeStaleMax,
+    ageMs,
+    isTooStale,
   };
 }
 

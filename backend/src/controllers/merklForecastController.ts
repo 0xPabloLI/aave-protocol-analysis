@@ -2,6 +2,14 @@ import { FORECAST_CACHE_TTL_MS, getMerklForecastState } from '../services/merklF
 import { getMarketsSnapshot, type RuntimeReserveData } from '../services/marketsService.js';
 import { logger } from '../logger.js';
 
+const FORECAST_SNAPSHOT_FALLBACK_MAX_STALE_MS = (() => {
+  const raw = process.env.MERKL_FORECAST_SNAPSHOT_FALLBACK_MAX_STALE_MS;
+  const fallback = Math.max(FORECAST_CACHE_TTL_MS * 3, 30 * 60 * 1000);
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+})();
+
 // Only metrics-dependent fields (require Merkl metrics API / dailyRewardsRecords).
 // Opportunity-only fields (campaignType, totalBudget, aprCap, latestTvl, plannedDaily)
 // are served from the markets endpoint breakdowns for 1-min freshness.
@@ -46,13 +54,32 @@ let snapshotCache: SnapshotCacheEntry | null = null;
  * Called by cron scheduler only.
  */
 export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> => {
+  const previous = snapshotCache;
+  const canUsePrevious = (): boolean => {
+    if (!previous) return false;
+    const ageMs = Math.max(0, Date.now() - previous.generatedAt);
+    return ageMs <= FORECAST_SNAPSHOT_FALLBACK_MAX_STALE_MS;
+  };
+
   const marketsSnapshot = getMarketsSnapshot();
   if (!marketsSnapshot) {
     logger.warn('Markets snapshot not available for forecast refresh; returning empty snapshot');
+    if (canUsePrevious()) {
+      logger.warn('Using previous forecast snapshot fallback because markets snapshot is unavailable');
+      return previous!.snapshot;
+    }
     return { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
   }
   const campaignIds = [...new Set(collectCampaignIdsFromMarkets(marketsSnapshot.payload.data))];
   if (campaignIds.length === 0) {
+    if (canUsePrevious() && previous!.snapshot.items.length > 0) {
+      logger.warn('No campaign IDs found; keeping previous forecast snapshot fallback');
+      snapshotCache = {
+        snapshot: previous!.snapshot,
+        generatedAt: previous!.generatedAt,
+      };
+      return previous!.snapshot;
+    }
     const emptySnapshot: ForecastSnapshot = { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
     snapshotCache = { snapshot: emptySnapshot, generatedAt: Date.now() };
     return emptySnapshot;
@@ -74,6 +101,16 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
   });
 
   const snapshot: ForecastSnapshot = { items, errors, staleTimeMs: FORECAST_CACHE_TTL_MS };
+
+  if (items.length === 0 && canUsePrevious() && previous!.snapshot.items.length > 0) {
+    logger.warn('Forecast refresh produced empty items; keeping previous forecast snapshot fallback');
+    snapshotCache = {
+      snapshot: previous!.snapshot,
+      generatedAt: previous!.generatedAt,
+    };
+    return previous!.snapshot;
+  }
+
   snapshotCache = { snapshot, generatedAt: Date.now() };
   return snapshot;
 };

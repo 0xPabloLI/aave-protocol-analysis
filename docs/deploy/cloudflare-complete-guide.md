@@ -133,8 +133,8 @@ Content-Type: application/json
 
 | 端点类型 | 端点 | 新鲜度需求 |
 |----------|------|-----------|
-| **核心实时** | `/api/markets`, `/api/campaigns/forecast-states` | 每次 refetch 都应重新验证 |
-| **侧数据** | `/api/coingecko-fdv`, `/api/coingecko-categories` | 可容忍 TTL 缓存 |
+| **核心实时** | `/api/markets` | 每次 refetch 都应重新验证 |
+| **侧数据** | `/api/meta/side-data` | 可容忍 TTL 缓存 |
 
 ### 4.3 后端 Header 策略
 
@@ -142,9 +142,8 @@ Content-Type: application/json
 
 | 类型 | 路径 | Cache-Control | 说明 |
 |------|------|---------------|------|
-| 核心实时 | `/api/markets*`, `/api/campaigns/forecast-states*` | `no-cache, must-revalidate` + `ETag` | 条件请求 → 304 |
-| 侧数据 | `/api/coingecko-fdv*` | `public, max-age=60, s-maxage=300, stale-while-revalidate=300` | 边缘缓存 5 分钟 |
-| 侧数据 | `/api/coingecko-categories*` | `public, max-age=3600, s-maxage=21600, stale-while-revalidate=21600` | 边缘缓存 6 小时 |
+| 核心实时 | `/api/markets*` | `no-cache, must-revalidate` + `ETag` | 条件请求 → 304 |
+| 侧数据 | `/api/meta/side-data*` | `public, max-age=60, s-maxage=300, stale-while-revalidate=300` | 聚合 side-data，按最短子块 TTL（5 分钟） |
 | 健康检查 | `/health`, `/api/health` | `no-store` | 不缓存 |
 
 ### 4.4 Cloudflare 规则配置
@@ -152,11 +151,11 @@ Content-Type: application/json
 创建两个有序规则：
 
 **规则 1: `bypass-core-realtime-api`（最高优先级）**
-- 匹配：`/api/markets*`, `/api/campaigns/forecast-states*`
+- 匹配：`/api/markets*`
 - 动作：`Bypass cache`
 
 **规则 2: `cache-side-data-api`**
-- 匹配：`/api/coingecko-fdv*`, `/api/coingecko-categories*`
+- 匹配：`/api/meta/side-data*`
 - 动作：`Eligible for cache`, `Edge TTL: Respect origin`, `Browser TTL: Respect origin`
 
 额外配置：
@@ -180,7 +179,7 @@ curl -I https://<api-host>/api/markets
 # 期望：未变更时返回 304
 
 # 4. 侧数据边缘缓存
-curl -I https://<api-host>/api/coingecko-categories
+curl -I https://<api-host>/api/meta/side-data
 # 多次请求后期望：CF-Cache-Status: HIT
 ```
 

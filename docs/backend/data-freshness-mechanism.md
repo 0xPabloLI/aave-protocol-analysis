@@ -149,7 +149,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 | 端点 | 对外 staleTimeMs | 内部缓存 TTL | 数据源更新频率 | 对齐状态 |
 |------|-----------------|-------------|---------------|---------|
 | `GET /api/markets` | 60s | 60s | 60s cron | ✓ (含 on-chain 数据) |
-| `GET /api/campaigns/forecast-states` | 10m | snapshotCache (cron 写入) | 10m cron | ✓ cron-write/API-read-only |
+| `GET /api/meta/side-data`（`forecast` 子块） | 10m（forecast 子块） | snapshotCache (cron 写入) | 10m cron | ✓ cron-write/API-read-only |
 | `GET /api/coingecko-fdv` | 5m | 5m | 5m cron | ✓ |
 | `GET /api/coingecko-categories` | 6h | 6h | 6h cron | ✓ |
 | `GET /api/meta/side-data` | 按子块各自 TTL | categories 6h / fdv 5m / forecast 10m | 聚合 | ✓ 子块独立 |
@@ -174,7 +174,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 | 接口 | 主要数据 | 软过期阈值（Soft） | 硬过期 / 最大陈旧（Hard） | 过期时行为 | 刷新失败时行为 |
 |---|---|---|---|---|---|
 | `GET /api/markets` | Aave markets 快照 + on-chain merge | 响应 `staleTimeMs` = 1m（提示用） | 无请求侧硬过期；冷启动无快照 → `503 MARKETS_SNAPSHOT_NOT_READY` | 请求**不**触发刷新；由 cron 每分钟刷新快照。On-chain 字段依赖独立 cron + **30m** TTL 缓存。 | `fetchMarketsPayload` 抛错时本轮不更新 `snapshot`，仍返回上一轮成功快照（若存在）；cron 会 `logger.warn`。 |
-| `GET /api/campaigns/forecast-states` | Merkl campaign forecast 状态 | **cron-write/API-read-only**：cron 每 10 分钟刷新 `snapshotCache`；API **不触发** Merkl API 调用 | 无；服务启动时预热缓存 | API 请求直接返回 snapshotCache；若缓存未填充则返回空 snapshot + warn。 | "部分失败"通过 errors[] 表达（整体 200）；cron 刷新失败仅记录 warn，继续用旧 snapshot。 |
+| `GET /api/meta/side-data` 的 `forecast` 子块 | Merkl campaign forecast 状态 | **cron-write/API-read-only**：cron 每 10 分钟刷新 `snapshotCache`；公开 API 聚合读取该快照，**不触发** Merkl API 调用 | 无；服务启动时预热缓存 | 若 forecast 快照未填充则返回空 snapshot + warn（在 side-data 中体现为 forecast 子块内容）；其余子块不受影响。 | "部分失败"通过 errors[] 表达（整体 200）；cron 刷新失败仅记录 warn，继续用旧 snapshot。 |
 | `GET /api/coingecko-categories` | `stablecoins / ETH` 符号集合 | `BACKEND_CACHE_TTL_MS.coingeckoCategories = 6h` | 同一数值视为最大陈旧；过期即必须刷新 | 缓存未过 6h：直接返回缓存；超过 6h：通过 `fetchJsonWithRetry` 串行请求 5 个 CoinGecko 分类页并更新缓存（有 rate limit & 指数退避）。 | 如果刷新期间所有重试都失败，内部抛错，controller 返回 `500`；**不会在 TTL 过期后回退使用旧缓存**（即使内存中仍有旧值）。 |
 | `GET /api/coingecko-fdv` | FDV 列表（CEX 代币 FDV） | `BACKEND_CACHE_TTL_MS.coingeckoFdv = 5m` | 同一数值视为最大陈旧；过期即必须刷新，同时要求所有条目 `fdvUsd !== null` | 缓存未过 5m 且没有 `fdvUsd = null`：直接返回缓存；过期或含 null：强制刷新，先尝试 CoinMarketCap，再回退 CoinGecko FDV。 | 若 CMC 和 CoinGecko 都失败，刷新 promise 抛错，controller 返回 `500`；**不会在 TTL 过期后继续用旧 FDV 缓存**。 |
 | `GET /api/health` / `GET /health` | 健康检查（环境 & 配置摘要） | 无 | 无 | 实时构造 JSON 返回，不做缓存或 TTL 判断。 | N/A（只要进程还活着基本能返回 200；严重错误才会 500）。 |

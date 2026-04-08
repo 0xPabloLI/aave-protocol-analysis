@@ -114,6 +114,11 @@ The server uses environment variables for configuration (see [AGENTS.md](AGENTS.
 - `PORT` - Server port (default: 3001)
 - `NODE_ENV` - Environment (development/production)
 - `FRONTEND_URL` - CORS allowed origins for production (comma-separated)
+- `MERKL_FALLBACK_MAX_STALE_MS` - Max age for Merkl fallback snapshots before refusing stale reuse (default: 10m)
+- `MERKL_FORECAST_OPPORTUNITY_META_FALLBACK_MAX_STALE_MS` - Max age for forecast opportunity-meta cache fallback (default: max(3x TTL, 30m))
+- `MERKL_FORECAST_SNAPSHOT_FALLBACK_MAX_STALE_MS` - Max age for forecast snapshot fallback when refresh returns empty/error (default: max(3x TTL, 30m))
+- `COINGECKO_CATEGORIES_FALLBACK_MAX_STALE_MS` - Max age for categories empty-result fallback (default: max(3x TTL, 30m))
+- `COINGECKO_FDV_FALLBACK_MAX_STALE_MS` - Max age for FDV empty-result fallback (default: max(3x TTL, 30m))
 - Configure in repo root `.env`; production may use Doppler or Railway for secrets.
 
 ### API Endpoints

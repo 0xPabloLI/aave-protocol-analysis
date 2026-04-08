@@ -129,7 +129,17 @@ npm start
 - `COINGECKO_API_KEY` - CoinGecko 认证（可选，可提高配额）
 - `DOPPLER_TOKEN` - 生产环境从 Doppler 拉取密钥时使用
 
-Merkl 预测相关（可选，有默认值）：`MERKL_FORECAST_RESULT_CACHE_TTL_MS`、`MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS`、`MERKL_METRICS_CACHE_TTL_MS`。详见 [AGENTS.md](../../AGENTS.md#configuration)。
+Merkl 预测相关（可选，有默认值）：
+
+- TTL：`MERKL_FORECAST_RESULT_CACHE_TTL_MS`、`MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS`、`MERKL_METRICS_CACHE_TTL_MS`
+- fallback 最大陈旧时间：
+  - `MERKL_FALLBACK_MAX_STALE_MS`（root Merkl 空结果时复用快照的上限，默认 10m）
+  - `MERKL_FORECAST_OPPORTUNITY_META_FALLBACK_MAX_STALE_MS`（forecast opportunity-meta 旧缓存兜底上限，默认 `max(3x TTL, 30m)`）
+  - `MERKL_FORECAST_SNAPSHOT_FALLBACK_MAX_STALE_MS`（forecast 快照兜底上限，默认 `max(3x TTL, 30m)`）
+  - `COINGECKO_CATEGORIES_FALLBACK_MAX_STALE_MS`（categories 空结果兜底上限，默认 `max(3x TTL, 30m)`）
+  - `COINGECKO_FDV_FALLBACK_MAX_STALE_MS`（fdv 空结果兜底上限，默认 `max(3x TTL, 30m)`）
+
+详见 [AGENTS.md](../../AGENTS.md#configuration)。
 
 ## 数据更新
 
