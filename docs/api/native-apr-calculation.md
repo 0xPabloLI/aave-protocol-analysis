@@ -181,7 +181,7 @@ Fields available in each reserve object:
 
 ### Cache
 
-- 内存快照 + `staleTimeMs` 60s（`marketsDataStaleThreshold` / `realtimeFamily`）；cron 每分钟刷新
+- 内存快照 + `staleTimeMs` 60s（`marketsDataStaleThreshold`）；cron 每分钟刷新
 - On-chain：独立 cron + **30 分钟** per-pool 缓存（`onchainCacheTtl`），RPC 失败时在 TTL 内复用
 
 ---

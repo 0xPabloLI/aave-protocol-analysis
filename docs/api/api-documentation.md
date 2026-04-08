@@ -212,7 +212,9 @@ interface MarketsResponse {
 
 **状态码**:
 - `200`: 成功
-- `503`: 仅当内存快照尚未就绪（冷启动未完成预热）时，`errorCode = "MARKETS_SNAPSHOT_NOT_READY"`
+- `503`: 内存快照不可安全服务：
+  - 冷启动未完成预热：`errorCode = "MARKETS_SNAPSHOT_NOT_READY"`
+  - 快照超过硬过期上限：`errorCode = "MARKETS_SNAPSHOT_STALE"`
 - `500`: 服务器错误
 
 **注意事项**:
