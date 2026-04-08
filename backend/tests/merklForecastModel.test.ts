@@ -38,7 +38,8 @@ test('buildForecastState supports DUTCH_AUCTION without apr cap', () => {
   assert.equal(state.remainingBudget, 600);
   assert.equal(state.remainingDays, 5);
   assert.equal(state.plannedDaily, 100);
-  assert.equal(state.requiredDaily, 100);
+  // Internal model still computes requiredDaily; controller omits it from API for DUTCH.
+  assert.equal(state.requiredDaily, state.plannedDaily);
 });
 
 test('buildForecastState requires apr cap for MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE campaigns', () => {
