@@ -103,3 +103,6 @@ data/
 workers/.wrangler/
 workers/node_modules/
 workers/dist/
+
+
+SESSION-BOARD.md

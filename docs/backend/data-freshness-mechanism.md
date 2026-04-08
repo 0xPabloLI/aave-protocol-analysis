@@ -135,12 +135,12 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 |---|---:|---|---|
 | `marketsDataStaleThreshold` | 60s | `GET /api/markets` `staleTimeMs` | 与 `GET /api/markets` 的 `staleTimeMs` 一致；**非**服务端请求触发刷新。 |
 | `onchainCacheTtl` | 30m | on-chain per-pool cache | RPC 失败时在 TTL 内复用缓存；cron 仍每分钟尝试刷新。 |
-| `merklForecastResult` | 10m | `merklForecastResultDefault` | 与 `merklMetricsMin` 对齐，底层 metrics 不会更快更新。 |
+| `merklForecastResult` | 10m | `merklForecastResultDefault` | 只对应 forecast snapshot 的刷新节奏，不代表 metrics cache 的 TTL。 |
 | `merklForecastMeta` | 5m | `merklForecastOpportunityMetaDefault`、`merklLiteFileMaxAge`、`merklOpportunitiesDefault` | 元数据查询可更频繁。 |
 | `marketsServeHardStaleMax` | 5m | `GET /api/markets` 硬过期上限 | 快照超出该值返回 `MARKETS_SNAPSHOT_STALE`（503）。 |
 | `coingeckoFdv` | 5m | FDV 缓存 | 与 FDV 预热 cron（每 5 分钟）一致。 |
 | `coingeckoLongDataTtlMs` | 6h | Categories 与 FDV 监控 | 低频元数据/监控，长 TTL 降低外部 API 压力。 |
-| `merklMetrics*` | 10m~6h | `merklMetricsDefault/Min/Max/Empty` | 按指标节奏做有界动态 TTL（clamp 范围统一为 10m~6h）。 |
+| `merklMetrics*` | 10m~6h | `merklMetricsDefault/Min/Max/Empty` | 这是 metrics cache 的独立 TTL 组；`merklMetricsDefault` 只是 cadence 识别失败时的兜底值。 |
 
 ### 端点对外 staleTimeMs 与内部 TTL 对齐表
 
@@ -165,7 +165,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 → 空数据时用 merklMetricsEmpty=10m（与 min 一致）
 ```
 
-**与 forecast cron 的关系**：cron 每 10 分钟重算 `snapshotCache` 时，会对每个 campaign 调用 `getMerklForecastState`；若某 campaign 的 metrics **仍在 TTL 内**，则**不会**再次请求 Merkl metrics，该次快照仍用缓存中的序列参与 `distributedSoFar` 等计算。详见 `docs/api/api-documentation.md` → **Opportunity 元数据与 metrics 的缓存节奏**。
+**与 forecast cron 的关系**：forecast cron 只是每 10 分钟重算 `snapshotCache`。它会在重算时调用 `getMerklForecastState`，但 `getMerklForecastState` 内部是否重新拉 metrics，取决于该 campaign 自己的 metrics TTL，而不是 10 分钟 cron 本身。换句话说，`merklForecastResultDefault = 10m` 管 snapshot，`merklMetricsDefault` 管 metrics 兜底，两者不是同一个 TTL。详见 `docs/api/api-documentation.md` → **Opportunity 元数据与 metrics 的缓存节奏**。
 
 ### 按端点汇总：软过期 / 硬过期 / 回退策略
 
@@ -206,6 +206,45 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 - `merklFetchConfig.baseDelayMs` 默认 1 秒 / `maxDelayMs` 默认 10 秒
 
 说明：上述为超时/调度/限流，不属于快照 freshness TTL，但已和 TTL 一样走统一时间常量管理。
+
+### `backend/src/cacheTtl.ts` 全量索引
+
+> 这一节把 `cacheTtl.ts` 里的**全部时间常量**一次列清，避免只看到对外 `staleTimeMs` 而忽略它们在缓存、重试、调度里的真实用途。
+
+| 常量 | 值 | 类型 | 用处 | 备注 |
+|---|---:|---|---|---|
+| `BACKEND_TIME_MS.oneMinute` | 60s | 基础时间单位 | 作为 markets TTL、on-chain cron、部分调度的基准 | 最常用的最小粒度 |
+| `BACKEND_TIME_MS.fiveMinutes` | 5m | 基础时间单位 | FDV TTL、Merkl 机会元数据 TTL、市场硬过期上限、部分重试/监控窗口 | 也是若干 fallback 默认值来源 |
+| `BACKEND_TIME_MS.tenMinutes` | 10m | 基础时间单位 | Merkl forecast 结果 TTL、Merkl metrics 最小 TTL、forecast cron | forecast 主节奏 |
+| `BACKEND_TIME_MS.thirtyMinutes` | 30m | 基础时间单位 | on-chain per-pool TTL、Merkl metrics 默认/空数据 TTL 的下限之一 | 典型“可容忍较旧缓存”窗口 |
+| `BACKEND_TIME_MS.sixHours` | 6h | 基础时间单位 | CoinGecko 长周期数据 TTL、Merkl metrics 最大 TTL | 低频元数据/监控 |
+| `BACKEND_TIME_MS.oneDay` | 24h | 基础时间单位 | 预留通用单位 | 当前未直接被 `BACKEND_CACHE_TTL_MS` 消费 |
+| `BACKEND_TIME_SECONDS.oneMinute` | 60s | 基础时间单位 | 纯秒级配置/文档对齐 | 目前主要是辅助常量 |
+| `BACKEND_FETCH_TIMING_MS.coingeckoBaseDelay` | 1000ms | 重试/退避 | CoinGecko 重试退避基准 | 影响 `coingeckoFetchConfig` 默认值 |
+| `BACKEND_FETCH_TIMING_MS.coingeckoMinRequestInterval` | 2500ms | 限流 | CoinGecko 请求间隔下限 | 防止触发 30 req/min 限流 |
+| `BACKEND_FETCH_TIMING_MS.coingeckoMinRequestIntervalFloor` | 1000ms | 限流下限 | CoinGecko 请求间隔的最小安全下限 | 保护配置异常 |
+| `BACKEND_FETCH_TIMING_MS.merklRetryBaseDelay` | 1000ms | 重试/退避 | Merkl 瞬态错误指数退避起点 | 供 Merkl fetch 重试逻辑使用 |
+| `BACKEND_FETCH_TIMING_MS.merklRetryMaxDelay` | 10000ms | 重试/退避 | Merkl 瞬态错误指数退避上限 | 限制最大等待 |
+| `BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0` | `0 * * * * *` | 调度 | markets 每分钟第 0 秒刷新 | 对应 `refreshMarketsSnapshot()` |
+| `BACKEND_SCHEDULE_CRON.onchainDataWarmEveryMinuteAtSecond10` | `10 * * * * *` | 调度 | on-chain 每分钟第 10 秒刷新 | 与 markets 分开，避免抢占 |
+| `BACKEND_SCHEDULE_CRON.coingeckoFdvWarmEveryFiveMinutesAtSecond5` | `5 */5 * * * *` | 调度 | FDV 每 5 分钟预热 | 与 `coingeckoFdv` TTL 对齐 |
+| `BACKEND_SCHEDULE_CRON.coingeckoCategoriesWarmEverySixHoursAtSecond10` | `10 0 */6 * * *` | 调度 | Categories 每 6 小时预热 | 与 `coingeckoLongDataTtlMs` 对齐 |
+| `BACKEND_SCHEDULE_CRON.campaignForecastWarmEveryTenMinutesAtSecond30` | `30 */10 * * * *` | 调度 | Forecast 每 10 分钟刷新 | 与 `merklForecastResultDefault` 对齐 |
+| `BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold` | 1m | 对外 staleTime | `GET /api/markets` 响应提示 | 软过期提示，不等于硬失败 |
+| `BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax` | 5m | 硬过期 | `GET /api/markets` 过旧则 503 | 防止无限期返回旧 markets 快照 |
+| `BACKEND_CACHE_TTL_MS.onchainCacheTtl` | 30m | 缓存 TTL | on-chain per-pool 缓存 | RPC 失败时允许复用 |
+| `BACKEND_CACHE_TTL_MS.merklForecastResultDefault` | 10m | 缓存 TTL / 对外 staleTime | forecast 结果快照 | 与 forecast cron 对齐 |
+| `BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault` | 5m | 缓存 TTL | forecast opportunity-meta 内存缓存 | 机会元数据更频繁刷新 |
+| `BACKEND_CACHE_TTL_MS.merklLiteFileMaxAge` | 5m | 文件快照 TTL | `merkl-opportunity-meta-lite.json` 可接受年龄 | 超过则不再作为 fresh lite 文件 |
+| `BACKEND_CACHE_TTL_MS.merklOpportunitiesDefault` | 5m | 缓存 TTL | Merkl opportunities 拉取缓存 | root 侧机会列表缓存 |
+| `BACKEND_CACHE_TTL_MS.coingeckoLongDataTtlMs` | 6h | 缓存 TTL | CoinGecko categories + FDV parity monitor | 低频长周期数据 |
+| `BACKEND_CACHE_TTL_MS.coingeckoFdv` | 5m | 缓存 TTL / 对外 staleTime | FDV 列表缓存 | 与 FDV 预热 cron 对齐 |
+| `BACKEND_CACHE_TTL_MS.merklMetricsDefault` | 30m | 动态缓存默认 TTL | Merkl metrics 动态 TTL 的默认值 | cadence 识别失败时兜底 |
+| `BACKEND_CACHE_TTL_MS.merklMetricsMin` | 10m | 动态缓存下限 | Merkl metrics 动态 TTL 下限 | 防止刷新过频 |
+| `BACKEND_CACHE_TTL_MS.merklMetricsMax` | 6h | 动态缓存上限 | Merkl metrics 动态 TTL 上限 | 防止缓存过久 |
+| `BACKEND_CACHE_TTL_MS.merklMetricsEmpty` | 10m | 空数据 TTL | metrics 无 dailyRewardsRecords 时的缓存 TTL | 与最小值对齐 |
+
+> 规则速记：`staleTime` 是给前端看的“建议刷新提示”；`TTL` 是缓存是否仍可复用；`hard stale` 是“过了就不该再服务”的边界；`cron` 是主动刷新节奏。三者不等价。
 
 ### Merkl API Rate Limit & 并发控制
 
