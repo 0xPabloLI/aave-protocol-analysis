@@ -32,7 +32,6 @@ export const BACKEND_SCHEDULE_CRON = {
 
 export const BACKEND_CACHE_TTL_MS = {
   // Markets near-realtime family.
-  realtimeFamily: BACKEND_TIME_MS.oneMinute,
   marketsDataStaleThreshold: BACKEND_TIME_MS.oneMinute,
   marketsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
   // On-chain data TTL: 30 min (deficit/baseVariableBorrowRate change infrequently)
@@ -47,12 +46,9 @@ export const BACKEND_CACHE_TTL_MS = {
   merklOpportunitiesDefault: BACKEND_TIME_MS.fiveMinutes,
 
   // CoinGecko family.
-  coingeckoSlowFamily: BACKEND_TIME_MS.sixHours,
-  coingeckoFastFamily: BACKEND_TIME_MS.tenMinutes,
-  coingeckoCategories: BACKEND_TIME_MS.sixHours,
+  coingeckoLongDataTtlMs: BACKEND_TIME_MS.sixHours,
   /** FDV cache TTL; matches FDV warm cron interval (5 min) so cron and request path share same freshness rule. */
   coingeckoFdv: BACKEND_TIME_MS.fiveMinutes,
-  coingeckoFdvMonitor: BACKEND_TIME_MS.sixHours,
 
   // Merkl metrics family (underlying data for forecast computation).
   // Dynamic TTL = observed cadence / 4, clamped to [min, max].
