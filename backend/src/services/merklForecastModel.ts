@@ -24,7 +24,8 @@ export interface MerklForecastState {
   totalBudget: number;
   // Fixed baseline daily budget over the full campaign window.
   plannedDaily: number;
-  // Dynamic target daily budget for remaining time (for DUTCH, equals plannedDaily).
+  // Dynamic target daily budget for remaining time. Only meaningful for non-DUTCH types;
+  // DUTCH_AUCTION always equals plannedDaily and is omitted from the API response.
   requiredDaily: number;
   remainingBudget: number;
   remainingDays: number;

@@ -13,9 +13,10 @@ const FORECAST_SNAPSHOT_FALLBACK_MAX_STALE_MS = (() => {
 // Only metrics-dependent fields (require Merkl metrics API / dailyRewardsRecords).
 // Opportunity-only fields (campaignType, totalBudget, aprCap, latestTvl, plannedDaily)
 // are served from the markets endpoint breakdowns for 1-min freshness.
+// DUTCH_AUCTION omits requiredDaily (always === plannedDaily; frontend falls back).
 export const toForecastResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>) => ({
   campaignId: state.campaignId,
-  requiredDaily: state.requiredDaily,
+  ...(state.campaignType !== 'DUTCH_AUCTION' && { requiredDaily: state.requiredDaily }),
   distributedSoFar: state.distributedSoFar,
   endTimestamp: state.endTimestamp,
 });
