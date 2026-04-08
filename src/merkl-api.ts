@@ -372,7 +372,7 @@ const toFiniteNumberForForecast = (value: unknown): number | null => {
 interface ForecastFieldsFlat {
   campaignType: ForecastCampaignTypeLite;
   totalBudget: number;
-  aprCap: number | null;
+  aprCap?: number;
   latestTvl: number;
   plannedDaily: number;
 }
@@ -476,8 +476,14 @@ const buildForecastFieldsFromOpportunity = async (
   const totalDays = Math.max((endTs - startTs) / 86400, 0.0001);
   const plannedDaily = totalBudget / totalDays;
 
+  const fields: ForecastFieldsFlat = {
+    campaignType: meta.campaignTypeHint,
+    totalBudget,
+    latestTvl: meta.tvl,
+    plannedDaily,
+  };
+
   // APR cap (only for MAX/FIX reward types)
-  let aprCap: number | null = null;
   if (
     meta.campaignTypeHint === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
     meta.campaignTypeHint === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
@@ -485,17 +491,11 @@ const buildForecastFieldsFromOpportunity = async (
     const rawApr = snapshot.params?.distributionMethodParameters?.distributionSettings?.apr;
     const aprValue = toFiniteNumberForForecast(rawApr);
     if (aprValue !== null && aprValue > 0) {
-      aprCap = aprValue;
+      fields.aprCap = aprValue;
     }
   }
 
-  return {
-    campaignType: meta.campaignTypeHint,
-    totalBudget,
-    aprCap,
-    latestTvl: meta.tvl,
-    plannedDaily,
-  };
+  return fields;
 };
 
 /**
