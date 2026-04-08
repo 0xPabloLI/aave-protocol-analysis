@@ -77,11 +77,11 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         const previous = snapshot;
         if (previous) {
           const ageMs = Date.now() - previous.fetchedAt;
-          if (ageMs <= BACKEND_CACHE_TTL_MS.marketsServeStaleMax) {
+          if (ageMs <= BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax) {
             logger.warn(
               `⚠️ Markets refresh returned empty dataset; keeping previous snapshot ` +
               `(age=${Math.round(ageMs / 1000)}s, maxServeStale=${Math.round(
-                BACKEND_CACHE_TTL_MS.marketsServeStaleMax / 1000
+                BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax / 1000
               )}s)`
             );
             return previous;
@@ -178,18 +178,18 @@ export function getMarketsData(): {
     return {
       payload: null,
       staleTimeMs: BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold,
-      maxServeStaleMs: BACKEND_CACHE_TTL_MS.marketsServeStaleMax,
+      maxServeStaleMs: BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax,
       ageMs: null,
       isTooStale: false,
     };
   }
 
   const ageMs = Date.now() - snapshot.fetchedAt;
-  const isTooStale = ageMs > BACKEND_CACHE_TTL_MS.marketsServeStaleMax;
+    const isTooStale = ageMs > BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax;
   if (isTooStale) {
     logger.warn(
       `Markets snapshot too stale to serve (age=${Math.round(ageMs / 1000)}s, max=${Math.round(
-        BACKEND_CACHE_TTL_MS.marketsServeStaleMax / 1000
+                BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax / 1000
       )}s)`
     );
   }
@@ -197,7 +197,7 @@ export function getMarketsData(): {
   return {
     payload: isTooStale ? null : snapshot.payload,
     staleTimeMs: BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold,
-    maxServeStaleMs: BACKEND_CACHE_TTL_MS.marketsServeStaleMax,
+      maxServeStaleMs: BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax,
     ageMs,
     isTooStale,
   };

@@ -33,7 +33,7 @@ export const BACKEND_SCHEDULE_CRON = {
 export const BACKEND_CACHE_TTL_MS = {
   // Markets near-realtime family.
   marketsDataStaleThreshold: BACKEND_TIME_MS.oneMinute,
-  marketsServeStaleMax: BACKEND_TIME_MS.fiveMinutes,
+  marketsServeHardStaleMax: BACKEND_TIME_MS.fiveMinutes,
   // On-chain data TTL: 30 min (deficit/baseVariableBorrowRate change infrequently)
   onchainCacheTtl: BACKEND_TIME_MS.thirtyMinutes,
 

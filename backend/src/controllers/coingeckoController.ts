@@ -4,15 +4,15 @@ import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 
 const CG_ENDPOINT = 'https://api.coingecko.com/api/v3/coins/markets';
 const CMC_QUOTES_ENDPOINT = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest';
-const COINGECKO_SLOW_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoSlowFamily;
-const CACHE_TTL_MS = COINGECKO_SLOW_TTL_MS;
+const COINGECKO_LONG_DATA_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoLongDataTtlMs;
+const CATEGORIES_CACHE_TTL_MS = COINGECKO_LONG_DATA_TTL_MS;
 /** Matches FDV warm cron interval (5 min); cron and request both respect this TTL. */
 const FDV_CACHE_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoFdv;
-const FDV_MONITOR_TTL_MS = COINGECKO_SLOW_TTL_MS;
+const FDV_MONITOR_TTL_MS = COINGECKO_LONG_DATA_TTL_MS;
 const FDV_DIFF_ALERT_THRESHOLD_PCT = 5;
 const CATEGORIES_FALLBACK_MAX_STALE_MS = (() => {
   const raw = process.env.COINGECKO_CATEGORIES_FALLBACK_MAX_STALE_MS;
-  const fallback = Math.max(CACHE_TTL_MS * 3, 30 * 60 * 1000);
+  const fallback = Math.max(CATEGORIES_CACHE_TTL_MS * 3, 30 * 60 * 1000);
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -327,7 +327,7 @@ function monitorFdvParity(cmcItems: FdvItem[]): void {
 
 function hasReusableCategoriesCache(): boolean {
   if (!cachedResponse) return false;
-  return Date.now() - cachedResponse.fetchedAt < CACHE_TTL_MS;
+  return Date.now() - cachedResponse.fetchedAt < CATEGORIES_CACHE_TTL_MS;
 }
 
 async function getOrRefreshCoingeckoCategoriesData(source: 'request' | 'startup'): Promise<CoingeckoCategoriesData> {
@@ -448,7 +448,7 @@ export async function getCoingeckoCategoriesSnapshot(
   return {
     data,
     fetchedAt: new Date(fetchedAtMs).toISOString(),
-    staleTimeMs: CACHE_TTL_MS,
+    staleTimeMs: CATEGORIES_CACHE_TTL_MS,
   };
 }
 
