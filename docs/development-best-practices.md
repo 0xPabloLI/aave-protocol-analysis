@@ -25,7 +25,7 @@ Use **`prune`** for functions that **drop or whitelist fields** so objects match
 ## 2) API Design
 
 - Keep APIs separated by data granularity:
-  - campaign-level forecast state (`/api/campaigns/forecast-states`)
+  - campaign-level forecast state（通过 `GET /api/meta/side-data` 的 `forecast.items` 暴露）
   - reserve/incentive-level market data (`/api/markets`)
 - Put only fields needed for frontend into responses.
 - Remove derivable fields from backend payloads when frontend can compute them cheaply.

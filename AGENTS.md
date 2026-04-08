@@ -176,6 +176,11 @@ DOPPLER_TOKEN=...                  # Doppler secrets (production)
 MERKL_FORECAST_RESULT_CACHE_TTL_MS=600000             # Forecast result cache TTL (default 10m, aligned with metricsMin)
 MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS=300000   # Opportunity meta cache TTL (default 5m)
 MERKL_METRICS_CACHE_TTL_MS=1800000                    # Metrics cache default TTL (default 30m, dynamic cadence-based)
+MERKL_FALLBACK_MAX_STALE_MS=600000                    # Root Merkl empty-result fallback max stale age (default 10m)
+MERKL_FORECAST_OPPORTUNITY_META_FALLBACK_MAX_STALE_MS=1800000 # Forecast opportunity-meta fallback max stale age (default max(3x TTL, 30m))
+MERKL_FORECAST_SNAPSHOT_FALLBACK_MAX_STALE_MS=1800000 # Forecast snapshot fallback max stale age (default max(3x TTL, 30m))
+COINGECKO_CATEGORIES_FALLBACK_MAX_STALE_MS=64800000   # Categories empty-result fallback max stale age (default max(3x TTL, 30m); with 6h TTL => 18h)
+COINGECKO_FDV_FALLBACK_MAX_STALE_MS=1800000           # FDV empty-result fallback max stale age (default max(3x TTL, 30m); with 5m TTL => 30m)
 ```
 
 **Priority**: System env vars > `.env` file > defaults

@@ -155,7 +155,7 @@ interface MerklCampaignBreakdown {
 
 **端点**: `GET /api/markets`
 
-**描述**: 获取 markets 快照（`markets-v2`），返回 `snapshot + reserves`。其中 `reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `reserveSizeUsd` / `utilizationPct` 以支持前端展示。如果数据超过 1 分钟未更新，会自动触发后台更新。若更新持续失败且快照陈旧时间超过硬上限（默认 5 分钟），接口会返回 `503`，避免长期返回过旧数据。
+**描述**: 获取 markets 快照（`markets-v2`），返回 `snapshot + reserves`。其中 `reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `reserveSizeUsd` / `utilizationPct` 以支持前端展示。该端点遵循 cron-write/API-read-only：请求只读内存快照，不触发外部拉取；冷启动未预热完成时返回 `503`。
 
 **请求参数**: 无
 
@@ -267,6 +267,7 @@ interface MarketsResponse {
 **说明**:
 - categories / fdv / forecast 的独立公开 URL 已移除
 - 客户端若需要 campaign forecast，应从本端点的 `forecast.items` 读取，而不是请求单独 forecast route
+- `GET /api/campaigns/forecast-states` 已从对外 API 中移除。
 
 ---
 
@@ -292,9 +293,11 @@ interface MarketsResponse {
 
 下述旧章节保留为历史背景时，请以本页顶部的“API 基础路径”与“已移除的公开端点”为准。
 
-### 4. 批量获取 Merkl Forecast States（历史）
+### 4. 批量获取 Merkl Forecast States（历史 / 已下线）
 
-**端点**: `GET /api/campaigns/forecast-states`
+**端点**: `GET /api/campaigns/forecast-states`（历史端点）
+
+> 该分段仅保留历史说明，便于理解迁移前后差异。
 
 **请求参数**:
 - `ids` (可选): 逗号分隔 campaignId 列表；省略时默认返回当前 markets 中全部 campaign 的状态。
@@ -417,7 +420,7 @@ Merkl 返回里历史上存在两套命名：
 
 - **metrics（按 campaign）**：每个 id 单独算 TTL、单独过期；过期后**仅该 id**再拉 `/v4/campaigns/{id}/metrics`。未过期则复用内存，即使 forecast **cron 每 10 分钟**重算快照也不会为该 id 打 Merkl。
 - **opportunity 元数据（整表）**：`campaignOpportunityCache` 为**一张**全量 map（来源：`merkl-opportunity-meta-lite.json` 若足够新鲜，否则 `/v4/opportunities`），默认 **约 5 分钟** TTL；过期后**整表**重建。与 metrics 的 per-id TTL **相互独立**。
-- **对外语义**：`GET /api/campaigns/forecast-states` 的 `staleTimeMs`（默认 10 分钟）表示 **snapshotCache** 的发布节奏；**不**表示「每个 campaign 的 metrics 都在 10 分钟内从 Merkl 更新一次」。
+- **对外语义**：`GET /api/meta/side-data` 的 `forecast.staleTimeMs`（默认 10 分钟）表示 **snapshotCache** 的发布节奏；**不**表示「每个 campaign 的 metrics 都在 10 分钟内从 Merkl 更新一次」。
 
 ### TVL 与 `distributedSoFar` 口径（摘要）
 
@@ -429,6 +432,53 @@ Merkl 返回里历史上存在两套命名：
 `merklForecastController.toForecastResponseItem` 只序列化：`campaignId`、`requiredDaily`、`distributedSoFar`、`endTimestamp`。
 
 内部完整状态 `MerklForecastState` 另有 `remainingBudget`、`remainingDays`、`startTimestamp`、`asOf` 等；**当前 REST 响应未包含**这些字段。
+
+### Merkl `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` 下 `plannedDaily` 与 `dailyRewardsBreakdown` 一致性观察
+
+该结论基于“市场页实际使用的 30 个 campaign”（来自后端 `GET /api/markets` 的 `merklSupplys`/`merklBorrows` 真实引用）：
+
+- 对比口径：
+  - `plannedDaily`：由 campaign `amount` 与 `[startTimestamp, endTimestamp]` 均分得出。
+  - `dailyRewardsBreakdown`：`/v4/campaigns/{campaignId}` 中的 `dailyRewardsBreakdown[].value` 汇总。
+  - `requiredDaily`：`/api/meta/side-data` 的 `forecast.items[]` 当前状态。
+  - `campaignType`：来自 `breakdown.distributionType / breakdown.distributionMethod / opp.distributionType`（不做归一化）。
+
+- `rawType = DUTCH_AUCTION`：在这批样本中全量一致（19/19）。
+- `rawType = MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE`：11 个中 5 个一致、6 个不一致。
+
+一致（`plannedDaily ≈ dailyRewardsBreakdown`）：
+
+- `12054222608540614766`（campaignApr 3.10 / aprCap 3.50）
+- `3886370444068287679`（campaignApr 3.18 / aprCap 3.75）
+- `4461587008158830948`（campaignApr 2.88 / aprCap 3.50）
+- `5941889252017973095`（campaignApr 1.41 / aprCap 2.30）
+- `8042494315215972422`（campaignApr 0.10 / aprCap 10.00）
+
+不一致（`plannedDaily` 与 `dailyRewardsBreakdown` 偏差明显）：
+
+- `1216866542342484437`（campaignApr 3.40 / aprCap 3.40）
+  - `plannedDaily`≈2794.57，`requiredDaily`≈3235.88，`dailyRewardsBreakdown`≈2032.50
+- `13694886148811361820`（campaignApr 3.50 / aprCap 3.50）
+  - `plannedDaily`≈9570.99，`requiredDaily`≈13106.12，`dailyRewardsBreakdown`≈7974.75
+- `1541246139455677822`（campaignApr 0.15 / aprCap 0.15）
+  - `plannedDaily`≈465.13，`requiredDaily`≈1648.34，`dailyRewardsBreakdown`≈28.92
+- `15889651832754610062`（campaignApr 3.50 / aprCap 3.50）
+  - `plannedDaily`≈994.95，`requiredDaily`≈3687.86，`dailyRewardsBreakdown`=0
+- `17406661278241767291`（campaignApr 3.50 / aprCap 3.50）
+  - `plannedDaily`≈26427.35，`requiredDaily`≈27387.15，`dailyRewardsBreakdown`≈26039.06
+- `251525480113095550`（campaignApr 1.75 / aprCap 1.75）
+  - `plannedDaily`≈2672.93，`requiredDaily`≈22243.07，`dailyRewardsBreakdown`≈366.35
+
+可见 **`MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` 且 `campaignApr` 接近/等于 `aprCap` 时**，`dailyRewardsBreakdown` 更容易与 `plannedDaily` 偏离；
+且不一致样本里 `requiredDaily` 常常显著高于 `plannedDaily`，表现为“当前限速下的动态发放”。
+
+当前实现状态与展示口径约束：
+
+- `plannedDaily` 与 `requiredDaily` 是两个独立指标，语义不同，**禁止互相 fallback**。
+- `plannedDaily`：来自 markets breakdown（`/api/markets`）里的计划日发放值。
+- `requiredDaily`：来自 forecast 状态（`/api/meta/side-data` 的 `forecast.items`）里的动态目标日发放值。
+- 任一字段缺失时应按“该字段不可用”处理（例如 `--`），不要用另一字段顶替。
+- `dailyRewardsBreakdown` 仍保留在 debug 与 raw campaign 快照中，建议仅用于排障/分析，不作为默认展示字段。
 
 ### 3. 健康检查
 
@@ -549,7 +599,7 @@ Merkl 返回里历史上存在两套命名：
 
 - `GET /api/coingecko-categories` 的最新快照元信息（6h TTL）
 - `GET /api/coingecko-fdv` 的最新快照元信息（5m TTL）
-- `GET /api/campaigns/forecast-states` 的全量 forecast 数据（10m TTL）
+- 内部 forecast 快照（10m TTL，公开通过本端点 `forecast` 子块返回）
 
 不会触发市场数据刷新，仅依赖各自缓存与 TTL。
 
@@ -584,13 +634,8 @@ Merkl 返回里历史上存在两套命名：
     "items": [
       {
         "campaignId": "0x...",
-        "campaignType": "DUTCH_AUCTION",
-        "plannedDaily": 1000,
         "requiredDaily": 1200,
-        "aprCap": null,
-        "totalBudget": 100000,
         "distributedSoFar": 45000,
-        "latestTvl": 5000000,
         "endTimestamp": 1710000000
       }
     ],
@@ -616,8 +661,8 @@ Merkl 返回里历史上存在两套命名：
   - `fetchedAt`: FDV 数据上次刷新时间。
   - `staleTimeMs`: FDV 缓存 TTL（毫秒），默认 5 分钟。
 - `forecast`: 当 forecast 快照可用时存在，结构：
-  - `items`: forecast 状态数组，字段同 `GET /api/campaigns/forecast-states`。
-  - `errors`: 部分 campaign 计算失败的错误数组（稳定字段为 `{ campaignId, message }`；某些现算路径可能额外带 `status`）。
+  - `items`: forecast 状态数组，实际字段为 `campaignId`、`requiredDaily`、`distributedSoFar`、`endTimestamp`。
+  - `errors`: 部分 campaign 计算失败的错误数组（稳定字段为 `{ campaignId, message }`）。
   - `staleTimeMs`: forecast 缓存 TTL（毫秒），默认 10 分钟。
 - `errors`: 可选对象，键为 `categories`/`fdv`/`forecast`，值为对应子任务整体失败时的错误信息。
 
@@ -654,7 +699,7 @@ Merkl 返回里历史上存在两套命名：
 
 ### 2. Merkl forecast side-data contract
 
-`GET /api/campaigns/forecast-states` 和 `GET /api/meta/side-data` 中的 `forecast.items[]` 当前**实际稳定返回**的是 metrics 依赖字段：
+`GET /api/meta/side-data` 中的 `forecast.items[]` 当前**实际稳定返回**的是 metrics 依赖字段：
 
 | 字段 | 后端当前返回 | 前端类型声明 | 状态 | 说明 |
 |------|--------------|--------------|------|------|
@@ -663,10 +708,10 @@ Merkl 返回里历史上存在两套命名：
 | `distributedSoFar` | 是 | 是 | 已统一 | points campaign 现在按 `totalInToken` 口径累计 |
 | `endTimestamp` | 是 | 是 | 已统一 | Unix seconds |
 | `campaignType` | 否 | 是 | 类型放宽 | 前端类型保留此字段，但当前 API 不保证在 forecast items 返回 |
-| `plannedDaily` | 否 | 是 | 类型放宽 | 实际由 `/api/markets` breakdown 提供 |
-| `aprCap` | 否 | 是 | 类型放宽 | 实际由 `/api/markets` breakdown 提供 |
-| `totalBudget` | 否 | 是 | 类型放宽 | 实际由 `/api/markets` breakdown 提供 |
-| `latestTvl` | 否 | 是 | 类型放宽 | 实际由 `/api/markets` breakdown 提供 |
+| `plannedDaily` | 否 | 否 | **不返回** | 使用 `/api/markets` breakdown 的 `plannedDaily` |
+| `aprCap` | 否 | 否 | **不返回** | 使用 `/api/markets` breakdown 的 `aprCap` |
+| `totalBudget` | 否 | 否 | **不返回** | 使用 `/api/markets` breakdown 的 `totalBudget` |
+| `latestTvl` | 否 | 否 | **不返回** | 使用 `/api/markets` breakdown 的 `latestTvl` |
 
 `errors[]` 结构也有一个兼容点：
 
@@ -674,7 +719,7 @@ Merkl 返回里历史上存在两套命名：
 |------|----------|------|------|
 | `campaignId` | 始终存在 | 已统一 |  |
 | `message` | 始终存在 | 已统一 |  |
-| `status` | 仅部分路径存在 | 类型放宽 | `?ids=` 现算路径可能有 `status`；snapshot 路径通常只有 `{ campaignId, message }` |
+| `status` | 否（公开接口不返回） | 类型放宽 | 历史/内部路径字段；公开 `side-data` 可按不存在处理 |
 
 ### 3. Brevis `/api/markets` incentive contract
 
@@ -912,8 +957,9 @@ Brevis 对外 contract 已收口到下面这组字段：
 ### 数据更新机制
 
 - **`GET /api/markets`**：cron-write/API-read-only；由定时任务与启动预热刷新内存快照，**请求不触发**外部拉取。on-chain 字段在 `refreshMarketsSnapshot` 写入时从 `onchainDataService` 缓存合并。
-- **`/api/coingecko-categories`**、**`/api/coingecko-fdv`**：缓存未过期则直出；过期或无效时**请求路径会触发**刷新（与 cron 预热共用同一套缓存逻辑）。
-- **`/api/campaigns/forecast-states`**（无 `ids`）：读 cron 预热的 forecast 快照；带 `?ids=` 时对指定 id 现算（仍受 Merkl 侧内存缓存约束）。
+- **`GET /api/meta/side-data`**：聚合返回 categories / fdv / forecast 三个子块；各子块按自己的缓存与预热节奏输出。
+- **`GET /api/meta/side-data`**：聚合返回 `forecast.items`（来源于 cron 预热的 forecast 快照）。
+- 该文件仍保留历史说明，仅作兼容参考：`/api/campaigns/forecast-states` 在历史文档中为 `forecast` 快照读取入口，当前实际运行时公开入口为 `GET /api/meta/side-data`。
 - `/api/markets` 返回 `snapshot + reserves`；无 `isStale` / `updateInProgress` 字段。
 
 ## 错误处理
@@ -960,11 +1006,8 @@ curl http://localhost:3001/api/markets
 # 健康检查
 curl http://localhost:3001/health
 
-# 获取 CoinGecko 分类数据
-curl http://localhost:3001/api/coingecko-categories
-
-# 获取 CoinGecko FDV 数据
-curl http://localhost:3001/api/coingecko-fdv
+# 获取侧数据聚合（categories + fdv + forecast）
+curl http://localhost:3001/api/meta/side-data
 ```
 
 ## 版本信息

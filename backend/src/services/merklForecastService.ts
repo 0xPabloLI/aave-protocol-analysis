@@ -55,6 +55,14 @@ const OPPORTUNITY_META_CACHE_TTL_MS = (() => {
     : (LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault);
 })();
 
+const OPPORTUNITY_META_FALLBACK_MAX_STALE_MS = (() => {
+  const raw = process.env.MERKL_FORECAST_OPPORTUNITY_META_FALLBACK_MAX_STALE_MS;
+  const fallback = Math.max(OPPORTUNITY_META_CACHE_TTL_MS * 3, 30 * 60 * 1000);
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+})();
+
 const METRICS_CACHE_DEFAULT_TTL_MS = (() => {
   const raw = process.env.MERKL_METRICS_CACHE_TTL_MS;
   if (!raw) return BACKEND_CACHE_TTL_MS.merklMetricsDefault;
@@ -82,6 +90,7 @@ interface CampaignOpportunityMeta {
 interface CampaignOpportunityCacheEntry {
   data: Map<string, CampaignOpportunityMeta>;
   expiresAt: number;
+  updatedAt: number;
 }
 
 // metricsCache has dynamic TTL (10m-6h based on data cadence) to avoid unnecessary Merkl API calls.
@@ -568,19 +577,73 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
     return campaignOpportunityCache.data;
   }
 
-  let map = await getFreshCampaignMetaMapFromLiteFile();
-  if (map) {
-    logger.info('📦 Merkl forecast using fresh merkl-opportunity-meta-lite.json');
-  } else {
+  const previousEntry = campaignOpportunityCache;
+  const previous = previousEntry?.data;
+
+  const canUsePreviousFallback = (): boolean => {
+    if (!previousEntry || !previous || previous.size === 0) return false;
+    const ageMs = Math.max(0, Date.now() - previousEntry.updatedAt);
+    return ageMs <= OPPORTUNITY_META_FALLBACK_MAX_STALE_MS;
+  };
+
+  const cacheAndReturn = (
+    map: Map<string, CampaignOpportunityMeta>,
+    updatedAt: number = Date.now()
+  ): Map<string, CampaignOpportunityMeta> => {
+    campaignOpportunityCache = {
+      data: map,
+      expiresAt: Date.now() + OPPORTUNITY_META_CACHE_TTL_MS,
+      updatedAt,
+    };
+    return map;
+  };
+
+  try {
+    let map = await getFreshCampaignMetaMapFromLiteFile();
+    if (map) {
+      logger.info('📦 Merkl forecast using fresh merkl-opportunity-meta-lite.json');
+      if (map.size > 0) {
+        return cacheAndReturn(map);
+      }
+      if (canUsePreviousFallback()) {
+        logger.warn('⚠️ Merkl forecast lite map is empty; keeping previous campaign opportunity cache');
+        return cacheAndReturn(previous!, previousEntry!.updatedAt);
+      }
+      if (previous && previous.size > 0) {
+        logger.warn('⚠️ Merkl forecast lite map is empty and previous cache is too stale; refusing fallback');
+      }
+    }
+
     const allOpps = await fetchMerklOpportunities();
     map = buildCampaignOpportunityMetaMapFromOpportunities(allOpps);
-  }
 
-  campaignOpportunityCache = {
-    data: map,
-    expiresAt: now + OPPORTUNITY_META_CACHE_TTL_MS,
-  };
-  return map;
+    if (map.size === 0 && canUsePreviousFallback()) {
+      logger.warn('⚠️ Merkl opportunities fallback map is empty; keeping previous campaign opportunity cache');
+      return cacheAndReturn(previous!, previousEntry!.updatedAt);
+    }
+    if (map.size === 0 && previous && previous.size > 0) {
+      logger.warn('⚠️ Merkl opportunities fallback map is empty and previous cache is too stale; refusing fallback');
+    }
+
+    return cacheAndReturn(map);
+  } catch (error) {
+    if (canUsePreviousFallback()) {
+      logger.warn(
+        `⚠️ Failed to refresh campaign opportunity cache, using previous snapshot: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      return cacheAndReturn(previous!, previousEntry!.updatedAt);
+    }
+    if (previous && previous.size > 0) {
+      logger.warn(
+        `⚠️ Failed to refresh campaign opportunity cache and previous snapshot is too stale (max ${Math.round(
+          OPPORTUNITY_META_FALLBACK_MAX_STALE_MS / 1000
+        )}s): ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+    throw error;
+  }
 };
 
 export const extractNormalizedTotalBudget = (campaign: unknown, campaignId: string): number => {

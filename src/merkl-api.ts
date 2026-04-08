@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import type { RequestInit, Response } from 'node-fetch';
-import { mkdir } from 'fs/promises';
+import { mkdir, readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
@@ -26,6 +26,10 @@ const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
 const OPPORTUNITIES_CACHE_TTL_MS = resolveCacheTtlMs(
   process.env.MERKL_OPPORTUNITIES_CACHE_TTL_MS,
   1 * 60 * 1000
+);
+const MERKL_FALLBACK_MAX_STALE_MS = resolveCacheTtlMs(
+  process.env.MERKL_FALLBACK_MAX_STALE_MS,
+  10 * 60 * 1000
 );
 
 function sleep(ms: number): Promise<void> {
@@ -252,6 +256,162 @@ interface ProcessMerklDataOptions {
   reserveTokenPriceByChainAndAddress?: Map<string, number>;
   priceSourceStats?: Record<UsdPriceSource, number>;
 }
+
+interface MerklStaleStatus {
+  stale: boolean;
+  reason?: string;
+  fallbackSource?: 'memory' | 'disk';
+  lastSuccessfulAt?: string;
+  lastFetchError?: string;
+  fetchedOpportunities: number;
+  usedOpportunities: number;
+}
+
+interface MerklArtifactsPayload {
+  rawOpportunities: MerklOpportunity[];
+  liveOpportunities: MerklOpportunity[];
+  processedData: MerklOpportunityData[];
+  index: Record<string, MerklOpportunityData[]>;
+  forecastCampaignMetaLite: Record<string, ForecastCampaignMetaLite>;
+  staleStatus: MerklStaleStatus;
+}
+
+interface MerklFallbackSnapshot {
+  source: 'memory' | 'disk';
+  rawOpportunities: MerklOpportunity[];
+  liveOpportunities: MerklOpportunity[];
+  processedData: MerklOpportunityData[];
+  index: Record<string, MerklOpportunityData[]>;
+  forecastCampaignMetaLite: Record<string, ForecastCampaignMetaLite>;
+  lastSuccessfulAt?: string;
+}
+
+interface MerklSuccessfulSnapshot {
+  rawOpportunities: MerklOpportunity[];
+  liveOpportunities: MerklOpportunity[];
+  processedData: MerklOpportunityData[];
+  index: Record<string, MerklOpportunityData[]>;
+  forecastCampaignMetaLite: Record<string, ForecastCampaignMetaLite>;
+  lastSuccessfulAt?: string;
+}
+
+let lastMerklSuccessfulSnapshot: MerklSuccessfulSnapshot | null = null;
+let lastMerklFetchError: string | null = null;
+
+const getRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+};
+
+const isNonEmptyIndex = (value: unknown): value is Record<string, MerklOpportunityData[]> => {
+  const record = getRecord(value);
+  return Boolean(record && Object.keys(record).length > 0);
+};
+
+const readDiskFallbackSnapshot = async (): Promise<MerklFallbackSnapshot | null> => {
+  try {
+    const merklRawDataPath = join(DEBUG_DATA_DIR, 'merkl-raw-data.json');
+    const rawJson = JSON.parse(await readFile(merklRawDataPath, 'utf-8')) as Record<string, unknown>;
+    const indexRaw = rawJson.index;
+    if (!isNonEmptyIndex(indexRaw)) return null;
+    const index = indexRaw as Record<string, MerklOpportunityData[]>;
+
+    const rawOpportunities = Array.isArray(rawJson.rawOpportunities)
+      ? (rawJson.rawOpportunities as MerklOpportunity[])
+      : [];
+    const liveOpportunities = Array.isArray(rawJson.liveOpportunities)
+      ? (rawJson.liveOpportunities as MerklOpportunity[])
+      : rawOpportunities;
+    const processedData = Array.isArray(rawJson.processedData)
+      ? (rawJson.processedData as MerklOpportunityData[])
+      : Object.values(index).flat();
+
+    let forecastCampaignMetaLite: Record<string, ForecastCampaignMetaLite> = {};
+    try {
+      const merklForecastLitePath = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
+      const liteJson = JSON.parse(await readFile(merklForecastLitePath, 'utf-8')) as Record<string, unknown>;
+      const campaigns = getRecord(liteJson.campaigns);
+      if (campaigns) {
+        forecastCampaignMetaLite = campaigns as unknown as Record<string, ForecastCampaignMetaLite>;
+      }
+    } catch {
+      forecastCampaignMetaLite = buildForecastCampaignMetaLiteMap(liveOpportunities);
+    }
+
+    return {
+      source: 'disk',
+      rawOpportunities,
+      liveOpportunities,
+      processedData,
+      index,
+      forecastCampaignMetaLite,
+      lastSuccessfulAt: typeof rawJson.timestamp === 'string' ? rawJson.timestamp : undefined,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const resolveMerklFallbackSnapshot = async (): Promise<MerklFallbackSnapshot | null> => {
+  const memorySnapshot = lastMerklSuccessfulSnapshot;
+  if (memorySnapshot !== null && Object.keys(memorySnapshot.index).length > 0) {
+    return {
+      source: 'memory',
+      rawOpportunities: memorySnapshot.rawOpportunities,
+      liveOpportunities: memorySnapshot.liveOpportunities,
+      processedData: memorySnapshot.processedData,
+      index: memorySnapshot.index,
+      forecastCampaignMetaLite: memorySnapshot.forecastCampaignMetaLite,
+      lastSuccessfulAt: memorySnapshot.lastSuccessfulAt,
+    };
+  }
+  return readDiskFallbackSnapshot();
+};
+
+const getSnapshotAgeMs = (iso?: string): number | null => {
+  if (!iso) return null;
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts) || ts <= 0) return null;
+  return Math.max(0, Date.now() - ts);
+};
+
+const isFallbackSnapshotFreshEnough = (snapshot: MerklFallbackSnapshot): boolean => {
+  const ageMs = getSnapshotAgeMs(snapshot.lastSuccessfulAt);
+  if (ageMs === null) return false;
+  return ageMs <= MERKL_FALLBACK_MAX_STALE_MS;
+};
+
+const persistMerklArtifacts = async (payload: MerklArtifactsPayload): Promise<void> => {
+  await mkdir(DEBUG_DATA_DIR, { recursive: true });
+  await mkdir(RUNTIME_DATA_DIR, { recursive: true });
+
+  const merklRawDataPath = join(DEBUG_DATA_DIR, 'merkl-raw-data.json');
+  await writeJsonAtomic(merklRawDataPath, {
+    timestamp: new Date().toISOString(),
+    stale: payload.staleStatus,
+    rawOpportunities: payload.rawOpportunities,
+    liveOpportunities: payload.liveOpportunities,
+    processedData: payload.processedData,
+    index: payload.index,
+  });
+  logger.info(
+    `💾 Merkl raw data saved to ${merklRawDataPath}${payload.staleStatus.stale ? ' (stale fallback)' : ''}`
+  );
+
+  const merklForecastLitePath = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
+  await writeJsonAtomic(
+    merklForecastLitePath,
+    {
+      timestamp: new Date().toISOString(),
+      stale: payload.staleStatus,
+      campaigns: payload.forecastCampaignMetaLite,
+    },
+    { space: 0 }
+  );
+  logger.info(
+    `💾 Merkl forecast lite data saved to ${merklForecastLitePath}${payload.staleStatus.stale ? ' (stale fallback)' : ''}`
+  );
+};
 
 const normalizeForecastCampaignTypeLite = (value: unknown): ForecastCampaignTypeLite | null => {
   if (typeof value !== 'string') return null;
@@ -509,10 +669,12 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
       ttlMs: OPPORTUNITIES_CACHE_TTL_MS,
       fetchImpl: fetch as unknown as typeof globalThis.fetch,
     })) as MerklOpportunity[];
+    lastMerklFetchError = null;
     logger.info(`✅ Fetched ${allOpportunities.length} live opportunities from Merkl`);
     return allOpportunities;
   } catch (error) {
     logger.error('❌ Error fetching Merkl opportunities:', error);
+    lastMerklFetchError = error instanceof Error ? error.message : String(error);
     return [];
   }
 }
@@ -662,11 +824,80 @@ export async function processMerklData(
     coingecko: 0,
     missing: 0,
   };
-  const opportunities = await fetchMerklOpportunities();
+  const fetchedOpportunities = await fetchMerklOpportunities();
   const mergedOptions: ProcessMerklDataOptions = {
     ...options,
     priceSourceStats,
   };
+  let opportunities = fetchedOpportunities;
+  let staleStatus: MerklStaleStatus = {
+    stale: false,
+    fetchedOpportunities: fetchedOpportunities.length,
+    usedOpportunities: fetchedOpportunities.length,
+  };
+
+  if (fetchedOpportunities.length === 0) {
+    const fallback = await resolveMerklFallbackSnapshot();
+    if (fallback && isFallbackSnapshotFreshEnough(fallback)) {
+      const fallbackAgeMs = fallback.lastSuccessfulAt
+        ? Date.now() - new Date(fallback.lastSuccessfulAt).getTime()
+        : null;
+      logger.warn(
+        `⚠️ Merkl opportunities empty; reusing ${fallback.source} fallback snapshot (${Object.keys(fallback.index).length} token keys${
+          fallbackAgeMs !== null && Number.isFinite(fallbackAgeMs)
+            ? `, age=${Math.max(0, Math.round(fallbackAgeMs / 1000))}s`
+            : ''
+        })`
+      );
+
+      await persistMerklArtifacts({
+        rawOpportunities: fallback.rawOpportunities,
+        liveOpportunities: fallback.liveOpportunities,
+        processedData: fallback.processedData,
+        index: fallback.index,
+        forecastCampaignMetaLite: fallback.forecastCampaignMetaLite,
+        staleStatus: {
+          stale: true,
+          reason: 'merkl-opportunities-empty',
+          fallbackSource: fallback.source,
+          lastSuccessfulAt: fallback.lastSuccessfulAt,
+          ...(lastMerklFetchError ? { lastFetchError: lastMerklFetchError } : {}),
+          fetchedOpportunities: fetchedOpportunities.length,
+          usedOpportunities: fallback.liveOpportunities.length,
+        },
+      });
+
+      lastMerklSuccessfulSnapshot = {
+        rawOpportunities: fallback.rawOpportunities,
+        liveOpportunities: fallback.liveOpportunities,
+        processedData: fallback.processedData,
+        index: fallback.index,
+        forecastCampaignMetaLite: fallback.forecastCampaignMetaLite,
+        lastSuccessfulAt: fallback.lastSuccessfulAt,
+      };
+
+      return { index: fallback.index };
+    }
+
+    if (fallback && !isFallbackSnapshotFreshEnough(fallback)) {
+      const fallbackAgeMs = getSnapshotAgeMs(fallback.lastSuccessfulAt);
+      logger.warn(
+        `⚠️ Merkl fallback snapshot expired (max ${Math.round(MERKL_FALLBACK_MAX_STALE_MS / 1000)}s, age=${
+          fallbackAgeMs === null ? 'unknown' : `${Math.round(fallbackAgeMs / 1000)}s`
+        }); refusing stale fallback`
+      );
+    }
+
+    logger.warn('⚠️ Merkl opportunities empty and no fallback snapshot available; continuing with empty result');
+    staleStatus = {
+      stale: true,
+      reason: fallback ? 'merkl-opportunities-empty-fallback-expired' : 'merkl-opportunities-empty-no-fallback',
+      ...(lastMerklFetchError ? { lastFetchError: lastMerklFetchError } : {}),
+      fetchedOpportunities: fetchedOpportunities.length,
+      usedOpportunities: 0,
+    };
+  }
+
   const merklData: Record<string, MerklOpportunityData[]> = {};
   logger.info('🔍 Processing Merkl opportunities...');
   // fetchMerklOpportunities 已在 API 层过滤 status=LIVE
@@ -835,25 +1066,34 @@ export async function processMerklData(
     `📈 Merkl budget price source usage (non-PRETGE): snapshot=${priceSourceStats.snapshot}, reserve=${priceSourceStats.reserve}, coingecko=${priceSourceStats.coingecko}, missing=${priceSourceStats.missing}`
   );
   
-  // 保存 Merkl 原始数据
-  await mkdir(DEBUG_DATA_DIR, { recursive: true });
-  const merklRawDataPath = join(DEBUG_DATA_DIR, 'merkl-raw-data.json');
-  await writeJsonAtomic(merklRawDataPath, {
-    timestamp: new Date().toISOString(),
-    rawOpportunities: opportunities, // 保存所有原始数据（包括非 live 的）
-    liveOpportunities: liveOpportunities, // 保存过滤后的 live opportunities
-    processedData,
-    index: merklData
-  });
-  logger.info(`💾 Merkl raw data saved to ${merklRawDataPath}`);
+  const freshTimestamp = new Date().toISOString();
+  staleStatus = {
+    ...staleStatus,
+    stale: staleStatus.stale,
+    fetchedOpportunities: fetchedOpportunities.length,
+    usedOpportunities: liveOpportunities.length,
+  };
 
-  const merklForecastLitePath = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
-  await writeJsonAtomic(merklForecastLitePath, {
-    timestamp: new Date().toISOString(),
-    campaigns: forecastCampaignMetaLite,
-  }, { space: 0 });
-  logger.info(`💾 Merkl forecast lite data saved to ${merklForecastLitePath}`);
-  
+  await persistMerklArtifacts({
+    rawOpportunities: opportunities,
+    liveOpportunities,
+    processedData,
+    index: merklData,
+    forecastCampaignMetaLite,
+    staleStatus,
+  });
+
+  if (!staleStatus.stale && Object.keys(merklData).length > 0) {
+    lastMerklSuccessfulSnapshot = {
+      rawOpportunities: opportunities,
+      liveOpportunities,
+      processedData,
+      index: merklData,
+      forecastCampaignMetaLite,
+      lastSuccessfulAt: freshTimestamp,
+    };
+  }
+
   return { index: merklData };
 }
 
