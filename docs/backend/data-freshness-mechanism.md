@@ -181,6 +181,20 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
 
 > 前端的 `staleTime` 可与各端点 `staleTimeMs` 对齐（如 markets 1m、forecast 10m）。`marketsServeHardStaleMax` 用于 HTTP 层硬过期边界。 
 
+### 最差可服务新鲜度（Worst-case 可回退窗口）
+
+说明：这列出“接口在不触发 `500` 的前提下，仍能被返回（含 fallback）”的最坏陈旧上限。
+
+| 接口 | 最差可服务新鲜度（最坏情况） | 主要控制点 |
+|---|---:|---|
+| `GET /api/markets` | `5m` (`marketsServeHardStaleMax`) | `marketsService.getMarketsData()` 超过此值返回 `503`（`MARKETS_SNAPSHOT_STALE`） |
+| `GET /api/meta/side-data`（`forecast`） | `max(MERKL_FORECAST_SNAPSHOT_FALLBACK_MAX_STALE_MS, 10m)`；默认 `30m` | `refreshForecastSnapshotCache()` 的 previous snapshot fallback |
+| `GET /api/meta/side-data`（`categories`） | `max(COINGECKO_CATEGORIES_FALLBACK_MAX_STALE_MS, 6h)`；默认 `18h` | `getOrRefreshCoingeckoCategoriesData()` 的 empty-result fallback |
+| `GET /api/meta/side-data`（`fdv`） | `max(COINGECKO_FDV_FALLBACK_MAX_STALE_MS, 5m)`；默认 `30m` | `getOrRefreshFdvData()` 的 stale/null/empty fallback |
+| `GET /api/meta/side-data`（任一子块失败） | `N/A`（聚合层返回 `partial=true`） | 失败子块通过 `errors` 暴露，其余子块仍返回 |
+
+> 注意：`side-data` 是聚合端点，最终对外感知是否“可用”需按子块分解；整体 `max age` 取决于最慢可恢复子块。
+
 ### 非 TTL 但已收敛的时间配置
 
 - `MARKETS_FETCH_TIMEOUT_MS`（`marketsService.ts`，markets 单次拉取超时，默认 60s）
