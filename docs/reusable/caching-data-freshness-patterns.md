@@ -1,32 +1,62 @@
-# Caching & Data Freshness Patterns (Reusable)
+# Caching & Data Freshness Standard
 
-Universal patterns for caching, TTL management, and data freshness. Apply to any backend service.
+Reusable standard for API caching, snapshot freshness, TTL management, and stale-data policy.
 
-## 1. Core Principles
+## 1. Standard Model
 
-### Separate Write Frequency from Freshness Window
+### Four States
+
+| State | Meaning | Behavior |
+|---|---|---|
+| Fresh | age ≤ `softTTL` | Return normally |
+| Soft stale | `softTTL` < age ≤ `maxServeStaleMs` | Return old value, mark stale |
+| Hard stale | age > `maxServeStaleMs` | Reject service or return explicit error |
+| Missing | no value yet | Return loading / empty / error |
+
+### Required Fields
+
+Every cache or snapshot must define:
+
+| Field | Meaning |
+|---|---|
+| `writeInterval` | Producer or cron refresh cadence |
+| `softTTL` | Age after which data is considered stale |
+| `maxServeStaleMs` | Maximum age allowed for serving old data |
+| `fallbackMode` | What happens when refresh fails |
+
+### Naming Rules
+
+- Use `*_TTL_MS` for freshness cadence.
+- Use `*_MAX_SERVE_STALE_MS` for the hard service boundary.
+- Use `*_WARM_CRON` for refresh scheduling.
+- Do not split the same freshness meaning across multiple variable names.
+
+## 2. Core Principles
+
+### Separate Write Interval from Serve Window
 
 | Concept | Definition | Example |
 |---------|------------|---------|
-| **Write frequency** | How often producer updates data | Varies by source (e.g. cron every 1 min vs every 10 min) |
-| **Freshness window** | How stale consumer tolerates | UI acceptable with 1 min stale |
-| **TTL** | Cache expiration time | Set based on both factors |
+| **Write interval** | How often producer or cron updates data | cron every 1 min or every 10 min |
+| **Soft TTL** | When data becomes stale | UI acceptable with 1 min stale |
+| **Max serve stale** | Oldest age allowed to serve | 5 min hard stop |
+| **Fallback mode** | What to do when refresh fails | reuse previous snapshot, empty result, or 503 |
 
-**Rule**: TTL ≤ min(write_frequency, freshness_window)
+**Rule**: `softTTL ≤ maxServeStaleMs`
 
-### Validate TTL Against Source Cadence
+### Validate Freshness Against Source Cadence
 
-Before setting a TTL:
+Before setting freshness controls:
 1. Check API docs for update frequency
 2. Sample observed timestamps over time
 3. Document the reasoning
 
-❌ **Don't** guess TTL  
+❌ **Don't** guess TTL or hard stale windows  
 ✅ **Do** measure source cadence first
 
-## 2. Layered Cache Architecture
+## 3. Layered Cache Architecture
 
-### Four-Layer Fallback Chain
+### Four-Layer Serving Chain
 
 ```
 Request
@@ -44,22 +74,21 @@ Request
 
 ### When to Use Each Layer
 
-| Layer | Use Case | TTL Range |
+| Layer | Use Case | Typical Window |
 |-------|----------|-----------|
 | In-memory | Hot path, sub-second access | 10s - 5min |
 | File snapshot | Restart resilience, shared state | 1min - 1hr |
 | Online cache | Cross-instance sharing, CDN | 5min - 1hr |
 | Upstream API | Source of truth | N/A |
 
-## 3. File Snapshot Design
+## 4. File Snapshot Design
 
 ### Separate Runtime from Debug Files
 
 ```
 data/
 ├── runtime/                    # Hot path, small, purpose-built
-│   ├── aave-formatted-data.full.json   # Example: optional fetcher artifact (this repo: API uses memory, not this file)
-│   └── forecast-meta-lite.json    # Example: auxiliary file some services read (e.g. Merkl forecast lite)
+│   └── runtime-artifact.json     # Compact file used by runtime code paths
 └── debug/                      # Large, verbose, troubleshooting only
     ├── raw-api-response.json
     └── full-scan-results.json
@@ -98,7 +127,7 @@ interface DataSnapshot<T> {
 
 **Why**: Enables accurate staleness detection independent of file mtime.
 
-## 4. Staleness Detection & Auto-Refresh
+## 5. Staleness Detection & Auto-Refresh
 
 ### State Machine Pattern
 
@@ -109,8 +138,8 @@ let updateStatus: UpdateStatus = 'idle';
 let activeUpdatePromise: Promise<void> | null = null;
 let lastUpdateTime: number = 0;
 
-async function checkAndUpdateIfStale(maxAgeMs: number): Promise<void> {
-  const isStale = Date.now() - lastUpdateTime > maxAgeMs;
+async function checkAndUpdateIfStale(maxServeStaleMs: number): Promise<void> {
+  const isStale = Date.now() - lastUpdateTime > maxServeStaleMs;
   
   if (!isStale) return;
   
@@ -159,34 +188,34 @@ async function getData(maxWaitMs: number = 1000): Promise<Data> {
 
 **Why**: Improves UX by waiting slightly for fresh data rather than always returning stale.
 
-## 5. TTL Strategy by Data Type
+## 6. TTL Strategy by Data Type
 
 ### User-Critical Data (Markets, Prices)
 
 ```typescript
-const STALENESS_THRESHOLD_MS = 60_000;  // 1 minute
-const HARD_STALE_CAP_MS = 300_000;      // 5 minutes → 503
+const SOFT_TTL_MS = 60_000;             // 1 minute
+const MAX_SERVE_STALE_MS = 300_000;     // 5 minutes → 503
 
-if (dataAge > HARD_STALE_CAP_MS) {
+if (dataAge > MAX_SERVE_STALE_MS) {
   throw new ServiceUnavailableError('Data too stale');
 }
 ```
 
-Optional hard cap: **this** codebase’s markets handler does **not** return 503 by snapshot age (only not-ready on cold start); see `docs/backend/data-freshness-mechanism.md`.
+Optional hard cap: some services keep serving stale data until `maxServeStaleMs`; others reject once hard stale. Always document the chosen policy.
 
-- Short TTL (1-5 min)
-- Hard cap with 503 response
+- Short soft TTL (1-5 min)
+- Hard service boundary with 503 or explicit empty/error
 - `Cache-Control: no-cache, must-revalidate`
 - ETag for efficient revalidation
 
 ### Side Data (Categories, Metadata)
 
 ```typescript
-const SIDE_DATA_TTL_MS = 3600_000;  // 1 hour
+const SIDE_DATA_SOFT_TTL_MS = 3600_000;  // 1 hour
 ```
 
 - Longer TTL (30min - 1hr)
-- Can serve stale without error
+- Can serve stale without error up to `maxServeStaleMs`
 - `Cache-Control: s-maxage=3600`
 
 ### Historical/Static Data
@@ -199,7 +228,7 @@ const HISTORICAL_TTL_MS = 86400_000;  // 24 hours
 - Immutable once written
 - `Cache-Control: max-age=86400, immutable`
 
-## 6. Negative Cache Pattern
+## 7. Negative Cache Pattern
 
 For expensive scans that often find nothing:
 
@@ -222,7 +251,7 @@ function shouldScan(entry: CacheEntry<T> | undefined): boolean {
 
 **Why**: Avoids repeated expensive scans for data that doesn't exist.
 
-## 7. HTTP Cache Headers
+## 8. HTTP Cache Headers
 
 ### Decision Tree
 
@@ -251,7 +280,7 @@ res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=600');
 res.setHeader('Cache-Control', 'max-age=86400, immutable');
 ```
 
-## 8. Debug Metadata for Troubleshooting
+## 9. Debug Metadata for Troubleshooting
 
 Include in debug snapshots:
 
@@ -272,7 +301,7 @@ interface DebugSnapshot {
 
 **Critical**: Always log `hitCacheOnly` flag. `pagesScanned=0` with `hitCacheOnly=true` means no real scan happened.
 
-## 9. Multi-Source Cache TTL
+## 10. Multi-Source Cache TTL
 
 When cached result depends on multiple sources with different cadences:
 
@@ -294,4 +323,17 @@ const marketCache = new Cache({ ttl: SOURCE_CADENCES.marketData });
 const incentiveCache = new Cache({ ttl: SOURCE_CADENCES.incentiveData });
 ```
 
-**Rule**: Set TTL based on the freshest source that materially affects correctness.
+**Rule**: Set `softTTL` based on the freshest source that materially affects correctness; keep `maxServeStaleMs` aligned with the strictest acceptable serving window.
+
+## 11. API Service Best Practices
+
+Use these as the default standard for future API services:
+
+- Define `softTTL`, `maxServeStaleMs`, and `fallbackMode` for every cache or snapshot.
+- Prefer one source of truth for freshness metadata; do not split the same meaning across multiple env vars.
+- Reuse base time constants, but keep semantic names distinct.
+- Use `maxServeStaleMs` for the actual service boundary, not as a vague fallback label.
+- Keep request handlers read-only; refresh in cron or explicit warmers.
+- Emit `generatedAt`, `ageMs`, `staleTimeMs`, and `fallbackReason` when data can age.
+- If a service can return old data safely, document the maximum age explicitly.
+- If a service cannot safely return old data, fail fast with a clear error.

@@ -27,8 +27,8 @@ const OPPORTUNITIES_CACHE_TTL_MS = resolveCacheTtlMs(
   process.env.MERKL_OPPORTUNITIES_CACHE_TTL_MS,
   1 * 60 * 1000
 );
-const MERKL_FALLBACK_MAX_STALE_MS = resolveCacheTtlMs(
-  process.env.MERKL_FALLBACK_MAX_STALE_MS,
+const MERKL_MAX_SERVE_STALE_MS = resolveCacheTtlMs(
+  process.env.MERKL_MAX_SERVE_STALE_MS,
   10 * 60 * 1000
 );
 
@@ -378,7 +378,7 @@ const getSnapshotAgeMs = (iso?: string): number | null => {
 const isFallbackSnapshotFreshEnough = (snapshot: MerklFallbackSnapshot): boolean => {
   const ageMs = getSnapshotAgeMs(snapshot.lastSuccessfulAt);
   if (ageMs === null) return false;
-  return ageMs <= MERKL_FALLBACK_MAX_STALE_MS;
+  return ageMs <= MERKL_MAX_SERVE_STALE_MS;
 };
 
 const persistMerklArtifacts = async (payload: MerklArtifactsPayload): Promise<void> => {
@@ -882,7 +882,7 @@ export async function processMerklData(
     if (fallback && !isFallbackSnapshotFreshEnough(fallback)) {
       const fallbackAgeMs = getSnapshotAgeMs(fallback.lastSuccessfulAt);
       logger.warn(
-        `⚠️ Merkl fallback snapshot expired (max ${Math.round(MERKL_FALLBACK_MAX_STALE_MS / 1000)}s, age=${
+        `⚠️ Merkl fallback snapshot expired (max ${Math.round(MERKL_MAX_SERVE_STALE_MS / 1000)}s, age=${
           fallbackAgeMs === null ? 'unknown' : `${Math.round(fallbackAgeMs / 1000)}s`
         }); refusing stale fallback`
       );
