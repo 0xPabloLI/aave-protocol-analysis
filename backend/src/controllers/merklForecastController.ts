@@ -2,8 +2,8 @@ import { FORECAST_CACHE_TTL_MS, getMerklForecastState } from '../services/merklF
 import { getMarketsSnapshot, type RuntimeReserveData } from '../services/marketsService.js';
 import { logger } from '../logger.js';
 
-const FORECAST_SNAPSHOT_FALLBACK_MAX_STALE_MS = (() => {
-  const raw = process.env.MERKL_FORECAST_SNAPSHOT_FALLBACK_MAX_STALE_MS;
+const FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS = (() => {
+  const raw = process.env.MERKL_FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS;
   const fallback = Math.max(FORECAST_CACHE_TTL_MS * 3, 30 * 60 * 1000);
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
@@ -34,7 +34,8 @@ const collectCampaignIdsFromMarkets = (markets: RuntimeReserveData[]): string[] 
   const ids = new Set<string>();
   for (const market of markets) {
     for (const group of [...(market.merklSupplys ?? []), ...(market.merklBorrows ?? []), ...(market.merklHolds ?? [])]) {
-      for (const breakdown of group.breakdowns ?? []) {
+      const breakdowns = (group as { breakdowns?: Array<{ campaignId?: string }> }).breakdowns ?? [];
+      for (const breakdown of breakdowns) {
         const id = String(breakdown.campaignId || '').trim();
         if (id) ids.add(id);
       }
@@ -59,7 +60,7 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
   const canUsePrevious = (): boolean => {
     if (!previous) return false;
     const ageMs = Math.max(0, Date.now() - previous.generatedAt);
-    return ageMs <= FORECAST_SNAPSHOT_FALLBACK_MAX_STALE_MS;
+    return ageMs <= FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS;
   };
 
   const marketsSnapshot = getMarketsSnapshot();

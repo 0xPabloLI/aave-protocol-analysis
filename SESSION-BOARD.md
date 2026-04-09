@@ -49,7 +49,11 @@
 | codex-0409a | Codex | 优化 Merkl 数据流文档 | docs/merkl-merit-cache-architecture.md, docs/backend/data-freshness-mechanism.md, docs/api/api-documentation.md | done | 2026-04-09T00:00:00 | 已优化术语与数据流表 |
 | codex-0409b | Codex | 收敛重复文档内容 | docs/api/api-documentation.md, docs/reusable/caching-data-freshness-patterns.md | done | 2026-04-09T00:00:00 | 已去掉重复展开，保留引用 |
 | codex-0409c | Codex | 写入 runtime 文件分类 | docs/merkl-merit-cache-architecture.md | done | 2026-04-09T00:00:00 | 已补分类规则 |
+| codex-0409d | Codex | 收敛 freshness 命名 | backend/src/cacheTtl.ts, backend/src/controllers/coingeckoController.ts, backend/src/services/merklForecastService.ts, backend/src/controllers/merklForecastController.ts, docs/backend/data-freshness-mechanism.md, docs/reusable/caching-data-freshness-patterns.md, README.md, docs/deploy/deploy.md, src/merkl-api.ts | done | 2026-04-09T00:00:00 | 已完成命名收敛与验证 |
 | codex-0409d | Codex | 补充 token price 数据流图 | docs/api/api-documentation.md, docs/merkl-merit-cache-architecture.md | done | 2026-04-09T00:00:00 | 已补主图与架构索引 |
+| codex-0409e | Codex | 统一 API freshness 术语 | docs/api/api-documentation.md, docs/api/native-apr-calculation.md, docs/backend/data-freshness-mechanism.md, docs/reusable/caching-data-freshness-patterns.md | done | 2026-04-09T00:00:00 | 已完成术语统一与标准化 |
+| codex-0409f | Codex | 压缩 freshness 文档 | docs/backend/data-freshness-mechanism.md, docs/api/api-documentation.md | done | 2026-04-09T00:00:00 | 已完成压缩与协议收敛 |
+| codex-0409g | Codex | 再压缩 backend freshness 文档 | docs/backend/data-freshness-mechanism.md | done | 2026-04-09T00:00:00 | 已统一术语并压缩描述段落 |
 
 ---
 

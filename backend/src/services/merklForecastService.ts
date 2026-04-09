@@ -55,8 +55,8 @@ const OPPORTUNITY_META_CACHE_TTL_MS = (() => {
     : (LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault);
 })();
 
-const OPPORTUNITY_META_FALLBACK_MAX_STALE_MS = (() => {
-  const raw = process.env.MERKL_FORECAST_OPPORTUNITY_META_FALLBACK_MAX_STALE_MS;
+const OPPORTUNITY_META_MAX_SERVE_STALE_MS = (() => {
+  const raw = process.env.MERKL_FORECAST_OPPORTUNITY_META_MAX_SERVE_STALE_MS;
   const fallback = Math.max(OPPORTUNITY_META_CACHE_TTL_MS * 3, 30 * 60 * 1000);
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
@@ -583,7 +583,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
   const canUsePreviousFallback = (): boolean => {
     if (!previousEntry || !previous || previous.size === 0) return false;
     const ageMs = Math.max(0, Date.now() - previousEntry.updatedAt);
-    return ageMs <= OPPORTUNITY_META_FALLBACK_MAX_STALE_MS;
+    return ageMs <= OPPORTUNITY_META_MAX_SERVE_STALE_MS;
   };
 
   const cacheAndReturn = (
@@ -638,7 +638,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
     if (previous && previous.size > 0) {
       logger.warn(
         `⚠️ Failed to refresh campaign opportunity cache and previous snapshot is too stale (max ${Math.round(
-          OPPORTUNITY_META_FALLBACK_MAX_STALE_MS / 1000
+          OPPORTUNITY_META_MAX_SERVE_STALE_MS / 1000
         )}s): ${error instanceof Error ? error.message : String(error)}`
       );
     }

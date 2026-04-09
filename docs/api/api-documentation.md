@@ -24,6 +24,16 @@
 - **字符编码**: UTF-8
 - **端点总数**: **4 条 URL**（若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 3 个逻辑端点）
 
+## Freshness Contract
+
+API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即“建议刷新提示”而非最终服务边界。真正的 `maxServeStaleMs` 由后端 freshness 文档定义；当接口需要硬边界或 fallback 策略时，以后端实现和 `docs/backend/data-freshness-mechanism.md` 为准。
+
+| Endpoint | `staleTimeMs` 语义 | 备注 |
+|---|---|---|
+| `GET /api/markets` | snapshot 软过期提示 | 请求不触发刷新，硬边界由后端 markets 服务控制 |
+| `GET /api/meta/side-data` | 各子块的 softTTL | `categories` / `fdv` / `forecast` 各自保留独立 `staleTimeMs` |
+| 其他带 `staleTimeMs` 的缓存字段 | 子快照 softTTL | 仅表示刷新节奏，不代表一定会强制失败 |
+
 ## 数据模型
 
 ### FormattedReserveData
@@ -155,7 +165,7 @@ interface MerklCampaignBreakdown {
 
 **端点**: `GET /api/markets`
 
-**描述**: 获取 markets 快照（`markets-v2`），返回 `snapshot + reserves`。其中 `reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `reserveSizeUsd` / `utilizationPct` 以支持前端展示。该端点遵循 cron-write/API-read-only：请求只读内存快照，不触发外部拉取；冷启动未预热完成时返回 `503`。
+**描述**: 获取 markets 快照（`markets-v2`），返回 `snapshot + reserves`。该端点的 freshness 语义见上面的 `Freshness Contract`；这里仅描述 payload 形状。`reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `reserveSizeUsd` / `utilizationPct` 以支持前端展示。该端点遵循 cron-write/API-read-only：请求只读内存快照，不触发外部拉取；冷启动未预热完成时返回 `503`。
 
 **请求参数**: 无
 
@@ -166,7 +176,7 @@ interface MarketsResponse {
   snapshot: {
     lastUpdated: string;               // 最后更新时间（ISO 8601）
     version: 'markets-v2';
-    staleTimeMs: number;               // 认为数据过期的阈值（毫秒），默认 60 秒
+    staleTimeMs: number;               // 对外 softTTL（见 Freshness Contract），默认 60 秒
   };
   reserves: MarketWithSpread[];        // 保留原全量字段 + 新增展示字段 + 可选 on-chain 字段
 }
@@ -238,7 +248,7 @@ flowchart LR
 
 **注意事项**:
 - 所有排序和过滤逻辑应在客户端处理
-- 数据由后端 cron 刷新；`snapshot.staleTimeMs` 供前端缓存提示，**请求不会触发**后端重新拉取
+- `snapshot.staleTimeMs` 只是对外 softTTL 提示，**请求不会触发**后端重新拉取
 - `tokenPrice` 已直接放在 `reserves` 行内，前端无需再做额外 price join
 
 ---
@@ -276,19 +286,20 @@ flowchart LR
 - fdv：FDV 数据（CoinMarketCap 优先，CoinGecko 回退）
 - forecast：Merkl campaign forecast 快照
 
-这些子数据仍由各自内部缓存和 cron 预热维护，但不再通过独立公开 endpoint 暴露。
+这些子数据仍由各自内部缓存和 cron 预热维护，但不再通过独立公开 endpoint 暴露；各自 `staleTimeMs` 的 freshness 语义见 `Freshness Contract`。
 
 **请求参数**: 无
 
 **响应特性**:
 - `partial`: 某个子块失败时仍可返回部分成功结果
 - `errors`: 按子块返回失败原因
-- 各子块保留自己的 `fetchedAt` / `staleTimeMs`
+- 各子块保留自己的 `fetchedAt` / `staleTimeMs`（softTTL）
 
 **说明**:
 - categories / fdv / forecast 的独立公开 URL 已移除
 - 客户端若需要 campaign forecast，应从本端点的 `forecast.items` 读取，而不是请求单独 forecast route
 - `GET /api/campaigns/forecast-states` 已从对外 API 中移除。
+- `forecast.staleTimeMs` 对应 snapshotCache 的发布节奏，不表示每个 campaign 的 metrics 都同时刷新；campaign 级 metrics TTL 见后端 freshness 文档。
 
 ---
 
@@ -358,7 +369,7 @@ Merkl 返回里历史上存在两套命名：
 
 ### Opportunity 元数据与 metrics 的缓存节奏
 
-这部分与 `docs/backend/data-freshness-mechanism.md` 的 TTL 分桶一致。这里仅保留对外语义：`GET /api/meta/side-data` 的 `forecast.staleTimeMs` 表示 **snapshotCache** 的发布节奏，不表示每个 campaign 的 metrics 都在同一时间刷新；campaign 级 metrics TTL 和 opportunity 元数据 TTL 的细节请看后端文档。
+这里仅保留对外语义：campaign 级 metrics TTL 与 opportunity 元数据 TTL 属于后端 freshness contract。
 
 ### TVL 与 `distributedSoFar` 口径（摘要）
 
@@ -590,19 +601,14 @@ Merkl 返回里历史上存在两套命名：
 
 字段说明：
 
-- `generatedAt`: 当前 meta 响应生成时间（ISO 8601）。
-- `partial`: 当 categories、fdv、forecast 其中之一失败时为 `true`。
-- `categories`: 当分类快照可用时存在，结构同 `side-data` 的 `categories` 子块，附加：
-  - `fetchedAt`: 分类数据上次刷新时间。
-  - `staleTimeMs`: 分类缓存 TTL（毫秒），默认 6 小时。
-- `fdv`: 当 FDV 快照可用时存在，结构同 `side-data` 的 `fdv` 子块，附加：
-  - `fetchedAt`: FDV 数据上次刷新时间。
-  - `staleTimeMs`: FDV 缓存 TTL（毫秒），默认 5 分钟。
-- `forecast`: 当 forecast 快照可用时存在，结构：
-  - `items`: forecast 状态数组，实际字段为 `campaignId`、`requiredDaily`、`distributedSoFar`、`endTimestamp`。
-  - `errors`: 部分 campaign 计算失败的错误数组（稳定字段为 `{ campaignId, message }`）。
-  - `staleTimeMs`: forecast 缓存 TTL（毫秒），默认 10 分钟。
-- `errors`: 可选对象，键为 `categories`/`fdv`/`forecast`，值为对应子任务整体失败时的错误信息。
+| 字段 | Contract 语义 | 备注 |
+|---|---|---|
+| `generatedAt` | 响应生成时间 | ISO 8601 |
+| `partial` | 是否部分成功 | 任一子块失败时为 `true` |
+| `categories` | 分类子块 | `fetchedAt` + `staleTimeMs`（softTTL） |
+| `fdv` | FDV 子块 | `fetchedAt` + `staleTimeMs`（softTTL） |
+| `forecast` | forecast 子块 | `items` + `errors` + `staleTimeMs`（snapshot 发布节奏） |
+| `errors` | 子块整体错误对象 | key 只会是 `categories` / `fdv` / `forecast` |
 
 **状态码**:
 
