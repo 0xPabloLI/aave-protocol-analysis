@@ -180,6 +180,25 @@ interface MarketsResponse {
 - **来源字段**：`aave` 来源的价格来自 Aave markets 数据里的 `reserve.size.usdPerToken`（若缺失则回退 `reserve.usdExchangeRate`）。
 - **缺省行为**：极少数 token 若本轮 Aave/Merkl 均未返回价格，则会沿用上一轮文件中该 token 的价格**仅当**上一轮文件的 `_metadata.timestamp` 在 3 倍正常更新周期内（3× backend stale 阈值，即 3 分钟）；超过则不沿用，避免长期保留已不再出现的 token 的过期价格。
 
+**Token price 数据流图**：
+
+```mermaid
+flowchart LR
+  A["Aave SDK / Aave markets data"] --> B["createBaseDatasetFromMarkets()\nitem.tokenPrice"]
+  B --> C["buildReserveTokenPriceMap()\nchainId:tokenAddress -> price"]
+  C --> D["resolveUsdPriceWithPriority()\nreservePrice fallback"]
+  D --> E["Merkl reward token totalBudget"]
+  D --> F["Brevis breakdown totalBudget"]
+  B --> G["enrichDatasetWithIncentiveData()"]
+  G --> H["pruneReserveForRuntime()"]
+  H --> I["fetchMarketsPayload()"]
+  I --> J["backend marketsService snapshot"]
+  J --> K["GET /api/markets"]
+  K --> L["reserves[].tokenPrice"]
+```
+
+要点：`/api/markets` 里的 `reserves[].tokenPrice` 来自 Aave 市场数据；`token-price-resolver.ts` 主要把这份价格当作 `reservePrice` 兜底，并把 CoinGecko 结果用于 Merkl / Brevis 的预算计算。
+
 **市场筛选列表**：请从 `reserves` 中按 `{ marketName, chainName }` 去重推导，不要再引入额外市场列表接口。
 
 **响应示例**:
@@ -281,87 +300,6 @@ interface MarketsResponse {
 
 ---
 
-## 已移除的公开端点
-
-以下端点已从公开 API surface 移除，相关数据请改从 `GET /api/meta/side-data` 获取：
-
-- `GET /api/coingecko-categories`
-- `GET /api/coingecko-fdv`
-- `GET /api/campaigns/forecast-states`
-
----
-
-### 历史说明
-
-下述旧章节保留为历史背景时，请以本页顶部的“API 基础路径”与“已移除的公开端点”为准。
-
-### 4. 批量获取 Merkl Forecast States（历史 / 已下线）
-
-**端点**: `GET /api/campaigns/forecast-states`（历史端点）
-
-> 该分段仅保留历史说明，便于理解迁移前后差异。
-
-**请求参数**:
-- `ids` (可选): 逗号分隔 campaignId 列表；省略时默认返回当前 markets 中全部 campaign 的状态。
-
-**`ids` 获取方式**:
-- 方式 1（推荐）：先请求 `GET /api/markets`，从 `reserves[].merklSupplys[]/merklBorrows[]/merklHolds[]` 的 `breakdowns[].campaignId` 提取并去重。
-- 方式 2：直接使用你已知的 campaignId（例如来自业务配置或历史记录），按逗号拼接传入 `ids`。
-
-示例（从 `/api/markets` 自动提取 ids）：
-
-```bash
-IDS=$(curl -s "http://localhost:3001/api/markets" | jq -r '
-  .reserves[]
-  | (.merklSupplys // []) + (.merklBorrows // []) + (.merklHolds // [])
-  | .[]
-  | (.breakdowns // [])[].campaignId
-' | sort -u | paste -sd, -)
-
-curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=${IDS}" | jq
-```
-
-示例（手动指定 ids）：
-
-```bash
-curl -s "http://localhost:3001/api/campaigns/forecast-states?ids=campaignA,campaignB,campaignC" | jq
-```
-
-**响应格式**:
-
-```json
-{
-  "requested": 2,
-  "items": [
-    {
-      "campaignId": "campaignA",
-      "requiredDaily": 1200,
-      "distributedSoFar": 45000,
-      "endTimestamp": 1710000000
-    }
-  ],
-  "errors": [
-    {
-      "campaignId": "campaignB",
-      "message": "campaign not found"
-    }
-  ],
-  "staleTimeMs": 600000
-}
-```
-
-其中：
-- `items` 为成功计算的 campaign 状态数组；当前稳定字段为 `campaignId`、`requiredDaily`、`distributedSoFar`、`endTimestamp`。
-- `errors` 为失败项数组；稳定字段为 `{ campaignId, message }`，现算路径可能额外附带 `status`。
-- `staleTimeMs` 为 Merkl forecast 结果缓存 TTL（毫秒），默认 10 分钟（与 `merklMetricsMin` 对齐，可通过环境变量 `MERKL_FORECAST_RESULT_CACHE_TTL_MS` 覆盖）。
-
-**状态码**:
-- `200`: 成功（部分失败也返回 200，失败体现在 `errors`）
-- `400`: `ids` 过多（最多 100）
-- `500`: 服务端错误
-
----
-
 ## Merkl Forecast：上游数据与派生字段
 
 实现见 `backend/src/services/merklForecastService.ts`、`backend/src/services/merklForecastModel.ts`。以下为「Merkl / 本地快照输入」与「本服务计算」的划分；**campaign 级数据不从 Aave SDK 读取**。
@@ -420,9 +358,7 @@ Merkl 返回里历史上存在两套命名：
 
 ### Opportunity 元数据与 metrics 的缓存节奏
 
-- **metrics（按 campaign）**：每个 id 单独算 TTL、单独过期；过期后**仅该 id**再拉 `/v4/campaigns/{id}/metrics`。未过期则复用内存，即使 forecast **cron 每 10 分钟**重算快照也不会为该 id 打 Merkl。
-- **opportunity 元数据（整表）**：`campaignOpportunityCache` 为**一张**全量 map（来源：`merkl-opportunity-meta-lite.json` 若足够新鲜，否则 `/v4/opportunities`），默认 **约 5 分钟** TTL；过期后**整表**重建。与 metrics 的 per-id TTL **相互独立**。
-- **对外语义**：`GET /api/meta/side-data` 的 `forecast.staleTimeMs`（默认 10 分钟）表示 **snapshotCache** 的发布节奏；**不**表示「每个 campaign 的 metrics 都在 10 分钟内从 Merkl 更新一次」。
+这部分与 `docs/backend/data-freshness-mechanism.md` 的 TTL 分桶一致。这里仅保留对外语义：`GET /api/meta/side-data` 的 `forecast.staleTimeMs` 表示 **snapshotCache** 的发布节奏，不表示每个 campaign 的 metrics 都在同一时间刷新；campaign 级 metrics TTL 和 opportunity 元数据 TTL 的细节请看后端文档。
 
 ### TVL 与 `distributedSoFar` 口径（摘要）
 
@@ -521,11 +457,11 @@ Merkl 返回里历史上存在两套命名：
 
 ---
 
-### 4. 获取 CoinGecko FDV 数据
+### 4. CoinGecko FDV（历史说明）
 
-**端点**: `GET /api/coingecko-fdv`
+**现行入口**: `GET /api/meta/side-data` 的 `fdv` 子块
 
-**描述**: 获取指定代币的完全稀释估值（FDV）。优先使用 CoinMarketCap API，失败时回退到 CoinGecko。缓存 TTL 与 FDV 预热 cron 一致（默认 5 分钟）。
+**描述**: 独立 `GET /api/coingecko-fdv` 已收口，不再对外暴露；当前 FDV 数据由 `side-data` 聚合返回，缓存语义不变（默认 5 分钟）。
 
 **请求参数**: 无
 
@@ -557,11 +493,11 @@ Merkl 返回里历史上存在两套命名：
 
 ---
 
-### 5. 获取 CoinGecko 分类数据
+### 5. CoinGecko 分类（历史说明）
 
-**端点**: `GET /api/coingecko-categories`
+**现行入口**: `GET /api/meta/side-data` 的 `categories` 子块
 
-**描述**: 获取 CoinGecko 分类数据，包括稳定币和以太坊相关代币的分类信息。数据缓存 6 小时。
+**描述**: 独立 `GET /api/coingecko-categories` 已收口，不再对外暴露；当前分类数据由 `side-data` 聚合返回，缓存语义不变（默认 6 小时）。
 
 **请求参数**: 无
 
@@ -597,11 +533,11 @@ Merkl 返回里历史上存在两套命名：
 
 **端点**: `GET /api/meta/side-data`
 
-**描述**: 聚合返回低频侧数据，用于前端一次性获取 CoinGecko 分类、FDV 快照和 Merkl forecast 状态。内部组合了：
+**描述**: 聚合返回低频侧数据，用于前端一次性获取 categories、FDV 快照和 Merkl forecast 状态。内部组合了：
 
-- `GET /api/coingecko-categories` 的最新快照元信息（6h TTL）
-- `GET /api/coingecko-fdv` 的最新快照元信息（5m TTL）
-- 内部 forecast 快照（10m TTL，公开通过本端点 `forecast` 子块返回）
+- `categories` 子块（6h TTL）
+- `fdv` 子块（5m TTL）
+- `forecast` 子块（10m TTL）
 
 不会触发市场数据刷新，仅依赖各自缓存与 TTL。
 
@@ -656,10 +592,10 @@ Merkl 返回里历史上存在两套命名：
 
 - `generatedAt`: 当前 meta 响应生成时间（ISO 8601）。
 - `partial`: 当 categories、fdv、forecast 其中之一失败时为 `true`。
-- `categories`: 当分类快照可用时存在，结构同 `GET /api/coingecko-categories`，附加：
+- `categories`: 当分类快照可用时存在，结构同 `side-data` 的 `categories` 子块，附加：
   - `fetchedAt`: 分类数据上次刷新时间。
   - `staleTimeMs`: 分类缓存 TTL（毫秒），默认 6 小时。
-- `fdv`: 当 FDV 快照可用时存在，结构同 `GET /api/coingecko-fdv`，附加：
+- `fdv`: 当 FDV 快照可用时存在，结构同 `side-data` 的 `fdv` 子块，附加：
   - `fetchedAt`: FDV 数据上次刷新时间。
   - `staleTimeMs`: FDV 缓存 TTL（毫秒），默认 5 分钟。
 - `forecast`: 当 forecast 快照可用时存在，结构：
@@ -961,7 +897,7 @@ Brevis 对外 contract 已收口到下面这组字段：
 - **`GET /api/markets`**：cron-write/API-read-only；由定时任务与启动预热刷新内存快照，**请求不触发**外部拉取。on-chain 字段在 `refreshMarketsSnapshot` 写入时从 `onchainDataService` 缓存合并。
 - **`GET /api/meta/side-data`**：聚合返回 categories / fdv / forecast 三个子块；各子块按自己的缓存与预热节奏输出。
 - **`GET /api/meta/side-data`**：聚合返回 `forecast.items`（来源于 cron 预热的 forecast 快照）。
-- 该文件仍保留历史说明，仅作兼容参考：`/api/campaigns/forecast-states` 在历史文档中为 `forecast` 快照读取入口，当前实际运行时公开入口为 `GET /api/meta/side-data`。
+- forecast 快照的公开入口已收口为 `GET /api/meta/side-data`。
 - `/api/markets` 返回 `snapshot + reserves`；无 `isStale` / `updateInProgress` 字段。
 
 ## 错误处理
@@ -1017,7 +953,7 @@ curl http://localhost:3001/api/meta/side-data
 - **API 版本**: 3.1
 - **文档更新时间**: 2026-03-24
 - **最后更新**:
-  - 补充端点：`GET /api/health`、`GET /api/coingecko-fdv`
+   - 补充端点：`GET /api/health`、`GET /api/meta/side-data`
   - 基础路径说明更新为完整 API 列表
   - 重构 Merit 数据结构：统一为 `meritSupplys` 和 `meritBorrows` 数组，每个条目包含完整的活动信息（apr, selfApr, link, startDate, endDate, startBlock, endBlock）
   - 统一命名：所有激励字段使用复数形式（meritSupplys, meritBorrows, merklSupplys, merklBorrows, merklHolds）
@@ -1026,13 +962,13 @@ curl http://localhost:3001/api/meta/side-data
   - 移除 Merkl APR 总和字段：`merklSupplyApr`、`merklBorrowApr`、`merklHoldApr` 已移除，数据已包含在对应的 opportunities 中
   - Merkl 数据结构增强：添加 `name` 和 `message` 字段到 opportunity 对象
   - Brevis 数据结构重构：从单个 `brevisSupplyApr`/`brevisBorrowApr` 字段改为 `brevisSupplys`/`brevisBorrows` 数组，支持多个活动
-  - 新增 CoinGecko 分类接口：`/api/coingecko-categories` 提供稳定币和以太坊相关代币分类
+   - 新增 CoinGecko 分类数据聚合入口：后续收口到 `/api/meta/side-data` 的 `categories` 子块
   - 健康检查接口增强：返回详细的环境配置信息
   - **2026-03-11**：明确仅 `GET /api/markets` 触发市场数据新鲜度检查与自动刷新；其他端点使用各自缓存/TTL
   - **2026-03-11（breaking）**：`GET /api/markets` 响应结构切换为 `snapshot + reserves`（`markets-v2`）
   - **2026-03-11**：`reserves` 保留原全量字段，并新增 `tokenPrice`、`reserveSizeUsd`、`utilizationPct`
   - **2026-03-11**：Merkl reward token 价格先不在 `/api/markets` 输出；若 reward token 为某 reserve 的 aToken，也不单独输出
-  - **2026-03-13**：为 `/api/markets`、`/api/coingecko-*`、`/api/campaigns/forecast-states` 增加 `staleTimeMs` 字段说明
+   - **2026-03-13**：为 `/api/markets`、`/api/meta/side-data`、`/api/campaigns/forecast-states` 增加 `staleTimeMs` 字段说明
   - **2026-03-13**：新增 `/api/meta/side-data` 端点文档，并描述 categories/fdv 子快照的 `fetchedAt` 与 `staleTimeMs`
   - **2026-03-13（breaking）**：`/api/markets` 字段 `marketSizeUsd` 更名为 `reserveSizeUsd`
   - **2026-03-14**：新增 `borrowCapUsd` 字段，与 `supplyCapUsd` 对称

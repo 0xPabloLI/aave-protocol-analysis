@@ -46,6 +46,10 @@
 
 | session-id | agent | task | touch-files | status | registered | notes |
 |------------|-------|------|-------------|--------|------------|-------|
+| codex-0409a | Codex | 优化 Merkl 数据流文档 | docs/merkl-merit-cache-architecture.md, docs/backend/data-freshness-mechanism.md, docs/api/api-documentation.md | done | 2026-04-09T00:00:00 | 已优化术语与数据流表 |
+| codex-0409b | Codex | 收敛重复文档内容 | docs/api/api-documentation.md, docs/reusable/caching-data-freshness-patterns.md | done | 2026-04-09T00:00:00 | 已去掉重复展开，保留引用 |
+| codex-0409c | Codex | 写入 runtime 文件分类 | docs/merkl-merit-cache-architecture.md | done | 2026-04-09T00:00:00 | 已补分类规则 |
+| codex-0409d | Codex | 补充 token price 数据流图 | docs/api/api-documentation.md, docs/merkl-merit-cache-architecture.md | done | 2026-04-09T00:00:00 | 已补主图与架构索引 |
 
 ---
 
