@@ -60,11 +60,11 @@
 |---|---|---|---|---|---|---|---|
 | `GET /api/markets` | Markets snapshot | 📸 In-memory snapshot | `0 * * * * *` | `marketsDataStaleThreshold = 60s` | `marketsServeHardStaleMax = 5m` | 刷新失败保留上一轮快照；冷启动未预热则 `503 MARKETS_SNAPSHOT_NOT_READY`；超 hardTTL 返回 `503 MARKETS_SNAPSHOT_STALE` | `staleTimeMs` 只做前端提示 |
 | `GET /api/markets` | On-chain per-pool cache | 🗂️ Pure in-memory cache | `10 * * * * *` | `onchainCacheTtl = 30m` | `onchainCacheTtl = 30m` | 过期条目不参与合并；缺失时回退 `deficit=0` + base rate 计算 | 仅影响 markets 合并字段 |
-| `GET /api/meta/side-data` | Forecast snapshot | 📸 In-memory snapshot | `30 */10 * * * *` | `merklForecastResultDefault = 10m` | `MERKL_FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮 snapshot；超窗后返回空 snapshot | `forecast.staleTimeMs` = snapshot 发布节奏 |
+| `GET /api/meta/side-data` | Forecast snapshot | 📸 In-memory snapshot | `30 */10 * * * *` | `merklForecastResultDefault = 10m` | `MERKL_FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮 snapshot；无旧快照时返回 `503 FORECAST_SNAPSHOT_NOT_READY` | `forecast.staleTimeMs` = snapshot 发布节奏 |
 | `GET /api/meta/side-data` | Forecast opportunity-meta cache | 🗂️ Pure in-memory cache + 📄 Runtime bridge file | on-demand + `merklForecastOpportunityMetaDefault = 5m` | `merklForecastOpportunityMetaDefault = 5m` | `MERKL_FORECAST_OPPORTUNITY_META_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 先读 fresh lite file，再回退旧 cache | 供 forecast 计算和 runtime file 读取 |
 | `GET /api/meta/side-data` | Categories cache | 🗂️ Pure in-memory cache | `10 0 */6 * * *` | `coingeckoLongDataTtlMs = 6h` | `COINGECKO_CATEGORIES_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮缓存；否则返回错误 | `categories.staleTimeMs` |
 | `GET /api/meta/side-data` | FDV cache | 🗂️ Pure in-memory cache | `5 */5 * * * *` | `coingeckoFdv = 5m` | `COINGECKO_FDV_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮缓存；否则返回错误 | `fdv.staleTimeMs` |
-| `GET /api/meta/side-data` | Merkl metrics cache | 🗂️ Pure in-memory cache | on-demand dynamic TTL | `merklMetricsMin/Default/Max` | `merklMetricsMin/Default/Max` | per-campaign cadence detection；空数据用 10m TTL | `metricsCache` 按 campaignId 分桶 |
+| `GET /api/meta/side-data` | Merkl metrics cache | 🗂️ Pure in-memory cache | on-demand dynamic TTL | `merklMetricsMin/Default/Max` | `merklMetricsMin/Default/Max` | per-campaign cadence detection；空结果优先复用上一轮非空缓存，超出硬上限才报错 | `metricsCache` 按 campaignId 分桶 |
 
 > 说明：`fallbackMode` 已包含刷新失败时行为，`hardTTL` 是最终拒绝服务边界。
 
@@ -119,7 +119,7 @@
 | `BACKEND_CACHE_TTL_MS.merklMetricsDefault` | 30m | 动态缓存默认 TTL | Merkl metrics 动态 TTL 的默认值 | cadence 识别失败时兜底 |
 | `BACKEND_CACHE_TTL_MS.merklMetricsMin` | 10m | 动态缓存下限 | Merkl metrics 动态 TTL 下限 | 防止刷新过频 |
 | `BACKEND_CACHE_TTL_MS.merklMetricsMax` | 6h | 动态缓存上限 | Merkl metrics 动态 TTL 上限 | 防止缓存过久 |
-| `BACKEND_CACHE_TTL_MS.merklMetricsEmpty` | 10m | 空数据 TTL | metrics 无 dailyRewardsRecords 时的缓存 TTL | 与最小值对齐 |
+| `BACKEND_CACHE_TTL_MS.merklMetricsEmpty` | 10m | 空数据 TTL | metrics 无 dailyRewardsRecords 时的缓存 TTL | 仅作为首次冷启动/无旧缓存时的回退值 |
 
 > 规则速记：`staleTime` 是给前端看的“建议刷新提示”；`TTL` 是缓存是否仍可复用；`hard stale` 是“过了就不该再服务”的边界；`cron` 是主动刷新节奏。三者不等价。
 
