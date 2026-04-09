@@ -65,12 +65,11 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
 
   const marketsSnapshot = getMarketsSnapshot();
   if (!marketsSnapshot) {
-    logger.warn('Markets snapshot not available for forecast refresh; returning empty snapshot');
     if (canUsePrevious()) {
       logger.warn('Using previous forecast snapshot fallback because markets snapshot is unavailable');
       return previous!.snapshot;
     }
-    return { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
+    throw new Error('Forecast snapshot not ready: markets snapshot is unavailable');
   }
   const campaignIds = [...new Set(collectCampaignIdsFromMarkets(marketsSnapshot.payload.data))];
   if (campaignIds.length === 0) {
@@ -82,9 +81,7 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
       };
       return previous!.snapshot;
     }
-    const emptySnapshot: ForecastSnapshot = { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
-    snapshotCache = { snapshot: emptySnapshot, generatedAt: Date.now() };
-    return emptySnapshot;
+    throw new Error('Forecast snapshot not ready: no campaign IDs available');
   }
 
   const results = await Promise.allSettled(campaignIds.map((id) => getMerklForecastState(id)));
@@ -113,6 +110,10 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
     return previous!.snapshot;
   }
 
+  if (items.length === 0) {
+    throw new Error('Forecast snapshot not ready: refresh produced no items');
+  }
+
   snapshotCache = { snapshot, generatedAt: Date.now() };
   return snapshot;
 };
@@ -125,10 +126,7 @@ export const getForecastSnapshot = async (): Promise<ForecastSnapshot> => {
   if (snapshotCache) {
     return snapshotCache.snapshot;
   }
-  // Cache not yet populated (server just started, cron hasn't run yet).
-  // Return empty snapshot instead of triggering fetch.
-  logger.warn('Forecast snapshot cache not yet populated; returning empty snapshot');
-  return { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
+  throw new Error('Forecast snapshot not ready: cache not yet populated');
 };
 
 /**

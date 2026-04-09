@@ -73,11 +73,13 @@ const METRICS_CACHE_DEFAULT_TTL_MS = (() => {
 const METRICS_CACHE_MIN_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsMin;
 const METRICS_CACHE_MAX_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsMax;
 const METRICS_CACHE_EMPTY_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsEmpty;
+const METRICS_CACHE_MAX_SERVE_STALE_MS = Math.max(METRICS_CACHE_DEFAULT_TTL_MS * 3, 30 * 60 * 1000);
 
 interface MetricsCacheEntry {
   raw: unknown;
   data: ForecastMetricsLite;
   expiresAt: number;
+  updatedAt: number;
 }
 
 interface CampaignOpportunityMeta {
@@ -357,6 +359,9 @@ const trimMetricsForForecast = (metrics: unknown): ForecastMetricsLite => {
   };
 };
 
+const hasForecastableMetrics = (metrics: ForecastMetricsLite): boolean =>
+  Array.isArray(metrics.dailyRewardsRecords) && metrics.dailyRewardsRecords.length > 0;
+
 const campaignUsesTokenRateInMetrics = (breakdown: unknown): boolean =>
   String(getAtPath(breakdown, ['token', 'type']) || '').trim().toUpperCase() === 'PRETGE';
 
@@ -560,13 +565,34 @@ const getCachedOrFetchMetrics = async (
     return { raw: cached.raw, data: cached.data };
   }
 
+  const previous = cached;
+  const canUsePreviousFallback = (): boolean => {
+    if (!previous || !hasForecastableMetrics(previous.data)) return false;
+    return Math.max(0, Date.now() - previous.updatedAt) <= METRICS_CACHE_MAX_SERVE_STALE_MS;
+  };
+
   const rawMetrics = await fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`);
   const { ttlMs } = deriveMetricsCacheTtlMs(rawMetrics);
   const metrics = trimMetricsForForecast(rawMetrics);
+
+  if (!hasForecastableMetrics(metrics)) {
+    if (canUsePreviousFallback()) {
+      logger.warn(
+        `⚠️ Merkl metrics refresh returned empty for ${campaignId}; keeping previous cache (age=${Math.round(
+          (Date.now() - previous!.updatedAt) / 1000
+        )}s, max=${Math.round(METRICS_CACHE_MAX_SERVE_STALE_MS / 1000)}s)`
+      );
+      return { raw: previous!.raw, data: previous!.data };
+    }
+
+    throw new Error(`Merkl metrics refresh returned empty for ${campaignId} and no fresh fallback cache is available`);
+  }
+
   metricsCache.set(campaignId, {
     raw: rawMetrics,
     data: metrics,
     expiresAt: now + ttlMs,
+    updatedAt: now,
   });
   return { raw: rawMetrics, data: metrics };
 };
