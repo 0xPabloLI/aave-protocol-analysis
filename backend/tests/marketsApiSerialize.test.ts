@@ -104,3 +104,116 @@ test('serializeReserveForApi preserves null aprCap on Merkl breakdown', () => {
   const api = serializeReserveForApi(reserve);
   assert.equal(api.merklBorrows?.[0]?.breakdowns?.[0]?.aprCap, null);
 });
+
+test('serializeReserveForApi omits DUTCH-only unused Merkl breakdown fields', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'dutch',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignType: 'DUTCH_AUCTION',
+            aprCap: null,
+            totalBudget: 1000,
+            latestTvl: 5000,
+            plannedDaily: 100,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'dutch-id',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignType, 'DUTCH_AUCTION');
+  assert.equal('aprCap' in (breakdown ?? {}), false);
+  assert.equal('totalBudget' in (breakdown ?? {}), false);
+  assert.equal(breakdown?.latestTvl, 5000);
+  assert.equal(breakdown?.plannedDaily, 100);
+});
+
+test('serializeReserveForApi omits plannedDaily for FIX_REWARD Merkl breakdowns', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'fix',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignType: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+            aprCap: 0.02,
+            totalBudget: 1000,
+            latestTvl: 5000,
+            plannedDaily: 100,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'fix-id',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignType, 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
+  assert.equal('plannedDaily' in (breakdown ?? {}), false);
+  assert.equal(breakdown?.totalBudget, 1000);
+  assert.equal(breakdown?.latestTvl, 5000);
+});
+
+test('serializeReserveForApi preserves plannedDaily for MAX_REWARD Merkl breakdowns', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'max',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+            aprCap: 0.02,
+            totalBudget: 1000,
+            latestTvl: 5000,
+            plannedDaily: 100,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'max-id',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignType, 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
+  assert.equal(breakdown?.plannedDaily, 100);
+});
