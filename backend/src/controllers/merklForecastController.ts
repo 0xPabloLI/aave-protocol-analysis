@@ -14,14 +14,24 @@ const FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS = (() => {
 // Opportunity-only fields (campaignType, totalBudget, aprCap, latestTvl, plannedDaily)
 // are served from the markets endpoint breakdowns for 1-min freshness.
 // DUTCH_AUCTION omits requiredDaily (always === plannedDaily; frontend falls back).
-export const toForecastResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>) => ({
-  campaignId: state.campaignId,
-  ...(state.campaignType !== 'DUTCH_AUCTION' && { requiredDaily: state.requiredDaily }),
-  distributedSoFar: state.distributedSoFar,
-  endTimestamp: state.endTimestamp,
-});
+export const toForecastResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>) => {
+  if (state.campaignType === 'DUTCH_AUCTION') return null;
 
-export type ForecastResponseItem = ReturnType<typeof toForecastResponseItem>;
+  return ({
+  campaignId: state.campaignId,
+  ...(state.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' && {
+    requiredDaily: state.requiredDaily,
+    distributedSoFar: state.distributedSoFar,
+    endTimestamp: state.endTimestamp,
+  }),
+  ...(state.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' && {
+    distributedSoFar: state.distributedSoFar,
+    endTimestamp: state.endTimestamp,
+  }),
+  });
+};
+
+export type ForecastResponseItem = Exclude<ReturnType<typeof toForecastResponseItem>, null>;
 
 export interface ForecastSnapshot {
   items: ForecastResponseItem[];
@@ -90,7 +100,8 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
 
   results.forEach((result, i) => {
     if (result.status === 'fulfilled') {
-      items.push(toForecastResponseItem(result.value));
+      const item = toForecastResponseItem(result.value);
+      if (item) items.push(item);
     } else {
       errors.push({
         campaignId: campaignIds[i],

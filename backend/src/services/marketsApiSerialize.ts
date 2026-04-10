@@ -14,13 +14,20 @@ function scaleMeritEntry<T extends { apr: number; selfApr?: number }>(e: T): T {
 }
 
 function scaleMerklBreakdown<
-  T extends { campaignApr: number; aprCap?: number | null },
+  T extends { campaignApr: number; aprCap?: number | null; campaignType?: string; plannedDaily?: number },
 >(b: T): T {
   const next = { ...b, campaignApr: b.campaignApr * 100 } as T;
   if (Object.prototype.hasOwnProperty.call(b, 'aprCap')) {
     const cap = b.aprCap;
     (next as { aprCap?: number | null }).aprCap =
       cap === null || cap === undefined ? cap : cap * 100;
+  }
+  if (b.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE') {
+    delete (next as { plannedDaily?: number }).plannedDaily;
+  }
+  if (b.campaignType === 'DUTCH_AUCTION') {
+    delete (next as { aprCap?: number | null }).aprCap;
+    delete (next as { totalBudget?: number }).totalBudget;
   }
   return next;
 }
