@@ -665,6 +665,37 @@ Merkl 返回里历史上存在两套命名：
 | `message` | 始终存在 | 已统一 |  |
 | `status` | 否（公开接口不返回） | 类型放宽 | 历史/内部路径字段；公开 `side-data` 可按不存在处理 |
 
+### 3. Merkl API Contract 集中配置（新增）
+
+为避免响应层散布条件分支，后端新增 `backend/src/lib/merklApiContract.ts` 集中定义各 `campaignType` 的字段规则。
+
+**核心设计原则：**
+1. **计算层保持完整**：`merklForecastModel` 仍为所有类型计算完整字段，保证内部复用和调试
+2. **API 层通过配置收口**：响应序列化阶段通过查表决定 omit 哪些字段
+3. **新增类型只需改配置表**：无需在多处添加 if 分支
+
+**Breakdown 字段规则（`GET /api/markets`）：**
+
+| campaignType | omit 字段（其余保留） |
+|-------------|---------------------|
+| `DUTCH_AUCTION` | `aprCap`, `totalBudget` |
+| `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` | `plannedDaily` |
+| `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` | （无）|
+
+**Forecast 字段规则（`GET /api/meta/side-data`）：**
+
+| campaignType | 模式 | `requiredDaily` | `distributedSoFar` | `endTimestamp` |
+|-------------|------|---------------|-------------------|---------------|
+| `DUTCH_AUCTION` | `none`（不返回条目） | — | — | — |
+| `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` | `fix` | 否 | 是 | 是 |
+| `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` | `max` | 是 | 是 | 是 |
+
+**关键实现细节：**
+- `toForecastResponseItem()` 对 `DUTCH_AUCTION` 返回 `null`，`refreshForecastSnapshotCache()` 自动过滤，不向客户端暴露无意义条目
+- `FIX` 模式下 `requiredDaily` 不返回，因为前端 forecast 计算只用 `plannedDaily`（来自 breakdown）
+- 所有字段决策通过 `getForecastFieldRule()` / `getBreakdownFieldRule()` 查询配置表，主逻辑代码无硬编码分支
+
+
 ### 3. Brevis `/api/markets` incentive contract
 
 Brevis 对外 contract 已收口到下面这组字段：

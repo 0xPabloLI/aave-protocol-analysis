@@ -4,6 +4,10 @@
  */
 import type { MarketWithSpread } from '../types/index.js';
 import type { RuntimeReserveData } from './marketsService.js';
+import {
+  getBreakdownFieldRule,
+  type CampaignForecastType,
+} from '../lib/merklApiContract.js';
 
 function scaleMeritEntry<T extends { apr: number; selfApr?: number }>(e: T): T {
   return {
@@ -14,7 +18,13 @@ function scaleMeritEntry<T extends { apr: number; selfApr?: number }>(e: T): T {
 }
 
 function scaleMerklBreakdown<
-  T extends { campaignApr: number; aprCap?: number | null; campaignType?: string; plannedDaily?: number },
+  T extends {
+    campaignApr: number;
+    aprCap?: number | null;
+    campaignType?: CampaignForecastType;
+    plannedDaily?: number;
+    totalBudget?: number;
+  },
 >(b: T): T {
   const next = { ...b, campaignApr: b.campaignApr * 100 } as T;
   if (Object.prototype.hasOwnProperty.call(b, 'aprCap')) {
@@ -22,12 +32,12 @@ function scaleMerklBreakdown<
     (next as { aprCap?: number | null }).aprCap =
       cap === null || cap === undefined ? cap : cap * 100;
   }
-  if (b.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE') {
-    delete (next as { plannedDaily?: number }).plannedDaily;
-  }
-  if (b.campaignType === 'DUTCH_AUCTION') {
-    delete (next as { aprCap?: number | null }).aprCap;
-    delete (next as { totalBudget?: number }).totalBudget;
+  // 应用 API contract 字段规则
+  if (b.campaignType) {
+    const rule = getBreakdownFieldRule(b.campaignType);
+    for (const field of rule.omit) {
+      delete (next as Record<string, unknown>)[field];
+    }
   }
   return next;
 }
