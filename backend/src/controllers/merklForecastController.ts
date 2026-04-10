@@ -1,6 +1,11 @@
 import { FORECAST_CACHE_TTL_MS, getMerklForecastState } from '../services/merklForecastService.js';
 import { getMarketsSnapshot, type RuntimeReserveData } from '../services/marketsService.js';
 import { logger } from '../logger.js';
+import {
+  getForecastFieldRule,
+  shouldIncludeForecastItem,
+  type CampaignForecastType,
+} from '../lib/merklApiContract.js';
 
 const FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS = (() => {
   const raw = process.env.MERKL_FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS;
@@ -14,24 +19,23 @@ const FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS = (() => {
 // Opportunity-only fields (campaignType, totalBudget, aprCap, latestTvl, plannedDaily)
 // are served from the markets endpoint breakdowns for 1-min freshness.
 // DUTCH_AUCTION omits requiredDaily (always === plannedDaily; frontend falls back).
-export const toForecastResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>) => {
-  if (state.campaignType === 'DUTCH_AUCTION') return null;
+export const toForecastResponseItem = (
+  state: Awaited<ReturnType<typeof getMerklForecastState>>,
+) => {
+  const type = state.campaignType as CampaignForecastType;
+  if (!shouldIncludeForecastItem(type)) return null;
 
-  return ({
-  campaignId: state.campaignId,
-  ...(state.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' && {
-    requiredDaily: state.requiredDaily,
+  const rule = getForecastFieldRule(type);
+  const item: { campaignId: string; requiredDaily?: number; distributedSoFar: number; endTimestamp: number } = {
+    campaignId: state.campaignId,
+    ...(rule.includeRequiredDaily && { requiredDaily: state.requiredDaily }),
     distributedSoFar: state.distributedSoFar,
     endTimestamp: state.endTimestamp,
-  }),
-  ...(state.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' && {
-    distributedSoFar: state.distributedSoFar,
-    endTimestamp: state.endTimestamp,
-  }),
-  });
+  };
+  return item;
 };
 
-export type ForecastResponseItem = Exclude<ReturnType<typeof toForecastResponseItem>, null>;
+export type ForecastResponseItem = { campaignId: string; requiredDaily?: number; distributedSoFar: number; endTimestamp: number };
 
 export interface ForecastSnapshot {
   items: ForecastResponseItem[];
