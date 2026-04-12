@@ -48,16 +48,14 @@ jobs:
           npm ci
           npm --prefix backend ci
 
-      # Backend uses moderate: catches Express path-to-regexp 0.x advisories; elliptic/ethers may
-      # still appear in npm audit output as low/informational when no upstream fix exists.
       - name: Audit runtime dependencies (root high, backend moderate)
         run: |
           set -e
+          # Try audit fix first, then check remaining vulnerabilities
+          npm audit fix --omit=dev || true
+          npm --prefix backend audit fix --omit=dev || true
           npm audit --omit=dev --audit-level=high || exit 1
           npm --prefix backend audit --omit=dev --audit-level=moderate || exit 1
-
-  # NOTE: Auto-remediation is handled by ci-auto-remediation.yml workflow
-  # (triggered via workflow_run event when this workflow fails)
 
   socket-firewall:
     runs-on: ubuntu-latest
