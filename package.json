@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@aave/client": "^0.6.1",
+    "@aave/client-v4": "npm:@aave/client@^4.1.1",
     "@bgd-labs/aave-address-book": "^4.44.22",
     "@internal/aave-shared-config": "file:packages/aave-shared-config",
     "@modelcontextprotocol/sdk": "^1.26.0",

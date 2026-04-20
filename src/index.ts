@@ -31,6 +31,8 @@ import {
   checkAndReportSessionStatus,
   closeBrowserInstances
 } from './cloudflare-browser.js';
+import { fetchAaveV4Reserves, bigintReplacer } from './v4-fetcher.js';
+import type { V4FetchResult } from './v4-fetcher.js';
 
 interface NetworkInfo {
   name: string;
@@ -495,8 +497,36 @@ async function fetchBrevisAprs(
 
 
 
-// 从 Aave 市场数据创建基础数据集
-function createBaseDatasetFromMarkets(markets: any[]): FormattedReserveData[] {
+/**
+ * Create the unified base dataset from V3 markets + V4 reserves.
+ * Shared by both backend (fetchMarketsPayload) and root (fetchAaveMarkets).
+ */
+// ts-prune-ignore-next
+export async function createUnifiedBaseDataset(v3Markets: any[]): Promise<{
+  baseDataset: FormattedReserveData[];
+  v3Count: number;
+  v4Count: number;
+  v4Dataset: FormattedReserveData[];
+  v4Raw: V4FetchResult['raw'];
+}> {
+  const v3Dataset = createBaseDatasetFromV3Markets(v3Markets);
+  let v4Dataset: FormattedReserveData[] = [];
+  let v4Raw: V4FetchResult['raw'] = { reserves: [], hubAssets: [] };
+  try {
+    const v4Result = await fetchAaveV4Reserves();
+    v4Dataset = v4Result.mapped as unknown as FormattedReserveData[];
+    v4Raw = v4Result.raw;
+    logger.info(`✅ Fetched ${v4Dataset.length} V4 reserves`);
+  } catch (error) {
+    logger.error(`❌ V4 data fetching failed (non-fatal): ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const baseDataset = [...v3Dataset, ...v4Dataset];
+  logger.info(`📊 Unified dataset: ${baseDataset.length} reserves (V3: ${v3Dataset.length}, V4: ${v4Dataset.length})`);
+  return { baseDataset, v3Count: v3Dataset.length, v4Count: v4Dataset.length, v4Dataset, v4Raw };
+}
+
+// 从 Aave V3 市场数据创建基础数据集
+function createBaseDatasetFromV3Markets(markets: any[]): FormattedReserveData[] {
   const baseDataset: FormattedReserveData[] = [];
 
   markets.forEach(market => {
@@ -1094,8 +1124,8 @@ async function fetchAaveMarketData(): Promise<MarketData> {
   // 确保 data 文件夹存在
   await mkdir(DEBUG_DATA_DIR, { recursive: true });
   
-  // 保存原始数据到JSON文件
-  const outputPath = join(DEBUG_DATA_DIR, 'aave-all-markets-data.json');
+  // 保存 V3 原始 SDK 响应数据
+  const outputPath = join(DEBUG_DATA_DIR, 'v3-raw-sdk-response.json');
   await writeJsonAtomic(outputPath, marketData);
   
   return marketData;
@@ -1124,11 +1154,10 @@ async function fetchAaveMarkets(): Promise<void> {
     // 格式化数据并保存到新文件
     logger.info('\n📊 Formatting market data...');
     
-    // 第一步：从 Aave 市场数据创建基础数据集
-    logger.info('📊 Creating base dataset from Aave markets...');
-    const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
+    // 第一步：从 Aave V3 + V4 创建统一基础数据集
+    logger.info('📊 Creating unified base dataset (V3 + V4)...');
+    const { baseDataset, v3Count, v4Count } = await createUnifiedBaseDataset(marketData.markets);
     const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
-    logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
 
     // 并发获取 Merit、Merkl 和 Brevis 数据（它们之间没有依赖关系）
     // 注意：程序是定期触发的，设置超时避免某个任务卡住导致所有数据被卡住
@@ -1245,13 +1274,15 @@ async function fetchAaveMarkets(): Promise<void> {
     logger.info(`🎯 Final dataset contains ${enrichedData.length} token combinations`);
     
     // 保存格式化 JSON 数据（完整 debug 全量）
-    const debugFormattedJsonFullPath = join(DEBUG_DATA_DIR, 'aave-formatted-data.full.json');
+    const debugFormattedJsonFullPath = join(DEBUG_DATA_DIR, 'v3v4-enriched-full.json');
     const debugPayload = {
       _metadata: {
         timestamp: marketData.timestamp,
         version: '2.0-debug-full',
         dataCount: enrichedData.length,
         profile: 'debug-full',
+        v3Count,
+        v4Count,
       },
       data: enrichedData,
     };
@@ -1263,9 +1294,9 @@ async function fetchAaveMarkets(): Promise<void> {
     const csvPath = join(EXPORT_DATA_DIR, 'aave-formatted-data.csv');
     await writeFile(csvPath, csvData, 'utf-8');
     
-    const outputPath = join(DEBUG_DATA_DIR, 'aave-all-markets-data.json');
-    logger.info(`💾 Original data saved to ${outputPath}`);
-    logger.info(`🧪 Debug full JSON saved to ${debugFormattedJsonFullPath}`);
+    const outputPath = join(DEBUG_DATA_DIR, 'v3-raw-sdk-response.json');
+    logger.info(`💾 V3 raw SDK data saved to ${outputPath}`);
+    logger.info(`🧪 V3+V4 enriched JSON saved to ${debugFormattedJsonFullPath}`);
     logger.info(`📈 CSV data saved to ${csvPath}`);
     logger.info(`📁 Debug data dir: ${DEBUG_DATA_DIR}`);
     logger.info(`📁 Export data dir: ${EXPORT_DATA_DIR}`);
@@ -1316,11 +1347,10 @@ export async function fetchMarketsPayload(): Promise<MarketsPayload> {
   // 从所有链获取市场数据
   const marketData = await fetchAaveMarketData();
   
-  // 格式化数据
+  // 格式化数据（V3 + V4 unified）
   logger.info('\n📊 Formatting market data...');
-  const baseDataset = createBaseDatasetFromMarkets(marketData.markets);
+  const { baseDataset, v3Count, v4Count, v4Raw } = await createUnifiedBaseDataset(marketData.markets);
   const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
-  logger.info(`✅ Created base dataset with ${baseDataset.length} token combinations`);
 
   // 并发获取 Merit、Merkl 和 Brevis 数据
   logger.info('🚀 Starting incentive data fetching concurrently...');
@@ -1357,7 +1387,7 @@ export async function fetchMarketsPayload(): Promise<MarketsPayload> {
 
   logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves`);
 
-  return {
+  const payload: MarketsPayload = {
     _metadata: {
       timestamp: marketData.timestamp,
       version: '2.0-runtime-minimal',
@@ -1366,6 +1396,69 @@ export async function fetchMarketsPayload(): Promise<MarketsPayload> {
     },
     data: runtimeData,
   };
+
+  // Write debug files (non-blocking, never fail the cron)
+  writeDebugSnapshot(payload, enrichedData, v3Count, v4Count, v4Raw).catch((err) => {
+    logger.warn(`⚠️ Debug file write failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+  });
+
+  return payload;
+}
+
+/**
+ * Write debug snapshots to disk so the backend has observable artifacts.
+ * Non-critical: failures are logged but never break the cron.
+ *
+ * Files written:
+ * - v3v4-enriched-full.json  — V3+V4 enriched data (pre-prune, with incentives)
+ * - v4-raw-sdk-response.json — Raw V4 SDK response (reserves + hubAssets, for V4 debugging)
+ */
+async function writeDebugSnapshot(
+  payload: MarketsPayload,
+  enrichedData: FormattedReserveData[],
+  v3Count: number,
+  v4Count: number,
+  v4Raw: V4FetchResult['raw'],
+): Promise<void> {
+  await mkdir(DEBUG_DATA_DIR, { recursive: true });
+
+  // V3+V4 enriched full (with incentives, pre-prune)
+  await writeJsonAtomic(
+    join(DEBUG_DATA_DIR, 'v3v4-enriched-full.json'),
+    {
+      _metadata: {
+        ...payload._metadata,
+        version: '2.0-debug-full',
+        profile: 'debug-full',
+        v3Count,
+        v4Count,
+      },
+      data: enrichedData,
+    },
+  );
+
+  // V4 raw SDK response (original BigDecimal/BigInt fields stringified)
+  if (v4Raw.reserves.length > 0 || v4Raw.hubAssets.length > 0) {
+    const rawJson = JSON.stringify(
+      {
+        _metadata: {
+          timestamp: payload._metadata.timestamp,
+          reserveCount: v4Raw.reserves.length,
+          hubAssetCount: v4Raw.hubAssets.length,
+          profile: 'v4-raw-sdk',
+        },
+        reserves: v4Raw.reserves,
+        hubAssets: v4Raw.hubAssets,
+      },
+      bigintReplacer as any,
+      2,
+    );
+    await writeFile(join(DEBUG_DATA_DIR, 'v4-raw-sdk-response.json'), rawJson, 'utf-8');
+  }
+
+  logger.info(
+    `💾 Debug snapshots written (enriched: ${enrichedData.length}, V3: ${v3Count}, V4: ${v4Count})`,
+  );
 }
 
 // 导出主函数,以便其他模块可以调用（backend 通过 dist 引用）
