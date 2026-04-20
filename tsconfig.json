@@ -16,7 +16,11 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@aave/client-v4": ["./node_modules/@aave/client-v4/dist/index.d.ts"],
+      "@aave/client-v4/actions": ["./node_modules/@aave/client-v4/dist/actions/index.d.ts"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "backend"]
