@@ -47,6 +47,7 @@ interface V4FormattedReserveData {
   variableRateSlope2?: string;
   optimalUsageRate?: string;
   baseVariableBorrowRate?: string;
+  aaveProReserveId?: string;
 }
 
 // V4 uses its own client instance (points to the same api.aave.com/graphql)
@@ -305,6 +306,7 @@ export async function fetchAaveV4Reserves(): Promise<V4FetchResult> {
       ...(hubInfo?.slopeAboveOptimal ? { variableRateSlope2: hubInfo.slopeAboveOptimal } : {}),
       ...(hubInfo?.optimalUtilizationRate ? { optimalUsageRate: hubInfo.optimalUtilizationRate } : {}),
       ...(hubInfo?.baseBorrowRate ? { baseVariableBorrowRate: hubInfo.baseBorrowRate } : {}),
+      ...(r.id ? { aaveProReserveId: String(r.id) } : {}),
     });
   }
 

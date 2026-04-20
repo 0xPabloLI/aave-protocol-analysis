@@ -28,6 +28,7 @@ export interface MarketWithSpread {
   tokenName: string;
   tokenSymbol: string;
   tokenAddress: string;
+  aaveProReserveId?: string;
   tokenPrice?: number;
   reserveSizeUsd?: number;
   utilizationPct?: number;
