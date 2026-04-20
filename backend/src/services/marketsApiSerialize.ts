@@ -66,6 +66,7 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     tokenName: reserve.tokenName,
     tokenSymbol: reserve.tokenSymbol,
     tokenAddress: reserve.tokenAddress,
+    ...(reserve.aaveProReserveId ? { aaveProReserveId: reserve.aaveProReserveId } : {}),
     ...(reserve.tokenPrice !== undefined ? { tokenPrice: reserve.tokenPrice } : {}),
     ...(reserve.reserveSizeUsd !== undefined ? { reserveSizeUsd: reserve.reserveSizeUsd } : {}),
     ...(reserve.utilizationPct !== undefined ? { utilizationPct: reserve.utilizationPct } : {}),

@@ -101,6 +101,7 @@ interface FormattedReserveData {
   variableRateSlope2?: string;
   optimalUsageRate?: string;
   // Note: baseVariableBorrowRate is NOT available from Aave API
+  aaveProReserveId?: string;
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
   merklSupplys?: MerklOpportunityGroup[];
@@ -141,6 +142,7 @@ interface RuntimeReserveData {
   optimalUsageRate?: string;
   deficit?: string; // from on-chain RPC
   baseVariableBorrowRate?: string; // from on-chain RPC
+  aaveProReserveId?: string;
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
   merklSupplys?: MerklOpportunityGroup[];
@@ -282,6 +284,7 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.variableRateSlope1 ? { variableRateSlope1: item.variableRateSlope1 } : {}),
     ...(item.variableRateSlope2 ? { variableRateSlope2: item.variableRateSlope2 } : {}),
     ...(item.optimalUsageRate ? { optimalUsageRate: item.optimalUsageRate } : {}),
+    ...(item.aaveProReserveId ? { aaveProReserveId: item.aaveProReserveId } : {}),
   };
 }
 
