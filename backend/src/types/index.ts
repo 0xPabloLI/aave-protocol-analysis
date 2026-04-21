@@ -79,6 +79,13 @@ export interface MarketWithSpread {
   merklHolds?: CampaignGroup<MerklMarketBreakdown>[];
   brevisSupplys?: CampaignGroup<BrevisMarketBreakdown>[];
   brevisBorrows?: CampaignGroup<BrevisMarketBreakdown>[];
+  // V4 Hub & Spoke addresses for contract interaction (only present for V4 markets)
+  hubId?: string;
+  hubName?: string;
+  hubAddress?: string;
+  spokeId?: string;
+  spokeName?: string;
+  spokeAddress?: string;
 }
 
 export interface MarketsResponse {

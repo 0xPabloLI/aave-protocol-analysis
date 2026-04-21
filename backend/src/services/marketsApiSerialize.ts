@@ -116,6 +116,13 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.brevisBorrows?.length
       ? { brevisBorrows: scaleGroupedCampaigns(reserve.brevisBorrows, scaleBrevisBreakdown) }
       : {}),
+    // V4 Hub & Spoke addresses (only for V4 markets)
+    ...(reserve.hubId ? { hubId: reserve.hubId } : {}),
+    ...(reserve.hubName ? { hubName: reserve.hubName } : {}),
+    ...(reserve.hubAddress ? { hubAddress: reserve.hubAddress } : {}),
+    ...(reserve.spokeId ? { spokeId: reserve.spokeId } : {}),
+    ...(reserve.spokeName ? { spokeName: reserve.spokeName } : {}),
+    ...(reserve.spokeAddress ? { spokeAddress: reserve.spokeAddress } : {}),
   };
   return out;
 }

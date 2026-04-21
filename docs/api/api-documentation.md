@@ -52,6 +52,15 @@ interface FormattedReserveData {
   tokenAddress: string;                  // 底层代币地址
   aTokenAddress: string | null;          // aToken 地址
   vTokenAddress: string | null;          // variableDebtToken 地址
+  aaveProReserveId?: string;             // 【仅 V4】V4 SDK ReserveId（base64），用于拼接 pro.aave.com 深链
+  
+  // 【仅 V4】Hub & Spoke 地址信息（用于合约交互和 pro.aave.com 链接）
+  hubId?: string;                        // 【仅 V4】Hub 唯一标识符（base64）
+  hubName?: string;                      // 【仅 V4】Hub 名称，如 "Core"
+  hubAddress?: string;                     // 【仅 V4】Hub 合约地址
+  spokeId?: string;                      // 【仅 V4】Spoke 唯一标识符（base64）
+  spokeName?: string;                    // 【仅 V4】Spoke 名称，如 "Main"
+  spokeAddress?: string;                   // 【仅 V4】Spoke 合约地址（市场入口）
   
   // 价格与规模（单位已说明）
   tokenPrice?: number;                   // 【单位: USD】每个 token 的美元价格

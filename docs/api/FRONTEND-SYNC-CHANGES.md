@@ -132,4 +132,103 @@ function getRateInputsFromReserve(reserve: ReserveForRateCalc) {
 - 利率/公式与数据来源：`docs/api/native-apr-calculation.md`
 - 精度与单位对比：`docs/backend/data-precision-comparison.md`
 
+---
+
+## 8. 如何向后端 API 添加新的 Reserve 字段
+
+当需要添加新的 reserve 字段到 API 响应时，必须在 **4 个位置** 进行协调修改，以确保类型安全和数据流完整性。
+
+### 8.1 四个必须修改的位置
+
+| 顺序 | 文件 | 修改内容 | 说明 |
+|------|------|----------|------|
+| 1 | `src/index.ts` | `FormattedReserveData` 接口 | Root fetcher 的数据结构定义 |
+| 2 | Fetcher 文件 (如 `src/v4-fetcher.ts`) | 数据填充逻辑 | 从 SDK/API 获取并填充新字段 |
+| 3 | `src/index.ts` | `pruneReserveForRuntime()` | **关键**：必须显式添加字段，否则会被过滤掉 |
+| 4 | `backend/src/types/index.ts` | `MarketWithSpread` 接口 | API 响应类型定义 |
+| 5 | `backend/src/services/marketsApiSerialize.ts` | `serializeReserveForApi()` | 序列化逻辑 |
+
+### 8.2 关键陷阱：`pruneReserveForRuntime()`
+
+**最常见错误**：忘记在 `pruneReserveForRuntime()` 中添加新字段！
+
+该函数的作用是白名单过滤——只有显式列出的字段才会被传递到 runtime payload。即使前面的步骤都正确，漏掉这一步会导致字段被**静默丢弃**。
+
+```typescript
+// src/index.ts (第 243 行附近)
+function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData {
+  return {
+    // ... 已有字段
+    
+    // 新增字段必须在这里显式添加！
+    ...(item.hubId ? { hubId: item.hubId } : {}),
+    ...(item.hubName ? { hubName: item.hubName } : {}),
+  };
+}
+```
+
+### 8.3 构建验证顺序
+
+```bash
+# 1. 先构建 root (生成 dist/ 供 backend 导入)
+npm run build
+
+# 2. 再构建 backend
+npm --prefix backend run build
+
+# 3. 运行 backend 测试
+npm --prefix backend run test
+```
+
+### 8.4 V4 Hub/Spoke 字段示例
+
+本次添加的 V4 专属字段（用于 pro.aave.com 链接和合约交互）：
+
+```typescript
+// GET /api/markets 响应中的 V4 reserve
+{
+  "hubId": "MTo6MHhDY2E4NTJCYzQwZTU2MGFkQzNi...",
+  "hubName": "Core",
+  "hubAddress": "0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9",
+  "spokeId": "MTo6MHg5NGU3QTVkQ2JFODE2ZTQ5OGI4...",
+  "spokeName": "Main",
+  "spokeAddress": "0x94e7A5dCbE816e498b89aB752661904E2F56c485"
+}
+```
+
+前端可拼接的链接：
+- Hub 页面: `https://pro.aave.com/explore/hub/${hubId}`
+- Reserve 页面: `https://pro.aave.com/explore/reserve/${aaveProReserveId}`
+
+### 8.5 架构说明
+
+为什么有这么多层？
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   Root Fetcher  │────▶│   prune function   │────▶│  Backend API    │
+│   (src/index.ts)│     │ (pruneReserveFor  │     │ (backend/src/)   │
+│                 │     │   Runtime)         │     │                 │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+       │                                               │
+       │ Aggregates data from Aave, Merit, Merkl,      │ Serves HTTP
+       │ Brevis, V4 SDK...                              │ API
+       ▼                                               ▼
+   FormattedReserveData                          MarketWithSpread
+```
+
+- `FormattedReserveData`: 数据聚合阶段的完整结构
+- `RuntimeReserveData`: 经过 prune 后写入磁盘的精简结构
+- `MarketWithSpread`: HTTP API 返回的最终结构
+
+### 8.6 相关文件速查
+
+| 层级 | 文件 | 作用 |
+|------|------|------|
+| Root 类型 | `src/index.ts` | `FormattedReserveData`, `RuntimeReserveData`, `pruneReserveForRuntime()` |
+| Root 获取 | `src/v4-fetcher.ts` | V4 数据获取，填充字段 |
+| Backend 类型 | `backend/src/types/index.ts` | `MarketWithSpread` API 响应接口 |
+| Backend 序列化 | `backend/src/services/marketsApiSerialize.ts` | `serializeReserveForApi()` |
+| Backend 数据模型 | `backend/src/services/marketsService.ts` | 使用 `RuntimeReserveData` |
+
 如有疑问可联系后端或对照上述文档。

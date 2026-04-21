@@ -217,3 +217,53 @@ test('serializeReserveForApi preserves plannedDaily for MAX_REWARD Merkl breakdo
   assert.equal(breakdown?.campaignType, 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
   assert.equal(breakdown?.plannedDaily, 100);
 });
+
+test('serializeReserveForApi passes through aaveProReserveId for V4 reserves', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV4Ethereum:1:0x973a023A7742',
+    marketName: 'AaveV4Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Test',
+    tokenSymbol: 'TST',
+    tokenAddress: '0x973a023A7742',
+    aaveProReserveId: 'MTo6MHg5NzNhMDIzQTc3NDIwYmE2MTBmMDZiMzg1OGFEOTkxRGY2ZDg1QTA4Ojo0',
+  };
+
+  const api = serializeReserveForApi(reserve);
+
+  assert.equal(api.aaveProReserveId, 'MTo6MHg5NzNhMDIzQTc3NDIwYmE2MTBmMDZiMzg1OGFEOTkxRGY2ZDg1QTA4Ojo0');
+});
+
+test('serializeReserveForApi omits aaveProReserveId when absent', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xabc',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Test',
+    tokenSymbol: 'TST',
+    tokenAddress: '0xabc',
+  };
+
+  const api = serializeReserveForApi(reserve);
+
+  assert.equal('aaveProReserveId' in api, false);
+});
+
+test('serializeReserveForApi omits aaveProReserveId when empty string', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV4Ethereum:1:0xdef',
+    marketName: 'AaveV4Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Test',
+    tokenSymbol: 'TST',
+    tokenAddress: '0xdef',
+    aaveProReserveId: '',
+  };
+
+  const api = serializeReserveForApi(reserve);
+
+  assert.equal('aaveProReserveId' in api, false);
+});
