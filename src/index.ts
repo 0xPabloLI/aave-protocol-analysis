@@ -109,6 +109,13 @@ interface FormattedReserveData {
   merklHolds?: MerklOpportunityGroup[];
   brevisSupplys?: BrevisCampaignItem[];
   brevisBorrows?: BrevisCampaignItem[];
+  // V4 Hub & Spoke addresses for contract interaction (only present for V4 markets)
+  hubId?: string;
+  hubName?: string;
+  hubAddress?: string;
+  spokeId?: string;
+  spokeName?: string;
+  spokeAddress?: string;
 }
 
 interface RuntimeReserveData {
@@ -150,6 +157,13 @@ interface RuntimeReserveData {
   merklHolds?: MerklOpportunityGroup[];
   brevisSupplys?: BrevisCampaignItem[];
   brevisBorrows?: BrevisCampaignItem[];
+  // V4 Hub & Spoke addresses for contract interaction (only present for V4 markets)
+  hubId?: string;
+  hubName?: string;
+  hubAddress?: string;
+  spokeId?: string;
+  spokeName?: string;
+  spokeAddress?: string;
 }
 
 // Payload interface for backend to import (cron-write/API-read-only pattern)
@@ -285,6 +299,13 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.variableRateSlope2 ? { variableRateSlope2: item.variableRateSlope2 } : {}),
     ...(item.optimalUsageRate ? { optimalUsageRate: item.optimalUsageRate } : {}),
     ...(item.aaveProReserveId ? { aaveProReserveId: item.aaveProReserveId } : {}),
+    // V4 Hub & Spoke addresses for contract interaction links
+    ...(item.hubId ? { hubId: item.hubId } : {}),
+    ...(item.hubName ? { hubName: item.hubName } : {}),
+    ...(item.hubAddress ? { hubAddress: item.hubAddress } : {}),
+    ...(item.spokeId ? { spokeId: item.spokeId } : {}),
+    ...(item.spokeName ? { spokeName: item.spokeName } : {}),
+    ...(item.spokeAddress ? { spokeAddress: item.spokeAddress } : {}),
   };
 }
 
