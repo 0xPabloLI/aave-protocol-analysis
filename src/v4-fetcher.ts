@@ -37,8 +37,8 @@ interface V4FormattedReserveData {
   borrowApy: number | undefined;
   borrowDisabled?: boolean;
   borrowCapUsd?: number;
-  supplyIncentives: number[];
-  borrowIncentives: number[];
+  supplyIncentives?: number[];
+  borrowIncentives?: number[];
   decimals?: number;
   availableLiquidity?: string;
   totalVariableDebt?: string;
@@ -48,6 +48,13 @@ interface V4FormattedReserveData {
   optimalUsageRate?: string;
   baseVariableBorrowRate?: string;
   aaveProReserveId?: string;
+  // V4 Hub & Spoke addresses for contract interaction
+  hubId?: string;
+  hubName?: string;
+  hubAddress?: string;
+  spokeId?: string;
+  spokeName?: string;
+  spokeAddress?: string;
 }
 
 // V4 uses its own client instance (points to the same api.aave.com/graphql)
@@ -133,7 +140,7 @@ async function fetchHubAssetIndex(chainIds: number[]): Promise<{ index: Map<stri
       const summary = (asset as any).summary;
 
       index.set(key, {
-        utilizationRate: toFiniteNumber(summary?.utilizationRate?.normalized) ?? undefined,
+        utilizationRate: toFiniteNumber(summary?.utilizationRate?.value) ?? undefined,
         availableLiquidity: summary?.availableLiquidity?.amount?.onChainValue?.toString?.() ?? undefined,
         totalBorrowed: summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined,
         liquidityFee: settings?.liquidityFee?.onChainValue?.toString?.() ?? undefined,
@@ -232,13 +239,14 @@ export async function fetchAaveV4Reserves(): Promise<V4FetchResult> {
     // Reserve size in USD
     const reserveSizeUsd = toFiniteNumber(r.summary?.supplied?.exchange) ?? undefined;
 
-    // Supply APY (normalized = ratio, e.g. 0.05 = 5%)
-    const supplyApyNorm = toFiniteNumber(r.summary?.supplyApy?.normalized);
-    const supplyApy = supplyApyNorm ?? undefined;
+    // Supply APY: use .value (ratio, e.g. 0.0043 = 0.43%), NOT .normalized (percentage)
+    // to match V3 convention where serializer does * 100
+    const supplyApyRaw = toFiniteNumber(r.summary?.supplyApy?.value);
+    const supplyApy = supplyApyRaw ?? undefined;
 
-    // Borrow APY
-    const borrowApyNorm = toFiniteNumber(r.summary?.borrowApy?.normalized);
-    const borrowApy = borrowApyNorm ?? undefined;
+    // Borrow APY: same — use .value (ratio)
+    const borrowApyRaw = toFiniteNumber(r.summary?.borrowApy?.value);
+    const borrowApy = borrowApyRaw ?? undefined;
 
     // Disabled flags
     const isFrozen = r.status?.frozen === true;
@@ -259,22 +267,15 @@ export async function fetchAaveV4Reserves(): Promise<V4FetchResult> {
       ? hubInfo.utilizationRate * 100
       : undefined;
 
-    // V4 incentives: embedded in reserve.summary.rewards[]
-    // Note: V4 extraApy.normalized is in percentage (e.g. 20 = 20%),
-    //       but V3 supplyIncentives stores ratio (e.g. 0.2 = 20%).
-    //       Convert to ratio to match V3 format.
-    const supplyIncentives: number[] = [];
-    const borrowIncentives: number[] = [];
-    const rewards: any[] = r.summary?.rewards ?? [];
-    for (const reward of rewards) {
-      if (reward.__typename === 'MerklSupplyReward') {
-        const extraApy = toFiniteNumber(reward.extraApy?.normalized);
-        if (extraApy !== null) supplyIncentives.push(extraApy / 100);
-      } else if (reward.__typename === 'MerklBorrowReward') {
-        const discountApy = toFiniteNumber(reward.discountApy?.normalized);
-        if (discountApy !== null) borrowIncentives.push(discountApy / 100);
-      }
-    }
+    // V4 SDK embeds summary.rewards[] (MerklSupplyReward / MerklBorrowReward)
+    // but these are internal Aave points (payout token "aglaMerklUSD") that
+    // don't exist in the public Merkl API and aren't shown as APY on Aave Pro.
+    // We skip them here; real Merkl incentives are fetched separately via
+    // the Merkl API and attached downstream.
+
+    // V4 Hub & Spoke info for contract interaction links
+    const hub = r.asset?.hub;
+    const spoke = r.spoke;
 
     // Rate-input fields from HubAsset
     dataset.push({
@@ -296,8 +297,6 @@ export async function fetchAaveV4Reserves(): Promise<V4FetchResult> {
       borrowApy,
       ...(borrowDisabled ? { borrowDisabled: true } : {}),
       ...(borrowCapUsd !== undefined ? { borrowCapUsd } : {}),
-      supplyIncentives: supplyIncentives.length > 0 ? supplyIncentives : (undefined as any),
-      borrowIncentives: borrowIncentives.length > 0 ? borrowIncentives : (undefined as any),
       ...(decimals !== undefined ? { decimals } : {}),
       ...(hubInfo?.availableLiquidity ? { availableLiquidity: hubInfo.availableLiquidity } : {}),
       ...(hubInfo?.totalBorrowed ? { totalVariableDebt: hubInfo.totalBorrowed } : {}),
@@ -307,6 +306,13 @@ export async function fetchAaveV4Reserves(): Promise<V4FetchResult> {
       ...(hubInfo?.optimalUtilizationRate ? { optimalUsageRate: hubInfo.optimalUtilizationRate } : {}),
       ...(hubInfo?.baseBorrowRate ? { baseVariableBorrowRate: hubInfo.baseBorrowRate } : {}),
       ...(r.id ? { aaveProReserveId: String(r.id) } : {}),
+      // V4 Hub & Spoke addresses
+      ...(hub?.id ? { hubId: String(hub.id) } : {}),
+      ...(hub?.name ? { hubName: hub.name } : {}),
+      ...(hub?.address ? { hubAddress: hub.address } : {}),
+      ...(spoke?.id ? { spokeId: String(spoke.id) } : {}),
+      ...(spoke?.name ? { spokeName: spoke.name } : {}),
+      ...(spoke?.address ? { spokeAddress: spoke.address } : {}),
     });
   }
 
