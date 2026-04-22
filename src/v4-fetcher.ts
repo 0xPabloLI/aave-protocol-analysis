@@ -229,8 +229,10 @@ export async function fetchAaveV4Reserves(): Promise<V4FetchResult> {
     const tokenName: string = r.asset?.underlying?.info?.name ?? 'Unknown';
     const decimals: number | undefined = r.asset?.underlying?.info?.decimals ?? undefined;
 
-    // reserveId: use "AaveV4<spoke>" to match V3's "AaveV3<chain>" pattern
-    const reserveId = `${marketName}:${chainIdNum}:${tokenAddressLower}`;
+    // V4 reserveId 格式: {marketName}:{chainId}:{tokenAddress}:{hubName}
+    // 在 multi-hub 市场中，同一 token 可能出现在多个 hub，需要 hubName 确保唯一性
+    const hubName: string = r.asset?.hub?.name ?? 'Unknown';
+    const reserveId = `${marketName}:${chainIdNum}:${tokenAddressLower}:${hubName}`;
 
     // Token price from exchange rate
     const exchangeRate = toFiniteNumber(r.summary?.supplied?.exchangeRate);
