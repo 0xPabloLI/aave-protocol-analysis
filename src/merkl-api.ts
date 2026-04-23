@@ -951,7 +951,8 @@ export async function processMerklData(
   // 处理所有 live opportunities（现在可以快速从缓存中获取数据）
   for (const opp of liveOpportunities) {
     if (!opp.explorerAddress) {
-      logger.warn(`   ⚠️ No explorerAddress found for opportunity ${opp.id}`);
+      const oppLink = generateMerklOpportunityLink(opp);
+      logger.warn(`   ⚠️ No explorerAddress found for opportunity ${opp.id}${oppLink ? ` — ${oppLink}` : ''}`);
       continue;
     }
     
