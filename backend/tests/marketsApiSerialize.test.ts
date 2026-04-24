@@ -267,3 +267,72 @@ test('serializeReserveForApi omits aaveProReserveId when empty string', () => {
 
   assert.equal('aaveProReserveId' in api, false);
 });
+
+test('serializeReserveForApi passes through isFrozenOrPaused when true', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xfrozen',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Frozen',
+    tokenSymbol: 'FRZ',
+    tokenAddress: '0xfrozen',
+    isFrozenOrPaused: true,
+  };
+
+  const api = serializeReserveForApi(reserve);
+
+  assert.equal(api.isFrozenOrPaused, true);
+});
+
+test('serializeReserveForApi omits isFrozenOrPaused when absent', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xnormal',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Normal',
+    tokenSymbol: 'NRM',
+    tokenAddress: '0xnormal',
+  };
+
+  const api = serializeReserveForApi(reserve);
+
+  assert.equal('isFrozenOrPaused' in api, false);
+});
+
+test('isFrozenOrPaused is independent of supplyDisabled', () => {
+  // A reserve can be frozen but not supply-disabled (supplyCap != 1)
+  const frozenNotDisabled: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xfnd',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'FrozenNotDisabled',
+    tokenSymbol: 'FND',
+    tokenAddress: '0xfnd',
+    isFrozenOrPaused: true,
+    supplyApy: 0.03,
+  };
+
+  const api1 = serializeReserveForApi(frozenNotDisabled);
+  assert.equal(api1.isFrozenOrPaused, true);
+  assert.equal('supplyDisabled' in api1, false);
+  assert.equal(api1.supplyApy, 3);
+
+  // A reserve can be supply-disabled (supplyCap=1) but not frozen
+  const disabledNotFrozen: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xdnf',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'DisabledNotFrozen',
+    tokenSymbol: 'DNF',
+    tokenAddress: '0xdnf',
+    supplyDisabled: true,
+  };
+
+  const api2 = serializeReserveForApi(disabledNotFrozen);
+  assert.equal('isFrozenOrPaused' in api2, false);
+  assert.equal(api2.supplyDisabled, true);
+});

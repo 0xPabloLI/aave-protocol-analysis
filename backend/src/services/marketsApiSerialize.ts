@@ -74,6 +74,7 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.vTokenAddress !== undefined ? { vTokenAddress: reserve.vTokenAddress } : {}),
     ...(reserve.supplyApy !== undefined ? { supplyApy: reserve.supplyApy * 100 } : {}),
     ...(reserve.supplyDisabled ? { supplyDisabled: true } : {}),
+    ...(reserve.isFrozenOrPaused ? { isFrozenOrPaused: true } : {}),
     ...(reserve.supplyCapUsd !== undefined ? { supplyCapUsd: reserve.supplyCapUsd } : {}),
     ...(reserve.borrowApy !== undefined ? { borrowApy: reserve.borrowApy * 100 } : {}),
     ...(reserve.borrowDisabled ? { borrowDisabled: true } : {}),

@@ -85,7 +85,8 @@ interface FormattedReserveData {
   aTokenAddress: string | null; // aToken address
   vTokenAddress: string | null; // variableDebtToken address
   supplyApy: number | undefined; // APY 比例值（如 0.052 = 5.2%/年）；CSV 与 HTTP 展示再 ×100
-  supplyDisabled?: boolean; // true when isFrozen, isPaused, or supplyCap is 1
+  supplyDisabled?: boolean; // true when supplyCap is 1
+  isFrozenOrPaused?: boolean;
   supplyCapUsd?: number; // 供应上限（USD）
   borrowApy: number | undefined; // APY 比例值；CSV 与 GET /api/markets 为百分值
   borrowDisabled?: boolean; // true when borrowingState is DISABLED or borrowCap is 1
@@ -133,6 +134,7 @@ interface RuntimeReserveData {
   vTokenAddress?: string;
   supplyApy?: number;
   supplyDisabled?: boolean;
+  isFrozenOrPaused?: boolean;
   supplyCapUsd?: number;
   borrowApy?: number;
   borrowDisabled?: boolean;
@@ -263,6 +265,7 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.vTokenAddress ? { vTokenAddress: item.vTokenAddress } : {}),
     ...(item.supplyApy !== undefined ? { supplyApy: item.supplyApy } : {}),
     ...(item.supplyDisabled ? { supplyDisabled: true } : {}),
+    ...(item.isFrozenOrPaused ? { isFrozenOrPaused: true } : {}),
     ...(item.supplyCapUsd !== undefined ? { supplyCapUsd: item.supplyCapUsd } : {}),
     ...(item.borrowApy !== undefined ? { borrowApy: item.borrowApy } : {}),
     ...(item.borrowDisabled ? { borrowDisabled: true } : {}),
@@ -560,11 +563,6 @@ function createBaseDatasetFromV3Markets(markets: any[]): FormattedReserveData[] 
 
     if (market.supplyReserves && Array.isArray(market.supplyReserves)) {
       market.supplyReserves.forEach((reserve: any) => {
-        // 过滤掉 isFrozen=true 或 isPaused=true 的 supply reserves
-        if (reserve.isFrozen === true || reserve.isPaused === true) {
-          return;
-        }
-
         const tokenSymbol = reserve.underlyingToken?.symbol || 'Unknown';
         const tokenAddress = reserve.underlyingToken?.address || '';
         const tokenAddressLower = tokenAddress.toLowerCase();
@@ -580,12 +578,13 @@ function createBaseDatasetFromV3Markets(markets: any[]): FormattedReserveData[] 
         const aTokenAddress = reserve.aToken?.address ?? null;
         const vTokenAddress = reserve.vToken?.address ?? null;
         
-        // 检查 supply 是否被禁用：isFrozen、isPaused、supplyCap=1
+        // 检查 supply 是否被禁用：supplyCap=1
         const isFrozen = reserve.isFrozen === true;
         const isPaused = reserve.isPaused === true;
         const supplyCapValue = reserve.supplyInfo?.supplyCap?.amount?.value;
         const supplyCapIsOne = supplyCapValue !== undefined && parseFloat(supplyCapValue) === 1;
-        const isSupplyDisabled = isFrozen || isPaused || supplyCapIsOne;
+        const isFrozenOrPaused = isFrozen || isPaused;
+        const isSupplyDisabled = supplyCapIsOne;
         
         // 提取 supplyCapUsd（单位：USD）
         const supplyCapUsdRaw = reserve.supplyInfo?.supplyCap?.usd;
@@ -659,6 +658,7 @@ function createBaseDatasetFromV3Markets(markets: any[]): FormattedReserveData[] 
           supplyApy,
           // 仅当 supply 被禁用时才添加此标志（节约带宽）
           ...(isSupplyDisabled ? { supplyDisabled: true } : {}),
+          ...(isFrozenOrPaused ? { isFrozenOrPaused: true } : {}),
           // supplyCapUsd 始终传递（如果有值）
           ...(supplyCapUsd !== undefined ? { supplyCapUsd } : {}),
           borrowApy,
