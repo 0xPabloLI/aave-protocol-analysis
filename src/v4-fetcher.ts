@@ -255,7 +255,8 @@ export async function fetchAaveV4Reserves(): Promise<V4FetchResult> {
     const isPaused = r.status?.paused === true;
     const canSupply: boolean = r.canSupply ?? true;
     const canBorrow: boolean = r.canBorrow ?? true;
-    const supplyDisabled = !canSupply || isFrozen || isPaused;
+    const isFrozenOrPaused = isFrozen || isPaused;
+    const supplyDisabled = !canSupply;
     const borrowDisabled = !canBorrow;
 
     // Caps
@@ -295,6 +296,7 @@ export async function fetchAaveV4Reserves(): Promise<V4FetchResult> {
       vTokenAddress: null, // V4 has no vToken
       supplyApy,
       ...(supplyDisabled ? { supplyDisabled: true } : {}),
+      ...(isFrozenOrPaused ? { isFrozenOrPaused: true } : {}),
       ...(supplyCapUsd !== undefined ? { supplyCapUsd } : {}),
       borrowApy,
       ...(borrowDisabled ? { borrowDisabled: true } : {}),
