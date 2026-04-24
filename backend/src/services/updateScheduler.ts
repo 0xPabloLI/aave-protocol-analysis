@@ -1,4 +1,4 @@
-import cron from 'node-cron';
+import { schedule } from 'node-cron';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from '../controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from '../controllers/merklForecastController.js';
 import { refreshMarketsSnapshot } from './marketsService.js';
@@ -23,7 +23,7 @@ export function startUpdateScheduler(): void {
   logger.info('   • Categories: every 6 hours');
 
   // Markets refresh every minute at second 0
-  cron.schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
+  schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
     try {
       await refreshMarketsSnapshot();
     } catch (error) {
@@ -34,7 +34,7 @@ export function startUpdateScheduler(): void {
   });
 
   // On-chain data refresh every minute at second 10 (per-chain concurrent, no overall timeout)
-  cron.schedule(BACKEND_SCHEDULE_CRON.onchainDataWarmEveryMinuteAtSecond10, async () => {
+  schedule(BACKEND_SCHEDULE_CRON.onchainDataWarmEveryMinuteAtSecond10, async () => {
     try {
       await refreshOnchainCache();
     } catch (error) {
@@ -45,7 +45,7 @@ export function startUpdateScheduler(): void {
   });
 
   // Warm FDV cache every 5 minutes so frontend reads hot snapshots.
-  cron.schedule(BACKEND_SCHEDULE_CRON.coingeckoFdvWarmEveryFiveMinutesAtSecond5, async () => {
+  schedule(BACKEND_SCHEDULE_CRON.coingeckoFdvWarmEveryFiveMinutesAtSecond5, async () => {
     try {
       await warmCoingeckoFdvCache();
     } catch (error) {
@@ -56,7 +56,7 @@ export function startUpdateScheduler(): void {
   });
 
   // Refresh campaign forecast snapshot every 10 minutes (cron-write, API-read-only pattern).
-  cron.schedule(BACKEND_SCHEDULE_CRON.campaignForecastWarmEveryTenMinutesAtSecond30, async () => {
+  schedule(BACKEND_SCHEDULE_CRON.campaignForecastWarmEveryTenMinutesAtSecond30, async () => {
     try {
       const summary = await warmCampaignForecastStatesCache();
       logger.info(
@@ -70,7 +70,7 @@ export function startUpdateScheduler(): void {
   });
 
   // Warm categories cache every 6 hours to reduce cold-start risk after failures.
-  cron.schedule(BACKEND_SCHEDULE_CRON.coingeckoCategoriesWarmEverySixHoursAtSecond10, async () => {
+  schedule(BACKEND_SCHEDULE_CRON.coingeckoCategoriesWarmEverySixHoursAtSecond10, async () => {
     try {
       await warmCoingeckoCategoriesCache();
     } catch (error) {
