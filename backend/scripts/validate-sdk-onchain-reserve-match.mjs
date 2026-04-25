@@ -17,12 +17,12 @@
  *   node scripts/validate-sdk-onchain-reserve-match.mjs
  */
 
-import { fetchMarketsPayload } from '../../dist/index.js';
+import { fetchMarketsData } from '../../dist/index.js';
 import { refreshOnchainCache, getOnchainDataFromCache } from '../dist/services/onchainDataService.js';
 
 async function main() {
   console.log('Fetching markets payload (Aave SDK)...');
-  const payload = await fetchMarketsPayload();
+  const payload = await fetchMarketsData();
   const sdkReserves = payload.data ?? [];
   const sdkKeys = new Set(sdkReserves.map((r) => r.reserveId));
 

@@ -14,7 +14,7 @@ import { UiPoolDataProvider } from '@aave/contract-helpers';
 import * as AaveAddressBook from '@bgd-labs/aave-address-book';
 import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { ethers } from 'ethers';
-import { fetchMarketsPayload } from '../../dist/index.js';
+import { fetchMarketsData } from '../../dist/index.js';
 
 const POOL_KEY = 'AaveV3Ethereum';
 const CHAIN_ID = 1;
@@ -63,7 +63,7 @@ async function main() {
   }
 
   console.log('\nFetching SDK payload...');
-  const payload = await fetchMarketsPayload();
+  const payload = await fetchMarketsData();
   const sdkReserve = payload.data?.find((r) => r.reserveId === RESERVE_ID);
   if (!sdkReserve) {
     console.error('SNX reserve not found in payload');
