@@ -31,7 +31,7 @@ import {
   checkAndReportSessionStatus,
   closeBrowserInstances
 } from './cloudflare-browser.js';
-import { fetchAaveV4Reserves, bigintReplacer } from './v4-fetcher.js';
+import { fetchV4MarketsData, bigintReplacer } from './v4-fetcher.js';
 import type { V4FetchResult } from './v4-fetcher.js';
 
 interface NetworkInfo {
@@ -529,7 +529,7 @@ async function fetchBrevisAprs(
 
 /**
  * Create the unified base dataset from V3 markets + V4 reserves.
- * Shared by both backend (fetchMarketsPayload) and root (fetchAaveMarkets).
+ * Shared by both backend (fetchMarketsData) and root (fetchAaveMarkets).
  */
 // ts-prune-ignore-next
 export async function createUnifiedBaseDataset(v3Markets: any[]): Promise<{
@@ -543,7 +543,7 @@ export async function createUnifiedBaseDataset(v3Markets: any[]): Promise<{
   let v4Dataset: FormattedReserveData[] = [];
   let v4Raw: V4FetchResult['raw'] = { reserves: [], hubAssets: [] };
   try {
-    const v4Result = await fetchAaveV4Reserves();
+    const v4Result = await fetchV4MarketsData();
     v4Dataset = v4Result.mapped as unknown as FormattedReserveData[];
     v4Raw = v4Result.raw;
     logger.info(`✅ Fetched ${v4Dataset.length} V4 reserves`);
@@ -1366,7 +1366,7 @@ async function fetchAaveMarkets(): Promise<void> {
 // 导出数据获取函数供 backend 内化使用（cron-write/API-read-only 模式）
 // 返回内存中的 payload，不写文件
 // ts-prune-ignore-next
-export async function fetchMarketsPayload(): Promise<MarketsPayload> {
+export async function fetchMarketsData(): Promise<MarketsPayload> {
   // 🧹 启动时检查并清理 Cloudflare browser sessions
   logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
   await checkAndReportSessionStatus();

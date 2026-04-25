@@ -15,7 +15,7 @@
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { fetchMarketsPayload } from '../../dist/index.js';
+import { fetchMarketsData } from '../../dist/index.js';
 import {
   refreshOnchainCache,
   getOnchainDataFromCache,
@@ -59,7 +59,7 @@ async function main() {
   }
 
   console.log('Fetching markets payload...');
-  const payload = await fetchMarketsPayload();
+  const payload = await fetchMarketsData();
   console.log('Refreshing on-chain cache...');
   await refreshOnchainCache();
   const onchainMap = getOnchainDataFromCache();

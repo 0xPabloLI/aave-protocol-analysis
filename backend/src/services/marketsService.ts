@@ -13,7 +13,7 @@
  * - If on-chain data missing, fallback calculation for baseVariableBorrowRate
  */
 
-import { fetchMarketsPayload, type MarketsPayload, type RuntimeReserveData } from '../../../dist/index.js';
+import { fetchMarketsData, type MarketsPayload, type RuntimeReserveData } from '../../../dist/index.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { logger } from '../logger.js';
 import {
@@ -68,7 +68,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
 
       // Fetch markets from Aave API
       const payload = await withTimeout(
-        fetchMarketsPayload(),
+        fetchMarketsData(),
         MARKETS_FETCH_TIMEOUT_MS,
         'Markets fetch timeout'
       );

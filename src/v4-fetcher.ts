@@ -177,7 +177,7 @@ export function bigintReplacer(_key: string, value: unknown): unknown {
  * Also returns the raw SDK response for debug purposes.
  */
 // ts-prune-ignore-next
-export async function fetchAaveV4Reserves(): Promise<V4FetchResult> {
+export async function fetchV4MarketsData(): Promise<V4FetchResult> {
   logger.info('🔄 [V4] Fetching Aave V4 reserves data...');
 
   // 1. Discover supported chains
