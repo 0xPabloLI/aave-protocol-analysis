@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "outDir": "./repro-dist",
+    "rootDir": "./repro-src",
+    "module": "ESNext",
+    "moduleResolution": "node"
+  }
+}
