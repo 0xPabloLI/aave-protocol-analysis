@@ -36,7 +36,8 @@ export interface MarketWithSpread {
   vTokenAddress?: string | null;
   supplyApy?: number | null;
   supplyDisabled?: boolean;
-  isFrozenOrPaused?: boolean;
+  isFrozen?: boolean;
+  isPaused?: boolean;
   supplyCapUsd?: number;
   borrowApy?: number | null;
   borrowDisabled?: boolean;

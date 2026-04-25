@@ -268,8 +268,8 @@ test('serializeReserveForApi omits aaveProReserveId when empty string', () => {
   assert.equal('aaveProReserveId' in api, false);
 });
 
-test('serializeReserveForApi passes through isFrozenOrPaused when true', () => {
-  const reserve: RuntimeReserveData = {
+test('serializeReserveForApi passes through isFrozen and isPaused when true', () => {
+  const frozen: RuntimeReserveData = {
     reserveId: 'AaveV3Ethereum:1:0xfrozen',
     marketName: 'AaveV3Ethereum',
     chainName: 'Ethereum',
@@ -277,15 +277,24 @@ test('serializeReserveForApi passes through isFrozenOrPaused when true', () => {
     tokenName: 'Frozen',
     tokenSymbol: 'FRZ',
     tokenAddress: '0xfrozen',
-    isFrozenOrPaused: true,
+    isFrozen: true,
   };
+  const paused: RuntimeReserveData = { ...frozen, isFrozen: undefined, isPaused: true };
+  const both: RuntimeReserveData = { ...frozen, isPaused: true };
 
-  const api = serializeReserveForApi(reserve);
+  const api1 = serializeReserveForApi(frozen);
+  const api2 = serializeReserveForApi(paused);
+  const api3 = serializeReserveForApi(both);
 
-  assert.equal(api.isFrozenOrPaused, true);
+  assert.equal(api1.isFrozen, true);
+  assert.equal('isPaused' in api1, false);
+  assert.equal(api2.isPaused, true);
+  assert.equal('isFrozen' in api2, false);
+  assert.equal(api3.isFrozen, true);
+  assert.equal(api3.isPaused, true);
 });
 
-test('serializeReserveForApi omits isFrozenOrPaused when absent', () => {
+test('serializeReserveForApi omits isFrozen/isPaused when absent', () => {
   const reserve: RuntimeReserveData = {
     reserveId: 'AaveV3Ethereum:1:0xnormal',
     marketName: 'AaveV3Ethereum',
@@ -298,10 +307,11 @@ test('serializeReserveForApi omits isFrozenOrPaused when absent', () => {
 
   const api = serializeReserveForApi(reserve);
 
-  assert.equal('isFrozenOrPaused' in api, false);
+  assert.equal('isFrozen' in api, false);
+  assert.equal('isPaused' in api, false);
 });
 
-test('isFrozenOrPaused is independent of supplyDisabled', () => {
+test('isFrozen/isPaused is independent of supplyDisabled', () => {
   // A reserve can be frozen but not supply-disabled (supplyCap != 1)
   const frozenNotDisabled: RuntimeReserveData = {
     reserveId: 'AaveV3Ethereum:1:0xfnd',
@@ -311,16 +321,16 @@ test('isFrozenOrPaused is independent of supplyDisabled', () => {
     tokenName: 'FrozenNotDisabled',
     tokenSymbol: 'FND',
     tokenAddress: '0xfnd',
-    isFrozenOrPaused: true,
+    isFrozen: true,
     supplyApy: 0.03,
   };
 
   const api1 = serializeReserveForApi(frozenNotDisabled);
-  assert.equal(api1.isFrozenOrPaused, true);
+  assert.equal(api1.isFrozen, true);
   assert.equal('supplyDisabled' in api1, false);
   assert.equal(api1.supplyApy, 3);
 
-  // A reserve can be supply-disabled (supplyCap=1) but not frozen
+  // A reserve can be supply-disabled (supplyCap=1) but not frozen/paused
   const disabledNotFrozen: RuntimeReserveData = {
     reserveId: 'AaveV3Ethereum:1:0xdnf',
     marketName: 'AaveV3Ethereum',
@@ -333,6 +343,7 @@ test('isFrozenOrPaused is independent of supplyDisabled', () => {
   };
 
   const api2 = serializeReserveForApi(disabledNotFrozen);
-  assert.equal('isFrozenOrPaused' in api2, false);
+  assert.equal('isFrozen' in api2, false);
+  assert.equal('isPaused' in api2, false);
   assert.equal(api2.supplyDisabled, true);
 });

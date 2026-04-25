@@ -86,7 +86,8 @@ interface FormattedReserveData {
   vTokenAddress: string | null; // variableDebtToken address
   supplyApy: number | undefined; // APY 比例值（如 0.052 = 5.2%/年）；CSV 与 HTTP 展示再 ×100
   supplyDisabled?: boolean; // true when supplyCap is 1
-  isFrozenOrPaused?: boolean;
+  isFrozen?: boolean;
+  isPaused?: boolean;
   supplyCapUsd?: number; // 供应上限（USD）
   borrowApy: number | undefined; // APY 比例值；CSV 与 GET /api/markets 为百分值
   borrowDisabled?: boolean; // true when borrowingState is DISABLED or borrowCap is 1
@@ -134,7 +135,8 @@ interface RuntimeReserveData {
   vTokenAddress?: string;
   supplyApy?: number;
   supplyDisabled?: boolean;
-  isFrozenOrPaused?: boolean;
+  isFrozen?: boolean;
+  isPaused?: boolean;
   supplyCapUsd?: number;
   borrowApy?: number;
   borrowDisabled?: boolean;
@@ -265,7 +267,8 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.vTokenAddress ? { vTokenAddress: item.vTokenAddress } : {}),
     ...(item.supplyApy !== undefined ? { supplyApy: item.supplyApy } : {}),
     ...(item.supplyDisabled ? { supplyDisabled: true } : {}),
-    ...(item.isFrozenOrPaused ? { isFrozenOrPaused: true } : {}),
+    ...(item.isFrozen ? { isFrozen: true } : {}),
+    ...(item.isPaused ? { isPaused: true } : {}),
     ...(item.supplyCapUsd !== undefined ? { supplyCapUsd: item.supplyCapUsd } : {}),
     ...(item.borrowApy !== undefined ? { borrowApy: item.borrowApy } : {}),
     ...(item.borrowDisabled ? { borrowDisabled: true } : {}),
@@ -583,7 +586,6 @@ function createBaseDatasetFromV3Markets(markets: any[]): FormattedReserveData[] 
         const isPaused = reserve.isPaused === true;
         const supplyCapValue = reserve.supplyInfo?.supplyCap?.amount?.value;
         const supplyCapIsOne = supplyCapValue !== undefined && parseFloat(supplyCapValue) === 1;
-        const isFrozenOrPaused = isFrozen || isPaused;
         const isSupplyDisabled = supplyCapIsOne;
         
         // 提取 supplyCapUsd（单位：USD）
@@ -658,7 +660,8 @@ function createBaseDatasetFromV3Markets(markets: any[]): FormattedReserveData[] 
           supplyApy,
           // 仅当 supply 被禁用时才添加此标志（节约带宽）
           ...(isSupplyDisabled ? { supplyDisabled: true } : {}),
-          ...(isFrozenOrPaused ? { isFrozenOrPaused: true } : {}),
+          ...(isFrozen ? { isFrozen: true } : {}),
+          ...(isPaused ? { isPaused: true } : {}),
           // supplyCapUsd 始终传递（如果有值）
           ...(supplyCapUsd !== undefined ? { supplyCapUsd } : {}),
           borrowApy,
