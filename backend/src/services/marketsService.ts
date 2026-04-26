@@ -216,7 +216,7 @@ export async function warmMarketsCache(): Promise<void> {
 // Option 3: Independent V3 and V4 snapshots
 // ============================================================
 
-import { fetchV3MarketsData, fetchV4OnlyMarketsData } from '../../../dist/index.js';
+import { fetchV3MarketsData, fetchV4MarketsDataOnly } from '../../../dist/index.js';
 
 // Separate V3 and V4 snapshots with independent TTLs
 let v3Snapshot: MarketsSnapshot | null = null;
@@ -344,7 +344,7 @@ export async function refreshV4Snapshot(): Promise<MarketsSnapshot | null> {
       logger.info('🔄 [V4] Starting V4-only markets refresh...');
 
       const payload = await withTimeout(
-        fetchV4OnlyMarketsData(),
+        fetchV4MarketsDataOnly(),
         MARKETS_FETCH_TIMEOUT_MS,
         'V4 markets fetch timeout'
       );

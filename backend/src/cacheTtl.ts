@@ -21,10 +21,12 @@ export const BACKEND_FETCH_TIMING_MS = {
 
 // Node-cron 6-field format (includes seconds): at second 0, every minute.
 export const BACKEND_SCHEDULE_CRON = {
+  // V3 and V4 refresh at the same time (parallel execution)
+  // They fetch from different data sources, so no resource contention
   marketsBackupEveryMinuteAtSecond0: '0 * * * * *',
-  // Option 3: V4 data refresh on a separate schedule (every 1 min at second 5)
-  // This allows V4 to refresh independently from V3, with its own TTL and error handling.
-  v4DataRefreshEveryMinuteAtSecond5: '5 * * * * *',
+  // Option 3: V4 data refresh at the same time as V3 (parallel, not sequential)
+  // V3 and V4 fetch from different API endpoints, so they can run concurrently
+  v4DataRefreshEveryMinuteAtSecond0: '0 * * * * *',
   // On-chain data refresh: every 1 min at second 10 (per-chain concurrent, 30-min TTL)
   onchainDataWarmEveryMinuteAtSecond10: '10 * * * * *',
   coingeckoFdvWarmEveryFiveMinutesAtSecond5: '5 */5 * * * *',
