@@ -114,13 +114,11 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
           }
           mergedCount++;
         } else {
-          // Apply fallback: deficit defaults to "0", baseVariableBorrowRate calculated
+          // No on-chain RPC data available.
+          // V4 reserves already have baseVariableBorrowRate from HubAsset settings,
+          // so only set deficit default. V3 reserves need the fallback calculation.
           (reserve as any).deficit = '0';
-          // For V4 reserves, baseVariableBorrowRate is already populated from
-          // HubAsset settings (via v4-fetcher). Only use the fallback calculation
-          // for V3 reserves where it's not available from the SDK.
-          const existingBaseRate = (reserve as any).baseVariableBorrowRate;
-          if (!existingBaseRate) {
+          if (!(reserve as any).baseVariableBorrowRate) {
             const fallbackBaseRate = calculateBaseRateFallback(
               reserve.borrowApy,
               reserve.utilizationPct,
@@ -255,12 +253,11 @@ function mergeOnchainData(payload: MarketsPayload): {
       }
       mergedCount++;
     } else {
+      // No on-chain RPC data available.
+      // V4 reserves already have baseVariableBorrowRate from HubAsset settings,
+      // so only set deficit default. V3 reserves need the fallback calculation.
       (reserve as any).deficit = '0';
-      // For V4 reserves, baseVariableBorrowRate is already populated from
-      // HubAsset settings (via v4-fetcher). Only use the fallback calculation
-      // for V3 reserves where it's not available from the SDK.
-      const existingBaseRate = (reserve as any).baseVariableBorrowRate;
-      if (!existingBaseRate) {
+      if (!(reserve as any).baseVariableBorrowRate) {
         const fallbackBaseRate = calculateBaseRateFallback(
           reserve.borrowApy,
           reserve.utilizationPct,
