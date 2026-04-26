@@ -116,17 +116,22 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         } else {
           // Apply fallback: deficit defaults to "0", baseVariableBorrowRate calculated
           (reserve as any).deficit = '0';
-          
-          const fallbackBaseRate = calculateBaseRateFallback(
-            reserve.borrowApy,
-            reserve.utilizationPct,
-            reserve.optimalUsageRate,
-            reserve.variableRateSlope1,
-            reserve.variableRateSlope2
-          );
-          if (fallbackBaseRate !== null) {
-            (reserve as any).baseVariableBorrowRate = fallbackBaseRate;
-            fallbackCount++;
+          // For V4 reserves, baseVariableBorrowRate is already populated from
+          // HubAsset settings (via v4-fetcher). Only use the fallback calculation
+          // for V3 reserves where it's not available from the SDK.
+          const existingBaseRate = (reserve as any).baseVariableBorrowRate;
+          if (!existingBaseRate) {
+            const fallbackBaseRate = calculateBaseRateFallback(
+              reserve.borrowApy,
+              reserve.utilizationPct,
+              reserve.optimalUsageRate,
+              reserve.variableRateSlope1,
+              reserve.variableRateSlope2
+            );
+            if (fallbackBaseRate !== null) {
+              (reserve as any).baseVariableBorrowRate = fallbackBaseRate;
+              fallbackCount++;
+            }
           }
         }
       }
@@ -251,16 +256,22 @@ function mergeOnchainData(payload: MarketsPayload): {
       mergedCount++;
     } else {
       (reserve as any).deficit = '0';
-      const fallbackBaseRate = calculateBaseRateFallback(
-        reserve.borrowApy,
-        reserve.utilizationPct,
-        reserve.optimalUsageRate,
-        reserve.variableRateSlope1,
-        reserve.variableRateSlope2
-      );
-      if (fallbackBaseRate !== null) {
-        (reserve as any).baseVariableBorrowRate = fallbackBaseRate;
-        fallbackCount++;
+      // For V4 reserves, baseVariableBorrowRate is already populated from
+      // HubAsset settings (via v4-fetcher). Only use the fallback calculation
+      // for V3 reserves where it's not available from the SDK.
+      const existingBaseRate = (reserve as any).baseVariableBorrowRate;
+      if (!existingBaseRate) {
+        const fallbackBaseRate = calculateBaseRateFallback(
+          reserve.borrowApy,
+          reserve.utilizationPct,
+          reserve.optimalUsageRate,
+          reserve.variableRateSlope1,
+          reserve.variableRateSlope2
+        );
+        if (fallbackBaseRate !== null) {
+          (reserve as any).baseVariableBorrowRate = fallbackBaseRate;
+          fallbackCount++;
+        }
       }
     }
   }

@@ -102,7 +102,8 @@ interface FormattedReserveData {
   variableRateSlope1?: string;
   variableRateSlope2?: string;
   optimalUsageRate?: string;
-  // Note: baseVariableBorrowRate is NOT available from Aave API
+  baseVariableBorrowRate?: string; // from V4 HubAsset settings or on-chain RPC
+  // Note: baseVariableBorrowRate is NOT available from V3 Aave API (only via RPC or V4 SDK)
   aaveProReserveId?: string;
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
@@ -304,6 +305,7 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.variableRateSlope1 ? { variableRateSlope1: item.variableRateSlope1 } : {}),
     ...(item.variableRateSlope2 ? { variableRateSlope2: item.variableRateSlope2 } : {}),
     ...(item.optimalUsageRate ? { optimalUsageRate: item.optimalUsageRate } : {}),
+    ...(item.baseVariableBorrowRate ? { baseVariableBorrowRate: item.baseVariableBorrowRate } : {}),
     ...(item.aaveProReserveId ? { aaveProReserveId: item.aaveProReserveId } : {}),
     // V4 Hub & Spoke addresses for contract interaction links
     ...(item.hubId ? { hubId: item.hubId } : {}),
