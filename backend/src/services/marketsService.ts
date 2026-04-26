@@ -103,35 +103,33 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       // Merge on-chain data by reserveId (marketName:chainId:tokenAddress)
       for (const reserve of payload.data) {
         const onchainData = onchainMap.get(reserve.reserveId);
-        
-        if (onchainData) {
-          // Merge on-chain data
-          if (onchainData.deficit !== undefined) {
-            (reserve as any).deficit = onchainData.deficit;
-          }
-          if (onchainData.baseVariableBorrowRate !== undefined) {
-            (reserve as any).baseVariableBorrowRate = onchainData.baseVariableBorrowRate;
-          }
-          mergedCount++;
-        } else {
-          // No on-chain RPC data available.
-          // V4 reserves already have baseVariableBorrowRate from HubAsset settings,
-          // so only set deficit default. V3 reserves need the fallback calculation.
+
+        // deficit: prefer on-chain RPC > existing value (from SDK) > default '0'
+        if (onchainData?.deficit !== undefined) {
+          (reserve as any).deficit = onchainData.deficit;
+        } else if (!(reserve as any).deficit) {
           (reserve as any).deficit = '0';
-          if (!(reserve as any).baseVariableBorrowRate) {
-            const fallbackBaseRate = calculateBaseRateFallback(
-              reserve.borrowApy,
-              reserve.utilizationPct,
-              reserve.optimalUsageRate,
-              reserve.variableRateSlope1,
-              reserve.variableRateSlope2
-            );
-            if (fallbackBaseRate !== null) {
-              (reserve as any).baseVariableBorrowRate = fallbackBaseRate;
-              fallbackCount++;
-            }
+        }
+
+        // baseVariableBorrowRate: prefer on-chain RPC > existing value (from V4 SDK) > fallback
+        if (onchainData?.baseVariableBorrowRate !== undefined) {
+          (reserve as any).baseVariableBorrowRate = onchainData.baseVariableBorrowRate;
+          mergedCount++;
+        } else if (!(reserve as any).baseVariableBorrowRate) {
+          // No on-chain RPC data and no SDK value — use fallback calculation (V3 only)
+          const fallbackBaseRate = calculateBaseRateFallback(
+            reserve.borrowApy,
+            reserve.utilizationPct,
+            reserve.optimalUsageRate,
+            reserve.variableRateSlope1,
+            reserve.variableRateSlope2
+          );
+          if (fallbackBaseRate !== null) {
+            (reserve as any).baseVariableBorrowRate = fallbackBaseRate;
+            fallbackCount++;
           }
         }
+        // else: reserve already has baseVariableBorrowRate from SDK (V4) — keep it
       }
 
       const newSnapshot: MarketsSnapshot = {
@@ -244,33 +242,32 @@ function mergeOnchainData(payload: MarketsPayload): {
   for (const reserve of payload.data) {
     const onchainData = onchainMap.get(reserve.reserveId);
 
-    if (onchainData) {
-      if (onchainData.deficit !== undefined) {
-        (reserve as any).deficit = onchainData.deficit;
-      }
-      if (onchainData.baseVariableBorrowRate !== undefined) {
-        (reserve as any).baseVariableBorrowRate = onchainData.baseVariableBorrowRate;
-      }
-      mergedCount++;
-    } else {
-      // No on-chain RPC data available.
-      // V4 reserves already have baseVariableBorrowRate from HubAsset settings,
-      // so only set deficit default. V3 reserves need the fallback calculation.
+    // deficit: prefer on-chain RPC > existing value (from SDK) > default '0'
+    if (onchainData?.deficit !== undefined) {
+      (reserve as any).deficit = onchainData.deficit;
+    } else if (!(reserve as any).deficit) {
       (reserve as any).deficit = '0';
-      if (!(reserve as any).baseVariableBorrowRate) {
-        const fallbackBaseRate = calculateBaseRateFallback(
-          reserve.borrowApy,
-          reserve.utilizationPct,
-          reserve.optimalUsageRate,
-          reserve.variableRateSlope1,
-          reserve.variableRateSlope2
-        );
-        if (fallbackBaseRate !== null) {
-          (reserve as any).baseVariableBorrowRate = fallbackBaseRate;
-          fallbackCount++;
-        }
+    }
+
+    // baseVariableBorrowRate: prefer on-chain RPC > existing value (from V4 SDK) > fallback
+    if (onchainData?.baseVariableBorrowRate !== undefined) {
+      (reserve as any).baseVariableBorrowRate = onchainData.baseVariableBorrowRate;
+      mergedCount++;
+    } else if (!(reserve as any).baseVariableBorrowRate) {
+      // No on-chain RPC data and no SDK value — use fallback calculation (V3 only)
+      const fallbackBaseRate = calculateBaseRateFallback(
+        reserve.borrowApy,
+        reserve.utilizationPct,
+        reserve.optimalUsageRate,
+        reserve.variableRateSlope1,
+        reserve.variableRateSlope2
+      );
+      if (fallbackBaseRate !== null) {
+        (reserve as any).baseVariableBorrowRate = fallbackBaseRate;
+        fallbackCount++;
       }
     }
+    // else: reserve already has baseVariableBorrowRate from SDK (V4) — keep it
   }
 
   return { mergedCount, fallbackCount };
