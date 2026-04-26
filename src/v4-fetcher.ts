@@ -96,11 +96,42 @@ interface HubAssetInfo {
   utilizationRate?: number;
   availableLiquidity?: string;
   totalBorrowed?: string;
-  liquidityFee?: string; // V4 equivalent of V3 reserveFactor
-  baseBorrowRate?: string;
-  slopeBelowOptimal?: string; // V3 variableRateSlope1
-  slopeAboveOptimal?: string; // V3 variableRateSlope2
-  optimalUtilizationRate?: string;
+  liquidityFee?: string; // V4 equivalent of V3 reserveFactor (4-decimal format, same as V3)
+  baseBorrowRate?: string; // RAY format
+  slopeBelowOptimal?: string; // V3 variableRateSlope1 (RAY format)
+  slopeAboveOptimal?: string; // V3 variableRateSlope2 (RAY format)
+  optimalUtilizationRate?: string; // RAY format
+}
+
+/**
+ * Convert a V4 PercentNumber's onChainValue to RAY (1e27) format.
+ *
+ * V4 SDK PercentNumber has a `decimals` field indicating the precision of onChainValue:
+ *   - IR model params (slopes, optimal, liquidityFee, baseBorrowRate): decimals=4 (bps-like, 10000=100%)
+ *   - APY/utilization: decimals=27 (RAY, 1e27=100%)
+ *
+ * V3 SDK PercentValue uses decimals=27 (RAY) for all IR model params (slopes, optimal).
+ * To maintain consistency with V3 and the downstream fallback calculation
+ * (calculateBaseRateFallback which expects RAY), we convert V4 4-decimal values
+ * to RAY by multiplying by 10^(27-4) = 10^23.
+ *
+ * @param onChainValue - The raw integer string from PercentNumber.onChainValue
+ * @param decimals - The decimals field from PercentNumber
+ * @returns The value converted to RAY (1e27) precision as a string
+ */
+function percentOnChainValueToRay(onChainValue: string, decimals: number): string {
+  if (!onChainValue || onChainValue === '0') return '0';
+  const shift = 27 - decimals;
+  if (shift === 0) return onChainValue;
+  if (shift > 0) {
+    // Pad with zeros: e.g., "400" with shift=23 → "400" + "0"*23
+    return onChainValue + '0'.repeat(shift);
+  }
+  // shift < 0: shouldn't happen in practice (V4 uses decimals 4 or 27)
+  // but handle gracefully by removing trailing zeros
+  const absShift = Math.abs(shift);
+  if (onChainValue.length <= absShift) return '0';
+  return onChainValue.slice(0, -absShift);
 }
 
 async function fetchHubAssetIndex(chainIds: number[]): Promise<{ index: Map<string, HubAssetInfo>; rawAssets: any[] }> {
@@ -139,15 +170,36 @@ async function fetchHubAssetIndex(chainIds: number[]): Promise<{ index: Map<stri
       const settings = (asset as any).settings;
       const summary = (asset as any).summary;
 
+      // Convert V4 PercentNumber rate params to RAY (1e27) format for consistency with V3.
+      // V4 IR model params use decimals=4 (bps-like), while V3 uses decimals=27 (RAY)
+      // for slopes/optimal/baseBorrowRate. We convert these to RAY so the downstream
+      // calculateBaseRateFallback() works correctly.
+      // Exception: reserveFactor (liquidityFee) — V3 stores it in 4-decimal format (raw=2000 for 20%),
+      // so we keep V4's liquidityFee in its native 4-decimal format for API consistency.
+      // availableLiquidity/totalBorrowed are DecimalNumber (token-native precision) — no conversion needed.
+      const baseBorrowRatePct = settings?.baseBorrowRate;
+      const slopeBelowOptimalPct = settings?.slopeBelowOptimal;
+      const slopeAboveOptimalPct = settings?.slopeAboveOptimal;
+      const optimalUtilizationRatePct = settings?.optimalUtilizationRate;
+
       index.set(key, {
         utilizationRate: toFiniteNumber(summary?.utilizationRate?.value) ?? undefined,
         availableLiquidity: summary?.availableLiquidity?.amount?.onChainValue?.toString?.() ?? undefined,
         totalBorrowed: summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined,
+        // liquidityFee: keep in native 4-decimal format to match V3 reserveFactor (also 4-decimal)
         liquidityFee: settings?.liquidityFee?.onChainValue?.toString?.() ?? undefined,
-        baseBorrowRate: settings?.baseBorrowRate?.onChainValue?.toString?.() ?? undefined,
-        slopeBelowOptimal: settings?.slopeBelowOptimal?.onChainValue?.toString?.() ?? undefined,
-        slopeAboveOptimal: settings?.slopeAboveOptimal?.onChainValue?.toString?.() ?? undefined,
-        optimalUtilizationRate: settings?.optimalUtilizationRate?.onChainValue?.toString?.() ?? undefined,
+        baseBorrowRate: baseBorrowRatePct?.onChainValue != null
+          ? percentOnChainValueToRay(String(baseBorrowRatePct.onChainValue), Number(baseBorrowRatePct.decimals ?? 4))
+          : undefined,
+        slopeBelowOptimal: slopeBelowOptimalPct?.onChainValue != null
+          ? percentOnChainValueToRay(String(slopeBelowOptimalPct.onChainValue), Number(slopeBelowOptimalPct.decimals ?? 4))
+          : undefined,
+        slopeAboveOptimal: slopeAboveOptimalPct?.onChainValue != null
+          ? percentOnChainValueToRay(String(slopeAboveOptimalPct.onChainValue), Number(slopeAboveOptimalPct.decimals ?? 4))
+          : undefined,
+        optimalUtilizationRate: optimalUtilizationRatePct?.onChainValue != null
+          ? percentOnChainValueToRay(String(optimalUtilizationRatePct.onChainValue), Number(optimalUtilizationRatePct.decimals ?? 4))
+          : undefined,
       });
     }
   }
