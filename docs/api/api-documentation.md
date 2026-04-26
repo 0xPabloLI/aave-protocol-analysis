@@ -370,7 +370,7 @@ Merkl 返回里历史上存在两套命名：
 | 项目 | 说明 |
 |------|------|
 | **`totalBudget`** | `extractNormalizedTotalBudget`：`amount` 按 `decimals` 做单位换算（大整数 → 可读数量）；若存在 **`rewardToken.price` > 0** 则乘以价格得到 **USD 口径**，否则为代币数量口径。 |
-| **`distributedSoFar`** | `estimateDistributedSoFar`：仅用 **`dailyRewardsRecords`**，在 `[start, min(now,end)]` 上按阶梯速率对「日发放率」做**时间积分**；再与 `totalBudget` 取 `min`。Merkl 不直接返回该标量。 |
+| **`distributedSoFar`** | `estimateDistributedSoFar`：仅用 **`dailyRewardsRecords`**，在 `[start, min(now,end)]` 上按阶梯速率对「日发放率」做**时间积分**；再与 `totalBudget` 取 `min`。Merkl 不直接返回该标量。**零基线策略**：当 campaign 刚启动、Merkl 尚无 `dailyRewardsRecords` 时，`distributedSoFar` 默认为 `0`（表示尚未发放），前端可拿到有意义的初始 forecast。但若持续 30 小时（`merklForecastZeroBaselineMaxAgeMs = oneDay + sixHours`）仍无 metrics 数据，该 campaign 将从 `forecast.items` 中排除并进入 `forecast.errors`，避免长期返回不可靠的初始值。一旦 Merkl 恢复正常数据，campaign 自动回到 items 中。 |
 | **`latestTvl`** | 优先用 opportunities / lite 中的 **`tvl`**；否则从 **`tvlRecords`** 按时间排序取**最后一条**的 `total`。 |
 | **`aprCap`** | `extractMaxApr`：仅从 `distributionSettings.apr` 等多路径读取（年化**比例**）；不用顶层 `campaign.apr`（该字段为百分数，语义是活动 APR）。仅 `MAX_REWARD_*` / `FIX_REWARD_*` 需要。`GET /api/markets` 对客户端输出百分值（×100）。 |
 | **`plannedDaily` / `requiredDaily` / `remainingBudget` / `remainingDays`** | `buildForecastState`：`plannedDaily = totalBudget / totalDays`；`requiredDaily` 在 `DUTCH_AUCTION` 时等于 `plannedDaily`，否则为 `remainingBudget / remainingDays`；`remainingBudget = totalBudget - distributedSoFar`。 |
