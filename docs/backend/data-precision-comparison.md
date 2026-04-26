@@ -2,10 +2,39 @@
 
 ## Data Sources
 
-| Source | Method | Fields |
-|--------|--------|--------|
-| **Aave SDK** | `@aave/client` GraphQL API | Most market data (rates, caps, balances, etc.) |
-| **On-chain RPC** | `UiPoolDataProvider.getReservesHumanized()` | `deficit`, `baseVariableBorrowRate` |
+| Source | Method | Fields | Version |
+|--------|--------|--------|---------|
+| **V3 SDK** | `@aave/client` GraphQL API | Most market data (rates, caps, balances, etc.) | V3 only |
+| **V4 SDK** | `@aave/client` GraphQL API + HubAsset settings | Most market data + `baseVariableBorrowRate` from HubAsset | V4 only |
+| **On-chain RPC** | `UiPoolDataProvider.getReservesHumanized()` | `deficit`, `baseVariableBorrowRate` | V3 only |
+
+### Data Merge Priority (`mergeOnchainData`)
+
+For each field, the priority chain is: **SDK value > on-chain RPC > fallback/default**.
+
+| Field | V3 reserve | V4 reserve |
+|-------|-----------|-----------|
+| `deficit` | absent in SDK → RPC → default `'0'` | absent in SDK → RPC (never covers V4) → default `'0'` |
+| `baseVariableBorrowRate` | absent in SDK → RPC → fallback calculation | **provided by SDK** (HubAsset settings) → kept |
+
+SDK data is fetched every 1 minute (cron at second :00) and replaces the entire payload.
+On-chain RPC has its own cron (second :10) with 30-min per-pool TTL.
+Since SDK is the freshest source, it takes highest priority.
+
+### On-chain RPC Coverage
+
+On-chain RPC **only covers V3 pools**. It iterates `AaveAddressBook` entries filtered by `key.startsWith('AaveV3')` (see `onchainDataService.ts:buildPoolConfigs()`). V4 reserves are never queried via RPC.
+
+### V4 HubAsset Multi-Hub Index
+
+V4 uses a Hub & Spoke model. Multiple hubs can exist on the same chain (e.g., Core, Plus, Prime on Ethereum).
+HubAsset index key is `chainId:tokenAddress:hubId` to prevent data collision when the same token exists in different hubs.
+
+### V4 Rate Parameter Unit Conversion
+
+V4 SDK's `PercentNumber` type uses `decimals=4` for IR model params (slopes, optimal, baseBorrowRate).
+V3 uses RAY (`decimals=27`) for the same fields.
+`percentOnChainValueToRay()` in `v4-fetcher.ts` converts V4 4-decimal `onChainValue` to RAY by padding with zeros, ensuring API returns consistent RAY format for both V3 and V4.
 
 ---
 
@@ -22,12 +51,12 @@
 | `variableRateSlope1` | `uint256`，RAY（10²⁷） | `string`，RAY（如 `"90000000000000000000000000"` = 9%，API 里 `decimals: 27`） | ✅ 一致 |
 | `variableRateSlope2` | `uint256`，RAY（10²⁷） | `string`，RAY，`decimals: 27` | ✅ 一致 |
 | `optimalUsageRate` | `uint256`，RAY（10²⁷） | `string`，RAY，`decimals: 27` | ✅ 一致 |
-| `baseVariableBorrowRate` | `uint256`，RAY（10²⁷），链上读 | 仍由 **On-chain RPC** 提供；缺失时用 **fallback 反推**（见下） | ✅ 未改来源，精度不变 |
-| `deficit` | `uint256`，raw 代币单位，链上读 | 仍由 **On-chain RPC** 提供，`string` raw | ✅ 未改来源，精度不变 |
+| `baseVariableBorrowRate` | `uint256`，RAY（10²⁷），链上读 | V3: On-chain RPC / fallback；V4: **SDK HubAsset settings**（RAY，经 `percentOnChainValueToRay` 转换） | ✅ 精度一致 |
+| `deficit` | `uint256`，raw 代币单位，链上读 | V3: On-chain RPC；V4: 默认 `'0'`（SDK 不提供，RPC 不覆盖 V4） | ✅ 精度一致 |
 
-### baseVariableBorrowRate Fallback（RPC 缺失时）
+### baseVariableBorrowRate Fallback（SDK 和 RPC 均缺失时）
 
-当链上无法获取 `baseVariableBorrowRate` 时，用 SDK 参数反推：
+当 SDK 和 on-chain RPC 都无法获取 `baseVariableBorrowRate` 时，用 fallback 反推：
 
 - **输入**：SDK 的 `borrowApy`（APY %）、`utilizationPct`、`optimalUsageRate`、`variableRateSlope1`、`variableRateSlope2`。
 - **APY → APR**：链上 ratePerSecond = rateRay/RAY / SECONDS_PER_YEAR，按秒复利 (1+ratePerSecond)^exp，故 1+APY = (1+APR/SECONDS_PER_YEAR)^SECONDS_PER_YEAR，即 **APR = SECONDS_PER_YEAR×((1+APY)^(1/SECONDS_PER_YEAR)−1)**，再转 RAY。
@@ -39,7 +68,8 @@
 
 - **数值含义与精度**：从 on-chain 切到 Aave SDK 的字段，单位与链上一致（RAW / BPS / RAY），可直接用于原有公式。
 - **类型**：链上是 `uint256`，SDK 用 `string` 传 raw，避免 JS 大数精度问题，前端用 `BigInt` 计算即可。
-- **仅剩两条仍走 on-chain**：`deficit`、`baseVariableBorrowRate`，精度与之前链上一致。
+- **V3 仅 `deficit` 仍走 on-chain RPC**；`baseVariableBorrowRate` 优先 RPC，fallback 兜底。
+- **V4 `baseVariableBorrowRate` 由 SDK 直接提供**（HubAsset settings），`deficit` 默认 `'0'`。
 
 ---
 
@@ -67,8 +97,8 @@
 | `variableRateSlope1` | Subgraph | Aave SDK | String | RAY (27 decimals) | ✅ 相同 |
 | `variableRateSlope2` | Subgraph | Aave SDK | String | RAY (27 decimals) | ✅ 相同 |
 | `optimalUsageRate` | Subgraph | Aave SDK | String | RAY (27 decimals) | ✅ 相同 |
-| `baseVariableBorrowRate` | Subgraph | On-chain RPC | String | RAY (27 decimals) | ⚠️ 来源变更 |
-| `deficit` | On-chain RPC | On-chain RPC | String | Raw token units | ✅ 相同 |
+| `baseVariableBorrowRate` | Subgraph | V3: On-chain RPC; V4: SDK HubAsset | String | RAY (27 decimals) | ⚠️ V3 来源变更；V4 新增 SDK 来源 |
+| `deficit` | On-chain RPC | V3: On-chain RPC; V4: default `'0'` | String | Raw token units | ⚠️ V4 无来源 |
 
 ### 精度验证示例
 
@@ -94,7 +124,7 @@ deficit: "0"                    // Raw token units (从 RPC 获取)
 | 使用 `totalScaledVariableDebt` | ❌ 字段已移除 | 改用 `totalVariableDebt` |
 | 使用 `variableBorrowIndex` | ❌ 字段已移除 | 不再需要 |
 | 计算实际债务 | ✅ 简化 | 直接使用 `totalVariableDebt` |
-| `baseVariableBorrowRate` 缺失 | ⚠️ 可能缺失 | 后端用 APY→APR 反推 fallback；前端可沿用 "0" 或 API 提供的 fallback |
+| `baseVariableBorrowRate` 缺失 | ⚠️ 可能缺失 | V3: 后端用 APY→APR 反推 fallback；V4: SDK 直接提供（HubAsset settings） |
 
 ---
 
@@ -161,3 +191,5 @@ const toHuman = (raw: string, decimals: number) =>
 - `deficit` and `baseVariableBorrowRate` use same precision as other RAY/token values
 - Both sources return strings for large numbers to avoid JavaScript float precision loss
 - Frontend should use BigInt for calculations, convert to float only for display
+- V4 rate params (slopes, optimal, baseBorrowRate) are converted from 4-decimal to RAY via `percentOnChainValueToRay()` to match V3 format
+- On-chain RPC data is not persisted to disk — only in-memory `poolCache` with 30-min TTL, lost on process restart

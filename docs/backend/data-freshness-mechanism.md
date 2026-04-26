@@ -9,6 +9,8 @@
 
 ## 设计原则
 
+> 通用缓存与新鲜度模式（四层架构、原子写入、状态机、HTTP 缓存头等）见 `docs/reusable/caching-data-freshness-patterns.md`。本文档只记录**本项目特有的**术语、策略与配置。
+
 ### Freshness Terms
 
 | Term | Meaning | Example |
@@ -21,16 +23,16 @@
 
 **Rule**: `softTTL` should fit the product's freshness tolerance. `writeInterval` is a refresh cadence, not a hard upper bound.
 
-**Two TTL patterns**:
+**本项目使用的两种 TTL 模式**：
 
 | Pattern | Behavior | When to use |
 |---|---|---|
-| **soft/hard两级** | soft 内正常返回；soft~hard 间返回旧数据+标记stale；hard外拒绝服务(503/null) | 公开API需要向调用方暴露陈旧程度（如markets的 `staleTimeMs`） |
-| **单TTL+兜底** | TTL内用缓存；过期直接丢弃，用安全默认值填充 | 内部缓存有可靠默认值，不需要向调用方暴露陈旧状态（如on-chain per-pool） |
+| **soft/hard 两级** | soft 内正常返回；soft~hard 间返回旧数据+标记 stale；hard 外拒绝服务 (503/null) | 公开 API 需要向调用方暴露陈旧程度（如 markets 的 `staleTimeMs`） |
+| **单 TTL+兜底** | TTL 内用缓存；过期直接丢弃，用安全默认值填充 | 内部缓存有可靠默认值，不需要向调用方暴露陈旧状态（如 on-chain per-pool） |
 
 > **共同前提**：两者都是 **cron-write / API-read-only** 模式（请求不触发刷新）。区别仅在过期后的处理策略。
 
-On-chain data (`deficit`, `baseVariableBorrowRate`) 使用**单TTL+兜底**模式：过期条目直接从结果中排除，markets层自动补默认值（`deficit="0"`，利率可计算时照算），不需要区分soft/hard。
+On-chain data (`deficit`, `baseVariableBorrowRate`) 使用**单 TTL+兜底**模式：过期条目直接从结果中排除，markets 层自动补默认值（`deficit="0"`，利率可计算时照算），不需要区分 soft/hard。
 
 ### 选择 TTL 前先验证
 
@@ -38,20 +40,12 @@ On-chain data (`deficit`, `baseVariableBorrowRate`) 使用**单TTL+兜底**模�
 - 采样观察实际时间戳间隔
 - 记录决策理由
 
-### 分层缓存架构
+### 分层缓存架构与文件快照
 
-```
-1. 内存运行时缓存  ← 最快，易失
-2. 运行时快照文件  ← 持久化，快速读取
-3. 在线缓存层      ← Redis/CDN
-4. 上游 API        ← 最慢，权威
-```
+本项目遵循 `docs/reusable/caching-data-freshness-patterns.md` 中的四层服务链与文件快照规范：
 
-### 文件快照设计
-
-- **Runtime 文件**：小巧、专用（如 `merkl-opportunity-meta-lite.json`）
-- **Debug 文件**：可大、详细，不在热路径
-- **原子写入**：`tmp` + `rename` 防止部分读取
+- **分层**：内存运行时缓存 → 运行时快照文件 → 在线缓存层（Redis/CDN）→ 上游 API
+- **文件快照**：Runtime 文件小巧专用（如 `merkl-opportunity-meta-lite.json`）；Debug 文件详细但不在热路径；原子写入采用 `tmp` + `rename`
 
 ---
 
@@ -122,6 +116,8 @@ On-chain data (`deficit`, `baseVariableBorrowRate`) 使用**单TTL+兜底**模�
 | `BACKEND_CACHE_TTL_MS.marketsSoftTtlMs` | 1m | 对外 staleTime | `GET /api/markets` 响应提示 | 软过期提示，不等于硬失败 |
 | `BACKEND_CACHE_TTL_MS.marketsHardTtlMs` | 5m | 硬过期 | `GET /api/markets` 过旧则 503 | 防止无限期返回旧 markets 快照 |
 | `BACKEND_CACHE_TTL_MS.onchainTtlMs` | 30m | 单TTL（hard边界+兜底） | on-chain per-pool 缓存 | 过期条目直接排除，markets层补默认值；无soft/hard分级 |
+| `BACKEND_CACHE_TTL_MS.v3TtlMs` | 5m | 单TTL（hard边界） | V3 snapshot 新鲜度判断 | 与 V4 独立；过期则标记 tooStale |
+| `BACKEND_CACHE_TTL_MS.v4TtlMs` | 5m | 单TTL（hard边界） | V4 snapshot 新鲜度判断 | 与 V3 独立；过期则标记 tooStale |
 | `BACKEND_CACHE_TTL_MS.merklForecastResultDefault` | 10m | 缓存 TTL / 对外 staleTime | forecast 结果快照 | 与 forecast cron 对齐 |
 | `BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault` | 5m | 缓存 TTL | forecast opportunity-meta 内存缓存 | 机会元数据更频繁刷新 |
 | `BACKEND_CACHE_TTL_MS.merklLiteFileMaxAge` | 5m | 文件快照 TTL | `merkl-opportunity-meta-lite.json` 可接受年龄 | 超过则不再作为 fresh lite 文件 |
