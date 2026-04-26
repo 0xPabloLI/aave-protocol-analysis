@@ -1462,9 +1462,38 @@ export async function fetchMarketsData(options?: {
 // ============================================================
 // Option 3: Independent V3 and V4 fetch functions
 // ============================================================
-// These allow the backend to maintain separate V3 and V4 snapshots
-// with independent TTLs, error handling, and refresh cycles.
-// At API read time, both snapshots are merged.
+
+/**
+ * Shared helper: Fetch and merge incentive data for a dataset.
+ * Eliminates code duplication between V3 and V4 fetch paths.
+ */
+async function fetchAndMergeIncentiveData(
+  dataset: FormattedReserveData[],
+  logPrefix: string
+): Promise<RuntimeReserveData[]> {
+  const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(dataset);
+
+  logger.info(`🚀 ${logPrefix} Starting incentive data fetching concurrently...`);
+
+  const [meritData, merklResult, brevisData] = await Promise.all([
+    fetchMeritData().catch((error) => {
+      logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+      return {} as MeritDataIndex;
+    }),
+    processMerklData({ reserveTokenPriceByChainAndAddress }).catch((error) => {
+      logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+      return { index: {} as MerklDataIndex } as MerklProcessedData;
+    }),
+    fetchBrevisAprs(dataset).catch((error) => {
+      logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+      return {} as BrevisDataIndex;
+    }),
+  ]);
+
+  const merklData = (merklResult as MerklProcessedData).index ?? {};
+  const enrichedData = enrichDatasetWithIncentiveData(dataset, meritData, merklData, brevisData);
+  return enrichedData.map(pruneReserveForRuntime);
+}
 
 /**
  * Fetch V3 markets data only (independent of V4).
@@ -1472,51 +1501,21 @@ export async function fetchMarketsData(options?: {
  */
 // ts-prune-ignore-next
 export async function fetchV3MarketsData(): Promise<MarketsPayload> {
-  logger.info('🔧 [V3-only] Pre-flight check: Cloudflare browser session status...');
+  logger.info('🔧 [V3] Pre-flight check: Cloudflare browser session status...');
   await checkAndReportSessionStatus();
 
   const marketData = await fetchAaveMarketData();
+  logger.info('\n📊 [V3] Formatting V3 market data...');
 
-  logger.info('\n📊 [V3-only] Formatting V3 market data...');
   const v3Dataset = createBaseDatasetFromV3Markets(marketData.markets);
-  const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(v3Dataset);
+  const runtimeData = await fetchAndMergeIncentiveData(v3Dataset, '[V3]');
 
-  logger.info('🚀 [V3-only] Starting incentive data fetching concurrently...');
-
-  const meritPromise = fetchMeritData().catch((error) => {
-    logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-    return {} as MeritDataIndex;
-  });
-  const merklPromise = processMerklData({
-    reserveTokenPriceByChainAndAddress,
-  }).catch((error) => {
-    logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-    return { index: {} as MerklDataIndex } as MerklProcessedData;
-  });
-  const brevisPromise = fetchBrevisAprs(v3Dataset).catch((error) => {
-    logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-    return {} as BrevisDataIndex;
-  });
-
-  const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
-
-  const meritData: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
-  const merklResult: MerklProcessedData =
-    results[1].status === 'fulfilled'
-      ? (results[1].value as MerklProcessedData)
-      : { index: {} as MerklDataIndex };
-  const merklData: MerklDataIndex = merklResult.index;
-  const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
-
-  const enrichedData = enrichDatasetWithIncentiveData(v3Dataset, meritData, merklData, brevisData);
-  const runtimeData = enrichedData.map(pruneReserveForRuntime);
-
-  logger.info(`🎯 [V3-only] Final V3 dataset contains ${runtimeData.length} reserves`);
+  logger.info(`🎯 [V3] Final dataset: ${runtimeData.length} reserves`);
 
   return {
     _metadata: {
       timestamp: marketData.timestamp,
-      version: '2.0-runtime-minimal-v3only',
+      version: '2.0-runtime-minimal-v3',
       dataCount: runtimeData.length,
       profile: 'runtime-minimal',
     },
@@ -1529,18 +1528,18 @@ export async function fetchV3MarketsData(): Promise<MarketsPayload> {
  * Used by Option 3's separate V4 cache refresh.
  */
 // ts-prune-ignore-next
-export async function fetchV4OnlyMarketsData(): Promise<MarketsPayload> {
-  logger.info('🔄 [V4-only] Fetching V4 reserves data...');
+export async function fetchV4MarketsDataOnly(): Promise<MarketsPayload> {
+  logger.info('🔄 [V4] Fetching V4 reserves data...');
 
   const v4Result = await fetchV4MarketsData();
   const v4Dataset = v4Result.mapped as unknown as FormattedReserveData[];
 
   if (v4Dataset.length === 0) {
-    logger.warn('⚠️ [V4-only] V4 data fetch returned empty dataset');
+    logger.warn('⚠️ [V4] V4 data fetch returned empty dataset');
     return {
       _metadata: {
         timestamp: new Date().toISOString(),
-        version: '2.0-runtime-minimal-v4only',
+        version: '2.0-runtime-minimal-v4',
         dataCount: 0,
         profile: 'runtime-minimal',
       },
@@ -1548,44 +1547,13 @@ export async function fetchV4OnlyMarketsData(): Promise<MarketsPayload> {
     };
   }
 
-  const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(v4Dataset);
-
-  logger.info('🚀 [V4-only] Starting incentive data fetching concurrently...');
-
-  const meritPromise = fetchMeritData().catch((error) => {
-    logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-    return {} as MeritDataIndex;
-  });
-  const merklPromise = processMerklData({
-    reserveTokenPriceByChainAndAddress,
-  }).catch((error) => {
-    logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-    return { index: {} as MerklDataIndex } as MerklProcessedData;
-  });
-  const brevisPromise = fetchBrevisAprs(v4Dataset).catch((error) => {
-    logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-    return {} as BrevisDataIndex;
-  });
-
-  const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
-
-  const meritData: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
-  const merklResult: MerklProcessedData =
-    results[1].status === 'fulfilled'
-      ? (results[1].value as MerklProcessedData)
-      : { index: {} as MerklDataIndex };
-  const merklData: MerklDataIndex = merklResult.index;
-  const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
-
-  const enrichedData = enrichDatasetWithIncentiveData(v4Dataset, meritData, merklData, brevisData);
-  const runtimeData = enrichedData.map(pruneReserveForRuntime);
-
-  logger.info(`🎯 [V4-only] Final V4 dataset contains ${runtimeData.length} reserves`);
+  const runtimeData = await fetchAndMergeIncentiveData(v4Dataset, '[V4]');
+  logger.info(`🎯 [V4] Final dataset: ${runtimeData.length} reserves`);
 
   return {
     _metadata: {
       timestamp: new Date().toISOString(),
-      version: '2.0-runtime-minimal-v4only',
+      version: '2.0-runtime-minimal-v4',
       dataCount: runtimeData.length,
       profile: 'runtime-minimal',
     },

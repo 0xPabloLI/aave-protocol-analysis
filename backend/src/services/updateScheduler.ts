@@ -9,16 +9,16 @@ import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 /**
  * 启动定时更新任务
  * 所有数据使用 cron-write/API-read-only 模式
- * 
+ *
  * Architecture:
- * - Markets: every 1 minute at :00, reads from on-chain cache
- * - V4 (Option 3): every 1 minute at :05, independent refresh with own TTL
+ * - Markets (V3): every 1 minute at :00
+ * - V4 (Option 3): every 1 minute at :00 (parallel with V3, different data source)
  * - On-chain: every 1 minute at :10, concurrent per-chain fetch with 30-min TTL
  */
 export function startUpdateScheduler(): void {
   logger.info('📅 Starting cron schedulers (all cron-write/API-read-only):');
-  logger.info('   • Markets: every 1 minute at :00');
-  logger.info('   • V4 (Option 3): every 1 minute at :05 (independent refresh)');
+  logger.info('   • Markets (V3): every 1 minute at :00');
+  logger.info('   • V4 (Option 3): every 1 minute at :00 (parallel with V3)');
   logger.info('   • On-chain (deficit, baseRate): every 1 minute at :10 (30-min per-chain TTL)');
   logger.info('   • Forecast: every 10 minutes');
   logger.info('   • FDV: every 5 minutes');
@@ -35,11 +35,10 @@ export function startUpdateScheduler(): void {
     }
   });
 
-  // Option 3: V4 data refresh on independent schedule (every 1 min at second 5)
-  // This allows V4 to have its own TTL, error handling, and refresh cycle.
-  // When Option 3 is active, V4 data is stored in a separate snapshot
-  // and merged with V3 at API read time.
-  schedule(BACKEND_SCHEDULE_CRON.v4DataRefreshEveryMinuteAtSecond5, async () => {
+  // Option 3: V4 data refresh at the same time as V3 (parallel execution)
+  // V3 and V4 fetch from different API endpoints, so they can run concurrently
+  // without resource contention. This provides the fastest refresh cycle.
+  schedule(BACKEND_SCHEDULE_CRON.v4DataRefreshEveryMinuteAtSecond0, async () => {
     try {
       await refreshV4Snapshot();
     } catch (error) {
