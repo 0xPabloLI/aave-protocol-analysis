@@ -131,15 +131,15 @@ npm start
 
 Merkl 预测相关（可选，有默认值）：
 
-- TTL：`MERKL_FORECAST_RESULT_CACHE_TTL_MS`、`MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS`、`MERKL_METRICS_CACHE_TTL_MS`
-- fallback 最大陈旧时间：
-  - `MERKL_MAX_SERVE_STALE_MS`（root Merkl 空结果时复用快照的上限，默认 10m）
-  - `MERKL_FORECAST_OPPORTUNITY_META_MAX_SERVE_STALE_MS`（forecast opportunity-meta 旧缓存兜底上限，默认 `max(3x TTL, 30m)`）
-  - `MERKL_FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS`（forecast 快照兜底上限，默认 `max(3x TTL, 30m)`）
-  - `COINGECKO_CATEGORIES_MAX_SERVE_STALE_MS`（categories 空结果兜底上限，默认 `max(3x TTL, 30m)`）
-  - `COINGECKO_FDV_MAX_SERVE_STALE_MS`（fdv 空结果兜底上限，默认 `max(3x TTL, 30m)`）
+- TTL（softTTL）：`MERKL_FORECAST_RESULT_SOFT_TTL_MS`、`MERKL_FORECAST_OPPORTUNITY_META_SOFT_TTL_MS`、`MERKL_METRICS_SOFT_TTL_MS`、`MERKL_OPPORTUNITIES_SOFT_TTL_MS`
+- fallback 最大陈旧时间（hardTTL）：
+  - `MERKL_HARD_TTL_MS`（root Merkl 空结果时复用快照的上限，默认 10m）
+  - `MERKL_FORECAST_OPPORTUNITY_META_HARD_TTL_MS`（forecast opportunity-meta 旧缓存兜底上限，默认 `max(3x TTL, 30m)`）
+  - `MERKL_FORECAST_SNAPSHOT_HARD_TTL_MS`（forecast 快照兜底上限，默认 `max(3x TTL, 30m)`）
+  - `COINGECKO_CATEGORIES_HARD_TTL_MS`（categories 空结果兜底上限，默认 `max(3x TTL, 30m)`）
+  - `COINGECKO_FDV_HARD_TTL_MS`（fdv 空结果兜底上限，默认 `max(3x TTL, 30m)`）
 
-这些上限在代码内部已统一收敛为 `*_MAX_SERVE_STALE_MS` 命名。
+这些上限在代码内部已统一收敛为 `*_HARD_TTL_MS` 命名。
 
 详见 [AGENTS.md](../../AGENTS.md#configuration)。
 

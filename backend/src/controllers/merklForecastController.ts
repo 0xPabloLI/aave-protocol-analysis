@@ -1,19 +1,14 @@
-import { FORECAST_CACHE_TTL_MS, getMerklForecastState } from '../services/merklForecastService.js';
+import { FORECAST_SOFT_TTL_MS, getMerklForecastState } from '../services/merklForecastService.js';
 import { getMarketsSnapshot, type RuntimeReserveData } from '../services/marketsService.js';
 import { logger } from '../logger.js';
+import { MERKL_TTL } from '../cacheTtl.js';
 import {
   getForecastFieldRule,
   shouldIncludeForecastItem,
   type CampaignForecastType,
 } from '../lib/merklApiContract.js';
 
-const FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS = (() => {
-  const raw = process.env.MERKL_FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS;
-  const fallback = Math.max(FORECAST_CACHE_TTL_MS * 3, 30 * 60 * 1000);
-  if (!raw) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-})();
+const FORECAST_SNAPSHOT_HARD_TTL_MS = MERKL_TTL.forecastSnapshotHardTtlMs;
 
 // Only metrics-dependent fields (require Merkl metrics API / dailyRewardsRecords).
 // Opportunity-only fields (campaignType, totalBudget, aprCap, latestTvl, plannedDaily)
@@ -74,7 +69,7 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
   const canUsePrevious = (): boolean => {
     if (!previous) return false;
     const ageMs = Math.max(0, Date.now() - previous.generatedAt);
-    return ageMs <= FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS;
+    return ageMs <= FORECAST_SNAPSHOT_HARD_TTL_MS;
   };
 
   const marketsSnapshot = getMarketsSnapshot();
@@ -114,7 +109,7 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
     }
   });
 
-  const snapshot: ForecastSnapshot = { items, errors, staleTimeMs: FORECAST_CACHE_TTL_MS };
+  const snapshot: ForecastSnapshot = { items, errors, staleTimeMs: FORECAST_SOFT_TTL_MS };
 
   if (items.length === 0 && canUsePrevious() && previous!.snapshot.items.length > 0) {
     logger.warn('Forecast refresh produced empty items; keeping previous forecast snapshot fallback');

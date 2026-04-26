@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from '../logger.js';
-import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
+import { BACKEND_CACHE_TTL_MS, MERKL_TTL } from '../cacheTtl.js';
 import { merklFetchConfig } from '../config.js';
 import {
   createMerklConcurrencyLimitedFetch,
@@ -30,50 +30,18 @@ const MERKL_CAMPAIGN_DEBUG_DIR = join(MERKL_DEBUG_DATA_DIR, 'campaigns');
 const MERKL_OPPORTUNITY_META_LITE_PATH = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
 const LEGACY_MERKL_OPPORTUNITY_META_LITE_PATH = join(DATA_DIR, 'merkl-opportunity-meta-lite.json');
 
-const LEGACY_SHARED_FORECAST_TTL_MS = (() => {
-  const raw = process.env.MERKL_FORECAST_CACHE_TTL_MS;
-  if (!raw) return null;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-})();
+export const FORECAST_SOFT_TTL_MS = MERKL_TTL.forecastResultSoftTtlMs;
 
-export const FORECAST_CACHE_TTL_MS = (() => {
-  const raw = process.env.MERKL_FORECAST_RESULT_CACHE_TTL_MS;
-  if (!raw) return LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastResultDefault;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0
-    ? parsed
-    : (LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastResultDefault);
-})();
+const OPPORTUNITY_META_SOFT_TTL_MS = MERKL_TTL.forecastOpportunityMetaSoftTtlMs;
 
-const OPPORTUNITY_META_CACHE_TTL_MS = (() => {
-  const raw = process.env.MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS;
-  if (!raw) return LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0
-    ? parsed
-    : (LEGACY_SHARED_FORECAST_TTL_MS ?? BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault);
-})();
+const OPPORTUNITY_META_HARD_TTL_MS = MERKL_TTL.forecastOpportunityMetaHardTtlMs;
 
-const OPPORTUNITY_META_MAX_SERVE_STALE_MS = (() => {
-  const raw = process.env.MERKL_FORECAST_OPPORTUNITY_META_MAX_SERVE_STALE_MS;
-  const fallback = Math.max(OPPORTUNITY_META_CACHE_TTL_MS * 3, 30 * 60 * 1000);
-  if (!raw) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-})();
-
-const METRICS_CACHE_DEFAULT_TTL_MS = (() => {
-  const raw = process.env.MERKL_METRICS_CACHE_TTL_MS;
-  if (!raw) return BACKEND_CACHE_TTL_MS.merklMetricsDefault;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : BACKEND_CACHE_TTL_MS.merklMetricsDefault;
-})();
+const METRICS_SOFT_TTL_MS = MERKL_TTL.metricsSoftTtlMs;
 
 const METRICS_CACHE_MIN_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsMin;
 const METRICS_CACHE_MAX_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsMax;
 const METRICS_CACHE_EMPTY_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsEmpty;
-const METRICS_CACHE_MAX_SERVE_STALE_MS = Math.max(METRICS_CACHE_DEFAULT_TTL_MS * 3, 30 * 60 * 1000);
+const METRICS_CACHE_HARD_TTL_MS = MERKL_TTL.metricsHardTtlMs;
 
 interface MetricsCacheEntry {
   raw: unknown;
@@ -327,7 +295,7 @@ const deriveMetricsCacheTtlMs = (metrics: unknown): { ttlMs: number; cadenceSeco
   // Use an aggressive fraction of observed cadence (user-approved), capped for safety.
   const candidateMs = Math.floor((cadenceSeconds * 1000) / 4);
   const ttlMs = clamp(
-    candidateMs || METRICS_CACHE_DEFAULT_TTL_MS,
+    candidateMs || METRICS_SOFT_TTL_MS,
     METRICS_CACHE_MIN_TTL_MS,
     METRICS_CACHE_MAX_TTL_MS
   );
@@ -569,7 +537,7 @@ const getCachedOrFetchMetrics = async (
   const previous = cached;
   const canUsePreviousFallback = (): boolean => {
     if (!previous || !hasForecastableMetrics(previous.data)) return false;
-    return Math.max(0, Date.now() - previous.updatedAt) <= METRICS_CACHE_MAX_SERVE_STALE_MS;
+    return Math.max(0, Date.now() - previous.updatedAt) <= METRICS_CACHE_HARD_TTL_MS;
   };
 
   const rawMetrics = await fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}/metrics`);
@@ -581,7 +549,7 @@ const getCachedOrFetchMetrics = async (
       logger.warn(
         `⚠️ Merkl metrics refresh returned empty for ${campaignId}; keeping previous cache (age=${Math.round(
           (Date.now() - previous!.updatedAt) / 1000
-        )}s, max=${Math.round(METRICS_CACHE_MAX_SERVE_STALE_MS / 1000)}s)`
+        )}s, max=${Math.round(METRICS_CACHE_HARD_TTL_MS / 1000)}s)`
       );
       return { raw: previous!.raw, data: previous!.data };
     }
@@ -612,7 +580,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
   const canUsePreviousFallback = (): boolean => {
     if (!previousEntry || !previous || previous.size === 0) return false;
     const ageMs = Math.max(0, Date.now() - previousEntry.updatedAt);
-    return ageMs <= OPPORTUNITY_META_MAX_SERVE_STALE_MS;
+    return ageMs <= OPPORTUNITY_META_HARD_TTL_MS;
   };
 
   const cacheAndReturn = (
@@ -621,7 +589,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
   ): Map<string, CampaignOpportunityMeta> => {
     campaignOpportunityCache = {
       data: map,
-      expiresAt: Date.now() + OPPORTUNITY_META_CACHE_TTL_MS,
+      expiresAt: Date.now() + OPPORTUNITY_META_SOFT_TTL_MS,
       updatedAt,
     };
     return map;
@@ -667,7 +635,7 @@ const getCampaignOpportunityMetaMap = async (): Promise<Map<string, CampaignOppo
     if (previous && previous.size > 0) {
       logger.warn(
         `⚠️ Failed to refresh campaign opportunity cache and previous snapshot is too stale (max ${Math.round(
-          OPPORTUNITY_META_MAX_SERVE_STALE_MS / 1000
+          OPPORTUNITY_META_HARD_TTL_MS / 1000
         )}s): ${error instanceof Error ? error.message : String(error)}`
       );
     }

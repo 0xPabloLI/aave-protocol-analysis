@@ -1,29 +1,17 @@
 import { logger } from '../logger.js';
 import { coingeckoFetchConfig } from '../config.js';
-import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
+import { BACKEND_CACHE_TTL_MS, COINGECKO_TTL } from '../cacheTtl.js';
 
 const CG_ENDPOINT = 'https://api.coingecko.com/api/v3/coins/markets';
 const CMC_QUOTES_ENDPOINT = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest';
 const COINGECKO_LONG_DATA_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoLongDataTtlMs;
-const CATEGORIES_CACHE_TTL_MS = COINGECKO_LONG_DATA_TTL_MS;
+const CATEGORIES_SOFT_TTL_MS = COINGECKO_TTL.categoriesSoftTtlMs;
 /** Matches FDV warm cron interval (5 min); cron and request both respect this TTL. */
-const FDV_CACHE_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoFdv;
+const FDV_SOFT_TTL_MS = COINGECKO_TTL.fdvSoftTtlMs;
 const FDV_MONITOR_TTL_MS = COINGECKO_LONG_DATA_TTL_MS;
 const FDV_DIFF_ALERT_THRESHOLD_PCT = 5;
-const CATEGORIES_MAX_SERVE_STALE_MS = (() => {
-  const raw = process.env.COINGECKO_CATEGORIES_MAX_SERVE_STALE_MS;
-  const fallback = Math.max(CATEGORIES_CACHE_TTL_MS * 3, 30 * 60 * 1000);
-  if (!raw) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-})();
-const FDV_MAX_SERVE_STALE_MS = (() => {
-  const raw = process.env.COINGECKO_FDV_MAX_SERVE_STALE_MS;
-  const fallback = Math.max(FDV_CACHE_TTL_MS * 3, 30 * 60 * 1000);
-  if (!raw) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-})();
+const CATEGORIES_HARD_TTL_MS = COINGECKO_TTL.categoriesHardTtlMs;
+const FDV_HARD_TTL_MS = COINGECKO_TTL.fdvHardTtlMs;
 const FDV_COINS = [
   { id: 'crypto-com-chain', cmcSymbol: 'CRO' },
   { id: 'gatechain-token', cmcSymbol: 'GT' },
@@ -91,9 +79,9 @@ let inFlightFdvFetch: Promise<{ items: FdvItem[]; fetchedAt: string }> | null = 
 let lastApiRequestTime: number = 0;
 let lastFdvMonitorCheckTime = 0;
 
-function isWithinMaxServeStale(fetchedAt: number, maxStaleMs: number): boolean {
+function isWithinHardTtl(fetchedAt: number, hardTtlMs: number): boolean {
   const ageMs = Math.max(0, Date.now() - fetchedAt);
-  return ageMs <= maxStaleMs;
+  return ageMs <= hardTtlMs;
 }
 
 const getHeaders = (): Record<string, string> => {
@@ -327,7 +315,7 @@ function monitorFdvParity(cmcItems: FdvItem[]): void {
 
 function hasReusableCategoriesCache(): boolean {
   if (!cachedResponse) return false;
-  return Date.now() - cachedResponse.fetchedAt < CATEGORIES_CACHE_TTL_MS;
+  return Date.now() - cachedResponse.fetchedAt < CATEGORIES_SOFT_TTL_MS;
 }
 
 async function getOrRefreshCoingeckoCategoriesData(source: 'request' | 'startup'): Promise<CoingeckoCategoriesData> {
@@ -409,11 +397,11 @@ async function getOrRefreshCoingeckoCategoriesData(source: 'request' | 'startup'
 
     const isEmpty = result.uniqueSymbolsStablecoins.length === 0 && result.uniqueSymbolsEth.length === 0;
     if (isEmpty) {
-        if (previous && isWithinMaxServeStale(previous.fetchedAt, CATEGORIES_MAX_SERVE_STALE_MS)) {
+        if (previous && isWithinHardTtl(previous.fetchedAt, CATEGORIES_HARD_TTL_MS)) {
           logger.warn(
             `⚠️ Coingecko categories refresh returned empty; keeping previous cache (age=${Math.round(
               (Date.now() - previous.fetchedAt) / 1000
-            )}s, max=${Math.round(CATEGORIES_MAX_SERVE_STALE_MS / 1000)}s)`
+            )}s, max=${Math.round(CATEGORIES_HARD_TTL_MS / 1000)}s)`
           );
           return previous.data;
         }
@@ -448,13 +436,13 @@ export async function getCoingeckoCategoriesSnapshot(
   return {
     data,
     fetchedAt: new Date(fetchedAtMs).toISOString(),
-    staleTimeMs: CATEGORIES_CACHE_TTL_MS,
+    staleTimeMs: CATEGORIES_SOFT_TTL_MS,
   };
 }
 
 function hasReusableFdvCache(): boolean {
   if (!cachedFdvResponse) return false;
-  if (Date.now() - cachedFdvResponse.fetchedAt >= FDV_CACHE_TTL_MS) return false;
+  if (Date.now() - cachedFdvResponse.fetchedAt >= FDV_SOFT_TTL_MS) return false;
   const hasNullFdv = cachedFdvResponse.data.items.some((item) => item.fdvUsd === null);
   return !hasNullFdv;
 }
@@ -492,11 +480,11 @@ async function getOrRefreshFdvData(
     const result = { items, fetchedAt: new Date().toISOString() };
 
     if (result.items.length === 0) {
-      if (previous && isWithinMaxServeStale(previous.fetchedAt, FDV_MAX_SERVE_STALE_MS)) {
+      if (previous && isWithinHardTtl(previous.fetchedAt, FDV_HARD_TTL_MS)) {
         logger.warn(
           `⚠️ FDV refresh returned empty items; keeping previous cache (age=${Math.round(
             (Date.now() - previous.fetchedAt) / 1000
-          )}s, max=${Math.round(FDV_MAX_SERVE_STALE_MS / 1000)}s)`
+          )}s, max=${Math.round(FDV_HARD_TTL_MS / 1000)}s)`
         );
         return previous.data;
       }
@@ -529,6 +517,6 @@ export async function getCoingeckoFdvSnapshot(
   const data = await getOrRefreshFdvData(source === 'meta' ? 'request' : source);
   return {
     data,
-    staleTimeMs: FDV_CACHE_TTL_MS,
+    staleTimeMs: FDV_SOFT_TTL_MS,
   };
 }

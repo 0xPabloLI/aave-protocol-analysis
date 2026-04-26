@@ -114,11 +114,11 @@ The server uses environment variables for configuration (see [AGENTS.md](AGENTS.
 - `PORT` - Server port (default: 3001)
 - `NODE_ENV` - Environment (development/production)
 - `FRONTEND_URL` - CORS allowed origins for production (comma-separated)
-- `MERKL_MAX_SERVE_STALE_MS` - Max age for Merkl fallback snapshots before refusing stale reuse (default: 10m)
-- `MERKL_FORECAST_OPPORTUNITY_META_MAX_SERVE_STALE_MS` - Max age for forecast opportunity-meta cache fallback (default: max(3x TTL, 30m))
-- `MERKL_FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS` - Max age for forecast snapshot fallback when refresh returns empty/error (default: max(3x TTL, 30m))
-- `COINGECKO_CATEGORIES_MAX_SERVE_STALE_MS` - Max age for categories empty-result fallback (default: max(3x TTL, 30m))
-- `COINGECKO_FDV_MAX_SERVE_STALE_MS` - Max age for FDV empty-result fallback (default: max(3x TTL, 30m))
+- `MERKL_HARD_TTL_MS` - Max age for Merkl fallback snapshots before refusing stale reuse (default: 10m)
+- `MERKL_FORECAST_OPPORTUNITY_META_HARD_TTL_MS` - Max age for forecast opportunity-meta cache fallback (default: max(3x TTL, 30m))
+- `MERKL_FORECAST_SNAPSHOT_HARD_TTL_MS` - Max age for forecast snapshot fallback when refresh returns empty/error (default: max(3x TTL, 30m))
+- `COINGECKO_CATEGORIES_HARD_TTL_MS` - Max age for categories empty-result fallback (default: max(3x TTL, 30m))
+- `COINGECKO_FDV_HARD_TTL_MS` - Max age for FDV empty-result fallback (default: max(3x TTL, 30m))
 - Configure in repo root `.env`; production may use Doppler or Railway for secrets.
 
 ### API Endpoints
@@ -129,10 +129,10 @@ The backend API server runs on `http://localhost:3001` by default. Public client
 |--------------|-------------|
 | `GET /health` | Health check with environment info |
 | `GET /api/health` | Same as `/health` (API namespace) |
-| `GET /api/markets` | `markets-v2`: root `snapshot` + `reserves` (prices on `reserves[].tokenPrice`); cron-warmed memory snapshot, request does not trigger fetches; hard stale boundary enforced by `marketsServeHardStaleMax` |
+| `GET /api/markets` | `markets-v2`: root `snapshot` + `reserves` (prices on `reserves[].tokenPrice`); cron-warmed memory snapshot, request does not trigger fetches; hard stale boundary enforced by `marketsHardTtlMs` |
 | `GET /api/meta/side-data` | Aggregated side-data payload (`categories` + `fdv` + `forecast`) |
 
-**Data freshness**: Public data endpoints use **cron-write / API-read-only**. `meta/side-data` still reads the same internal category/FDV/forecast caches, but the standalone public routes for those caches are no longer exposed. `markets` uses `staleTimeMs` (`marketsDataStaleThreshold`) plus a hard stale cap (`marketsServeHardStaleMax`, over which API returns `503`). See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
+**Data freshness**: Public data endpoints use **cron-write / API-read-only**. `meta/side-data` still reads the same internal category/FDV/forecast caches, but the standalone public routes for those caches are no longer exposed. `markets` uses `staleTimeMs` (`marketsSoftTtlMs`) plus a hard stale cap (`marketsHardTtlMs`, over which API returns `503`). See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
 
 **Filter market derivation**: Clients should derive unique `{ marketName, chainName }` filter options from `GET /api/markets` response data. The backend no longer exposes a separate market-list endpoint for that UI concern.
 

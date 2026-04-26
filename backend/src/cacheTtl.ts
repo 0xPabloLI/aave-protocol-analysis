@@ -37,21 +37,20 @@ export const BACKEND_SCHEDULE_CRON = {
 
 export const BACKEND_CACHE_TTL_MS = {
   // Markets near-realtime family.
-  marketsDataStaleThreshold: BACKEND_TIME_MS.oneMinute,
-  marketsServeHardStaleMax: BACKEND_TIME_MS.fiveMinutes,
+  marketsSoftTtlMs: BACKEND_TIME_MS.oneMinute,
+  marketsHardTtlMs: BACKEND_TIME_MS.fiveMinutes,
   // On-chain data TTL: 30 min (deficit/baseVariableBorrowRate change infrequently)
-  onchainCacheTtl: BACKEND_TIME_MS.thirtyMinutes,
+  onchainTtlMs: BACKEND_TIME_MS.thirtyMinutes,
 
   // ============================================================
-  // Option 3: Independent V3 and V4 cache TTLs
+  // V3 and V4 independent single-TTL (same pattern as onchainTtlMs)
   // ============================================================
   // V3 and V4 have separate snapshots with independent freshness policies.
   // This allows one to fail without affecting the other's availability.
   // At API read time, both snapshots are merged.
-  v3DataStaleThreshold: BACKEND_TIME_MS.oneMinute,
-  v3ServeHardStaleMax: BACKEND_TIME_MS.fiveMinutes,
-  v4DataStaleThreshold: BACKEND_TIME_MS.oneMinute,
-  v4ServeHardStaleMax: BACKEND_TIME_MS.fiveMinutes,
+  // Single hard boundary: expired data is excluded (no soft/hard split).
+  v3TtlMs: BACKEND_TIME_MS.fiveMinutes,
+  v4TtlMs: BACKEND_TIME_MS.fiveMinutes,
 
   // Merkl forecast family.
   // forecastResult aligned with metricsMin since underlying metrics data won't change faster.
@@ -76,4 +75,21 @@ export const BACKEND_CACHE_TTL_MS = {
   // Zero-baseline max age: 1 day (typical Merkl metrics cadence) + 6h (merklMetricsMax buffer).
   // Beyond this window, zero-distributed forecast is considered unreliable; campaign is excluded.
   merklForecastZeroBaselineMaxAgeMs: BACKEND_TIME_MS.oneDay + BACKEND_TIME_MS.sixHours,
+} as const;
+
+export const MERKL_TTL = {
+  forecastResultSoftTtlMs: BACKEND_CACHE_TTL_MS.merklForecastResultDefault,
+  forecastOpportunityMetaSoftTtlMs: BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault,
+  forecastOpportunityMetaHardTtlMs: Math.max(BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault * 3, BACKEND_TIME_MS.thirtyMinutes),
+  metricsSoftTtlMs: BACKEND_CACHE_TTL_MS.merklMetricsDefault,
+  metricsHardTtlMs: Math.max(BACKEND_CACHE_TTL_MS.merklMetricsDefault * 3, BACKEND_TIME_MS.thirtyMinutes),
+  forecastSnapshotHardTtlMs: Math.max(BACKEND_CACHE_TTL_MS.merklForecastResultDefault * 3, BACKEND_TIME_MS.thirtyMinutes),
+  opportunitiesSoftTtlMs: BACKEND_CACHE_TTL_MS.merklOpportunitiesDefault,
+} as const;
+
+export const COINGECKO_TTL = {
+  categoriesSoftTtlMs: BACKEND_CACHE_TTL_MS.coingeckoLongDataTtlMs,
+  categoriesHardTtlMs: Math.max(BACKEND_CACHE_TTL_MS.coingeckoLongDataTtlMs * 3, BACKEND_TIME_MS.thirtyMinutes),
+  fdvSoftTtlMs: BACKEND_CACHE_TTL_MS.coingeckoFdv,
+  fdvHardTtlMs: Math.max(BACKEND_CACHE_TTL_MS.coingeckoFdv * 3, BACKEND_TIME_MS.thirtyMinutes),
 } as const;

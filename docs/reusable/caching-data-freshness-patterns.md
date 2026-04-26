@@ -9,8 +9,8 @@ Reusable standard for API caching, snapshot freshness, TTL management, and stale
 | State | Meaning | Behavior |
 |---|---|---|
 | Fresh | age ≤ `softTTL` | Return normally |
-| Soft stale | `softTTL` < age ≤ `maxServeStaleMs` | Return old value, mark stale |
-| Hard stale | age > `maxServeStaleMs` | Reject service or return explicit error |
+| Soft stale | `softTTL` < age ≤ `hardTTL` | Return old value, mark stale |
+| Hard stale | age > `hardTTL` | Reject service or return explicit error |
 | Missing | no value yet | Return loading / empty / error |
 
 ### Required Fields
@@ -21,13 +21,13 @@ Every cache or snapshot must define:
 |---|---|
 | `writeInterval` | Producer or cron refresh cadence |
 | `softTTL` | Age after which data is considered stale |
-| `maxServeStaleMs` | Maximum age allowed for serving old data |
+| `hardTTL` | Maximum age allowed for serving old data |
 | `fallbackMode` | What happens when refresh fails |
 
 ### Naming Rules
 
-- Use `*_TTL_MS` for freshness cadence.
-- Use `*_MAX_SERVE_STALE_MS` for the hard service boundary.
+- Use `*_SOFT_TTL_MS` for soft freshness cadence.
+- Use `*_HARD_TTL_MS` for the hard service boundary.
 - Use `*_WARM_CRON` for refresh scheduling.
 - Do not split the same freshness meaning across multiple variable names.
 
@@ -42,7 +42,7 @@ Every cache or snapshot must define:
 | **Max serve stale** | Oldest age allowed to serve | 5 min hard stop |
 | **Fallback mode** | What to do when refresh fails | reuse previous snapshot, empty result, or 503 |
 
-**Rule**: `softTTL ≤ maxServeStaleMs`
+**Rule**: `softTTL ≤ hardTTL`
 
 ### Validate Freshness Against Source Cadence
 
@@ -138,8 +138,8 @@ let updateStatus: UpdateStatus = 'idle';
 let activeUpdatePromise: Promise<void> | null = null;
 let lastUpdateTime: number = 0;
 
-async function checkAndUpdateIfStale(maxServeStaleMs: number): Promise<void> {
-  const isStale = Date.now() - lastUpdateTime > maxServeStaleMs;
+async function checkAndUpdateIfStale(hardTtlMs: number): Promise<void> {
+  const isStale = Date.now() - lastUpdateTime > hardTtlMs;
   
   if (!isStale) return;
   
@@ -194,14 +194,14 @@ async function getData(maxWaitMs: number = 1000): Promise<Data> {
 
 ```typescript
 const SOFT_TTL_MS = 60_000;             // 1 minute
-const MAX_SERVE_STALE_MS = 300_000;     // 5 minutes → 503
+const HARD_TTL_MS = 300_000;     // 5 minutes → 503
 
-if (dataAge > MAX_SERVE_STALE_MS) {
+if (dataAge > HARD_TTL_MS) {
   throw new ServiceUnavailableError('Data too stale');
 }
 ```
 
-Optional hard cap: some services keep serving stale data until `maxServeStaleMs`; others reject once hard stale. Always document the chosen policy.
+Optional hard cap: some services keep serving stale data until `hardTTL`; others reject once hard stale. Always document the chosen policy.
 
 - Short soft TTL (1-5 min)
 - Hard service boundary with 503 or explicit empty/error
@@ -215,7 +215,7 @@ const SIDE_DATA_SOFT_TTL_MS = 3600_000;  // 1 hour
 ```
 
 - Longer TTL (30min - 1hr)
-- Can serve stale without error up to `maxServeStaleMs`
+- Can serve stale without error up to `hardTTL`
 - `Cache-Control: s-maxage=3600`
 
 ### Historical/Static Data
@@ -323,16 +323,16 @@ const marketCache = new Cache({ ttl: SOURCE_CADENCES.marketData });
 const incentiveCache = new Cache({ ttl: SOURCE_CADENCES.incentiveData });
 ```
 
-**Rule**: Set `softTTL` based on the freshest source that materially affects correctness; keep `maxServeStaleMs` aligned with the strictest acceptable serving window.
+**Rule**: Set `softTTL` based on the freshest source that materially affects correctness; keep `hardTTL` aligned with the strictest acceptable serving window.
 
 ## 11. API Service Best Practices
 
 Use these as the default standard for future API services:
 
-- Define `softTTL`, `maxServeStaleMs`, and `fallbackMode` for every cache or snapshot.
+- Define `softTTL`, `hardTTL`, and `fallbackMode` for every cache or snapshot.
 - Prefer one source of truth for freshness metadata; do not split the same meaning across multiple env vars.
 - Reuse base time constants, but keep semantic names distinct.
-- Use `maxServeStaleMs` for the actual service boundary, not as a vague fallback label.
+- Use `hardTTL` for the actual service boundary, not as a vague fallback label.
 - Keep request handlers read-only; refresh in cron or explicit warmers.
 - Emit `generatedAt`, `ageMs`, `staleTimeMs`, and `fallbackReason` when data can age.
 - If a service can return old data safely, document the maximum age explicitly.

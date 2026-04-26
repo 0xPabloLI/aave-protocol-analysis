@@ -23,13 +23,16 @@ const merklLimitedFetch = createMerklConcurrencyLimitedFetch(
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
 const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
-const OPPORTUNITIES_CACHE_TTL_MS = resolveCacheTtlMs(
-  process.env.MERKL_OPPORTUNITIES_CACHE_TTL_MS,
-  1 * 60 * 1000
+const MERKL_DEFAULT_OPPORTUNITIES_SOFT_TTL_MS = 1 * 60 * 1000;
+const MERKL_DEFAULT_HARD_TTL_MS = 10 * 60 * 1000;
+
+const OPPORTUNITIES_SOFT_TTL_MS = resolveCacheTtlMs(
+  process.env.MERKL_OPPORTUNITIES_SOFT_TTL_MS,
+  MERKL_DEFAULT_OPPORTUNITIES_SOFT_TTL_MS
 );
-const MERKL_MAX_SERVE_STALE_MS = resolveCacheTtlMs(
-  process.env.MERKL_MAX_SERVE_STALE_MS,
-  10 * 60 * 1000
+const MERKL_HARD_TTL_MS = resolveCacheTtlMs(
+  process.env.MERKL_HARD_TTL_MS,
+  MERKL_DEFAULT_HARD_TTL_MS
 );
 
 function sleep(ms: number): Promise<void> {
@@ -378,7 +381,7 @@ const getSnapshotAgeMs = (iso?: string): number | null => {
 const isFallbackSnapshotFreshEnough = (snapshot: MerklFallbackSnapshot): boolean => {
   const ageMs = getSnapshotAgeMs(snapshot.lastSuccessfulAt);
   if (ageMs === null) return false;
-  return ageMs <= MERKL_MAX_SERVE_STALE_MS;
+  return ageMs <= MERKL_HARD_TTL_MS;
 };
 
 const persistMerklArtifacts = async (payload: MerklArtifactsPayload): Promise<void> => {
@@ -666,7 +669,7 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
     logger.info('🔄 Fetching Merkl opportunities for Aave + Tydro (LIVE, campaigns=true, short-page pagination)...');
     const allOpportunities = (await fetchMerklOpportunitiesSnapshot({
       baseUrl: 'https://api.merkl.xyz/v4',
-      ttlMs: OPPORTUNITIES_CACHE_TTL_MS,
+      ttlMs: OPPORTUNITIES_SOFT_TTL_MS,
       fetchImpl: fetch as unknown as typeof globalThis.fetch,
     })) as MerklOpportunity[];
     lastMerklFetchError = null;
@@ -882,7 +885,7 @@ export async function processMerklData(
     if (fallback && !isFallbackSnapshotFreshEnough(fallback)) {
       const fallbackAgeMs = getSnapshotAgeMs(fallback.lastSuccessfulAt);
       logger.warn(
-        `⚠️ Merkl fallback snapshot expired (max ${Math.round(MERKL_MAX_SERVE_STALE_MS / 1000)}s, age=${
+        `⚠️ Merkl fallback snapshot expired (max ${Math.round(MERKL_HARD_TTL_MS / 1000)}s, age=${
           fallbackAgeMs === null ? 'unknown' : `${Math.round(fallbackAgeMs / 1000)}s`
         }); refusing stale fallback`
       );

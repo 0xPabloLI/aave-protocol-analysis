@@ -20,7 +20,7 @@ import { logger } from '../logger.js';
  */
 export async function getMarkets(req: Request, res: Response): Promise<void> {
   try {
-    const { payload, staleTimeMs, maxServeStaleMs, ageMs, isTooStale } = getMarketsData();
+    const { payload, staleTimeMs, hardTtlMs, ageMs, isTooStale } = getMarketsData();
 
     // If no snapshot yet (cold start before warmup completes)
     if (!payload) {
@@ -29,7 +29,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
         res.status(503).json({
           errorCode: 'MARKETS_SNAPSHOT_STALE',
           error: 'Service unavailable',
-          message: `Markets snapshot is too old to serve safely (ageMs=${ageMs ?? 'unknown'}, maxServeStaleMs=${maxServeStaleMs}).`,
+          message: `Markets snapshot is too old to serve safely (ageMs=${ageMs ?? 'unknown'}, hardTtlMs=${hardTtlMs}).`,
         });
         return;
       }
