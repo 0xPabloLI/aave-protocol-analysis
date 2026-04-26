@@ -3,7 +3,7 @@
 本文档整合了后端数据新鲜度机制、TTL 配置策略和缓存设计原则。
 
 **与代码对齐**：行为描述以 `backend/src` 现行实现为准。通用模式另见 `docs/reusable/caching-data-freshness-patterns.md`（避免重复粘贴长模板）。
-**命名说明**：内部常量与环境变量已统一为 `*_MAX_SERVE_STALE_MS`。
+**命名说明**：内部常量与环境变量已统一为 `*_SOFT_TTL_MS` / `*_HARD_TTL_MS`。
 
 ---
 
@@ -14,11 +14,23 @@
 | Term | Meaning | Example |
 |------|------|------|
 | `writeInterval` | Producer or cron refresh cadence | markets cron every 1 min |
-| `softTTL` | Age after which data is considered stale | `marketsDataStaleThreshold = 60s` |
-| `maxServeStaleMs` | Oldest age allowed to serve | `marketsServeHardStaleMax = 5m` |
-| `fallbackMode` | What happens when refresh fails | reuse previous snapshot / return error |
+| `softTTL` | Age after which data is considered stale (still served, marked stale) | `marketsSoftTtlMs = 60s` |
+| `hardTTL` | Oldest age allowed to serve; beyond this, reject or return error | `marketsHardTtlMs = 5m` |
+| `singleTTL` | Single hard boundary with fallback defaults (no soft/hard split) | `onchainTtlMs = 30m` |
+| `fallbackMode` | What happens when refresh fails | reuse previous snapshot / return error / use defaults |
 
-**Rule**: `softTTL` should fit the product's freshness tolerance. `writeInterval` is a refresh cadence, not a hard upper bound; some caches intentionally use a longer `softTTL` or `maxServeStaleMs` than the write cadence when best-effort cron is acceptable.
+**Rule**: `softTTL` should fit the product's freshness tolerance. `writeInterval` is a refresh cadence, not a hard upper bound.
+
+**Two TTL patterns**:
+
+| Pattern | Behavior | When to use |
+|---|---|---|
+| **soft/hard两级** | soft 内正常返回；soft~hard 间返回旧数据+标记stale；hard外拒绝服务(503/null) | 公开API需要向调用方暴露陈旧程度（如markets的 `staleTimeMs`） |
+| **单TTL+兜底** | TTL内用缓存；过期直接丢弃，用安全默认值填充 | 内部缓存有可靠默认值，不需要向调用方暴露陈旧状态（如on-chain per-pool） |
+
+> **共同前提**：两者都是 **cron-write / API-read-only** 模式（请求不触发刷新）。区别仅在过期后的处理策略。
+
+On-chain data (`deficit`, `baseVariableBorrowRate`) 使用**单TTL+兜底**模式：过期条目直接从结果中排除，markets层自动补默认值（`deficit="0"`，利率可计算时照算），不需要区分soft/hard。
 
 ### 选择 TTL 前先验证
 
@@ -45,7 +57,7 @@
 
 ## Model
 
-> 下表是唯一的 freshness source：它同时表达 endpoint、cache layer、`writeInterval`、`softTTL`、`maxServeStaleMs` 和 `fallbackMode`。
+> 下表是唯一的 freshness source：它同时表达 endpoint、cache layer、`writeInterval`、`softTTL`、`hardTTL` 和 `fallbackMode`。
 
 ### Freshness Matrix
 
@@ -58,12 +70,12 @@
 
 | Endpoint | Object | Cache layer | writeInterval | softTTL | hardTTL | fallbackMode | Notes |
 |---|---|---|---|---|---|---|---|
-| `GET /api/markets` | Markets snapshot | 📸 In-memory snapshot | `0 * * * * *` | `marketsDataStaleThreshold = 60s` | `marketsServeHardStaleMax = 5m` | 刷新失败保留上一轮快照；冷启动未预热则 `503 MARKETS_SNAPSHOT_NOT_READY`；超 hardTTL 返回 `503 MARKETS_SNAPSHOT_STALE` | `staleTimeMs` 只做前端提示 |
-| `GET /api/markets` | On-chain per-pool cache | 🗂️ Pure in-memory cache | `10 * * * * *` | `onchainCacheTtl = 30m` | `onchainCacheTtl = 30m` | 过期条目不参与合并；缺失时回退 `deficit=0` + base rate 计算 | 仅影响 markets 合并字段 |
-| `GET /api/meta/side-data` | Forecast snapshot | 📸 In-memory snapshot | `30 */10 * * * *` | `merklForecastResultDefault = 10m` | `MERKL_FORECAST_SNAPSHOT_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮 snapshot；无旧快照时返回 `503 FORECAST_SNAPSHOT_NOT_READY` | `forecast.staleTimeMs` = snapshot 发布节奏 |
-| `GET /api/meta/side-data` | Forecast opportunity-meta cache | 🗂️ Pure in-memory cache + 📄 Runtime bridge file | on-demand + `merklForecastOpportunityMetaDefault = 5m` | `merklForecastOpportunityMetaDefault = 5m` | `MERKL_FORECAST_OPPORTUNITY_META_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 先读 fresh lite file，再回退旧 cache | 供 forecast 计算和 runtime file 读取 |
-| `GET /api/meta/side-data` | Categories cache | 🗂️ Pure in-memory cache | `10 0 */6 * * *` | `coingeckoLongDataTtlMs = 6h` | `COINGECKO_CATEGORIES_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮缓存；否则返回错误 | `categories.staleTimeMs` |
-| `GET /api/meta/side-data` | FDV cache | 🗂️ Pure in-memory cache | `5 */5 * * * *` | `coingeckoFdv = 5m` | `COINGECKO_FDV_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮缓存；否则返回错误 | `fdv.staleTimeMs` |
+| `GET /api/markets` | Markets snapshot | 📸 In-memory snapshot | `0 * * * * *` | `marketsSoftTtlMs = 60s` | `marketsHardTtlMs = 5m` | 刷新失败保留上一轮快照；冷启动未预热则 `503 MARKETS_SNAPSHOT_NOT_READY`；超 hardTTL 返回 `503 MARKETS_SNAPSHOT_STALE` | `staleTimeMs` 只做前端提示 |
+| `GET /api/markets` | On-chain per-pool cache | 🗂️ Pure in-memory cache | `10 * * * * *` | — (单TTL) | **singleTTL = 30m** (`onchainTtlMs`) | 过期条目不参与合并；缺失时回退 `deficit=0` + base rate 计算 | 单TTL+兜底模式，无soft/hard分级；仅影响 markets 合并字段 |
+| `GET /api/meta/side-data` | Forecast snapshot | 📸 In-memory snapshot | `30 */10 * * * *` | `merklForecastResultDefault = 10m` | `MERKL_FORECAST_SNAPSHOT_HARD_TTL_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮 snapshot；无旧快照时返回 `503 FORECAST_SNAPSHOT_NOT_READY` | `forecast.staleTimeMs` = snapshot 发布节奏 |
+| `GET /api/meta/side-data` | Forecast opportunity-meta cache | 🗂️ Pure in-memory cache + 📄 Runtime bridge file | on-demand + `merklForecastOpportunityMetaDefault = 5m` | `merklForecastOpportunityMetaDefault = 5m` | `MERKL_FORECAST_OPPORTUNITY_META_HARD_TTL_MS`（默认 `max(3x TTL, 30m)`） | 先读 fresh lite file，再回退旧 cache | 供 forecast 计算和 runtime file 读取 |
+| `GET /api/meta/side-data` | Categories cache | 🗂️ Pure in-memory cache | `10 0 */6 * * *` | `coingeckoLongDataTtlMs = 6h` | `COINGECKO_CATEGORIES_HARD_TTL_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮缓存；否则返回错误 | `categories.staleTimeMs` |
+| `GET /api/meta/side-data` | FDV cache | 🗂️ Pure in-memory cache | `5 */5 * * * *` | `coingeckoFdv = 5m` | `COINGECKO_FDV_HARD_TTL_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮缓存；否则返回错误 | `fdv.staleTimeMs` |
 | `GET /api/meta/side-data` | Merkl metrics cache | 🗂️ Pure in-memory cache | on-demand dynamic TTL | `merklMetricsMin/Default/Max` | `merklMetricsMin/Default/Max` | per-campaign cadence detection；空结果优先复用上一轮非空缓存，超出硬上限才报错；**零基线（无 dailyRewardsRecords）最多容忍 30h（`merklForecastZeroBaselineMaxAgeMs = oneDay + sixHours`），超限后 campaign 从 forecast items 中排除** | `metricsCache` 按 campaignId 分桶 |
 
 > 说明：`fallbackMode` 已包含刷新失败时行为，`hardTTL` 是最终拒绝服务边界。
@@ -107,21 +119,39 @@
 | `BACKEND_SCHEDULE_CRON.coingeckoFdvWarmEveryFiveMinutesAtSecond5` | `5 */5 * * * *` | 调度 | FDV 每 5 分钟预热 | 与 `coingeckoFdv` TTL 对齐 |
 | `BACKEND_SCHEDULE_CRON.coingeckoCategoriesWarmEverySixHoursAtSecond10` | `10 0 */6 * * *` | 调度 | Categories 每 6 小时预热 | 与 `coingeckoLongDataTtlMs` 对齐 |
 | `BACKEND_SCHEDULE_CRON.campaignForecastWarmEveryTenMinutesAtSecond30` | `30 */10 * * * *` | 调度 | Forecast 每 10 分钟刷新 | 与 `merklForecastResultDefault` 对齐 |
-| `BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold` | 1m | 对外 staleTime | `GET /api/markets` 响应提示 | 软过期提示，不等于硬失败 |
-| `BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax` | 5m | 硬过期 | `GET /api/markets` 过旧则 503 | 防止无限期返回旧 markets 快照 |
-| `BACKEND_CACHE_TTL_MS.onchainCacheTtl` | 30m | 缓存 TTL | on-chain per-pool 缓存 | RPC 失败时允许复用 |
+| `BACKEND_CACHE_TTL_MS.marketsSoftTtlMs` | 1m | 对外 staleTime | `GET /api/markets` 响应提示 | 软过期提示，不等于硬失败 |
+| `BACKEND_CACHE_TTL_MS.marketsHardTtlMs` | 5m | 硬过期 | `GET /api/markets` 过旧则 503 | 防止无限期返回旧 markets 快照 |
+| `BACKEND_CACHE_TTL_MS.onchainTtlMs` | 30m | 单TTL（hard边界+兜底） | on-chain per-pool 缓存 | 过期条目直接排除，markets层补默认值；无soft/hard分级 |
 | `BACKEND_CACHE_TTL_MS.merklForecastResultDefault` | 10m | 缓存 TTL / 对外 staleTime | forecast 结果快照 | 与 forecast cron 对齐 |
 | `BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault` | 5m | 缓存 TTL | forecast opportunity-meta 内存缓存 | 机会元数据更频繁刷新 |
 | `BACKEND_CACHE_TTL_MS.merklLiteFileMaxAge` | 5m | 文件快照 TTL | `merkl-opportunity-meta-lite.json` 可接受年龄 | 超过则不再作为 fresh lite 文件 |
 | `BACKEND_CACHE_TTL_MS.merklOpportunitiesDefault` | 5m | 缓存 TTL | Merkl opportunities 拉取缓存 | root 侧机会列表缓存 |
 | `BACKEND_CACHE_TTL_MS.coingeckoLongDataTtlMs` | 6h | 缓存 TTL | CoinGecko categories + FDV parity monitor | 低频长周期数据 |
 | `BACKEND_CACHE_TTL_MS.coingeckoFdv` | 5m | 缓存 TTL / 对外 staleTime | FDV 列表缓存 | 与 FDV 预热 cron 对齐 |
-| `BACKEND_CACHE_TTL_MS.merklMetricsDefault` | 30m | 动态缓存默认 TTL | Merkl metrics 动态 TTL 的默认值 | cadence 识别失败时兜底 |
+| `BACKEND_CACHE_TTL_MS.merklMetricsDefault` | 30m | 动态softTTL默认值 | Merkl metrics 动态 TTL 的默认值 | cadence 识别失败时兜底；内部派生 hardTTL = max(soft×3, 30m) |
 | `BACKEND_CACHE_TTL_MS.merklMetricsMin` | 10m | 动态缓存下限 | Merkl metrics 动态 TTL 下限 | 防止刷新过频 |
 | `BACKEND_CACHE_TTL_MS.merklMetricsMax` | 6h | 动态缓存上限 | Merkl metrics 动态 TTL 上限 | 防止缓存过久 |
 | `BACKEND_CACHE_TTL_MS.merklMetricsEmpty` | 10m | 空数据 TTL | metrics 无 dailyRewardsRecords 时的缓存 TTL | 仅作为首次冷启动/无旧缓存时的回退值 |
 
-> 规则速记：`staleTime` 是给前端看的“建议刷新提示”；`TTL` 是缓存是否仍可复用；`hard stale` 是“过了就不该再服务”的边界；`cron` 是主动刷新节奏。三者不等价。
+### `MERKL_TTL` / `COINGECKO_TTL` — 派生 TTL 常量
+
+> 从 `BACKEND_CACHE_TTL_MS` 派生的最终 TTL 值，各 service/controller 仅 import 使用。hardTTL 统一由 `max(softTTL × 3, 30min)` 派生。
+
+| 常量 | 值 | 来源 | 消费者 |
+|---|---:|---|---|
+| `MERKL_TTL.forecastResultSoftTtlMs` | 10m | `merklForecastResultDefault` | `merklForecastService.ts` → 导出 `FORECAST_SOFT_TTL_MS` |
+| `MERKL_TTL.forecastOpportunityMetaSoftTtlMs` | 5m | `merklForecastOpportunityMetaDefault` | `merklForecastService.ts` |
+| `MERKL_TTL.forecastOpportunityMetaHardTtlMs` | 15m | max(5m×3, 30m) | `merklForecastService.ts` |
+| `MERKL_TTL.metricsSoftTtlMs` | 30m | `merklMetricsDefault` | `merklForecastService.ts` |
+| `MERKL_TTL.metricsHardTtlMs` | 90m | max(30m×3, 30m) | `merklForecastService.ts` |
+| `MERKL_TTL.forecastSnapshotHardTtlMs` | 30m | max(10m×3, 30m) | `merklForecastController.ts` |
+| `MERKL_TTL.opportunitiesSoftTtlMs` | 5m | `merklOpportunitiesDefault` | `merklOpportunityClient.ts` |
+| `COINGECKO_TTL.categoriesSoftTtlMs` | 6h | `coingeckoLongDataTtlMs` | `coingeckoController.ts` |
+| `COINGECKO_TTL.categoriesHardTtlMs` | 18h | max(6h×3, 30m) | `coingeckoController.ts` |
+| `COINGECKO_TTL.fdvSoftTtlMs` | 5m | `coingeckoFdv` | `coingeckoController.ts` |
+| `COINGECKO_TTL.fdvHardTtlMs` | 15m | max(5m×3, 30m) | `coingeckoController.ts` |
+
+> 规则速记：`staleTime` 是给前端看的"建议刷新提示"；`softTTL` 是软过期（视为陈旧但仍可服务）；`hardTTL` 是"过了就不该再服务"的边界；`singleTTL` 是单一边界+兜底默认值模式（如 onchain）；`cron` 是主动刷新节奏。所有 TTL 值为纯常量（`cacheTtl.ts`），各文件仅 import。hardTTL 默认从 softTTL 动态派生：`max(softTTL × 3, 30min)`。
 
 ### Merkl API Rate Limit & 并发控制
 

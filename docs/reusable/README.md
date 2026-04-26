@@ -27,7 +27,7 @@ This folder contains universal development patterns extracted from project exper
 
 ### Caching
 
-- **Separate write interval from serve window**: define `writeInterval`, `softTTL`, `maxServeStaleMs`, and `fallbackMode`
+- **Separate write interval from serve window**: define `writeInterval`, `softTTL`, `hardTTL`, and `fallbackMode`
 - **Layered fallback**: memory → file → online cache → upstream
 - **Atomic writes**: tmp + rename to prevent partial reads
 

@@ -242,7 +242,7 @@ export async function refreshOnchainCache(): Promise<void> {
 export function getOnchainDataFromCache(): Map<string, OnchainReserveData> {
   const result = new Map<string, OnchainReserveData>();
   const now = Date.now();
-  const ttl = BACKEND_CACHE_TTL_MS.onchainCacheTtl;
+  const ttl = BACKEND_CACHE_TTL_MS.onchainTtlMs;
 
   for (const [poolKey, entry] of poolCache) {
     const age = now - entry.updatedAt;
@@ -270,7 +270,7 @@ export function getOnchainCacheStatus(): {
   oldestUpdateMs: number | null;
 } {
   const now = Date.now();
-  const ttl = BACKEND_CACHE_TTL_MS.onchainCacheTtl;
+  const ttl = BACKEND_CACHE_TTL_MS.onchainTtlMs;
   let freshPools = 0;
   let stalePools = 0;
   let reserveCount = 0;

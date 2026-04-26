@@ -26,7 +26,7 @@
 
 ## Freshness Contract
 
-API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即“建议刷新提示”而非最终服务边界。真正的 `maxServeStaleMs` 由后端 freshness 文档定义；当接口需要硬边界或 fallback 策略时，以后端实现和 `docs/backend/data-freshness-mechanism.md` 为准。
+API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即"建议刷新提示"而非最终服务边界。真正的 `hardTTL` 由后端 freshness 文档定义；当接口需要硬边界或 fallback 策略时，以后端实现和 `docs/backend/data-freshness-mechanism.md` 为准。
 
 | Endpoint | `staleTimeMs` 语义 | 备注 |
 |---|---|---|

@@ -8,7 +8,7 @@
  * 
  * Architecture:
  * - Markets: cron every 1 minute (see updateScheduler) calls refreshMarketsSnapshot()
- * - On-chain data: separate cron every 1 minute at :10; per-pool cache TTL 30m (onchainCacheTtl)
+ * - On-chain data: separate cron every 1 minute at :10; per-pool cache TTL 30m (onchainTtlMs)
  * - At merge time, on-chain cache is read (never blocks markets fetch)
  * - If on-chain data missing, fallback calculation for baseVariableBorrowRate
  */
@@ -78,11 +78,11 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         const previous = snapshot;
         if (previous) {
           const ageMs = Date.now() - previous.fetchedAt;
-          if (ageMs <= BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax) {
+          if (ageMs <= BACKEND_CACHE_TTL_MS.marketsHardTtlMs) {
             logger.warn(
               `⚠️ Markets refresh returned empty dataset; keeping previous snapshot ` +
-              `(age=${Math.round(ageMs / 1000)}s, maxServeStale=${Math.round(
-                BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax / 1000
+              `(age=${Math.round(ageMs / 1000)}s, hardTtl=${Math.round(
+                BACKEND_CACHE_TTL_MS.marketsHardTtlMs / 1000
               )}s)`
             );
             return previous;
@@ -174,7 +174,7 @@ export function getMarketsSnapshot(): MarketsSnapshot | null {
 export function getMarketsData(): {
   payload: MarketsPayload | null;
   staleTimeMs: number;
-  maxServeStaleMs: number;
+  hardTtlMs: number;
   ageMs: number | null;
   isTooStale: boolean;
 } {
@@ -182,27 +182,27 @@ export function getMarketsData(): {
     logger.warn('Markets snapshot not yet populated; returning null');
     return {
       payload: null,
-      staleTimeMs: BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold,
-      maxServeStaleMs: BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax,
+      staleTimeMs: BACKEND_CACHE_TTL_MS.marketsSoftTtlMs,
+      hardTtlMs: BACKEND_CACHE_TTL_MS.marketsHardTtlMs,
       ageMs: null,
       isTooStale: false,
     };
   }
 
   const ageMs = Date.now() - snapshot.fetchedAt;
-    const isTooStale = ageMs > BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax;
+    const isTooStale = ageMs > BACKEND_CACHE_TTL_MS.marketsHardTtlMs;
   if (isTooStale) {
     logger.warn(
       `Markets snapshot too stale to serve (age=${Math.round(ageMs / 1000)}s, max=${Math.round(
-                BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax / 1000
+                BACKEND_CACHE_TTL_MS.marketsHardTtlMs / 1000
       )}s)`
     );
   }
 
   return {
     payload: isTooStale ? null : snapshot.payload,
-    staleTimeMs: BACKEND_CACHE_TTL_MS.marketsDataStaleThreshold,
-      maxServeStaleMs: BACKEND_CACHE_TTL_MS.marketsServeHardStaleMax,
+    staleTimeMs: BACKEND_CACHE_TTL_MS.marketsSoftTtlMs,
+      hardTtlMs: BACKEND_CACHE_TTL_MS.marketsHardTtlMs,
     ageMs,
     isTooStale,
   };
@@ -303,7 +303,7 @@ export async function refreshV3Snapshot(): Promise<MarketsSnapshot | null> {
         const previous = v3Snapshot;
         if (previous) {
           const ageMs = Date.now() - previous.fetchedAt;
-          if (ageMs <= BACKEND_CACHE_TTL_MS.v3ServeHardStaleMax) {
+          if (ageMs <= BACKEND_CACHE_TTL_MS.v3TtlMs) {
             logger.warn(
               `⚠️ [V3] V3 refresh returned empty dataset; keeping previous V3 snapshot ` +
               `(age=${Math.round(ageMs / 1000)}s)`
@@ -364,7 +364,7 @@ export async function refreshV4Snapshot(): Promise<MarketsSnapshot | null> {
         const previous = v4Snapshot;
         if (previous) {
           const ageMs = Date.now() - previous.fetchedAt;
-          if (ageMs <= BACKEND_CACHE_TTL_MS.v4ServeHardStaleMax) {
+          if (ageMs <= BACKEND_CACHE_TTL_MS.v4TtlMs) {
             logger.warn(
               `⚠️ [V4] V4 refresh returned empty dataset; keeping previous V4 snapshot ` +
               `(age=${Math.round(ageMs / 1000)}s)`
@@ -425,13 +425,13 @@ export function getMergedV3V4Data(): {
 
   if (v3Snapshot) {
     v3AgeMs = now - v3Snapshot.fetchedAt;
-    v3IsTooStale = v3AgeMs > BACKEND_CACHE_TTL_MS.v3ServeHardStaleMax;
+    v3IsTooStale = v3AgeMs > BACKEND_CACHE_TTL_MS.v3TtlMs;
     if (!v3IsTooStale) {
       v3Data = v3Snapshot.payload.data;
     } else {
       logger.warn(
         `[V3] V3 snapshot too stale to serve (age=${Math.round(v3AgeMs / 1000)}s, ` +
-        `max=${Math.round(BACKEND_CACHE_TTL_MS.v3ServeHardStaleMax / 1000)}s)`
+        `max=${Math.round(BACKEND_CACHE_TTL_MS.v3TtlMs / 1000)}s)`
       );
     }
   }
@@ -443,13 +443,13 @@ export function getMergedV3V4Data(): {
 
   if (v4Snapshot) {
     v4AgeMs = now - v4Snapshot.fetchedAt;
-    v4IsTooStale = v4AgeMs > BACKEND_CACHE_TTL_MS.v4ServeHardStaleMax;
+    v4IsTooStale = v4AgeMs > BACKEND_CACHE_TTL_MS.v4TtlMs;
     if (!v4IsTooStale) {
       v4Data = v4Snapshot.payload.data;
     } else {
       logger.warn(
         `[V4] V4 snapshot too stale to serve (age=${Math.round(v4AgeMs / 1000)}s, ` +
-        `max=${Math.round(BACKEND_CACHE_TTL_MS.v4ServeHardStaleMax / 1000)}s)`
+        `max=${Math.round(BACKEND_CACHE_TTL_MS.v4TtlMs / 1000)}s)`
       );
     }
   }
