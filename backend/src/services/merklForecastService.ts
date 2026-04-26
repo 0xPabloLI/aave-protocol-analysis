@@ -101,6 +101,7 @@ interface CampaignOpportunityCacheEntry {
 const inFlight = new Map<string, Promise<MerklForecastState>>();
 const metricsCache = new Map<string, MetricsCacheEntry>();
 let campaignOpportunityCache: CampaignOpportunityCacheEntry | null = null;
+const zeroBaselineFirstSeenAt = new Map<string, number>();
 
 interface CampaignSnapshotLite {
   id: string;
@@ -585,7 +586,9 @@ const getCachedOrFetchMetrics = async (
       return { raw: previous!.raw, data: previous!.data };
     }
 
-    throw new Error(`Merkl metrics refresh returned empty for ${campaignId} and no fresh fallback cache is available`);
+    logger.warn(
+      `⚠️ Merkl metrics returned empty dailyRewardsRecords for ${campaignId}; using zero-distributed baseline`
+    );
   }
 
   metricsCache.set(campaignId, {
@@ -736,13 +739,26 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         metrics,
         campaignOpportunityMeta.useTokenRateInMetrics
       );
-      if (dailyRewardsRecords.length === 0) {
-        throw new Error(`Metrics unavailable for campaign ${campaignId}; forecast disabled`);
+      const isZeroBaseline = dailyRewardsRecords.length === 0;
+      if (isZeroBaseline) {
+        const now = Date.now();
+        const firstSeen = zeroBaselineFirstSeenAt.get(campaignId) ?? now;
+        if (!zeroBaselineFirstSeenAt.has(campaignId)) {
+          zeroBaselineFirstSeenAt.set(campaignId, now);
+        }
+        const ageMs = now - firstSeen;
+        if (ageMs > BACKEND_CACHE_TTL_MS.merklForecastZeroBaselineMaxAgeMs) {
+          throw new Error(
+            `Campaign ${campaignId} has had no Merkl metrics for ${Math.round(ageMs / 3_600_000)}h ` +
+            `(max=${BACKEND_CACHE_TTL_MS.merklForecastZeroBaselineMaxAgeMs / 3_600_000}h); forecast excluded`
+          );
+        }
+      } else {
+        zeroBaselineFirstSeenAt.delete(campaignId);
       }
-      const distributedSoFar = Math.min(
-        estimateDistributedSoFar(dailyRewardsRecords, startTs, endTs, nowTs),
-        totalBudget
-      );
+      const distributedSoFar = isZeroBaseline
+        ? 0
+        : Math.min(estimateDistributedSoFar(dailyRewardsRecords, startTs, endTs, nowTs), totalBudget);
       const aprCap =
         campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
         campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'

@@ -64,7 +64,7 @@
 | `GET /api/meta/side-data` | Forecast opportunity-meta cache | 🗂️ Pure in-memory cache + 📄 Runtime bridge file | on-demand + `merklForecastOpportunityMetaDefault = 5m` | `merklForecastOpportunityMetaDefault = 5m` | `MERKL_FORECAST_OPPORTUNITY_META_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 先读 fresh lite file，再回退旧 cache | 供 forecast 计算和 runtime file 读取 |
 | `GET /api/meta/side-data` | Categories cache | 🗂️ Pure in-memory cache | `10 0 */6 * * *` | `coingeckoLongDataTtlMs = 6h` | `COINGECKO_CATEGORIES_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮缓存；否则返回错误 | `categories.staleTimeMs` |
 | `GET /api/meta/side-data` | FDV cache | 🗂️ Pure in-memory cache | `5 */5 * * * *` | `coingeckoFdv = 5m` | `COINGECKO_FDV_MAX_SERVE_STALE_MS`（默认 `max(3x TTL, 30m)`） | 刷新失败时在窗口内复用上一轮缓存；否则返回错误 | `fdv.staleTimeMs` |
-| `GET /api/meta/side-data` | Merkl metrics cache | 🗂️ Pure in-memory cache | on-demand dynamic TTL | `merklMetricsMin/Default/Max` | `merklMetricsMin/Default/Max` | per-campaign cadence detection；空结果优先复用上一轮非空缓存，超出硬上限才报错 | `metricsCache` 按 campaignId 分桶 |
+| `GET /api/meta/side-data` | Merkl metrics cache | 🗂️ Pure in-memory cache | on-demand dynamic TTL | `merklMetricsMin/Default/Max` | `merklMetricsMin/Default/Max` | per-campaign cadence detection；空结果优先复用上一轮非空缓存，超出硬上限才报错；**零基线（无 dailyRewardsRecords）最多容忍 30h（`merklForecastZeroBaselineMaxAgeMs = oneDay + sixHours`），超限后 campaign 从 forecast items 中排除** | `metricsCache` 按 campaignId 分桶 |
 
 > 说明：`fallbackMode` 已包含刷新失败时行为，`hardTTL` 是最终拒绝服务边界。
 

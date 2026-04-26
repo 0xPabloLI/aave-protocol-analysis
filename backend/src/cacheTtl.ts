@@ -73,4 +73,7 @@ export const BACKEND_CACHE_TTL_MS = {
   merklMetricsMax: BACKEND_TIME_MS.sixHours,
   // Empty = no dailyRewardsRecords yet; retry more frequently (below clamp min is intentional).
   merklMetricsEmpty: BACKEND_TIME_MS.tenMinutes,
+  // Zero-baseline max age: 1 day (typical Merkl metrics cadence) + 6h (merklMetricsMax buffer).
+  // Beyond this window, zero-distributed forecast is considered unreliable; campaign is excluded.
+  merklForecastZeroBaselineMaxAgeMs: BACKEND_TIME_MS.oneDay + BACKEND_TIME_MS.sixHours,
 } as const;
