@@ -31,7 +31,7 @@ import {
   checkAndReportSessionStatus,
   closeBrowserInstances
 } from './cloudflare-browser.js';
-import { fetchV4MarketsData, bigintReplacer } from './v4-fetcher.js';
+import { fetchV4ReservesData, bigintReplacer } from './v4-fetcher.js';
 import type { V4FetchResult } from './v4-fetcher.js';
 
 interface NetworkInfo {
@@ -553,7 +553,7 @@ export async function createUnifiedBaseDataset(v3Markets: any[], options?: {
   try {
     // Option 1: V4 now has retry logic (3 attempts with backoff), matching V3 reliability.
     // Option 2: When v4Fatal=true, V4 failure throws (equal importance to V3).
-    const v4Result = await fetchV4MarketsData({ throwOnFinalFailure: v4Fatal });
+    const v4Result = await fetchV4ReservesData({ throwOnFinalFailure: v4Fatal });
     v4Dataset = v4Result.mapped as unknown as FormattedReserveData[];
     v4Raw = v4Result.raw;
     if (v4Dataset.length > 0) {
@@ -1528,10 +1528,10 @@ export async function fetchV3MarketsData(): Promise<MarketsPayload> {
  * Used by Option 3's separate V4 cache refresh.
  */
 // ts-prune-ignore-next
-export async function fetchV4MarketsDataOnly(): Promise<MarketsPayload> {
+export async function fetchV4MarketsData(): Promise<MarketsPayload> {
   logger.info('🔄 [V4] Fetching V4 reserves data...');
 
-  const v4Result = await fetchV4MarketsData();
+  const v4Result = await fetchV4ReservesData();
   const v4Dataset = v4Result.mapped as unknown as FormattedReserveData[];
 
   if (v4Dataset.length === 0) {

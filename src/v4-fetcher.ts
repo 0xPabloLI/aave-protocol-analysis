@@ -334,7 +334,7 @@ const V4_MAX_RETRIES = 3;
 const V4_RETRY_BASE_DELAY_MS = 2000; // 2s base, then 4s, 6s
 
 /**
- * Fetch V4 markets data with retry logic (matches V3 reliability).
+ * Fetch V4 reserves data with retry logic (matches V3 reliability).
  *
  * Retry strategy:
  * - Up to 3 attempts total
@@ -345,7 +345,7 @@ const V4_RETRY_BASE_DELAY_MS = 2000; // 2s base, then 4s, 6s
  * @param throwOnFinalFailure - If true, throws on final failure instead of returning empty
  */
 // ts-prune-ignore-next
-export async function fetchV4MarketsData(
+export async function fetchV4ReservesData(
   options?: { maxRetries?: number; throwOnFinalFailure?: boolean }
 ): Promise<V4FetchResult> {
   const maxRetries = options?.maxRetries ?? V4_MAX_RETRIES;
