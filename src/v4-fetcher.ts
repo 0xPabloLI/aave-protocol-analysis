@@ -88,9 +88,12 @@ function toFiniteNumber(value: unknown): number | null {
 }
 
 /**
- * Build an index of HubAsset data keyed by underlying token address + chainId
+ * Build an index of HubAsset data keyed by (chainId:tokenAddress:hubId)
  * so we can look up rate parameters (baseBorrowRate, slopes, liquidityFee, etc.)
  * for each reserve.
+ *
+ * Key includes hubId because the same token can have different HubAsset data
+ * in different hubs on the same chain (e.g., Core vs Prime on Ethereum).
  */
 interface HubAssetInfo {
   utilizationRate?: number;
@@ -165,7 +168,10 @@ async function fetchHubAssetIndex(chainIds: number[]): Promise<{ index: Map<stri
     for (const asset of assetsResult.value) {
       const tokenAddress = (asset as any).underlying?.address?.toLowerCase?.() ?? '';
       if (!tokenAddress) continue;
-      const key = `${hubChainId}:${tokenAddress}`;
+      // Key includes hubId to handle multi-hub chains where the same token
+      // has different HubAsset data in different hubs (e.g., Core vs Prime on Ethereum)
+      const hubId = String(hub.id ?? '');
+      const key = `${hubChainId}:${tokenAddress}:${hubId}`;
 
       const settings = (asset as any).settings;
       const summary = (asset as any).summary;
@@ -314,7 +320,9 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     const borrowCapUsd = toFiniteNumber(r.settings?.borrowCap?.exchange) ?? undefined;
 
     // Utilization from HubAsset (reserve-level doesn't have it)
-    const hubAssetKey = `${chainIdNum}:${tokenAddressLower}`;
+    // Key includes hubId to match the correct HubAsset in multi-hub chains
+    const reserveHubId = String(r.asset?.hub?.id ?? '');
+    const hubAssetKey = `${chainIdNum}:${tokenAddressLower}:${reserveHubId}`;
     const hubInfo = hubAssetIndex.get(hubAssetKey);
     const utilizationPct = hubInfo?.utilizationRate !== undefined
       ? hubInfo.utilizationRate * 100
