@@ -530,9 +530,16 @@ async function fetchBrevisAprs(
 /**
  * Create the unified base dataset from V3 markets + V4 reserves.
  * Shared by both backend (fetchMarketsData) and root (fetchAaveMarkets).
+ *
+ * @param v3Markets - V3 market data from fetchAaveMarketData()
+ * @param options.v4Fatal - Option 2: If true, V4 fetch failure is fatal (throws).
+ *                           Makes V3 and V4 equally important — if either fails, the entire refresh fails.
+ *                           Default: false (V4 failure is non-fatal, graceful degradation).
  */
 // ts-prune-ignore-next
-export async function createUnifiedBaseDataset(v3Markets: any[]): Promise<{
+export async function createUnifiedBaseDataset(v3Markets: any[], options?: {
+  v4Fatal?: boolean;
+}): Promise<{
   baseDataset: FormattedReserveData[];
   v3Count: number;
   v4Count: number;
@@ -542,13 +549,29 @@ export async function createUnifiedBaseDataset(v3Markets: any[]): Promise<{
   const v3Dataset = createBaseDatasetFromV3Markets(v3Markets);
   let v4Dataset: FormattedReserveData[] = [];
   let v4Raw: V4FetchResult['raw'] = { reserves: [], hubAssets: [] };
+  const v4Fatal = options?.v4Fatal ?? false;
   try {
-    const v4Result = await fetchV4MarketsData();
+    // Option 1: V4 now has retry logic (3 attempts with backoff), matching V3 reliability.
+    // Option 2: When v4Fatal=true, V4 failure throws (equal importance to V3).
+    const v4Result = await fetchV4MarketsData({ throwOnFinalFailure: v4Fatal });
     v4Dataset = v4Result.mapped as unknown as FormattedReserveData[];
     v4Raw = v4Result.raw;
-    logger.info(`✅ Fetched ${v4Dataset.length} V4 reserves`);
+    if (v4Dataset.length > 0) {
+      logger.info(`✅ Fetched ${v4Dataset.length} V4 reserves`);
+    } else if (v4Fatal) {
+      // Option 2: Empty V4 dataset is fatal when v4Fatal=true
+      throw new Error('V4 data fetch returned empty dataset (v4Fatal=true)');
+    } else {
+      logger.warn(`⚠️ V4 data fetch returned empty dataset after retries (non-fatal)`);
+    }
   } catch (error) {
-    logger.error(`❌ V4 data fetching failed (non-fatal): ${error instanceof Error ? error.message : String(error)}`);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    if (v4Fatal) {
+      // Option 2: V4 failure is fatal — throw to make the entire refresh fail
+      logger.error(`❌ V4 data fetching failed (FATAL — v4Fatal=true): ${errorMsg}`);
+      throw new Error(`V4 data fetch failed (fatal): ${errorMsg}`);
+    }
+    logger.error(`❌ V4 data fetching failed (non-fatal): ${errorMsg}`);
   }
   const baseDataset = [...v3Dataset, ...v4Dataset];
   logger.info(`📊 Unified dataset: ${baseDataset.length} reserves (V3: ${v3Dataset.length}, V4: ${v4Dataset.length})`);
@@ -1366,7 +1389,9 @@ async function fetchAaveMarkets(): Promise<void> {
 // 导出数据获取函数供 backend 内化使用（cron-write/API-read-only 模式）
 // 返回内存中的 payload，不写文件
 // ts-prune-ignore-next
-export async function fetchMarketsData(): Promise<MarketsPayload> {
+export async function fetchMarketsData(options?: {
+  v4Fatal?: boolean;
+}): Promise<MarketsPayload> {
   // 🧹 启动时检查并清理 Cloudflare browser sessions
   logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
   await checkAndReportSessionStatus();
@@ -1376,7 +1401,9 @@ export async function fetchMarketsData(): Promise<MarketsPayload> {
   
   // 格式化数据（V3 + V4 unified）
   logger.info('\n📊 Formatting market data...');
-  const { baseDataset, v3Count, v4Count, v4Raw } = await createUnifiedBaseDataset(marketData.markets);
+  const { baseDataset, v3Count, v4Count, v4Raw } = await createUnifiedBaseDataset(marketData.markets, {
+    v4Fatal: options?.v4Fatal,
+  });
   const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
 
   // 并发获取 Merit、Merkl 和 Brevis 数据
@@ -1430,6 +1457,140 @@ export async function fetchMarketsData(): Promise<MarketsPayload> {
   });
 
   return payload;
+}
+
+// ============================================================
+// Option 3: Independent V3 and V4 fetch functions
+// ============================================================
+// These allow the backend to maintain separate V3 and V4 snapshots
+// with independent TTLs, error handling, and refresh cycles.
+// At API read time, both snapshots are merged.
+
+/**
+ * Fetch V3 markets data only (independent of V4).
+ * Used by Option 3's separate V3 cache refresh.
+ */
+// ts-prune-ignore-next
+export async function fetchV3MarketsData(): Promise<MarketsPayload> {
+  logger.info('🔧 [V3-only] Pre-flight check: Cloudflare browser session status...');
+  await checkAndReportSessionStatus();
+
+  const marketData = await fetchAaveMarketData();
+
+  logger.info('\n📊 [V3-only] Formatting V3 market data...');
+  const v3Dataset = createBaseDatasetFromV3Markets(marketData.markets);
+  const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(v3Dataset);
+
+  logger.info('🚀 [V3-only] Starting incentive data fetching concurrently...');
+
+  const meritPromise = fetchMeritData().catch((error) => {
+    logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return {} as MeritDataIndex;
+  });
+  const merklPromise = processMerklData({
+    reserveTokenPriceByChainAndAddress,
+  }).catch((error) => {
+    logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { index: {} as MerklDataIndex } as MerklProcessedData;
+  });
+  const brevisPromise = fetchBrevisAprs(v3Dataset).catch((error) => {
+    logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return {} as BrevisDataIndex;
+  });
+
+  const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
+
+  const meritData: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
+  const merklResult: MerklProcessedData =
+    results[1].status === 'fulfilled'
+      ? (results[1].value as MerklProcessedData)
+      : { index: {} as MerklDataIndex };
+  const merklData: MerklDataIndex = merklResult.index;
+  const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
+
+  const enrichedData = enrichDatasetWithIncentiveData(v3Dataset, meritData, merklData, brevisData);
+  const runtimeData = enrichedData.map(pruneReserveForRuntime);
+
+  logger.info(`🎯 [V3-only] Final V3 dataset contains ${runtimeData.length} reserves`);
+
+  return {
+    _metadata: {
+      timestamp: marketData.timestamp,
+      version: '2.0-runtime-minimal-v3only',
+      dataCount: runtimeData.length,
+      profile: 'runtime-minimal',
+    },
+    data: runtimeData,
+  };
+}
+
+/**
+ * Fetch V4 markets data only (independent of V3).
+ * Used by Option 3's separate V4 cache refresh.
+ */
+// ts-prune-ignore-next
+export async function fetchV4OnlyMarketsData(): Promise<MarketsPayload> {
+  logger.info('🔄 [V4-only] Fetching V4 reserves data...');
+
+  const v4Result = await fetchV4MarketsData();
+  const v4Dataset = v4Result.mapped as unknown as FormattedReserveData[];
+
+  if (v4Dataset.length === 0) {
+    logger.warn('⚠️ [V4-only] V4 data fetch returned empty dataset');
+    return {
+      _metadata: {
+        timestamp: new Date().toISOString(),
+        version: '2.0-runtime-minimal-v4only',
+        dataCount: 0,
+        profile: 'runtime-minimal',
+      },
+      data: [],
+    };
+  }
+
+  const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(v4Dataset);
+
+  logger.info('🚀 [V4-only] Starting incentive data fetching concurrently...');
+
+  const meritPromise = fetchMeritData().catch((error) => {
+    logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return {} as MeritDataIndex;
+  });
+  const merklPromise = processMerklData({
+    reserveTokenPriceByChainAndAddress,
+  }).catch((error) => {
+    logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { index: {} as MerklDataIndex } as MerklProcessedData;
+  });
+  const brevisPromise = fetchBrevisAprs(v4Dataset).catch((error) => {
+    logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return {} as BrevisDataIndex;
+  });
+
+  const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
+
+  const meritData: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
+  const merklResult: MerklProcessedData =
+    results[1].status === 'fulfilled'
+      ? (results[1].value as MerklProcessedData)
+      : { index: {} as MerklDataIndex };
+  const merklData: MerklDataIndex = merklResult.index;
+  const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
+
+  const enrichedData = enrichDatasetWithIncentiveData(v4Dataset, meritData, merklData, brevisData);
+  const runtimeData = enrichedData.map(pruneReserveForRuntime);
+
+  logger.info(`🎯 [V4-only] Final V4 dataset contains ${runtimeData.length} reserves`);
+
+  return {
+    _metadata: {
+      timestamp: new Date().toISOString(),
+      version: '2.0-runtime-minimal-v4only',
+      dataCount: runtimeData.length,
+      profile: 'runtime-minimal',
+    },
+    data: runtimeData,
+  };
 }
 
 /**

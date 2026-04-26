@@ -22,6 +22,9 @@ export const BACKEND_FETCH_TIMING_MS = {
 // Node-cron 6-field format (includes seconds): at second 0, every minute.
 export const BACKEND_SCHEDULE_CRON = {
   marketsBackupEveryMinuteAtSecond0: '0 * * * * *',
+  // Option 3: V4 data refresh on a separate schedule (every 1 min at second 5)
+  // This allows V4 to refresh independently from V3, with its own TTL and error handling.
+  v4DataRefreshEveryMinuteAtSecond5: '5 * * * * *',
   // On-chain data refresh: every 1 min at second 10 (per-chain concurrent, 30-min TTL)
   onchainDataWarmEveryMinuteAtSecond10: '10 * * * * *',
   coingeckoFdvWarmEveryFiveMinutesAtSecond5: '5 */5 * * * *',
@@ -36,6 +39,17 @@ export const BACKEND_CACHE_TTL_MS = {
   marketsServeHardStaleMax: BACKEND_TIME_MS.fiveMinutes,
   // On-chain data TTL: 30 min (deficit/baseVariableBorrowRate change infrequently)
   onchainCacheTtl: BACKEND_TIME_MS.thirtyMinutes,
+
+  // ============================================================
+  // Option 3: Independent V3 and V4 cache TTLs
+  // ============================================================
+  // V3 and V4 have separate snapshots with independent freshness policies.
+  // This allows one to fail without affecting the other's availability.
+  // At API read time, both snapshots are merged.
+  v3DataStaleThreshold: BACKEND_TIME_MS.oneMinute,
+  v3ServeHardStaleMax: BACKEND_TIME_MS.fiveMinutes,
+  v4DataStaleThreshold: BACKEND_TIME_MS.oneMinute,
+  v4ServeHardStaleMax: BACKEND_TIME_MS.fiveMinutes,
 
   // Merkl forecast family.
   // forecastResult aligned with metricsMin since underlying metrics data won't change faster.
