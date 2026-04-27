@@ -43,8 +43,8 @@
 |----------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
 | **tokenPrice** | Price 列 | Reserve | `r.summary?.supplied?.exchangeRate` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber()` 转换 | `reserve.size?.usdPerToken` ?? `reserve.usdExchangeRate` | `buildV3BaseDataset()` | `toFiniteNumber()` 取首个有效值 |
 | **reserveSizeUsd** | Total supplied / Supply Size / Size 列 | Reserve | `r.summary?.supplied?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplied?.exchange) ?? undefined` | `reserve.size?.usd` | `buildV3BaseDataset()` | `toFiniteNumber(reserve?.size?.usd) ?? undefined` |
-| **supplyCapUsd** | Supply cap / CapProgressRing | **Hub** | `r.settings?.supplyCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.supplyCap?.exchange) ?? undefined` | `reserve.supplyInfo?.supplyCap?.usd` | `buildV3BaseDataset()` | `parseFloat(supplyCapUsdRaw)` 或 `undefined` |
-| **borrowCapUsd** | Borrow cap / CapProgressRing | **Hub** | `r.settings?.borrowCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.borrowCap?.exchange) ?? undefined` | `reserve.borrowInfo?.borrowCap?.usd` | `buildV3BaseDataset()` | `parseFloat(borrowCapUsdRaw)` 或 `undefined` |
+| **supplyCapUsd** | Supply cap / CapProgressRing | **Reserve** | `r.settings?.supplyCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.supplyCap?.exchange) ?? undefined` | `reserve.supplyInfo?.supplyCap?.usd` | `buildV3BaseDataset()` | `parseFloat(supplyCapUsdRaw)` 或 `undefined` |
+| **borrowCapUsd** | Borrow cap / CapProgressRing | **Reserve** | `r.settings?.borrowCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.borrowCap?.exchange) ?? undefined` | `reserve.borrowInfo?.borrowCap?.usd` | `buildV3BaseDataset()` | `parseFloat(borrowCapUsdRaw)` 或 `undefined` |
 
 ### APY 与利率字段
 
@@ -155,17 +155,16 @@
 | **Size 列派生值** |
 | Total Supplied | Reserve | `reserveSizeUsd` (API 直接提供) | `marketsApiSerialize.ts` | 市场总供应量 |
 | Total Borrowed (USD) | Reserve | `totalVariableDebt / 10^decimals * tokenPrice` | `scenarioSize.ts:106-119` | 每个 reserve 独立的借款总额 |
-| Borrow Avail | **Hub** | `min(borrowCapUsd - borrowedUsd, poolLiquidityUsd)` | `scenarioSize.ts:173-193` | 基于 Hub 级 cap 和 liquidity |
 | Deficit (USD) | N/A | `deficit / 10^decimals * tokenPrice` | `deficit.ts:91-98` | V3 only，V4 默认 '0' |
 | Deficit Share Ratio | N/A | `deficitUsd / (deficitUsd + totalSuppliedUsd)` | `deficit.ts:100-111` | V3 only |
 | **Util 列派生值** |
 | Utilization | **Hub** | `utilizationPct` (API 直接提供) | `marketsApiSerialize.ts` | Hub 级利用率 |
 | Liquidity (USD) | **Hub** | `availableLiquidity / 10^decimals * tokenPrice` | `scenarioSize.ts:139-152` | 基于 Hub 级 availableLiquidity |
 | **Cap 相关派生值** |
-| Available to Supply | Mixed | `supplyCapUsd - reserveSizeUsd` | 派生 | Hub 级 cap - Reserve 级 supplied |
-| Supply Cap % | Mixed | `reserveSizeUsd / supplyCapUsd * 100` | 派生 | Reserve 级 supplied / Hub 级 cap |
-| Borrow Cap % | Mixed | `borrowedUsd / borrowCapUsd * 100` | 派生 | Reserve 级 borrowed / Hub 级 cap |
-| Available to Borrow | **Hub** | `min(borrowCapUsd - borrowed, poolLiquidityUsd)` | `scenarioSize.ts:173-193` | 基于 Hub 级 cap 和 liquidity |
+| Available to Supply | **Reserve** | `min(hubRemainingSupplyCap, spokeSupplyCapUsd - reserveSizeUsd)` | 派生 | Hub remaining + Spoke cap 取较小 |
+| Supply Cap % | **Reserve** | `reserveSizeUsd / min(spokeSupplyCapUsd, hubSupplyCapUsd) * 100` | 派生 | Spoke 实际供应 / 实际可用上限 |
+| Borrow Cap % | **Reserve** | `borrowedUsd / min(spokeBorrowCapUsd, hubBorrowCapUsd) * 100` | 派生 | Spoke 实际借款 / 实际可用上限 |
+| Borrow Avail (Available to Borrow) | **Reserve** | `min(spokeBorrowCapUsd - borrowedUsd, hubLiquidityUsd)` | `scenarioSize.ts:173-193` | Spoke cap - Hub liquidity 取较小 |
 | **Supply/Borrow 列派生值** |
 | Total Supply APY | **Hub** | `supplyApy + sum(supplyIncentives) + sum(meritSupplys) + sum(merklSupplys) + sum(brevisSupplys)` | `formatters.ts:371-374` | 基于 Hub 级 supplyApy 计算 |
 | Total Borrow APY | **Hub** | `borrowApy - sum(borrowIncentives) - sum(meritBorrows) - sum(merklBorrows) - sum(brevisBorrows)` | `formatters.ts:384-388` | 基于 Hub 级 borrowApy 计算 |
