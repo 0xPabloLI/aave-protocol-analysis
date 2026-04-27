@@ -130,7 +130,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
   }
   
   // 回退到内部 fetcher（本地开发或 Redis 不可用）
-  const payload = await fetchMarketsPayload();
+  const payload = await fetchMarketsData();
   snapshot = { payload, fetchedAt: Date.now() };
   return snapshot;
 }

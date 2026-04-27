@@ -49,7 +49,7 @@ flowchart LR
    IDX -- "writes" --> MARKETS
   MERIT -- "writes" --> TIMER
 
-  IDX -. "exports fetchMarketsPayload" .-> MKS
+  IDX -. "exports fetchMarketsData" .-> MKS
   FCS -- "reads" --> MKLITE
   FCS -. "uses data" .-> MOC
   MOC -. "uses data" .-> SHARED
@@ -114,7 +114,7 @@ flowchart TD
   D --> J["data/runtime/merkl-opportunity-meta-lite.json (runtime-lite)"]
   D --> R["@internal/aave-shared-config snapshot (memory)"]
    B --> K["data/debug/aave-formatted-data.full.json"]
-  CRON["Backend cron: refreshMarketsSnapshot"] --> MP["fetchMarketsPayload() same pipeline, in-memory"]
+  CRON["Backend cron: refreshMarketsSnapshot"] --> MP["fetchMarketsData() same pipeline, in-memory"]
   MP --> MS["marketsService memory snapshot"]
   L["backend GET /api/markets"] --> MS
   N["backend /api/meta/side-data (forecast.items)"] --> O["merklForecastService"]
@@ -136,7 +136,7 @@ flowchart TD
 
 ### Debug / Troubleshoot (human-facing first)
 - `data/debug/aave-formatted-data.full.json`
-  - Written when the **root** fetcher runs (`runMarketsFetcher` / CLI); not read by `GET /api/markets`. The backend serves markets from `marketsService` memory via `fetchMarketsPayload()` (same pipeline, no file read on the request path).
+  - Written when the **root** fetcher runs (`runMarketsFetcher` / CLI); not read by `GET /api/markets`. The backend serves markets from `marketsService` memory via `fetchMarketsData()` (same pipeline, no file read on the request path).
 - `data/debug/merkl-raw-data.json`
   - Full Merkl debug snapshot (raw/live opportunities + processed/index)
 - `data/debug/merit-raw-data.json`
@@ -170,7 +170,7 @@ flowchart TD
   C --> D["resolveUsdPriceWithPriority()"]
   D --> E["Merkl totalBudget"]
   D --> F["Brevis totalBudget"]
-  B --> G["fetchMarketsPayload()"]
+  B --> G["fetchMarketsData()"]
   G --> H["backend marketsService snapshot"]
   H --> I["GET /api/markets"]
 ```
