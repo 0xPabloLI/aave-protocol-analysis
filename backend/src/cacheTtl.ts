@@ -21,12 +21,8 @@ export const BACKEND_FETCH_TIMING_MS = {
 
 // Node-cron 6-field format (includes seconds): at second 0, every minute.
 export const BACKEND_SCHEDULE_CRON = {
-  // V3 and V4 refresh at the same time (parallel execution)
-  // They fetch from different data sources, so no resource contention
+  // Markets (V3+V4 merged) refresh every minute
   marketsBackupEveryMinuteAtSecond0: '0 * * * * *',
-  // Option 3: V4 data refresh at the same time as V3 (parallel, not sequential)
-  // V3 and V4 fetch from different API endpoints, so they can run concurrently
-  v4DataRefreshEveryMinuteAtSecond0: '0 * * * * *',
   // On-chain data refresh: every 1 min at second 10 (per-chain concurrent, 30-min TTL)
   onchainDataWarmEveryMinuteAtSecond10: '10 * * * * *',
   coingeckoFdvWarmEveryFiveMinutesAtSecond5: '5 */5 * * * *',
@@ -41,16 +37,6 @@ export const BACKEND_CACHE_TTL_MS = {
   marketsHardTtlMs: BACKEND_TIME_MS.fiveMinutes,
   // On-chain data TTL: 30 min (deficit/baseVariableBorrowRate change infrequently)
   onchainTtlMs: BACKEND_TIME_MS.thirtyMinutes,
-
-  // ============================================================
-  // V3 and V4 independent single-TTL (same pattern as onchainTtlMs)
-  // ============================================================
-  // V3 and V4 have separate snapshots with independent freshness policies.
-  // This allows one to fail without affecting the other's availability.
-  // At API read time, both snapshots are merged.
-  // Single hard boundary: expired data is excluded (no soft/hard split).
-  v3TtlMs: BACKEND_TIME_MS.fiveMinutes,
-  v4TtlMs: BACKEND_TIME_MS.fiveMinutes,
 
   // Merkl forecast family.
   // forecastResult aligned with metricsMin since underlying metrics data won't change faster.
