@@ -116,8 +116,6 @@ On-chain data (`deficit`, `baseVariableBorrowRate`) 使用**单 TTL+兜底**模�
 | `BACKEND_CACHE_TTL_MS.marketsSoftTtlMs` | 1m | 对外 staleTime | `GET /api/markets` 响应提示 | 软过期提示，不等于硬失败 |
 | `BACKEND_CACHE_TTL_MS.marketsHardTtlMs` | 5m | 硬过期 | `GET /api/markets` 过旧则 503 | 防止无限期返回旧 markets 快照 |
 | `BACKEND_CACHE_TTL_MS.onchainTtlMs` | 30m | 单TTL（hard边界+兜底） | on-chain per-pool 缓存 | 过期条目直接排除，markets层补默认值；无soft/hard分级 |
-| `BACKEND_CACHE_TTL_MS.v3TtlMs` | 5m | 单TTL（hard边界） | V3 snapshot 新鲜度判断 | 与 V4 独立；过期则标记 tooStale |
-| `BACKEND_CACHE_TTL_MS.v4TtlMs` | 5m | 单TTL（hard边界） | V4 snapshot 新鲜度判断 | 与 V3 独立；过期则标记 tooStale |
 | `BACKEND_CACHE_TTL_MS.merklForecastResultDefault` | 10m | 缓存 TTL / 对外 staleTime | forecast 结果快照 | 与 forecast cron 对齐 |
 | `BACKEND_CACHE_TTL_MS.merklForecastOpportunityMetaDefault` | 5m | 缓存 TTL | forecast opportunity-meta 内存缓存 | 机会元数据更频繁刷新 |
 | `BACKEND_CACHE_TTL_MS.merklLiteFileMaxAge` | 5m | 文件快照 TTL | `merkl-opportunity-meta-lite.json` 可接受年龄 | 超过则不再作为 fresh lite 文件 |
