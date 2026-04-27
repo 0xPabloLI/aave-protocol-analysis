@@ -150,18 +150,29 @@
 
 来自 `docs/api/field-glossary.md`:
 
-| 派生值 | 公式 | 代码位置 | V4 级别 | 说明 |
-|--------|------|---------|---------|------|
-| Total Supply APY | `supplyApy + sum(incentiveApy)` | `formatters.ts:371-374` | **Hub** | 基于 Hub 级 supplyApy 计算 |
-| Total Borrow APY | `borrowApy - sum(incentiveApy)` | `formatters.ts:384-388` | **Hub** | 基于 Hub 级 borrowApy 计算 |
-| Spread | `totalSupplyApy - totalBorrowApy` | `formatters.ts:392-395` | **Hub** | 基于两个 Hub 级 APY 计算 |
-| Total Borrowed (USD) | `totalVariableDebt / 10^decimals * tokenPrice` | `scenarioSize.ts:106-119` | Reserve | 每个 reserve 独立的借款总额 |
-| Pool Liquidity (USD) | `availableLiquidity / 10^decimals * tokenPrice` | `scenarioSize.ts:139-152` | **Hub** | 基于 Hub 级 availableLiquidity |
-| Deficit (USD) | `deficit / 10^decimals * tokenPrice` | `deficit.ts:91-98` | N/A | V3 only，V4 默认 '0' |
-| Deficit Share Ratio | `deficitUsd / (deficitUsd + totalSuppliedUsd)` | `deficit.ts:100-111` | N/A | V3 only |
-| Available to Borrow | `min(borrowCap - borrowed, poolLiquidity)` | `scenarioSize.ts:173-193` | **Hub** | 基于 Hub 级 cap 和 liquidity |
-| Available to Supply | `supplyCapUsd - reserveSizeUsd` | 派生 | Mixed | Hub 级 cap - Reserve 级 supplied |
-| Supply Cap % | `reserveSizeUsd / supplyCapUsd * 100` | 派生 | Mixed | Reserve 级 supplied / Hub 级 cap |
+| 派生值 | V4 级别 | 公式 | 代码位置 | 说明 |
+|--------|---------|------|---------|------|
+| **Size 列派生值** |
+| Total Supplied | Reserve | `reserveSizeUsd` (API 直接提供) | `marketsApiSerialize.ts` | 市场总供应量 |
+| Total Borrowed (USD) | Reserve | `totalVariableDebt / 10^decimals * tokenPrice` | `scenarioSize.ts:106-119` | 每个 reserve 独立的借款总额 |
+| Borrow Avail | **Hub** | `borrowCapUsd - borrowedUsd - poolLiquidityUsd` | `scenarioSize.ts:173-193` | 基于 Hub 级 cap 和 liquidity |
+| Deficit (USD) | N/A | `deficit / 10^decimals * tokenPrice` | `deficit.ts:91-98` | V3 only，V4 默认 '0' |
+| Deficit Share Ratio | N/A | `deficitUsd / (deficitUsd + totalSuppliedUsd)` | `deficit.ts:100-111` | V3 only |
+| **Util 列派生值** |
+| Utilization | **Hub** | `utilizationPct` (API 直接提供) | `marketsApiSerialize.ts` | Hub 级利用率 |
+| Liquidity (USD) | **Hub** | `availableLiquidity / 10^decimals * tokenPrice` | `scenarioSize.ts:139-152` | 基于 Hub 级 availableLiquidity |
+| **Cap 相关派生值** |
+| Available to Supply | Mixed | `supplyCapUsd - reserveSizeUsd` | 派生 | Hub 级 cap - Reserve 级 supplied |
+| Supply Cap % | Mixed | `reserveSizeUsd / supplyCapUsd * 100` | 派生 | Reserve 级 supplied / Hub 级 cap |
+| Borrow Cap % | Mixed | `borrowedUsd / borrowCapUsd * 100` | 派生 | Reserve 级 borrowed / Hub 级 cap |
+| Available to Borrow | **Hub** | `min(borrowCapUsd - borrowed, poolLiquidityUsd)` | `scenarioSize.ts:173-193` | 基于 Hub 级 cap 和 liquidity |
+| **Supply/Borrow 列派生值** |
+| Total Supply APY | **Hub** | `supplyApy + sum(incentiveApy)` | `formatters.ts:371-374` | 基于 Hub 级 supplyApy 计算 |
+| Total Borrow APY | **Hub** | `borrowApy - sum(incentiveApy)` | `formatters.ts:384-388` | 基于 Hub 级 borrowApy 计算 |
+| Supply Incentive APY | 外部 | `sum(supplyIncentives + meritSupplys + merklSupplys + brevisSupplys)` | `formatters.ts` | 外部激励合计 |
+| Borrow Incentive APY | 外部 | `sum(borrowIncentives + meritBorrows + merklBorrows + brevisBorrows)` | `formatters.ts` | 外部激励合计 |
+| **Spread 列** |
+| Spread | **Hub** | `totalSupplyApy - totalBorrowApy` | `formatters.ts:392-395` | 基于两个 Hub 级 APY 计算 |
 
 ---
 
