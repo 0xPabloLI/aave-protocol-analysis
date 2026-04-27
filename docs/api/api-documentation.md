@@ -40,6 +40,8 @@ API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即"建议刷�
 
 市场储备数据的完整结构，包含所有激励信息。
 
+> **前端字段映射**：各字段在前端界面中的展示名称、排序选项、派生计算公式见 [field-glossary.md](./field-glossary.md)。
+
 ```typescript
 interface FormattedReserveData {
   // 基础信息

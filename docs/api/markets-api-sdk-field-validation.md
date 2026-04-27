@@ -119,5 +119,13 @@ base-rate 校验报告见 `data/debug/base-rate-fallback-validation-report.json`
 
 ---
 
+---
+
+## 相关文档
+
+各字段的前端展示名称、排序选项、派生计算公式见 [field-glossary.md](./field-glossary.md)。
+
+---
+
 **校验日期**: 2026-03-15  
 **依据**: `backend/src/types/index.ts`（MarketWithSpread）、`src/index.ts`（createBaseDatasetFromMarkets）、`data/debug/aave-all-markets-data.json`（SDK 原始响应）
