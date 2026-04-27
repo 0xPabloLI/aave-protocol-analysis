@@ -94,7 +94,7 @@
 ### 5.2 中期（V4 incentive 开始出现时）
 
 1. **给 `FormattedReserveData` 加 `protocolVersion` 字段**（`'v3' | 'v4'`）
-   - `createBaseDatasetFromV3Markets()` 填 `'v3'`
+   - `buildV3BaseDataset()` 填 `'v3'`
    - `v4-fetcher.ts` 填 `'v4'`
    - 经过 `pruneReserveForRuntime()` 传递到 backend
 
@@ -121,7 +121,7 @@
 | Merkl 匹配 | `src/merkl-api.ts` | `findMatchingMerklOpportunities()` |
 | Brevis 索引构建 | `src/brevis-api.ts` | `fetchBrevisAprs()` 内部 |
 | V4 数据获取 | `src/v4-fetcher.ts` | `fetchAaveV4Reserves()` |
-| 统一数据集 | `src/index.ts` | `createUnifiedBaseDataset()` |
+| 统一数据集 | `src/index.ts` | `buildMarketsBaseDataset()` |
 
 ---
 

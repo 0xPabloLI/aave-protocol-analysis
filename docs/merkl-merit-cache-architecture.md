@@ -60,7 +60,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  A["src/index.ts fetchAaveMarketsData()"] --> B["src/merkl-api.ts processMerklData()"]
+  A["src/index.ts runMarketsFetcher()"] --> B["src/merkl-api.ts processMerklData()"]
   B --> C["@internal/aave-shared-config snapshot (raw opportunities[])"]
   C --> D["Merkl /v4/opportunities"]
   B -- "writes" --> E["data/runtime/merkl-opportunity-meta-lite.json"]
@@ -103,7 +103,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  A["Root CLI: fetchAaveMarketsData()"] --> B["/src/index.ts pipeline"]
+  A["Root CLI: runMarketsFetcher()"] --> B["/src/index.ts pipeline"]
   B --> C["Merit: /src/merit-api.ts"]
   B --> D["Merkl: /src/merkl-api.ts"]
   B --> E["Brevis"]
@@ -136,7 +136,7 @@ flowchart TD
 
 ### Debug / Troubleshoot (human-facing first)
 - `data/debug/aave-formatted-data.full.json`
-  - Written when the **root** fetcher runs (`fetchAaveMarketsData` / CLI); not read by `GET /api/markets`. The backend serves markets from `marketsService` memory via `fetchMarketsPayload()` (same pipeline, no file read on the request path).
+  - Written when the **root** fetcher runs (`runMarketsFetcher` / CLI); not read by `GET /api/markets`. The backend serves markets from `marketsService` memory via `fetchMarketsPayload()` (same pipeline, no file read on the request path).
 - `data/debug/merkl-raw-data.json`
   - Full Merkl debug snapshot (raw/live opportunities + processed/index)
 - `data/debug/merit-raw-data.json`
