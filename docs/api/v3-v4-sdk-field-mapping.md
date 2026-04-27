@@ -50,8 +50,8 @@
 
 | API 字段 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
 |----------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **supplyApy** | Supply > Native | Reserve | `r.summary?.supplyApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplyApy?.value) ?? undefined` | `reserve.supplyInfo?.apy?.value` | `createBaseDatasetFromV3Markets()` | 若 `supplyCap === 1` 则为 `undefined`，否则 `parseFloat(supplyApyValue)` |
-| **borrowApy** | Borrow > Native | Reserve | `r.summary?.borrowApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.borrowApy?.value) ?? undefined` | `reserve.borrowInfo?.apy?.value` | `createBaseDatasetFromV3Markets()` | `parseFloat(borrowApyValue)` 或 `undefined` |
+| **supplyApy** | Supply > Native | **Hub** | `r.summary?.supplyApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplyApy?.value) ?? undefined` | `reserve.supplyInfo?.apy?.value` | `createBaseDatasetFromV3Markets()` | 若 `supplyCap === 1` 则为 `undefined`，否则 `parseFloat(supplyApyValue)` |
+| **borrowApy** | Borrow > Native | **Hub** | `r.summary?.borrowApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.borrowApy?.value) ?? undefined` | `reserve.borrowInfo?.apy?.value` | `createBaseDatasetFromV3Markets()` | `parseFloat(borrowApyValue)` 或 `undefined` |
 | **utilizationPct** | Utilization 列 / Util% 指示条 | **Hub** | `hubInfo?.utilizationRate` | `fetchV4MarketsDataInner()` 内联 | `hubInfo.utilizationRate * 100`，从 HubAsset 索引查询 | `reserve.borrowInfo?.utilizationRate?.value` | `createBaseDatasetFromV3Markets()` | `toFiniteNumber(value)` × 100，负数则 `undefined` |
 | **availableLiquidity** | Pool liquidity / Liquidity | **Hub** | `hubInfo?.availableLiquidity` | `fetchV4MarketsDataInner()` 内联 | 从 `fetchHubAssetIndex()` 构建的索引获取 | `reserve.borrowInfo?.availableLiquidity?.amount?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` |
 | **totalVariableDebt** | Total borrowed / Borrow Size | Reserve | `r.summary?.borrowed?.amount?.onChainValue` | `fetchV4MarketsDataInner()` 内联 | `onChainValue.toString()` | `reserve.borrowInfo?.total?.amount?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` |
@@ -129,27 +129,39 @@
 
 **Reserve 级别但依赖 Hub 参数的字段**：
 
-| 字段 | 计算依赖 | 说明 |
-|------|----------|------|
-| `supplyApy` | `utilizationPct` + 利率模型参数 (Hub) | APY根据utilization实时计算，但曲线参数来自Hub |
-| `borrowApy` | `utilizationPct` + 利率模型参数 (Hub) | 同上 |
+| 字段 | V4 实际级别 | 说明 |
+|------|-------------|------|
+| `reserveSizeUsd` | Reserve | 每个 reserve 独立的实际供应额（Spoke 级别） |
+| `totalVariableDebt` | Reserve | 每个 reserve 独立的实际借款额（Spoke 级别） |
+
+**重要澄清 - 为什么 `supplyApy`/`borrowApy` 是 Hub 级别**：
+
+虽然这两个值从 `r.summary`（reserve 对象）获取，但它们在 V4 中是 **Hub 级别** 的：
+
+1. **计算公式**：APY = f(utilizationPct, 利率模型参数)，其中 utilizationPct 和利率参数都是 Hub 级别的
+2. **实际表现**：同一 Hub 内所有 Spoke 的 `supplyApy` 和 `borrowApy` 值**完全相同**
+3. **架构原因**：V4 的利率模型在 Hub 层统一计算，然后应用到所有 Spoke
+
+这与 V3 形成对比：V3 中每个 reserve 有独立的利率参数，所以 APY 可以不同；V4 中同一 Hub 内所有 reserves 的 APY 必然相同。
 
 ---
 
-## 前端派生值计算公式
+## 前端派生值计算公式（带 V4 级别标注）
 
 来自 `docs/api/field-glossary.md`:
 
-| 派生值 | 公式 | 代码位置 |
-|--------|------|---------|
-| Total Supply APY | `supplyApy + sum(incentiveApy)` | `formatters.ts:371-374` |
-| Total Borrow APY | `borrowApy - sum(incentiveApy)` | `formatters.ts:384-388` |
-| Spread | `totalSupplyApy - totalBorrowApy` | `formatters.ts:392-395` |
-| Total Borrowed (USD) | `totalVariableDebt / 10^decimals * tokenPrice` | `scenarioSize.ts:106-119` |
-| Pool Liquidity (USD) | `availableLiquidity / 10^decimals * tokenPrice` | `scenarioSize.ts:139-152` |
-| Deficit (USD) | `deficit / 10^decimals * tokenPrice` | `deficit.ts:91-98` |
-| Deficit Share Ratio | `deficitUsd / (deficitUsd + totalSuppliedUsd)` | `deficit.ts:100-111` |
-| Available to Borrow | `min(borrowCap - borrowed, poolLiquidity)` | `scenarioSize.ts:173-193` |
+| 派生值 | 公式 | 代码位置 | V4 级别 | 说明 |
+|--------|------|---------|---------|------|
+| Total Supply APY | `supplyApy + sum(incentiveApy)` | `formatters.ts:371-374` | **Hub** | 基于 Hub 级 supplyApy 计算 |
+| Total Borrow APY | `borrowApy - sum(incentiveApy)` | `formatters.ts:384-388` | **Hub** | 基于 Hub 级 borrowApy 计算 |
+| Spread | `totalSupplyApy - totalBorrowApy` | `formatters.ts:392-395` | **Hub** | 基于两个 Hub 级 APY 计算 |
+| Total Borrowed (USD) | `totalVariableDebt / 10^decimals * tokenPrice` | `scenarioSize.ts:106-119` | Reserve | 每个 reserve 独立的借款总额 |
+| Pool Liquidity (USD) | `availableLiquidity / 10^decimals * tokenPrice` | `scenarioSize.ts:139-152` | **Hub** | 基于 Hub 级 availableLiquidity |
+| Deficit (USD) | `deficit / 10^decimals * tokenPrice` | `deficit.ts:91-98` | N/A | V3 only，V4 默认 '0' |
+| Deficit Share Ratio | `deficitUsd / (deficitUsd + totalSuppliedUsd)` | `deficit.ts:100-111` | N/A | V3 only |
+| Available to Borrow | `min(borrowCap - borrowed, poolLiquidity)` | `scenarioSize.ts:173-193` | **Hub** | 基于 Hub 级 cap 和 liquidity |
+| Available to Supply | `supplyCapUsd - reserveSizeUsd` | 派生 | Mixed | Hub 级 cap - Reserve 级 supplied |
+| Supply Cap % | `reserveSizeUsd / supplyCapUsd * 100` | 派生 | Mixed | Reserve 级 supplied / Hub 级 cap |
 
 ---
 
