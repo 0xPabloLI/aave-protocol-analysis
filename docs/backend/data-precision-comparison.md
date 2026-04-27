@@ -8,7 +8,7 @@
 | **V4 SDK** | `@aave/client` GraphQL API + HubAsset settings | Most market data + `baseVariableBorrowRate` from HubAsset | V4 only |
 | **On-chain RPC** | `UiPoolDataProvider.getReservesHumanized()` | `deficit`, `baseVariableBorrowRate` | V3 only |
 
-### Data Merge Priority (`mergeOnchainData`)
+### Data Merge Priority (on-chain merge in `refreshMarketsSnapshot`)
 
 For each field, the priority chain is: **SDK value > on-chain RPC > fallback/default**.
 
