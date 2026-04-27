@@ -12,6 +12,7 @@ import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
 import { brevisApi, pruneBrevisCampaignForRuntime } from './brevis-api.js';
 import { resolveUsdPriceWithPriority } from './token-price-resolver.js';
+import { toFiniteNumber } from './utils/number.js';
 import {
   MerklCampaignBreakdown,
   MerklOpportunityData,
@@ -47,28 +48,6 @@ interface MarketData {
   networkInfo: NetworkInfo[];
   markets: any[];
   errors: string[];
-}
-
-function toFiniteNumber(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  if (typeof value === 'bigint') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  if (typeof value === 'object') {
-    // Common Aave client pattern: DecimalValue { value: string }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const maybeValue = (value as any).value;
-    if (typeof maybeValue === 'string' || typeof maybeValue === 'number' || typeof maybeValue === 'bigint') {
-      return toFiniteNumber(maybeValue);
-    }
-  }
-  return null;
 }
 
 interface FormattedReserveData {
@@ -609,32 +588,32 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
         const isFrozen = reserve.isFrozen === true;
         const isPaused = reserve.isPaused === true;
         const supplyCapValue = reserve.supplyInfo?.supplyCap?.amount?.value;
-        const supplyCapIsOne = supplyCapValue !== undefined && parseFloat(supplyCapValue) === 1;
+        const supplyCapIsOne = supplyCapValue !== undefined && toFiniteNumber(supplyCapValue) === 1;
         const isSupplyDisabled = supplyCapIsOne;
         
         // 提取 supplyCapUsd（单位：USD）
         const supplyCapUsdRaw = reserve.supplyInfo?.supplyCap?.usd;
-        const supplyCapUsd = supplyCapUsdRaw ? parseFloat(supplyCapUsdRaw) : undefined;
+        const supplyCapUsd = toFiniteNumber(supplyCapUsdRaw) ?? undefined;
         
         const supplyApyValue = reserve.supplyInfo?.apy?.value;
         const supplyApy = supplyCapIsOne || !supplyApyValue
           ? undefined
-          : parseFloat(supplyApyValue);
+          : toFiniteNumber(supplyApyValue) ?? undefined;
         
         // 检查 borrowingState 是否为 "DISABLED"，如果是则表示该 token 不能被 borrow
         const isBorrowDisabledByState = reserve.borrowInfo?.borrowingState === "DISABLED";
         
         // 检查 borrowCap，如果为 1 也视为 disabled（因为对用户没有实际意义）
         const borrowCapValue = reserve.borrowInfo?.borrowCap?.amount?.value;
-        const borrowCapIsOne = borrowCapValue !== undefined && parseFloat(borrowCapValue) === 1;
+        const borrowCapIsOne = borrowCapValue !== undefined && toFiniteNumber(borrowCapValue) === 1;
         const isBorrowDisabled = isBorrowDisabledByState || borrowCapIsOne;
         
         // 提取 borrowCapUsd（单位：USD），与 supplyCapUsd 对称
         const borrowCapUsdRaw = reserve.borrowInfo?.borrowCap?.usd;
-        const borrowCapUsd = borrowCapUsdRaw ? parseFloat(borrowCapUsdRaw) : undefined;
+        const borrowCapUsd = toFiniteNumber(borrowCapUsdRaw) ?? undefined;
         
         const borrowApyValue = reserve.borrowInfo?.apy?.value;
-        const borrowApy = borrowApyValue ? parseFloat(borrowApyValue) : undefined;
+        const borrowApy = toFiniteNumber(borrowApyValue) ?? undefined;
         
         // Rate-input fields for manual APR calculation (from Aave SDK)
         // All raw values are strings to preserve precision for on-chain math
@@ -654,13 +633,15 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
           reserve.incentives.forEach((incentive: any) => {
             if (incentive.__typename === 'AaveSupplyIncentive') {
               const aprValue = incentive.extraSupplyApr?.value || incentive.supplyApr?.value;
-              if (aprValue) {
-                protocolSupplyIncentives.push(parseFloat(aprValue));
+              const aprNum = toFiniteNumber(aprValue);
+              if (aprNum !== null) {
+                protocolSupplyIncentives.push(aprNum);
               }
             } else if (incentive.__typename === 'AaveBorrowIncentive') {
               const aprValue = incentive.extraBorrowApr?.value || incentive.borrowApr?.value;
-              if (aprValue) {
-                protocolBorrowIncentives.push(parseFloat(aprValue));
+              const aprNum = toFiniteNumber(aprValue);
+              if (aprNum !== null) {
+                protocolBorrowIncentives.push(aprNum);
               }
             }
           });
