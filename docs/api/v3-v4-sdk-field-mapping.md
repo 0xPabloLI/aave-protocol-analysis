@@ -1,6 +1,6 @@
 # V3 vs V4 SDK 字段映射对比
 
-本文档系统记录 Aave V3 与 V4 市场数据各字段的 SDK 来源差异、处理方法及所在函数。
+本文档系统记录 Aave V3 与 V4 市场数据各字段的 SDK 来源差异、处理方法、前端映射及 V4 Hub/Spoke 级别。
 
 ## 概述
 
@@ -12,93 +12,133 @@
 | **核心函数** | `createBaseDatasetFromV3Markets()` | `fetchV4MarketsDataInner()` → 内联循环 |
 | **Reserve ID 格式** | `{market}:{chainId}:{token}` | `{market}:{chainId}:{token}:{hubName}` |
 
+**V4 数据级别说明**：
+- **Reserve 级别**: 数据直接来自 `r` (reserve 对象)，每个 reserve 独立
+- **Hub 级别**: 数据来自 `hubInfo` (HubAsset 索引)，同一 hub 内多个 reserves 共享
+
 ---
 
 ## 核心字段对比表
 
 ### 基础信息字段
 
-| API 字段 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 |
-|----------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **reserveId** | 构造: `${market}:${chainId}:${token}` | `createBaseDatasetFromV3Markets()` | 字符串拼接 | 构造: `${market}:${chainId}:${token}:${hubName}` | `fetchV4MarketsDataInner()` 内联 | 字符串拼接 |
-| **marketName** | `market.name` | `createBaseDatasetFromV3Markets()` | 直接使用 | 构造: `AaveV4${spokeName}` | `fetchV4MarketsDataInner()` 内联 | `spokeName.replace(/\s+/g, '')` 后拼接 |
-| **chainName** | `market.chain?.name` | `createBaseDatasetFromV3Markets()` | 直接取值 | `r.chain?.name ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 |
-| **chainId** | `market.chain?.chainId` | `createBaseDatasetFromV3Markets()` | 直接取值 | `Number(r.chain?.chainId ?? 0)` | `fetchV4MarketsDataInner()` 内联 | 转数字并带默认值 |
-| **tokenName** | `reserve.underlyingToken?.name` | `createBaseDatasetFromV3Markets()` | 直接取值 | `r.asset?.underlying?.info?.name ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 |
-| **tokenSymbol** | `reserve.underlyingToken?.symbol` | `createBaseDatasetFromV3Markets()` | 直接取值 | `r.asset?.underlying?.info?.symbol ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 |
-| **tokenAddress** | `reserve.underlyingToken?.address` | `createBaseDatasetFromV3Markets()` | 直接取值 | `r.asset?.underlying?.address ?? ''` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 |
-| **decimals** | `reserve.underlyingToken?.decimals` | `createBaseDatasetFromV3Markets()` | 直接取值 | `r.asset?.underlying?.info?.decimals ?? undefined` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 |
+| API 字段 | 前端展示 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V4 级别 |
+|----------|----------|-------------|-------------|-------------|-------------|-------------|-------------|---------|
+| **reserveId** | - | 构造: `${market}:${chainId}:${token}` | `createBaseDatasetFromV3Markets()` | 字符串拼接 | 构造: `${market}:${chainId}:${token}:${hubName}` | `fetchV4MarketsDataInner()` 内联 | 字符串拼接 | Reserve |
+| **marketName** | Market 列 | `market.name` | `createBaseDatasetFromV3Markets()` | 直接使用 | 构造: `AaveV4${spokeName}` | `fetchV4MarketsDataInner()` 内联 | `spokeName.replace(/\s+/g, '')` 后拼接 | Reserve |
+| **chainName** | Market 列 | `market.chain?.name` | `createBaseDatasetFromV3Markets()` | 直接取值 | `r.chain?.name ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | Reserve |
+| **chainId** | - | `market.chain?.chainId` | `createBaseDatasetFromV3Markets()` | 直接取值 | `Number(r.chain?.chainId ?? 0)` | `fetchV4MarketsDataInner()` 内联 | 转数字并带默认值 | Reserve |
+| **tokenName** | Token 名称 | `reserve.underlyingToken?.name` | `createBaseDatasetFromV3Markets()` | 直接取值 | `r.asset?.underlying?.info?.name ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | Reserve |
+| **tokenSymbol** | Token 列 | `reserve.underlyingToken?.symbol` | `createBaseDatasetFromV3Markets()` | 直接取值 | `r.asset?.underlying?.info?.symbol ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | Reserve |
+| **tokenAddress** | 合约地址 | `reserve.underlyingToken?.address` | `createBaseDatasetFromV3Markets()` | 直接取值 | `r.asset?.underlying?.address ?? ''` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | Reserve |
+| **decimals** | 精度换算除数 | `reserve.underlyingToken?.decimals` | `createBaseDatasetFromV3Markets()` | 直接取值 | `r.asset?.underlying?.info?.decimals ?? undefined` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | Reserve |
 
 ### 价格与规模字段
 
-| API 字段 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 |
-|----------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **tokenPrice** | `reserve.size?.usdPerToken` ?? `reserve.usdExchangeRate` | `createBaseDatasetFromV3Markets()` | `toFiniteNumber()` 取首个有效值 | `r.summary?.supplied?.exchangeRate` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber()` 转换 |
-| **reserveSizeUsd** | `reserve.size?.usd` | `createBaseDatasetFromV3Markets()` | `toFiniteNumber(reserve?.size?.usd) ?? undefined` | `r.summary?.supplied?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplied?.exchange) ?? undefined` |
-| **supplyCapUsd** | `reserve.supplyInfo?.supplyCap?.usd` | `createBaseDatasetFromV3Markets()` | `parseFloat(supplyCapUsdRaw)` 或 `undefined` | `r.settings?.supplyCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.supplyCap?.exchange) ?? undefined` |
-| **borrowCapUsd** | `reserve.borrowInfo?.borrowCap?.usd` | `createBaseDatasetFromV3Markets()` | `parseFloat(borrowCapUsdRaw)` 或 `undefined` | `r.settings?.borrowCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.borrowCap?.exchange) ?? undefined` |
+| API 字段 | 前端展示 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V4 级别 |
+|----------|----------|-------------|-------------|-------------|-------------|-------------|-------------|---------|
+| **tokenPrice** | Price 列 | `reserve.size?.usdPerToken` ?? `reserve.usdExchangeRate` | `createBaseDatasetFromV3Markets()` | `toFiniteNumber()` 取首个有效值 | `r.summary?.supplied?.exchangeRate` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber()` 转换 | Reserve |
+| **reserveSizeUsd** | Total supplied / Supply Size / Size 列 | `reserve.size?.usd` | `createBaseDatasetFromV3Markets()` | `toFiniteNumber(reserve?.size?.usd) ?? undefined` | `r.summary?.supplied?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplied?.exchange) ?? undefined` | Reserve |
+| **supplyCapUsd** | Supply cap / CapProgressRing | `reserve.supplyInfo?.supplyCap?.usd` | `createBaseDatasetFromV3Markets()` | `parseFloat(supplyCapUsdRaw)` 或 `undefined` | `r.settings?.supplyCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.supplyCap?.exchange) ?? undefined` | **Hub** |
+| **borrowCapUsd** | Borrow cap / CapProgressRing | `reserve.borrowInfo?.borrowCap?.usd` | `createBaseDatasetFromV3Markets()` | `parseFloat(borrowCapUsdRaw)` 或 `undefined` | `r.settings?.borrowCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.borrowCap?.exchange) ?? undefined` | **Hub** |
 
 ### APY 与利率字段
 
-| API 字段 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 |
-|----------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **supplyApy** | `reserve.supplyInfo?.apy?.value` | `createBaseDatasetFromV3Markets()` | 若 `supplyCap === 1` 则为 `undefined`，否则 `parseFloat(supplyApyValue)` | `r.summary?.supplyApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplyApy?.value) ?? undefined` |
-| **borrowApy** | `reserve.borrowInfo?.apy?.value` | `createBaseDatasetFromV3Markets()` | `parseFloat(borrowApyValue)` 或 `undefined` | `r.summary?.borrowApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.borrowApy?.value) ?? undefined` |
-| **utilizationPct** | `reserve.borrowInfo?.utilizationRate?.value` | `createBaseDatasetFromV3Markets()` | `toFiniteNumber(value)` × 100，负数则 `undefined` | HubAsset 索引 | `fetchV4MarketsDataInner()` 内联 | `hubInfo.utilizationRate * 100`，从 HubAsset 表查询 |
-| **availableLiquidity** | `reserve.borrowInfo?.availableLiquidity?.amount?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `hubInfo?.availableLiquidity` | `fetchV4MarketsDataInner()` 内联 | 从 `fetchHubAssetIndex()` 构建的索引获取 |
-| **totalVariableDebt** | `reserve.borrowInfo?.total?.amount?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `r.summary?.borrowed?.amount?.onChainValue` | `fetchV4MarketsDataInner()` 内联 | `onChainValue.toString()` |
+| API 字段 | 前端展示 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V4 级别 |
+|----------|----------|-------------|-------------|-------------|-------------|-------------|-------------|---------|
+| **supplyApy** | Supply > Native | `reserve.supplyInfo?.apy?.value` | `createBaseDatasetFromV3Markets()` | 若 `supplyCap === 1` 则为 `undefined`，否则 `parseFloat(supplyApyValue)` | `r.summary?.supplyApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplyApy?.value) ?? undefined` | Reserve |
+| **borrowApy** | Borrow > Native | `reserve.borrowInfo?.apy?.value` | `createBaseDatasetFromV3Markets()` | `parseFloat(borrowApyValue)` 或 `undefined` | `r.summary?.borrowApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.borrowApy?.value) ?? undefined` | Reserve |
+| **utilizationPct** | Utilization 列 / Util% 指示条 | `reserve.borrowInfo?.utilizationRate?.value` | `createBaseDatasetFromV3Markets()` | `toFiniteNumber(value)` × 100，负数则 `undefined` | `hubInfo?.utilizationRate` | `fetchV4MarketsDataInner()` 内联 | `hubInfo.utilizationRate * 100`，从 HubAsset 索引查询 | **Hub** |
+| **availableLiquidity** | Pool liquidity / Liquidity | `reserve.borrowInfo?.availableLiquidity?.amount?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `hubInfo?.availableLiquidity` | `fetchV4MarketsDataInner()` 内联 | 从 `fetchHubAssetIndex()` 构建的索引获取 | **Hub** |
+| **totalVariableDebt** | Total borrowed / Borrow Size | `reserve.borrowInfo?.total?.amount?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `r.summary?.borrowed?.amount?.onChainValue` | `fetchV4MarketsDataInner()` 内联 | `onChainValue.toString()` | Reserve |
 
 ### 利率模型参数字段 (RAY 精度)
 
-| API 字段 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 |
-|----------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **reserveFactor** | `reserve.borrowInfo?.reserveFactor?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `hubInfo?.liquidityFee` | `fetchV4MarketsDataInner()` 内联 | 从 `fetchHubAssetIndex()` 索引获取，值为 RAY 格式字符串 |
-| **variableRateSlope1** | `reserve.borrowInfo?.variableRateSlope1?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `hubInfo?.slopeBelowOptimal` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY |
-| **variableRateSlope2** | `reserve.borrowInfo?.variableRateSlope2?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `hubInfo?.slopeAboveOptimal` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY |
-| **optimalUsageRate** | `reserve.borrowInfo?.optimalUsageRate?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `hubInfo?.optimalUtilizationRate` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY |
-| **baseVariableBorrowRate** | 链上 RPC (`UiPoolDataProvider`) | `marketsService.mergeOnchainData()` | 优先 RPC，缺失时用 APY→APR 反推 | `hubInfo?.baseBorrowRate` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY |
+| API 字段 | 前端使用 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V4 级别 |
+|----------|----------|-------------|-------------|-------------|-------------|-------------|-------------|---------|
+| **reserveFactor** | `useRateSimulation` | `reserve.borrowInfo?.reserveFactor?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `hubInfo?.liquidityFee` | `fetchV4MarketsDataInner()` 内联 | 从 HubAsset 索引获取，值为 RAY 格式字符串 | **Hub** |
+| **variableRateSlope1** | `useRateSimulation` | `reserve.borrowInfo?.variableRateSlope1?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `hubInfo?.slopeBelowOptimal` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | **Hub** |
+| **variableRateSlope2** | `useRateSimulation` | `reserve.borrowInfo?.variableRateSlope2?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `hubInfo?.slopeAboveOptimal` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | **Hub** |
+| **optimalUsageRate** | "Optimal" 标记 / UtilizationSheet | `reserve.borrowInfo?.optimalUsageRate?.raw` | `createBaseDatasetFromV3Markets()` | 直接取值或 `undefined` | `hubInfo?.optimalUtilizationRate` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | **Hub** |
+| **baseVariableBorrowRate** | `useRateSimulation` | 链上 RPC (`UiPoolDataProvider`) | `marketsService.mergeOnchainData()` | 优先 RPC，缺失时用 APY→APR 反推 | `hubInfo?.baseBorrowRate` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | **Hub** |
 
 ### 合约地址字段
 
-| API 字段 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 |
-|----------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **aTokenAddress** | `reserve.aToken?.address` | `createBaseDatasetFromV3Markets()` | 直接取值或 `null` | N/A | `fetchV4MarketsDataInner()` 内联 | 固定填 `null` (V4 无 aToken) |
-| **vTokenAddress** | `reserve.vToken?.address` | `createBaseDatasetFromV3Markets()` | 直接取值或 `null` | N/A | `fetchV4MarketsDataInner()` 内联 | 固定填 `null` (V4 无 vToken) |
-| **hubId** | N/A | N/A | N/A | `hub?.id` | `fetchV4MarketsDataInner()` 内联 | `String(hub.id)` 转字符串 |
-| **hubName** | N/A | N/A | N/A | `hub?.name` | `fetchV4MarketsDataInner()` 内联 | 直接取值 |
-| **hubAddress** | N/A | N/A | N/A | `hub?.address` | `fetchV4MarketsDataInner()` 内联 | 直接取值 |
-| **spokeId** | N/A | N/A | N/A | `spoke?.id` | `fetchV4MarketsDataInner()` 内联 | `String(spoke.id)` 转字符串 |
-| **spokeName** | N/A | N/A | N/A | `spoke?.name` | `fetchV4MarketsDataInner()` 内联 | 直接取值 |
-| **spokeAddress** | N/A | N/A | N/A | `spoke?.address` | `fetchV4MarketsDataInner()` 内联 | 直接取值 |
-| **aaveProReserveId** | N/A | N/A | N/A | `r.id` | `fetchV4MarketsDataInner()` 内联 | `String(r.id)` 转字符串 |
+| API 字段 | 前端使用 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V4 级别 |
+|----------|----------|-------------|-------------|-------------|-------------|-------------|-------------|---------|
+| **aTokenAddress** | - | `reserve.aToken?.address` | `createBaseDatasetFromV3Markets()` | 直接取值或 `null` | N/A | `fetchV4MarketsDataInner()` 内联 | 固定填 `null` (V4 无 aToken) | N/A |
+| **vTokenAddress** | - | `reserve.vToken?.address` | `createBaseDatasetFromV3Markets()` | 直接取值或 `null` | N/A | `fetchV4MarketsDataInner()` 内联 | 固定填 `null` (V4 无 vToken) | N/A |
+| **hubId** | 拼接待用 (`pro.aave.com/explore/hub/${hubId}`) | N/A | N/A | N/A | `hub?.id` | `fetchV4MarketsDataInner()` 内联 | `String(hub.id)` 转字符串 | **Hub** |
+| **hubName** | 显示 Hub 名称 (如 "Core") | N/A | N/A | N/A | `hub?.name` | `fetchV4MarketsDataInner()` 内联 | 直接取值 | **Hub** |
+| **hubAddress** | 合约交互用 | N/A | N/A | N/A | `hub?.address` | `fetchV4MarketsDataInner()` 内联 | 直接取值 | **Hub** |
+| **spokeId** | 拼接待用 | N/A | N/A | N/A | `spoke?.id` | `fetchV4MarketsDataInner()` 内联 | `String(spoke.id)` 转字符串 | Reserve |
+| **spokeName** | 显示 Spoke 名称 (如 "Main") | N/A | N/A | N/A | `spoke?.name` | `fetchV4MarketsDataInner()` 内联 | 直接取值 | Reserve |
+| **spokeAddress** | 合约交互用 (市场入口) | N/A | N/A | N/A | `spoke?.address` | `fetchV4MarketsDataInner()` 内联 | 直接取值 | Reserve |
+| **aaveProReserveId** | pro.aave.com 深链拼接用 | N/A | N/A | N/A | `r.id` | `fetchV4MarketsDataInner()` 内联 | `String(r.id)` 转字符串 | Reserve |
 
 ### 状态与开关字段
 
-| API 字段 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 |
-|----------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **supplyDisabled** | 派生 | `createBaseDatasetFromV3Markets()` | `isFrozen \|\| isPaused \|\| supplyCap === 1` | `!r.canSupply` | `fetchV4MarketsDataInner()` 内联 | 直接取反 `canSupply` 布尔值 |
-| **borrowDisabled** | 派生 | `createBaseDatasetFromV3Markets()` | `borrowingState === "DISABLED" \|\| borrowCap === 1` | `!r.canBorrow` | `fetchV4MarketsDataInner()` 内联 | 直接取反 `canBorrow` 布尔值 |
-| **isFrozen** | `reserve.isFrozen` | `createBaseDatasetFromV3Markets()` | `=== true` 判断 | `r.status?.frozen` | `fetchV4MarketsDataInner()` 内联 | `=== true` 判断 |
-| **isPaused** | `reserve.isPaused` | `createBaseDatasetFromV3Markets()` | `=== true` 判断 | `r.status?.paused` | `fetchV4MarketsDataInner()` 内联 | `=== true` 判断 |
+| API 字段 | 前端展示 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V4 级别 |
+|----------|----------|-------------|-------------|-------------|-------------|-------------|-------------|---------|
+| **supplyDisabled** | Supply unavailable tooltip | 派生 | `createBaseDatasetFromV3Markets()` | `isFrozen \|\| isPaused \|\| supplyCap === 1` | `!r.canSupply` | `fetchV4MarketsDataInner()` 内联 | 直接取反 `canSupply` 布尔值 | Reserve |
+| **borrowDisabled** | Borrow disabled tooltip | 派生 | `createBaseDatasetFromV3Markets()` | `borrowingState === "DISABLED" \|\| borrowCap === 1` | `!r.canBorrow` | `fetchV4MarketsDataInner()` 内联 | 直接取反 `canBorrow` 布尔值 | Reserve |
+| **isFrozen** | Frozen badge + ❄ icon | `reserve.isFrozen` | `createBaseDatasetFromV3Markets()` | `=== true` 判断 | `r.status?.frozen` | `fetchV4MarketsDataInner()` 内联 | `=== true` 判断 | Reserve |
+| **isPaused** | Paused badge + ❄ icon | `reserve.isPaused` | `createBaseDatasetFromV3Markets()` | `=== true` 判断 | `r.status?.paused` | `fetchV4MarketsDataInner()` 内联 | `=== true` 判断 | Reserve |
 
 ### 激励字段 (外部数据源)
 
-| API 字段 | V3 来源 | V3 处理函数 | V3 处理方法 | V4 来源 | V4 处理函数 | V4 处理方法 |
-|----------|---------|-------------|-------------|---------|-------------|-------------|
-| **supplyIncentives** | SDK: `reserve.incentives` | `createBaseDatasetFromV3Markets()` | 遍历 `incentives` 数组，过滤 `__typename === 'AaveSupplyIncentive'`，提取 `extraSupplyApr` 或 `supplyApr` | SDK: `r.summary?.rewards` | `fetchV4MarketsDataInner()` 内联 | **通常跳过** (内部积分，非公开 Merkl) |
-| **borrowIncentives** | SDK: `reserve.incentives` | `createBaseDatasetFromV3Markets()` | 同上，过滤 `AaveBorrowIncentive` | SDK: `r.summary?.rewards` | `fetchV4MarketsDataInner()` 内联 | **通常跳过** (内部积分，非公开 Merkl) |
-| **meritSupplys** | Merit API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Merit API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 |
-| **meritBorrows** | Merit API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Merit API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 |
-| **merklSupplys** | Merkl API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Merkl API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 |
-| **merklBorrows** | Merkl API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Merkl API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 |
-| **brevisSupplys** | Brevis API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Brevis API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 |
+| API 字段 | 前端展示 | V3 来源 | V3 处理函数 | V3 处理方法 | V4 来源 | V4 处理函数 | V4 处理方法 | V4 级别 |
+|----------|----------|---------|-------------|-------------|---------|-------------|-------------|---------|
+| **supplyIncentives** | Protocol Incentive | SDK: `reserve.incentives` | `createBaseDatasetFromV3Markets()` | 遍历 `incentives` 数组，过滤 `__typename === 'AaveSupplyIncentive'`，提取 `extraSupplyApr` 或 `supplyApr` | SDK: `r.summary?.rewards` | `fetchV4MarketsDataInner()` 内联 | **通常跳过** (内部积分，非公开 Merkl) | Reserve |
+| **borrowIncentives** | Protocol Incentive | SDK: `reserve.incentives` | `createBaseDatasetFromV3Markets()` | 同上，过滤 `AaveBorrowIncentive` | SDK: `r.summary?.rewards` | `fetchV4MarketsDataInner()` 内联 | **通常跳过** (内部积分，非公开 Merkl) | Reserve |
+| **meritSupplys** / **meritBorrows** | ACI Incentive | Merit API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Merit API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | 外部 |
+| **merklSupplys** / **merklBorrows** / **merklHolds** | Merkl Incentive | Merkl API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Merkl API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | 外部 |
+| **brevisSupplys** / **brevisBorrows** | Brevis Incentive | Brevis API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Brevis API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | 外部 |
 
 ### 特殊字段
 
-| API 字段 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 |
-|----------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **deficit** | 链上 RPC (`UiPoolDataProvider`) | `onchainDataService.fetchOnchainData()` | 从 RPC 读取，失败则默认 `'0'` | N/A (SDK 不提供) | `createBaseDatasetFromV3Markets()` (V4 复用) | 默认 `'0'` |
-| **borrowingState** | `reserve.borrowInfo?.borrowingState` | `createBaseDatasetFromV3Markets()` | 直接取值用于判断 | 待确认 V4 对应字段 | `fetchV4MarketsDataInner()` 内联 | 未直接提供，通过 `canBorrow` 间接判断 |
+| API 字段 | 前端展示 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V4 级别 |
+|----------|----------|-------------|-------------|-------------|-------------|-------------|-------------|---------|
+| **deficit** | Deficit / Def% / Size 列 Deficit 行 | 链上 RPC (`UiPoolDataProvider`) | `onchainDataService.fetchOnchainData()` | 从 RPC 读取，失败则默认 `'0'` | N/A (SDK 不提供) | 默认 `'0'` | 默认 `'0'` | N/A |
+| **borrowingState** | 用于判断 borrow 是否 DISABLED | `reserve.borrowInfo?.borrowingState` | `createBaseDatasetFromV3Markets()` | 直接取值用于判断 | 待确认 V4 对应字段 | `fetchV4MarketsDataInner()` 内联 | 未直接提供，通过 `canBorrow` 间接判断 | Reserve |
+
+---
+
+## 前端派生值计算公式
+
+来自 `docs/api/field-glossary.md`:
+
+| 派生值 | 公式 | 代码位置 |
+|--------|------|---------|
+| Total Supply APY | `supplyApy + sum(incentiveApy)` | `formatters.ts:371-374` |
+| Total Borrow APY | `borrowApy - sum(incentiveApy)` | `formatters.ts:384-388` |
+| Spread | `totalSupplyApy - totalBorrowApy` | `formatters.ts:392-395` |
+| Total Borrowed (USD) | `totalVariableDebt / 10^decimals * tokenPrice` | `scenarioSize.ts:106-119` |
+| Pool Liquidity (USD) | `availableLiquidity / 10^decimals * tokenPrice` | `scenarioSize.ts:139-152` |
+| Deficit (USD) | `deficit / 10^decimals * tokenPrice` | `deficit.ts:91-98` |
+| Deficit Share Ratio | `deficitUsd / (deficitUsd + totalSuppliedUsd)` | `deficit.ts:100-111` |
+| Available to Borrow | `min(borrowCap - borrowed, poolLiquidity)` | `scenarioSize.ts:173-193` |
+
+---
+
+## V4 Hub 级别字段汇总
+
+以下 V4 字段从 **HubAsset 索引** 获取，同一 hub 内多个 reserves 共享相同值：
+
+| 字段 | 说明 | HubAsset 字段 |
+|------|------|---------------|
+| `supplyCapUsd` | 供应上限 USD | `settings.supplyCap.exchange` |
+| `borrowCapUsd` | 借贷上限 USD | `settings.borrowCap.exchange` |
+| `utilizationPct` | 资金利用率 | `utilizationRate * 100` |
+| `availableLiquidity` | 可用流动性 | `availableLiquidity` |
+| `reserveFactor` | 储备因子 | `liquidityFee` |
+| `variableRateSlope1` | 利率曲线斜率 1 | `slopeBelowOptimal` (经转换) |
+| `variableRateSlope2` | 利率曲线斜率 2 | `slopeAboveOptimal` (经转换) |
+| `optimalUsageRate` | 最优利用率 | `optimalUtilizationRate` (经转换) |
+| `baseVariableBorrowRate` | 基础借款利率 | `baseBorrowRate` (经转换) |
+| `hubId` | Hub ID | `hub.id` |
+| `hubName` | Hub 名称 | `hub.name` |
+| `hubAddress` | Hub 合约地址 | `hub.address` |
 
 ---
 
@@ -278,6 +318,7 @@ async function fetchHubAssetIndex(chainIds: number[]): Promise<{ index: Map<stri
 | **Hub & Spoke** | 无 | 需要 `fetchHubAssetIndex()` 预构建索引 |
 | **Reserve 遍历** | 外层 `markets.forEach` + 内层 `supplyReserves.forEach` | 单层 `v4Reserves.forEach` |
 | **Reserve ID** | 三字段拼接 | 四字段拼接（含 `hubName`） |
+| **数据级别** | 全部为 Reserve 级别 | 部分为 Hub 级别（共享同一 hub 数据） |
 
 ### 2. `reserveSizeUsd` 路径差异
 
@@ -310,7 +351,7 @@ const borrowCapUsd = toFiniteNumber(r.settings?.borrowCap?.exchange) ?? undefine
 
 **说明**：
 - V3 的 cap 在 `supplyInfo` / `borrowInfo` 下，用 `parseFloat` 转换
-- V4 的 cap 在 `settings` 下，且字段名用 `exchange` 而非 `usd`，用 `toFiniteNumber` 转换
+- V4 的 cap 在 `settings` 下（实际来自 HubAsset 索引），且字段名用 `exchange` 而非 `usd`，用 `toFiniteNumber` 转换
 
 ### 4. V4 Hub & Spoke 架构影响
 
@@ -372,6 +413,29 @@ V4 特有字段完全依赖 SDK，无 RPC 覆盖。
 
 ---
 
+## 常见前端用语 ↔ API 字段速查
+
+| 前端说 | 找 API 字段 |
+|--------|-----------|
+| "Total supplied" / "总供应量" | `reserveSizeUsd` |
+| "Total borrowed" / "总借款" | `totalVariableDebt`（需 USD 换算） |
+| "Pool liquidity" / "池流动性" | `availableLiquidity`（需 USD 换算） |
+| "Supply cap" / "供应上限" | `supplyCapUsd` |
+| "Borrow cap" / "借贷上限" | `borrowCapUsd` |
+| "Available to supply" | `supplyCapUsd - reserveSizeUsd`（派生） |
+| "Available to borrow" | `min(borrowCapUsd - borrowed, poolLiquidity)`（派生） |
+| "Utilization" / "利用率" | `utilizationPct` |
+| "Deficit" / "坏账" | `deficit`（需 USD 换算 + 占比计算） |
+| "Supply APY" | `supplyApy`（Native）+ 各激励（合计） |
+| "Borrow APY" | `borrowApy`（Native）- 各激励（合计） |
+| "Spread" | `totalSupplyApy - totalBorrowApy`（派生） |
+| "Protocol Incentive" | `supplyIncentives` / `borrowIncentives` |
+| "ACI Incentive" | `meritSupplys` / `meritBorrows` |
+| "Merkl Incentive" | `merklSupplys` / `merklBorrows` / `merklHolds` |
+| "Brevis Incentive" | `brevisSupplys` / `brevisBorrows` |
+
+---
+
 **文档创建日期**: 2026-04-27  
 **依据代码**: `src/index.ts`, `src/v4-fetcher.ts`  
-**相关文档**: `docs/backend/data-precision-comparison.md`, `docs/api/markets-api-sdk-field-validation.md`
+**相关文档**: `docs/backend/data-precision-comparison.md`, `docs/api/markets-api-sdk-field-validation.md`, `docs/api/field-glossary.md`
