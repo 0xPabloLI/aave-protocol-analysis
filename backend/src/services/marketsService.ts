@@ -16,6 +16,7 @@
 import { fetchMarketsData, type MarketsPayload, type RuntimeReserveData } from '../../../dist/index.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { v4FatalConfig } from '../config.js';
+import { withTimeout } from '../lib/timeout.js';
 import { logger } from '../logger.js';
 import {
   getOnchainDataFromCache,
@@ -26,13 +27,6 @@ import {
 
 // Timeout for markets fetch (Aave API can be slow)
 const MARKETS_FETCH_TIMEOUT_MS = 60_000; // 60 seconds
-
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
-  ]);
-}
 
 // Re-export types for other modules
 export type { MarketsPayload, RuntimeReserveData };

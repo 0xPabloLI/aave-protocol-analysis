@@ -1,4 +1,5 @@
 import { BACKEND_FETCH_TIMING_MS, BACKEND_TIME_MS, BACKEND_TIME_SECONDS } from './cacheTtl.js';
+import { readNumberEnv } from '@internal/aave-shared-config';
 
 // ============================================================
 // V3/V4 Equality Configuration
@@ -47,20 +48,6 @@ export const merklFetchConfig = {
     min: 1000,
   }),
 };
-
-type NumberEnvOptions = {
-  defaultValue: number;
-  min?: number;
-};
-
-function readNumberEnv(key: string, options: NumberEnvOptions): number {
-  const raw = process.env[key];
-  if (raw === undefined) return options.defaultValue;
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return options.defaultValue;
-  if (options.min !== undefined && value < options.min) return options.defaultValue;
-  return value;
-}
 
 // CoinGecko API 请求的重试/退避配置
 // Rate Limit 参考：https://docs.coingecko.com/docs/common-errors-rate-limit

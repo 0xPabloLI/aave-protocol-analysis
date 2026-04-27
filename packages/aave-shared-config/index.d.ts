@@ -64,3 +64,22 @@ export declare const fetchMerklOpportunitiesSnapshot: (
 ) => Promise<unknown[]>;
 
 export declare const __resetMerklOpportunitiesSnapshotCacheForTests: () => void;
+
+// ============================================================
+// Shared env-var helpers
+// ============================================================
+
+export interface NumberEnvOptions {
+  defaultValue: number;
+  min?: number;
+}
+
+export declare function readNumberEnv(key: string, options: NumberEnvOptions): number;
+
+// ============================================================
+// Shared env-file / Doppler helpers
+// ============================================================
+
+export declare function parseEnvLinesToObject(envText: string): Record<string, string>;
+export declare function injectEnv(envVars: Record<string, string>): void;
+export declare function tryLoadFromDoppler(): boolean;
