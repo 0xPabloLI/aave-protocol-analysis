@@ -13,8 +13,8 @@
 | `availableLiquidity` | **Pool liquidity** / **Liquidity** | BorrowCapSheet、Utilization 列（Liquidity 排序） | `string` raw token → 前端转为 USD | 池中可用流动性。前端通过 `availableLiquidity / 10^decimals * tokenPrice` 换算 |
 | `utilizationPct` | **Utilization** | Utilization 列（百分比 + 指示条） | `number` 百分比 0-100 | 资金利用率。前端还展示 `optimalUsageRate` 对应的 "Optimal" 标记 |
 | `tokenPrice` | **Price** | Price 列 | `number` USD | 每个 token 的美元价格 |
-| `supplyApy` | **Supply** (Native) | Supply 列主数值、SimulationSubRow | `number` 百分比 | 基础 Supply APY（不含激励）。前端合计：`supplyApy + incentiveApy` |
-| `borrowApy` | **Borrow** (Native) | Borrow 列主数值、SimulationSubRow | `number` 百分比 | 基础 Borrow APY（不含激励）。前端合计：`borrowApy - incentiveApy` |
+| `supplyApy` | **Supply** (Native) | Supply 列主数值、SimulationSubRow | `number` 百分比 | 基础 Supply APY（不含激励）。前端合计：`supplyApy + sum(supplyIncentives等)` |
+| `borrowApy` | **Borrow** (Native) | Borrow 列主数值、SimulationSubRow | `number` 百分比 | 基础 Borrow APY（不含激励）。前端合计：`borrowApy - sum(borrowIncentives等)` |
 | `supplyCapUsd` | **Supply cap** / **Available to supply** / **% of cap** | CapProgressRing、SupplyCapSheet | `number` USD | 供应上限及相关派生值 |
 | `borrowCapUsd` | **Borrow cap** / **Available to borrow** / **% of cap** | BorrowCapProgressRing、BorrowCapSheet | `number` USD | 借贷上限及相关派生值 |
 | `deficit` | **Deficit** / **Deficit (%)** | Size 列（Deficit 行）、DeficitLiquidityRing | `string` raw token → 前端转为 USD + 计算占比 | 坏账。前端计算 `deficit / 10^decimals * tokenPrice` 得 USD 值，再算 `deficitUsd / (deficitUsd + totalSuppliedUsd)` 得占比 |
@@ -44,9 +44,9 @@
 | `merklSupplys` / `merklBorrows` / `merklHolds` | **Merkl Incentive** | Merkl 激励，同协议激励处理；有白名单切换开关 |
 | `brevisSupplys` / `brevisBorrows` | **Brevis Incentive** | Brevis 激励，同协议激励处理 |
 
-激励整合（前端 `formatters.ts`）：
-- **Total Supply APY** = `supplyApy + supplyIncentives + meritSupplys + merklSupplys + brevisSupplys`（均经 APR→APY 转换）
-- **Total Borrow APY** = `borrowApy - borrowIncentives - meritBorrows - merklBorrows - brevisBorrows`
+激励整合（前端 `formatters.ts`）—— API 返回数组字段，前端求和后参与计算：
+- **Total Supply APY** = `supplyApy + sum(supplyIncentives) + sum(meritSupplys) + sum(merklSupplys) + sum(brevisSupplys)`（均经 APR→APY 转换）
+- **Total Borrow APY** = `borrowApy - sum(borrowIncentives) - sum(meritBorrows) - sum(merklBorrows) - sum(brevisBorrows)`
 - **Spread** = `totalSupplyApy - totalBorrowApy`
 
 ---
@@ -119,17 +119,17 @@
 |----|---------|---------|-----------|
 | **Size** | Supply | `supply` | `reserveSizeUsd` |
 | | Borrow Size | `borrow` | `totalVariableDebt` → USD |
-| | Borrow Avail | `borrowAvailability` | `borrowCapUsd - borrowed - liquidity`（派生） |
+| | Borrow Avail | `borrowAvailability` | `min(borrowCapUsd - borrowedUsd, poolLiquidityUsd)`（派生） |
 | | Deficit | `deficitAmount` | `deficit` → USD |
 | | Deficit (%) | `deficitRatio` | `deficitUsd / (deficitUsd + totalSuppliedUsd)`（派生） |
 | **Util** | Utilization | `utilization` | `utilizationPct` |
 | | Liquidity | `liquidity` | `availableLiquidity` → USD |
-| **Supply** | Total | `supplyTotal` | `supplyApy + incentiveApy`（派生） |
+| **Supply** | Total | `supplyTotal` | `supplyApy + sum(supplyIncentives等)`（派生） |
 | | Native | `supplyNative` | `supplyApy` |
-| | Incentive | `supplyIncentive` | `incentiveApy`（派生） |
-| **Borrow** | Total | `borrowTotal` | `borrowApy - incentiveApy`（派生） |
+| | Incentive | `supplyIncentive` | `sum(supplyIncentives)`（派生） |
+| **Borrow** | Total | `borrowTotal` | `borrowApy - sum(borrowIncentives等)`（派生） |
 | | Native | `borrowNative` | `borrowApy` |
-| | Incentive | `borrowIncentive` | `incentiveApy`（派生） |
+| | Incentive | `borrowIncentive` | `sum(borrowIncentives)`（派生） |
 | **Spread** | — | — | `totalSupplyApy - totalBorrowApy`（派生） |
 
 ---
@@ -145,7 +145,7 @@
 | Pool Liquidity (USD) | `availableLiquidity / 10^decimals * tokenPrice` | `scenarioSize.ts:139-152` |
 | Deficit (USD) | `deficit / 10^decimals * tokenPrice` | `deficit.ts:91-98` |
 | Deficit Share Ratio | `deficitUsd / (deficitUsd + totalSuppliedUsd)` | `deficit.ts:100-111` |
-| Available to Borrow | `min(borrowCap - borrowed, poolLiquidity)` | `scenarioSize.ts:173-193` |
+| Available to Borrow | `min(borrowCapUsd - borrowedUsd, poolLiquidityUsd)` | `scenarioSize.ts:173-193` |
 
 ---
 
