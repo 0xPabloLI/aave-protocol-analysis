@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process';
+
 const DEFAULT_ITEMS_PER_PAGE = 100;
 const MAX_ITEMS_PER_PAGE = 100;
 const DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS = 60 * 1000;
@@ -626,7 +628,6 @@ export const injectEnv = (envVars) => {
  * Returns true if secrets were loaded successfully.
  */
 export const tryLoadFromDoppler = () => {
-  const { execSync } = require('node:child_process');
   const dopplerToken = process.env.DOPPLER_TOKEN;
 
   if (!dopplerToken) {
