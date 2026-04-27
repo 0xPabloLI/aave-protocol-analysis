@@ -223,24 +223,30 @@ export function toFiniteNumber(value: unknown): number | null {
 - 统一数值转换逻辑，避免潜在差异
 - 约 15 行代码抽象为 1 处维护
 
-### 2. `parseFloat()` vs `toFiniteNumber()` 统一
+### 2. `parseFloat()` vs `toFiniteNumber()` 统一 ✅ 已完成
 
-**现状**: V3 部分字段用 `parseFloat`，部分用 `toFiniteNumber`
+**变更前**: V3 部分字段用 `parseFloat`，部分用 `toFiniteNumber`
 
-| V3 字段 | 当前使用函数 |
-|---------|-------------|
-| `supplyCapUsd` | `parseFloat()` |
-| `borrowCapUsd` | `parseFloat()` |
-| `supplyApy` | `parseFloat()` |
-| `borrowApy` | `parseFloat()` |
-| `tokenPrice` | `toFiniteNumber()` |
-| `reserveSizeUsd` | `toFiniteNumber()` |
-| `utilizationPct` | `toFiniteNumber()` |
+| V3 字段 | 原使用函数 | 现使用函数 |
+|---------|------------|------------|
+| `supplyCapUsd` | `parseFloat()` | `toFiniteNumber()` ✅ |
+| `borrowCapUsd` | `parseFloat()` | `toFiniteNumber()` ✅ |
+| `supplyApy` | `parseFloat()` | `toFiniteNumber()` ✅ |
+| `borrowApy` | `parseFloat()` | `toFiniteNumber()` ✅ |
+| `supplyCapIsOne` | `parseFloat()` | `toFiniteNumber()` ✅ |
+| `borrowCapIsOne` | `parseFloat()` | `toFiniteNumber()` ✅ |
+| `incentive apr` | `parseFloat()` | `toFiniteNumber()` ✅ |
 
-**建议**: 统一使用 `toFiniteNumber()`，理由：
-- 更安全（处理 NaN/Infinity/非数字字符串）
-- 与 V4 保持一致
-- 已有 4 个文件使用，说明是团队偏好
+**变更后**: 全部统一使用 `toFiniteNumber()`，更安全且与 V4 保持一致。
+
+**代码变更**:
+```typescript
+// 变更前
+const supplyCapUsd = supplyCapUsdRaw ? parseFloat(supplyCapUsdRaw) : undefined;
+
+// 变更后  
+const supplyCapUsd = toFiniteNumber(supplyCapUsdRaw) ?? undefined;
+```
 
 ### 3. V4 的 HubAsset 索引模式 - 架构级差异
 

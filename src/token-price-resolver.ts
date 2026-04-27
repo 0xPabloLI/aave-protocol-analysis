@@ -1,4 +1,5 @@
 import { COINGECKO_PLATFORM_BY_CHAIN_ID_SYNCED } from './generated/coingecko-platform-by-chain-id.js';
+import { toFiniteNumber } from './utils/number.js';
 
 type AssetPlatform = { id?: string; chain_identifier?: number | null };
 
@@ -73,24 +74,6 @@ function pruneTokenPriceCache(now: number): void {
     if (!oldestKey) break;
     tokenPriceResolveCache.delete(oldestKey);
   }
-}
-
-function toFiniteNumber(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  if (typeof value === 'bigint') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  if (typeof value === 'object') {
-    const maybeValue = (value as { value?: unknown }).value;
-    if (maybeValue !== undefined) return toFiniteNumber(maybeValue);
-  }
-  return null;
 }
 
 async function getCoingeckoAssetPlatformMap(forceRefresh = false): Promise<Map<number, string>> {

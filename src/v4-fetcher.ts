@@ -15,6 +15,7 @@
 import { AaveClient, chainId as v4ChainId } from '@aave/client-v4';
 import { chains, reserves, hubs, hubAssets } from '@aave/client-v4/actions';
 import { logger } from './logger.js';
+import { toFiniteNumber } from './utils/number.js';
 
 // Re-use types from V3 — we import only the type to avoid circular deps.
 // The actual interface is defined in index.ts; we duplicate the minimal shape here.
@@ -59,33 +60,6 @@ interface V4FormattedReserveData {
 
 // V4 uses its own client instance (points to the same api.aave.com/graphql)
 const v4Client = AaveClient.create();
-
-/**
- * Convert V4 SDK BigDecimal / PercentNumber / plain values to a finite number.
- * V4 SDK uses BigDecimal objects where String(bd) yields the numeric string.
- */
-function toFiniteNumber(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  if (typeof value === 'object' && value !== null) {
-    // BigDecimal: String(bd) → numeric string (most reliable conversion)
-    const str = String(value);
-    if (str && str !== '[object Object]') {
-      const parsed = parseFloat(str);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-    // Fallback: try .value property
-    const maybeValue = (value as any).value;
-    if (maybeValue !== undefined) {
-      return toFiniteNumber(maybeValue);
-    }
-  }
-  return null;
-}
 
 /**
  * Build an index of HubAsset data keyed by (chainId:tokenAddress:hubId)

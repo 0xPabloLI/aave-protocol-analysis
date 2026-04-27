@@ -6,6 +6,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
+import { toFiniteNumber } from './utils/number.js';
 import {
   extractCampaignInfoWithWorker,
   extractMeritDynamicInfoWithWorker,
@@ -201,15 +202,6 @@ const normalizeTokenSymbolForMatching = (token: string): string => {
     usdc0: 'usdc',
   };
   return aliasMap[raw] ?? raw;
-};
-
-const toFiniteNumber = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
 };
 
 const parseMeritEndDateToMs = (value: string | undefined): number | null => {
