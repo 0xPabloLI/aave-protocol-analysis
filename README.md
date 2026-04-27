@@ -144,7 +144,7 @@ Merkl opportunities are paginated upstream (default 20, max 100 per page). The s
 
 ## Output Files
 
-When you run the **root** data fetcher (`npm run dev` / `npm start` at repo root), files are generated under `data/` subfolders. The **backend API** does not read `data/debug/aave-formatted-data.full.json`; it builds the same pipeline in memory via `fetchMarketsPayload()`.
+When you run the **root** data fetcher (`npm run dev` / `npm start` at repo root), files are generated under `data/` subfolders. The **backend API** does not read `data/debug/aave-formatted-data.full.json`; it builds the same pipeline in memory via `fetchMarketsData()`.
 
 - `data/debug/aave-formatted-data.full.json` - Full formatted output (debug artifact; not the API backing store)
 - `data/runtime/merkl-opportunity-meta-lite.json` - Forecast runtime-lite snapshot (campaign meta; **read by backend** forecast path when present/fresh)

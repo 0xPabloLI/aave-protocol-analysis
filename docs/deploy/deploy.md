@@ -214,7 +214,7 @@ curl http://localhost:3001/health
    lsof -i :3001
    ```
 
-2. 后端不依赖 `data/debug/aave-formatted-data.full.json` 启动；若需核对可选 fetcher 产物可 `ls data/debug/`。确认根目录已 `npm run build`（backend 通过 `dist/index.js` 调用 `fetchMarketsPayload()`）。
+2. 后端不依赖 `data/debug/aave-formatted-data.full.json` 启动；若需核对可选 fetcher 产物可 `ls data/debug/`。确认根目录已 `npm run build`（backend 通过 `dist/index.js` 调用 `fetchMarketsData()`）。
 
 3. 查看日志：
    ```bash

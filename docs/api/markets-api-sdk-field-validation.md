@@ -5,7 +5,7 @@
 ## 结论摘要
 
 - **API 所需字段均有数据源覆盖，无缺失。**
-- 来自 **Aave SDK**（`@aave/client` `markets()` → `market.supplyReserves[]`）的字段均已在 `src/index.ts` 的 `createBaseDatasetFromMarkets()` 中正确映射。
+- 来自 **Aave SDK**（`@aave/client` `markets()` → `market.supplyReserves[]`）的字段均已在 `src/index.ts` 的 `buildV3BaseDataset()` 中正确映射。
 - **baseVariableBorrowRate**、**deficit** 设计上来自链上 RPC（`UiPoolDataProvider.getReservesHumanized()`），非 SDK；缺失时由 backend 做 fallback 或置空。
 - **merit***、**merkl***、**brevis*** 来自外部激励 API，非 SDK。
 
@@ -39,8 +39,8 @@ API 中对应字段均为可选；该 20 条在响应里 `borrowApy`、`utilizat
 
 | 脚本 | 数据源 | 数量 | 说明 |
 |------|--------|------|------|
-| **validate-sdk-reserve-fields.mjs** | `data/debug/aave-all-markets-data.json` | **240** | 与 createBaseDatasetFromMarkets 一致：**排除** isFrozen / isPaused 后再统计 |
-| **validate-base-rate-fallback.mjs**（payload） | `fetchMarketsPayload()` → `payload.data` | **240** | 同上，与 API 一致 |
+| **validate-sdk-reserve-fields.mjs** | `data/debug/aave-all-markets-data.json` | **240** | 与 buildV3BaseDataset 一致：**排除** isFrozen / isPaused 后再统计 |
+| **validate-base-rate-fallback.mjs**（payload） | `fetchMarketsData()` → `payload.data` | **240** | 同上，与 API 一致 |
 
 原始 SDK 文件中共 275 条 supplyReserves，排除 35 条 frozen/paused 后为 240，两脚本数量应对齐。  
 base-rate 校验报告见 `data/debug/base-rate-fallback-validation-report.json`（含 noBorrowInfo、null fallback、**reservesWithoutOnchainBase 全量列表及条数**、无 on-chain base 原因等）。
@@ -107,7 +107,7 @@ base-rate 校验报告见 `data/debug/base-rate-fallback-validation-report.json`
 - `underlyingToken.name/symbol/address/decimals`、`aToken.address`、`vToken.address` 存在 ✓  
 - `incentives` 数组存在（可为空）✓  
 
-上述路径与 `createBaseDatasetFromMarkets()` 中的使用一致，**无缺失的 SDK 字段**。
+上述路径与 `buildV3BaseDataset()` 中的使用一致，**无缺失的 SDK 字段**。
 
 ---
 
@@ -128,4 +128,4 @@ base-rate 校验报告见 `data/debug/base-rate-fallback-validation-report.json`
 ---
 
 **校验日期**: 2026-03-15  
-**依据**: `backend/src/types/index.ts`（MarketWithSpread）、`src/index.ts`（createBaseDatasetFromMarkets）、`data/debug/aave-all-markets-data.json`（SDK 原始响应）
+**依据**: `backend/src/types/index.ts`（MarketWithSpread）、`src/index.ts`（buildV3BaseDataset）、`data/debug/aave-all-markets-data.json`（SDK 原始响应）
