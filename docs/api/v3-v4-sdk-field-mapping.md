@@ -155,7 +155,7 @@
 | **Size 列派生值** |
 | Total Supplied | Reserve | `reserveSizeUsd` (API 直接提供) | `marketsApiSerialize.ts` | 市场总供应量 |
 | Total Borrowed (USD) | Reserve | `totalVariableDebt / 10^decimals * tokenPrice` | `scenarioSize.ts:106-119` | 每个 reserve 独立的借款总额 |
-| Borrow Avail | **Hub** | `borrowCapUsd - borrowedUsd - poolLiquidityUsd` | `scenarioSize.ts:173-193` | 基于 Hub 级 cap 和 liquidity |
+| Borrow Avail | **Hub** | `min(borrowCapUsd - borrowedUsd, poolLiquidityUsd)` | `scenarioSize.ts:173-193` | 基于 Hub 级 cap 和 liquidity |
 | Deficit (USD) | N/A | `deficit / 10^decimals * tokenPrice` | `deficit.ts:91-98` | V3 only，V4 默认 '0' |
 | Deficit Share Ratio | N/A | `deficitUsd / (deficitUsd + totalSuppliedUsd)` | `deficit.ts:100-111` | V3 only |
 | **Util 列派生值** |
@@ -167,10 +167,10 @@
 | Borrow Cap % | Mixed | `borrowedUsd / borrowCapUsd * 100` | 派生 | Reserve 级 borrowed / Hub 级 cap |
 | Available to Borrow | **Hub** | `min(borrowCapUsd - borrowed, poolLiquidityUsd)` | `scenarioSize.ts:173-193` | 基于 Hub 级 cap 和 liquidity |
 | **Supply/Borrow 列派生值** |
-| Total Supply APY | **Hub** | `supplyApy + sum(incentiveApy)` | `formatters.ts:371-374` | 基于 Hub 级 supplyApy 计算 |
-| Total Borrow APY | **Hub** | `borrowApy - sum(incentiveApy)` | `formatters.ts:384-388` | 基于 Hub 级 borrowApy 计算 |
-| Supply Incentive APY | 外部 | `sum(supplyIncentives + meritSupplys + merklSupplys + brevisSupplys)` | `formatters.ts` | 外部激励合计 |
-| Borrow Incentive APY | 外部 | `sum(borrowIncentives + meritBorrows + merklBorrows + brevisBorrows)` | `formatters.ts` | 外部激励合计 |
+| Total Supply APY | **Hub** | `supplyApy + sum(supplyIncentives) + sum(meritSupplys) + sum(merklSupplys) + sum(brevisSupplys)` | `formatters.ts:371-374` | 基于 Hub 级 supplyApy 计算 |
+| Total Borrow APY | **Hub** | `borrowApy - sum(borrowIncentives) - sum(meritBorrows) - sum(merklBorrows) - sum(brevisBorrows)` | `formatters.ts:384-388` | 基于 Hub 级 borrowApy 计算 |
+| Supply Incentive APY | 外部 | `sum(supplyIncentives) + sum(meritSupplys) + sum(merklSupplys) + sum(brevisSupplys)` | `formatters.ts` | 外部激励合计 |
+| Borrow Incentive APY | 外部 | `sum(borrowIncentives) + sum(meritBorrows) + sum(merklBorrows) + sum(brevisBorrows)` | `formatters.ts` | 外部激励合计 |
 | **Spread 列** |
 | Spread | **Hub** | `totalSupplyApy - totalBorrowApy` | `formatters.ts:392-395` | 基于两个 Hub 级 APY 计算 |
 
