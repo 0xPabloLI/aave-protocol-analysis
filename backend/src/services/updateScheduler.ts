@@ -1,7 +1,7 @@
 import { schedule } from 'node-cron';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from '../controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from '../controllers/merklForecastController.js';
-import { refreshMarketsSnapshot, refreshV4Snapshot } from './marketsService.js';
+import { refreshMarketsSnapshot } from './marketsService.js';
 import { refreshOnchainCache } from './onchainDataService.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
@@ -11,14 +11,12 @@ import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
  * 所有数据使用 cron-write/API-read-only 模式
  *
  * Architecture:
- * - Markets (V3): every 1 minute at :00
- * - V4 (Option 3): every 1 minute at :00 (parallel with V3, different data source)
+ * - Markets (V3+V4 merged): every 1 minute at :00
  * - On-chain: every 1 minute at :10, concurrent per-chain fetch with 30-min TTL
  */
 export function startUpdateScheduler(): void {
   logger.info('📅 Starting cron schedulers (all cron-write/API-read-only):');
-  logger.info('   • Markets (V3): every 1 minute at :00');
-  logger.info('   • V4 (Option 3): every 1 minute at :00 (parallel with V3)');
+  logger.info('   • Markets (V3+V4 merged): every 1 minute at :00');
   logger.info('   • On-chain (deficit, baseRate): every 1 minute at :10 (30-min per-chain TTL)');
   logger.info('   • Forecast: every 10 minutes');
   logger.info('   • FDV: every 5 minutes');
@@ -31,19 +29,6 @@ export function startUpdateScheduler(): void {
     } catch (error) {
       logger.warn(
         `Markets refresh scheduler failed: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  });
-
-  // Option 3: V4 data refresh at the same time as V3 (parallel execution)
-  // V3 and V4 fetch from different API endpoints, so they can run concurrently
-  // without resource contention. This provides the fastest refresh cycle.
-  schedule(BACKEND_SCHEDULE_CRON.v4DataRefreshEveryMinuteAtSecond0, async () => {
-    try {
-      await refreshV4Snapshot();
-    } catch (error) {
-      logger.warn(
-        `V4 refresh scheduler failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   });
