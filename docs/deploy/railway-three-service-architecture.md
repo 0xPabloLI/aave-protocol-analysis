@@ -78,12 +78,12 @@ flowchart LR
 
 **文件**：`src/index.ts`（或新建 `scripts/fetch-and-push-redis.ts`）
 
-**改动**：在 `fetchAaveMarketsData()` 完成后，若存在 `REDIS_URL`，将数据写入 Redis：
+**改动**：在 `runMarketsFetcher()` 完成后，若存在 `REDIS_URL`，将数据写入 Redis：
 
 ```typescript
 import Redis from 'ioredis';
 
-// 在 fetchAaveMarketsData() 最后
+// 在 runMarketsFetcher() 最后
 const redisUrl = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL;
 if (redisUrl) {
   const redis = new Redis(redisUrl);

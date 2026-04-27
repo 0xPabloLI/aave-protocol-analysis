@@ -530,16 +530,15 @@ async function fetchBrevisAprs(
 
 
 /**
- * Create the unified base dataset from V3 markets + V4 reserves.
- * Shared by both backend (fetchMarketsData) and root (fetchAaveMarkets).
+ * Build the base dataset from V3 markets + V4 reserves.
+ * Shared by both backend (fetchMarketsData) and root (runMarketsFetcher).
  *
- * @param v3Markets - V3 market data from fetchAaveMarketData()
- * @param options.v4Fatal - Option 2: If true, V4 fetch failure is fatal (throws).
+ * @param v3Markets - V3 market data from fetchRawMarketData()
+ * @param options.v4Fatal - If true, V4 fetch failure is fatal (throws).
  *                           Makes V3 and V4 equally important — if either fails, the entire refresh fails.
  *                           Default: false (V4 failure is non-fatal, graceful degradation).
  */
-// ts-prune-ignore-next
-export async function createUnifiedBaseDataset(v3Markets: any[], options?: {
+async function buildMarketsBaseDataset(v3Markets: any[], options?: {
   v4Fatal?: boolean;
 }): Promise<{
   baseDataset: FormattedReserveData[];
@@ -548,7 +547,7 @@ export async function createUnifiedBaseDataset(v3Markets: any[], options?: {
   v4Dataset: FormattedReserveData[];
   v4Raw: V4FetchResult['raw'];
 }> {
-  const v3Dataset = createBaseDatasetFromV3Markets(v3Markets);
+  const v3Dataset = buildV3BaseDataset(v3Markets);
   let v4Dataset: FormattedReserveData[] = [];
   let v4Raw: V4FetchResult['raw'] = { reserves: [], hubAssets: [] };
   const v4Fatal = options?.v4Fatal ?? false;
@@ -581,7 +580,7 @@ export async function createUnifiedBaseDataset(v3Markets: any[], options?: {
 }
 
 // 从 Aave V3 市场数据创建基础数据集
-function createBaseDatasetFromV3Markets(markets: any[]): FormattedReserveData[] {
+function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
   const baseDataset: FormattedReserveData[] = [];
 
   markets.forEach(market => {
@@ -1049,7 +1048,7 @@ function generateCSV(data: FormattedReserveData[]): string {
 }
 
 // 从所有链获取 Aave 市场数据
-async function fetchAaveMarketData(): Promise<MarketData> {
+async function fetchRawMarketData(): Promise<MarketData> {
   logger.info('🔄 Fetching Aave markets data from all networks...');
   
   // 获取所有 AaveV3 网络信息
@@ -1183,7 +1182,7 @@ async function fetchAaveMarketData(): Promise<MarketData> {
   return marketData;
 }
 
-async function fetchAaveMarkets(): Promise<void> {
+async function runMarketsFetcher(): Promise<void> {
   // 🧹 启动时检查并清理 Cloudflare browser sessions
   // 这是为了避免之前程序异常退出后残留的 session 占用配额
   logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
@@ -1201,14 +1200,14 @@ async function fetchAaveMarkets(): Promise<void> {
 
   try {
     // 从所有链获取市场数据（已包含保存原始数据到文件）
-    const marketData = await fetchAaveMarketData();
+    const marketData = await fetchRawMarketData();
     
     // 格式化数据并保存到新文件
     logger.info('\n📊 Formatting market data...');
     
     // 第一步：从 Aave V3 + V4 创建统一基础数据集
     logger.info('📊 Creating unified base dataset (V3 + V4)...');
-    const { baseDataset, v3Count, v4Count } = await createUnifiedBaseDataset(marketData.markets);
+    const { baseDataset, v3Count, v4Count } = await buildMarketsBaseDataset(marketData.markets);
     const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
 
     // 并发获取 Merit、Merkl 和 Brevis 数据（它们之间没有依赖关系）
@@ -1399,11 +1398,11 @@ export async function fetchMarketsData(options?: {
   await checkAndReportSessionStatus();
 
   // 从所有链获取市场数据
-  const marketData = await fetchAaveMarketData();
+  const marketData = await fetchRawMarketData();
   
   // 格式化数据（V3 + V4 unified）
   logger.info('\n📊 Formatting market data...');
-  const { baseDataset, v3Count, v4Count, v4Raw } = await createUnifiedBaseDataset(marketData.markets, {
+  const { baseDataset, v3Count, v4Count, v4Raw } = await buildMarketsBaseDataset(marketData.markets, {
     v4Fatal: options?.v4Fatal,
   });
   const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
@@ -1459,108 +1458,6 @@ export async function fetchMarketsData(options?: {
   });
 
   return payload;
-}
-
-// ============================================================
-// Option 3: Independent V3 and V4 fetch functions
-// ============================================================
-
-/**
- * Shared helper: Fetch and merge incentive data for a dataset.
- * Eliminates code duplication between V3 and V4 fetch paths.
- */
-async function fetchAndMergeIncentiveData(
-  dataset: FormattedReserveData[],
-  logPrefix: string
-): Promise<RuntimeReserveData[]> {
-  const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(dataset);
-
-  logger.info(`🚀 ${logPrefix} Starting incentive data fetching concurrently...`);
-
-  const [meritData, merklResult, brevisData] = await Promise.all([
-    fetchMeritData().catch((error) => {
-      logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-      return {} as MeritDataIndex;
-    }),
-    processMerklData({ reserveTokenPriceByChainAndAddress }).catch((error) => {
-      logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-      return { index: {} as MerklDataIndex } as MerklProcessedData;
-    }),
-    fetchBrevisAprs(dataset).catch((error) => {
-      logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-      return {} as BrevisDataIndex;
-    }),
-  ]);
-
-  const merklData = (merklResult as MerklProcessedData).index ?? {};
-  const enrichedData = enrichDatasetWithIncentiveData(dataset, meritData, merklData, brevisData);
-  return enrichedData.map(pruneReserveForRuntime);
-}
-
-/**
- * Fetch V3 markets data only (independent of V4).
- * Used by Option 3's separate V3 cache refresh.
- */
-// ts-prune-ignore-next
-export async function fetchV3MarketsData(): Promise<MarketsPayload> {
-  logger.info('🔧 [V3] Pre-flight check: Cloudflare browser session status...');
-  await checkAndReportSessionStatus();
-
-  const marketData = await fetchAaveMarketData();
-  logger.info('\n📊 [V3] Formatting V3 market data...');
-
-  const v3Dataset = createBaseDatasetFromV3Markets(marketData.markets);
-  const runtimeData = await fetchAndMergeIncentiveData(v3Dataset, '[V3]');
-
-  logger.info(`🎯 [V3] Final dataset: ${runtimeData.length} reserves`);
-
-  return {
-    _metadata: {
-      timestamp: marketData.timestamp,
-      version: '2.0-runtime-minimal-v3',
-      dataCount: runtimeData.length,
-      profile: 'runtime-minimal',
-    },
-    data: runtimeData,
-  };
-}
-
-/**
- * Fetch V4 markets data only (independent of V3).
- * Used by Option 3's separate V4 cache refresh.
- */
-// ts-prune-ignore-next
-export async function fetchV4MarketsData(): Promise<MarketsPayload> {
-  logger.info('🔄 [V4] Fetching V4 reserves data...');
-
-  const v4Result = await fetchV4ReservesData();
-  const v4Dataset = v4Result.mapped as unknown as FormattedReserveData[];
-
-  if (v4Dataset.length === 0) {
-    logger.warn('⚠️ [V4] V4 data fetch returned empty dataset');
-    return {
-      _metadata: {
-        timestamp: new Date().toISOString(),
-        version: '2.0-runtime-minimal-v4',
-        dataCount: 0,
-        profile: 'runtime-minimal',
-      },
-      data: [],
-    };
-  }
-
-  const runtimeData = await fetchAndMergeIncentiveData(v4Dataset, '[V4]');
-  logger.info(`🎯 [V4] Final dataset: ${runtimeData.length} reserves`);
-
-  return {
-    _metadata: {
-      timestamp: new Date().toISOString(),
-      version: '2.0-runtime-minimal-v4',
-      dataCount: runtimeData.length,
-      profile: 'runtime-minimal',
-    },
-    data: runtimeData,
-  };
 }
 
 /**
@@ -1619,12 +1516,6 @@ async function writeDebugSnapshot(
   );
 }
 
-// 导出主函数,以便其他模块可以调用（backend 通过 dist 引用）
-// ts-prune-ignore-next
-export async function fetchAaveMarketsData(): Promise<void> {
-  return fetchAaveMarkets();
-}
-
 // 只有当这个文件作为主模块直接运行时，才执行以下代码
 // 这样可以避免在作为模块被导入时执行 process.exit()
 // 检查逻辑：
@@ -1639,7 +1530,7 @@ const isMainModule = !mainScript.includes('server') &&
 
 if (isMainModule) {
   // 执行主函数（仅当作为独立脚本运行时）
-  fetchAaveMarkets().catch(error => {
+  runMarketsFetcher().catch(error => {
   logger.error('❌ Failed to fetch Aave markets:', error);
   process.exit(1);
 }).then(async () => {
