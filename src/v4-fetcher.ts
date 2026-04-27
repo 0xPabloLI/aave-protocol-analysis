@@ -362,7 +362,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(borrowCapUsd !== undefined ? { borrowCapUsd } : {}),
       ...(decimals !== undefined ? { decimals } : {}),
       ...(hubInfo?.availableLiquidity ? { availableLiquidity: hubInfo.availableLiquidity } : {}),
-      ...(hubInfo?.totalBorrowed ? { totalVariableDebt: hubInfo.totalBorrowed } : {}),
+      ...(r.summary?.borrowed?.amount?.onChainValue ? { totalVariableDebt: r.summary.borrowed.amount.onChainValue.toString() } : {}),
       ...(hubInfo?.liquidityFee ? { reserveFactor: hubInfo.liquidityFee } : {}),
       ...(hubInfo?.slopeBelowOptimal ? { variableRateSlope1: hubInfo.slopeBelowOptimal } : {}),
       ...(hubInfo?.slopeAboveOptimal ? { variableRateSlope2: hubInfo.slopeAboveOptimal } : {}),
