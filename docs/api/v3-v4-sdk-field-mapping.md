@@ -43,15 +43,15 @@
 |----------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
 | **tokenPrice** | Price 列 | Reserve | `r.summary?.supplied?.exchangeRate` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber()` 转换 | `reserve.size?.usdPerToken` ?? `reserve.usdExchangeRate` | `buildV3BaseDataset()` | `toFiniteNumber()` 取首个有效值 |
 | **reserveSizeUsd** | Total supplied / Supply Size / Size 列 | Reserve | `r.summary?.supplied?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplied?.exchange) ?? undefined` | `reserve.size?.usd` | `buildV3BaseDataset()` | `toFiniteNumber(reserve?.size?.usd) ?? undefined` |
-| **supplyCapUsd** | Supply cap / CapProgressRing | **Reserve** | `r.settings?.supplyCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.supplyCap?.exchange) ?? undefined` | `reserve.supplyInfo?.supplyCap?.usd` | `buildV3BaseDataset()` | `parseFloat(supplyCapUsdRaw)` 或 `undefined` |
-| **borrowCapUsd** | Borrow cap / CapProgressRing | **Reserve** | `r.settings?.borrowCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.borrowCap?.exchange) ?? undefined` | `reserve.borrowInfo?.borrowCap?.usd` | `buildV3BaseDataset()` | `parseFloat(borrowCapUsdRaw)` 或 `undefined` |
+| **supplyCapUsd** | Supply cap / CapProgressRing | **Reserve** | `r.settings?.supplyCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.supplyCap?.exchange) ?? undefined` | `reserve.supplyInfo?.supplyCap?.usd` | `buildV3BaseDataset()` | `toFiniteNumber(supplyCapUsdRaw) ?? undefined` |
+| **borrowCapUsd** | Borrow cap / CapProgressRing | **Reserve** | `r.settings?.borrowCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.borrowCap?.exchange) ?? undefined` | `reserve.borrowInfo?.borrowCap?.usd` | `buildV3BaseDataset()` | `toFiniteNumber(borrowCapUsdRaw) ?? undefined` |
 
 ### APY 与利率字段
 
 | API 字段 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
 |----------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **supplyApy** | Supply > Native | **Hub** | `r.summary?.supplyApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplyApy?.value) ?? undefined` | `reserve.supplyInfo?.apy?.value` | `buildV3BaseDataset()` | 若 `supplyCap === 1` 则为 `undefined`，否则 `parseFloat(supplyApyValue)` |
-| **borrowApy** | Borrow > Native | **Hub** | `r.summary?.borrowApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.borrowApy?.value) ?? undefined` | `reserve.borrowInfo?.apy?.value` | `buildV3BaseDataset()` | `parseFloat(borrowApyValue)` 或 `undefined` |
+| **supplyApy** | Supply > Native | **Hub** | `r.summary?.supplyApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplyApy?.value) ?? undefined` | `reserve.supplyInfo?.apy?.value` | `buildV3BaseDataset()` | 若 `supplyCap === 1` 则为 `undefined`，否则 `toFiniteNumber(supplyApyValue)` |
+| **borrowApy** | Borrow > Native | **Hub** | `r.summary?.borrowApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.borrowApy?.value) ?? undefined` | `reserve.borrowInfo?.apy?.value` | `buildV3BaseDataset()` | `toFiniteNumber(borrowApyValue) ?? undefined` |
 | **utilizationPct** | Utilization 列 / Util% 指示条 | **Hub** | `hubInfo?.utilizationRate` | `fetchV4MarketsDataInner()` 内联 | `hubInfo.utilizationRate * 100`，从 HubAsset 索引查询 | `reserve.borrowInfo?.utilizationRate?.value` | `buildV3BaseDataset()` | `toFiniteNumber(value)` × 100，负数则 `undefined` |
 | **availableLiquidity** | Pool liquidity / Liquidity | **Hub** | `hubInfo?.availableLiquidity` | `fetchV4MarketsDataInner()` 内联 | 从 `fetchHubAssetIndex()` 构建的索引获取 | `reserve.borrowInfo?.availableLiquidity?.amount?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
 | **totalVariableDebt** | Total borrowed / Borrow Size | Reserve | `r.summary?.borrowed?.amount?.onChainValue` | `fetchV4MarketsDataInner()` 内联 | `onChainValue.toString()` | `reserve.borrowInfo?.total?.amount?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
@@ -64,7 +64,7 @@
 | **variableRateSlope1** | `useRateSimulation` | **Hub** | `hubInfo?.slopeBelowOptimal` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | `reserve.borrowInfo?.variableRateSlope1?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
 | **variableRateSlope2** | `useRateSimulation` | **Hub** | `hubInfo?.slopeAboveOptimal` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | `reserve.borrowInfo?.variableRateSlope2?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
 | **optimalUsageRate** | "Optimal" 标记 / UtilizationSheet | **Hub** | `hubInfo?.optimalUtilizationRate` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | `reserve.borrowInfo?.optimalUsageRate?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
-| **baseVariableBorrowRate** | `useRateSimulation` | **Hub** | `hubInfo?.baseBorrowRate` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | 链上 RPC (`UiPoolDataProvider`) | `marketsService.mergeOnchainData()` | 优先 RPC，缺失时用 APY→APR 反推 |
+| **baseVariableBorrowRate** | `useRateSimulation` | **Hub** | `hubInfo?.baseBorrowRate` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | 链上 RPC (`UiPoolDataProvider`) | `marketsService.refreshMarketsSnapshot()` on-chain merge | 优先 RPC，缺失时用 APY→APR 反推 |
 
 ### 合约地址字段
 
@@ -103,7 +103,7 @@
 
 | API 字段 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
 |----------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **deficit** | Deficit / Def% / Size 列 Deficit 行 | N/A | N/A (SDK 不提供) | 默认 `'0'` | 默认 `'0'` | 链上 RPC (`UiPoolDataProvider`) | `onchainDataService.fetchOnchainData()` | 从 RPC 读取，失败则默认 `'0'` |
+| **deficit** | Deficit / Def% / Size 列 Deficit 行 | N/A | N/A (SDK 不提供) | 默认 `'0'` | 默认 `'0'` | 链上 RPC (`UiPoolDataProvider`) | `onchainDataService.refreshOnchainCache()` | 从 RPC 读取，失败则默认 `'0'` |
 | **borrowingState** | 用于判断 borrow 是否 DISABLED | Reserve | 待确认 V4 对应字段 | `fetchV4MarketsDataInner()` 内联 | 未直接提供，通过 `canBorrow` 间接判断 | `reserve.borrowInfo?.borrowingState` | `buildV3BaseDataset()` | 直接取值用于判断 |
 
 ---
@@ -177,49 +177,12 @@
 
 ## 可复用函数抽象建议
 
-### 1. `toFiniteNumber()` - 高优先级抽象 ⭐
+### 1. `toFiniteNumber()` - 已完成抽象 ✅
 
-**现状**: 4 个实现存在于不同文件，逻辑高度重复
+**现状**: 已合并到 `src/utils/number.ts` 单一规范实现，所有调用方从此导入。
 
-| 文件 | 位置 | 实现差异 |
-|------|------|----------|
-| `src/index.ts` | Line 52 | 标准实现，支持 number/string/bigint/object(with .value) |
-| `src/v4-fetcher.ts` | Line 67 | 多了 BigDecimal String() 转换逻辑 |
-| `src/token-price-resolver.ts` | Line 78 | 与 index.ts 基本相同，少了 object 递归中的 null 检查 |
-| `src/merit-api.ts` | Line 206 | 箭头函数形式，简化版（不支持 bigint/object.value） |
-
-**建议**: 抽象到 `src/utils/number.ts`
-
-```typescript
-// 建议的统一定义
-export function toFiniteNumber(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  if (typeof value === 'bigint') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  if (typeof value === 'object') {
-    // 支持 BigDecimal String() 转换（V4 特有逻辑）
-    const str = String(value);
-    if (str && str !== '[object Object]') {
-      const parsed = parseFloat(str);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-    // Fallback: try .value property
-    const maybeValue = (value as { value?: unknown }).value;
-    if (maybeValue !== undefined) return toFiniteNumber(maybeValue);
-  }
-  return null;
-}
-```
-
-**复用收益**: 
-- 消除 4 处重复代码
+**复用收益**:
+- 消除了 4 处重复定义
 - 统一数值转换逻辑，避免潜在差异
 - 约 15 行代码抽象为 1 处维护
 
@@ -306,9 +269,9 @@ export function isSupplyDisabledV3(
 
 ### `toFiniteNumber(value: unknown): number | null`
 
-**位置**: `src/index.ts:52`, `src/v4-fetcher.ts:67`, `src/token-price-resolver.ts:78`, `src/merit-api.ts:206`
+**位置**: `src/utils/number.ts`（单一规范实现，所有调用方从此导入）
 
-用于安全转换 SDK 返回的数值，但 4 个实现有细微差异。
+用于安全转换 SDK 返回的数值。已从 4 处重复定义合并为单一实现。
 
 ### `percentOnChainValueToRay(onChainValue: string, decimals: number): string`
 
@@ -376,20 +339,17 @@ const reserveSizeUsd = toFiniteNumber(r.summary?.supplied?.exchange) ?? undefine
 ### 3. `supplyCapUsd` / `borrowCapUsd` 路径差异
 
 ```typescript
-// V3: src/index.ts:617-618 in buildV3BaseDataset()
-const supplyCapUsdRaw = reserve.supplyInfo?.supplyCap?.usd;
-const supplyCapUsd = supplyCapUsdRaw ? parseFloat(supplyCapUsdRaw) : undefined;
+// V3: src/index.ts in buildV3BaseDataset()
+const supplyCapUsd = toFiniteNumber(reserve.supplyInfo?.supplyCap?.usd) ?? undefined;
+const borrowCapUsd = toFiniteNumber(reserve.borrowInfo?.borrowCap?.usd) ?? undefined;
 
-const borrowCapUsdRaw = reserve.borrowInfo?.borrowCap?.usd;
-const borrowCapUsd = borrowCapUsdRaw ? parseFloat(borrowCapUsdRaw) : undefined;
-
-// V4: src/v4-fetcher.ts:319-320 in fetchV4MarketsDataInner()
+// V4: src/v4-fetcher.ts in fetchV4MarketsDataInner()
 const supplyCapUsd = toFiniteNumber(r.settings?.supplyCap?.exchange) ?? undefined;
 const borrowCapUsd = toFiniteNumber(r.settings?.borrowCap?.exchange) ?? undefined;
 ```
 
 **说明**：
-- V3 的 cap 在 `supplyInfo` / `borrowInfo` 下，用 `parseFloat` 转换
+- V3 的 cap 在 `supplyInfo` / `borrowInfo` 下，用 `toFiniteNumber` 转换
 - V4 的 cap 在 `settings` 下（实际来自 HubAsset 索引），且字段名用 `exchange` 而非 `usd`，用 `toFiniteNumber` 转换
 
 ### 4. V4 Hub & Spoke 架构影响
