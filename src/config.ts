@@ -1,16 +1,4 @@
-type NumberEnvOptions = {
-  defaultValue: number;
-  min?: number;
-};
-
-function readNumberEnv(key: string, options: NumberEnvOptions): number {
-  const raw = process.env[key];
-  if (raw === undefined) return options.defaultValue;
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return options.defaultValue;
-  if (options.min !== undefined && value < options.min) return options.defaultValue;
-  return value;
-}
+import { readNumberEnv } from '@internal/aave-shared-config';
 
 function readBooleanEnv(key: string, defaultValue: boolean): boolean {
   const raw = process.env[key];

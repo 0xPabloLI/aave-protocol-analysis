@@ -16,6 +16,7 @@
 import { UiPoolDataProvider } from '@aave/contract-helpers';
 import * as AaveAddressBook from '@bgd-labs/aave-address-book';
 import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
+import { withTimeout } from '../lib/timeout.js';
 import { ethProviderService } from './ethProviderService.js';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
@@ -45,13 +46,6 @@ interface OnchainConfig {
   uiPoolDataProviderAddress: string;
   poolAddressesProvider: string;
   defaultRpcUrls: string[];
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
-  ]);
 }
 
 function normalizeAddress(addr: string): string {
