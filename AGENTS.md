@@ -29,6 +29,20 @@
 - Keep cron-write/API-read-only pattern: request handlers should not trigger external fetches.
 - When adding reserve fields, update both root shaping and backend types/serialization.
 
+## Automated Checks (No Manual Checklist Needed)
+
+### Reserve Field Addition
+Adding new reserve fields is now type-safe:
+
+1. **Type Safety**: `src/types/prune-type-helper.ts` enforces that `pruneReserveForRuntime` returns all `RuntimeReserveData` fields at compile time
+2. **Runtime Test**: `tests/field-coverage.test.ts` validates all expected fields are present
+3. **Field Registry**: `src/types/runtime-validation.ts` maintains `EXPECTED_RUNTIME_FIELDS` as source of truth
+
+**Run tests to verify:**
+```bash
+npm run build && npm run test
+```
+
 ## Required Coupled Changes
 When touching one area, check its pair:
 - `src/index.ts` (`pruneReserveForRuntime`) ↔ `backend/src/types/index.ts`

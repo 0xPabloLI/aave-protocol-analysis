@@ -90,6 +90,7 @@ export interface MarketWithSpread {
   spokeAddress?: string;
   // V4 HubAsset-level summary fields (from HubSummaryFragment)
   assetTotalSupplied?: string;
+  assetTotalBorrowed?: string;
   assetTotalSupplyCap?: string;
   assetTotalBorrowCap?: string;
 }

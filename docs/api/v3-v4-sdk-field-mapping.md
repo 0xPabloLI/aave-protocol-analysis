@@ -11,6 +11,13 @@
 | **处理文件** | `src/index.ts` | `src/v4-fetcher.ts` |
 | **核心函数** | `buildV3BaseDataset()` | `fetchV4MarketsDataInner()` → 内联循环 |
 | **Reserve ID 格式** | `{market}:{chainId}:{token}` | `{market}:{chainId}:{token}:{hubName}` |
+| **HTTP 请求数** | 1 次 `markets()` 覆盖多链 | `chains()` + `hubs()` + `reserves()` + N 次 `hubAssets()` |
+
+**V4 请求优化**：
+- `fetchHubAssetIndex()` 使用 `Promise.all()` 并行发起所有 `hubAssets()` 查询
+- `@aave/client-v4` 底层使用 urql，默认开启 `batch: true`
+- 同一 tick 内并行的 GraphQL 查询会被 urql 自动合并为单个 HTTP 请求
+- 优化前：串行 N 次 `hubAssets()` 请求；优化后：1~2 次 batch 请求
 
 **V4 数据级别说明**：
 - **Reserve 级别**: 数据直接来自 `r` (reserve 对象)，每个 reserve 独立
@@ -432,6 +439,73 @@ V4 特有字段完全依赖 SDK，无 RPC 覆盖。
 | "ACI Incentive" | `meritSupplys` / `meritBorrows` |
 | "Merkl Incentive" | `merklSupplys` / `merklBorrows` / `merklHolds` |
 | "Brevis Incentive" | `brevisSupplys` / `brevisBorrows` |
+
+---
+
+## GraphQL 客户端与架构说明
+
+### V3 与 V4 SDK 底层架构
+
+| 维度 | V3 (`@aave/client`) | V4 (`@aave/client-v4`) |
+|------|---------------------|------------------------|
+| **传输协议** | GraphQL over HTTP | GraphQL over HTTP |
+| **客户端** | urql (`AaveClient` extends `GqlClient`) | urql (`AaveClient` extends `GqlClient`) |
+| **Batching** | 默认开启 (`batch: true`) | 默认开启 (`batch: true`) |
+| **Query 合并** | 同一 tick 内多个 query 自动合并为单个 HTTP POST | 同一 tick 内多个 query 自动合并为单个 HTTP POST |
+
+**关键结论**：V3 和 V4 SDK 底层都使用 urql，不是 Apollo Client。urql 的 batching 机制不需要额外配置，只要把请求改为并行发起即可自动合并。
+
+### 为什么不用 Apollo Client / DataLoader
+
+| 工具 | 定位 | 本项目适用性 |
+|------|------|-------------|
+| **Apollo Client** | 前端 GraphQL 客户端（React/Vue 生态） | ❌ 不适用。我们使用 urql（更轻量），且 SDK 已封装 |
+| **DataLoader** | 服务端 resolver 层批处理工具 | ❌ 不适用。我们是客户端调用方，不是服务端 |
+| **urql batching** | 前端 GraphQL 请求合并 | ✅ 已内置，无需额外安装 |
+
+**DataLoader 的典型使用场景**（服务端）：
+```typescript
+// 服务端 resolver 中解决 N+1
+const userLoader = new DataLoader(async (userIds) => {
+  // 1 次 SQL/GraphQL 查询获取所有 user
+  return await db.users.findMany({ where: { id: { in: userIds } } });
+});
+
+// resolver 中多次调用自动合并
+const user1 = await userLoader.load(1);
+const user2 = await userLoader.load(2); // 合并为 1 次查询
+```
+
+**我们的场景**（客户端）：
+```typescript
+// 客户端直接调用 SDK，利用 urql batching
+const results = await Promise.all([
+  hubAssets(client, { query: { hubId: hub1.id } }),
+  hubAssets(client, { query: { hubId: hub2.id } }),
+  // urql 自动把这 2 个 query 合并为 1 个 HTTP 请求
+]);
+```
+
+### V3 的 `markets()` 调用模式
+
+V3 的 `markets(client, { chainIds: [...] })` 本身支持批量 chainIds，设计上已经避免了 N+1 问题：
+
+```typescript
+// ✅ V3 推荐：1 次请求覆盖多链
+const result = await markets(client, {
+  chainIds: [chainId(1), chainId(137), chainId(42161)],
+});
+
+// ⚠️ V3 当前实现：逐个 chainId 调用（为了错误隔离）
+for (const chainIdValue of chainIds) {
+  const result = await markets(client, { chainIds: [chainId(chainIdValue)] });
+  // 一个链失败不影响其他链
+}
+```
+
+**权衡**：
+- **批量调用**：1 次 HTTP 请求，速度快，但一个链失败全失败
+- **逐个调用**：N 次 HTTP 请求，速度慢，但错误隔离好
 
 ---
 
