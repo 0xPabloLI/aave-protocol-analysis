@@ -56,6 +56,10 @@ interface V4FormattedReserveData {
   spokeId?: string;
   spokeName?: string;
   spokeAddress?: string;
+  // V4 HubAsset-level summary fields (from HubSummaryFragment)
+  assetTotalSupplied?: string;
+  assetTotalSupplyCap?: string;
+  assetTotalBorrowCap?: string;
 }
 
 // V4 uses its own client instance (points to the same api.aave.com/graphql)
@@ -78,6 +82,10 @@ interface HubAssetInfo {
   slopeBelowOptimal?: string; // V3 variableRateSlope1 (RAY format)
   slopeAboveOptimal?: string; // V3 variableRateSlope2 (RAY format)
   optimalUtilizationRate?: string; // RAY format
+  // HubAsset-level summary fields from HubSummaryFragment
+  totalSupplied?: string;
+  totalSupplyCap?: string;
+  totalBorrowCap?: string;
 }
 
 /**
@@ -126,12 +134,19 @@ async function fetchHubAssetIndex(chainIds: number[]): Promise<{ index: Map<stri
     return { index, rawAssets };
   }
 
-  // 2. For each hub, fetch its assets
-  for (const hub of hubsResult.value) {
+  // 2. Fetch hub assets in parallel so urql can batch the GraphQL requests.
+  //    AaveClient has batching enabled by default (batch: true), so all hubAssets()
+  //    calls fired in the same tick are merged into a single HTTP request.
+  const hubAssetsResults = await Promise.all(
+    (hubsResult.value as any[]).map(async (hub: any) => {
+      const result = await hubAssets(v4Client, { query: { hubId: hub.id } });
+      return { hub, result } as const;
+    })
+  );
+
+  for (const { hub, result: assetsResult } of hubAssetsResults) {
     const hubChainId = Number(hub.chain?.chainId ?? 0);
-    const assetsResult = await hubAssets(v4Client, {
-      query: { hubId: hub.id },
-    });
+
     if (assetsResult.isErr()) {
       logger.warn(`⚠️ V4: Failed to fetch hubAssets for hub ${hub.name}: ${assetsResult.error.message}`);
       continue;
@@ -180,6 +195,10 @@ async function fetchHubAssetIndex(chainIds: number[]): Promise<{ index: Map<stri
         optimalUtilizationRate: optimalUtilizationRatePct?.onChainValue != null
           ? percentOnChainValueToRay(String(optimalUtilizationRatePct.onChainValue), Number(optimalUtilizationRatePct.decimals ?? 4))
           : undefined,
+        // HubAsset-level summary fields (may not exist in HubAsset.summary, will be undefined if absent)
+        totalSupplied: summary?.totalSupplied?.amount?.onChainValue?.toString?.() ?? undefined,
+        totalSupplyCap: summary?.totalSupplyCap?.amount?.onChainValue?.toString?.() ?? undefined,
+        totalBorrowCap: summary?.totalBorrowCap?.amount?.onChainValue?.toString?.() ?? undefined,
       });
     }
   }
@@ -350,6 +369,10 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(spoke?.id ? { spokeId: String(spoke.id) } : {}),
       ...(spoke?.name ? { spokeName: spoke.name } : {}),
       ...(spoke?.address ? { spokeAddress: spoke.address } : {}),
+      // V4 HubAsset-level summary fields
+      ...(hubInfo?.totalSupplied ? { assetTotalSupplied: hubInfo.totalSupplied } : {}),
+      ...(hubInfo?.totalSupplyCap ? { assetTotalSupplyCap: hubInfo.totalSupplyCap } : {}),
+      ...(hubInfo?.totalBorrowCap ? { assetTotalBorrowCap: hubInfo.totalBorrowCap } : {}),
     });
   }
 

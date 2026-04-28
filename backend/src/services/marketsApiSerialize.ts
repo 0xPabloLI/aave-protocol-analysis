@@ -125,6 +125,10 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.spokeId ? { spokeId: reserve.spokeId } : {}),
     ...(reserve.spokeName ? { spokeName: reserve.spokeName } : {}),
     ...(reserve.spokeAddress ? { spokeAddress: reserve.spokeAddress } : {}),
+    // V4 HubAsset-level summary fields (from HubSummaryFragment)
+    ...(reserve.assetTotalSupplied ? { assetTotalSupplied: reserve.assetTotalSupplied } : {}),
+    ...(reserve.assetTotalSupplyCap ? { assetTotalSupplyCap: reserve.assetTotalSupplyCap } : {}),
+    ...(reserve.assetTotalBorrowCap ? { assetTotalBorrowCap: reserve.assetTotalBorrowCap } : {}),
   };
   return out;
 }
