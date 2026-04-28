@@ -6,6 +6,22 @@ cd "$(dirname "$0")/.."
 
 bash scripts/dev-clean.sh
 
+# Preflight: ensure backend deps installed (tsx present)
+if [ ! -x "./node_modules/.bin/tsx" ]; then
+  echo "[dev-entry] tsx missing in backend/node_modules — running npm install..." >&2
+  npm install --include=dev --no-audit --no-fund
+# Preflight: package.json/lock newer than node_modules — deps may be stale
+elif [ "package.json" -nt "node_modules" ] || { [ -f "package-lock.json" ] && [ "package-lock.json" -nt "node_modules" ]; }; then
+  echo "[dev-entry] package.json/lock newer than node_modules — running npm install..." >&2
+  npm install --include=dev --no-audit --no-fund
+fi
+
+# Preflight: ensure root dist exists (backend imports from ../dist/index.js)
+if [ ! -f "../dist/index.js" ]; then
+  echo "[dev-entry] root dist/index.js missing — running root build..." >&2
+  (cd .. && npm run build)
+fi
+
 case "${1:-}" in
   --watch)
     exec ./node_modules/.bin/tsx watch src/server.ts

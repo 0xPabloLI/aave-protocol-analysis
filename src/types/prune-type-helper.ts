@@ -47,6 +47,7 @@ export type RequiredKeys<T> = {
  * }
  * ```
  */
+// ts-prune-ignore-next (public helper for callers that opt in)
 export function assertRuntimeReserveData(
   data: RuntimeReserveData
 ): RuntimeReserveData {
@@ -57,6 +58,7 @@ export function assertRuntimeReserveData(
  * 部分字段映射辅助类型
  * 用于指导 prune 函数需要处理哪些字段
  */
+// ts-prune-ignore-next (public type for documentation/tooling)
 export type PruneFieldMapping = {
   // 必填字段（直接复制）
   [K in RequiredKeys<RuntimeReserveData>]: K extends keyof FormattedReserveData 
@@ -74,6 +76,7 @@ export type PruneFieldMapping = {
  * 
  * 如果 pruneReserveForRuntime 缺少返回类型或字段不匹配，会编译报错
  */
+// ts-prune-ignore-next (public type for compile-time validation)
 export type ValidatePruneFunction<TFn extends (item: FormattedReserveData) => RuntimeReserveData> = 
   TFn extends (item: FormattedReserveData) => infer R 
     ? R extends RuntimeReserveData 
@@ -85,6 +88,7 @@ export type ValidatePruneFunction<TFn extends (item: FormattedReserveData) => Ru
  * 运行时验证：检查返回对象是否包含所有期望的字段
  * 用于开发和测试阶段发现遗漏
  */
+// ts-prune-ignore-next (used by tests/dev tooling, not src)
 export function validatePruneResult(
   result: Record<string, unknown>
 ): { valid: boolean; missing: string[]; extra: string[] } {
