@@ -58,6 +58,7 @@ interface V4FormattedReserveData {
   spokeAddress?: string;
   // V4 HubAsset-level summary fields (from HubSummaryFragment)
   assetTotalSupplied?: string;
+  assetTotalBorrowed?: string;
   assetTotalSupplyCap?: string;
   assetTotalBorrowCap?: string;
 }
@@ -371,6 +372,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(spoke?.address ? { spokeAddress: spoke.address } : {}),
       // V4 HubAsset-level summary fields
       ...(hubInfo?.totalSupplied ? { assetTotalSupplied: hubInfo.totalSupplied } : {}),
+      ...(hubInfo?.totalBorrowed ? { assetTotalBorrowed: hubInfo.totalBorrowed } : {}),
       ...(hubInfo?.totalSupplyCap ? { assetTotalSupplyCap: hubInfo.totalSupplyCap } : {}),
       ...(hubInfo?.totalBorrowCap ? { assetTotalBorrowCap: hubInfo.totalBorrowCap } : {}),
     });

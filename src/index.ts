@@ -34,6 +34,7 @@ import {
 } from './cloudflare-browser.js';
 import { fetchV4ReservesData, bigintReplacer } from './v4-fetcher.js';
 import type { V4FetchResult } from './v4-fetcher.js';
+import type { ValidateSourceCoverage } from './types/prune-type-helper.js';
 
 interface NetworkInfo {
   name: string;
@@ -50,7 +51,7 @@ interface MarketData {
   errors: string[];
 }
 
-interface FormattedReserveData {
+export interface FormattedReserveData {
   reserveId: string;
   marketName: string;
   chainName: string;
@@ -100,11 +101,12 @@ interface FormattedReserveData {
   spokeAddress?: string;
   // V4 HubAsset-level summary fields (from HubSummaryFragment)
   assetTotalSupplied?: string;
+  assetTotalBorrowed?: string;
   assetTotalSupplyCap?: string;
   assetTotalBorrowCap?: string;
 }
 
-interface RuntimeReserveData {
+export interface RuntimeReserveData {
   reserveId: string;
   marketName: string;
   chainName: string;
@@ -154,6 +156,7 @@ interface RuntimeReserveData {
   spokeAddress?: string;
   // V4 HubAsset-level summary fields (from HubSummaryFragment)
   assetTotalSupplied?: string;
+  assetTotalBorrowed?: string;
   assetTotalSupplyCap?: string;
   assetTotalBorrowCap?: string;
 }
@@ -170,9 +173,6 @@ export interface MarketsPayload {
   data: RuntimeReserveData[];
 }
 
-// Re-export for backend type usage
-// ts-prune-ignore-next
-export type { RuntimeReserveData };
 
 function pruneMeritEntryForRuntime(entry: MeritAprEntry): MeritAprEntry {
   return {
@@ -240,6 +240,8 @@ function pruneBrevisGroupForRuntime(group: BrevisCampaignItem): BrevisCampaignIt
 }
 
 function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData {
+  // 编译时类型验证：使用 satisfies 确保返回对象满足 RuntimeReserveData 类型
+  // 如果缺少必填字段，TypeScript 会报错
   return {
     reserveId: item.reserveId,
     marketName: item.marketName,
@@ -301,6 +303,11 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.spokeId ? { spokeId: item.spokeId } : {}),
     ...(item.spokeName ? { spokeName: item.spokeName } : {}),
     ...(item.spokeAddress ? { spokeAddress: item.spokeAddress } : {}),
+    // V4 HubAsset-level summary fields
+    ...(item.assetTotalSupplied ? { assetTotalSupplied: item.assetTotalSupplied } : {}),
+    ...(item.assetTotalBorrowed ? { assetTotalBorrowed: item.assetTotalBorrowed } : {}),
+    ...(item.assetTotalSupplyCap ? { assetTotalSupplyCap: item.assetTotalSupplyCap } : {}),
+    ...(item.assetTotalBorrowCap ? { assetTotalBorrowCap: item.assetTotalBorrowCap } : {}),
   };
 }
 

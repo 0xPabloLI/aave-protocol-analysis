@@ -127,6 +127,7 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.spokeAddress ? { spokeAddress: reserve.spokeAddress } : {}),
     // V4 HubAsset-level summary fields (from HubSummaryFragment)
     ...(reserve.assetTotalSupplied ? { assetTotalSupplied: reserve.assetTotalSupplied } : {}),
+    ...(reserve.assetTotalBorrowed ? { assetTotalBorrowed: reserve.assetTotalBorrowed } : {}),
     ...(reserve.assetTotalSupplyCap ? { assetTotalSupplyCap: reserve.assetTotalSupplyCap } : {}),
     ...(reserve.assetTotalBorrowCap ? { assetTotalBorrowCap: reserve.assetTotalBorrowCap } : {}),
   };
