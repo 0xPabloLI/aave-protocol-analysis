@@ -75,6 +75,7 @@ export const EXPECTED_RUNTIME_FIELDS = [
 ] as const;
 
 // 类型辅助函数：检查对象是否包含所有期望的字段（用于测试）
+// ts-prune-ignore-next (used by tests/, which are outside tsconfig.include)
 export function validateRuntimeReserveShape(
   data: Record<string, unknown>
 ): string[] {
