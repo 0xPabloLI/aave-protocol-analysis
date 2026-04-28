@@ -4,7 +4,8 @@
  * 确保 pruneReserveForRuntime 不会遗漏任何字段
  */
 
-import { describe, it, expect } from 'vitest';
+import test from 'node:test';
+import assert from 'node:assert/strict';
 import { EXPECTED_RUNTIME_FIELDS, validateRuntimeReserveShape } from '../src/types/runtime-validation.js';
 
 // 模拟一个完整的 FormattedReserveData 对象（包含所有可能的字段）
@@ -60,58 +61,51 @@ const mockFullReserve = {
   assetTotalBorrowCap: '8000000000000',
 };
 
-describe('RuntimeReserveData Field Coverage', () => {
-  it('should have all expected fields defined in EXPECTED_RUNTIME_FIELDS', () => {
-    // 验证 EXPECTED_RUNTIME_FIELDS 包含所有关键字段
-    const criticalFields = [
-      'reserveId',
-      'tokenAddress',
-      'supplyApy',
-      'assetTotalSupplied',
-      'assetTotalBorrowed',
-      'assetTotalSupplyCap',
-      'assetTotalBorrowCap',
-    ];
-    
-    for (const field of criticalFields) {
-      expect(EXPECTED_RUNTIME_FIELDS).toContain(field);
-    }
-  });
+test('all critical fields defined in EXPECTED_RUNTIME_FIELDS', () => {
+  const criticalFields = [
+    'reserveId',
+    'tokenAddress',
+    'supplyApy',
+    'assetTotalSupplied',
+    'assetTotalBorrowed',
+    'assetTotalSupplyCap',
+    'assetTotalBorrowCap',
+  ];
+  
+  for (const field of criticalFields) {
+    assert(EXPECTED_RUNTIME_FIELDS.includes(field as any), `Missing field: ${field}`);
+  }
+});
 
-  it('should detect missing fields in runtime data', () => {
-    // 创建一个缺少某些字段的对象
-    const incompleteData = {
-      reserveId: 'test',
-      marketName: 'test',
-      // 缺少很多字段...
-    };
+test('detect missing fields in runtime data', () => {
+  const incompleteData = {
+    reserveId: 'test',
+    marketName: 'test',
+  };
 
-    const missing = validateRuntimeReserveShape(incompleteData);
-    
-    // 应该检测到缺失的字段
-    expect(missing.length).toBeGreaterThan(0);
-    expect(missing).toContain('tokenAddress');
-    expect(missing).toContain('chainId');
-  });
+  const missing = validateRuntimeReserveShape(incompleteData);
+  
+  assert(missing.length > 0, 'Should detect missing fields');
+  assert(missing.includes('tokenAddress'), 'Should detect missing tokenAddress');
+  assert(missing.includes('chainId'), 'Should detect missing chainId');
+});
 
-  it('should validate complete mock reserve has no missing fields', () => {
-    const missing = validateRuntimeReserveShape(mockFullReserve);
-    
-    // 完整的 mock 数据不应该有缺失字段
-    expect(missing).toHaveLength(0);
-  });
+test('validate complete mock reserve has no missing fields', () => {
+  const missing = validateRuntimeReserveShape(mockFullReserve);
+  
+  assert.strictEqual(missing.length, 0, `Missing fields: ${missing.join(', ')}`);
+});
 
-  it('should specifically check for V4 HubAsset summary fields', () => {
-    const v4Fields = [
-      'assetTotalSupplied',
-      'assetTotalBorrowed', 
-      'assetTotalSupplyCap',
-      'assetTotalBorrowCap',
-    ];
+test('V4 HubAsset summary fields present in registry', () => {
+  const v4Fields = [
+    'assetTotalSupplied',
+    'assetTotalBorrowed', 
+    'assetTotalSupplyCap',
+    'assetTotalBorrowCap',
+  ];
 
-    for (const field of v4Fields) {
-      expect(EXPECTED_RUNTIME_FIELDS).toContain(field);
-      expect(field in mockFullReserve).toBe(true);
-    }
-  });
+  for (const field of v4Fields) {
+    assert(EXPECTED_RUNTIME_FIELDS.includes(field as any), `Missing V4 field: ${field}`);
+    assert(field in mockFullReserve, `Field not in mock: ${field}`);
+  }
 });
