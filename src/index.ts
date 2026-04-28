@@ -98,6 +98,10 @@ interface FormattedReserveData {
   spokeId?: string;
   spokeName?: string;
   spokeAddress?: string;
+  // V4 HubAsset-level summary fields (from HubSummaryFragment)
+  assetTotalSupplied?: string;
+  assetTotalSupplyCap?: string;
+  assetTotalBorrowCap?: string;
 }
 
 interface RuntimeReserveData {
@@ -148,6 +152,10 @@ interface RuntimeReserveData {
   spokeId?: string;
   spokeName?: string;
   spokeAddress?: string;
+  // V4 HubAsset-level summary fields (from HubSummaryFragment)
+  assetTotalSupplied?: string;
+  assetTotalSupplyCap?: string;
+  assetTotalBorrowCap?: string;
 }
 
 // Payload interface for backend to import (cron-write/API-read-only pattern)
