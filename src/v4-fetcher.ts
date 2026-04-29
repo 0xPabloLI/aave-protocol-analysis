@@ -197,9 +197,10 @@ async function fetchHubAssetIndex(chainIds: number[]): Promise<{ index: Map<stri
           ? percentOnChainValueToRay(String(optimalUtilizationRatePct.onChainValue), Number(optimalUtilizationRatePct.decimals ?? 4))
           : undefined,
         // HubAsset-level summary fields (may not exist in HubAsset.summary, will be undefined if absent)
-        totalSupplied: summary?.totalSupplied?.amount?.onChainValue?.toString?.() ?? undefined,
-        totalSupplyCap: summary?.totalSupplyCap?.amount?.onChainValue?.toString?.() ?? undefined,
-        totalBorrowCap: summary?.totalBorrowCap?.amount?.onChainValue?.toString?.() ?? undefined,
+        // Note: SDK returns ExchangeAmount/ExchangeAmountWithChange with .value (not .amount.onChainValue)
+        totalSupplied: summary?.totalSupplied?.current?.value?.toString?.() ?? undefined,
+        totalSupplyCap: summary?.totalSupplyCap?.value?.toString?.() ?? undefined,
+        totalBorrowCap: summary?.totalBorrowCap?.value?.toString?.() ?? undefined,
       });
     }
   }
@@ -371,10 +372,21 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(spoke?.name ? { spokeName: spoke.name } : {}),
       ...(spoke?.address ? { spokeAddress: spoke.address } : {}),
       // V4 HubAsset-level summary fields
-      ...(hubInfo?.totalSupplied ? { assetTotalSupplied: hubInfo.totalSupplied } : {}),
-      ...(hubInfo?.totalBorrowed ? { assetTotalBorrowed: hubInfo.totalBorrowed } : {}),
-      ...(hubInfo?.totalSupplyCap ? { assetTotalSupplyCap: hubInfo.totalSupplyCap } : {}),
-      ...(hubInfo?.totalBorrowCap ? { assetTotalBorrowCap: hubInfo.totalBorrowCap } : {}),
+      // Note: SDK structure varies by field:
+      // - totalSupplied/totalSupplyCap/totalBorrowCap: in hub.summary (from r.asset.hub)
+      // - borrowed: in r.summary (reserve level, not hub level)
+      ...(hub?.summary?.totalSupplied?.current?.value
+        ? { assetTotalSupplied: String(hub.summary.totalSupplied.current.value) }
+        : {}),
+      ...(r.summary?.borrowed?.amount?.onChainValue
+        ? { assetTotalBorrowed: String(r.summary.borrowed.amount.onChainValue) }
+        : {}),
+      ...(hub?.summary?.totalSupplyCap?.value
+        ? { assetTotalSupplyCap: String(hub.summary.totalSupplyCap.value) }
+        : {}),
+      ...(hub?.summary?.totalBorrowCap?.value
+        ? { assetTotalBorrowCap: String(hub.summary.totalBorrowCap.value) }
+        : {}),
     });
   }
 

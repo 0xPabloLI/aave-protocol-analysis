@@ -1516,13 +1516,14 @@ async function writeDebugSnapshot(
 // 这样可以避免在作为模块被导入时执行 process.exit()
 // 检查逻辑：
 // 1. 如果 process.argv[1] 包含 'server'，说明是从 backend server 运行的，不应该执行
-// 2. 如果当前文件路径在 dist 目录下，说明是被编译后导入的，不应该执行
+// 2. 如果当前文件路径在 dist 目录下，说明是被编译后导入的，不应该执行（可被 FORCE_RUN_FETCHER 覆盖）
 // 3. 否则，说明是直接运行这个文件（npm run dev 在根目录），应该执行
 const mainScript = process.argv[1] || '';
 const currentFile = fileURLToPath(import.meta.url);
-const isMainModule = !mainScript.includes('server') && 
-                     !currentFile.includes('/dist/') &&
-                     !currentFile.includes('\\dist\\');
+const isMainModule = process.env.FORCE_RUN_FETCHER === 'true' || 
+                     (!mainScript.includes('server') && 
+                      !currentFile.includes('/dist/') &&
+                      !currentFile.includes('\\dist\\'));
 
 if (isMainModule) {
   // 执行主函数（仅当作为独立脚本运行时）

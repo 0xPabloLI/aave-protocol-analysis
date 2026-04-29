@@ -133,6 +133,30 @@
 | `hubId` | Hub ID | `hub.id` | Hub 标识 |
 | `hubName` | Hub 名称 | `hub.name` | Hub 标识 |
 | `hubAddress` | Hub 合约地址 | `hub.address` | Hub 标识 |
+| `assetTotalSupplied` | Hub 资产总供应量 | `summary.totalSupplied.current.value` | ExchangeAmountWithChange → .current.value |
+| `assetTotalBorrowed` | Hub 资产总借款量 | `summary.borrowed.amount.onChainValue` | Erc20Amount 类型（注意：与其他字段不同） |
+| `assetTotalSupplyCap` | Hub 资产供应上限 | `summary.totalSupplyCap.value` | ExchangeAmount → .value |
+| `assetTotalBorrowCap` | Hub 资产借款上限 | `summary.totalBorrowCap.value` | ExchangeAmount → .value |
+
+**重要提示 - SDK 字段结构差异**：
+
+V4 SDK 返回的 HubSummaryFragment 字段有不同结构：
+
+```typescript
+// 1. ExchangeAmountWithChange (totalSupplied)
+// 结构: { __typename: "ExchangeAmountWithChange", current: { __typename: "ExchangeAmount", value: string } }
+summary?.totalSupplied?.current?.value
+
+// 2. ExchangeAmount (totalSupplyCap, totalBorrowCap)
+// 结构: { __typename: "ExchangeAmount", value: string }
+summary?.totalSupplyCap?.value
+summary?.totalBorrowCap?.value
+
+// 3. Erc20Amount (borrowed, availableLiquidity) - 注意这是不同的类型！
+// 结构: { __typename: "Erc20Amount", amount: { onChainValue: string } }
+summary?.borrowed?.amount?.onChainValue
+summary?.availableLiquidity?.amount?.onChainValue
+```
 
 **Reserve 级别但依赖 Hub 参数的字段**：
 
