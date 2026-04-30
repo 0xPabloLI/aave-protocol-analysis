@@ -67,7 +67,7 @@
 
 | API 字段 | 前端使用 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
 |----------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **reserveFactor** | `useRateSimulation` | **Hub** | `hubInfo?.liquidityFee` | `fetchV4MarketsDataInner()` 内联 | 从 HubAsset 索引获取，值为 RAY 格式字符串 | `reserve.borrowInfo?.reserveFactor?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
+| **reserveFactor** | `useRateSimulation` | **Hub** | `hubInfo?.liquidityFee` | `fetchV4MarketsDataInner()` 内联 | 从 HubAsset 索引获取，值为 4-decimal (bps-like) 格式字符串，与 V3 一致 | `reserve.borrowInfo?.reserveFactor?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
 | **variableRateSlope1** | `useRateSimulation` | **Hub** | `hubInfo?.slopeBelowOptimal` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | `reserve.borrowInfo?.variableRateSlope1?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
 | **variableRateSlope2** | `useRateSimulation` | **Hub** | `hubInfo?.slopeAboveOptimal` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | `reserve.borrowInfo?.variableRateSlope2?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
 | **optimalUsageRate** | "Optimal" 标记 / UtilizationSheet | **Hub** | `hubInfo?.optimalUtilizationRate` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | `reserve.borrowInfo?.optimalUsageRate?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
@@ -121,42 +121,43 @@
 
 | 字段 | 说明 | HubAsset 字段 | 为什么共享 |
 |------|------|---------------|----------|
-| `supplyCapUsd` | 供应上限 USD | `settings.supplyCap.exchange` | Hub级别的风险控制参数 |
-| `borrowCapUsd` | 借贷上限 USD | `settings.borrowCap.exchange` | Hub级别的风险控制参数 |
-| `utilizationPct` | 资金利用率 | `utilizationRate * 100` | 基于 Hub 总流动性计算 |
-| `availableLiquidity` | 可用流动性 | `availableLiquidity` | Hub 级别流动性池 |
-| `reserveFactor` | 储备因子 | `liquidityFee` | Hub 级别的费率策略 |
-| `variableRateSlope1` | 利率曲线斜率 1 | `slopeBelowOptimal` (经转换) | 同一 Hub 利率模型共享 |
-| `variableRateSlope2` | 利率曲线斜率 2 | `slopeAboveOptimal` (经转换) | 同一 Hub 利率模型共享 |
-| `optimalUsageRate` | 最优利用率 | `optimalUtilizationRate` (经转换) | 同一 Hub 利率模型共享 |
-| `baseVariableBorrowRate` | 基础借款利率 | `baseBorrowRate` (经转换) | 同一 Hub 利率模型共享 |
+| `utilizationPct` | 资金利用率 | `summary.utilizationRate * 100` | 基于 Hub 总流动性计算 |
+| `availableLiquidity` | 可用流动性 | `summary.availableLiquidity.amount.onChainValue` | Hub 级别流动性池 |
+| `reserveFactor` | 储备因子 | `settings.liquidityFee.onChainValue` | Hub 级别的费率策略 (4-decimal) |
+| `variableRateSlope1` | 利率曲线斜率 1 | `settings.slopeBelowOptimal` (经转换) | 同一 Hub 利率模型共享 |
+| `variableRateSlope2` | 利率曲线斜率 2 | `settings.slopeAboveOptimal` (经转换) | 同一 Hub 利率模型共享 |
+| `optimalUsageRate` | 最优利用率 | `settings.optimalUtilizationRate` (经转换) | 同一 Hub 利率模型共享 |
+| `baseVariableBorrowRate` | 基础借款利率 | `settings.baseBorrowRate` (经转换) | 同一 Hub 利率模型共享 |
 | `hubId` | Hub ID | `hub.id` | Hub 标识 |
 | `hubName` | Hub 名称 | `hub.name` | Hub 标识 |
 | `hubAddress` | Hub 合约地址 | `hub.address` | Hub 标识 |
-| `assetTotalSupplied` | Hub 资产总供应量 | `summary.totalSupplied.current.value` | ExchangeAmountWithChange → .current.value |
-| `assetTotalBorrowed` | Hub 资产总借款量 | `summary.borrowed.amount.onChainValue` | Erc20Amount 类型（注意：与其他字段不同） |
-| `assetTotalSupplyCap` | Hub 资产供应上限 | `summary.totalSupplyCap.value` | ExchangeAmount → .value |
-| `assetTotalBorrowCap` | Hub 资产借款上限 | `summary.totalBorrowCap.value` | ExchangeAmount → .value |
+| `assetTotalSupplied` | Hub 资产总供应量 | `hub.summary.totalSupplied.current.value` | HubSummary → ExchangeAmountWithChange |
+| `assetTotalBorrowed` | Hub 资产总借款量 | `r.summary.borrowed.amount.onChainValue` | ReserveSummary → Erc20Amount (Spoke 级别) |
+| `assetTotalSupplyCap` | Hub 资产供应上限 | `hub.summary.totalSupplyCap.value` | HubSummary → ExchangeAmount |
+| `assetTotalBorrowCap` | Hub 资产借款上限 | `hub.summary.totalBorrowCap.value` | HubSummary → ExchangeAmount |
 
 **重要提示 - SDK 字段结构差异**：
 
-V4 SDK 返回的 HubSummaryFragment 字段有不同结构：
+V4 SDK 返回的 HubSummary 字段有不同结构（通过 `r.asset.hub.summary` 或 `hubAsset.hub.summary` 访问）：
 
 ```typescript
-// 1. ExchangeAmountWithChange (totalSupplied)
+// 1. ExchangeAmountWithChange (totalSupplied, totalBorrowed)
 // 结构: { __typename: "ExchangeAmountWithChange", current: { __typename: "ExchangeAmount", value: string } }
-summary?.totalSupplied?.current?.value
+hub.summary?.totalSupplied?.current?.value
+hub.summary?.totalBorrowed?.current?.value
 
 // 2. ExchangeAmount (totalSupplyCap, totalBorrowCap)
 // 结构: { __typename: "ExchangeAmount", value: string }
-summary?.totalSupplyCap?.value
-summary?.totalBorrowCap?.value
+hub.summary?.totalSupplyCap?.value
+hub.summary?.totalBorrowCap?.value
 
-// 3. Erc20Amount (borrowed, availableLiquidity) - 注意这是不同的类型！
+// 3. Erc20Amount (HubAssetSummary.borrowed, availableLiquidity)
 // 结构: { __typename: "Erc20Amount", amount: { onChainValue: string } }
-summary?.borrowed?.amount?.onChainValue
-summary?.availableLiquidity?.amount?.onChainValue
+asset.summary?.borrowed?.amount?.onChainValue
+asset.summary?.availableLiquidity?.amount?.onChainValue
 ```
+
+**注意**：`supplyCapUsd` 和 `borrowCapUsd` 是 **Reserve 级别** 字段，来自 `ReserveSettings`（`r.settings.supplyCap.exchange` / `r.settings.borrowCap.exchange`），不是 Hub 级别。HubAssetSettings 没有 supplyCap/borrowCap 字段。
 
 **Reserve 级别但依赖 Hub 参数的字段**：
 
