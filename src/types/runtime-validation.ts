@@ -68,10 +68,6 @@ export const EXPECTED_RUNTIME_FIELDS = [
   'spokeId',
   'spokeName',
   'spokeAddress',
-  'assetTotalSupplied',
-  'assetTotalBorrowed',
-  'assetTotalSupplyCap',
-  'assetTotalBorrowCap',
 ] as const;
 
 // 类型辅助函数：检查对象是否包含所有期望的字段（用于测试）

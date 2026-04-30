@@ -104,7 +104,6 @@ export function validatePruneResult(
     'aaveProReserveId', 'meritSupplys', 'meritBorrows', 'merklSupplys',
     'merklBorrows', 'merklHolds', 'brevisSupplys', 'brevisBorrows',
     'hubId', 'hubName', 'hubAddress', 'spokeId', 'spokeName', 'spokeAddress',
-    'assetTotalSupplied', 'assetTotalBorrowed', 'assetTotalSupplyCap', 'assetTotalBorrowCap',
   ];
   
   const missing: string[] = [];

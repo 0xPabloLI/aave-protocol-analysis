@@ -46,13 +46,14 @@ export interface MarketWithSpread {
   decimals?: number;
   availableLiquidity?: string;
   totalVariableDebt?: string; // raw token units - total borrowed
-  reserveFactor?: string;
-  variableRateSlope1?: string;
-  variableRateSlope2?: string;
-  optimalUsageRate?: string;
+  // Rate-model fields are percent numbers (e.g., 9 means 9%) for V3/V4 unified API.
+  reserveFactor?: number;
+  variableRateSlope1?: number;
+  variableRateSlope2?: number;
+  optimalUsageRate?: number;
   // On-chain only fields (from UiPoolDataProvider.getReservesHumanized())
   // Absent if RPC fetch failed; cached for 30 min on failure
-  baseVariableBorrowRate?: string; // RAY (1e27) - for simulated borrow rate calculation
+  baseVariableBorrowRate?: number; // percent (e.g., 0 means 0%)
   deficit?: string; // raw token units - for accurate supply APY calculation
   supplyIncentives?: number[];
   borrowIncentives?: number[];
@@ -88,11 +89,6 @@ export interface MarketWithSpread {
   spokeId?: string;
   spokeName?: string;
   spokeAddress?: string;
-  // V4 HubAsset-level summary fields (from HubSummaryFragment)
-  assetTotalSupplied?: string;
-  assetTotalBorrowed?: string;
-  assetTotalSupplyCap?: string;
-  assetTotalBorrowCap?: string;
 }
 
 export interface MarketsResponse {

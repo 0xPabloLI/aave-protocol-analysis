@@ -83,10 +83,10 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.decimals !== undefined ? { decimals: reserve.decimals } : {}),
     ...(reserve.availableLiquidity ? { availableLiquidity: reserve.availableLiquidity } : {}),
     ...(reserve.totalVariableDebt ? { totalVariableDebt: reserve.totalVariableDebt } : {}),
-    ...(reserve.reserveFactor ? { reserveFactor: reserve.reserveFactor } : {}),
-    ...(reserve.variableRateSlope1 ? { variableRateSlope1: reserve.variableRateSlope1 } : {}),
-    ...(reserve.variableRateSlope2 ? { variableRateSlope2: reserve.variableRateSlope2 } : {}),
-    ...(reserve.optimalUsageRate ? { optimalUsageRate: reserve.optimalUsageRate } : {}),
+    ...(reserve.reserveFactor !== undefined ? { reserveFactor: reserve.reserveFactor } : {}),
+    ...(reserve.variableRateSlope1 !== undefined ? { variableRateSlope1: reserve.variableRateSlope1 } : {}),
+    ...(reserve.variableRateSlope2 !== undefined ? { variableRateSlope2: reserve.variableRateSlope2 } : {}),
+    ...(reserve.optimalUsageRate !== undefined ? { optimalUsageRate: reserve.optimalUsageRate } : {}),
     ...(reserve.baseVariableBorrowRate !== undefined
       ? { baseVariableBorrowRate: reserve.baseVariableBorrowRate }
       : {}),
@@ -125,11 +125,6 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.spokeId ? { spokeId: reserve.spokeId } : {}),
     ...(reserve.spokeName ? { spokeName: reserve.spokeName } : {}),
     ...(reserve.spokeAddress ? { spokeAddress: reserve.spokeAddress } : {}),
-    // V4 HubAsset-level summary fields (from HubSummaryFragment)
-    ...(reserve.assetTotalSupplied ? { assetTotalSupplied: reserve.assetTotalSupplied } : {}),
-    ...(reserve.assetTotalBorrowed ? { assetTotalBorrowed: reserve.assetTotalBorrowed } : {}),
-    ...(reserve.assetTotalSupplyCap ? { assetTotalSupplyCap: reserve.assetTotalSupplyCap } : {}),
-    ...(reserve.assetTotalBorrowCap ? { assetTotalBorrowCap: reserve.assetTotalBorrowCap } : {}),
   };
   return out;
 }
