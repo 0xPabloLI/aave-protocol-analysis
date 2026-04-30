@@ -66,7 +66,7 @@
 - [x] commit 1 — V4 fetcher 重构（删除 hubAssets、rate params 改 number 百分比）✅
 - [x] commit 2 — V3 rate params 改 number 百分比 ✅
 - [x] commit 4 — on-chain `baseVariableBorrowRate` + fallback 改 number 百分比 ✅ (与 commit 1+2 合并：类型耦合)
-- [ ] commit 3 — V3+V4 新增 11 个字段 (reserveSize, supplyCap, borrowCap, suppliable*, borrowable*, totalVariableDebtUsd, availableLiquidityUsd)
+- [x] commit 3 — V3+V4 新增 11 个字段 (reserveSize, supplyCap, borrowCap, suppliable*, borrowable*, totalVariableDebtUsd, availableLiquidityUsd) ✅
 - [ ] commit 5 — 前端类型/zod 调整
 - [ ] commit 6 — 前端利率计算器 Float 重写
 - [ ] commit 7 — 前端消费新 USD/cap 字段
