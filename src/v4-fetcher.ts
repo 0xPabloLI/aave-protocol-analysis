@@ -48,7 +48,16 @@ interface V4FormattedReserveData {
   borrowIncentives?: number[];
   decimals?: number;
   availableLiquidity?: string;
+  availableLiquidityUsd?: number;
   totalVariableDebt?: string;
+  totalVariableDebtUsd?: number;
+  reserveSize?: string;
+  supplyCap?: string;
+  borrowCap?: string;
+  suppliable?: string;
+  suppliableUsd?: number;
+  borrowable?: string;
+  borrowableUsd?: number;
   // Rate-model fields are percent numbers (e.g., 9 = 9%) after unification.
   reserveFactor?: number;
   variableRateSlope1?: number;
@@ -183,6 +192,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     const a = r.asset;
     const utilizationPct = percentNumberToPercent(a?.summary?.utilizationRate);
     const availableLiquidity = a?.summary?.availableLiquidity?.amount?.onChainValue?.toString?.() ?? undefined;
+    const availableLiquidityUsd = toFiniteNumber(a?.summary?.availableLiquidity?.exchange?.value) ?? undefined;
 
     const reserveFactor = percentNumberToPercent(a?.settings?.liquidityFee);
     const variableRateSlope1 = percentNumberToPercent(a?.settings?.slopeBelowOptimal);
@@ -190,7 +200,16 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     const optimalUsageRate = percentNumberToPercent(a?.settings?.optimalUtilizationRate);
     const baseVariableBorrowRate = percentNumberToPercent(a?.settings?.baseBorrowRate);
 
+    // Reserve-level (per-spoke) sizes & caps in raw token units
+    const reserveSize = r.summary?.supplied?.amount?.onChainValue?.toString?.() ?? undefined;
     const totalVariableDebt = r.summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined;
+    const totalVariableDebtUsd = toFiniteNumber(r.summary?.borrowed?.exchange?.value) ?? undefined;
+    const supplyCap = r.settings?.supplyCap?.amount?.onChainValue?.toString?.() ?? undefined;
+    const borrowCap = r.settings?.borrowCap?.amount?.onChainValue?.toString?.() ?? undefined;
+    const suppliable = r.summary?.suppliable?.amount?.onChainValue?.toString?.() ?? undefined;
+    const suppliableUsd = toFiniteNumber(r.summary?.suppliable?.exchange?.value) ?? undefined;
+    const borrowable = r.summary?.borrowable?.amount?.onChainValue?.toString?.() ?? undefined;
+    const borrowableUsd = toFiniteNumber(r.summary?.borrowable?.exchange?.value) ?? undefined;
 
     // V4 SDK embeds summary.rewards[] (MerklSupplyReward / MerklBorrowReward) but they
     // are internal Aave points (payout token "aglaMerklUSD") that don't exist in the
@@ -224,7 +243,16 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(borrowCapUsd !== undefined ? { borrowCapUsd } : {}),
       ...(decimals !== undefined ? { decimals } : {}),
       ...(availableLiquidity ? { availableLiquidity } : {}),
+      ...(availableLiquidityUsd !== undefined ? { availableLiquidityUsd } : {}),
       ...(totalVariableDebt ? { totalVariableDebt } : {}),
+      ...(totalVariableDebtUsd !== undefined ? { totalVariableDebtUsd } : {}),
+      ...(reserveSize ? { reserveSize } : {}),
+      ...(supplyCap ? { supplyCap } : {}),
+      ...(borrowCap ? { borrowCap } : {}),
+      ...(suppliable ? { suppliable } : {}),
+      ...(suppliableUsd !== undefined ? { suppliableUsd } : {}),
+      ...(borrowable ? { borrowable } : {}),
+      ...(borrowableUsd !== undefined ? { borrowableUsd } : {}),
       ...(reserveFactor !== undefined ? { reserveFactor } : {}),
       ...(variableRateSlope1 !== undefined ? { variableRateSlope1 } : {}),
       ...(variableRateSlope2 !== undefined ? { variableRateSlope2 } : {}),

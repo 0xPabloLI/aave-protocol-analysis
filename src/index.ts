@@ -76,8 +76,17 @@ export interface FormattedReserveData {
   borrowIncentives: number[]; // Protocol borrow incentives 比例值数组
   // Rate-input fields for manual APR calculation (raw strings for precision)
   decimals?: number;
-  availableLiquidity?: string;
-  totalVariableDebt?: string; // Total borrowed (raw token units)
+  availableLiquidity?: string; // raw token units (hub-level for V4)
+  availableLiquidityUsd?: number;
+  totalVariableDebt?: string; // raw token units (per-spoke for V4)
+  totalVariableDebtUsd?: number;
+  reserveSize?: string; // raw token units (per-spoke for V4)
+  supplyCap?: string; // raw token units (per-spoke for V4)
+  borrowCap?: string; // raw token units (per-spoke for V4)
+  suppliable?: string; // raw token units; available headroom to supply
+  suppliableUsd?: number;
+  borrowable?: string; // raw token units; available headroom to borrow
+  borrowableUsd?: number;
   // Rate-model fields are percent numbers (e.g., 9 means 9%) for V3/V4 unified API.
   reserveFactor?: number;
   variableRateSlope1?: number;
@@ -128,7 +137,16 @@ export interface RuntimeReserveData {
   // Rate-input fields for manual APR calculation
   decimals?: number;
   availableLiquidity?: string;
-  totalVariableDebt?: string; // Total borrowed (raw token units)
+  availableLiquidityUsd?: number;
+  totalVariableDebt?: string;
+  totalVariableDebtUsd?: number;
+  reserveSize?: string;
+  supplyCap?: string;
+  borrowCap?: string;
+  suppliable?: string;
+  suppliableUsd?: number;
+  borrowable?: string;
+  borrowableUsd?: number;
   reserveFactor?: number;
   variableRateSlope1?: number;
   variableRateSlope2?: number;
@@ -280,7 +298,16 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     // Rate-input fields for manual APR calculation
     ...(item.decimals !== undefined ? { decimals: item.decimals } : {}),
     ...(item.availableLiquidity ? { availableLiquidity: item.availableLiquidity } : {}),
+    ...(item.availableLiquidityUsd !== undefined ? { availableLiquidityUsd: item.availableLiquidityUsd } : {}),
     ...(item.totalVariableDebt ? { totalVariableDebt: item.totalVariableDebt } : {}),
+    ...(item.totalVariableDebtUsd !== undefined ? { totalVariableDebtUsd: item.totalVariableDebtUsd } : {}),
+    ...(item.reserveSize ? { reserveSize: item.reserveSize } : {}),
+    ...(item.supplyCap ? { supplyCap: item.supplyCap } : {}),
+    ...(item.borrowCap ? { borrowCap: item.borrowCap } : {}),
+    ...(item.suppliable ? { suppliable: item.suppliable } : {}),
+    ...(item.suppliableUsd !== undefined ? { suppliableUsd: item.suppliableUsd } : {}),
+    ...(item.borrowable ? { borrowable: item.borrowable } : {}),
+    ...(item.borrowableUsd !== undefined ? { borrowableUsd: item.borrowableUsd } : {}),
     ...(item.reserveFactor !== undefined ? { reserveFactor: item.reserveFactor } : {}),
     ...(item.variableRateSlope1 !== undefined ? { variableRateSlope1: item.variableRateSlope1 } : {}),
     ...(item.variableRateSlope2 !== undefined ? { variableRateSlope2: item.variableRateSlope2 } : {}),
@@ -622,7 +649,52 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
         // All raw values are strings to preserve precision for on-chain math
         const decimals = reserve.underlyingToken?.decimals ?? undefined;
         const availableLiquidity = reserve.borrowInfo?.availableLiquidity?.amount?.raw ?? undefined;
+        const availableLiquidityUsd = toFiniteNumber(reserve.borrowInfo?.availableLiquidity?.usd) ?? undefined;
         const totalVariableDebt = reserve.borrowInfo?.total?.amount?.raw ?? undefined; // Total borrowed
+        const totalVariableDebtUsd = toFiniteNumber(reserve.borrowInfo?.total?.usd) ?? undefined;
+        const reserveSize = reserve.size?.amount?.raw ?? undefined;
+        const supplyCap = reserve.supplyInfo?.supplyCap?.amount?.raw ?? undefined;
+        const borrowCap = reserve.borrowInfo?.borrowCap?.amount?.raw ?? undefined;
+        // V3 has no direct suppliable/borrowable; derive server-side so the frontend
+        // consumes the same field names for V3 and V4.
+        const subtractRawClamped = (a?: string, b?: string): string | undefined => {
+          if (!a || !b) return undefined;
+          try {
+            const diff = BigInt(a) - BigInt(b);
+            return diff > 0n ? diff.toString() : '0';
+          } catch {
+            return undefined;
+          }
+        };
+        const minRawClamped = (a?: string, b?: string): string | undefined => {
+          if (!a || !b) return undefined;
+          try {
+            const av = BigInt(a);
+            const bv = BigInt(b);
+            const m = av < bv ? av : bv;
+            return m > 0n ? m.toString() : '0';
+          } catch {
+            return undefined;
+          }
+        };
+        const subtractClamped = (a?: number, b?: number): number | undefined => {
+          if (a === undefined || b === undefined) return undefined;
+          return Math.max(0, a - b);
+        };
+        const minClamped = (a?: number, b?: number): number | undefined => {
+          if (a === undefined || b === undefined) return undefined;
+          return Math.max(0, Math.min(a, b));
+        };
+        const suppliable = subtractRawClamped(supplyCap, reserveSize);
+        const suppliableUsd = subtractClamped(supplyCapUsd, reserveSizeUsd);
+        const borrowable = minRawClamped(
+          subtractRawClamped(borrowCap, totalVariableDebt),
+          availableLiquidity,
+        );
+        const borrowableUsd = minClamped(
+          subtractClamped(borrowCapUsd, totalVariableDebtUsd),
+          availableLiquidityUsd,
+        );
         // V3 SDK PercentValue.value is a ratio string (e.g., "0.20" = 20%); ×100 to percent number.
         const percentFromV3 = (pv: any): number | undefined => {
           const ratio = toFiniteNumber(pv?.value);
@@ -688,7 +760,16 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
           // Rate-input fields for manual APR calculation (raw strings for precision)
           ...(decimals !== undefined ? { decimals } : {}),
           ...(availableLiquidity ? { availableLiquidity } : {}),
+          ...(availableLiquidityUsd !== undefined ? { availableLiquidityUsd } : {}),
           ...(totalVariableDebt ? { totalVariableDebt } : {}),
+          ...(totalVariableDebtUsd !== undefined ? { totalVariableDebtUsd } : {}),
+          ...(reserveSize ? { reserveSize } : {}),
+          ...(supplyCap ? { supplyCap } : {}),
+          ...(borrowCap ? { borrowCap } : {}),
+          ...(suppliable ? { suppliable } : {}),
+          ...(suppliableUsd !== undefined ? { suppliableUsd } : {}),
+          ...(borrowable ? { borrowable } : {}),
+          ...(borrowableUsd !== undefined ? { borrowableUsd } : {}),
           ...(reserveFactor !== undefined ? { reserveFactor } : {}),
           ...(variableRateSlope1 !== undefined ? { variableRateSlope1 } : {}),
           ...(variableRateSlope2 !== undefined ? { variableRateSlope2 } : {}),
