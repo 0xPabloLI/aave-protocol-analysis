@@ -83,10 +83,6 @@ interface HubAssetInfo {
   slopeBelowOptimal?: string; // V3 variableRateSlope1 (RAY format)
   slopeAboveOptimal?: string; // V3 variableRateSlope2 (RAY format)
   optimalUtilizationRate?: string; // RAY format
-  // HubAsset-level summary fields from HubSummaryFragment
-  totalSupplied?: string;
-  totalSupplyCap?: string;
-  totalBorrowCap?: string;
 }
 
 /**
@@ -196,11 +192,6 @@ async function fetchHubAssetIndex(chainIds: number[]): Promise<{ index: Map<stri
         optimalUtilizationRate: optimalUtilizationRatePct?.onChainValue != null
           ? percentOnChainValueToRay(String(optimalUtilizationRatePct.onChainValue), Number(optimalUtilizationRatePct.decimals ?? 4))
           : undefined,
-        // HubAsset-level summary fields (may not exist in HubAsset.summary, will be undefined if absent)
-        // Note: SDK returns ExchangeAmount/ExchangeAmountWithChange with .value (not .amount.onChainValue)
-        totalSupplied: summary?.totalSupplied?.current?.value?.toString?.() ?? undefined,
-        totalSupplyCap: summary?.totalSupplyCap?.value?.toString?.() ?? undefined,
-        totalBorrowCap: summary?.totalBorrowCap?.value?.toString?.() ?? undefined,
       });
     }
   }
