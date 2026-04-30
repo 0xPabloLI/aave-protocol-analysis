@@ -78,11 +78,12 @@ export interface FormattedReserveData {
   decimals?: number;
   availableLiquidity?: string;
   totalVariableDebt?: string; // Total borrowed (raw token units)
-  reserveFactor?: string;
-  variableRateSlope1?: string;
-  variableRateSlope2?: string;
-  optimalUsageRate?: string;
-  baseVariableBorrowRate?: string; // from V4 HubAsset settings or on-chain RPC
+  // Rate-model fields are percent numbers (e.g., 9 means 9%) for V3/V4 unified API.
+  reserveFactor?: number;
+  variableRateSlope1?: number;
+  variableRateSlope2?: number;
+  optimalUsageRate?: number;
+  baseVariableBorrowRate?: number; // from V4 reserve.asset.settings or on-chain RPC
   // Note: baseVariableBorrowRate is NOT available from V3 Aave API (only via RPC or V4 SDK)
   aaveProReserveId?: string;
   meritSupplys?: MeritAprEntry[];
@@ -99,11 +100,6 @@ export interface FormattedReserveData {
   spokeId?: string;
   spokeName?: string;
   spokeAddress?: string;
-  // V4 HubAsset-level summary fields (from HubSummaryFragment)
-  assetTotalSupplied?: string;
-  assetTotalBorrowed?: string;
-  assetTotalSupplyCap?: string;
-  assetTotalBorrowCap?: string;
 }
 
 export interface RuntimeReserveData {
@@ -133,12 +129,12 @@ export interface RuntimeReserveData {
   decimals?: number;
   availableLiquidity?: string;
   totalVariableDebt?: string; // Total borrowed (raw token units)
-  reserveFactor?: string;
-  variableRateSlope1?: string;
-  variableRateSlope2?: string;
-  optimalUsageRate?: string;
-  deficit?: string; // from on-chain RPC
-  baseVariableBorrowRate?: string; // from on-chain RPC
+  reserveFactor?: number;
+  variableRateSlope1?: number;
+  variableRateSlope2?: number;
+  optimalUsageRate?: number;
+  deficit?: string; // from on-chain RPC (still raw token units)
+  baseVariableBorrowRate?: number; // percent (e.g., 0 means 0%)
   aaveProReserveId?: string;
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
@@ -154,11 +150,6 @@ export interface RuntimeReserveData {
   spokeId?: string;
   spokeName?: string;
   spokeAddress?: string;
-  // V4 HubAsset-level summary fields (from HubSummaryFragment)
-  assetTotalSupplied?: string;
-  assetTotalBorrowed?: string;
-  assetTotalSupplyCap?: string;
-  assetTotalBorrowCap?: string;
 }
 
 // Payload interface for backend to import (cron-write/API-read-only pattern)
@@ -290,11 +281,11 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.decimals !== undefined ? { decimals: item.decimals } : {}),
     ...(item.availableLiquidity ? { availableLiquidity: item.availableLiquidity } : {}),
     ...(item.totalVariableDebt ? { totalVariableDebt: item.totalVariableDebt } : {}),
-    ...(item.reserveFactor ? { reserveFactor: item.reserveFactor } : {}),
-    ...(item.variableRateSlope1 ? { variableRateSlope1: item.variableRateSlope1 } : {}),
-    ...(item.variableRateSlope2 ? { variableRateSlope2: item.variableRateSlope2 } : {}),
-    ...(item.optimalUsageRate ? { optimalUsageRate: item.optimalUsageRate } : {}),
-    ...(item.baseVariableBorrowRate ? { baseVariableBorrowRate: item.baseVariableBorrowRate } : {}),
+    ...(item.reserveFactor !== undefined ? { reserveFactor: item.reserveFactor } : {}),
+    ...(item.variableRateSlope1 !== undefined ? { variableRateSlope1: item.variableRateSlope1 } : {}),
+    ...(item.variableRateSlope2 !== undefined ? { variableRateSlope2: item.variableRateSlope2 } : {}),
+    ...(item.optimalUsageRate !== undefined ? { optimalUsageRate: item.optimalUsageRate } : {}),
+    ...(item.baseVariableBorrowRate !== undefined ? { baseVariableBorrowRate: item.baseVariableBorrowRate } : {}),
     ...(item.aaveProReserveId ? { aaveProReserveId: item.aaveProReserveId } : {}),
     // V4 Hub & Spoke addresses for contract interaction links
     ...(item.hubId ? { hubId: item.hubId } : {}),
@@ -303,11 +294,6 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.spokeId ? { spokeId: item.spokeId } : {}),
     ...(item.spokeName ? { spokeName: item.spokeName } : {}),
     ...(item.spokeAddress ? { spokeAddress: item.spokeAddress } : {}),
-    // V4 HubAsset-level summary fields
-    ...(item.assetTotalSupplied ? { assetTotalSupplied: item.assetTotalSupplied } : {}),
-    ...(item.assetTotalBorrowed ? { assetTotalBorrowed: item.assetTotalBorrowed } : {}),
-    ...(item.assetTotalSupplyCap ? { assetTotalSupplyCap: item.assetTotalSupplyCap } : {}),
-    ...(item.assetTotalBorrowCap ? { assetTotalBorrowCap: item.assetTotalBorrowCap } : {}),
   };
 }
 
@@ -543,7 +529,7 @@ async function buildMarketsBaseDataset(v3Markets: any[], options?: {
 }> {
   const v3Dataset = buildV3BaseDataset(v3Markets);
   let v4Dataset: FormattedReserveData[] = [];
-  let v4Raw: V4FetchResult['raw'] = { reserves: [], hubAssets: [] };
+  let v4Raw: V4FetchResult['raw'] = { reserves: [] };
   const v4Fatal = options?.v4Fatal ?? false;
   try {
     // Option 1: V4 now has retry logic (3 attempts with backoff), matching V3 reliability.
@@ -637,11 +623,16 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
         const decimals = reserve.underlyingToken?.decimals ?? undefined;
         const availableLiquidity = reserve.borrowInfo?.availableLiquidity?.amount?.raw ?? undefined;
         const totalVariableDebt = reserve.borrowInfo?.total?.amount?.raw ?? undefined; // Total borrowed
-        const reserveFactorRaw = reserve.borrowInfo?.reserveFactor?.raw ?? undefined;
-        const variableRateSlope1 = reserve.borrowInfo?.variableRateSlope1?.raw ?? undefined;
-        const variableRateSlope2 = reserve.borrowInfo?.variableRateSlope2?.raw ?? undefined;
-        const optimalUsageRate = reserve.borrowInfo?.optimalUsageRate?.raw ?? undefined;
-        // Note: baseVariableBorrowRate is NOT available from Aave API
+        // V3 SDK PercentValue.value is a ratio string (e.g., "0.20" = 20%); ×100 to percent number.
+        const percentFromV3 = (pv: any): number | undefined => {
+          const ratio = toFiniteNumber(pv?.value);
+          return ratio === null || ratio === undefined ? undefined : ratio * 100;
+        };
+        const reserveFactor = percentFromV3(reserve.borrowInfo?.reserveFactor);
+        const variableRateSlope1 = percentFromV3(reserve.borrowInfo?.variableRateSlope1);
+        const variableRateSlope2 = percentFromV3(reserve.borrowInfo?.variableRateSlope2);
+        const optimalUsageRate = percentFromV3(reserve.borrowInfo?.optimalUsageRate);
+        // Note: baseVariableBorrowRate is NOT available from Aave API (filled by on-chain RPC or fallback)
         
         const protocolSupplyIncentives: number[] = [];
         const protocolBorrowIncentives: number[] = [];
@@ -698,10 +689,10 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
           ...(decimals !== undefined ? { decimals } : {}),
           ...(availableLiquidity ? { availableLiquidity } : {}),
           ...(totalVariableDebt ? { totalVariableDebt } : {}),
-          ...(reserveFactorRaw ? { reserveFactor: reserveFactorRaw } : {}),
-          ...(variableRateSlope1 ? { variableRateSlope1 } : {}),
-          ...(variableRateSlope2 ? { variableRateSlope2 } : {}),
-          ...(optimalUsageRate ? { optimalUsageRate } : {}),
+          ...(reserveFactor !== undefined ? { reserveFactor } : {}),
+          ...(variableRateSlope1 !== undefined ? { variableRateSlope1 } : {}),
+          ...(variableRateSlope2 !== undefined ? { variableRateSlope2 } : {}),
+          ...(optimalUsageRate !== undefined ? { optimalUsageRate } : {}),
         });
       });
     }
@@ -1464,7 +1455,7 @@ export async function fetchMarketsData(options?: {
  *
  * Files written:
  * - v3v4-enriched-full.json  — V3+V4 enriched data (pre-prune, with incentives)
- * - v4-raw-sdk-response.json — Raw V4 SDK response (reserves + hubAssets, for V4 debugging)
+ * - v4-raw-sdk-response.json — Raw V4 SDK response (reserves, for V4 debugging)
  */
 async function writeDebugSnapshot(
   payload: MarketsPayload,
@@ -1491,17 +1482,15 @@ async function writeDebugSnapshot(
   );
 
   // V4 raw SDK response (original BigDecimal/BigInt fields stringified)
-  if (v4Raw.reserves.length > 0 || v4Raw.hubAssets.length > 0) {
+  if (v4Raw.reserves.length > 0) {
     const rawJson = JSON.stringify(
       {
         _metadata: {
           timestamp: payload._metadata.timestamp,
           reserveCount: v4Raw.reserves.length,
-          hubAssetCount: v4Raw.hubAssets.length,
           profile: 'v4-raw-sdk',
         },
         reserves: v4Raw.reserves,
-        hubAssets: v4Raw.hubAssets,
       },
       bigintReplacer as any,
       2,

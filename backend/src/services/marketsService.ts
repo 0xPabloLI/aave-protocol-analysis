@@ -108,7 +108,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         }
 
         // baseVariableBorrowRate: SDK value > on-chain RPC > fallback calculation
-        if ((reserve as any).baseVariableBorrowRate) {
+        if ((reserve as any).baseVariableBorrowRate !== undefined) {
           // SDK already provided baseVariableBorrowRate — keep it
         } else if (onchainData?.baseVariableBorrowRate !== undefined) {
           (reserve as any).baseVariableBorrowRate = onchainData.baseVariableBorrowRate;

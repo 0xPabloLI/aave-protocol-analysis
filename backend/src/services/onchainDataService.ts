@@ -28,7 +28,23 @@ const ONCHAIN_PER_RPC_TIMEOUT_MS = 15_000; // 15s timeout per RPC endpoint attem
  */
 export interface OnchainReserveData {
   deficit?: string;
-  baseVariableBorrowRate?: string;
+  baseVariableBorrowRate?: number; // percent (e.g., 0 means 0%)
+}
+
+/**
+ * Convert a RAY (1e27 fixed-point) string to a percent number.
+ * Uses BigInt scaling to retain ~6 decimal places of precision.
+ */
+function rayStringToPercent(rayStr: string): number | undefined {
+  if (!rayStr) return undefined;
+  try {
+    const big = BigInt(rayStr);
+    // big / 1e21 = percent × 1e6 (safe Number range for realistic rates)
+    const microPct = big / 10n ** 21n;
+    return Number(microPct) / 1e6;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -141,9 +157,11 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
           data.deficit = reserve.deficit?.toString?.() ?? String(reserve.deficit);
         }
         
-        // baseVariableBorrowRate from interest rate strategy
+        // baseVariableBorrowRate from interest rate strategy (RPC returns RAY → convert to percent)
         if (reserve.baseVariableBorrowRate !== undefined && reserve.baseVariableBorrowRate !== null) {
-          data.baseVariableBorrowRate = reserve.baseVariableBorrowRate?.toString?.() ?? String(reserve.baseVariableBorrowRate);
+          const rayStr = reserve.baseVariableBorrowRate?.toString?.() ?? String(reserve.baseVariableBorrowRate);
+          const pct = rayStringToPercent(rayStr);
+          if (pct !== undefined) data.baseVariableBorrowRate = pct;
         }
         
         if (Object.keys(data).length > 0) {
@@ -296,89 +314,76 @@ export function getOnchainCacheStatus(): {
 // Fallback calculation for baseVariableBorrowRate
 // ============================================================
 
-const RAY = BigInt('1000000000000000000000000000'); // 1e27
-
 /** Seconds per year; must match Aave on-chain (365*24*3600). */
 const SECONDS_PER_YEAR = 365 * 24 * 60 * 60;
 
 /**
- * Convert borrow APY (annual yield as ratio, e.g. 0.052 = 5.2%) to APR in RAY using the inverse
- * of chain per-second compounding.
- * On-chain: ratePerSecond = rateRay/RAY / SECONDS_PER_YEAR; index compounds as
- * (1 + ratePerSecond)^exp over exp seconds, so 1+APY = (1 + APR/SECONDS_PER_YEAR)^SECONDS_PER_YEAR.
- * Hence APR = SECONDS_PER_YEAR * ((1+APY)^(1/SECONDS_PER_YEAR) - 1).
+ * Convert borrow APY (annual yield as ratio, e.g. 0.052 = 5.2%) to APR percent.
+ * On-chain: 1+APY = (1 + APR/SECONDS_PER_YEAR)^SECONDS_PER_YEAR.
+ * Hence APR = SECONDS_PER_YEAR * ((1+APY)^(1/SECONDS_PER_YEAR) - 1), then ×100 → percent.
  */
-function apyRatioToAprRay(apyRatio: number): bigint {
-  const apyDecimal = apyRatio;
-  if (!Number.isFinite(apyDecimal) || apyDecimal <= -1) return 0n;
-  const onePlusApy = 1 + apyDecimal;
-  const aprDecimal =
-    SECONDS_PER_YEAR * (Math.pow(onePlusApy, 1 / SECONDS_PER_YEAR) - 1);
-  if (!Number.isFinite(aprDecimal) || aprDecimal < 0) return 0n;
-  return BigInt(Math.floor(aprDecimal * 1e27));
+function apyRatioToAprPercent(apyRatio: number): number {
+  if (!Number.isFinite(apyRatio) || apyRatio <= -1) return 0;
+  const aprDecimal = SECONDS_PER_YEAR * (Math.pow(1 + apyRatio, 1 / SECONDS_PER_YEAR) - 1);
+  return Number.isFinite(aprDecimal) && aprDecimal >= 0 ? aprDecimal * 100 : 0;
 }
 
 /**
- * Calculate baseVariableBorrowRate from borrowApy using reverse formula.
+ * Calculate baseVariableBorrowRate (percent number) from borrowApy using reverse formula.
  * Used when RPC data is unavailable.
  *
- * Inputs:
- * - borrowApyRatio: borrow APY as annual yield ratio (e.g. 0.052). Converted to APR in RAY via inverse of per-second compounding.
- * - utilizationPct: borrow usage in % = totalDebt / (availableLiquidity + totalDebt). Same as chain; deficit is not included.
- * - This function does not use reserve size; only utilization and rate params. Uses this reserve's slopes/optimal (same market).
+ * Inputs (all percent numbers, ratio for APY):
+ * - borrowApyRatio: borrow APY as annual yield ratio (e.g. 0.052 = 5.2%/yr).
+ * - utilizationPct: borrow usage percent (0-100); same as chain (excludes deficit).
+ * - optimalUsageRate / variableRateSlope1 / variableRateSlope2: percent numbers.
  *
- * Forward formula (Aave V3 two-slope model):
- * - If borrowUsageRate <= optimalUsageRate:
+ * Forward formula (Aave V3 two-slope model, in percent space):
+ * - If util <= optimal && optimal > 0:
  *     variableBorrowRate = baseRate + slope1 * (util / optimal)
- * - If borrowUsageRate > optimalUsageRate:
- *     excessRatio = (util - optimal) / (RAY - optimal)
- *     variableBorrowRate = baseRate + slope1 + slope2 * excessRatio
+ * - If util > optimal && optimal < 100:
+ *     variableBorrowRate = baseRate + slope1 + slope2 * (util - optimal) / (100 - optimal)
  */
 export function calculateBaseRateFallback(
   borrowApyRatio: number | null | undefined,
   utilizationPct: number | null | undefined,
-  optimalUsageRateRay: string | undefined,
-  variableRateSlope1Ray: string | undefined,
-  variableRateSlope2Ray?: string
-): string | null {
+  optimalUsageRate: number | undefined,
+  variableRateSlope1: number | undefined,
+  variableRateSlope2?: number
+): number | null {
   if (borrowApyRatio === null || borrowApyRatio === undefined) {
     return null;
   }
 
-  const borrowRateRay = apyRatioToAprRay(borrowApyRatio);
+  const borrowRatePct = apyRatioToAprPercent(borrowApyRatio);
 
   if (
     utilizationPct !== null &&
     utilizationPct !== undefined &&
-    optimalUsageRateRay &&
-    variableRateSlope1Ray
+    Number.isFinite(utilizationPct) &&
+    optimalUsageRate !== undefined &&
+    Number.isFinite(optimalUsageRate) &&
+    variableRateSlope1 !== undefined &&
+    Number.isFinite(variableRateSlope1)
   ) {
-    try {
-      const utilRay = BigInt(Math.floor((utilizationPct / 100) * 1e27));
-      const optimalRay = BigInt(optimalUsageRateRay);
-      const slope1Ray = BigInt(variableRateSlope1Ray);
-
-      if (utilRay <= optimalRay && optimalRay > 0n) {
-        // baseRate = borrowRate - slope1 * (util / optimal)
-        const normalizedUsage = (utilRay * RAY) / optimalRay;
-        const slope1Contribution = (slope1Ray * normalizedUsage) / RAY;
-        const baseRate = borrowRateRay - slope1Contribution;
-        if (baseRate >= 0n) return baseRate.toString();
-      } else if (utilRay > optimalRay && variableRateSlope2Ray) {
-        // baseRate = borrowRate - slope1 - slope2 * excessRatio
-        // excessRatio = (util - optimal) / (RAY - optimal)
-        const slope2Ray = BigInt(variableRateSlope2Ray);
-        const denom = RAY - optimalRay;
-        if (denom <= 0n) return '0';
-        const excessRatio = ((utilRay - optimalRay) * RAY) / denom;
-        const slope2Contribution = (slope2Ray * excessRatio) / RAY;
-        const baseRate = borrowRateRay - slope1Ray - slope2Contribution;
-        if (baseRate >= 0n) return baseRate.toString();
-      }
-    } catch {
-      // fall through
+    if (utilizationPct <= optimalUsageRate && optimalUsageRate > 0) {
+      // baseRate = borrowRate - slope1 * (util / optimal)
+      const slope1Contribution = variableRateSlope1 * (utilizationPct / optimalUsageRate);
+      const baseRate = borrowRatePct - slope1Contribution;
+      if (baseRate >= 0) return baseRate;
+    } else if (
+      utilizationPct > optimalUsageRate &&
+      variableRateSlope2 !== undefined &&
+      Number.isFinite(variableRateSlope2)
+    ) {
+      // baseRate = borrowRate - slope1 - slope2 * (util - optimal) / (100 - optimal)
+      const denom = 100 - optimalUsageRate;
+      if (denom <= 0) return 0;
+      const excessRatio = (utilizationPct - optimalUsageRate) / denom;
+      const slope2Contribution = variableRateSlope2 * excessRatio;
+      const baseRate = borrowRatePct - variableRateSlope1 - slope2Contribution;
+      if (baseRate >= 0) return baseRate;
     }
   }
 
-  return '0';
+  return 0;
 }

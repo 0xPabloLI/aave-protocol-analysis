@@ -35,11 +35,11 @@ const mockFullReserve = {
   decimals: 6,
   availableLiquidity: '1000000000000',
   totalVariableDebt: '800000000000',
-  reserveFactor: '2000',
-  variableRateSlope1: '40000000000000000000000000',
-  variableRateSlope2: '800000000000000000000000000',
-  optimalUsageRate: '800000000000000000000000000',
-  baseVariableBorrowRate: '4000000000000000000000000',
+  reserveFactor: 20,
+  variableRateSlope1: 4,
+  variableRateSlope2: 80,
+  optimalUsageRate: 80,
+  baseVariableBorrowRate: 0.4,
   deficit: '0',
   aaveProReserveId: '12345',
   meritSupplys: [{ apr: 0.01, link: 'test', startDate: '2024-01-01', endDate: '2024-12-31' }],
@@ -55,10 +55,6 @@ const mockFullReserve = {
   spokeId: '1',
   spokeName: 'Main',
   spokeAddress: '0x5678',
-  assetTotalSupplied: '1000000000000',
-  assetTotalBorrowed: '800000000000',
-  assetTotalSupplyCap: '10000000000000',
-  assetTotalBorrowCap: '8000000000000',
 };
 
 test('all critical fields defined in EXPECTED_RUNTIME_FIELDS', () => {
@@ -66,10 +62,11 @@ test('all critical fields defined in EXPECTED_RUNTIME_FIELDS', () => {
     'reserveId',
     'tokenAddress',
     'supplyApy',
-    'assetTotalSupplied',
-    'assetTotalBorrowed',
-    'assetTotalSupplyCap',
-    'assetTotalBorrowCap',
+    'reserveFactor',
+    'variableRateSlope1',
+    'variableRateSlope2',
+    'optimalUsageRate',
+    'baseVariableBorrowRate',
   ];
   
   for (const field of criticalFields) {
@@ -96,13 +93,8 @@ test('validate complete mock reserve has no missing fields', () => {
   assert.strictEqual(missing.length, 0, `Missing fields: ${missing.join(', ')}`);
 });
 
-test('V4 HubAsset summary fields present in registry', () => {
-  const v4Fields = [
-    'assetTotalSupplied',
-    'assetTotalBorrowed', 
-    'assetTotalSupplyCap',
-    'assetTotalBorrowCap',
-  ];
+test('V4 Hub & Spoke addressing fields present in registry', () => {
+  const v4Fields = ['hubId', 'hubName', 'hubAddress', 'spokeId', 'spokeName', 'spokeAddress'];
 
   for (const field of v4Fields) {
     assert(EXPECTED_RUNTIME_FIELDS.includes(field as any), `Missing V4 field: ${field}`);
