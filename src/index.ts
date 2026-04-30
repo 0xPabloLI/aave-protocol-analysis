@@ -616,7 +616,9 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
           : toFiniteNumber(supplyApyValue) ?? undefined;
         
         // 检查 borrowingState 是否为 "DISABLED"，如果是则表示该 token 不能被 borrow
-        const isBorrowDisabledByState = reserve.borrowInfo?.borrowingState === "DISABLED";
+        // 注意：部分市场（如 AaveV3Ethereum）在 borrowingState=DISABLED 时 SDK 直接返回 borrowInfo: null，
+        // 而不是返回 { borrowingState: "DISABLED" }，因此 borrowInfo 为 null 也视为 borrow disabled
+        const isBorrowDisabledByState = reserve.borrowInfo?.borrowingState === "DISABLED" || reserve.borrowInfo === null;
         
         // 检查 borrowCap，如果为 1 也视为 disabled（因为对用户没有实际意义）
         const borrowCapValue = reserve.borrowInfo?.borrowCap?.amount?.value;
