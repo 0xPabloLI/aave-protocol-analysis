@@ -119,6 +119,8 @@
 
 ## 执行 commit 顺序
 
+> **⚠️ 部署状态**：当前生产环境仍运行 `main` 分支（V3 输出 RAY string / bps string，V4 尚未集成）。`railway` 分支的精度统一变更**未合并到 `main`**，在生产 API 响应中 `optimalUsageRate` 等字段仍然是旧格式（`string` RAY/bps）。前端 `aaveapy/lovable` 分支已更新为消费新的 number 格式，需要后端 `railway → main` 合并部署后才能正确工作。
+
 后端 (`aave-protocol-analysis/`)：
 
 1. **commit 1** — V4 fetcher 删除 `fetchHubAssetIndex()`/`hubs`/`hubAssets`/`percentOnChainValueToRay`，全部从 `reserve.asset.summary/settings` 读；rate params 输出 `value × 100` 的 number；删除 `assetTotal*`。
