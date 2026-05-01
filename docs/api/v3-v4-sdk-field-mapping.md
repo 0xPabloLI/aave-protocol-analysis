@@ -2,6 +2,8 @@
 
 本文档系统记录 Aave V3 与 V4 市场数据各字段的 SDK 来源差异、处理方法、前端映射及 V4 Hub/Spoke 级别。
 
+> **精度统一（已完成）**：所有百分比字段已统一为 `number`、单位 %（例如 `9` = 9%）。详见 `v3-v4-precision-unification-plan.md` 的完整精度表。
+
 ## 概述
 
 | 维度 | V3 | V4 |
@@ -33,45 +35,56 @@
 
 ### 基础信息字段
 
-| API 字段 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
-|----------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **reserveId** | - | Reserve | 构造: `${market}:${chainId}:${token}:${hubName}` | `fetchV4MarketsDataInner()` 内联 | 字符串拼接 | 构造: `${market}:${chainId}:${token}` | `buildV3BaseDataset()` | 字符串拼接 |
-| **marketName** | Market 列 | Reserve | 构造: `AaveV4${spokeName}` | `fetchV4MarketsDataInner()` 内联 | `spokeName.replace(/\s+/g, '')` 后拼接 | `market.name` | `buildV3BaseDataset()` | 直接使用 |
-| **chainName** | Market 列 | Reserve | `r.chain?.name ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | `market.chain?.name` | `buildV3BaseDataset()` | 直接取值 |
-| **chainId** | - | Reserve | `Number(r.chain?.chainId ?? 0)` | `fetchV4MarketsDataInner()` 内联 | 转数字并带默认值 | `market.chain?.chainId` | `buildV3BaseDataset()` | 直接取值 |
-| **tokenName** | Token 名称 | Reserve | `r.asset?.underlying?.info?.name ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | `reserve.underlyingToken?.name` | `buildV3BaseDataset()` | 直接取值 |
-| **tokenSymbol** | Token 列 | Reserve | `r.asset?.underlying?.info?.symbol ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | `reserve.underlyingToken?.symbol` | `buildV3BaseDataset()` | 直接取值 |
-| **tokenAddress** | 合约地址 | Reserve | `r.asset?.underlying?.address ?? ''` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | `reserve.underlyingToken?.address` | `buildV3BaseDataset()` | 直接取值 |
-| **decimals** | 精度换算除数 | Reserve | `r.asset?.underlying?.info?.decimals ?? undefined` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | `reserve.underlyingToken?.decimals` | `buildV3BaseDataset()` | 直接取值 |
+| API 字段 | 类型 / 精度 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
+|----------|------------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
+| **reserveId** | `string` | - | Reserve | 构造: `${market}:${chainId}:${token}:${hubName}` | `fetchV4MarketsDataInner()` 内联 | 字符串拼接 | 构造: `${market}:${chainId}:${token}` | `buildV3BaseDataset()` | 字符串拼接 |
+| **marketName** | `string` | Market 列 | Reserve | 构造: `AaveV4${spokeName}` | `fetchV4MarketsDataInner()` 内联 | `spokeName.replace(/\s+/g, '')` 后拼接 | `market.name` | `buildV3BaseDataset()` | 直接使用 |
+| **chainName** | `string` | Market 列 | Reserve | `r.chain?.name ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | `market.chain?.name` | `buildV3BaseDataset()` | 直接取值 |
+| **chainId** | `number`, 整数 | - | Reserve | `Number(r.chain?.chainId ?? 0)` | `fetchV4MarketsDataInner()` 内联 | 转数字并带默认值 | `market.chain?.chainId` | `buildV3BaseDataset()` | 直接取值 |
+| **tokenName** | `string` | Token 名称 | Reserve | `r.asset?.underlying?.info?.name ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | `reserve.underlyingToken?.name` | `buildV3BaseDataset()` | 直接取值 |
+| **tokenSymbol** | `string` | Token 列 | Reserve | `r.asset?.underlying?.info?.symbol ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | `reserve.underlyingToken?.symbol` | `buildV3BaseDataset()` | 直接取值 |
+| **tokenAddress** | `string` (EVM address) | 合约地址 | Reserve | `r.asset?.underlying?.address ?? ''` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | `reserve.underlyingToken?.address` | `buildV3BaseDataset()` | 直接取值 |
+| **decimals** | `number`, 整数 | 精度换算除数 | Reserve | `r.asset?.underlying?.info?.decimals ?? undefined` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | `reserve.underlyingToken?.decimals` | `buildV3BaseDataset()` | 直接取值 |
 
 ### 价格与规模字段
 
-| API 字段 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
-|----------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **tokenPrice** | Price 列 | Reserve | `r.summary?.supplied?.exchangeRate` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber()` 转换 | `reserve.size?.usdPerToken` ?? `reserve.usdExchangeRate` | `buildV3BaseDataset()` | `toFiniteNumber()` 取首个有效值 |
-| **reserveSizeUsd** | Total supplied / Supply Size / Size 列 | Reserve | `r.summary?.supplied?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplied?.exchange) ?? undefined` | `reserve.size?.usd` | `buildV3BaseDataset()` | `toFiniteNumber(reserve?.size?.usd) ?? undefined` |
-| **supplyCapUsd** | Supply cap / CapProgressRing | **Reserve** | `r.settings?.supplyCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.supplyCap?.exchange) ?? undefined` | `reserve.supplyInfo?.supplyCap?.usd` | `buildV3BaseDataset()` | `toFiniteNumber(supplyCapUsdRaw) ?? undefined` |
-| **borrowCapUsd** | Borrow cap / CapProgressRing | **Reserve** | `r.settings?.borrowCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.borrowCap?.exchange) ?? undefined` | `reserve.borrowInfo?.borrowCap?.usd` | `buildV3BaseDataset()` | `toFiniteNumber(borrowCapUsdRaw) ?? undefined` |
+| API 字段 | 类型 / 精度 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
+|----------|------------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
+| **tokenPrice** | `number`, USD/token | Price 列 | Reserve | `r.summary?.supplied?.exchangeRate` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber()` 转换 | `reserve.size?.usdPerToken` ?? `reserve.usdExchangeRate` | `buildV3BaseDataset()` | `toFiniteNumber()` 取首个有效值 |
+| **reserveSizeUsd** | `number`, USD | Size 列 / Total supplied | Reserve | `r.summary?.supplied?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplied?.exchange) ?? undefined` | `reserve.size?.usd` | `buildV3BaseDataset()` | `toFiniteNumber(reserve?.size?.usd) ?? undefined` |
+| supplyCapUsd | `number`, USD | Supply cap / CapProgressRing | **Reserve** | `r.settings?.supplyCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.supplyCap?.exchange) ?? undefined` | `reserve.supplyInfo?.supplyCap?.usd` | `buildV3BaseDataset()` | `toFiniteNumber(supplyCapUsdRaw) ?? undefined` |
+| **borrowCapUsd** | `number`, USD | Borrow cap / CapProgressRing | **Reserve** | `r.settings?.borrowCap?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.settings?.borrowCap?.exchange) ?? undefined` | `reserve.borrowInfo?.borrowCap?.usd` | `buildV3BaseDataset()` | `toFiniteNumber(borrowCapUsdRaw) ?? undefined` |
+| **reserveSize** | `string`, raw token units | 后端派生 suppliable 用 | Reserve | `r.summary?.supplied?.amount?.onChainValue` | `fetchV4MarketsDataInner()` 内联 | `onChainValue.toString()` | `reserve.size?.amount?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
+| **supplyCap** | `string`, raw token units | 后端派生 suppliable 用 | Reserve | `r.settings?.supplyCap?.amount?.onChainValue` | `fetchV4MarketsDataInner()` 内联 | `onChainValue.toString()` | `reserve.supplyInfo?.supplyCap?.amount?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
+| **borrowCap** | `string`, raw token units | 后端派生 borrowable 用 | Reserve | `r.settings?.borrowCap?.amount?.onChainValue` | `fetchV4MarketsDataInner()` 内联 | `onChainValue.toString()` | `reserve.borrowInfo?.borrowCap?.amount?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
+| **availableLiquidityUsd** | `number`, USD | 后端提供 | **Hub** | `hubInfo?.availableLiquidityUsd` 或 `summary.availableLiquidity.exchange.value` | `fetchV4MarketsDataInner()` 内联 | 从 HubAsset 查询 | `reserve.borrowInfo?.availableLiquidity?.usd` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
+| **totalVariableDebtUsd** | `number`, USD | 后端提供 | Reserve | `r.summary?.borrowed?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber()` | `reserve.borrowInfo?.total?.usd` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
+| **suppliable** | `string`, raw token units | 后端派生 | Reserve | 派生: `max(0, supplyCap − reserveSize)` | `fetchV4MarketsDataInner()` 内联 | 服务端计算 | 派生 | `buildV3BaseDataset()` | 服务端计算 |
+| **suppliableUsd** | `number`, USD | 后端派生 | Reserve | 派生: `max(0, supplyCapUsd − reserveSizeUsd)` | `fetchV4MarketsDataInner()` 内联 | 服务端计算 | 派生 | `buildV3BaseDataset()` | 服务端计算 |
+| **borrowable** | `string`, raw token units | 后端派生 | Reserve | 派生: `max(0, min(borrowCap−debt, availableLiquidity))` | `fetchV4MarketsDataInner()` 内联 | 服务端计算 | 派生 | `buildV3BaseDataset()` | 服务端计算 |
+| **borrowableUsd** | `number`, USD | 后端派生 | Reserve | 派生: `max(0, min(borrowCapUsd−debtUsd, availableLiquidityUsd))` | `fetchV4MarketsDataInner()` 内联 | 服务端计算 | 派生 | `buildV3BaseDataset()` | 服务端计算 |
 
 ### APY 与利率字段
 
-| API 字段 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
-|----------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **supplyApy** | Supply > Native | **Hub** | `r.summary?.supplyApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplyApy?.value) ?? undefined` | `reserve.supplyInfo?.apy?.value` | `buildV3BaseDataset()` | 若 `supplyCap === 1` 则为 `undefined`，否则 `toFiniteNumber(supplyApyValue)` |
-| **borrowApy** | Borrow > Native | **Hub** | `r.summary?.borrowApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.borrowApy?.value) ?? undefined` | `reserve.borrowInfo?.apy?.value` | `buildV3BaseDataset()` | `toFiniteNumber(borrowApyValue) ?? undefined` |
-| **utilizationPct** | Utilization 列 / Util% 指示条 | **Hub** | `hubInfo?.utilizationRate` | `fetchV4MarketsDataInner()` 内联 | `hubInfo.utilizationRate * 100`，从 HubAsset 索引查询 | `reserve.borrowInfo?.utilizationRate?.value` | `buildV3BaseDataset()` | `toFiniteNumber(value)` × 100，负数则 `undefined` |
-| **availableLiquidity** | Pool liquidity / Liquidity | **Hub** | `hubInfo?.availableLiquidity` | `fetchV4MarketsDataInner()` 内联 | 从 `fetchHubAssetIndex()` 构建的索引获取 | `reserve.borrowInfo?.availableLiquidity?.amount?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
-| **totalVariableDebt** | Total borrowed / Borrow Size | Reserve | `r.summary?.borrowed?.amount?.onChainValue` | `fetchV4MarketsDataInner()` 内联 | `onChainValue.toString()` | `reserve.borrowInfo?.total?.amount?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
+| API 字段 | 类型 / 精度 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
+|----------|------------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
+| **supplyApy** | `number`, percent (e.g., `2.07` = 2.07%) | Supply > Native | **Hub** | `r.summary?.supplyApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.supplyApy?.value) ?? undefined` | `reserve.supplyInfo?.apy?.value` | `buildV3BaseDataset()` | 若 `supplyCap === 1` 则为 `undefined`，否则 `toFiniteNumber(supplyApyValue)` |
+| **borrowApy** | `number`, percent | Borrow > Native | **Hub** | `r.summary?.borrowApy?.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber(r.summary?.borrowApy?.value) ?? undefined` | `reserve.borrowInfo?.apy?.value` | `buildV3BaseDataset()` | `toFiniteNumber(borrowApyValue) ?? undefined` |
+| **utilizationPct** | `number`, percent (e.g., `45.2` = 45.2%) | Utilization 列 / Util% 指示条 | **Hub** | `hubInfo?.utilizationRate` | `fetchV4MarketsDataInner()` 内联 | `hubInfo.utilizationRate * 100`，从 HubAsset 索引查询 | `reserve.borrowInfo?.utilizationRate?.value` | `buildV3BaseDataset()` | `toFiniteNumber(value)` × 100，负数则 `undefined` |
+| **availableLiquidity** | `string`, raw token units | 后端子段 | **Hub** | `hubInfo?.availableLiquidity` | `fetchV4MarketsDataInner()` 内联 | 从 `fetchHubAssetIndex()` 构建的索引获取 | `reserve.borrowInfo?.availableLiquidity?.amount?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
+| **totalVariableDebt** | `string`, raw token units | Total borrowed / Borrow Size | Reserve | `r.summary?.borrowed?.amount?.onChainValue` | `fetchV4MarketsDataInner()` 内联 | `onChainValue.toString()` | `reserve.borrowInfo?.total?.amount?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
 
-### 利率模型参数字段 (RAY 精度)
+### 利率模型参数字段（已统一为 percent number）
 
-| API 字段 | 前端使用 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
-|----------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **reserveFactor** | `useRateSimulation` | **Hub** | `hubInfo?.liquidityFee` | `fetchV4MarketsDataInner()` 内联 | 从 HubAsset 索引获取，值为 4-decimal (bps-like) 格式字符串，与 V3 一致 | `reserve.borrowInfo?.reserveFactor?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
-| **variableRateSlope1** | `useRateSimulation` | **Hub** | `hubInfo?.slopeBelowOptimal` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | `reserve.borrowInfo?.variableRateSlope1?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
-| **variableRateSlope2** | `useRateSimulation` | **Hub** | `hubInfo?.slopeAboveOptimal` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | `reserve.borrowInfo?.variableRateSlope2?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
-| **optimalUsageRate** | "Optimal" 标记 / UtilizationSheet | **Hub** | `hubInfo?.optimalUtilizationRate` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | `reserve.borrowInfo?.optimalUsageRate?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
-| **baseVariableBorrowRate** | `useRateSimulation` | **Hub** | `hubInfo?.baseBorrowRate` | `fetchHubAssetIndex()` → 内联 | `percentOnChainValueToRay()` 转 RAY | 链上 RPC (`UiPoolDataProvider`) | `marketsService.refreshMarketsSnapshot()` on-chain merge | 优先 RPC，缺失时用 APY→APR 反推 |
+> **精度统一已完成**：以下 5 个字段均已从 RAY/bps string 改为 `number` percent（例如 `reserveFactor: 10` = 10%、`variableRateSlope1: 4` = 4%）。前端 `interestRateCalculator.ts` 已从 BigInt RAY 数学重写为 Float 百分数直接计算。
+
+| API 字段 | 类型 / 精度 | 前单位 | 现单位 | 前端使用 | V4 级别 | V4 SDK 路径 | V4 处理方法 | V3 SDK 路径 | V3 处理方法 |
+|----------|------------|--------|--------|----------|---------|-------------|-------------|-------------|-------------|
+| **reserveFactor** | `number`, percent | bps string | percent | `useRateSimulation` / rate calc | **Hub** | `hubInfo?.liquidityFee` → `asset.settings.liquidityFee.value × 100` | `value * 100`（不再用 `percentOnChainValueToRay`） | `reserve.borrowInfo?.reserveFactor?.value × 100` | `value * 100` | 
+| **variableRateSlope1** | `number`, percent | RAY string | percent | `useRateSimulation` / rate calc | **Hub** | `hubInfo?.slopeBelowOptimal` → `asset.settings.slopeBelowOptimal.value × 100` | `value * 100` | `reserve.borrowInfo?.variableRateSlope1?.value × 100` | `value * 100` | 
+| **variableRateSlope2** | `number`, percent | RAY string | percent | `useRateSimulation` / rate calc | **Hub** | `hubInfo?.slopeAboveOptimal` → `asset.settings.slopeAboveOptimal.value × 100` | `value * 100` | `reserve.borrowInfo?.variableRateSlope2?.value × 100` | `value * 100` |
+| **optimalUsageRate** | `number`, percent | RAY string | percent | "Optimal" 标记 / UtilizationSheet | **Hub** | `hubInfo?.optimalUtilizationRate` → `asset.settings.optimalUtilizationRate.value × 100` | `value * 100` | `reserve.borrowInfo?.optimalUsageRate?.value × 100` | `value * 100` |
+| **baseVariableBorrowRate** | `number`, percent | RAY string | percent | `useRateSimulation` / rate calc | **Hub** | `hubInfo?.baseBorrowRate` → `asset.settings.baseBorrowRate.value × 100` | `value * 100` | 链上 RPC (`UiPoolDataProvider`) 或 APY→APR 反推 | `calculateBaseRateFallback()` 输出就是 percent number, 不再 RAY |
 
 ### 合约地址字段
 
@@ -96,22 +109,22 @@
 | **isFrozen** | Frozen badge + ❄ icon | Reserve | `r.status?.frozen` | `fetchV4MarketsDataInner()` 内联 | `=== true` 判断 | `reserve.isFrozen` | `buildV3BaseDataset()` | `=== true` 判断 |
 | **isPaused** | Paused badge + ❄ icon | Reserve | `r.status?.paused` | `fetchV4MarketsDataInner()` 内联 | `=== true` 判断 | `reserve.isPaused` | `buildV3BaseDataset()` | `=== true` 判断 |
 
-### 激励字段 (外部数据源)
+### 激励字段 (外部数据源，均 percent number)
 
-| API 字段 | 前端展示 | V4 级别 | V4 来源 | V4 处理函数 | V4 处理方法 | V3 来源 | V3 处理函数 | V3 处理方法 |
-|----------|----------|---------|---------|-------------|-------------|---------|-------------|-------------|
-| **supplyIncentives** | Protocol Incentive | Reserve | SDK: `r.summary?.rewards` | `fetchV4MarketsDataInner()` 内联 | **通常跳过** (内部积分，非公开 Merkl) | SDK: `reserve.incentives` | `buildV3BaseDataset()` | 遍历 `incentives` 数组，过滤 `__typename === 'AaveSupplyIncentive'`，提取 `extraSupplyApr` 或 `supplyApr` |
-| **borrowIncentives** | Protocol Incentive | Reserve | SDK: `r.summary?.rewards` | `fetchV4MarketsDataInner()` 内联 | **通常跳过** (内部积分，非公开 Merkl) | SDK: `reserve.incentives` | `buildV3BaseDataset()` | 同上，过滤 `AaveBorrowIncentive` |
-| **meritSupplys** / **meritBorrows** | ACI Incentive | 外部 | Merit API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Merit API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 |
-| **merklSupplys** / **merklBorrows** / **merklHolds** | Merkl Incentive | 外部 | Merkl API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Merkl API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 |
-| **brevisSupplys** / **brevisBorrows** | Brevis Incentive | 外部 | Brevis API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Brevis API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 |
+| API 字段 | 类型 / 精度 | 前端展示 | V4 级别 | V4 来源 | V4 处理函数 | V4 处理方法 | V3 来源 | V3 处理函数 | V3 处理方法 |
+|----------|------------|----------|---------|---------|-------------|-------------|---------|-------------|-------------|
+| **supplyIncentives** | `number[]`, percent | Protocol Incentive | Reserve | SDK: `r.summary?.rewards` | `fetchV4MarketsDataInner()` 内联 | **通常跳过** (内部积分，非公开 Merkl) | SDK: `reserve.incentives` | `buildV3BaseDataset()` | 遍历 `incentives` 数组，过滤 `__typename === 'AaveSupplyIncentive'`，提取 `extraSupplyApr` 或 `supplyApr` |
+| **borrowIncentives** | `number[]`, percent | Protocol Incentive | Reserve | SDK: `r.summary?.rewards` | `fetchV4MarketsDataInner()` 内联 | **通常跳过** (内部积分，非公开 Merkl) | SDK: `reserve.incentives` | `buildV3BaseDataset()` | 同上，过滤 `AaveBorrowIncentive` |
+| **meritSupplys** / **meritBorrows** | `MeritIncentive[]` (`.apr`, `.selfApr` 均为 `number`, percent) | ACI Incentive | 外部 | Merit API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Merit API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 |
+| **merklSupplys** / **merklBorrows** / **merklHolds** | `MerklOpportunityGroup[]` (`.campaignApr` / `.aprCap` 均为 `number`, percent) | Merkl Incentive | 外部 | Merkl API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Merkl API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 |
+| **brevisSupplys** / **brevisBorrows** | `BrevisIncentive[]` (`.campaignApr` 为 `number`, percent) | Brevis Incentive | 外部 | Brevis API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 | Brevis API | `index.ts:enrichDatasetWithIncentiveData()` | 外部 enrich 阶段匹配 |
 
 ### 特殊字段
 
-| API 字段 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
-|----------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **deficit** | Deficit / Def% / Size 列 Deficit 行 | N/A | N/A (SDK 不提供) | 默认 `'0'` | 默认 `'0'` | 链上 RPC (`UiPoolDataProvider`) | `onchainDataService.refreshOnchainCache()` | 从 RPC 读取，失败则默认 `'0'` |
-| **borrowingState** | 用于判断 borrow 是否 DISABLED | Reserve | 待确认 V4 对应字段 | `fetchV4MarketsDataInner()` 内联 | 未直接提供，通过 `canBorrow` 间接判断 | `reserve.borrowInfo?.borrowingState` | `buildV3BaseDataset()` | 直接取值用于判断 |
+| API 字段 | 类型 / 精度 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
+|----------|------------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
+| **deficit** | `string`, raw token units | Deficit / Def% / Size 列 Deficit 行 | N/A | N/A (SDK 不提供) | 默认 `'0'` | 默认 `'0'` | 链上 RPC (`UiPoolDataProvider`) | `onchainDataService.refreshOnchainCache()` | 从 RPC 读取，失败则默认 `'0'` |
+| **borrowingState** | `string` (V3 only) | 用于判断 borrow 是否 DISABLED | Reserve | 待确认 V4 对应字段 | `fetchV4MarketsDataInner()` 内联 | 未直接提供，通过 `canBorrow` 间接判断 | `reserve.borrowInfo?.borrowingState` | `buildV3BaseDataset()` | 直接取值用于判断 |
 
 ---
 
@@ -119,22 +132,19 @@
 
 以下 V4 字段从 **HubAsset 索引** 获取，同一 hub 内多个 reserves 共享相同值：
 
-| 字段 | 说明 | HubAsset 字段 | 为什么共享 |
-|------|------|---------------|----------|
-| `utilizationPct` | 资金利用率 | `summary.utilizationRate * 100` | 基于 Hub 总流动性计算 |
-| `availableLiquidity` | 可用流动性 | `summary.availableLiquidity.amount.onChainValue` | Hub 级别流动性池 |
-| `reserveFactor` | 储备因子 | `settings.liquidityFee.onChainValue` | Hub 级别的费率策略 (4-decimal) |
-| `variableRateSlope1` | 利率曲线斜率 1 | `settings.slopeBelowOptimal` (经转换) | 同一 Hub 利率模型共享 |
-| `variableRateSlope2` | 利率曲线斜率 2 | `settings.slopeAboveOptimal` (经转换) | 同一 Hub 利率模型共享 |
-| `optimalUsageRate` | 最优利用率 | `settings.optimalUtilizationRate` (经转换) | 同一 Hub 利率模型共享 |
-| `baseVariableBorrowRate` | 基础借款利率 | `settings.baseBorrowRate` (经转换) | 同一 Hub 利率模型共享 |
-| `hubId` | Hub ID | `hub.id` | Hub 标识 |
-| `hubName` | Hub 名称 | `hub.name` | Hub 标识 |
-| `hubAddress` | Hub 合约地址 | `hub.address` | Hub 标识 |
-| `assetTotalSupplied` | Hub 资产总供应量 | `hub.summary.totalSupplied.current.value` | HubSummary → ExchangeAmountWithChange |
-| `assetTotalBorrowed` | Hub 资产总借款量 | `r.summary.borrowed.amount.onChainValue` | ReserveSummary → Erc20Amount (Spoke 级别) |
-| `assetTotalSupplyCap` | Hub 资产供应上限 | `hub.summary.totalSupplyCap.value` | HubSummary → ExchangeAmount |
-| `assetTotalBorrowCap` | Hub 资产借款上限 | `hub.summary.totalBorrowCap.value` | HubSummary → ExchangeAmount |
+| 字段 | 类型 / 精度 | 说明 | HubAsset 字段 | 为什么共享 |
+|------|------------|------|---------------|----------|
+| `utilizationPct` | `number`, percent | 资金利用率 | `summary.utilizationRate * 100` | 基于 Hub 总流动性计算 |
+| `availableLiquidity` | `string`, raw token units | 可用流动性 | `summary.availableLiquidity.amount.onChainValue` | Hub 级别流动性池 |
+| `reserveFactor` | `number`, percent | 储备因子 | `settings.liquidityFee.value × 100` | Hub 级别的费率策略 |
+| `variableRateSlope1` | `number`, percent | 利率曲线斜率 1 | `settings.slopeBelowOptimal.value × 100` | 同一 Hub 利率模型共享 |
+| `variableRateSlope2` | `number`, percent | 利率曲线斜率 2 | `settings.slopeAboveOptimal.value × 100` | 同一 Hub 利率模型共享 |
+| `optimalUsageRate` | `number`, percent | 最优利用率 | `settings.optimalUtilizationRate.value × 100` | 同一 Hub 利率模型共享 |
+| `baseVariableBorrowRate` | `number`, percent | 基础借款利率 | `settings.baseBorrowRate.value × 100` | 同一 Hub 利率模型共享 |
+| `hubId` | `string` | Hub ID | `hub.id` | Hub 标识 |
+| `hubName` | `string` | Hub 名称 | `hub.name` | Hub 标识 |
+| `hubAddress` | `string` (EVM) | Hub 合约地址 | `hub.address` | Hub 标识 |
+| `availableLiquidityUsd` | `number`, USD | Hub 可用流动性 USD | `summary.availableLiquidity.exchange.value` | Hub 级别 |
 
 **重要提示 - SDK 字段结构差异**：
 
@@ -307,21 +317,9 @@ export function isSupplyDisabledV3(
 
 ### `percentOnChainValueToRay(onChainValue: string, decimals: number): string`
 
-**位置**: `src/v4-fetcher.ts:125`
+**位置**: `src/v4-fetcher.ts:125`（已删除）
 
-V4 特有：将 4-decimal 精度转换为 RAY (27-decimal)：
-
-```typescript
-function percentOnChainValueToRay(onChainValue: string, decimals: number): string {
-  const value = BigInt(onChainValue);
-  const diff = 27 - decimals;
-  if (diff <= 0) return value.toString();
-  return (value * BigInt(10) ** BigInt(diff)).toString();
-}
-```
-
-- V4 SDK 返回的利率参数是 4-decimal (如 `900` 表示 9%)
-- 需转换为 RAY 格式 (如 `900000000000000000000000000`) 以与 V3 对齐
+**已删除，无需关注。** 精度统一后 V3/V4 统一使用 `.value × 100` 的 percent number，不再需要 RAY 转换。
 
 ### `fetchHubAssetIndex(chainIds: number[]): Promise<{ index: Map<string, HubAssetInfo>; rawAssets: any[] }>`
 
@@ -402,24 +400,25 @@ const utilizationPct = hubInfo?.utilizationRate !== undefined
   : undefined;
 ```
 
-### 5. V4 利率参数单位转换
+### 5. V4 利率参数精度（已统一为 percent number）
 
-V4 SDK 的利率参数使用 4-decimal 精度，需转换为 RAY (27-decimal) 以匹配 V3：
+> **已变更**：V4 SDK 的利率参数原来从 `settings.slopeBelowOptimal.onChainValue`（4-decimal）经 `percentOnChainValueToRay()` 转为 RAY string 以匹配 V3 旧格式。精度统一后，V3 和 V4 都从 SDK 的 `.value`（decimal fraction，如 `0.04` = 4%）直接读，输出 `number × 100` 的 percent number。**`percentOnChainValueToRay()` 已删除，不再需要。**
 
 ```typescript
-// src/v4-fetcher.ts:125 percentOnChainValueToRay()
+// 变更前（已删除）：
 function percentOnChainValueToRay(onChainValue: string, decimals: number): string {
+  // 转为 RAY (27-decimal) 以匹配 V3 旧格式
   const value = BigInt(onChainValue);
   const diff = 27 - decimals;
   if (diff <= 0) return value.toString();
   return (value * BigInt(10) ** BigInt(diff)).toString();
 }
 
-// 在 fetchHubAssetIndex() 中应用转换
-const variableRateSlope1 = percentOnChainValueToRay(
-  (asset as any).settings?.variableRateSlope1?.onChainValue,
-  (asset as any).settings?.variableRateSlope1?.decimals
-);
+// 变更后：
+// V3/V4 统一：value 是 SDK 返回的 decimal fraction (e.g., 0.04 = 4%), 输出 percent number
+const variableRateSlope1 = toFiniteNumber(asset.settings?.slopeBelowOptimal?.value)
+  ? toFiniteNumber(asset.settings?.slopeBelowOptimal?.value)! * 100
+  : undefined;
 ```
 
 ---
