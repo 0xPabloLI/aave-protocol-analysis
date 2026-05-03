@@ -18,7 +18,9 @@
 - `npm --prefix backend run test` — backend tests
 
 ## Mandatory Session Workflow
-1. **Session coordination first**: read/update `SESSION-BOARD.md` before editing; mark conflicts; deregister on completion.
+1. **Bootstrap first** (every new session — BEFORE any other action):
+   - **Codex**: `~/.codex/superpowers/.codex/superpowers-codex bootstrap && ~/.codex/superpowers/.codex/superpowers-codex use-skill brainstorming`
+   - **CodeArts**: Use the `skill` tool to load `using-superpowers`, then load `brainstorming`. This is mandatory — do not skip even for simple questions.
 2. **Hook policy**: do not bypass local hooks (`pre-commit`/`pre-push`), which enforce `ci:remote` and lockfile consistency.
 3. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
 4. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`.
@@ -64,7 +66,6 @@ When touching one area, check its pair:
 - Backend freshness/caching: `backend/src/services/marketsService.ts`, `onchainDataService.ts`, `merklForecastService.ts`, `cacheTtl.ts`
 
 ## Key References
-- `SESSION-BOARD.md`
 - `docs/merkl-merit-cache-architecture.md`
 - `docs/backend/data-freshness-mechanism.md`
 - `docs/development-best-practices.md`
