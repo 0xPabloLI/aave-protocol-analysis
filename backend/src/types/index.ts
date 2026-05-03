@@ -30,7 +30,6 @@ export interface MarketWithSpread {
   tokenAddress: string;
   aaveProReserveId?: string;
   tokenPrice?: number;
-  reserveSizeUsd?: number;
   utilizationPct?: number;
   aTokenAddress?: string | null;
   vTokenAddress?: string | null;
@@ -38,23 +37,17 @@ export interface MarketWithSpread {
   supplyDisabled?: boolean;
   isFrozen?: boolean;
   isPaused?: boolean;
-  supplyCapUsd?: number;
   borrowApy?: number | null;
   borrowDisabled?: boolean;
-  borrowCapUsd?: number;
   // Rate-input fields for manual APR calculation (from Aave SDK)
   decimals?: number;
   availableLiquidity?: string;
-  availableLiquidityUsd?: number;
   totalVariableDebt?: string; // raw token units - total borrowed
-  totalVariableDebtUsd?: number;
   reserveSize?: string; // raw token units - total supplied
   supplyCap?: string; // raw token units
   borrowCap?: string; // raw token units
   suppliable?: string; // raw token units; available headroom to supply
-  suppliableUsd?: number;
   borrowable?: string; // raw token units; available headroom to borrow
-  borrowableUsd?: number;
   // Rate-model fields are percent numbers (e.g., 9 means 9%) for V3/V4 unified API.
   reserveFactor?: number;
   variableRateSlope1?: number;
