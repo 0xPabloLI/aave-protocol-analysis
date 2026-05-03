@@ -31,3 +31,19 @@ export function toFiniteNumber(value: unknown): number | null {
   }
   return null;
 }
+
+/**
+ * Convert an Aave SDK PercentValue / PercentNumber to a percent JS number.
+ *
+ * Both V3 ({@link @aave/client}) and V4 ({@link @aave/client-v4}) SDKs return
+ * ratio-based percent objects like { value: "0.09" } where the value is a decimal
+ * fraction string. This function multiplies by 100 to produce a canonical percent
+ * number (e.g., 9 = 9%) matching the unified V3/V4 API and frontend expectations.
+ *
+ * @returns percent number (e.g., 9 for 9%), or undefined if the input is falsy or unparseable
+ */
+export function percentValueToPercent(percentValue: { value?: unknown } | undefined): number | undefined {
+  if (!percentValue) return undefined;
+  const ratio = toFiniteNumber(percentValue.value);
+  return ratio === null || ratio === undefined ? undefined : ratio * 100;
+}
