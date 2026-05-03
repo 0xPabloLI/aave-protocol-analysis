@@ -3,6 +3,9 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
+# Skip postinstall script that tries to install backend deps before they exist
+ENV SKIP_BACKEND_POSTINSTALL=true
+
 # Install root dependencies (including devDependencies for TypeScript compilation)
 COPY package*.json ./
 COPY packages/ ./packages/
@@ -46,6 +49,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# Skip postinstall script that tries to install backend deps before they exist
+ENV SKIP_BACKEND_POSTINSTALL=true
 
 # Install production-only dependencies for root
 COPY package*.json ./
