@@ -104,6 +104,8 @@ workers/.wrangler/
 workers/node_modules/
 workers/dist/
 
+# Railway CLI local config
+.railway
 
 SESSION-BOARD.md
 
