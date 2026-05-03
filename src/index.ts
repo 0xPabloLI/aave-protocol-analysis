@@ -12,7 +12,7 @@ import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
 import { brevisApi, pruneBrevisCampaignForRuntime } from './brevis-api.js';
 import { resolveUsdPriceWithPriority } from './token-price-resolver.js';
-import { toFiniteNumber } from './utils/number.js';
+import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
 import {
   MerklCampaignBreakdown,
   MerklOpportunityData,
@@ -650,16 +650,11 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
           subtractRawClamped(borrowCap, totalVariableDebt),
           availableLiquidity,
         );
-        // V3 SDK PercentValue.value is a ratio string (e.g., "0.20" = 20%); ×100 to percent number.
-        const percentFromV3 = (pv: any): number | undefined => {
-          const ratio = toFiniteNumber(pv?.value);
-          return ratio === null || ratio === undefined ? undefined : ratio * 100;
-        };
-        const reserveFactor = percentFromV3(reserve.borrowInfo?.reserveFactor);
-        const variableRateSlope1 = percentFromV3(reserve.borrowInfo?.variableRateSlope1);
-        const variableRateSlope2 = percentFromV3(reserve.borrowInfo?.variableRateSlope2);
-        const optimalUsageRate = percentFromV3(reserve.borrowInfo?.optimalUsageRate);
         // Note: baseVariableBorrowRate is NOT available from Aave API (filled by on-chain RPC or fallback)
+        const reserveFactor = percentValueToPercent(reserve.borrowInfo?.reserveFactor);
+        const variableRateSlope1 = percentValueToPercent(reserve.borrowInfo?.variableRateSlope1);
+        const variableRateSlope2 = percentValueToPercent(reserve.borrowInfo?.variableRateSlope2);
+        const optimalUsageRate = percentValueToPercent(reserve.borrowInfo?.optimalUsageRate);
         
         const protocolSupplyIncentives: number[] = [];
         const protocolBorrowIncentives: number[] = [];

@@ -19,7 +19,7 @@
 import { AaveClient, chainId as v4ChainId } from '@aave/client-v4';
 import { chains, reserves } from '@aave/client-v4/actions';
 import { logger } from './logger.js';
-import { toFiniteNumber } from './utils/number.js';
+import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
 
 // Re-use types from V3 — we import only the type to avoid circular deps.
 // The actual interface is defined in index.ts; we duplicate the minimal shape here.
@@ -92,19 +92,6 @@ export interface V4FetchResult {
 export function bigintReplacer(_key: string, value: unknown): unknown {
   if (typeof value === 'bigint') return value.toString();
   return value;
-}
-
-/**
- * Convert a V4 SDK PercentNumber to a percent JS number (e.g., 9 = 9%).
- *
- * V4 PercentNumber.value is a ratio string (e.g., "0.09" = 9%); we multiply by 100
- * to get the canonical percent representation that matches V3 and the frontend.
- */
-function percentNumberToPercent(percentNumber: any): number | undefined {
-  if (!percentNumber) return undefined;
-  const ratio = toFiniteNumber(percentNumber.value);
-  if (ratio === null || ratio === undefined) return undefined;
-  return ratio * 100;
 }
 
 /**
@@ -190,15 +177,15 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
 
     // Hub-level (shared across spokes) liquidity / utilization / rate model
     const a = r.asset;
-    const utilizationPct = percentNumberToPercent(a?.summary?.utilizationRate);
+    const utilizationPct = percentValueToPercent(a?.summary?.utilizationRate);
     const availableLiquidity = a?.summary?.availableLiquidity?.amount?.onChainValue?.toString?.() ?? undefined;
     const availableLiquidityUsd = toFiniteNumber(a?.summary?.availableLiquidity?.exchange?.value) ?? undefined;
 
-    const reserveFactor = percentNumberToPercent(a?.settings?.liquidityFee);
-    const variableRateSlope1 = percentNumberToPercent(a?.settings?.slopeBelowOptimal);
-    const variableRateSlope2 = percentNumberToPercent(a?.settings?.slopeAboveOptimal);
-    const optimalUsageRate = percentNumberToPercent(a?.settings?.optimalUtilizationRate);
-    const baseVariableBorrowRate = percentNumberToPercent(a?.settings?.baseBorrowRate);
+    const reserveFactor = percentValueToPercent(a?.settings?.liquidityFee);
+    const variableRateSlope1 = percentValueToPercent(a?.settings?.slopeBelowOptimal);
+    const variableRateSlope2 = percentValueToPercent(a?.settings?.slopeAboveOptimal);
+    const optimalUsageRate = percentValueToPercent(a?.settings?.optimalUtilizationRate);
+    const baseVariableBorrowRate = percentValueToPercent(a?.settings?.baseBorrowRate);
 
     // Reserve-level (per-spoke) sizes & caps in raw token units
     const reserveSize = r.summary?.supplied?.amount?.onChainValue?.toString?.() ?? undefined;
