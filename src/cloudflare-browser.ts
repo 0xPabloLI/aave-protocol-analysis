@@ -631,44 +631,4 @@ async function extractMeritDynamicInfoWithWorkerInternal(key: string): Promise<M
   }
 }
 
-/**
- * 使用 Cloudflare Workers + Puppeteer 提取 Self Authentication 描述
- */
-export async function extractSelfAuthenticationDescriptionWithCloudflare(key: string): Promise<string | null> {
-  if (!CLOUDFLARE_WORKER_URL) {
-    logger.warn('⚠️ CLOUDFLARE_WORKER_URL not set, skipping Cloudflare Worker');
-    return null;
-  }
-
-  try {
-    const response = await fetch(CLOUDFLARE_WORKER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'extractSelfAuth',
-        key,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      throw new Error(`Cloudflare Worker HTTP ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json() as { success: boolean; result?: string | null; error?: string };
-
-    if (!data.success) {
-      logger.warn(`⚠️ Cloudflare Worker failed for ${key}:`, data.error || 'Unknown error');
-      return null;
-    }
-
-    return data.result ?? null;
-  } catch (error) {
-    logger.warn(`⚠️ Cloudflare self-auth extraction failed for ${key}:`, error);
-    return null;
-  }
-}
-
 // REST API path removed for self-auth; Workers + local Puppeteer handle it.

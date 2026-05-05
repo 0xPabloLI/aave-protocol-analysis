@@ -1,7 +1,7 @@
 import {
   fetchMerklOpportunitiesSnapshot,
 } from '@internal/aave-shared-config';
-import { BACKEND_CACHE_TTL_MS, MERKL_TTL } from '../cacheTtl.js';
+import { MERKL_TTL } from '../cacheTtl.js';
 
 export interface FetchMerklOpportunitiesOptions {
   mainProtocolId?: string;

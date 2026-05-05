@@ -83,8 +83,6 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.reserveSize ? { reserveSize: reserve.reserveSize } : {}),
     ...(reserve.supplyCap ? { supplyCap: reserve.supplyCap } : {}),
     ...(reserve.borrowCap ? { borrowCap: reserve.borrowCap } : {}),
-    ...(reserve.suppliable ? { suppliable: reserve.suppliable } : {}),
-    ...(reserve.borrowable ? { borrowable: reserve.borrowable } : {}),
     ...(reserve.reserveFactor !== undefined ? { reserveFactor: reserve.reserveFactor } : {}),
     ...(reserve.variableRateSlope1 !== undefined ? { variableRateSlope1: reserve.variableRateSlope1 } : {}),
     ...(reserve.variableRateSlope2 !== undefined ? { variableRateSlope2: reserve.variableRateSlope2 } : {}),

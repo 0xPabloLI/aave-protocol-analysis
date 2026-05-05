@@ -35,8 +35,6 @@ const mockFullReserve = {
   reserveSize: '1800000000000',
   supplyCap: '10000000000000',
   borrowCap: '8000000000000',
-  suppliable: '8200000000000',
-  borrowable: '7200000000000',
   reserveFactor: 20,
   variableRateSlope1: 4,
   variableRateSlope2: 80,
