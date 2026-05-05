@@ -36,14 +36,14 @@ API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即"建议刷�
 
 ## 数据模型
 
-### FormattedReserveData
+### RuntimeReserveData
 
 市场储备数据的完整结构，包含所有激励信息。
 
 > **前端字段映射**：各字段在前端界面中的展示名称、排序选项、派生计算公式见 [field-glossary.md](./field-glossary.md)。
 
 ```typescript
-interface FormattedReserveData {
+interface RuntimeReserveData {
   // 基础信息
   reserveId: string;                     // 储备 ID（唯一标识符）
   marketName: string;                    // 市场名称，如 "AaveV3Arbitrum"

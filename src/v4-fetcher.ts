@@ -120,7 +120,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
   const v4Reserves = reservesResult.value;
   logger.info(`✅ [V4] Fetched ${v4Reserves.length} reserves`);
 
-  // 3. Map each V4 Reserve → FormattedReserveData
+  // 3. Map each V4 Reserve → RuntimeReserveData
   const dataset: V4FormattedReserveData[] = [];
 
   for (const reserve of v4Reserves) {

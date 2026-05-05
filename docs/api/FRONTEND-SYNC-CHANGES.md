@@ -142,7 +142,7 @@ function getRateInputsFromReserve(reserve: ReserveForRateCalc) {
 
 | 顺序 | 文件 | 修改内容 | 说明 |
 |------|------|----------|------|
-| 1 | `src/index.ts` | `FormattedReserveData` 接口 | Root fetcher 的数据结构定义 |
+| 1 | `src/index.ts` | `RuntimeReserveData` 接口 | Root fetcher 的数据结构定义 |
 | 2 | Fetcher 文件 (如 `src/v4-fetcher.ts`) | 数据填充逻辑 | 从 SDK/API 获取并填充新字段 |
 | 3 | `src/index.ts` | `pruneReserveForRuntime()` | **关键**：必须显式添加字段，否则会被过滤掉 |
 | 4 | `backend/src/types/index.ts` | `MarketWithSpread` 接口 | API 响应类型定义 |
@@ -156,7 +156,7 @@ function getRateInputsFromReserve(reserve: ReserveForRateCalc) {
 
 ```typescript
 // src/index.ts (第 243 行附近)
-function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData {
+function pruneReserveForRuntime(item: RuntimeReserveData): RuntimeReserveData {
   return {
     // ... 已有字段
     
@@ -214,10 +214,10 @@ npm --prefix backend run test
        │ Aggregates data from Aave, Merit, Merkl,      │ Serves HTTP
        │ Brevis, V4 SDK...                              │ API
        ▼                                               ▼
-   FormattedReserveData                          MarketWithSpread
+   RuntimeReserveData                          MarketWithSpread
 ```
 
-- `FormattedReserveData`: 数据聚合阶段的完整结构
+- `RuntimeReserveData`: 数据聚合阶段的完整结构
 - `RuntimeReserveData`: 经过 prune 后写入磁盘的精简结构
 - `MarketWithSpread`: HTTP API 返回的最终结构
 
@@ -225,7 +225,7 @@ npm --prefix backend run test
 
 | 层级 | 文件 | 作用 |
 |------|------|------|
-| Root 类型 | `src/index.ts` | `FormattedReserveData`, `RuntimeReserveData`, `pruneReserveForRuntime()` |
+| Root 类型 | `src/index.ts` | `RuntimeReserveData`, `RuntimeReserveData`, `pruneReserveForRuntime()` |
 | Root 获取 | `src/v4-fetcher.ts` | V4 数据获取，填充字段 |
 | Backend 类型 | `backend/src/types/index.ts` | `MarketWithSpread` API 响应接口 |
 | Backend 序列化 | `backend/src/services/marketsApiSerialize.ts` | `serializeReserveForApi()` |

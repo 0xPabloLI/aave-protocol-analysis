@@ -58,10 +58,7 @@
 | **borrowCap** | `string`, raw token units | 后端派生 borrowable 用 | Reserve | `r.settings?.borrowCap?.amount?.onChainValue` | `fetchV4MarketsDataInner()` 内联 | `onChainValue.toString()` | `reserve.borrowInfo?.borrowCap?.amount?.raw` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
 | **availableLiquidityUsd** | `number`, USD | 后端提供 | **Hub** | `r.asset.summary.availableLiquidity.exchange.value` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber()` | `reserve.borrowInfo?.availableLiquidity?.usd` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
 | **totalVariableDebtUsd** | `number`, USD | 后端提供 | Reserve | `r.summary?.borrowed?.exchange` | `fetchV4MarketsDataInner()` 内联 | `toFiniteNumber()` | `reserve.borrowInfo?.total?.usd` | `buildV3BaseDataset()` | 直接取值或 `undefined` |
-| **suppliable** | `string`, raw token units | 后端派生 | Reserve | 派生: `max(0, supplyCap − reserveSize)` | `fetchV4MarketsDataInner()` 内联 | 服务端计算 | 派生 | `buildV3BaseDataset()` | 服务端计算 |
-| **suppliableUsd** | `number`, USD | 后端派生 | Reserve | 派生: `max(0, supplyCapUsd − reserveSizeUsd)` | `fetchV4MarketsDataInner()` 内联 | 服务端计算 | 派生 | `buildV3BaseDataset()` | 服务端计算 |
-| **borrowable** | `string`, raw token units | 后端派生 | Reserve | 派生: `max(0, min(borrowCap−debt, availableLiquidity))` | `fetchV4MarketsDataInner()` 内联 | 服务端计算 | 派生 | `buildV3BaseDataset()` | 服务端计算 |
-| **borrowableUsd** | `number`, USD | 后端派生 | Reserve | 派生: `max(0, min(borrowCapUsd−debtUsd, availableLiquidityUsd))` | `fetchV4MarketsDataInner()` 内联 | 服务端计算 | 派生 | `buildV3BaseDataset()` | 服务端计算 |
+
 
 ### APY 与利率字段
 

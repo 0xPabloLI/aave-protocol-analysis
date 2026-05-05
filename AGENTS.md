@@ -34,9 +34,9 @@
 ## Automated Checks (No Manual Checklist Needed)
 
 ### Reserve Field Addition
-Adding new reserve fields is now type-safe:
+Adding new reserve fields to the single `RuntimeReserveData` type requires:
 
-1. **Type Safety**: `src/types/prune-type-helper.ts` enforces that `pruneReserveForRuntime` returns all `RuntimeReserveData` fields at compile time
+1. **Type Sync**: Update `RuntimeReserveData` → `MarketWithSpread` (backend) → `marketsApiSerialize.ts` serialization
 2. **Runtime Test**: `tests/field-coverage.test.ts` validates all expected fields are present
 3. **Field Registry**: `src/types/runtime-validation.ts` maintains `EXPECTED_RUNTIME_FIELDS` as source of truth
 

@@ -50,57 +50,6 @@ interface MarketData {
   errors: string[];
 }
 
-export interface FormattedReserveData {
-  reserveId: string;
-  marketName: string;
-  chainName: string;
-  chainId: number;
-  tokenName: string;
-  tokenSymbol: string;
-  tokenAddress: string; // underlying token address
-  tokenPrice?: number;
-  utilizationPct?: number;
-  aTokenAddress: string | null; // aToken address
-  vTokenAddress: string | null; // variableDebtToken address
-  supplyApy: number | undefined; // APY 比例值（如 0.052 = 5.2%/年）；CSV 与 HTTP 展示再 ×100
-  supplyDisabled?: boolean; // true when supplyCap is 1
-  isFrozen?: boolean;
-  isPaused?: boolean;
-  borrowApy: number | undefined; // APY 比例值；CSV 与 GET /api/markets 为百分值
-  borrowDisabled?: boolean; // true when borrowingState is DISABLED or borrowCap is 1
-  supplyIncentives: number[]; // Protocol supply incentives 比例值数组
-  borrowIncentives: number[]; // Protocol borrow incentives 比例值数组
-  // Rate-input fields for manual APR calculation (raw strings for precision)
-  decimals?: number;
-  availableLiquidity?: string; // raw token units (hub-level for V4)
-  totalVariableDebt?: string; // raw token units (per-spoke for V4)
-  reserveSize?: string; // raw token units (per-spoke for V4)
-  supplyCap?: string; // raw token units (per-spoke for V4)
-  borrowCap?: string; // raw token units (per-spoke for V4)
-  // Rate-model fields are percent numbers (e.g., 9 means 9%) for V3/V4 unified API.
-  reserveFactor?: number;
-  variableRateSlope1?: number;
-  variableRateSlope2?: number;
-  optimalUsageRate?: number;
-  baseVariableBorrowRate?: number; // from V4 reserve.asset.settings or on-chain RPC
-  // Note: baseVariableBorrowRate is NOT available from V3 Aave API (only via RPC or V4 SDK)
-  aaveProReserveId?: string;
-  meritSupplys?: MeritAprEntry[];
-  meritBorrows?: MeritAprEntry[];
-  merklSupplys?: MerklOpportunityGroup[];
-  merklBorrows?: MerklOpportunityGroup[];
-  merklHolds?: MerklOpportunityGroup[];
-  brevisSupplys?: BrevisCampaignItem[];
-  brevisBorrows?: BrevisCampaignItem[];
-  // V4 Hub & Spoke addresses for contract interaction (only present for V4 markets)
-  hubId?: string;
-  hubName?: string;
-  hubAddress?: string;
-  spokeId?: string;
-  spokeName?: string;
-  spokeAddress?: string;
-}
-
 export interface RuntimeReserveData {
   reserveId: string;
   marketName: string;
@@ -164,145 +113,12 @@ export interface MarketsPayload {
 }
 
 
-function pruneMeritEntryForRuntime(entry: MeritAprEntry): MeritAprEntry {
-  return {
-    apr: entry.apr,
-    ...(entry.selfApr !== undefined ? { selfApr: entry.selfApr } : {}),
-    link: entry.link,
-    ...(entry.name ? { name: entry.name } : {}),
-    ...(entry.message ? { message: entry.message } : {}),
-    startDate: entry.startDate,
-    endDate: entry.endDate,
-    ...(entry.lastRoundRewardUsd !== undefined ? { lastRoundRewardUsd: entry.lastRoundRewardUsd } : {}),
-  };
-}
-
-function pruneMerklBreakdownForRuntime(breakdown: MerklCampaignBreakdown): MerklCampaignBreakdown {
-  return {
-    campaignApr: breakdown.campaignApr,
-    campaignStartedAt: breakdown.campaignStartedAt,
-    campaignEndedAt: breakdown.campaignEndedAt,
-    campaignId: breakdown.campaignId,
-    ...(breakdown.whitelistOnly !== undefined ? { whitelistOnly: breakdown.whitelistOnly } : {}),
-    ...(breakdown.pointsPerThousandUsd !== undefined
-      ? { pointsPerThousandUsd: breakdown.pointsPerThousandUsd }
-      : {}),
-    ...(breakdown.campaignType ? {
-      campaignType: breakdown.campaignType,
-      totalBudget: breakdown.totalBudget,
-      aprCap: breakdown.aprCap,
-      latestTvl: breakdown.latestTvl,
-      plannedDaily: breakdown.plannedDaily,
-    } : {}),
-  };
-}
-
-function pruneMerklGroupForRuntime(group: MerklOpportunityGroup): MerklOpportunityGroup {
-  return {
-    link: group.link,
-    ...(group.name ? { name: group.name } : {}),
-    ...(group.message ? { message: group.message } : {}),
-    breakdowns: (group.breakdowns ?? []).map(pruneMerklBreakdownForRuntime),
-  };
-}
-
-function pruneBrevisBreakdownForRuntime(breakdown: BrevisCampaignBreakdown): BrevisCampaignBreakdown {
-  return {
-    campaignApr: breakdown.campaignApr,
-    campaignStartedAt: breakdown.campaignStartedAt,
-    campaignEndedAt: breakdown.campaignEndedAt,
-    ...(breakdown.latestTvl !== undefined ? { latestTvl: breakdown.latestTvl } : {}),
-    ...(breakdown.totalBudget !== undefined ? { totalBudget: breakdown.totalBudget } : {}),
-    ...(breakdown.perUserRewardCapUsd !== undefined
-      ? { perUserRewardCapUsd: breakdown.perUserRewardCapUsd }
-      : {}),
-    ...(breakdown.campaignId ? { campaignId: breakdown.campaignId } : {}),
-  };
-}
-
-function pruneBrevisGroupForRuntime(group: BrevisCampaignItem): BrevisCampaignItem {
-  return {
-    link: group.link,
-    ...(group.name ? { name: group.name } : {}),
-    ...(group.message ? { message: group.message } : {}),
-    breakdowns: (group.breakdowns ?? []).map(pruneBrevisBreakdownForRuntime),
-  };
-}
-
-function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData {
-  // 编译时类型验证：使用 satisfies 确保返回对象满足 RuntimeReserveData 类型
-  // 如果缺少必填字段，TypeScript 会报错
-  return {
-    reserveId: item.reserveId,
-    marketName: item.marketName,
-    chainName: item.chainName,
-    chainId: item.chainId,
-    tokenName: item.tokenName,
-    tokenSymbol: item.tokenSymbol,
-    tokenAddress: item.tokenAddress,
-    ...(item.tokenPrice !== undefined ? { tokenPrice: item.tokenPrice } : {}),
-    ...(item.utilizationPct !== undefined ? { utilizationPct: item.utilizationPct } : {}),
-    ...(item.aTokenAddress ? { aTokenAddress: item.aTokenAddress } : {}),
-    ...(item.vTokenAddress ? { vTokenAddress: item.vTokenAddress } : {}),
-    ...(item.supplyApy !== undefined ? { supplyApy: item.supplyApy } : {}),
-    ...(item.supplyDisabled ? { supplyDisabled: true } : {}),
-    ...(item.isFrozen ? { isFrozen: true } : {}),
-    ...(item.isPaused ? { isPaused: true } : {}),
-    ...(item.borrowApy !== undefined ? { borrowApy: item.borrowApy } : {}),
-    ...(item.borrowDisabled ? { borrowDisabled: true } : {}),
-    ...(item.supplyIncentives && item.supplyIncentives.length > 0 ? { supplyIncentives: item.supplyIncentives } : {}),
-    ...(item.borrowIncentives && item.borrowIncentives.length > 0 ? { borrowIncentives: item.borrowIncentives } : {}),
-    ...(item.meritSupplys && item.meritSupplys.length > 0
-      ? { meritSupplys: item.meritSupplys.map(pruneMeritEntryForRuntime) }
-      : {}),
-    ...(item.meritBorrows && item.meritBorrows.length > 0
-      ? { meritBorrows: item.meritBorrows.map(pruneMeritEntryForRuntime) }
-      : {}),
-    ...(item.merklSupplys && item.merklSupplys.length > 0
-      ? { merklSupplys: item.merklSupplys.map(pruneMerklGroupForRuntime) }
-      : {}),
-    ...(item.merklBorrows && item.merklBorrows.length > 0
-      ? { merklBorrows: item.merklBorrows.map(pruneMerklGroupForRuntime) }
-      : {}),
-    ...(item.merklHolds && item.merklHolds.length > 0
-      ? { merklHolds: item.merklHolds.map(pruneMerklGroupForRuntime) }
-      : {}),
-    ...(item.brevisSupplys && item.brevisSupplys.length > 0
-      ? { brevisSupplys: item.brevisSupplys.map(pruneBrevisGroupForRuntime) }
-      : {}),
-    ...(item.brevisBorrows && item.brevisBorrows.length > 0
-      ? { brevisBorrows: item.brevisBorrows.map(pruneBrevisGroupForRuntime) }
-      : {}),
-    // Rate-input fields for manual APR calculation
-    ...(item.decimals !== undefined ? { decimals: item.decimals } : {}),
-    ...(item.availableLiquidity ? { availableLiquidity: item.availableLiquidity } : {}),
-    ...(item.totalVariableDebt ? { totalVariableDebt: item.totalVariableDebt } : {}),
-    ...(item.reserveSize ? { reserveSize: item.reserveSize } : {}),
-    ...(item.supplyCap ? { supplyCap: item.supplyCap } : {}),
-    ...(item.borrowCap ? { borrowCap: item.borrowCap } : {}),
-    ...(item.reserveFactor !== undefined ? { reserveFactor: item.reserveFactor } : {}),
-    ...(item.variableRateSlope1 !== undefined ? { variableRateSlope1: item.variableRateSlope1 } : {}),
-    ...(item.variableRateSlope2 !== undefined ? { variableRateSlope2: item.variableRateSlope2 } : {}),
-    ...(item.optimalUsageRate !== undefined ? { optimalUsageRate: item.optimalUsageRate } : {}),
-    ...(item.baseVariableBorrowRate !== undefined ? { baseVariableBorrowRate: item.baseVariableBorrowRate } : {}),
-    ...(item.aaveProReserveId ? { aaveProReserveId: item.aaveProReserveId } : {}),
-    // V4 Hub & Spoke addresses for contract interaction links
-    ...(item.hubId ? { hubId: item.hubId } : {}),
-    ...(item.hubName ? { hubName: item.hubName } : {}),
-    ...(item.hubAddress ? { hubAddress: item.hubAddress } : {}),
-    ...(item.spokeId ? { spokeId: item.spokeId } : {}),
-    ...(item.spokeName ? { spokeName: item.spokeName } : {}),
-    ...(item.spokeAddress ? { spokeAddress: item.spokeAddress } : {}),
-  };
-}
-
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
 const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
 const EXPORT_DATA_DIR = join(DATA_DIR, 'exports');
 
-// 从 baseDataset 构建链-代币索引：chainNameLower -> Set<tokenSymbolLower>
-function buildChainTokenIndex(baseDataset: FormattedReserveData[]): Record<string, Set<string>> {
+function buildChainTokenIndex(baseDataset: RuntimeReserveData[]): Record<string, Set<string>> {
   const index: Record<string, Set<string>> = {};
   
   baseDataset.forEach(item => {
@@ -400,7 +216,7 @@ async function getAllAaveV3Networks(): Promise<NetworkInfo[]> {
 
 // Brevis APR 提取：基于 Aave 市场链/代币列表匹配 campaign 数据
 async function fetchBrevisAprs(
-  baseDataset: FormattedReserveData[]
+  baseDataset: RuntimeReserveData[]
 ): Promise<BrevisDataIndex> {
   try {
     logger.info('🌐 Fetching Brevis Incentra Aave campaign data...');
@@ -520,21 +336,21 @@ async function fetchBrevisAprs(
 async function buildMarketsBaseDataset(v3Markets: any[], options?: {
   v4Fatal?: boolean;
 }): Promise<{
-  baseDataset: FormattedReserveData[];
+  baseDataset: RuntimeReserveData[];
   v3Count: number;
   v4Count: number;
-  v4Dataset: FormattedReserveData[];
+  v4Dataset: RuntimeReserveData[];
   v4Raw: V4FetchResult['raw'];
 }> {
   const v3Dataset = buildV3BaseDataset(v3Markets);
-  let v4Dataset: FormattedReserveData[] = [];
+  let v4Dataset: RuntimeReserveData[] = [];
   let v4Raw: V4FetchResult['raw'] = { reserves: [] };
   const v4Fatal = options?.v4Fatal ?? false;
   try {
     // Option 1: V4 now has retry logic (3 attempts with backoff), matching V3 reliability.
     // Option 2: When v4Fatal=true, V4 failure throws (equal importance to V3).
     const v4Result = await fetchV4ReservesData({ throwOnFinalFailure: v4Fatal });
-    v4Dataset = v4Result.mapped as unknown as FormattedReserveData[];
+    v4Dataset = v4Result.mapped as unknown as RuntimeReserveData[];
     v4Raw = v4Result.raw;
     if (v4Dataset.length > 0) {
       logger.info(`✅ Fetched ${v4Dataset.length} V4 reserves`);
@@ -559,8 +375,8 @@ async function buildMarketsBaseDataset(v3Markets: any[], options?: {
 }
 
 // 从 Aave V3 市场数据创建基础数据集
-function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
-  const baseDataset: FormattedReserveData[] = [];
+function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
+  const baseDataset: RuntimeReserveData[] = [];
 
   markets.forEach(market => {
     const marketName = market.name || 'Unknown';
@@ -694,7 +510,7 @@ type MerklDataIndex = Record<string, MerklOpportunityData[]>;
 type BrevisDataIndex = Record<string, BrevisDataItem>;
 type MerklProcessedData = { index: MerklDataIndex };
 
-function buildReserveTokenPriceMap(baseDataset: FormattedReserveData[]): Map<string, number> {
+function buildReserveTokenPriceMap(baseDataset: RuntimeReserveData[]): Map<string, number> {
   const map = new Map<string, number>();
   baseDataset.forEach((reserve) => {
     const price = toFiniteNumber(reserve.tokenPrice);
@@ -707,11 +523,11 @@ function buildReserveTokenPriceMap(baseDataset: FormattedReserveData[]): Map<str
 }
 
 function enrichDatasetWithIncentiveData(
-  baseDataset: FormattedReserveData[],
+  baseDataset: RuntimeReserveData[],
   meritData: MeritDataIndex,
   merklData: MerklDataIndex,
   brevisData: BrevisDataIndex
-): FormattedReserveData[] {
+): RuntimeReserveData[] {
   return baseDataset.map(item => {
     const meritItemData = getMeritDataFromMarket(item.marketName, item.chainName, item.tokenSymbol, meritData);
     
@@ -834,6 +650,130 @@ function enrichDatasetWithIncentiveData(
       }
     }
     
+    if (item.aTokenAddress === null) item.aTokenAddress = undefined;
+    if (item.vTokenAddress === null) item.vTokenAddress = undefined;
+    if (item.meritSupplys) {
+      item.meritSupplys = item.meritSupplys.map(e => ({
+        apr: e.apr,
+        ...(e.selfApr !== undefined ? { selfApr: e.selfApr } : {}),
+        link: e.link,
+        ...(e.name ? { name: e.name } : {}),
+        ...(e.message ? { message: e.message } : {}),
+        startDate: e.startDate,
+        endDate: e.endDate,
+        ...(e.lastRoundRewardUsd !== undefined ? { lastRoundRewardUsd: e.lastRoundRewardUsd } : {}),
+      }));
+    }
+    if (item.meritBorrows) {
+      item.meritBorrows = item.meritBorrows.map(e => ({
+        apr: e.apr,
+        ...(e.selfApr !== undefined ? { selfApr: e.selfApr } : {}),
+        link: e.link,
+        ...(e.name ? { name: e.name } : {}),
+        ...(e.message ? { message: e.message } : {}),
+        startDate: e.startDate,
+        endDate: e.endDate,
+        ...(e.lastRoundRewardUsd !== undefined ? { lastRoundRewardUsd: e.lastRoundRewardUsd } : {}),
+      }));
+    }
+    if (item.merklSupplys) {
+      item.merklSupplys = item.merklSupplys.map(g => ({
+        link: g.link,
+        ...(g.name ? { name: g.name } : {}),
+        ...(g.message ? { message: g.message } : {}),
+        breakdowns: (g.breakdowns ?? []).map(b => ({
+          campaignApr: b.campaignApr,
+          campaignStartedAt: b.campaignStartedAt,
+          campaignEndedAt: b.campaignEndedAt,
+          campaignId: b.campaignId,
+          ...(b.whitelistOnly !== undefined ? { whitelistOnly: b.whitelistOnly } : {}),
+          ...(b.pointsPerThousandUsd !== undefined ? { pointsPerThousandUsd: b.pointsPerThousandUsd } : {}),
+          ...(b.campaignType ? {
+            campaignType: b.campaignType,
+            totalBudget: b.totalBudget,
+            aprCap: b.aprCap,
+            latestTvl: b.latestTvl,
+            plannedDaily: b.plannedDaily,
+          } : {}),
+        })),
+      }));
+    }
+    if (item.merklBorrows) {
+      item.merklBorrows = item.merklBorrows.map(g => ({
+        link: g.link,
+        ...(g.name ? { name: g.name } : {}),
+        ...(g.message ? { message: g.message } : {}),
+        breakdowns: (g.breakdowns ?? []).map(b => ({
+          campaignApr: b.campaignApr,
+          campaignStartedAt: b.campaignStartedAt,
+          campaignEndedAt: b.campaignEndedAt,
+          campaignId: b.campaignId,
+          ...(b.whitelistOnly !== undefined ? { whitelistOnly: b.whitelistOnly } : {}),
+          ...(b.pointsPerThousandUsd !== undefined ? { pointsPerThousandUsd: b.pointsPerThousandUsd } : {}),
+          ...(b.campaignType ? {
+            campaignType: b.campaignType,
+            totalBudget: b.totalBudget,
+            aprCap: b.aprCap,
+            latestTvl: b.latestTvl,
+            plannedDaily: b.plannedDaily,
+          } : {}),
+        })),
+      }));
+    }
+    if (item.merklHolds) {
+      item.merklHolds = item.merklHolds.map(g => ({
+        link: g.link,
+        ...(g.name ? { name: g.name } : {}),
+        ...(g.message ? { message: g.message } : {}),
+        breakdowns: (g.breakdowns ?? []).map(b => ({
+          campaignApr: b.campaignApr,
+          campaignStartedAt: b.campaignStartedAt,
+          campaignEndedAt: b.campaignEndedAt,
+          campaignId: b.campaignId,
+          ...(b.whitelistOnly !== undefined ? { whitelistOnly: b.whitelistOnly } : {}),
+          ...(b.pointsPerThousandUsd !== undefined ? { pointsPerThousandUsd: b.pointsPerThousandUsd } : {}),
+          ...(b.campaignType ? {
+            campaignType: b.campaignType,
+            totalBudget: b.totalBudget,
+            aprCap: b.aprCap,
+            latestTvl: b.latestTvl,
+            plannedDaily: b.plannedDaily,
+          } : {}),
+        })),
+      }));
+    }
+    if (item.brevisSupplys) {
+      item.brevisSupplys = item.brevisSupplys.map(g => ({
+        link: g.link,
+        ...(g.name ? { name: g.name } : {}),
+        ...(g.message ? { message: g.message } : {}),
+        breakdowns: (g.breakdowns ?? []).map(b => ({
+          campaignApr: b.campaignApr,
+          campaignStartedAt: b.campaignStartedAt,
+          campaignEndedAt: b.campaignEndedAt,
+          ...(b.latestTvl !== undefined ? { latestTvl: b.latestTvl } : {}),
+          ...(b.totalBudget !== undefined ? { totalBudget: b.totalBudget } : {}),
+          ...(b.perUserRewardCapUsd !== undefined ? { perUserRewardCapUsd: b.perUserRewardCapUsd } : {}),
+          ...(b.campaignId ? { campaignId: b.campaignId } : {}),
+        })),
+      }));
+    }
+    if (item.brevisBorrows) {
+      item.brevisBorrows = item.brevisBorrows.map(g => ({
+        link: g.link,
+        ...(g.name ? { name: g.name } : {}),
+        ...(g.message ? { message: g.message } : {}),
+        breakdowns: (g.breakdowns ?? []).map(b => ({
+          campaignApr: b.campaignApr,
+          campaignStartedAt: b.campaignStartedAt,
+          campaignEndedAt: b.campaignEndedAt,
+          ...(b.latestTvl !== undefined ? { latestTvl: b.latestTvl } : {}),
+          ...(b.totalBudget !== undefined ? { totalBudget: b.totalBudget } : {}),
+          ...(b.perUserRewardCapUsd !== undefined ? { perUserRewardCapUsd: b.perUserRewardCapUsd } : {}),
+          ...(b.campaignId ? { campaignId: b.campaignId } : {}),
+        })),
+      }));
+    }
     return item;
   });
 }
@@ -854,7 +794,7 @@ function ratioToPercentString(value: number): string {
   return String(value * 100);
 }
 
-function generateCSV(data: FormattedReserveData[]): string {
+function generateCSV(data: RuntimeReserveData[]): string {
   if (data.length === 0) return '';
 
   // CSV 头部
@@ -1413,7 +1353,7 @@ export async function fetchMarketsData(options?: {
   // Enrich with incentive data
   logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
   const enrichedData = enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
-  const runtimeData = enrichedData.map(pruneReserveForRuntime);
+  const runtimeData = enrichedData;
 
   logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves`);
 
@@ -1445,7 +1385,7 @@ export async function fetchMarketsData(options?: {
  */
 async function writeDebugSnapshot(
   payload: MarketsPayload,
-  enrichedData: FormattedReserveData[],
+  enrichedData: RuntimeReserveData[],
   v3Count: number,
   v4Count: number,
   v4Raw: V4FetchResult['raw'],

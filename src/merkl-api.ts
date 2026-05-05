@@ -1123,7 +1123,7 @@ export function filterExpiredCampaigns(breakdowns: MerklCampaignBreakdown[]): Me
  * 根据 token 地址查找匹配的 Merkl opportunities
  */
 export function findMatchingMerklOpportunities(
-  item: { chainId: number; marketName: string; tokenAddress: string; aTokenAddress: string | null; vTokenAddress: string | null },
+  item: { chainId: number; marketName: string; tokenAddress: string; aTokenAddress?: string | null; vTokenAddress?: string | null },
   merklData: Record<string, MerklOpportunityData[]>
 ): MerklOpportunityData[] {
   const matchedOpportunities: MerklOpportunityData[] = [];
