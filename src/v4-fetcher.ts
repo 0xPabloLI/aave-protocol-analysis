@@ -2,7 +2,7 @@
  * Aave V4 Data Fetcher
  *
  * Fetches Aave V4 reserve data via the V4 SDK (Hub & Spoke model)
- * and maps it to the same FormattedReserveData shape used by V3,
+ * and maps it to the same RuntimeReserveData shape used by V3,
  * so both versions can be served through a single unified API.
  *
  * Key V3 → V4 differences handled here:
@@ -86,7 +86,7 @@ export function bigintReplacer(_key: string, value: unknown): unknown {
 }
 
 /**
- * Fetch all V4 reserves and map them to the same FormattedReserveData shape.
+ * Fetch all V4 reserves and map them to the RuntimeReserveData shape.
  * Also returns the raw SDK response for debug purposes.
  *
  * Internal implementation — use fetchV4ReservesData() for production callers.
@@ -146,9 +146,6 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     const exchangeRate = toFiniteNumber(r.summary?.supplied?.exchangeRate?.value)
       ?? toFiniteNumber(r.summary?.supplied?.exchangeRate);
     const tokenPrice = exchangeRate ?? undefined;
-
-    // Reserve-level (per-spoke) sizes
-    const reserveSizeUsd = toFiniteNumber(r.summary?.supplied?.exchange?.value) ?? undefined;
 
     // Supply / Borrow APY: use .value (ratio) — serializer applies ×100.
     const supplyApy = toFiniteNumber(r.summary?.supplyApy?.value) ?? undefined;
