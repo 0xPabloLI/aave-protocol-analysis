@@ -48,21 +48,17 @@
 | `reserveSize` | string | raw token units | = available + totalDebt |
 | `supplyCap` | string | raw token units | 0 表示无限 |
 | `borrowCap` | string | raw token units | 0 表示无限 |
-| `suppliable` | string | raw token units | 服务端派生：max(0, supplyCap − reserveSize) |
-| `borrowable` | string | raw token units | 服务端派生：max(0, min(borrowCap−debt, available)) |
 
-#### 4. USD 金额（number，单位 USD）
+#### 4. USD 金额（number，单位 USD — V4 内部中间字段，不在 API 中）
 
 | 字段 | 类型 | 单位 | 备注 |
 |---|---|---|---|
 | `tokenPrice` | number | USD per token | |
-| `reserveSizeUsd` | number | USD | |
-| `availableLiquidityUsd` | number | USD | 新增 |
-| `totalVariableDebtUsd` | number | USD | 新增 |
-| `supplyCapUsd` | number | USD | |
-| `borrowCapUsd` | number | USD | |
-| `suppliableUsd` | number | USD | 新增，服务端派生 |
-| `borrowableUsd` | number | USD | 新增，服务端派生 |
+| `reserveSizeUsd` | number | USD | V4 内部，不在 API 中 |
+| `availableLiquidityUsd` | number | USD | V4 内部，不在 API 中 |
+| `totalVariableDebtUsd` | number | USD | V4 内部，不在 API 中 |
+| `supplyCapUsd` | number | USD | V4 内部，不在 API 中 |
+| `borrowCapUsd` | number | USD | V4 内部，不在 API 中 |
 
 #### 5. 状态/标志
 
@@ -90,7 +86,8 @@
 ### 删除/新增
 
 - 删除：V4 `fetchHubAssetIndex()`、`hubs/hubAssets` 调用、`percentOnChainValueToRay()`、`assetTotalSupplied/Borrowed/SupplyCap/BorrowCap`。
-- 新增（V3+V4 同步）：`reserveSize`、`supplyCap`、`borrowCap`、`suppliable`、`suppliableUsd`、`borrowable`、`borrowableUsd`、`totalVariableDebtUsd`、`availableLiquidityUsd`。
+- 新增（V3+V4 同步）：`reserveSize`、`supplyCap`、`borrowCap`、`totalVariableDebtUsd`、`availableLiquidityUsd`。
+- **后续移除**：`suppliable`、`borrowable`、`suppliableUsd`、`borrowableUsd`（纯派生字段，2026-06 已移除，前端自行计算）。
 
 ### V4 SDK 路径全景（`reserve.asset.summary/settings` 已包含全部 hub 级数据，不再需要 hubAssets()）
 
@@ -112,10 +109,6 @@
 | `supplyCapUsd` | `r.settings.supplyCap.exchange.value` | `reserve.supplyInfo.supplyCap.usd` |
 | `borrowCap` | `r.settings.borrowCap.amount.onChainValue` | `reserve.borrowInfo.borrowCap.amount.raw` |
 | `borrowCapUsd` | `r.settings.borrowCap.exchange.value` | `reserve.borrowInfo.borrowCap.usd` |
-| `suppliable` | `r.summary.suppliable.amount.onChainValue` | 服务端派生 `max(0, supplyCap - reserveSize)` |
-| `suppliableUsd` | `r.summary.suppliable.exchange.value` | 服务端派生 `max(0, supplyCapUsd - reserveSizeUsd)` |
-| `borrowable` | `r.summary.borrowable.amount.onChainValue` | 服务端派生 `max(0, min(borrowCap-totalDebt, availableLiquidity))` |
-| `borrowableUsd` | `r.summary.borrowable.exchange.value` | 服务端派生 `max(0, min(borrowCapUsd-totalDebtUsd, availableLiquidityUsd))` |
 
 ## 执行 commit 顺序
 
@@ -125,7 +118,8 @@
 
 1. **commit 1** — V4 fetcher 删除 `fetchHubAssetIndex()`/`hubs`/`hubAssets`/`percentOnChainValueToRay`，全部从 `reserve.asset.summary/settings` 读；rate params 输出 `value × 100` 的 number；删除 `assetTotal*`。
 2. **commit 2** — V3 `buildV3BaseDataset()` 把 5 个 rate params 输出从 RAY/bps string 改为 number 百分比（用 `.value × 100`）。
-3. **commit 3** — V3+V4 同时新增 11 个字段（reserveSize、supplyCap、borrowCap、suppliable*、borrowable*、totalVariableDebtUsd、availableLiquidityUsd）。`pruneReserveForRuntime`+`FormattedReserveData`+`RuntimeReserveData`+`EXPECTED_RUNTIME_FIELDS`+`MarketWithSpread`+`marketsApiSerialize.ts` 全套类型同步。
+3. **commit 3** — V3+V4 同时新增 `reserveSize`、`supplyCap`、`borrowCap`、`suppliable`、`borrowable`、`suppliableUsd`、`borrowableUsd`、`totalVariableDebtUsd`、`availableLiquidityUsd`。`pruneReserveForRuntime`+`RuntimeReserveData`+`EXPECTED_RUNTIME_FIELDS`+`MarketWithSpread`+`marketsApiSerialize.ts` 全套类型同步。
+   > ⚠️ **2026-05 已回滚**：`suppliable`/`borrowable`/`suppliableUsd`/`borrowableUsd` 在后续 cleanup 中移除（纯派生，前端计算）。`FormattedReserveData` 已合并入 `RuntimeReserveData`，`pruneReserveForRuntime` 已删除。
 4. **commit 4** — 后端 on-chain ingestion + `calculateBaseRateFallback` 改为 number 百分比（消除 RAY 字符串内部传递）。
 
 前端 (`aaveapy/lovable`)：
@@ -137,9 +131,10 @@
 
 ## 进度
 
-后端 (aave-protocol-analysis, railway 分支) — 已完成（2 个 commit）：
-1. `674e40e` — V4 fetcher 重构 + V3 rate params 改 number + onchain fallback（合并 commit 1+2+4）
-2. `d21fa07` — 新增 11 个字段 + 服务端派生 suppliable/borrowable（commit 3）
+后端 (aave-protocol-analysis, railway 分支) — 已完成：
+1. V4 fetcher 重构 + V3 rate params 改 number + onchain fallback
+2. 新增 9 个字段 + 服务端派生 suppliable/borrowable
+3. **2026-05 cleanup** — 移除 suppliable/borrowable（纯派生），合并 FormattedReserveData → RuntimeReserveData，删除 pruneReserveForRuntime + prune helpers + prune-type-helper.ts，清理 V4 USD 中间死代码
 
 前端 (aaveapy, lovable 分支) — 已完成（4 个 commit）：
 1. `5e69a1b` feat(types): align ReserveWithSpread + zod schema with unified V3/V4 API（commit 5）
@@ -149,8 +144,9 @@
 
 - [x] commit 1 — V4 fetcher 重构（删除 hubAssets、rate params 改 number 百分比）✅
 - [x] commit 2 — V3 rate params 改 number 百分比 ✅
-- [x] commit 3 — V3+V4 新增 11 个字段 ✅
-- [x] commit 4 — on-chain `baseVariableBorrowRate` + fallback 改 number 百分比 ✅（与 commit 1+2 合并）
+- [x] commit 3 — V3+V4 新增字段 ✅（suppliable/borrowable 后续移除）
+- [x] commit 4 — on-chain + fallback 改 number ✅
+- [x] **2026-05 cleanup** — 移除派生字段 + 合并类型 + 删除 prune + 清理死代码 ✅
 - [x] commit 5 — 前端类型/zod 调整 ✅
 - [x] commit 6 — 前端利率计算器 Float 重写 ✅
 - [x] commit 7 — 前端 `useRateSimulation` 去 RAY/bps 转换 ✅

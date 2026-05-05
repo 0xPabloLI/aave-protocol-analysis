@@ -54,8 +54,7 @@
 | codex-0409e | Codex | 统一 API freshness 术语 | docs/api/api-documentation.md, docs/api/native-apr-calculation.md, docs/backend/data-freshness-mechanism.md, docs/reusable/caching-data-freshness-patterns.md | done | 2026-04-09T00:00:00 | 已完成术语统一与标准化 |
 | codex-0409f | Codex | 压缩 freshness 文档 | docs/backend/data-freshness-mechanism.md, docs/api/api-documentation.md | done | 2026-04-09T00:00:00 | 已完成压缩与协议收敛 |
 | codex-0409g | Codex | 再压缩 backend freshness 文档 | docs/backend/data-freshness-mechanism.md | done | 2026-04-09T00:00:00 | 已统一术语并压缩描述段落 |
-| codex-0504a | CodeArts | 分析 v4 reserve 冻结/暂停与 supply/borrow 标志的关系 | (只读分析，无写入) | active | 2026-05-04T00:00:00 | |
-| codex-0504b | CodeArts | 检查 dead code | (只读分析，无写入) | active | 2026-05-04T00:00:00 | |
+| codex-0504a | CodeArts | 分析 v4 reserve 冻结/暂停与 supply/borrow 标志的关系 | (只读分析，无写入) | done | 2026-05-04T00:00:00 | |
 
 ---
 

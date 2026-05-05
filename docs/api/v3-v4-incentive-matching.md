@@ -93,7 +93,7 @@
 
 ### 5.2 中期（V4 incentive 开始出现时）
 
-1. **给 `FormattedReserveData` 加 `protocolVersion` 字段**（`'v3' | 'v4'`）
+1. **给 `RuntimeReserveData` 加 `protocolVersion` 字段**（`'v3' | 'v4'`）
    - `buildV3BaseDataset()` 填 `'v3'`
    - `v4-fetcher.ts` 填 `'v4'`
    - 经过 `pruneReserveForRuntime()` 传递到 backend

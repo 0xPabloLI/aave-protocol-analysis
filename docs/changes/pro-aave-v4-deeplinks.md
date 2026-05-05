@@ -16,14 +16,14 @@ Aave V4 使用 `pro.aave.com` 作为前端界面（V3 使用 `app.aave.com`）�
 
 ### 后端 (aave-protocol-analysis)
 
-**数据流：** `V4 SDK → v4-fetcher → FormattedReserveData → pruneReserveForRuntime → RuntimeReserveData → serializeReserveForApi → MarketWithSpread → /api/markets`
+**数据流：** `V4 SDK → v4-fetcher → RuntimeReserveData → pruneReserveForRuntime → RuntimeReserveData → serializeReserveForApi → MarketWithSpread → /api/markets`
 
 新增可选字段 `aaveProReserveId?: string`，在以上 5 个阶段逐层透传：
 
 | 文件 | 改动 |
 |---|---|
 | `src/v4-fetcher.ts` | 接口加字段 + 提取 `r.id` |
-| `src/index.ts` | `FormattedReserveData`、`RuntimeReserveData` 加字段；`pruneReserveForRuntime` 透传 |
+| `src/index.ts` | `RuntimeReserveData`、`RuntimeReserveData` 加字段；`pruneReserveForRuntime` 透传 |
 | `backend/src/types/index.ts` | `MarketWithSpread` 加字段 |
 | `backend/src/services/marketsApiSerialize.ts` | `serializeReserveForApi` 透传 |
 
@@ -63,8 +63,8 @@ buildAaveUrl({ marketName, tokenAddress, aaveProReserveId })
 后端数据管道使用**显式字段映射**（而非 `...spread`），新增字段必须在每一层都手动添加。
 核心卡点列表（见 `AGENTS.md` "Required Coupled Changes"）：
 
-1. `V4FormattedReserveData` (v4-fetcher.ts)
-2. `FormattedReserveData` (index.ts)
+1. `V4RuntimeReserveData` (v4-fetcher.ts)
+2. `RuntimeReserveData` (index.ts)
 3. `pruneReserveForRuntime` (index.ts) ← **本次遗漏被修复的位置**
 4. `RuntimeReserveData` (index.ts)
 5. `MarketWithSpread` (backend/src/types/index.ts)

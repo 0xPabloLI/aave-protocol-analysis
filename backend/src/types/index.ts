@@ -1,4 +1,4 @@
-// 复用现有的 FormattedReserveData 类型定义
+// 复用 RuntimeReserveData 类型定义
 // 注意：这个文件需要从主项目的 src/index.ts 中导出类型
 import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
 

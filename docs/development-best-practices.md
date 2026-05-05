@@ -13,14 +13,9 @@ General implementation and architecture practices. For detailed caching/TTL conf
 - Normalize upstream naming only at boundaries (parsers/adapters), keep core domain names consistent.
 - When Merkl and Brevis share the same response skeleton, reuse **shared structural types** (`BaseCampaignBreakdown`, `CampaignGroup<T>`) and generic traversal/serialization helpers; keep domain math and ingest-specific logic separate.
 
-### Runtime payload shaping (`prune*`)
+### Runtime payload shaping (lean output)
 
-Use **`prune`** for functions that **drop or whitelist fields** so objects match the **runtime / API / CSV** contract (not generic refactors).
-
-- **Pattern**: `prune<Thing>ForRuntime` when the output is the shipped reserve payload or a nested fragment of it (examples in `src/index.ts`: `pruneReserveForRuntime`, `pruneMeritEntryForRuntime`, `pruneMerklGroupForRuntime`, `pruneMerklBreakdownForRuntime`).
-- **Brevis**: `pruneBrevisCampaignForRuntime` in `src/brevis-api.ts` — removes transient `budget*` fields after `fetchBrevisAprs` enriches `totalBudget` (same “slim public shape” idea; may run before the final `pruneReserveForRuntime` pass).
-- **Do not** introduce parallel verbs (`strip`, `omitForApi`, etc.) for the same role unless there is a clearly different semantic (e.g. security redaction); prefer extending the `prune*` family and documenting the call order in code comments.
-- For grouped incentive payloads, prefer one generic serializer pass (for example `scaleGroupedCampaigns`) over parallel Merkl/Brevis loops that only differ in per-breakdown field scaling.
+Data is built and enriched in `enrichDatasetWithIncentiveData()` which also handles nested field pruning inline (strips transient SDK fields from Merit/Merkl/Brevis sub-objects before writing to disk). There is no separate pruning pass — the single `RuntimeReserveData` type is the source of truth for both fetch output and API payload.
 
 ## 2) API Design
 

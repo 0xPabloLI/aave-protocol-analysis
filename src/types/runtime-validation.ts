@@ -1,25 +1,8 @@
 /**
- * RuntimeReserveData 类型安全验证
- * 
- * 这个文件通过 TypeScript 类型体操确保 pruneReserveForRuntime 函数
- * 不会遗漏任何字段。如果添加了新字段但没有在 pruneReserveForRuntime
- * 中处理，编译会报错。
+ * RuntimeReserveData 字段注册表
  */
 
-import type { FormattedReserveData, RuntimeReserveData } from '../index.js';
-
-// 提取 RuntimeReserveData 的所有可选字段类型
-type RuntimeOptionalFields = {
-  [K in keyof RuntimeReserveData as RuntimeReserveData[K] extends undefined ? never : K]?: RuntimeReserveData[K];
-};
-
-// 类型测试：确保 RuntimeReserveData 的每个字段都能在 FormattedReserveData 找到对应
-// 如果 RuntimeReserveData 有而 FormattedReserveData 没有的字段（除了 deficit），会编译报错
-type ValidateRuntimeFields = {
-  [K in keyof Omit<RuntimeReserveData, 'deficit'>]: K extends keyof FormattedReserveData 
-    ? RuntimeReserveData[K] 
-    : never;
-};
+import type { RuntimeReserveData } from '../index.js';
 
 // 这个常量用于运行时测试 - 包含所有应该在 RuntimeReserveData 中的字段
 export const EXPECTED_RUNTIME_FIELDS = [
