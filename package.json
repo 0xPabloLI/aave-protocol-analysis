@@ -18,7 +18,7 @@
     "dev:watch": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "postinstall": "node -e \"const fs=require('fs');if(process.env.SKIP_BACKEND_POSTINSTALL)process.exit(0);if(!fs.existsSync('backend/node_modules/.bin/tsx')){const{execSync}=require('child_process');execSync('npm --prefix backend install --include=dev --no-audit --no-fund',{stdio:'inherit'});}\"",
-    "ci": "npm ci && npm run build && npm run prune && cd backend && npm ci && npm run build && npm run prune",
+    "ci": "npm ci && npm run build && npm run prune && cd backend && npm ci && npm run build && npm run prune && npm run test",
     "ci:remote": "npm run ci && npm audit --omit=dev --audit-level=high 2>&1 | grep -v 'GHSA-848j-6mx2-7j84' | (grep -qE 'found [1-9][0-9]* vulnerabilit|found [1-9] vulnerabilit' && exit 1 || exit 0) && npm --prefix backend audit --omit=dev --audit-level=moderate 2>&1 | grep -v 'GHSA-848j-6mx2-7j84' | (grep -qE 'found [1-9][0-9]* vulnerabilit|found [1-9] vulnerabilit' && exit 1 || exit 0)",
     "ci:auto-fix": "npm audit fix --omit=dev || true && npm --prefix backend audit fix --omit=dev || true",
     "deploy": "./deploy.sh",
