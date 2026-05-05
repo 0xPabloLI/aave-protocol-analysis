@@ -46,8 +46,6 @@ export interface MarketWithSpread {
   reserveSize?: string; // raw token units - total supplied
   supplyCap?: string; // raw token units
   borrowCap?: string; // raw token units
-  suppliable?: string; // raw token units; available headroom to supply
-  borrowable?: string; // raw token units; available headroom to borrow
   // Rate-model fields are percent numbers (e.g., 9 means 9%) for V3/V4 unified API.
   reserveFactor?: number;
   variableRateSlope1?: number;

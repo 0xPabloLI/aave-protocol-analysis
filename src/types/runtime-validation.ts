@@ -48,8 +48,6 @@ export const EXPECTED_RUNTIME_FIELDS = [
   'reserveSize',
   'supplyCap',
   'borrowCap',
-  'suppliable',
-  'borrowable',
   'reserveFactor',
   'variableRateSlope1',
   'variableRateSlope2',
@@ -101,6 +99,3 @@ type ValidateAllFieldsCovered = {
 type ValidateNoExtraFields = {
   [K in ExpectedField]: K extends RuntimeKeys ? true : never;
 }[ExpectedField];
-
-// 导出类型用于外部测试
-export type { ValidateRuntimeFields, ValidateAllFieldsCovered, ValidateNoExtraFields };

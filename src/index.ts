@@ -34,7 +34,6 @@ import {
 } from './cloudflare-browser.js';
 import { fetchV4ReservesData, bigintReplacer } from './v4-fetcher.js';
 import type { V4FetchResult } from './v4-fetcher.js';
-import type { ValidateSourceCoverage } from './types/prune-type-helper.js';
 
 interface NetworkInfo {
   name: string;
@@ -281,8 +280,6 @@ function pruneReserveForRuntime(item: FormattedReserveData): RuntimeReserveData 
     ...(item.reserveSize ? { reserveSize: item.reserveSize } : {}),
     ...(item.supplyCap ? { supplyCap: item.supplyCap } : {}),
     ...(item.borrowCap ? { borrowCap: item.borrowCap } : {}),
-    ...(item.suppliable ? { suppliable: item.suppliable } : {}),
-    ...(item.borrowable ? { borrowable: item.borrowable } : {}),
     ...(item.reserveFactor !== undefined ? { reserveFactor: item.reserveFactor } : {}),
     ...(item.variableRateSlope1 !== undefined ? { variableRateSlope1: item.variableRateSlope1 } : {}),
     ...(item.variableRateSlope2 !== undefined ? { variableRateSlope2: item.variableRateSlope2 } : {}),
@@ -619,33 +616,6 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
         const reserveSize = reserve.size?.amount?.raw ?? undefined;
         const supplyCap = reserve.supplyInfo?.supplyCap?.amount?.raw ?? undefined;
         const borrowCap = reserve.borrowInfo?.borrowCap?.amount?.raw ?? undefined;
-        // V3 has no direct suppliable/borrowable; derive server-side so the frontend
-        // consumes the same field names for V3 and V4.
-        const subtractRawClamped = (a?: string, b?: string): string | undefined => {
-          if (!a || !b) return undefined;
-          try {
-            const diff = BigInt(a) - BigInt(b);
-            return diff > 0n ? diff.toString() : '0';
-          } catch {
-            return undefined;
-          }
-        };
-        const minRawClamped = (a?: string, b?: string): string | undefined => {
-          if (!a || !b) return undefined;
-          try {
-            const av = BigInt(a);
-            const bv = BigInt(b);
-            const m = av < bv ? av : bv;
-            return m > 0n ? m.toString() : '0';
-          } catch {
-            return undefined;
-          }
-        };
-        const suppliable = subtractRawClamped(supplyCap, reserveSize);
-        const borrowable = minRawClamped(
-          subtractRawClamped(borrowCap, totalVariableDebt),
-          availableLiquidity,
-        );
         // Note: baseVariableBorrowRate is NOT available from Aave API (filled by on-chain RPC or fallback)
         const reserveFactor = percentValueToPercent(reserve.borrowInfo?.reserveFactor);
         const variableRateSlope1 = percentValueToPercent(reserve.borrowInfo?.variableRateSlope1);
@@ -705,8 +675,6 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
           ...(reserveSize ? { reserveSize } : {}),
           ...(supplyCap ? { supplyCap } : {}),
           ...(borrowCap ? { borrowCap } : {}),
-          ...(suppliable ? { suppliable } : {}),
-          ...(borrowable ? { borrowable } : {}),
           ...(reserveFactor !== undefined ? { reserveFactor } : {}),
           ...(variableRateSlope1 !== undefined ? { variableRateSlope1 } : {}),
           ...(variableRateSlope2 !== undefined ? { variableRateSlope2 } : {}),
@@ -1540,16 +1508,13 @@ if (isMainModule) {
   logger.error('❌ Failed to fetch Aave markets:', error);
   process.exit(1);
 }).then(async () => {
-  // 关闭 Puppeteer 浏览器实例并 flush aliases
-  const { closeBrowser, flushMeritKeyAliases } = await import('./merit-api.js');
-  await flushMeritKeyAliases().catch(() => {});
+  const { closeBrowser } = await import('./merit-api.js');
   await closeBrowser().catch((err) => {
     logger.warn('⚠️ Error when closing browser:', err);
   });
   process.exit(0);
 }).catch(async (error) => {
-  const { closeBrowser, flushMeritKeyAliases } = await import('./merit-api.js');
-  await flushMeritKeyAliases().catch(() => {});
+  const { closeBrowser } = await import('./merit-api.js');
   await closeBrowser().catch(() => {});
   process.exit(1);
   });

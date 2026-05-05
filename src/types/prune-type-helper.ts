@@ -6,6 +6,7 @@
 
 import type { FormattedReserveData, RuntimeReserveData } from '../index.js';
 
+// ts-prune-ignore-next (compile-time type assertion for field coverage validation)
 export type ValidateSourceCoverage = {
   [K in keyof Omit<RuntimeReserveData, 'deficit'>]: 
     K extends keyof FormattedReserveData 

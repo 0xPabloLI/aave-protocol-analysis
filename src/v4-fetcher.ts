@@ -32,7 +32,6 @@ interface V4FormattedReserveData {
   tokenSymbol: string;
   tokenAddress: string;
   tokenPrice?: number;
-  reserveSizeUsd?: number;
   utilizationPct?: number;
   aTokenAddress: string | null;
   vTokenAddress: string | null;
@@ -40,24 +39,16 @@ interface V4FormattedReserveData {
   supplyDisabled?: boolean;
   isFrozen?: boolean;
   isPaused?: boolean;
-  supplyCapUsd?: number;
   borrowApy: number | undefined;
   borrowDisabled?: boolean;
-  borrowCapUsd?: number;
   supplyIncentives?: number[];
   borrowIncentives?: number[];
   decimals?: number;
   availableLiquidity?: string;
-  availableLiquidityUsd?: number;
   totalVariableDebt?: string;
-  totalVariableDebtUsd?: number;
   reserveSize?: string;
   supplyCap?: string;
   borrowCap?: string;
-  suppliable?: string;
-  suppliableUsd?: number;
-  borrowable?: string;
-  borrowableUsd?: number;
   // Rate-model fields are percent numbers (e.g., 9 = 9%) after unification.
   reserveFactor?: number;
   variableRateSlope1?: number;
@@ -171,15 +162,10 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     const supplyDisabled = !canSupply;
     const borrowDisabled = !canBorrow;
 
-    // Reserve-level (per-spoke) caps in USD
-    const supplyCapUsd = toFiniteNumber(r.settings?.supplyCap?.exchange?.value) ?? undefined;
-    const borrowCapUsd = toFiniteNumber(r.settings?.borrowCap?.exchange?.value) ?? undefined;
-
     // Hub-level (shared across spokes) liquidity / utilization / rate model
     const a = r.asset;
     const utilizationPct = percentValueToPercent(a?.summary?.utilizationRate);
     const availableLiquidity = a?.summary?.availableLiquidity?.amount?.onChainValue?.toString?.() ?? undefined;
-    const availableLiquidityUsd = toFiniteNumber(a?.summary?.availableLiquidity?.exchange?.value) ?? undefined;
 
     const reserveFactor = percentValueToPercent(a?.settings?.liquidityFee);
     const variableRateSlope1 = percentValueToPercent(a?.settings?.slopeBelowOptimal);
@@ -190,13 +176,8 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     // Reserve-level (per-spoke) sizes & caps in raw token units
     const reserveSize = r.summary?.supplied?.amount?.onChainValue?.toString?.() ?? undefined;
     const totalVariableDebt = r.summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined;
-    const totalVariableDebtUsd = toFiniteNumber(r.summary?.borrowed?.exchange?.value) ?? undefined;
     const supplyCap = r.settings?.supplyCap?.amount?.onChainValue?.toString?.() ?? undefined;
     const borrowCap = r.settings?.borrowCap?.amount?.onChainValue?.toString?.() ?? undefined;
-    const suppliable = r.summary?.suppliable?.amount?.onChainValue?.toString?.() ?? undefined;
-    const suppliableUsd = toFiniteNumber(r.summary?.suppliable?.exchange?.value) ?? undefined;
-    const borrowable = r.summary?.borrowable?.amount?.onChainValue?.toString?.() ?? undefined;
-    const borrowableUsd = toFiniteNumber(r.summary?.borrowable?.exchange?.value) ?? undefined;
 
     // V4 SDK embeds summary.rewards[] (MerklSupplyReward / MerklBorrowReward) but they
     // are internal Aave points (payout token "aglaMerklUSD") that don't exist in the
@@ -216,7 +197,6 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       tokenSymbol,
       tokenAddress,
       ...(tokenPrice !== undefined ? { tokenPrice } : {}),
-      ...(reserveSizeUsd !== undefined ? { reserveSizeUsd } : {}),
       ...(utilizationPct !== undefined ? { utilizationPct } : {}),
       aTokenAddress: null, // V4 has no aToken
       vTokenAddress: null, // V4 has no vToken
@@ -224,22 +204,14 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(supplyDisabled ? { supplyDisabled: true } : {}),
       ...(isFrozen ? { isFrozen: true } : {}),
       ...(isPaused ? { isPaused: true } : {}),
-      ...(supplyCapUsd !== undefined ? { supplyCapUsd } : {}),
       borrowApy,
       ...(borrowDisabled ? { borrowDisabled: true } : {}),
-      ...(borrowCapUsd !== undefined ? { borrowCapUsd } : {}),
       ...(decimals !== undefined ? { decimals } : {}),
       ...(availableLiquidity ? { availableLiquidity } : {}),
-      ...(availableLiquidityUsd !== undefined ? { availableLiquidityUsd } : {}),
       ...(totalVariableDebt ? { totalVariableDebt } : {}),
-      ...(totalVariableDebtUsd !== undefined ? { totalVariableDebtUsd } : {}),
       ...(reserveSize ? { reserveSize } : {}),
       ...(supplyCap ? { supplyCap } : {}),
       ...(borrowCap ? { borrowCap } : {}),
-      ...(suppliable ? { suppliable } : {}),
-      ...(suppliableUsd !== undefined ? { suppliableUsd } : {}),
-      ...(borrowable ? { borrowable } : {}),
-      ...(borrowableUsd !== undefined ? { borrowableUsd } : {}),
       ...(reserveFactor !== undefined ? { reserveFactor } : {}),
       ...(variableRateSlope1 !== undefined ? { variableRateSlope1 } : {}),
       ...(variableRateSlope2 !== undefined ? { variableRateSlope2 } : {}),
