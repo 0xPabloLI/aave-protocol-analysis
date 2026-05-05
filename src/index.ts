@@ -78,8 +78,6 @@ export interface FormattedReserveData {
   reserveSize?: string; // raw token units (per-spoke for V4)
   supplyCap?: string; // raw token units (per-spoke for V4)
   borrowCap?: string; // raw token units (per-spoke for V4)
-  suppliable?: string; // raw token units; available headroom to supply
-  borrowable?: string; // raw token units; available headroom to borrow;
   // Rate-model fields are percent numbers (e.g., 9 means 9%) for V3/V4 unified API.
   reserveFactor?: number;
   variableRateSlope1?: number;
@@ -131,8 +129,6 @@ export interface RuntimeReserveData {
   reserveSize?: string;
   supplyCap?: string;
   borrowCap?: string;
-  suppliable?: string;
-  borrowable?: string;
   reserveFactor?: number;
   variableRateSlope1?: number;
   variableRateSlope2?: number;
@@ -595,7 +591,7 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
         const isPaused = reserve.isPaused === true;
         const supplyCapValue = reserve.supplyInfo?.supplyCap?.amount?.value;
         const supplyCapIsOne = supplyCapValue !== undefined && toFiniteNumber(supplyCapValue) === 1;
-        const isSupplyDisabled = supplyCapIsOne;
+        const isSupplyDisabled = isFrozen || isPaused || supplyCapIsOne;
         
         const supplyApyValue = reserve.supplyInfo?.apy?.value;
         const supplyApy = supplyCapIsOne || !supplyApyValue
@@ -610,7 +606,7 @@ function buildV3BaseDataset(markets: any[]): FormattedReserveData[] {
         // 检查 borrowCap，如果为 1 也视为 disabled（因为对用户没有实际意义）
         const borrowCapValue = reserve.borrowInfo?.borrowCap?.amount?.value;
         const borrowCapIsOne = borrowCapValue !== undefined && toFiniteNumber(borrowCapValue) === 1;
-        const isBorrowDisabled = isBorrowDisabledByState || borrowCapIsOne;
+        const isBorrowDisabled = isFrozen || isPaused || isBorrowDisabledByState || borrowCapIsOne;
         
         const borrowApyValue = reserve.borrowInfo?.apy?.value;
         const borrowApy = toFiniteNumber(borrowApyValue) ?? undefined;

@@ -108,6 +108,8 @@
 | **isFrozen** | Frozen badge + ❄ icon | Reserve | `r.status?.frozen` | `fetchV4MarketsDataInner()` 内联 | `=== true` 判断 | `reserve.isFrozen` | `buildV3BaseDataset()` | `=== true` 判断 |
 | **isPaused** | Paused badge + ❄ icon | Reserve | `r.status?.paused` | `fetchV4MarketsDataInner()` 内联 | `=== true` 判断 | `reserve.isPaused` | `buildV3BaseDataset()` | `=== true` 判断 |
 
+> **已验证（2026-05-04）**：在 V4 实际响应数据中，`isFrozen` 或 `isPaused` 为 `true` 时，`canSupply` 和 `canBorrow` 在 V4 SDK 层**始终**返回 `false`，因此映射后的 `supplyDisabled` 和 `borrowDisabled` 也**始终**为 `true`。虽然 `v4-fetcher.ts` 中这四个字段是独立获取的（无代码级推导），但运行时数据 100% 一致：56 个 frozen reserve 和 6 个 paused reserve 均伴随 `supplyDisabled=true && borrowDisabled=true`。反向不成立：有 62 个 reserve 的 `supplyDisabled=true` 并非由 frozen/paused 导致（而是 `supplyCap === 1` 等其它原因）。
+
 ### 激励字段 (外部数据源，均 percent number)
 
 | API 字段 | 类型 / 精度 | 前端展示 | V4 级别 | V4 来源 | V4 处理函数 | V4 处理方法 | V3 来源 | V3 处理函数 | V3 处理方法 |
