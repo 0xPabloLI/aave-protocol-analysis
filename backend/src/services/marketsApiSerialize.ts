@@ -125,6 +125,7 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.spokeId ? { spokeId: reserve.spokeId } : {}),
     ...(reserve.spokeName ? { spokeName: reserve.spokeName } : {}),
     ...(reserve.spokeAddress ? { spokeAddress: reserve.spokeAddress } : {}),
+    ...((reserve as any).priceSource ? { priceSource: (reserve as any).priceSource as 'sdk' | 'oracle' } : {}),
   };
   return out;
 }

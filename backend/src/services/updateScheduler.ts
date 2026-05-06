@@ -3,6 +3,7 @@ import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from '../controll
 import { warmCampaignForecastStatesCache } from '../controllers/merklForecastController.js';
 import { refreshMarketsSnapshot } from './marketsService.js';
 import { refreshOnchainCache } from './onchainDataService.js';
+import { refreshOracleCache } from './oracleService.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
@@ -18,6 +19,7 @@ export function startUpdateScheduler(): void {
   logger.info('📅 Starting cron schedulers (all cron-write/API-read-only):');
   logger.info('   • Markets (V3+V4 merged): every 1 minute at :00');
   logger.info('   • On-chain (deficit, baseRate): every 1 minute at :10 (30-min per-chain TTL)');
+  logger.info('   • Oracle (V3+V4 prices): every 60s (60s TTL, V4 reserveToken 1h cached)');
   logger.info('   • Forecast: every 10 minutes');
   logger.info('   • FDV: every 5 minutes');
   logger.info('   • Categories: every 6 hours');
@@ -40,6 +42,17 @@ export function startUpdateScheduler(): void {
     } catch (error) {
       logger.warn(
         `On-chain cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  });
+
+  // Oracle price refresh every minute
+  schedule(BACKEND_SCHEDULE_CRON.oraclePriceWarmEveryMinuteAtSecond0, async () => {
+    try {
+      await refreshOracleCache();
+    } catch (error) {
+      logger.warn(
+        `Oracle cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   });

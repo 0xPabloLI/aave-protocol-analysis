@@ -10,6 +10,7 @@ import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controlle
 import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
 import { warmMarketsCache } from './services/marketsService.js';
 import { refreshOnchainCache } from './services/onchainDataService.js';
+import { refreshOracleCache } from './services/oracleService.js';
 import { logger } from './logger.js';
 import { explainServerListenError } from './startup.js';
 
@@ -96,6 +97,9 @@ Promise.allSettled([
   refreshOnchainCache()
     .then(() => logger.info('✅ On-chain cache (deficit, baseRate) warmed on startup'))
     .catch((error) => logger.warn('⚠️  Failed to warm on-chain cache on startup:', error)),
+  refreshOracleCache()
+    .then(() => logger.info('✅ Oracle price cache warmed on startup'))
+    .catch((error) => logger.warn('⚠️  Failed to warm oracle cache on startup:', error)),
   warmMarketsCache()
     .then(() => logger.info('✅ Markets cache warmed on startup'))
     .catch((error) => logger.warn('⚠️  Failed to warm markets on startup:', error)),
