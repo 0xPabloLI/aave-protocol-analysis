@@ -19,6 +19,8 @@ on:
     - cron: '0 3 * * *'   # 03:00 UTC daily
   workflow_dispatch: {}
 
+permissions: {}
+
 concurrency:
   group: db-backup
   cancel-in-progress: false
