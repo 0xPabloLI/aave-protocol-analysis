@@ -25,10 +25,14 @@ export const BACKEND_SCHEDULE_CRON = {
   marketsBackupEveryMinuteAtSecond0: '0 * * * * *',
   // On-chain data refresh: every 1 min at second 10 (per-chain concurrent, 30-min TTL)
   onchainDataWarmEveryMinuteAtSecond10: '10 * * * * *',
+  // Oracle price refresh: every 60s (prices update ~every block; V4 reserveToken 1h cached)
+  oraclePriceWarmEveryMinuteAtSecond0: '0 * * * * *',
   coingeckoFdvWarmEveryFiveMinutesAtSecond5: '5 */5 * * * *',
   coingeckoCategoriesWarmEverySixHoursAtSecond10: '10 0 */6 * * *',
   // Aligned with merklForecastResultDefault (10 min) for cron-write/API-read-only pattern.
   campaignForecastWarmEveryTenMinutesAtSecond30: '30 */10 * * * *',
+  // Persistence (PostgreSQL): every 5 min at :30s, after markets (:00) + onchain (:10) + oracle (:00) settle.
+  persistenceFlushEveryFiveMinutesAtSecond30: '30 */5 * * * *',
 } as const;
 
 export const BACKEND_CACHE_TTL_MS = {
@@ -37,6 +41,8 @@ export const BACKEND_CACHE_TTL_MS = {
   marketsHardTtlMs: BACKEND_TIME_MS.fiveMinutes,
   // On-chain data TTL: 30 min (deficit/baseVariableBorrowRate change infrequently)
   onchainTtlMs: BACKEND_TIME_MS.thirtyMinutes,
+  // Oracle price TTL: 60s (prices update ~every block; V4 reserveToken mapping has 1h own TTL)
+  oracleTtlMs: 60_000,
 
   // Merkl forecast family.
   // forecastResult aligned with metricsMin since underlying metrics data won't change faster.

@@ -89,6 +89,7 @@ export interface MarketWithSpread {
   spokeId?: string;
   spokeName?: string;
   spokeAddress?: string;
+  priceSource?: 'sdk' | 'oracle';
 }
 
 export interface MarketsResponse {
