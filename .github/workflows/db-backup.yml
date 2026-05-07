@@ -1,0 +1,85 @@
+name: Database Backup to Cloudflare R2
+
+# Daily PG dump → upload to Cloudflare R2 (S3-compatible).
+#
+# Required GitHub Secrets:
+#   DATABASE_URL_PUBLIC   Public Railway PG connection string
+#                         (Settings → "Public Networking" → connection URL)
+#   R2_ENDPOINT           https://<account-id>.r2.cloudflarestorage.com
+#   R2_ACCESS_KEY_ID      Cloudflare R2 API token Access Key
+#   R2_SECRET_ACCESS_KEY  Cloudflare R2 API token Secret
+#   R2_BUCKET             Bucket name (e.g. aave-db-backups)
+#
+# Old-backup deletion is intentionally NOT done here — configure an R2 bucket
+# lifecycle rule (Object lifecycle → Delete after 30 days) instead. That way
+# retention is consistent even if a workflow run is ever skipped.
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC daily
+  workflow_dispatch: {}
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install postgresql-client-17
+        run: |
+          set -euo pipefail
+          # Railway provisions PG 17 by default; the pg_dump on ubuntu-latest
+          # is older, which would fail with "server version mismatch".
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSLo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client-17
+          pg_dump --version
+
+      - name: Dump database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PUBLIC }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL_PUBLIC secret is not set" >&2
+            exit 1
+          fi
+          STAMP="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+          FILE="aave-pg-${STAMP}.dump"
+          # -Fc = custom binary format with built-in compression (-Z9)
+          pg_dump "$DATABASE_URL" -Fc -Z9 -f "$FILE"
+          ls -lh "$FILE"
+          echo "BACKUP_FILE=$FILE" >> "$GITHUB_ENV"
+
+      - name: Upload to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT:           ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET:             ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          aws s3 cp "$BACKUP_FILE" "s3://${R2_BUCKET}/${BACKUP_FILE}" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --region auto \
+            --no-progress
+
+      - name: Verify upload
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT:           ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET:             ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          aws s3 ls "s3://${R2_BUCKET}/${BACKUP_FILE}" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --region auto

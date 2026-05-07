@@ -508,3 +508,11 @@ export function getV4OraclePrice(chainId: number, spokeAddress: string, tokenAdd
   if (!isLeanCacheFresh()) return undefined;
   return leanPriceCache.get(`${chainId}:${spokeAddress.toLowerCase()}:${tokenAddress.toLowerCase()}`);
 }
+
+/**
+ * Returns the most recent full oracle snapshot, or null if not yet warmed.
+ * Read-only — never triggers a refresh.
+ */
+export function getCachedOraclePricesSnapshot(): OraclePricesSnapshot | null {
+  return cachedSnapshot;
+}

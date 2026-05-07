@@ -13,6 +13,8 @@ import { refreshOnchainCache } from './services/onchainDataService.js';
 import { refreshOracleCache } from './services/oracleService.js';
 import { logger } from './logger.js';
 import { explainServerListenError } from './startup.js';
+import { closePool } from './services/dbPool.js';
+import { getPersistenceStatus } from './services/persistenceService.js';
 
 const app = express();
 app.set('etag', 'weak');
@@ -87,6 +89,14 @@ const healthHandler = (req: express.Request, res: express.Response) => {
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
+// Persistence diagnostics — exposes whether DB writes are happening on schedule.
+// Useful for catching silent persistence failures (the cron writer never throws
+// up the call stack, so without this endpoint a failed DB connection could go
+// unnoticed for days).
+app.get('/api/persistence-status', (_req, res) => {
+  res.json(getPersistenceStatus());
+});
+
 // 启动时预热所有缓存，避免首个请求冷启动
 // 注意：cron 不会在启动时立即执行，所以需要显式 warmup
 // 所有 API 数据现在使用 cron-write/API-read-only 模式
@@ -138,6 +148,29 @@ Promise.allSettled([
       }
       process.exit(1);
     });
+
+    // Graceful shutdown — stop accepting new requests, drain in-flight ones,
+    // then close the DB pool so any open connections to Railway PG are released
+    // cleanly during deploy/restart.
+    let shuttingDown = false;
+    const shutdown = (signal: string) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      logger.info(`📴 Received ${signal}, shutting down gracefully…`);
+      server.close((err) => {
+        if (err) logger.warn('Error closing HTTP server:', err);
+        closePool()
+          .catch((e) => logger.warn('Error closing DB pool:', e))
+          .finally(() => process.exit(0));
+      });
+      // Hard timeout: force-exit if shutdown stalls (>10s).
+      setTimeout(() => {
+        logger.warn('⏱️  Graceful shutdown timed out, forcing exit');
+        process.exit(1);
+      }, 10_000).unref();
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
   })
   .catch((error) => {
     logger.error('❌ Startup warmup failed:', error);

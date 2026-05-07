@@ -1,9 +1,11 @@
 import { schedule } from 'node-cron';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from '../controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from '../controllers/merklForecastController.js';
-import { refreshMarketsSnapshot } from './marketsService.js';
+import { getMarketsSnapshot, refreshMarketsSnapshot } from './marketsService.js';
 import { refreshOnchainCache } from './onchainDataService.js';
-import { refreshOracleCache } from './oracleService.js';
+import { getCachedOraclePricesSnapshot, refreshOracleCache } from './oracleService.js';
+import { isPersistenceEnabled } from './dbPool.js';
+import { persistSnapshotIfNeeded } from './persistenceService.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
@@ -89,6 +91,27 @@ export function startUpdateScheduler(): void {
     } catch (error) {
       logger.warn(
         `Categories warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  });
+
+  // Persist snapshots to PostgreSQL — runs after markets/onchain/oracle have settled.
+  // Throttled internally; safely no-ops if DATABASE_URL is unset.
+  if (isPersistenceEnabled()) {
+    logger.info('   • Persistence flush: every 5 minutes at :30 (PostgreSQL)');
+  } else {
+    logger.info('   • Persistence flush: disabled (DATABASE_URL not set)');
+  }
+  schedule(BACKEND_SCHEDULE_CRON.persistenceFlushEveryFiveMinutesAtSecond30, async () => {
+    try {
+      const marketsSnapshot = getMarketsSnapshot();
+      const oracleSnapshot = getCachedOraclePricesSnapshot();
+      await persistSnapshotIfNeeded(marketsSnapshot?.payload ?? null, oracleSnapshot);
+    } catch (error) {
+      // persistSnapshotIfNeeded already swallows per-write errors; this catches
+      // anything before/around it (e.g. snapshot getter throwing unexpectedly).
+      logger.warn(
+        `Persistence scheduler failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   });

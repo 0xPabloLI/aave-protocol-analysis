@@ -31,6 +31,8 @@ export const BACKEND_SCHEDULE_CRON = {
   coingeckoCategoriesWarmEverySixHoursAtSecond10: '10 0 */6 * * *',
   // Aligned with merklForecastResultDefault (10 min) for cron-write/API-read-only pattern.
   campaignForecastWarmEveryTenMinutesAtSecond30: '30 */10 * * * *',
+  // Persistence (PostgreSQL): every 5 min at :30s, after markets (:00) + onchain (:10) + oracle (:00) settle.
+  persistenceFlushEveryFiveMinutesAtSecond30: '30 */5 * * * *',
 } as const;
 
 export const BACKEND_CACHE_TTL_MS = {
