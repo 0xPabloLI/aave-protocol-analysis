@@ -24,6 +24,7 @@ import {
   calculateBaseRateFallback,
   type OnchainReserveData,
 } from './onchainDataService.js';
+import { getV3OraclePrice, getV4OraclePrice } from './oracleService.js';
 
 // Timeout for markets fetch (Aave API can be slow)
 const MARKETS_FETCH_TIMEOUT_MS = 60_000; // 60 seconds
@@ -129,6 +130,35 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         }
       }
 
+      // Oracle price override: if oracle diff > 1%, use oracle price
+      let oracleOverrideCount = 0;
+      for (const reserve of payload.data) {
+        let oraclePrice: number | undefined;
+
+        if (reserve.spokeAddress) {
+          oraclePrice = getV4OraclePrice(reserve.chainId, reserve.spokeAddress, reserve.tokenAddress);
+        } else {
+          oraclePrice = getV3OraclePrice(reserve.chainId, reserve.tokenAddress);
+        }
+
+        if (oraclePrice === undefined) continue;
+
+        const sdkPrice = reserve.tokenPrice;
+        if (sdkPrice === undefined || sdkPrice === 0) {
+          reserve.tokenPrice = oraclePrice;
+          (reserve as any).priceSource = 'oracle';
+          oracleOverrideCount++;
+          continue;
+        }
+
+        const diff = Math.abs(oraclePrice - sdkPrice) / sdkPrice;
+        if (diff > 0.01) {
+          reserve.tokenPrice = oraclePrice;
+          (reserve as any).priceSource = 'oracle';
+          oracleOverrideCount++;
+        }
+      }
+
       const newSnapshot: MarketsSnapshot = {
         payload,
         fetchedAt: Date.now(),
@@ -140,6 +170,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       logger.info(
         `✅ Markets refresh: ${payload.data.length} reserves in ${elapsed}ms ` +
         `(on-chain: ${mergedCount} merged, ${fallbackCount} fallback, ` +
+        `oracle: ${oracleOverrideCount} overridden, ` +
         `cache: ${cacheStatus.freshPools}/${cacheStatus.poolCount} fresh)`
       );
 

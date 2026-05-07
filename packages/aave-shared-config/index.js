@@ -255,6 +255,19 @@ export const AAVE_RPC_URLS_BY_CHAIN_KEY = Object.freeze({
     'https://rpc.ankr.com/flare',
     `https://rpc.ankr.com/flare/${ANKR_API_KEY}`,
   ]),
+  xlayer: Object.freeze([
+    'https://rpc.xlayer.tech',
+    'https://xlayerrpc.okx.com',
+    'https://xlayer.drpc.org',
+    'https://1rpc.io/xlayer',
+  ]),
+  harmony: Object.freeze([
+    'https://api.harmony.one',
+    'https://rpc.ankr.com/harmony',
+    'https://harmony-0-rpc.gateway.pokt.network',
+    'https://1rpc.io/one',
+    `https://rpc.ankr.com/harmony/${ANKR_API_KEY}`,
+  ]),
 });
 
 export const AAVE_CHAIN_KEY_ALIASES = Object.freeze({
@@ -276,6 +289,7 @@ export const AAVE_CHAIN_ID_TO_RPC_KEY = Object.freeze({
   100: 'gnosis',
   137: 'polygon',
   146: 'sonic',
+  196: 'xlayer',
   324: 'zksync',
   1868: 'soneium',
   42220: 'celo',

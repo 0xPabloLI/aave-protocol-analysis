@@ -89,8 +89,73 @@
 | `spokeAddress` | 合约交互用（市场入口） |
 
 ---
+## 七、V4 SDK `borrowable` vs `canBorrow` 三层语义
 
-## 七、表头列与排序选项对照
+在 V4 SDK 原始响应（`/api/markets` 的数据源）中，每个 reserve 存在三个与「借款」相关的字段，
+分属不同层级，含义各不相同：
+
+### 1. `summary.borrowable` — 可用借款数量（Erc20Amount 对象）
+
+位于 `reserve.summary` 下，是 `__typename: "Erc20Amount"` 复杂对象，表示 **协议池子还剩多少可被借出**：
+
+```json
+"summary": {
+  "supplied":   { ... },   // 总存款
+  "borrowed":   { ... },   // 总借款
+  "borrowable": {           // 剩余流动性 = 存款 - 借款
+    "amount": { "onChainValue": "184229214", "value": "1.84229214" },
+    "exchange": { "value": "149934.6142", "name": "USD" }
+  }
+}
+```
+
+### 2. `settings.borrowable` — 协议风险配置开关（boolean）
+
+位于 `reserve.settings`（`ReserveSettings`），是管理员/治理配置的 **策略开关**——是否允许该资产被借出：
+
+```json
+"settings": {
+  "borrowable": false,   // false = 协议不允许借款
+  "collateral": true,
+  "suppliable": true
+}
+```
+
+> 对应合约层 Spoke `ReserveFlagsMap.borrowable`（位掩码 `0x04`），详见
+> [frozen-paused-semantics.md](../../../aaveapy-doc/frozen-paused-semantics.md#borrowable借款开关)。
+
+### 3. `canBorrow` — 运行时综合判断（boolean）
+
+位于 reserve 顶层，面向用户的 **最终综合判断**，合并了所有状态条件：
+
+```json
+"canBorrow": false,        // 综合结果：能借吗？
+"canSupply": true,
+"canUseAsCollateral": true
+```
+
+### 判断逻辑链
+
+```
+settings.borrowable = true
+  AND status.frozen = false
+  AND status.paused = false
+  AND status.active = true
+→ canBorrow = true
+```
+
+| 字段 | 位置 | 类型 | 含义 |
+|------|------|------|------|
+| `summary.borrowable` | 数据层 | `Erc20Amount` 对象 | 还剩多少可借（流动性数量） |
+| `settings.borrowable` | 配置层 | `boolean` | 协议是否允许借款（管理员开关） |
+| `canBorrow` | 运行时层 | `boolean` | 用户现在能不能借（综合判断） |
+
+> 可能 `settings.borrowable=true` 但 `canBorrow=false`（如资产被暂停），反之不可能。
+>
+> API 对外暴露 `borrowDisabled`（=`!canBorrow`的运行时值），不直接暴露 SDK 原始三层字段。
+
+---
+## 八、表头列与排序选项对照
 
 ```
 ┌─────────┬──────────┬────────┬──────────┬──────────┬──────────┐
@@ -134,7 +199,7 @@
 
 ---
 
-## 八、前端派生值计算公式
+## 九、前端派生值计算公式
 
 | 派生值 | 公式 | 代码位置 |
 |--------|------|---------|
@@ -149,7 +214,7 @@
 
 ---
 
-## 九、响应示例（字段 → 前端映射标注）
+## 十、响应示例（字段 → 前端映射标注）
 
 ```json
 {
