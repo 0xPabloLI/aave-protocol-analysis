@@ -211,10 +211,6 @@ function buildMarketRow(reserve: RuntimeReserveData, snapshotTs: string): unknow
 // Oracle writer
 // ---------------------------------------------------------------------------
 
-const ORACLE_COLUMNS = [
-  'snapshot_ts', 'chain_id', 'token_address', 'raw_price', 'price_usd', 'source', 'spoke_address',
-] as const;
-
 interface OracleRow {
   snapshotTs: string;
   chainId: number;
@@ -231,11 +227,12 @@ async function persistOraclePrices(
 ): Promise<number> {
   const pool = getPool();
 
-  const rows: OracleRow[] = [];
+  const v3Rows: OracleRow[] = [];
+  const v4Rows: OracleRow[] = [];
 
   for (const v3 of snap.v3) {
     for (const [tokenAddr, entry] of Object.entries(v3.assets)) {
-      rows.push({
+      v3Rows.push({
         snapshotTs,
         chainId: v3.chainId,
         tokenAddress: tokenAddr.toLowerCase(),
@@ -251,7 +248,7 @@ async function persistOraclePrices(
     for (const [reserveIdStr, entry] of Object.entries(v4.reserves)) {
       const tokenAddr = v4.reserveTokens[reserveIdStr];
       if (!tokenAddr) continue;
-      rows.push({
+      v4Rows.push({
         snapshotTs,
         chainId: v4.chainId,
         tokenAddress: tokenAddr.toLowerCase(),
@@ -263,6 +260,27 @@ async function persistOraclePrices(
     }
   }
 
+  if (v3Rows.length === 0 && v4Rows.length === 0) return 0;
+
+  let written = 0;
+  written += await writeOracleChunk(pool, v3Rows, ORACLE_COLUMNS_V3);
+  written += await writeOracleChunk(pool, v4Rows, ORACLE_COLUMNS_V4);
+  return written;
+}
+
+const ORACLE_COLUMNS_V3 = [
+  'snapshot_ts', 'chain_id', 'token_address', 'raw_price', 'price_usd', 'source',
+] as const;
+
+const ORACLE_COLUMNS_V4 = [
+  'snapshot_ts', 'chain_id', 'token_address', 'raw_price', 'price_usd', 'source', 'spoke_address',
+] as const;
+
+async function writeOracleChunk(
+  pool: ReturnType<typeof getPool>,
+  rows: OracleRow[],
+  columns: readonly string[]
+): Promise<number> {
   if (rows.length === 0) return 0;
 
   // Deduplicate within a single batch to avoid `ON CONFLICT ... cannot affect
@@ -275,18 +293,24 @@ async function persistOraclePrices(
     return true;
   });
 
+  const onConflict = columns.length === ORACLE_COLUMNS_V3.length
+    ? 'ON CONFLICT (snapshot_ts, chain_id, token_address, source) DO NOTHING'
+    : 'ON CONFLICT (snapshot_ts, chain_id, token_address, source, spoke_address) DO NOTHING';
+
   const CHUNK = 1000;
   let written = 0;
   for (let i = 0; i < unique.length; i += CHUNK) {
     const chunk = unique.slice(i, i + CHUNK);
-    const tuples = chunk.map((r) => [
-      r.snapshotTs, r.chainId, r.tokenAddress, r.rawPrice, r.priceUsd, r.source, r.spokeAddress,
-    ]);
+    const tuples = chunk.map((r) =>
+      columns.length === ORACLE_COLUMNS_V3.length
+        ? [r.snapshotTs, r.chainId, r.tokenAddress, r.rawPrice, r.priceUsd, r.source]
+        : [r.snapshotTs, r.chainId, r.tokenAddress, r.rawPrice, r.priceUsd, r.source, r.spokeAddress]
+    );
     const { text, values } = buildBulkInsert(
       'oracle_prices',
-      ORACLE_COLUMNS as unknown as string[],
+      columns as unknown as string[],
       tuples,
-      'ON CONFLICT (snapshot_ts, chain_id, token_address, source, spoke_address) DO NOTHING'
+      onConflict
     );
     const result = await pool.query(text, values);
     written += result.rowCount ?? 0;

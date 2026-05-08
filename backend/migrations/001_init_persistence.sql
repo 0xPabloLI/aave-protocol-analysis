@@ -74,9 +74,19 @@ CREATE TABLE IF NOT EXISTS oracle_prices (
     raw_price       NUMERIC(78, 0) NOT NULL,     -- oracle raw uint256
     price_usd       NUMERIC(24, 8) NOT NULL,     -- raw_price / 1e8
     source          TEXT        NOT NULL,        -- 'v3' | 'v4'
-    spoke_address   TEXT,                        -- v4 only
-    CONSTRAINT oracle_prices_unique UNIQUE (snapshot_ts, chain_id, token_address, source, spoke_address)
+    spoke_address   TEXT                         -- v4 only (V3 rows = NULL)
 );
+
+-- Partial unique indexes: PostgreSQL treats NULL as distinct in UNIQUE,
+-- so V3 (spoke_address=NULL) and V4 (spoke_address non-NULL) need separate
+-- unique indexes to guarantee idempotency.
+CREATE UNIQUE INDEX IF NOT EXISTS oracle_prices_unique_v3
+    ON oracle_prices (snapshot_ts, chain_id, token_address, source)
+    WHERE spoke_address IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS oracle_prices_unique_v4
+    ON oracle_prices (snapshot_ts, chain_id, token_address, source, spoke_address)
+    WHERE spoke_address IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_oracle_prices_ts
     ON oracle_prices (snapshot_ts DESC);
