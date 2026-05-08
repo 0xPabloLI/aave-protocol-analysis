@@ -301,8 +301,8 @@ void persistSnapshotIfNeeded(newSnapshot.payload, getOraclePricesFromCache())
 |------|------|
 | 触发 | 每天凌晨 03:00 UTC |
 | 内容 | `pg_dump --format=custom --compress=9` |
-| 保留 | 最近 30 天 |
-| 执行方式 | GitHub Actions (推荐) 或 Railway 内 cron |
+| 保留 | 无限期（R2 免费额度 10GB，每日 dump ~5MB，1 年仅 ~1.8GB） |
+| 执行方式 | GitHub Actions |
 | 存储 | Cloudflare R2, bucket: `aave-db-backups` |
 
 ### 6.2 实现：GitHub Actions（推荐）
@@ -539,8 +539,8 @@ LIMIT 100;
 | 3. `dbPool.ts` 连接池 | ✅ 已实现 | 优雅降级，无 DATABASE_URL 时自动跳过 |
 | 4. `persistenceService.ts` 写入 | ✅ 已实现 | 每 5 分钟 cron 触发，参数化批量 INSERT |
 | 5. 集成到 `updateScheduler.ts` | ✅ 已实现 | 独立 cron `persistenceFlush` |
-| 6. 测试验证 (本地) | ⏳ 待部署 | 代码需推到 Railway 触发部署 |
-| 7. Cloudflare R2 配置 | ⏳ 待手动 | 需创建 bucket + API token |
+| 6. 测试验证 (本地) | ✅ 已完成 | root build + backend build + 53 tests pass |
+| 7. Cloudflare R2 配置 | ⏳ 待手动 | 需创建 bucket + API token（见下方操作指南） |
 | 8. GitHub Actions 备份 | ⏳ 待手动 | 需配置 GH Secrets (R2 key + DATABASE_URL_PUBLIC) |
 | 9. 文档更新 | ✅ 本文即文档 | — |
 
