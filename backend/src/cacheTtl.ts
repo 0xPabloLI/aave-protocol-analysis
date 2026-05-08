@@ -2,6 +2,7 @@ export const BACKEND_TIME_MS = {
   oneMinute: 1 * 60 * 1000,
   fiveMinutes: 5 * 60 * 1000,
   tenMinutes: 10 * 60 * 1000,
+  fifteenMinutes: 15 * 60 * 1000,
   thirtyMinutes: 30 * 60 * 1000,
   sixHours: 6 * 60 * 60 * 1000,
   oneDay: 24 * 60 * 60 * 1000,
@@ -27,7 +28,7 @@ export const BACKEND_SCHEDULE_CRON = {
   onchainDataWarmEveryMinuteAtSecond10: '10 * * * * *',
   // Oracle price refresh: every 60s (prices update ~every block; V4 reserveToken 1h cached)
   oraclePriceWarmEveryMinuteAtSecond0: '0 * * * * *',
-  coingeckoFdvWarmEveryFiveMinutesAtSecond5: '5 */5 * * * *',
+  coingeckoFdvWarmEveryFifteenMinutesAtSecond5: '5 */15 * * * *',
   coingeckoCategoriesWarmEverySixHoursAtSecond10: '10 0 */6 * * *',
   // Aligned with merklForecastResultDefault (10 min) for cron-write/API-read-only pattern.
   campaignForecastWarmEveryTenMinutesAtSecond30: '30 */10 * * * *',
@@ -54,8 +55,8 @@ export const BACKEND_CACHE_TTL_MS = {
 
   // CoinGecko family.
   coingeckoLongDataTtlMs: BACKEND_TIME_MS.sixHours,
-  /** FDV cache TTL; matches FDV warm cron interval (5 min) so cron and request path share same freshness rule. */
-  coingeckoFdv: BACKEND_TIME_MS.fiveMinutes,
+  /** FDV cache TTL; matches FDV warm cron interval (15 min) so cron and request path share same freshness rule. */
+  coingeckoFdv: BACKEND_TIME_MS.fifteenMinutes,
 
   // Merkl metrics family (underlying data for forecast computation).
   // Dynamic TTL = observed cadence / 4, clamped to [min, max].

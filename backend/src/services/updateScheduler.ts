@@ -23,7 +23,7 @@ export function startUpdateScheduler(): void {
   logger.info('   • On-chain (deficit, baseRate): every 1 minute at :10 (30-min per-chain TTL)');
   logger.info('   • Oracle (V3+V4 prices): every 60s (60s TTL, V4 reserveToken 1h cached)');
   logger.info('   • Forecast: every 10 minutes');
-  logger.info('   • FDV: every 5 minutes');
+  logger.info('   • FDV: every 15 minutes');
   logger.info('   • Categories: every 6 hours');
 
   // Markets refresh every minute at second 0
@@ -59,8 +59,8 @@ export function startUpdateScheduler(): void {
     }
   });
 
-  // Warm FDV cache every 5 minutes so frontend reads hot snapshots.
-  schedule(BACKEND_SCHEDULE_CRON.coingeckoFdvWarmEveryFiveMinutesAtSecond5, async () => {
+  // Warm FDV cache every 15 minutes so frontend reads hot snapshots.
+  schedule(BACKEND_SCHEDULE_CRON.coingeckoFdvWarmEveryFifteenMinutesAtSecond5, async () => {
     try {
       await warmCoingeckoFdvCache();
     } catch (error) {

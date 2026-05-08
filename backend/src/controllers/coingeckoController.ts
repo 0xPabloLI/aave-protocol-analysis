@@ -6,7 +6,7 @@ const CG_ENDPOINT = 'https://api.coingecko.com/api/v3/coins/markets';
 const CMC_QUOTES_ENDPOINT = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest';
 const COINGECKO_LONG_DATA_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoLongDataTtlMs;
 const CATEGORIES_SOFT_TTL_MS = COINGECKO_TTL.categoriesSoftTtlMs;
-/** Matches FDV warm cron interval (5 min); cron and request both respect this TTL. */
+/** Matches FDV warm cron interval (15 min); cron and request both respect this TTL. */
 const FDV_SOFT_TTL_MS = COINGECKO_TTL.fdvSoftTtlMs;
 const FDV_MONITOR_TTL_MS = COINGECKO_LONG_DATA_TTL_MS;
 const FDV_DIFF_ALERT_THRESHOLD_PCT = 5;
