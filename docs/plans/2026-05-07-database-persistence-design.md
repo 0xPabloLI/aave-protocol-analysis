@@ -540,8 +540,8 @@ LIMIT 100;
 | 4. `persistenceService.ts` 写入 | ✅ 已实现 | 每 5 分钟 cron 触发，参数化批量 INSERT |
 | 5. 集成到 `updateScheduler.ts` | ✅ 已实现 | 独立 cron `persistenceFlush` |
 | 6. 测试验证 (本地) | ✅ 已完成 | root build + backend build + 53 tests pass |
-| 7. Cloudflare R2 配置 | ⏳ 待手动 | 需创建 bucket + API token（见下方操作指南） |
-| 8. GitHub Actions 备份 | ⏳ 待手动 | 需配置 GH Secrets (R2 key + DATABASE_URL_PUBLIC) |
+| 7. Cloudflare R2 配置 | ✅ 已完成 | bucket `aave-db-backups` + 无限期保留 |
+| 8. GitHub Actions 备份 | ⏳ 待手动 | workflow 已就绪，需配置 GH Secrets |
 | 9. 文档更新 | ✅ 本文即文档 | — |
 
 ### 当前 changes 说明
