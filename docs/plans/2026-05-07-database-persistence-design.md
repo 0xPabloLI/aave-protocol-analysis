@@ -529,3 +529,25 @@ LIMIT 100;
 10. **容量重新核算**：~28 列宽表 × 550 行 × 288 次/天 ≈ 60 MB/天 ≈ 1.8 GB/月（不是草稿里的 450 MB/月）。Railway Hobby 5 GB 实际只够 2.5–3 个月，落地后必须尽早实施第 9 章的降采样或考虑 TimescaleDB（草稿第 12 章）。
 
 参数化 INSERT 的并发上限、错误日志、SIGTERM 处理见 [persistenceService.ts](file:///Users/pabloli/Documents/code/aave-protocol-analysis/backend/src/services/persistenceService.ts) / [dbPool.ts](file:///Users/pabloli/Documents/code/aave-protocol-analysis/backend/src/services/dbPool.ts) / [server.ts](file:///Users/pabloli/Documents/code/aave-protocol-analysis/backend/src/server.ts)。
+
+## 14. 部署进度（2026-05-07）
+
+| 步骤 | 状态 | 备注 |
+|------|------|------|
+| 1. Railway 添加 PostgreSQL 插件 | ✅ 已完成 | 部署到 aaveapy production 环境 |
+| 2. 创建表 (migration) | ✅ 已完成 | `market_snapshots` + `oracle_prices` + 索引 已建 |
+| 3. `dbPool.ts` 连接池 | ✅ 已实现 | 优雅降级，无 DATABASE_URL 时自动跳过 |
+| 4. `persistenceService.ts` 写入 | ✅ 已实现 | 每 5 分钟 cron 触发，参数化批量 INSERT |
+| 5. 集成到 `updateScheduler.ts` | ✅ 已实现 | 独立 cron `persistenceFlush` |
+| 6. 测试验证 (本地) | ⏳ 待部署 | 代码需推到 Railway 触发部署 |
+| 7. Cloudflare R2 配置 | ⏳ 待手动 | 需创建 bucket + API token |
+| 8. GitHub Actions 备份 | ⏳ 待手动 | 需配置 GH Secrets (R2 key + DATABASE_URL_PUBLIC) |
+| 9. 文档更新 | ✅ 本文即文档 | — |
+
+### 当前 changes 说明
+
+- `.trae/mcp.json` 已加入 `.gitignore`（IDE 工具配置，不应提交）
+- workflow `permissions: {}` 安全加固
+- oracle_prices UNIQUE 约束拆为两个 partial index（修复 PostgreSQL NULL 处理）
+- persistenceService V3/V4 分开 batch INSERT 匹配新约束
+- 其余为测试路径调整等旁系修改，均在方案预期内

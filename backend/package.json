@@ -12,7 +12,7 @@
     "dev:reset": "npm run dev:clean && npm run dev",
     "dev:watch": "bash scripts/dev-entry.sh --watch",
     "dev:watch:reset": "npm run dev:clean && npm run dev:watch",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --test tests/*.test.ts",
     "prune": "ts-prune -i '.*aave-shared-config/index\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep '^src/' | (grep -q . && exit 1 || exit 0)"
   },
   "dependencies": {
