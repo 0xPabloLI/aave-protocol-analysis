@@ -2,17 +2,18 @@ name: Database Backup to Cloudflare R2
 
 # Daily PG dump → upload to Cloudflare R2 (S3-compatible).
 #
-# Required GitHub Secrets:
-#   DATABASE_URL_PUBLIC   Public Railway PG connection string
-#                         (Settings → "Public Networking" → connection URL)
-#   R2_ENDPOINT           https://<account-id>.r2.cloudflarestorage.com
-#   R2_ACCESS_KEY_ID      Cloudflare R2 API token Access Key
-#   R2_SECRET_ACCESS_KEY  Cloudflare R2 API token Secret
-#   R2_BUCKET             Bucket name (e.g. aave-db-backups)
+# Uses matrix strategy to back up both staging and production.
+# Each dump is prefixed with the environment name so files never collide.
 #
-# Old-backup deletion is intentionally NOT done here — configure an R2 bucket
-# lifecycle rule (Object lifecycle → Delete after 30 days) instead. That way
-# retention is consistent even if a workflow run is ever skipped.
+# Required GitHub Secrets:
+#   DATABASE_URL_PUBLIC_STAGING     Railway staging PG public connection string
+#   DATABASE_URL_PUBLIC_PRODUCTION  Railway production PG public connection string
+#   R2_ENDPOINT                     https://<account-id>.r2.cloudflarestorage.com
+#   R2_ACCESS_KEY_ID                Cloudflare R2 API token Access Key
+#   R2_SECRET_ACCESS_KEY            Cloudflare R2 API token Secret
+#   R2_BUCKET                       Bucket name (e.g. aave-db-backups)
+#
+# Retention is handled by R2 lifecycle rule (30-day auto-delete), not by this workflow.
 
 on:
   schedule:
@@ -21,20 +22,21 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: db-backup
-  cancel-in-progress: false
-
 jobs:
   backup:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [staging, production]
+    concurrency:
+      group: db-backup-${{ matrix.environment }}
+      cancel-in-progress: false
     steps:
       - name: Install postgresql-client-17
         run: |
           set -euo pipefail
-          # Railway provisions PG 17 by default; the pg_dump on ubuntu-latest
-          # is older, which would fail with "server version mismatch".
           sudo install -d /usr/share/postgresql-common/pgdg
           sudo curl -fsSLo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
             https://www.postgresql.org/media/keys/ACCC4CF8.asc
@@ -45,18 +47,17 @@ jobs:
           sudo apt-get install -y postgresql-client-17
           pg_dump --version
 
-      - name: Dump database
+      - name: Dump ${{ matrix.environment }} database
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL_PUBLIC }}
+          DATABASE_URL: ${{ matrix.environment == 'staging' && secrets.DATABASE_URL_PUBLIC_STAGING || secrets.DATABASE_URL_PUBLIC_PRODUCTION }}
         run: |
           set -euo pipefail
           if [ -z "${DATABASE_URL:-}" ]; then
-            echo "DATABASE_URL_PUBLIC secret is not set" >&2
+            echo "DATABASE_URL_PUBLIC_${{ matrix.environment }} secret is not set" >&2
             exit 1
           fi
           STAMP="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-          FILE="aave-pg-${STAMP}.dump"
-          # -Fc = custom binary format with built-in compression (-Z9)
+          FILE="${{ matrix.environment }}-aave-pg-${STAMP}.dump"
           pg_dump "$DATABASE_URL" -Fc -Z9 -f "$FILE"
           ls -lh "$FILE"
           echo "BACKUP_FILE=$FILE" >> "$GITHUB_ENV"
@@ -81,7 +82,6 @@ jobs:
           R2_ENDPOINT:           ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET:             ${{ secrets.R2_BUCKET }}
         run: |
-          set -euo pipefail
           aws s3 ls "s3://${R2_BUCKET}/${BACKUP_FILE}" \
             --endpoint-url "$R2_ENDPOINT" \
             --region auto

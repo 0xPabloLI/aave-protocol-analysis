@@ -59,6 +59,16 @@ app.get('/favicon.ico', (req, res) => {
   res.end();
 });
 
+// Security.txt — RFC 9116 vulnerability disclosure policy
+app.get('/.well-known/security.txt', (_req, res) => {
+  res.type('text/plain').send(
+    'Contact: mailto:security@aaveapy.com\n' +
+    'Expires: 2027-05-08T00:00:00.000Z\n' +
+    'Preferred-Languages: en, zh\n' +
+    'Canonical: https://aaveapy.com/.well-known/security.txt\n'
+  );
+});
+
 // Routes
 app.use('/api/markets', marketsRouter);
 app.use('/api/meta', metaRouter);
