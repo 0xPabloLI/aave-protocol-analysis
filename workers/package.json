@@ -19,5 +19,8 @@
   },
   "optionalDependencies": {
     "@cloudflare/workerd-darwin-arm64": "^1.20260123.0"
+  },
+  "overrides": {
+    "basic-ftp": "^5.3.1"
   }
 }
