@@ -211,6 +211,15 @@ function buildMarketRow(reserve: RuntimeReserveData, snapshotTs: string): unknow
 // Oracle writer
 // ---------------------------------------------------------------------------
 
+interface OracleConfigKey {
+  source: 'v3' | 'v4';
+  poolKey: string;
+  chainId: number;
+  poolAddress: string | null;
+  oracleAddress: string;
+  spokeAddress: string | null;
+}
+
 interface OracleRow {
   snapshotTs: string;
   chainId: number;
@@ -218,7 +227,70 @@ interface OracleRow {
   rawPrice: string;
   priceUsd: number;
   source: 'v3' | 'v4';
-  spokeAddress: string | null;
+  configId: number;
+}
+
+/**
+ * Ensure every pool/spoke in the snapshot has a corresponding row in
+ * oracle_source_configs.  Returns a map keyed by (source|poolKey) → config_id.
+ * Uses INSERT … ON CONFLICT … DO UPDATE so repeated calls are idempotent
+ * and last_seen_at stays current.
+ */
+async function ensureOracleSourceConfigs(
+  snap: OraclePricesSnapshot
+): Promise<Map<string, number>> {
+  const pool = getPool();
+  const configMap = new Map<string, number>();
+
+  // Collect all unique sources
+  const configs: OracleConfigKey[] = [];
+  for (const v3 of snap.v3) {
+    configs.push({
+      source: 'v3',
+      poolKey: v3.poolKey,
+      chainId: v3.chainId,
+      poolAddress: v3.poolAddress.toLowerCase(),
+      oracleAddress: v3.oracleAddress.toLowerCase(),
+      spokeAddress: null,
+    });
+  }
+  for (const v4 of snap.v4) {
+    configs.push({
+      source: 'v4',
+      poolKey: v4.spokeName,
+      chainId: v4.chainId,
+      poolAddress: null,
+      oracleAddress: v4.oracleAddress.toLowerCase(),
+      spokeAddress: v4.spokeAddress.toLowerCase(),
+    });
+  }
+
+  if (configs.length === 0) return configMap;
+
+  // Batch upsert
+  const values: unknown[] = [];
+  const placeholders: string[] = [];
+  let i = 1;
+  for (const c of configs) {
+    placeholders.push(`($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`);
+    values.push(c.source, c.poolKey, c.chainId, c.poolAddress, c.oracleAddress, c.spokeAddress);
+  }
+
+  const upsertSql = `
+    INSERT INTO oracle_source_configs
+      (source, pool_key, chain_id, pool_address, oracle_address, spoke_address)
+    VALUES ${placeholders.join(', ')}
+    ON CONFLICT (source, pool_key, chain_id, pool_address, oracle_address, spoke_address)
+    DO UPDATE SET last_seen_at = NOW()
+    RETURNING id, source, pool_key
+  `;
+
+  const result = await pool.query(upsertSql, values);
+  for (const row of result.rows) {
+    configMap.set(`${row.source}|${row.pool_key}`, row.id);
+  }
+
+  return configMap;
 }
 
 async function persistOraclePrices(
@@ -227,90 +299,77 @@ async function persistOraclePrices(
 ): Promise<number> {
   const pool = getPool();
 
-  const v3Rows: OracleRow[] = [];
-  const v4Rows: OracleRow[] = [];
+  const configMap = await ensureOracleSourceConfigs(snap);
+  if (configMap.size === 0) return 0;
+
+  const rows: OracleRow[] = [];
 
   for (const v3 of snap.v3) {
+    const configId = configMap.get(`v3|${v3.poolKey}`);
+    if (configId === undefined) continue;
     for (const [tokenAddr, entry] of Object.entries(v3.assets)) {
-      v3Rows.push({
+      rows.push({
         snapshotTs,
         chainId: v3.chainId,
         tokenAddress: tokenAddr.toLowerCase(),
         rawPrice: entry.rawPrice,
         priceUsd: entry.priceUsd,
         source: 'v3',
-        spokeAddress: null,
+        configId,
       });
     }
   }
 
   for (const v4 of snap.v4) {
+    const configId = configMap.get(`v4|${v4.spokeName}`);
+    if (configId === undefined) continue;
     for (const [reserveIdStr, entry] of Object.entries(v4.reserves)) {
       const tokenAddr = v4.reserveTokens[reserveIdStr];
       if (!tokenAddr) continue;
-      v4Rows.push({
+      rows.push({
         snapshotTs,
         chainId: v4.chainId,
         tokenAddress: tokenAddr.toLowerCase(),
         rawPrice: entry.rawPrice,
         priceUsd: entry.priceUsd,
         source: 'v4',
-        spokeAddress: v4.spokeAddress.toLowerCase(),
+        configId,
       });
     }
   }
 
-  if (v3Rows.length === 0 && v4Rows.length === 0) return 0;
-
-  let written = 0;
-  written += await writeOracleChunk(pool, v3Rows, ORACLE_COLUMNS_V3);
-  written += await writeOracleChunk(pool, v4Rows, ORACLE_COLUMNS_V4);
-  return written;
+  if (rows.length === 0) return 0;
+  return writeOracleChunk(pool, rows);
 }
 
-const ORACLE_COLUMNS_V3 = [
-  'snapshot_ts', 'chain_id', 'token_address', 'raw_price', 'price_usd', 'source',
-] as const;
-
-const ORACLE_COLUMNS_V4 = [
-  'snapshot_ts', 'chain_id', 'token_address', 'raw_price', 'price_usd', 'source', 'spoke_address',
+const ORACLE_COLUMNS = [
+  'snapshot_ts', 'chain_id', 'token_address', 'raw_price', 'price_usd', 'source', 'config_id',
 ] as const;
 
 async function writeOracleChunk(
   pool: ReturnType<typeof getPool>,
-  rows: OracleRow[],
-  columns: readonly string[]
+  rows: OracleRow[]
 ): Promise<number> {
-  if (rows.length === 0) return 0;
-
-  // Deduplicate within a single batch to avoid `ON CONFLICT ... cannot affect
-  // row a second time` errors when the same key appears more than once.
   const seen = new Set<string>();
   const unique = rows.filter((r) => {
-    const key = `${r.chainId}|${r.tokenAddress}|${r.source}|${r.spokeAddress ?? ''}`;
+    const key = `${r.chainId}|${r.tokenAddress}|${r.configId}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
 
-  const onConflict = columns.length === ORACLE_COLUMNS_V3.length
-    ? 'ON CONFLICT (snapshot_ts, chain_id, token_address, source) DO NOTHING'
-    : 'ON CONFLICT (snapshot_ts, chain_id, token_address, source, spoke_address) DO NOTHING';
-
   const CHUNK = 1000;
   let written = 0;
   for (let i = 0; i < unique.length; i += CHUNK) {
     const chunk = unique.slice(i, i + CHUNK);
-    const tuples = chunk.map((r) =>
-      columns.length === ORACLE_COLUMNS_V3.length
-        ? [r.snapshotTs, r.chainId, r.tokenAddress, r.rawPrice, r.priceUsd, r.source]
-        : [r.snapshotTs, r.chainId, r.tokenAddress, r.rawPrice, r.priceUsd, r.source, r.spokeAddress]
-    );
+    const tuples = chunk.map((r) => [
+      r.snapshotTs, r.chainId, r.tokenAddress, r.rawPrice, r.priceUsd, r.source, r.configId,
+    ]);
     const { text, values } = buildBulkInsert(
       'oracle_prices',
-      columns as unknown as string[],
+      ORACLE_COLUMNS as unknown as string[],
       tuples,
-      onConflict
+      'ON CONFLICT (snapshot_ts, chain_id, token_address, source, config_id) DO NOTHING'
     );
     const result = await pool.query(text, values);
     written += result.rowCount ?? 0;

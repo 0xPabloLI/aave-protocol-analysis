@@ -186,6 +186,7 @@ export interface OraclePriceEntry {
 export interface V3OraclePoolResult {
   poolKey: string;
   chainId: number;
+  poolAddress: string;
   oracleAddress: string;
   assets: Record<string, OraclePriceEntry>; // key = assetAddress (lowercase)
 }
@@ -261,6 +262,7 @@ async function fetchV3PoolPrices(
   return {
     poolKey: config.poolKey,
     chainId: config.chainId,
+    poolAddress: config.poolAddress,
     oracleAddress: config.oracleAddress,
     assets: priceMap,
   };
