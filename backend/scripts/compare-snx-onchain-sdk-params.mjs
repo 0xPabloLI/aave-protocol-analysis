@@ -11,7 +11,7 @@
  */
 
 import { UiPoolDataProvider } from '@aave/contract-helpers';
-import * as AaveAddressBook from '@bgd-labs/aave-address-book';
+import * as AaveAddressBook from '@aave-dao/aave-address-book';
 import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { ethers } from 'ethers';
 import { fetchMarketsData } from '../../dist/index.js';

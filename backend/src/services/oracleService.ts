@@ -18,6 +18,7 @@ import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { mkdir, rename, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { SYNCED_V3_POOL_CONFIGS, SYNCED_V4_SPOKE_CONFIGS, type SyncedV3PoolConfig, type SyncedV4SpokeConfig } from '../generated/oracle-pool-configs.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -113,7 +114,8 @@ const V4_ORACLE_ABI = [
 ];
 
 // ============================================================
-// V3 Pool Configs (from AaveOracle-V3-价格读取指南.md)
+// V3 Pool Configs (auto-synced from @aave-dao/aave-address-book)
+// Run `npm run sync:oracle-pool-configs` to refresh.
 // ============================================================
 interface V3PoolConfig {
   poolKey: string;
@@ -123,35 +125,42 @@ interface V3PoolConfig {
   oracleAddress: string;
 }
 
-const V3_POOL_CONFIGS: V3PoolConfig[] = [
-  { poolKey: 'AaveV3Ethereum', chainId: 1, chainName: 'Ethereum', poolAddress: '0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2', oracleAddress: '0x54586bE62E3c3580375aE3723C145253060Ca0C2' },
-  { poolKey: 'AaveV3EthereumLido', chainId: 1, chainName: 'Ethereum', poolAddress: '0x4e033931ad43597d96D6bcc25c280717730B58B1', oracleAddress: '0xE3C061981870C0C7b1f3C4F4bB36B95f1F260BE6' },
-  { poolKey: 'AaveV3EthereumEtherFi', chainId: 1, chainName: 'Ethereum', poolAddress: '0x0AA97c284e98396202b6A04024F5E2c65026F3c0', oracleAddress: '0x43b64f28A678944E0655404B0B98E443851cC34F' },
-  { poolKey: 'AaveV3EthereumHorizon', chainId: 1, chainName: 'Ethereum', poolAddress: '0xAe05Cd22df81871bc7cC2a04BeCfb516bFe332C8', oracleAddress: '0x985BcfAB7e0f4EF2606CC5b64FC1A16311880442' },
-  { poolKey: 'AaveV3Arbitrum', chainId: 42161, chainName: 'Arbitrum', poolAddress: '0x794a61358D6845594F94dc1DB02A252b5b4814aD', oracleAddress: '0xb56c2F0B653B2e0b10C9b928C8580Ac5Df02C7C7' },
-  { poolKey: 'AaveV3Avalanche', chainId: 43114, chainName: 'Avalanche', poolAddress: '0x794a61358D6845594F94dc1DB02A252b5b4814aD', oracleAddress: '0xEBd36016B3eD09D4693Ed4251c67Bd858c3c7C9C' },
-  { poolKey: 'AaveV3Base', chainId: 8453, chainName: 'Base', poolAddress: '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5', oracleAddress: '0x2Cc0Fc26eD4563A5ce5e8bdcfe1A2878676Ae156' },
-  { poolKey: 'AaveV3BNB', chainId: 56, chainName: 'BNB', poolAddress: '0x6807dc923806fE8Fd134338EABCA509979a7e0cB', oracleAddress: '0x39bc1bfDa2130d6Bb6DBEfd366939b4c7aa7C697' },
-  { poolKey: 'AaveV3Celo', chainId: 42220, chainName: 'Celo', poolAddress: '0x3E59A31363E2ad014dcbc521c4a0d5757d9f3402', oracleAddress: '0x1e693D088ceFD1E95ba4c4a5F7EeA41a1Ec37e8b' },
-  { poolKey: 'AaveV3Gnosis', chainId: 100, chainName: 'Gnosis', poolAddress: '0xb50201558B00496A145fE76f7424749556E326D8', oracleAddress: '0xeb0a051be10228213BAEb449db63719d6742F7c4' },
-  { poolKey: 'AaveV3Linea', chainId: 59144, chainName: 'Linea', poolAddress: '0xc47b8C00b0f69a36fa203Ffeac0334874574a8Ac', oracleAddress: '0xCFDAdA7DCd2e785cF706BaDBC2B8Af5084d595e9' },
-  { poolKey: 'AaveV3Mantle', chainId: 5000, chainName: 'Mantle', poolAddress: '0x458F293454fE0d67EC0655f3672301301DD51422', oracleAddress: '0x47a063CfDa980532267970d478EC340C0F80E8df' },
-  { poolKey: 'AaveV3MegaETH', chainId: 4326, chainName: 'MegaETH', poolAddress: '0x7e324AbC5De01d112AfC03a584966ff199741C28', oracleAddress: '0x421117D7319E96d831972b3F7e970bbfe29C4F21' },
-  { poolKey: 'AaveV3Metis', chainId: 1088, chainName: 'Metis', poolAddress: '0x90df02551bB792286e8D4f13E0e357b4Bf1D6a57', oracleAddress: '0x38D36e85E47eA6ff0d18B0adF12E5fC8984A6f8e' },
-  { poolKey: 'AaveV3Optimism', chainId: 10, chainName: 'Optimism', poolAddress: '0x794a61358D6845594F94dc1DB02A252b5b4814aD', oracleAddress: '0xD81eb3728a631871a7eBBaD631b5f424909f0c77' },
-  { poolKey: 'AaveV3Polygon', chainId: 137, chainName: 'Polygon', poolAddress: '0x794a61358D6845594F94dc1DB02A252b5b4814aD', oracleAddress: '0xb023e699F5a33916Ea823A16485e259257cA8Bd1' },
-  { poolKey: 'AaveV3Plasma', chainId: 9745, chainName: 'Plasma', poolAddress: '0x925a2A7214Ed92428B5b1B090F80b25700095e12', oracleAddress: '0x33E0b3fc976DC9C516926BA48CfC0A9E10a2aAA5' },
-  { poolKey: 'AaveV3Scroll', chainId: 534352, chainName: 'Scroll', poolAddress: '0x11fCfe756c05AD438e312a7fd934381537D3cFfe', oracleAddress: '0x04421D8C506E2fA2371a08EfAaBf791F624054F3' },
-  { poolKey: 'AaveV3Soneium', chainId: 1868, chainName: 'Soneium', poolAddress: '0xDd3d7A7d03D9fD9ef45f3E587287922eF65CA38B', oracleAddress: '0x20040a64612555042335926d72B4E5F667a67fA1' },
-  { poolKey: 'AaveV3Sonic', chainId: 146, chainName: 'Sonic', poolAddress: '0x5362dBb1e601abF3a4c14c22ffEdA64042E5eAA3', oracleAddress: '0xD63f7658C66B2934Bd234D79D06aEF5290734B30' },
-  { poolKey: 'AaveV3XLayer', chainId: 196, chainName: 'XLayer', poolAddress: '0xE3F3Caefdd7180F884c01E57f65Df979Af84f116', oracleAddress: '0x91FC11136d5615575a0fC5981Ab5C0C54418E2C6' },
-  { poolKey: 'AaveV3zkSync', chainId: 324, chainName: 'zkSync', poolAddress: '0x78e30497a3c7527d953c6B1E3541b021A98Ac43c', oracleAddress: '0xC7F58Fca663a8d377B6D0c9703C697f56dC40088' },
-  { poolKey: 'AaveV3Harmony', chainId: 1666600000, chainName: 'Harmony', poolAddress: '0x794a61358D6845594F94dc1DB02A252b5b4814aD', oracleAddress: '0x3C90887Ede8D65ccb2777A5d577beAb2548280AD' },
-  { poolKey: 'AaveV3Ink', chainId: 57073, chainName: 'Ink', poolAddress: '0x2816cf15F6d2A220E789aA011D5EE4eB6c47FEbA', oracleAddress: '0x4758213271BFdC72224A7a8742dC865fC97756e1' },
-];
+const CHAIN_NAME_BY_ID: Record<number, string> = {
+  1: 'Ethereum',
+  10: 'Optimism',
+  56: 'BNB',
+  100: 'Gnosis',
+  137: 'Polygon',
+  146: 'Sonic',
+  196: 'XLayer',
+  324: 'zkSync',
+  1088: 'Metis',
+  1868: 'Soneium',
+  4326: 'MegaETH',
+  5000: 'Mantle',
+  8453: 'Base',
+  9745: 'Plasma',
+  42161: 'Arbitrum',
+  42220: 'Celo',
+  43114: 'Avalanche',
+  57073: 'Ink',
+  59144: 'Linea',
+  534352: 'Scroll',
+  1666600000: 'Harmony',
+};
+
+const V3_POOL_CONFIGS: V3PoolConfig[] = SYNCED_V3_POOL_CONFIGS.map((c: SyncedV3PoolConfig): V3PoolConfig => ({
+  poolKey: c.poolKey,
+  chainId: c.chainId,
+  chainName: CHAIN_NAME_BY_ID[c.chainId] ?? `Chain${c.chainId}`,
+  poolAddress: c.poolAddress,
+  oracleAddress: c.oracleAddress,
+}));
 
 // ============================================================
-// V4 Spoke Configs (from AaveOracle-V4-Price-Fetch.md, Ethereum only)
+// V4 Spoke Configs (auto-synced from @aave-dao/aave-address-book)
+// Run `npm run sync:oracle-pool-configs` to refresh.
+// Horizons/Treasury overridden manually — oracle not in address book.
 // ============================================================
 interface V4SpokeConfig {
   spokeName: string;
@@ -161,17 +170,29 @@ interface V4SpokeConfig {
   oracleAddress: string;
 }
 
+const SPOKE_NAME_MAP: Record<string, string> = {
+  BLUECHIP: 'Bluechip',
+  ETHENACORRELATED: 'Ethena',
+  ETHENAECOSYSTEM: 'EthenaEcosystem',
+  ETHERFI: 'EtherFi',
+  FOREX: 'Forex',
+  GOLD: 'Gold',
+  KELP: 'Kelp',
+  LIDO: 'Lido',
+  LOMBARDBTC: 'Lombard',
+  MAIN: 'Main',
+};
+
 const V4_SPOKE_CONFIGS: V4SpokeConfig[] = [
-  { spokeName: 'BLUECHIP_SPOKE', chainId: 1, chainName: 'Ethereum', spokeAddress: '0x973a023A77420ba610f06b3858aD991Df6d85A08', oracleAddress: '0xdA1266a7b8620819dAE3F8bd6B546Da36e505bB8' },
-  { spokeName: 'MAIN_SPOKE', chainId: 1, chainName: 'Ethereum', spokeAddress: '0x94e7A5dCbE816e498b89aB752661904E2F56c485', oracleAddress: '0x99B2B6CEa9C3D2fd8F4d90f86741C44B212a6127' },
-  { spokeName: 'ETHENA_CORRELATED_SPOKE', chainId: 1, chainName: 'Ethereum', spokeAddress: '0x58131E79531caB1d52301228d1f7b842F26B9649', oracleAddress: '0x9b91a0943CADf554742E8Fb358B1cC4ae4F85F01' },
-  { spokeName: 'ETHENA_ECOSYSTEM_SPOKE', chainId: 1, chainName: 'Ethereum', spokeAddress: '0xba1B3D55D249692b669A164024A838309B7508AF', oracleAddress: '0xc390dbe9fc00D6db73C52d375642b47008C33c90' },
-  { spokeName: 'ETHERFI_E_SPOKE', chainId: 1, chainName: 'Ethereum', spokeAddress: '0xbF10BDfE177dE0336aFD7fcCF80A904E15386219', oracleAddress: '0xd8B153FaAA8f2b1bC774916FEd333A4F3dE48792' },
-  { spokeName: 'LIDO_E_SPOKE', chainId: 1, chainName: 'Ethereum', spokeAddress: '0xe1900480ac69f0B296841Cd01cC37546d92F35Cd', oracleAddress: '0x664D73b6C3591333Fd79510f7ce9ef81228824F5' },
-  { spokeName: 'KELP_E_SPOKE', chainId: 1, chainName: 'Ethereum', spokeAddress: '0x3131FE68C4722e726fe6B2819ED68e514395B9a4', oracleAddress: '0x37C316996C714Bf906743071e04E62220b3271ac' },
-  { spokeName: 'FOREX_SPOKE', chainId: 1, chainName: 'Ethereum', spokeAddress: '0xD8B93635b8C6d0fF98CbE90b5988E3F2d1Cd9da1', oracleAddress: '0xB3CE6E7b6d389a66eA4a3777bA07219d00FB3a9D' },
-  { spokeName: 'GOLD_SPOKE', chainId: 1, chainName: 'Ethereum', spokeAddress: '0x65407b940966954b23dfA3caA5C0702bB42984DC', oracleAddress: '0x0083421fd178749af2201ddA5A7C3feB5790B80c' },
-  { spokeName: 'LOMBARD_BTC_SPOKE', chainId: 1, chainName: 'Ethereum', spokeAddress: '0x7EC68b5695e803e98a21a9A05d744F28b0a7753D', oracleAddress: '0x198Cac7f54FFc7d709Ac0FEc4B6454CE73e21D3D' },
+  ...SYNCED_V4_SPOKE_CONFIGS.map((c: SyncedV4SpokeConfig): V4SpokeConfig => ({
+    spokeName: SPOKE_NAME_MAP[c.spokeName] ?? c.spokeName,
+    chainId: c.chainId,
+    chainName: CHAIN_NAME_BY_ID[c.chainId] ?? `Chain${c.chainId}`,
+    spokeAddress: c.spokeAddress,
+    oracleAddress: c.oracleAddress,
+  })),
+  // Manual override — TREASURY_SPOKE (Horizons) oracle not in address book
+  { spokeName: 'Horizons', chainId: 1, chainName: 'Ethereum', spokeAddress: '0xb9b0b8616f6bf6841972a52058132be08d723155', oracleAddress: '0x3a0Eb5E08d2e8337C2972dA8EAcF5a7e74A187C6' },
 ];
 
 // ============================================================

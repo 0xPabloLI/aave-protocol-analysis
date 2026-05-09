@@ -8,7 +8,7 @@
  *   npm run sync:coingecko-platform-map
  *   npm run sync:coingecko-platform-map -- --check   # exit 1 if file would change
  */
-import * as addressBook from '@bgd-labs/aave-address-book';
+import * as addressBook from '@aave-dao/aave-address-book';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

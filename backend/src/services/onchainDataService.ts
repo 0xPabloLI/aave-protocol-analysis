@@ -14,7 +14,7 @@
  */
 
 import { UiPoolDataProvider } from '@aave/contract-helpers';
-import * as AaveAddressBook from '@bgd-labs/aave-address-book';
+import * as AaveAddressBook from '@aave-dao/aave-address-book';
 import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { withTimeout } from '../lib/timeout.js';
 import { ethProviderService } from './ethProviderService.js';
