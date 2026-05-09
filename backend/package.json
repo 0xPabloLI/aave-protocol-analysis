@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@aave/contract-helpers": "^1.37.1",
-    "@bgd-labs/aave-address-book": "^4.44.22",
+    "@aave-dao/aave-address-book": "^4.49.9",
     "@internal/aave-shared-config": "file:../packages/aave-shared-config",
     "@types/compression": "^1.8.1",
     "@types/pg": "^8.20.0",

@@ -25,12 +25,13 @@
     "mcp:context7": "node .cursor/context7-server.js",
     "prune": "ts-prune -i '.*aave-shared-config/index\\.d\\.ts' 2>&1 | (grep -v '(used in module)' | grep -q . && exit 1 || exit 0)",
     "test": "tsx --test tests/**/*.test.ts",
-    "sync:coingecko-platform-map": "tsx scripts/sync-coingecko-platform-map.ts"
+    "sync:coingecko-platform-map": "tsx scripts/sync-coingecko-platform-map.ts",
+    "sync:oracle-pool-configs": "tsx scripts/sync-oracle-pool-configs.ts"
   },
   "dependencies": {
     "@aave/client": "^0.6.1",
     "@aave/client-v4": "npm:@aave/client@^4.1.1",
-    "@bgd-labs/aave-address-book": "^4.44.22",
+    "@aave-dao/aave-address-book": "^4.49.9",
     "@internal/aave-shared-config": "file:packages/aave-shared-config",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@types/puppeteer": "^5.4.7",

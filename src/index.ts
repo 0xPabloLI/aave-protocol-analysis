@@ -2,7 +2,7 @@ import './env.js';
 import { writeFile, mkdir } from 'fs/promises';
 import { chainId, AaveClient, ChainsFilter } from "@aave/client";
 import { markets, chains } from "@aave/client/actions";
-import * as addressBook from "@bgd-labs/aave-address-book";
+import * as addressBook from "@aave-dao/aave-address-book";
 
 // 创建 Aave 客户端实例
 const client = AaveClient.create();

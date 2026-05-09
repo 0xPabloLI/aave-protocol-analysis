@@ -96,6 +96,7 @@ node_modules
 scripts/*
 !scripts/sync-aave-subgraph-deployments.mjs
 !scripts/sync-coingecko-platform-map.ts
+!scripts/sync-oracle-pool-configs.ts
 
 data/
 
