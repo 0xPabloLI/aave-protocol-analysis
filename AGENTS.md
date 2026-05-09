@@ -51,6 +51,7 @@ When touching one area, check its pair:
 - Root output schema ↔ `backend/src/services/marketsApiSerialize.ts`
 - `backend/src/cacheTtl.ts` ↔ `backend/src/services/updateScheduler.ts`
 - Chain/platform mapping ↔ `src/generated/coingecko-platform-by-chain-id.ts`
+- `scripts/sync-oracle-pool-configs.ts` ↔ `backend/src/generated/oracle-pool-configs.ts`
 
 ## Validation Gate
 - For code changes, run at minimum:
@@ -66,6 +67,7 @@ When touching one area, check its pair:
 - Backend freshness/caching: `backend/src/services/marketsService.ts`, `onchainDataService.ts`, `merklForecastService.ts`, `cacheTtl.ts`
 
 ## Key References
+- `aaveapy-doc/` (git submodule) — reference implementation for CI hardcode-sync patterns
 - `docs/merkl-merit-cache-architecture.md`
 - `docs/backend/data-freshness-mechanism.md`
 - `docs/development-best-practices.md`
