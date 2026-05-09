@@ -110,6 +110,7 @@ app.get('/api/persistence-status', (_req, res) => {
 // 启动时预热所有缓存，避免首个请求冷启动
 // 注意：cron 不会在启动时立即执行，所以需要显式 warmup
 // 所有 API 数据现在使用 cron-write/API-read-only 模式
+// Persistence via DATABASE_URL env var (set in Railway staging)
 logger.info('🔄 Starting cache warmup (all data will be fetched before server accepts requests)...');
 
 // Phase 1: independent caches (can run in parallel)
