@@ -17,6 +17,16 @@
 - `npm --prefix backend run build` — compile backend
 - `npm --prefix backend run test` — backend tests
 
+## Deployment
+
+- **Always check linked service before `railway up`**: run `railway status` first.
+  The project has two services: `aave-protocol-analysis` (app) and `Postgres-mDWG` (DB).
+  `railway up` deploys to the currently linked service — if linked to Postgres, it will fail.
+- **Deploy the app**: `railway up --detach --service aave-protocol-analysis -m "..."`
+- **Deploy the DB** (rare): `railway up --detach --service Postgres-mDWG -m "..."`
+- After deploy, verify with `railway status` — the app healthcheck needs ~3min to warm up
+  (oracle prices + market data fetch).
+
 ## Mandatory Session Workflow
 1. **Bootstrap first** (every new session — BEFORE any other action):
    - **Codex**: `~/.codex/superpowers/.codex/superpowers-codex bootstrap && ~/.codex/superpowers/.codex/superpowers-codex use-skill brainstorming`
