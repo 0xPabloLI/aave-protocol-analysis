@@ -47,7 +47,7 @@ base-rate 校验报告见 `data/debug/base-rate-fallback-validation-report.json`
 
 ### SDK 与链上 reserve 条目不匹配校验
 
-- **目的**：比对 Aave SDK 的 `supplyReserves` 与链上 `UiPoolDataProvider.getReservesHumanized()` 返回的 reserve 集合，按 **reserveId**（`marketName:chainId:tokenAddress`）检查是否一致。
+- **目的**：比对 Aave SDK 的 `supplyReserves` 与链上 `UiPoolDataProvider.getReservesHumanized()` 返回的 reserve 集合，按 **reserveId**（`chainId:poolAddress:tokenAddress`）检查是否一致。
 - **链上覆盖**：后端已按 **所有 address-book 市场** 拉取链上数据（同链多市场如 Ethereum 主池、Lido、EtherFi、Horizon 均独立拉取），merge 时用 `reserve.reserveId` 匹配。
 - **脚本**：`backend/scripts/validate-sdk-onchain-reserve-match.mjs`  
   运行：`npm run build && cd backend && npm run build && node scripts/validate-sdk-onchain-reserve-match.mjs`
@@ -62,7 +62,7 @@ base-rate 校验报告见 `data/debug/base-rate-fallback-validation-report.json`
 
 | API 字段 (MarketWithSpread) | 数据源 | SDK/其他路径 | 说明 |
 |-----------------------------|--------|----------------|------|
-| **reserveId** | 构造 | `${marketName}:${chainId}:${tokenAddress}` | ✓ |
+| **reserveId** | 构造 | `${chainId}:${poolAddress}:${tokenAddress}` | ✓ |
 | **marketName** | SDK | `market.name` | ✓ |
 | **chainName** | SDK | `market.chain?.name` | ✓ |
 | **chainId** | SDK | `market.chain?.chainId` | ✓ |

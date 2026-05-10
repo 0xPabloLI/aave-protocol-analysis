@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Validates that Aave SDK reserves and on-chain (UiPoolDataProvider.getReservesHumanized)
- * reserve entries match per reserveId (marketName:chainId:tokenAddress).
+ * reserve entries match per reserveId (chainId:poolAddress:tokenAddress).
  *
  * On-chain cache now covers all address-book pools (including same-chain markets
  * e.g. Ethereum main, Lido, EtherFi, Horizon). Comparison is by reserveId.

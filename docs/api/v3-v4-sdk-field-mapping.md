@@ -36,7 +36,7 @@
 
 | API 字段 | 类型 / 精度 | 前端展示 | V4 级别 | V4 SDK 路径 | V4 处理函数 | V4 处理方法 | V3 SDK 路径 | V3 处理函数 | V3 处理方法 |
 |----------|------------|----------|---------|-------------|-------------|-------------|-------------|-------------|-------------|
-| **reserveId** | `string` | - | Reserve | 构造: `${market}:${chainId}:${token}:${hubName}` | `fetchV4MarketsDataInner()` 内联 | 字符串拼接 | 构造: `${market}:${chainId}:${token}` | `buildV3BaseDataset()` | 字符串拼接 |
+| **reserveId** | `string` | - | Reserve | 构造: `${chainId}:${spokeAddress}:${token}:${hubName}` | `fetchV4MarketsDataInner()` 内联 | 字符串拼接 | 构造: `${chainId}:${poolAddress}:${token}` | `buildV3BaseDataset()` | 字符串拼接 |
 | **marketName** | `string` | Market 列 | Reserve | 构造: `AaveV4${spokeName}` | `fetchV4MarketsDataInner()` 内联 | `spokeName.replace(/\s+/g, '')` 后拼接 | `market.name` | `buildV3BaseDataset()` | 直接使用 |
 | **chainName** | `string` | Market 列 | Reserve | `r.chain?.name ?? 'Unknown'` | `fetchV4MarketsDataInner()` 内联 | 带默认值取值 | `market.chain?.name` | `buildV3BaseDataset()` | 直接取值 |
 | **chainId** | `number`, 整数 | - | Reserve | `Number(r.chain?.chainId ?? 0)` | `fetchV4MarketsDataInner()` 内联 | 转数字并带默认值 | `market.chain?.chainId` | `buildV3BaseDataset()` | 直接取值 |

@@ -69,7 +69,7 @@ async function main() {
   const noBorrowInfo = payload.data?.filter((r) => r.borrowApy === undefined) ?? [];
   const noBorrowInfoCount = noBorrowInfo.length;
 
-  // Keys are reserveId = marketName:chainId:tokenAddress; pool = marketName:chainId
+  // Keys are reserveId = chainId:poolAddress:tokenAddress; pool = chainId:poolAddress
   const poolsInCache = new Set([...onchainMap.keys()].map((k) => {
     const parts = k.split(':');
     return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : k;
@@ -87,7 +87,7 @@ async function main() {
     const actualRay = onchain?.baseVariableBorrowRate;
 
     if (actualRay === undefined || actualRay === null) {
-      const poolKey = `${reserve.marketName}:${reserve.chainId}`;
+      const poolKey = reserve.reserveId.split(':').slice(0, 2).join(':');
       const reason = poolsInCache.has(poolKey)
         ? 'token_not_in_fetched_pool'
         : 'pool_not_in_cache';

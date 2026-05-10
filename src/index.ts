@@ -379,6 +379,7 @@ function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
   const baseDataset: RuntimeReserveData[] = [];
 
   markets.forEach(market => {
+    const poolAddress = (market.address || '').toLowerCase();
     const marketName = market.name || 'Unknown';
     const chainName = market.chain?.name || 'Unknown';
     const chainId = market.chain?.chainId || 0;
@@ -388,7 +389,7 @@ function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
         const tokenSymbol = reserve.underlyingToken?.symbol || 'Unknown';
         const tokenAddress = reserve.underlyingToken?.address || '';
         const tokenAddressLower = tokenAddress.toLowerCase();
-        const reserveId = `${marketName}:${chainId}:${tokenAddressLower}`;
+        const reserveId = `${chainId}:${poolAddress}:${tokenAddressLower}`;
         const tokenPrice =
           toFiniteNumber(reserve?.size?.usdPerToken) ??
           toFiniteNumber(reserve?.usdExchangeRate) ??

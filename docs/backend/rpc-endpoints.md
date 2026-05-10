@@ -52,7 +52,7 @@ On-chain data is fetched **concurrently per-pool** (one config per address-book 
 - **Cron schedule**: Every 1 minute at second :10 (markets at :00)
 - **Per-RPC timeout**: 15 seconds
 - **No overall timeout**: All pools run concurrently, each tries all RPC endpoints for that chain
-- **Per-pool cache**: Each pool (address-book entry) has its own `updatedAt`; merge key = **reserveId** (`marketName:chainId:tokenAddress`)
+- **Per-pool cache**: Each pool (address-book entry) has its own `updatedAt`; merge key = **reserveId** (`chainId:poolAddress:tokenAddress`)
 - **Cache TTL**: 30 minutes (on-chain data changes infrequently)
 
 ## Fetch Flow
@@ -68,7 +68,7 @@ Pool AaveV3EthereumLido: RPC → 成功 → 更新 pool cache
    ↓
 Markets 读取时 (每分钟 :00)
    ↓
-遍历 per-pool cache，按 reserveId (marketName:chainId:tokenAddress) 合并到 payload
+遍历 per-pool cache，按 reserveId (chainId:poolAddress:tokenAddress) 合并到 payload
 ```
 
 ## Failover Strategy
@@ -85,8 +85,8 @@ Markets 读取时 (每分钟 :00)
 |------|------|
 | Pool 数 | ~22（所有 address-book 市场，含同链多市场） |
 | 每 pool reserve 数 | 约 5–20，平均 ~12 |
-| 单条缓存 | `poolKey` + `updatedAt` + `Map<tokenAddress, { deficit?, baseVariableBorrowRate? }>` |
-| 合并键 | reserveId = `marketName:chainId:tokenAddress`（与 SDK payload 一致） |
+| 单条缓存 | `poolAddress` + `updatedAt` + `Map<tokenAddress, { deficit?, baseVariableBorrowRate? }>` |
+| 合并键 | reserveId = `chainId:poolAddress:tokenAddress`（与 SDK payload 一致） |
 
 **粗算**：22 × (1 个 Map + 12 × (42 字符地址 + 约 60 字符两个字段)) ≈ **30–60 KB**。**结论：per-pool cache 对内存负担可忽略。**
 

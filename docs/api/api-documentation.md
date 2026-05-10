@@ -232,7 +232,7 @@ flowchart LR
   },
   "reserves": [
     {
-      "reserveId": "AaveV3Ethereum:1:0xbe9895146f7af43049ca1c1ae358b0541ea49704",
+      "reserveId": "1:0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2:0xbe9895146f7af43049ca1c1ae358b0541ea49704",
       "marketName": "AaveV3Ethereum",
       "chainName": "Ethereum",
       "chainId": 1,
