@@ -26,23 +26,25 @@ export function isPersistenceEnabled(): boolean {
 /**
  * Decide whether to enable TLS for the pg client.
  *
- * - Railway internal network (`*.railway.internal`) does NOT support TLS.
- * - Public Railway endpoints (`*.proxy.rlwy.net`, `*.railway.app`) require TLS
- *   with a self-signed cert; we accept it via `rejectUnauthorized: false`.
- * - Allow explicit override via `DATABASE_SSL=true|false`.
+ * - `DATABASE_SSL=true` → enable SSL, accept self-signed certs.
+ * - `DATABASE_SSL=false` → disable SSL entirely.
+ * - Not set → enable SSL with self-signed certs for remote hosts;
+ *   disable SSL for localhost only.
+ *
+ * No domain-based guessing: the env var is the single source of truth
+ * for non-localhost connections. This avoids mismatches with Railway
+ * templates that enforce SSL (e.g. postgres-ssl).
  */
 function resolveSslConfig(connectionString: string): pg.PoolConfig['ssl'] {
   const explicit = process.env.DATABASE_SSL?.toLowerCase();
   if (explicit === 'true') return { rejectUnauthorized: false };
   if (explicit === 'false') return undefined;
 
-  if (/\.railway\.internal/i.test(connectionString)) return undefined;
-  if (/\.proxy\.rlwy\.net|\.railway\.app/i.test(connectionString)) {
-    return { rejectUnauthorized: false };
-  }
-  // Localhost / unknown host: default off.
+  // Localhost: SSL typically not configured.
   if (/@(localhost|127\.0\.0\.1)/i.test(connectionString)) return undefined;
-  return undefined;
+
+  // Remote: default to SSL with self-signed cert acceptance.
+  return { rejectUnauthorized: false };
 }
 
 export function getPool(): PoolType {
