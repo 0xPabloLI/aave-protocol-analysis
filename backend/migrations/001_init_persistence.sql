@@ -8,6 +8,9 @@
 -- * NUMERIC(40,0) is chosen so raw uint256 wei values fit without overflow.
 -- * incentive_details is JSONB so future incentive sources (merit/merkl/brevis
 --   etc.) can be added without schema migrations.
+-- * market_snapshots stores high-frequency metrics (price, APY, liquidity).
+--   Low-frequency config (rate strategy, caps, addresses) lives in
+--   market_configs (created in 002_split_market_configs.sql).
 
 BEGIN;
 
@@ -21,8 +24,6 @@ CREATE TABLE IF NOT EXISTS market_snapshots (
     token_symbol                TEXT        NOT NULL,
     token_name                  TEXT        NOT NULL,
     token_address               TEXT        NOT NULL,
-    a_token_address             TEXT,
-    v_token_address             TEXT,
     decimals                    INTEGER,
     token_price                 NUMERIC(24, 8),
     supply_apy                  NUMERIC(12, 6),
@@ -31,28 +32,11 @@ CREATE TABLE IF NOT EXISTS market_snapshots (
     available_liquidity         NUMERIC(40, 0),
     total_variable_debt         NUMERIC(40, 0),
     reserve_size                NUMERIC(40, 0),
-    supply_cap                  NUMERIC(40, 0),
-    borrow_cap                  NUMERIC(40, 0),
     deficit                     NUMERIC(40, 0),
-    base_variable_borrow_rate   NUMERIC(12, 6),
-    reserve_factor              NUMERIC(8, 4),
-    variable_rate_slope1        NUMERIC(8, 4),
-    variable_rate_slope2        NUMERIC(8, 4),
-    optimal_usage_rate          NUMERIC(8, 4),
-    supply_disabled             BOOLEAN,
-    borrow_disabled             BOOLEAN,
-    is_frozen                   BOOLEAN,
-    is_paused                   BOOLEAN,
     supply_incentives_apr       NUMERIC(12, 6),
     borrow_incentives_apr       NUMERIC(12, 6),
     incentive_details           JSONB,
     aave_pro_reserve_id         TEXT,
-    hub_id                      TEXT,
-    hub_name                    TEXT,
-    hub_address                 TEXT,
-    spoke_id                    TEXT,
-    spoke_name                  TEXT,
-    spoke_address               TEXT,
     CONSTRAINT market_snapshots_unique UNIQUE (snapshot_ts, reserve_id)
 );
 

@@ -93,9 +93,26 @@ New table for rarely-changing fields, written only on actual changes:
 **Storage reduction estimate** (for ~200 reserves, 5-min interval):
 - **Before**: ~200 rows × 35 cols × 288 writes/day = ~2M column-values/day
 - **After**: 
-  - Snapshots: ~200 rows × 18 cols × 288 writes/day = ~1M column-values/day  
-  - Configs: ~200 rows × 17 cols × ~1-5 writes/day (on actual changes) = ~3-17K column-values/day
+  - Snapshots: ~200 rows × 21 cols × 288 writes/day = ~1.2M column-values/day  
+  - Configs: ~200 rows × 22 cols × ~1-5 writes/day (on actual changes) = ~3-17K column-values/day
 - **Estimated savings**: ~50% reduction in total stored data
+
+### Cleanup Migration (004)
+
+After the split, old config columns in `market_snapshots` must be dropped:
+- `a_token_address`, `v_token_address`
+- `supply_cap`, `borrow_cap`
+- `base_variable_borrow_rate`, `reserve_factor`, `variable_rate_slope1/2`, `optimal_usage_rate`
+- `supply_disabled`, `borrow_disabled`, `is_frozen`, `is_paused`
+- `hub_id/name/address`, `spoke_id/name/address`
+
+See `004_drop_config_cols_from_snapshots.sql`. Run AFTER 002 to avoid data loss on historical config.
+
+### Final Table Schemas
+
+**market_snapshots** (21 data columns): snapshot_ts, reserve_id, chain_id, chain_name, market_name, token_symbol, token_name, token_address, decimals, token_price, supply_apy, borrow_apy, utilization_pct, available_liquidity, total_variable_debt, reserve_size, deficit, supply_incentives_apr, borrow_incentives_apr, incentive_details, aave_pro_reserve_id
+
+**market_configs** (22 data columns): snapshot_ts, reserve_id, a_token_address, v_token_address, supply_cap, borrow_cap, base_variable_borrow_rate, reserve_factor, variable_rate_slope1, variable_rate_slope2, optimal_usage_rate, supply_disabled, borrow_disabled, is_frozen, is_paused, hub_id, hub_name, hub_address, spoke_id, spoke_name, spoke_address
 
 ### Query Considerations
 
