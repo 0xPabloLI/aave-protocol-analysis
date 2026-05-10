@@ -200,7 +200,6 @@ const V4_SPOKE_CONFIGS: V4SpokeConfig[] = [
 // ============================================================
 
 export interface OraclePriceEntry {
-  rawPrice: string;
   priceUsd: number;
 }
 
@@ -275,7 +274,6 @@ async function fetchV3PoolPrices(
     const addr = assets[i].toLowerCase();
     const raw = rawPrices[i];
     priceMap[addr] = {
-      rawPrice: raw,
       priceUsd: Number(raw) / 1e8,
     };
   }
@@ -332,7 +330,6 @@ async function fetchV4SpokePrices(
   for (let i = 0; i < reserveIds.length; i++) {
     const raw = rawPrices[i];
     priceMap[reserveIds[i]] = {
-      rawPrice: raw,
       priceUsd: Number(raw) / 1e8,
     };
   }

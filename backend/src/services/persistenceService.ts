@@ -47,6 +47,7 @@ export function computeHash(data: unknown[]): string {
 }
 
 /** Exposed for tests: reset content-hash maps (simulates process restart). */
+// ts-prune-ignore-next
 export function resetPersistenceHashes(): void {
   marketRowHashes.clear();
   marketConfigHashes.clear();
@@ -347,7 +348,6 @@ interface OracleRow {
   snapshotTs: string;
   chainId: number;
   tokenAddress: string;
-  rawPrice: string;
   priceUsd: number;
   configId: number;
 }
@@ -434,7 +434,6 @@ async function persistOraclePrices(
         snapshotTs,
         chainId: v3.chainId,
         tokenAddress: tokenAddr.toLowerCase(),
-        rawPrice: entry.rawPrice,
         priceUsd: entry.priceUsd,
         configId,
       });
@@ -451,7 +450,6 @@ async function persistOraclePrices(
         snapshotTs,
         chainId: v4.chainId,
         tokenAddress: tokenAddr.toLowerCase(),
-        rawPrice: entry.rawPrice,
         priceUsd: entry.priceUsd,
         configId,
       });
@@ -463,7 +461,7 @@ async function persistOraclePrices(
 }
 
 const ORACLE_COLUMNS = [
-  'snapshot_ts', 'chain_id', 'token_address', 'raw_price', 'price_usd', 'config_id',
+  'snapshot_ts', 'chain_id', 'token_address', 'price_usd', 'config_id',
 ] as const;
 
 async function writeOracleChunk(
@@ -484,7 +482,7 @@ async function writeOracleChunk(
   const newHashes: { key: string; hash: string }[] = [];
   for (const r of unique) {
     const key = `${r.chainId}|${r.tokenAddress}|${r.configId}`;
-    const newHash = computeHash([r.rawPrice, r.priceUsd]);
+    const newHash = computeHash([r.priceUsd]);
     if (oraclePriceHashes.get(key) === newHash) continue;
     changed.push(r);
     newHashes.push({ key, hash: newHash });
@@ -497,7 +495,7 @@ async function writeOracleChunk(
   for (let i = 0; i < changed.length; i += CHUNK) {
     const chunk = changed.slice(i, i + CHUNK);
     const tuples = chunk.map((r) => [
-      r.snapshotTs, r.chainId, r.tokenAddress, r.rawPrice, r.priceUsd, r.configId,
+      r.snapshotTs, r.chainId, r.tokenAddress, r.priceUsd, r.configId,
     ]);
     const { text, values } = buildBulkInsert(
       'oracle_prices',

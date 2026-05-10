@@ -150,8 +150,7 @@ CREATE TABLE oracle_prices (
     snapshot_ts   TIMESTAMPTZ NOT NULL,
     chain_id      INTEGER NOT NULL,
     token_address TEXT NOT NULL,                  -- lowercase
-    raw_price     NUMERIC(78, 0) NOT NULL,        -- oracle 原始值
-    price_usd     NUMERIC(24, 8) NOT NULL,        -- raw_price / 1e8
+    price_usd     NUMERIC(24, 8) NOT NULL,        -- USD price (oracle raw / 1e8)
     config_id     INTEGER NOT NULL REFERENCES oracle_source_configs(id)
     -- source ('v3'|'v4') 已移除：通过 config_id → oracle_source_configs.source 推导
 );
