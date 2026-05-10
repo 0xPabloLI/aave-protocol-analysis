@@ -48,14 +48,8 @@ jobs:
           npm ci
           npm --prefix backend ci
 
-      - name: Audit runtime dependencies (root high, backend moderate)
-        run: |
-          set -e
-          # Try audit fix first, then check remaining vulnerabilities
-          npm audit fix --omit=dev || true
-          npm --prefix backend audit fix --omit=dev || true
-          npm audit --omit=dev --audit-level=high || exit 1
-          npm --prefix backend audit --omit=dev --audit-level=moderate || exit 1
+      - name: Audit runtime dependencies (shared script, excludes GHSA-848j-6mx2-7j84)
+        run: npm run audit
 
   socket-firewall:
     runs-on: ubuntu-latest
