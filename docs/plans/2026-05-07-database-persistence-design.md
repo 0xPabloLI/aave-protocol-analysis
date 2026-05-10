@@ -565,6 +565,7 @@ LIMIT 100;
    - 30 天 retention 改为 R2 bucket 自带的 lifecycle rule，workflow 不再写删除逻辑（更可靠，跳过运行也不会撑爆 bucket）。
 10. **容量重新核算**：~28 列宽表 × 550 行 × 288 次/天 ≈ 60 MB/天 ≈ 1.8 GB/月（不是草稿里的 450 MB/月）。Railway Hobby 5 GB 实际只够 2.5–3 个月，落地后必须尽早实施第 9 章的降采样或考虑 TimescaleDB（草稿第 12 章）。
 11. **内容哈希去重（2026-05-10）**：persistMarketSnapshot / writeOracleChunk 新增跨批次内容哈希去重。每次写入前对每行数据的业务字段计算 SHA256，与上一次成功写入的哈希对比——数据未变化则跳过该行（跳过写入）。进程重启后哈希表为空，首次写入全量（低频，可接受）。效果：Aave 利率稳定时（多数 5 分钟周期），数据库写入量从全量 550+ 行降为 0 行，大幅减少 PG 写入压力和存储消耗。
+12. **移除 oracle_prices.source 冗余列（2026-05-10）**：`oracle_prices.source` 可通过 `config_id → oracle_source_configs.source` 推导，属于非规范化冗余。migration 003 移除该列并从 UNIQUE 约束中删除 `source`，`persistenceService.ts` 中 `OracleRow` 接口及写入逻辑同步清理。
 
 参数化 INSERT 的并发上限、错误日志、SIGTERM 处理见 [persistenceService.ts](file:///Users/pabloli/Documents/code/aave-protocol-analysis/backend/src/services/persistenceService.ts) / [dbPool.ts](file:///Users/pabloli/Documents/code/aave-protocol-analysis/backend/src/services/dbPool.ts) / [server.ts](file:///Users/pabloli/Documents/code/aave-protocol-analysis/backend/src/server.ts)。
 
