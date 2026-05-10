@@ -63,7 +63,7 @@
 
 ## 4. 数据库 Schema
 
-### 4.1 `market_snapshots` — 市场快照
+### 4.1 `market_snapshots` — 市场快照（高频数据）
 
 每次刷新后所有 reserve 的核心指标。一张宽表，查询简单。
 
@@ -78,6 +78,7 @@ CREATE TABLE market_snapshots (
     token_symbol    TEXT NOT NULL,
     token_name      TEXT NOT NULL,
     token_address   TEXT NOT NULL,
+    decimals        INTEGER,
     token_price     NUMERIC(24, 8),               -- USD 价格
     supply_apy      NUMERIC(12, 6),               -- supply APY (百分比)
     borrow_apy      NUMERIC(12, 6),               -- borrow APY (百分比)
@@ -85,32 +86,63 @@ CREATE TABLE market_snapshots (
     available_liquidity NUMERIC(40, 0),           -- 可用流动性 (raw wei)
     total_variable_debt  NUMERIC(40, 0),          -- 总负债 (raw wei)
     reserve_size    NUMERIC(40, 0),               -- 总存款 (raw wei)
-    supply_cap      NUMERIC(40, 0),               -- 存款上限 (raw wei)
-    borrow_cap      NUMERIC(40, 0),               -- 借款上限 (raw wei)
     deficit         NUMERIC(40, 0),               -- 坏账 (raw wei)
-    base_variable_borrow_rate NUMERIC(12, 6),     -- 基础浮动借款利率 (百分比)
-    reserve_factor  NUMERIC(8, 4),                -- 储备金系数 (百分比)
-    variable_rate_slope1 NUMERIC(8, 4),
-    variable_rate_slope2 NUMERIC(8, 4),
-    optimal_usage_rate   NUMERIC(8, 4),
-    supply_disabled  BOOLEAN,
-    borrow_disabled  BOOLEAN,
-    is_frozen        BOOLEAN,
-    is_paused        BOOLEAN,
     supply_incentives_apr NUMERIC(12, 6),         -- 所有 supply 激励加总
     borrow_incentives_apr NUMERIC(12, 6),         -- 所有 borrow 激励加总
     incentive_details JSONB,                      -- 激励明细 (JSON)
-    decimals         INTEGER,
-    hub_name         TEXT,                        -- V4 hub, V3=NULL
-    spoke_name       TEXT                         -- V4 spoke, V3=NULL
+    aave_pro_reserve_id TEXT,                     -- Aave Pro reference
+    CONSTRAINT market_snapshots_unique UNIQUE (snapshot_ts, reserve_id)
 );
 
 CREATE INDEX idx_market_snapshots_ts      ON market_snapshots (snapshot_ts DESC);
 CREATE INDEX idx_market_snapshots_reserve ON market_snapshots (reserve_id, snapshot_ts DESC);
 CREATE INDEX idx_market_snapshots_symbol  ON market_snapshots (token_symbol, snapshot_ts DESC);
+CREATE INDEX idx_market_snapshots_chain   ON market_snapshots (chain_id, snapshot_ts DESC);
 ```
 
-### 4.2 `oracle_prices` — 预言机价格
+### 4.1b `market_configs` — 市场配置（低频数据，2026-05-10 拆分新增）
+
+从 `market_snapshots` 中拆出的低频字段，仅在治理投票后变更时才写入新行。保留历史版本可追溯利率模型变更轨迹。
+
+```sql
+CREATE TABLE market_configs (
+    id                          BIGSERIAL PRIMARY KEY,
+    snapshot_ts                 TIMESTAMPTZ NOT NULL,
+    reserve_id                  TEXT        NOT NULL,
+    a_token_address             TEXT,
+    v_token_address             TEXT,
+    supply_cap                  NUMERIC(40, 0),
+    borrow_cap                  NUMERIC(40, 0),
+    base_variable_borrow_rate   NUMERIC(8, 4),
+    reserve_factor              NUMERIC(8, 4),
+    variable_rate_slope1        NUMERIC(8, 4),
+    variable_rate_slope2        NUMERIC(8, 4),
+    optimal_usage_rate          NUMERIC(8, 4),
+    supply_disabled             BOOLEAN,
+    borrow_disabled             BOOLEAN,
+    is_frozen                   BOOLEAN,
+    is_paused                   BOOLEAN,
+    hub_id                      TEXT,
+    hub_name                    TEXT,
+    hub_address                 TEXT,
+    spoke_id                    TEXT,
+    spoke_name                  TEXT,
+    spoke_address               TEXT,
+    CONSTRAINT market_configs_unique UNIQUE (snapshot_ts, reserve_id)
+);
+
+CREATE INDEX idx_market_configs_reserve_ts ON market_configs (reserve_id, snapshot_ts DESC);
+CREATE INDEX idx_market_configs_ts         ON market_configs (snapshot_ts DESC);
+```
+
+**拆分逻辑**：
+- `market_snapshots`（21 列）：价格、APY、利用率、流动性 — 每 5 分钟写入
+- `market_configs`（22 列）：利率策略、额度限制、状态标志、合约地址 — 仅当内容 hash 变化时才写入
+
+**容量影响**：~50% 存储减少。Config 表写入从 288 次/天降为 ~1-5 次/天。
+```
+
+### 4.2 `oracle_prices` — 预言机价格（已通过 oracle_source_configs 规范化）
 
 ```sql
 CREATE TABLE oracle_prices (
@@ -120,11 +152,16 @@ CREATE TABLE oracle_prices (
     token_address TEXT NOT NULL,                  -- lowercase
     raw_price     NUMERIC(78, 0) NOT NULL,        -- oracle 原始值
     price_usd     NUMERIC(24, 8) NOT NULL,        -- raw_price / 1e8
-    source        TEXT NOT NULL                   -- 'v3' | 'v4'
+    config_id     INTEGER NOT NULL REFERENCES oracle_source_configs(id)
+    -- source ('v3'|'v4') 已移除：通过 config_id → oracle_source_configs.source 推导
 );
+
+CREATE UNIQUE INDEX oracle_prices_unique
+    ON oracle_prices (snapshot_ts, chain_id, token_address, config_id);
 
 CREATE INDEX idx_oracle_prices_ts    ON oracle_prices (snapshot_ts DESC);
 CREATE INDEX idx_oracle_prices_token ON oracle_prices (chain_id, token_address, snapshot_ts DESC);
+CREATE INDEX idx_oracle_prices_config_ts ON oracle_prices (config_id, snapshot_ts DESC);
 ```
 
 ### 4.3 数据量估算
@@ -514,7 +551,7 @@ LIMIT 100;
 落地实现与第 4–7 章草稿存在以下差异，以代码为准：
 
 1. **SQL 拼接 → 参数化批量 INSERT**：`buildBulkInsert()` 生成 `$1,$2,...` 占位符，所有值通过 `pool.query(text, values)` 走参数化通道；草稿里的字符串拼接版本是 broken 的伪代码（`.join()` 写在了模板字符串内部），未采用。
-2. **幂等约束**：`market_snapshots` 加 `UNIQUE(snapshot_ts, reserve_id)`；`oracle_prices` 加 `UNIQUE(snapshot_ts, chain_id, token_address, source, spoke_address)`。所有 INSERT 走 `ON CONFLICT DO NOTHING`，进程重启或快照重复触发都不会产生重复行。
+2. **幂等约束**：`market_snapshots` 加 `UNIQUE(snapshot_ts, reserve_id)`；`oracle_prices` 加 `UNIQUE(snapshot_ts, chain_id, token_address, config_id)`（`config_id` 引用 `oracle_source_configs.id`，已通过 migration 003 移除冗余 `source` 列）。所有 INSERT 走 `ON CONFLICT DO NOTHING`，进程重启或快照重复触发都不会产生重复行。
 3. **Schema 字段补齐**：补 `a_token_address / v_token_address / aave_pro_reserve_id / hub_id / hub_address / spoke_id / spoke_address`，去掉所有 `as any` 强转。
 4. **激励聚合修正**：草稿里 `aggregateIncentivesApr(reserve.supplyIncentives ?? [])` 只读了 legacy 的 `number[]`，丢失 merit/merkl/brevis；实现里改为对四类来源（legacy `supplyIncentives` 数组 + `meritSupplys.apr` + `merklSupplys.breakdowns[].campaignApr` + `brevisSupplys.breakdowns[].campaignApr`）求和，统一换算成百分比。注意 merkl/brevis 的字段是 `campaignApr`（来自 `BaseCampaignBreakdown`），不是 `apr`。
 5. **集成点改为独立 cron**：放弃在 `marketsService.refreshMarketsSnapshot` 末尾 `void` 触发，改在 [updateScheduler.ts](file:///Users/pabloli/Documents/code/aave-protocol-analysis/backend/src/services/updateScheduler.ts) 新增 `persistenceFlushEveryFiveMinutesAtSecond30`（每 5 分钟在 :30s 执行），统一拉取 markets/oracle 当前快照后写入，避免不同源刷新时间错位。
@@ -527,6 +564,7 @@ LIMIT 100;
    - `aws s3 cp backup-*.dump.gz` 不支持 glob → 改用 `BACKUP_FILE` 环境变量传递明确文件名；同时去掉误导性的 `.gz` 后缀（`-Fc -Z9` 是 custom 格式自压缩，不是 gzip）。
    - 30 天 retention 改为 R2 bucket 自带的 lifecycle rule，workflow 不再写删除逻辑（更可靠，跳过运行也不会撑爆 bucket）。
 10. **容量重新核算**：~28 列宽表 × 550 行 × 288 次/天 ≈ 60 MB/天 ≈ 1.8 GB/月（不是草稿里的 450 MB/月）。Railway Hobby 5 GB 实际只够 2.5–3 个月，落地后必须尽早实施第 9 章的降采样或考虑 TimescaleDB（草稿第 12 章）。
+11. **内容哈希去重（2026-05-10）**：persistMarketSnapshot / writeOracleChunk 新增跨批次内容哈希去重。每次写入前对每行数据的业务字段计算 SHA256，与上一次成功写入的哈希对比——数据未变化则跳过该行（跳过写入）。进程重启后哈希表为空，首次写入全量（低频，可接受）。效果：Aave 利率稳定时（多数 5 分钟周期），数据库写入量从全量 550+ 行降为 0 行，大幅减少 PG 写入压力和存储消耗。
 
 参数化 INSERT 的并发上限、错误日志、SIGTERM 处理见 [persistenceService.ts](file:///Users/pabloli/Documents/code/aave-protocol-analysis/backend/src/services/persistenceService.ts) / [dbPool.ts](file:///Users/pabloli/Documents/code/aave-protocol-analysis/backend/src/services/dbPool.ts) / [server.ts](file:///Users/pabloli/Documents/code/aave-protocol-analysis/backend/src/server.ts)。
 
