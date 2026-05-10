@@ -110,7 +110,7 @@ app.get('/api/persistence-status', (_req, res) => {
 // 启动时预热所有缓存，避免首个请求冷启动
 // 注意：cron 不会在启动时立即执行，所以需要显式 warmup
 // 所有 API 数据现在使用 cron-write/API-read-only 模式
-// Postgres persistence via internal Railway network (SSL required by template)
+// Postgres persistence via Railway internal network (pg user, SCRAM-SHA-256)
 logger.info('🔄 Starting cache warmup (all data will be fetched before server accepts requests)...');
 
 // Phase 1: independent caches (can run in parallel)
