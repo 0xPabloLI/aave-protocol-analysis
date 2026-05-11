@@ -48,3 +48,21 @@ Example of a wrong assumption caught by this rule:
 
 If you (the AI) have not completed the bootstrap sequence, STOP and do it now.
 Do not proceed with user requests until these skills are loaded.
+
+## Deployment Safety Rule (Critical)
+
+**Before executing ANY Railway deploy command (`railway up`, `railway deploy`, `railway redeploy`), you MUST:**
+
+1. **Run `railway status` first** and verify the linked service
+2. **Check the target service matches the intent**:
+   - `aave-protocol-analysis` = app → OK to `railway up`
+   - `Postgres-mDWG` = database → **NEVER use `railway up`**, only `railway redeploy --from-source`
+3. **If linked service is wrong**, use `railway link --service <correct-service>` first
+
+**Why this matters (real incident: 2026-05-10):**
+- Running `railway up` while linked to `Postgres-mDWG` replaced the PostgreSQL template
+  container with a Node.js app build, causing a multi-hour database outage
+- Data was safe on the persistent volume but the service was down until recovered
+- `railway redeploy` without `--from-source` inherits the corrupted manifest
+
+This is a **hard gate** — do not skip even if the user says "just deploy."

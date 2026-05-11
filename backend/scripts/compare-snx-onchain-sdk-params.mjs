@@ -16,10 +16,12 @@ import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { ethers } from 'ethers';
 import { fetchMarketsData } from '../../dist/index.js';
 
-const POOL_KEY = 'AaveV3Ethereum';
 const CHAIN_ID = 1;
+const POOL_ADDRESS = '0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2';
 const SNX_TOKEN = '0xc011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f';
-const RESERVE_ID = `${POOL_KEY}:${CHAIN_ID}:${SNX_TOKEN.toLowerCase()}`;
+const RESERVE_ID = `${CHAIN_ID}:${POOL_ADDRESS}:${SNX_TOKEN.toLowerCase()}`;
+
+const POOL_KEY = 'AaveV3Ethereum';
 const RAY = BigInt('1000000000000000000000000000');
 
 function rayToPct(rayVal) {

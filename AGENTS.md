@@ -17,15 +17,42 @@
 - `npm --prefix backend run build` — compile backend
 - `npm --prefix backend run test` — backend tests
 
-## Deployment
+## Deployment (Hard Safety Gate)
 
-- **Always check linked service before `railway up`**: run `railway status` first.
-  The project has two services: `aave-protocol-analysis` (app) and `Postgres-mDWG` (DB).
-  `railway up` deploys to the currently linked service — if linked to Postgres, it will fail.
-- **Deploy the app**: `railway up --detach --service aave-protocol-analysis -m "..."`
-- **Deploy the DB** (rare): `railway up --detach --service Postgres-mDWG -m "..."`
-- After deploy, verify with `railway status` — the app healthcheck needs ~3min to warm up
-  (oracle prices + market data fetch).
+### ⛔ Before ANY deploy command, you MUST run `railway status` and verify:
+- The **linked service** is the one you intend to deploy to
+- If deploying the app → linked service MUST be `aave-protocol-analysis`
+- If the linked service is `Postgres-mDWG` → **STOP. Do NOT deploy.**
+
+### Two-service topology
+
+| Service | Type | Builder | Deploy method |
+|---|---|---|---|
+| `aave-protocol-analysis` | App (Node.js) | Dockerfile | `railway up` |
+| `Postgres-mDWG` | Database (PostgreSQL) | Template image | `railway redeploy --from-source` |
+
+### App deploy
+```bash
+railway up --detach --service aave-protocol-analysis -m "commit message"
+```
+
+### DB redeploy (only when needed, e.g., after config change)
+```bash
+railway redeploy --service Postgres-mDWG --from-source -y
+```
+Do NOT use `railway up` for the database — it will push the app's Dockerfile build
+to the DB service, replacing PostgreSQL with a Node.js container.
+
+### ⚠️ Consequences of deploying app code to Postgres-mDWG
+1. **Service outage**: DB replaced by Node.js container → healthcheck fails at `/health` → 0/1 replicas → app loses DB connection
+2. **Data is NOT lost** — persists on the volume (`postgres-volume-4Ftf`), but inaccessible until correct template is restored
+3. **Recovery** requires `railway redeploy --service Postgres-mDWG --from-source -y` to pull the original template image
+4. **Root cause**: `railway up` + `railway redeploy` both pick up the project-level `railway.json` (DOCKERFILE builder), which corrupts the DB service manifest
+
+### Post-deploy verification
+- App healthcheck needs ~3min to warm up (oracle prices + market data fetch)
+- Verify: `railway status` → app should show `● Online`, DB should show `● Online`
+- Verify: `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}`
 
 ## Mandatory Session Workflow
 1. **Bootstrap first** (every new session — BEFORE any other action):
