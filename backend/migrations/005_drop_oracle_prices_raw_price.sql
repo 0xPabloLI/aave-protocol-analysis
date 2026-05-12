@@ -1,10 +1,11 @@
--- Remove redundant `raw_price` column from oracle_prices.
--- `price_usd` already stores the derived USD value; keeping raw_price is
--- unnecessary since it can be reconstructed as price_usd * 1e8 if needed.
+-- Remove redundant columns from oracle_prices.
+-- - `raw_price`: price_usd already stores derived USD value.
+-- - `spoke_address`: denormalized, available via config_id → oracle_source_configs.
 -- Apply with: psql "$DATABASE_URL" -f backend/migrations/005_drop_oracle_prices_raw_price.sql
 
 BEGIN;
 
-ALTER TABLE oracle_prices DROP COLUMN raw_price;
+ALTER TABLE oracle_prices DROP COLUMN IF EXISTS raw_price;
+ALTER TABLE oracle_prices DROP COLUMN IF EXISTS spoke_address;
 
 COMMIT;

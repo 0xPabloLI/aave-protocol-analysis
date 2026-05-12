@@ -19,7 +19,7 @@ import { logger } from '../logger.js';
 import type { MarketsPayload, RuntimeReserveData } from '../../../dist/index.js';
 import type { OraclePricesSnapshot } from './oracleService.js';
 
-const PERSIST_INTERVAL_MS = Number.parseInt(process.env.PERSIST_INTERVAL_MS ?? '', 10) || 5 * 60 * 1000;
+const PERSIST_INTERVAL_MS = Number.parseInt(process.env.PERSIST_INTERVAL_MS ?? '', 10) || 60 * 1000;
 
 let lastPersistTs = 0;
 let lastPersistSuccessTs = 0;
@@ -158,16 +158,17 @@ export async function persistSnapshotIfNeeded(
 // ---------------------------------------------------------------------------
 
 const MARKET_COLUMNS = [
-  'snapshot_ts', 'reserve_id', 'chain_id', 'chain_name', 'market_name',
-  'token_symbol', 'token_name', 'token_address', 'decimals',
+  'snapshot_ts', 'reserve_id',
   'token_price', 'supply_apy', 'borrow_apy', 'utilization_pct',
   'available_liquidity', 'total_variable_debt', 'reserve_size', 'deficit',
   'supply_incentives_apr', 'borrow_incentives_apr', 'incentive_details',
-  'aave_pro_reserve_id',
 ] as const;
 
 const MARKET_CONFIG_COLUMNS = [
   'snapshot_ts', 'reserve_id',
+  'chain_id', 'chain_name', 'market_name',
+  'token_symbol', 'token_name', 'token_address', 'decimals',
+  'aave_pro_reserve_id',
   'a_token_address', 'v_token_address',
   'supply_cap', 'borrow_cap',
   'base_variable_borrow_rate', 'reserve_factor',
@@ -283,13 +284,6 @@ function buildSnapshotRow(reserve: RuntimeReserveData, snapshotTs: string): unkn
   return [
     snapshotTs,
     reserve.reserveId,
-    reserve.chainId,
-    reserve.chainName,
-    reserve.marketName,
-    reserve.tokenSymbol,
-    reserve.tokenName,
-    reserve.tokenAddress,
-    reserve.decimals ?? null,
     nullableNumber(reserve.tokenPrice),
     nullableNumber(reserve.supplyApy),
     nullableNumber(reserve.borrowApy),
@@ -301,7 +295,6 @@ function buildSnapshotRow(reserve: RuntimeReserveData, snapshotTs: string): unkn
     aggregateSupplyIncentivesApr(reserve),
     aggregateBorrowIncentivesApr(reserve),
     JSON.stringify(buildIncentiveDetails(reserve)),
-    reserve.aaveProReserveId ?? null,
   ];
 }
 
@@ -309,6 +302,14 @@ function buildConfigRow(reserve: RuntimeReserveData, snapshotTs: string): unknow
   return [
     snapshotTs,
     reserve.reserveId,
+    reserve.chainId,
+    reserve.chainName,
+    reserve.marketName,
+    reserve.tokenSymbol,
+    reserve.tokenName,
+    reserve.tokenAddress,
+    reserve.decimals ?? null,
+    reserve.aaveProReserveId ?? null,
     reserve.aTokenAddress ?? null,
     reserve.vTokenAddress ?? null,
     nullableBigintString(reserve.supplyCap),

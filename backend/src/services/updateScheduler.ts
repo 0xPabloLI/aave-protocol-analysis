@@ -20,7 +20,7 @@ import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 export function startUpdateScheduler(): void {
   logger.info('📅 Starting cron schedulers (all cron-write/API-read-only):');
   logger.info('   • Markets (V3+V4 merged): every 1 minute at :00');
-  logger.info('   • On-chain (deficit, baseRate): every 1 minute at :10 (30-min per-chain TTL)');
+  logger.info('   • On-chain (deficit, baseRate): every 1 minute at :10 (persists DB after refresh)');
   logger.info('   • Oracle (V3+V4 prices): every 60s (60s TTL, V4 reserveToken 1h cached)');
   logger.info('   • Forecast: every 10 minutes');
   logger.info('   • FDV: every 15 minutes');
@@ -38,9 +38,16 @@ export function startUpdateScheduler(): void {
   });
 
   // On-chain data refresh every minute at second 10 (per-chain concurrent, no overall timeout)
+  // Persist runs after onchain refresh so the database mirrors the freshest memory state.
   schedule(BACKEND_SCHEDULE_CRON.onchainDataWarmEveryMinuteAtSecond10, async () => {
     try {
       await refreshOnchainCache();
+      // Flush memory snapshots to PostgreSQL (throttled internally to 1 min).
+      const marketsSnapshot = getMarketsSnapshot();
+      const oracleSnapshot = getCachedOraclePricesSnapshot();
+      if (isPersistenceEnabled()) {
+        await persistSnapshotIfNeeded(marketsSnapshot?.payload ?? null, oracleSnapshot);
+      }
     } catch (error) {
       logger.warn(
         `On-chain cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
@@ -91,27 +98,6 @@ export function startUpdateScheduler(): void {
     } catch (error) {
       logger.warn(
         `Categories warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  });
-
-  // Persist snapshots to PostgreSQL — runs after markets/onchain/oracle have settled.
-  // Throttled internally; safely no-ops if DATABASE_URL is unset.
-  if (isPersistenceEnabled()) {
-    logger.info('   • Persistence flush: every 5 minutes at :30 (PostgreSQL)');
-  } else {
-    logger.info('   • Persistence flush: disabled (DATABASE_URL not set)');
-  }
-  schedule(BACKEND_SCHEDULE_CRON.persistenceFlushEveryFiveMinutesAtSecond30, async () => {
-    try {
-      const marketsSnapshot = getMarketsSnapshot();
-      const oracleSnapshot = getCachedOraclePricesSnapshot();
-      await persistSnapshotIfNeeded(marketsSnapshot?.payload ?? null, oracleSnapshot);
-    } catch (error) {
-      // persistSnapshotIfNeeded already swallows per-write errors; this catches
-      // anything before/around it (e.g. snapshot getter throwing unexpectedly).
-      logger.warn(
-        `Persistence scheduler failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   });
