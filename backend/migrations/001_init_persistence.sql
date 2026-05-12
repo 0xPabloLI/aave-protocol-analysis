@@ -69,11 +69,9 @@ CREATE TABLE IF NOT EXISTS oracle_prices (
     snapshot_ts     TIMESTAMPTZ NOT NULL,
     chain_id        INTEGER     NOT NULL,
     token_address   TEXT        NOT NULL,        -- lowercase
-    raw_price       NUMERIC(78, 0) NOT NULL,     -- oracle raw uint256
-    price_usd       NUMERIC(24, 8) NOT NULL,     -- raw_price / 1e8
-    source          TEXT        NOT NULL,        -- 'v3' | 'v4'
+    price_usd       NUMERIC(24, 8) NOT NULL,     -- oracle price in USD
     config_id       INTEGER     NOT NULL REFERENCES oracle_source_configs(id),
-    CONSTRAINT oracle_prices_unique UNIQUE (snapshot_ts, chain_id, token_address, source, config_id)
+    CONSTRAINT oracle_prices_unique UNIQUE (snapshot_ts, chain_id, token_address, config_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_oracle_prices_ts
