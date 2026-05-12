@@ -28,6 +28,14 @@
 | 地址簿未覆盖链 | 上游 SDK 无 fallback metadata | 等待上游更新 |
 | RPC 质量 | 运行时基础设施问题 | 监控告警 + 更新 shared RPC 列表 |
 | 新链支持 | 需要 RPC 端点 | 更新 `packages/aave-shared-config/index.js` |
+| V4 TREASURY_SPOKE | `ITreasurySpoke` 无 oracle，address-book 不提供 `TREASURY_SPOKE_ORACLE` | sync 脚本自动跳过并输出日志 |
+
+### V4 Spoke Oracle 同步规则
+
+`sync-oracle-pool-configs` 脚本从 `@aave-dao/aave-address-book` 的 `AaveV4Ethereum.SPOKES` 提取 spoke+oracle 对。规则：
+- 有 `_SPOKE_ORACLE` / `_ESPOKE_ORACLE` 的 spoke → 写入生成文件
+- 无 oracle 的 spoke（如 `TREASURY_SPOKE`）→ 自动跳过，日志输出 `V4 spokes skipped (no oracle in address-book): <key>`
+- 不再手动硬编码 oracle 地址（之前 Horizons 的硬编码地址链上不存在合约，已移除）
 
 ## 6. Aave V3 合约地址参考
 

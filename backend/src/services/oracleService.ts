@@ -160,7 +160,7 @@ const V3_POOL_CONFIGS: V3PoolConfig[] = SYNCED_V3_POOL_CONFIGS.map((c: SyncedV3P
 // ============================================================
 // V4 Spoke Configs (auto-synced from @aave-dao/aave-address-book)
 // Run `npm run sync:oracle-pool-configs` to refresh.
-// Horizons/Treasury overridden manually — oracle not in address book.
+// TREASURY_SPOKE (Horizons) excluded: no oracle in address-book & contract has no oracle getter.
 // ============================================================
 interface V4SpokeConfig {
   spokeName: string;
@@ -191,8 +191,6 @@ const V4_SPOKE_CONFIGS: V4SpokeConfig[] = [
     spokeAddress: c.spokeAddress,
     oracleAddress: c.oracleAddress,
   })),
-  // Manual override — TREASURY_SPOKE (Horizons) oracle not in address book
-  { spokeName: 'Horizons', chainId: 1, chainName: 'Ethereum', spokeAddress: '0xb9b0b8616f6bf6841972a52058132be08d723155', oracleAddress: '0x3a0Eb5E08d2e8337C2972dA8EAcF5a7e74A187C6' },
 ];
 
 // ============================================================

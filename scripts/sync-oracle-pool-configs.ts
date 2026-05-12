@@ -6,6 +6,9 @@
  * Populates V3 pool configs (poolAddress + oracleAddress) from AaveV3* exports,
  * and V4 spoke configs (spokeAddress + oracleAddress) from AaveV4Ethereum SPOKES.
  *
+ * V4 spokes without oracle (e.g. TREASURY_SPOKE) are skipped automatically
+ * with a log message — no manual exclude list needed.
+ *
  * Usage:
  *   npm run sync:oracle-pool-configs
  *   npm run sync:oracle-pool-configs -- --check   # exit 1 if file would change
@@ -65,7 +68,6 @@ function getAaveV3MainnetPoolConfigs(): SyncedV3PoolConfig[] {
 }
 
 function spokeKeyToName(key: string): string {
-  // Strip _SPOKE / _ESPOKE suffix, keep Correlated/Ecosystem/etc as part of the name
   const base = key.replace(/_E?SPOKE$/, '');
   return base.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).replace(/ /g, '');
 }
@@ -77,8 +79,8 @@ function getAaveV4SpokeConfigs(): SyncedV4SpokeConfig[] {
   const spokes = v4.SPOKES;
   const configs: SyncedV4SpokeConfig[] = [];
   const seen = new Set<string>();
+  const skipped: string[] = [];
 
-  // First pass: collect all spoke→oracle pairs
   const spokeEntries: Array<{ key: string; spokeAddr: string; oracleAddr: string | undefined }> = [];
   const oracleMap: Record<string, string> = {};
   for (const key of Object.keys(spokes)) {
@@ -89,10 +91,12 @@ function getAaveV4SpokeConfigs(): SyncedV4SpokeConfig[] {
     spokeEntries.push({ key, spokeAddr: spokes[key], oracleAddr });
   }
 
-  // Attach oracles where available, skip spokes without oracle
   for (const { key, spokeAddr, oracleAddr } of spokeEntries) {
     const oracle = oracleAddr ?? oracleMap[key];
-    if (!oracle) continue;
+    if (!oracle) {
+      skipped.push(key);
+      continue;
+    }
 
     const spokeName = spokeKeyToName(key);
     if (seen.has(spokeName)) continue;
@@ -104,6 +108,10 @@ function getAaveV4SpokeConfigs(): SyncedV4SpokeConfig[] {
       spokeAddress: spokeAddr.toLowerCase(),
       oracleAddress: oracle.toLowerCase(),
     });
+  }
+
+  if (skipped.length > 0) {
+    console.log(`[sync-oracle-pool-configs] V4 spokes skipped (no oracle in address-book): ${skipped.join(', ')}`);
   }
 
   configs.sort((a, b) => a.spokeName.localeCompare(b.spokeName));
