@@ -111,3 +111,6 @@ workers/dist/
 SESSION-BOARD.md
 
 .arts/
+
+# MCP config (contains sensitive tokens)
+.trae/mcp.json
