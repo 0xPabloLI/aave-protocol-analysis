@@ -146,7 +146,6 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         const sdkPrice = reserve.tokenPrice;
         if (sdkPrice === undefined || sdkPrice === 0) {
           reserve.tokenPrice = oraclePrice;
-          (reserve as any).priceSource = 'oracle';
           oracleOverrideCount++;
           continue;
         }
@@ -154,7 +153,6 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         const diff = Math.abs(oraclePrice - sdkPrice) / sdkPrice;
         if (diff > 0.01) {
           reserve.tokenPrice = oraclePrice;
-          (reserve as any).priceSource = 'oracle';
           oracleOverrideCount++;
         }
       }
