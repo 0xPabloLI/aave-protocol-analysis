@@ -20,7 +20,8 @@ import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 export function startUpdateScheduler(): void {
   logger.info('📅 Starting cron schedulers (all cron-write/API-read-only):');
   logger.info('   • Markets (V3+V4 merged): every 1 minute at :00');
-  logger.info('   • On-chain (deficit, baseRate): every 1 minute at :10 (persists DB after refresh)');
+  logger.info('   • On-chain (deficit, baseRate): every 1 minute at :10');
+  logger.info('   • Persistence (PostgreSQL): every 1 minute at :20');
   logger.info('   • Oracle (V3+V4 prices): every 60s (60s TTL, V4 reserveToken 1h cached)');
   logger.info('   • Forecast: every 10 minutes');
   logger.info('   • FDV: every 15 minutes');
@@ -38,11 +39,21 @@ export function startUpdateScheduler(): void {
   });
 
   // On-chain data refresh every minute at second 10 (per-chain concurrent, no overall timeout)
-  // Persist runs after onchain refresh so the database mirrors the freshest memory state.
   schedule(BACKEND_SCHEDULE_CRON.onchainDataWarmEveryMinuteAtSecond10, async () => {
     try {
       await refreshOnchainCache();
-      // Flush memory snapshots to PostgreSQL (throttled internally to 1 min).
+    } catch (error) {
+      logger.warn(
+        `On-chain cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  });
+
+  // Persist memory snapshots to PostgreSQL every minute at :20.
+  // Runs independently after markets (:00) + oracle (:00) + onchain (:10) settle.
+  // Onchain failure does NOT block persist — markets + oracle data is still valid.
+  schedule(BACKEND_SCHEDULE_CRON.persistSnapshotsEveryMinuteAtSecond20, async () => {
+    try {
       const marketsSnapshot = getMarketsSnapshot();
       const oracleSnapshot = getCachedOraclePricesSnapshot();
       if (isPersistenceEnabled()) {
@@ -50,7 +61,7 @@ export function startUpdateScheduler(): void {
       }
     } catch (error) {
       logger.warn(
-        `On-chain cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
+        `Persistence flush failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   });
