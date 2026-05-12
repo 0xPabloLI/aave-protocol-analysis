@@ -103,14 +103,37 @@ When touching one area, check its pair:
 - Token pricing + chain mapping: `src/token-price-resolver.ts`, `src/generated/coingecko-platform-by-chain-id.ts`
 - Backend freshness/caching: `backend/src/services/marketsService.ts`, `onchainDataService.ts`, `merklForecastService.ts`, `cacheTtl.ts`
 
-## Key References
-- `aaveapy-doc/` (git submodule) — reference implementation for CI hardcode-sync patterns
-- `docs/merkl-merit-cache-architecture.md`
-- `docs/backend/data-freshness-mechanism.md`
-- `docs/development-best-practices.md`
-- `docs/api/api-documentation.md`
-- `docs/api/brevis-supplement.md`
-- `docs/deploy/cloudflare-complete-guide.md`
+## Documentation Placement Rule
+
+### `aaveapy-doc/` (git submodule) — 跨前后端 + 协议知识
+The submodule is the canonical source for knowledge that spans frontend AND backend, or concerns Aave protocol fundamentals. It must be kept current.
+
+**Protocol knowledge (合约/费率/状态语义):**
+- `aaveapy-doc/frozen-paused-semantics.md` — isFrozen/isPaused/borrowable 合约层语义
+- `aaveapy-doc/aave-supply-borrow-rate-formula.md` — 利率计算公式
+- `aaveapy-doc/AaveOracle-Price-Fetch.md` — 价格预言机取数机制
+
+**跨前后端 API/SDK/字段映射:**
+- `aaveapy-doc/field-glossary.md` — API 字段 → 前端展示概念映射表
+- `aaveapy-doc/v3-v4-sdk-field-mapping.md` — V3 vs V4 SDK 字段来源/处理差异
+- `aaveapy-doc/v3-v4-precision-unification-plan.md` — V3/V4 精度统一方案（completed）
+- `aaveapy-doc/v3-v4-incentive-matching.md` — Merit/Merkl/Brevis 激励匹配机制
+
+**前端异常状态适配方案:**
+- `aaveapy-doc/AaveAPY 精确协议标记与前端异常状态适配方案（精简版）.md`
+- `aaveapy-doc/AaveAPY 精确协议标记与前端异常状态适配方案（精确实现版）.md`
+- `aaveapy-doc/AaveAPY 精确协议标记与前端异常状态适配方案（修订版）.md`
+
+### `docs/` — 本项目工程文档
+- `docs/api/api-documentation.md` — API 接口文档
+- `docs/api/brevis-supplement.md` — Brevis 补充说明
+- `docs/backend/data-freshness-mechanism.md` — 数据新鲜度机制
+- `docs/development-best-practices.md` — 开发最佳实践
+- `docs/merkl-merit-cache-architecture.md` — 缓存架构
+- `docs/deploy/cloudflare-complete-guide.md` — 部署指南
+
+### Agent 查询优先级
+当被问到跨前后端或协议相关问题时，Agent 必须**优先搜索 `aaveapy-doc/` 子模块**寻找答案，`docs/` 仅作为本项目工程实现细节的补充。
 
 ## Learned Preferences (Condensed)
 - Keep docs concise and remove superseded content.
