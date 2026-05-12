@@ -39,6 +39,7 @@ interface V4FormattedReserveData {
   supplyDisabled?: boolean;
   isFrozen?: boolean;
   isPaused?: boolean;
+  isActive?: false;
   borrowApy: number | undefined;
   borrowDisabled?: boolean;
   supplyIncentives?: number[];
@@ -154,10 +155,12 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     // Disabled flags
     const isFrozen = r.status?.frozen === true;
     const isPaused = r.status?.paused === true;
+    const isInactive = r.status?.active === false;
     const canSupply: boolean = r.canSupply ?? true;
     const canBorrow: boolean = r.canBorrow ?? true;
-    const supplyDisabled = !canSupply;
-    const borrowDisabled = !canBorrow;
+    const hasProtocolReason = isPaused || isInactive || isFrozen;
+    const supplyDisabled = hasProtocolReason ? false : !canSupply;
+    const borrowDisabled = hasProtocolReason ? false : !canBorrow;
 
     // Hub-level (shared across spokes) liquidity / utilization / rate model
     const a = r.asset;
@@ -201,6 +204,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(supplyDisabled ? { supplyDisabled: true } : {}),
       ...(isFrozen ? { isFrozen: true } : {}),
       ...(isPaused ? { isPaused: true } : {}),
+      ...(isInactive ? { isActive: false } as const : {}),
       borrowApy,
       ...(borrowDisabled ? { borrowDisabled: true } : {}),
       ...(decimals !== undefined ? { decimals } : {}),

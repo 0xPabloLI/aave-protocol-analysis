@@ -37,6 +37,7 @@ export interface MarketWithSpread {
   supplyDisabled?: boolean;
   isFrozen?: boolean;
   isPaused?: boolean;
+  isActive?: false;
   borrowApy?: number | null;
   borrowDisabled?: boolean;
   // Rate-input fields for manual APR calculation (from Aave SDK)

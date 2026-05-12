@@ -66,6 +66,7 @@ export interface RuntimeReserveData {
   supplyDisabled?: boolean;
   isFrozen?: boolean;
   isPaused?: boolean;
+  isActive?: false;
   borrowApy?: number;
   borrowDisabled?: boolean;
   supplyIncentives?: number[];
@@ -403,9 +404,10 @@ function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
         // 检查 supply 是否被禁用：supplyCap=1
         const isFrozen = reserve.isFrozen === true;
         const isPaused = reserve.isPaused === true;
+        const hasProtocolReason = isPaused || isFrozen;
         const supplyCapValue = reserve.supplyInfo?.supplyCap?.amount?.value;
         const supplyCapIsOne = supplyCapValue !== undefined && toFiniteNumber(supplyCapValue) === 1;
-        const isSupplyDisabled = isFrozen || isPaused || supplyCapIsOne;
+        const isSupplyDisabled = hasProtocolReason ? false : supplyCapIsOne;
         
         const supplyApyValue = reserve.supplyInfo?.apy?.value;
         const supplyApy = supplyCapIsOne || !supplyApyValue
@@ -420,7 +422,7 @@ function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
         // 检查 borrowCap，如果为 1 也视为 disabled（因为对用户没有实际意义）
         const borrowCapValue = reserve.borrowInfo?.borrowCap?.amount?.value;
         const borrowCapIsOne = borrowCapValue !== undefined && toFiniteNumber(borrowCapValue) === 1;
-        const isBorrowDisabled = isFrozen || isPaused || isBorrowDisabledByState || borrowCapIsOne;
+        const isBorrowDisabled = hasProtocolReason ? false : (isBorrowDisabledByState || borrowCapIsOne);
         
         const borrowApyValue = reserve.borrowInfo?.apy?.value;
         const borrowApy = toFiniteNumber(borrowApyValue) ?? undefined;

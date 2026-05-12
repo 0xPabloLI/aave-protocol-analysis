@@ -21,6 +21,7 @@ export const EXPECTED_RUNTIME_FIELDS = [
   'supplyDisabled',
   'isFrozen',
   'isPaused',
+  'isActive',
   'borrowApy',
   'borrowDisabled',
   'supplyIncentives',

@@ -75,6 +75,7 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.supplyDisabled ? { supplyDisabled: true } : {}),
     ...(reserve.isFrozen ? { isFrozen: true } : {}),
     ...(reserve.isPaused ? { isPaused: true } : {}),
+    ...(reserve.isActive === false ? { isActive: false as const } : {}),
     ...(reserve.borrowApy !== undefined ? { borrowApy: reserve.borrowApy * 100 } : {}),
     ...(reserve.borrowDisabled ? { borrowDisabled: true } : {}),
     ...(reserve.decimals !== undefined ? { decimals: reserve.decimals } : {}),
