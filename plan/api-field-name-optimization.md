@@ -153,7 +153,10 @@ DB 迁移需要 `ALTER TABLE RENAME COLUMN`，或方案B兼容过渡期间双写
 - API 文档 `docs/api/api-documentation.md` 更新为新的字段名表
 - 75 个后端测试全部通过
 
-**Phase 4** ⏳ 待执行：API version bump → `markets-v3`
+**Phase 4** ✅ 已完成 (2026-05-13)：API version bump → `markets-v3`
+- `MARKETS_API_VERSION = 'markets-v3'` 常量已导出
+- `MarketsResponse.snapshot.version` 类型更新
+- `marketsVersionBump.test.ts` 验证版本号
 
 ### 方案A：直接重命名（不推荐）
 

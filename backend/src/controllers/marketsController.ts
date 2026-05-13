@@ -12,6 +12,9 @@ import { serializeMarketsReservesForApi } from '../services/marketsApiSerialize.
 import { MarketsResponse, MarketWithSpread } from '../types/index.js';
 import { logger } from '../logger.js';
 
+/** API version — bumped when breaking changes (field renames) are introduced. */
+export const MARKETS_API_VERSION = 'markets-v3';
+
 /**
  * GET /api/markets
  * Returns all markets data from the in-memory snapshot.
@@ -60,7 +63,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
     const response: MarketsResponse = {
       snapshot: {
         lastUpdated: payload._metadata.timestamp,
-        version: 'markets-v2',
+        version: MARKETS_API_VERSION,
         staleTimeMs,
       },
       reserves,

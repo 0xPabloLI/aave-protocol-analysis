@@ -179,7 +179,7 @@ interface MerklCampaignBreakdown {
 
 **端点**: `GET /api/markets`
 
-**描述**: 获取 markets 快照（`markets-v2`），返回 `snapshot + reserves`。该端点的 freshness 语义见上面的 `Freshness Contract`；这里仅描述 payload 形状。`reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `reserveSizeUsd` / `utilizationPct` 以支持前端展示。该端点遵循 cron-write/API-read-only：请求只读内存快照，不触发外部拉取；冷启动未预热完成时返回 `503`。
+**描述**: 获取 markets 快照（`markets-v3`），返回 `snapshot + reserves`。该端点的 freshness 语义见上面的 `Freshness Contract`；这里仅描述 payload 形状。`reserves` 保留原有全量 reserve 字段（包括 `aTokenAddress`、`vTokenAddress`、各类激励字段），并新增 `tokenPrice` / `reserveSizeUsd` / `utilizationPct` 以支持前端展示。该端点遵循 cron-write/API-read-only：请求只读内存快照，不触发外部拉取；冷启动未预热完成时返回 `503`。
 
 **请求参数**: 无
 
@@ -189,7 +189,7 @@ interface MerklCampaignBreakdown {
 interface MarketsResponse {
   snapshot: {
     lastUpdated: string;               // 最后更新时间（ISO 8601）
-    version: 'markets-v2';
+    version: 'markets-v3';
     staleTimeMs: number;               // 对外 softTTL（见 Freshness Contract），默认 60 秒
   };
   reserves: MarketWithSpread[];        // 保留原全量字段 + 新增展示字段 + 可选 on-chain 字段
@@ -231,7 +231,7 @@ flowchart LR
 {
   "snapshot": {
     "lastUpdated": "2026-01-13T11:00:06.895Z",
-    "version": "markets-v2"
+    "version": "markets-v3"
   },
   "reserves": [
     {
@@ -991,6 +991,7 @@ curl http://localhost:3001/api/meta/side-data
   - 健康检查接口增强：返回详细的环境配置信息
   - **2026-03-11**：明确仅 `GET /api/markets` 触发市场数据新鲜度检查与自动刷新；其他端点使用各自缓存/TTL
   - **2026-03-11（breaking）**：`GET /api/markets` 响应结构切换为 `snapshot + reserves`（`markets-v2`）
+  - **2026-05-13（breaking）**：`GET /api/markets` 8 个 reserve 字段重命名（`reserveSize`→`supplied`、`totalVariableDebt`→`borrowed` 等），版本升级至 `markets-v3`
   - **2026-03-11**：`reserves` 保留原全量字段，并新增 `tokenPrice`、`reserveSizeUsd`、`utilizationPct`
   - **2026-03-11**：Merkl reward token 价格先不在 `/api/markets` 输出；若 reward token 为某 reserve 的 aToken，也不单独输出
    - **2026-03-13**：为 `/api/markets`、`/api/meta/side-data`、`/api/campaigns/forecast-states` 增加 `staleTimeMs` 字段说明

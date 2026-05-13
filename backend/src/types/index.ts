@@ -93,7 +93,7 @@ export interface MarketWithSpread {
 export interface MarketsResponse {
   snapshot: {
     lastUpdated: string; // ISO timestamp
-    version: 'markets-v2';
+    version: 'markets-v3';
     staleTimeMs: number;
   };
   reserves: MarketWithSpread[];
