@@ -25,6 +25,7 @@ const mockFullReserve = {
   supplyDisabled: false,
   isFrozen: false,
   isPaused: false,
+  isActive: false,
   borrowApy: 0.08,
   borrowDisabled: false,
   supplyIncentives: [0.01],

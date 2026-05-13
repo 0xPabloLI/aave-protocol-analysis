@@ -347,3 +347,52 @@ test('isFrozen/isPaused is independent of supplyDisabled', () => {
   assert.equal('isPaused' in api2, false);
   assert.equal(api2.supplyDisabled, true);
 });
+
+test('serializeReserveForApi outputs isActive:false for inactive V4 reserve', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV4Ethereum:1:0xinactive',
+    marketName: 'AaveV4Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Inactive',
+    tokenSymbol: 'INA',
+    tokenAddress: '0xinactive',
+    isActive: false,
+  };
+
+  const api = serializeReserveForApi(reserve);
+  assert.equal(api.isActive, false);
+  assert.equal('isFrozen' in api, false);
+  assert.equal('isPaused' in api, false);
+});
+
+test('serializeReserveForApi does NOT output isActive when true or absent', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV4Ethereum:1:0xactive',
+    marketName: 'AaveV4Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Active',
+    tokenSymbol: 'ACT',
+    tokenAddress: '0xactive',
+  };
+
+  const api = serializeReserveForApi(reserve);
+  assert.equal('isActive' in api, false);
+});
+
+test('serializeReserveForApi never outputs isActive for V3 reserve', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xv3',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'V3Token',
+    tokenSymbol: 'V3T',
+    tokenAddress: '0xv3',
+    supplyApy: 0.03,
+  };
+
+  const api = serializeReserveForApi(reserve);
+  assert.equal('isActive' in api, false);
+});
