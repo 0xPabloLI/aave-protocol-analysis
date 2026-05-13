@@ -133,17 +133,20 @@ interface RuntimeReserveData {
   }>;
   
   // On-chain & SDK fields（用于 APR 模拟计算，可选字段，扁平化到 reserve 中）
-  // 所有值为 BigNumber 字符串（RAY = 10^27 用于利率，token decimals 用于金额）
+  // Raw token 金额为 BigInt-safe string；利率模型参数为 number percent（V3/V4 精度已统一）
   decimals?: number;                     // 代币精度
-  availableLiquidity?: string;           // 【单位: raw token】可用流动性
-  reserveFactor?: string;                // 【单位: RAY】储备因子
-  variableRateSlope1?: string;           // 【单位: RAY】利率曲线斜率1
-  variableRateSlope2?: string;           // 【单位: RAY】利率曲线斜率2
-  optimalUsageRate?: string;             // 【单位: RAY】最优利用率（如 920000000000000000000000000 = 92%）
-  // On-chain only fields (from UiPoolDataProvider.getReservesHumanized())
-  // Cached for 5 min on RPC failure; absent if no data available
-  baseVariableBorrowRate?: string;       // 【单位: RAY】基础可变借款利率（用于模拟利率计算）
+  liquidity?: string;                    // 【单位: raw token】可用流动性
+  borrowed?: string;                     // 【单位: raw token】总借款量
+  supplied?: string;                     // 【单位: raw token】总供应量
+  supplyCap?: string;                    // 【单位: raw token】供应上限
+  borrowCap?: string;                    // 【单位: raw token】借贷上限
   deficit?: string;                      // 【单位: raw token】储备赤字（坏账），用于计算准确的 Supply APY
+  // 利率模型参数（已统一为 percent number，例如 9 = 9%）
+  protocolFee?: number;                  // 【单位: percent】协议费用
+  slopeBelowOptimal?: number;            // 【单位: percent】利率曲线斜率 1（低于最优利用率时）
+  slopeAboveOptimal?: number;            // 【单位: percent】利率曲线斜率 2（高于最优利用率时）
+  optimalUtilization?: number;           // 【单位: percent】最优利用率（如 92 = 92%）
+  baseBorrowRate?: number;               // 【单位: percent】基础借款利率
 }
 ```
 
@@ -868,62 +871,36 @@ Brevis 对外 contract 已收口到下面这组字段：
 
    #### On-chain & SDK 字段单位（位于 `/api/markets` 的 `reserves[]` 中）
 
-   **重要**：这些字段为链上或 SDK 原始数据，需要前端自行转换。这些字段可选（若 RPC 获取失败则 on-chain 字段不存在）。
+   **重要**：利率模型参数已统一为 `number` percent（V3/V4 精度统一，不再使用 RAY/BPS string）。Raw token 金额保持 BigInt-safe string。这些字段可选（若 RPC 获取失败则 on-chain 字段不存在）。
 
-   | 字段 | 原始单位 | 转换说明 |
-   |------|----------|----------|
-   | `decimals` | 整数 | token 精度（用于其他字段的换算） |
-   | `availableLiquidity` | **token 原始单位** (string) | 可用流动性。换算：`BigInt(value) / 10^decimals` 得到 token 数量 |
-   | `reserveFactor` | **BPS** (4 decimals) | 储备金率。换算：`value / 10000` 得到小数（如 2000 → 0.20 = 20%） |
-   | `variableRateSlope1` | **RAY** (27 decimals) | 利率曲线斜率 1。换算：`BigInt(value) / 10^27` 得到小数 |
-   | `variableRateSlope2` | **RAY** (27 decimals) | 利率曲线斜率 2。换算同上 |
-   | `optimalUsageRate` | **RAY** (27 decimals) | 最优使用率。换算：`BigInt(value) / 10^27`（如 450000...000 → 0.45 = 45%） |
-   | `baseVariableBorrowRate` | **RAY** (27 decimals) | 基础可变借款利率（on-chain only），用于模拟利率计算 |
-   | `deficit` | **token 原始单位** (string) | 坏账缺口（on-chain only），用于计算准确的 Supply APY |
+   | 字段 | 类型 & 单位 | 说明 |
+   |------|------------|------|
+   | `decimals` | `number` 整数 | token 精度（用于 raw token 字段的 USD 换算） |
+   | `liquidity` | `string` raw token | 可用流动性。前端换算：`Number(value) / 10^decimals * tokenPrice` |
+   | `borrowed` | `string` raw token | 总借款量。前端换算同 |
+   | `supplied` | `string` raw token | 总供应量。前端换算同 |
+   | `supplyCap` | `string` raw token | 供应上限。前端换算同 |
+   | `borrowCap` | `string` raw token | 借贷上限。前端换算同 |
+   | `deficit` | `string` raw token | 坏账缺口（on-chain only），用于计算准确的 Supply APY |
+   | `protocolFee` | `number` percent | 协议费用。例如 `10` = 10%（V3 对应 `reserveFactor`，V4 对应 `liquidityFee`） |
+   | `slopeBelowOptimal` | `number` percent | 利率曲线斜率 1。例如 `4` = 4% |
+   | `slopeAboveOptimal` | `number` percent | 利率曲线斜率 2。例如 `60` = 60% |
+   | `optimalUtilization` | `number` percent | 最优利用率。例如 `92` = 92% |
+   | `baseBorrowRate` | `number` percent | 基础借款利率。例如 `0` = 0% |
 
-   **On-chain 字段说明**：`baseVariableBorrowRate` 和 `deficit` 仅从 RPC 获取（UiPoolDataProvider.getReservesHumanized）。如 RPC 失败，使用 5 分钟内的缓存数据；超过缓存期或无缓存时字段缺失。
-
-   #### 常用单位定义
-
-   | 单位名称 | 精度 | 说明 |
-   |----------|------|------|
-   | **RAY** | 27 decimals | Aave 协议标准精度单位，`1 RAY = 10^27` |
-   | **BPS** | 4 decimals | 基点（Basis Points），`10000 BPS = 100%` |
-   | **WAD** | 18 decimals | 常见 ERC20 精度，`1 WAD = 10^18` |
+   **On-chain 字段说明**：`baseBorrowRate` 和 `deficit` 仅从 RPC 获取（UiPoolDataProvider.getReservesHumanized）。如 RPC 失败，使用 5 分钟内的缓存数据；超过缓存期或无缓存时字段缺失。
 
    #### 前端转换示例
 
    ```typescript
-   const RAY = BigInt(10) ** BigInt(27);
-   const BPS_DIVISOR = 10000;
-
-   // 转换 availableLiquidity 为 token 数量
-   function toTokenAmount(raw: string, decimals: number): number {
-     return Number(BigInt(raw)) / Math.pow(10, decimals);
+   // Raw token 金额 → USD 展示值
+   function rawToUsd(rawAmount: string, decimals: number, tokenPrice: number): number {
+     return (Number(rawAmount) / 10 ** decimals) * tokenPrice;
    }
 
-   // 转换 RAY 单位为小数
-   function fromRay(raw: string): number {
-     return Number(BigInt(raw)) / Number(RAY);
-   }
-
-   // 转换 BPS 为小数
-   function fromBps(raw: string): number {
-     return Number(raw) / BPS_DIVISOR;
-   }
-
-   // 计算实际可变债务
-   function getActualVariableDebt(
-     scaledDebt: string,
-     borrowIndex: string,
-     decimals: number
-   ): number {
-     const scaled = BigInt(scaledDebt);
-     const index = BigInt(borrowIndex);
-     const actualRaw = (scaled * index) / RAY;
-     return Number(actualRaw) / Math.pow(10, decimals);
-   }
-   ```
+   // 利率模型参数（number percent）直接参与计算，无需转换
+   // 例如 reserveFactor: 10 直接表示 10%，slopeBelowOptimal: 4 直接表示 4%
+   const borrowRate = baseBorrowRate + utilizationRatio * slopeBelowOptimal + excessRatio * slopeAboveOptimal;
 
 ### 数据来源
 

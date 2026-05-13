@@ -108,23 +108,23 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
           (reserve as any).deficit = '0';
         }
 
-        // baseVariableBorrowRate: SDK value > on-chain RPC > fallback calculation
-        if ((reserve as any).baseVariableBorrowRate !== undefined) {
-          // SDK already provided baseVariableBorrowRate — keep it
+        // baseBorrowRate: SDK value > on-chain RPC > fallback calculation
+        if ((reserve as any).baseBorrowRate !== undefined) {
+          // SDK already provided baseBorrowRate — keep it
         } else if (onchainData?.baseVariableBorrowRate !== undefined) {
-          (reserve as any).baseVariableBorrowRate = onchainData.baseVariableBorrowRate;
+          (reserve as any).baseBorrowRate = onchainData.baseVariableBorrowRate;
           mergedCount++;
         } else {
           // No SDK value and no on-chain RPC data — use fallback calculation
           const fallbackBaseRate = calculateBaseRateFallback(
             reserve.borrowApy,
             reserve.utilizationPct,
-            reserve.optimalUsageRate,
-            reserve.variableRateSlope1,
-            reserve.variableRateSlope2
+            reserve.optimalUtilization,
+            reserve.slopeBelowOptimal,
+            reserve.slopeAboveOptimal
           );
           if (fallbackBaseRate !== null) {
-            (reserve as any).baseVariableBorrowRate = fallbackBaseRate;
+            (reserve as any).baseBorrowRate = fallbackBaseRate;
             fallbackCount++;
           }
         }

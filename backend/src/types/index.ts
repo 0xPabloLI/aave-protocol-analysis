@@ -42,19 +42,17 @@ export interface MarketWithSpread {
   borrowDisabled?: boolean;
   // Rate-input fields for manual APR calculation (from Aave SDK)
   decimals?: number;
-  availableLiquidity?: string;
-  totalVariableDebt?: string; // raw token units - total borrowed
-  reserveSize?: string; // raw token units - total supplied
-  supplyCap?: string; // raw token units
-  borrowCap?: string; // raw token units
-  // Rate-model fields are percent numbers (e.g., 9 means 9%) for V3/V4 unified API.
-  reserveFactor?: number;
-  variableRateSlope1?: number;
-  variableRateSlope2?: number;
-  optimalUsageRate?: number;
-  // On-chain only fields (from UiPoolDataProvider.getReservesHumanized())
-  // Absent if RPC fetch failed; cached for 30 min on failure
-  baseVariableBorrowRate?: number; // percent (e.g., 0 means 0%)
+  supplyCap?: string;
+  borrowCap?: string;
+  // 字段重命名后仅保留新字段名
+  supplied?: string;
+  borrowed?: string;
+  liquidity?: string;
+  protocolFee?: number;
+  slopeBelowOptimal?: number;
+  slopeAboveOptimal?: number;
+  optimalUtilization?: number;
+  baseBorrowRate?: number; // percent (e.g., 0 means 0%)
   deficit?: string; // raw token units - for accurate supply APY calculation
   supplyIncentives?: number[];
   borrowIncentives?: number[];

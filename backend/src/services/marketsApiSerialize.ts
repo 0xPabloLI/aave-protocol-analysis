@@ -79,17 +79,17 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.borrowApy !== undefined ? { borrowApy: reserve.borrowApy * 100 } : {}),
     ...(reserve.borrowDisabled ? { borrowDisabled: true } : {}),
     ...(reserve.decimals !== undefined ? { decimals: reserve.decimals } : {}),
-    ...(reserve.availableLiquidity ? { availableLiquidity: reserve.availableLiquidity } : {}),
-    ...(reserve.totalVariableDebt ? { totalVariableDebt: reserve.totalVariableDebt } : {}),
-    ...(reserve.reserveSize ? { reserveSize: reserve.reserveSize } : {}),
+    ...(reserve.liquidity ? { liquidity: reserve.liquidity } : {}),
+    ...(reserve.borrowed ? { borrowed: reserve.borrowed } : {}),
+    ...(reserve.supplied ? { supplied: reserve.supplied } : {}),
     ...(reserve.supplyCap ? { supplyCap: reserve.supplyCap } : {}),
     ...(reserve.borrowCap ? { borrowCap: reserve.borrowCap } : {}),
-    ...(reserve.reserveFactor !== undefined ? { reserveFactor: reserve.reserveFactor } : {}),
-    ...(reserve.variableRateSlope1 !== undefined ? { variableRateSlope1: reserve.variableRateSlope1 } : {}),
-    ...(reserve.variableRateSlope2 !== undefined ? { variableRateSlope2: reserve.variableRateSlope2 } : {}),
-    ...(reserve.optimalUsageRate !== undefined ? { optimalUsageRate: reserve.optimalUsageRate } : {}),
-    ...(reserve.baseVariableBorrowRate !== undefined
-      ? { baseVariableBorrowRate: reserve.baseVariableBorrowRate }
+    ...(reserve.protocolFee !== undefined ? { protocolFee: reserve.protocolFee } : {}),
+    ...(reserve.slopeBelowOptimal !== undefined ? { slopeBelowOptimal: reserve.slopeBelowOptimal } : {}),
+    ...(reserve.slopeAboveOptimal !== undefined ? { slopeAboveOptimal: reserve.slopeAboveOptimal } : {}),
+    ...(reserve.optimalUtilization !== undefined ? { optimalUtilization: reserve.optimalUtilization } : {}),
+    ...(reserve.baseBorrowRate !== undefined
+      ? { baseBorrowRate: reserve.baseBorrowRate }
       : {}),
     ...(reserve.deficit !== undefined ? { deficit: reserve.deficit } : {}),
     ...(reserve.supplyIncentives?.length

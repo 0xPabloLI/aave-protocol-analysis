@@ -73,17 +73,18 @@ export interface RuntimeReserveData {
   borrowIncentives?: number[];
   // Rate-input fields for manual APR calculation
   decimals?: number;
-  availableLiquidity?: string;
-  totalVariableDebt?: string;
-  reserveSize?: string;
   supplyCap?: string;
   borrowCap?: string;
-  reserveFactor?: number;
-  variableRateSlope1?: number;
-  variableRateSlope2?: number;
-  optimalUsageRate?: number;
   deficit?: string; // from on-chain RPC (still raw token units)
-  baseVariableBorrowRate?: number; // percent (e.g., 0 means 0%)
+  // 字段重命名后仅保留新字段名
+  supplied?: string;
+  borrowed?: string;
+  liquidity?: string;
+  protocolFee?: number;
+  slopeBelowOptimal?: number;
+  slopeAboveOptimal?: number;
+  optimalUtilization?: number;
+  baseBorrowRate?: number;
   aaveProReserveId?: string;
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
@@ -430,16 +431,16 @@ function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
         // Rate-input fields for manual APR calculation (from Aave SDK)
         // All raw values are strings to preserve precision for on-chain math
         const decimals = reserve.underlyingToken?.decimals ?? undefined;
-        const availableLiquidity = reserve.borrowInfo?.availableLiquidity?.amount?.raw ?? undefined;
-        const totalVariableDebt = reserve.borrowInfo?.total?.amount?.raw ?? undefined; // Total borrowed
-        const reserveSize = reserve.size?.amount?.raw ?? undefined;
+        const liquidity = reserve.borrowInfo?.availableLiquidity?.amount?.raw ?? undefined;
+        const borrowed = reserve.borrowInfo?.total?.amount?.raw ?? undefined; // Total borrowed
+        const supplied = reserve.size?.amount?.raw ?? undefined;
         const supplyCap = reserve.supplyInfo?.supplyCap?.amount?.raw ?? undefined;
         const borrowCap = reserve.borrowInfo?.borrowCap?.amount?.raw ?? undefined;
-        // Note: baseVariableBorrowRate is NOT available from Aave API (filled by on-chain RPC or fallback)
-        const reserveFactor = percentValueToPercent(reserve.borrowInfo?.reserveFactor);
-        const variableRateSlope1 = percentValueToPercent(reserve.borrowInfo?.variableRateSlope1);
-        const variableRateSlope2 = percentValueToPercent(reserve.borrowInfo?.variableRateSlope2);
-        const optimalUsageRate = percentValueToPercent(reserve.borrowInfo?.optimalUsageRate);
+        // Note: baseBorrowRate is NOT available from Aave API (filled by on-chain RPC or fallback)
+        const protocolFee = percentValueToPercent(reserve.borrowInfo?.reserveFactor);
+        const slopeBelowOptimal = percentValueToPercent(reserve.borrowInfo?.variableRateSlope1);
+        const slopeAboveOptimal = percentValueToPercent(reserve.borrowInfo?.variableRateSlope2);
+        const optimalUtilization = percentValueToPercent(reserve.borrowInfo?.optimalUsageRate);
         
         const protocolSupplyIncentives: number[] = [];
         const protocolBorrowIncentives: number[] = [];
@@ -489,15 +490,15 @@ function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
           borrowIncentives: protocolBorrowIncentives.length > 0 ? protocolBorrowIncentives : undefined as any,
           // Rate-input fields for manual APR calculation (raw strings for precision)
           ...(decimals !== undefined ? { decimals } : {}),
-          ...(availableLiquidity ? { availableLiquidity } : {}),
-          ...(totalVariableDebt ? { totalVariableDebt } : {}),
-          ...(reserveSize ? { reserveSize } : {}),
+          ...(liquidity ? { liquidity } : {}),
+          ...(borrowed ? { borrowed } : {}),
+          ...(supplied ? { supplied } : {}),
           ...(supplyCap ? { supplyCap } : {}),
           ...(borrowCap ? { borrowCap } : {}),
-          ...(reserveFactor !== undefined ? { reserveFactor } : {}),
-          ...(variableRateSlope1 !== undefined ? { variableRateSlope1 } : {}),
-          ...(variableRateSlope2 !== undefined ? { variableRateSlope2 } : {}),
-          ...(optimalUsageRate !== undefined ? { optimalUsageRate } : {}),
+          ...(protocolFee !== undefined ? { protocolFee } : {}),
+          ...(slopeBelowOptimal !== undefined ? { slopeBelowOptimal } : {}),
+          ...(slopeAboveOptimal !== undefined ? { slopeAboveOptimal } : {}),
+          ...(optimalUtilization !== undefined ? { optimalUtilization } : {}),
         });
       });
     }

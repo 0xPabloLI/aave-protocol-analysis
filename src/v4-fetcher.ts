@@ -165,17 +165,17 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     // Hub-level (shared across spokes) liquidity / utilization / rate model
     const a = r.asset;
     const utilizationPct = percentValueToPercent(a?.summary?.utilizationRate);
-    const availableLiquidity = a?.summary?.availableLiquidity?.amount?.onChainValue?.toString?.() ?? undefined;
+    const liquidity = a?.summary?.availableLiquidity?.amount?.onChainValue?.toString?.() ?? undefined;
 
-    const reserveFactor = percentValueToPercent(a?.settings?.liquidityFee);
-    const variableRateSlope1 = percentValueToPercent(a?.settings?.slopeBelowOptimal);
-    const variableRateSlope2 = percentValueToPercent(a?.settings?.slopeAboveOptimal);
-    const optimalUsageRate = percentValueToPercent(a?.settings?.optimalUtilizationRate);
-    const baseVariableBorrowRate = percentValueToPercent(a?.settings?.baseBorrowRate);
+    const protocolFee = percentValueToPercent(a?.settings?.liquidityFee);
+    const slopeBelowOptimal = percentValueToPercent(a?.settings?.slopeBelowOptimal);
+    const slopeAboveOptimal = percentValueToPercent(a?.settings?.slopeAboveOptimal);
+    const optimalUtilization = percentValueToPercent(a?.settings?.optimalUtilizationRate);
+    const baseBorrowRate = percentValueToPercent(a?.settings?.baseBorrowRate);
 
     // Reserve-level (per-spoke) sizes & caps in raw token units
-    const reserveSize = r.summary?.supplied?.amount?.onChainValue?.toString?.() ?? undefined;
-    const totalVariableDebt = r.summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined;
+    const supplied = r.summary?.supplied?.amount?.onChainValue?.toString?.() ?? undefined;
+    const borrowed = r.summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined;
     const supplyCap = r.settings?.supplyCap?.amount?.onChainValue?.toString?.() ?? undefined;
     const borrowCap = r.settings?.borrowCap?.amount?.onChainValue?.toString?.() ?? undefined;
 
@@ -208,16 +208,16 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       borrowApy,
       ...(borrowDisabled ? { borrowDisabled: true } : {}),
       ...(decimals !== undefined ? { decimals } : {}),
-      ...(availableLiquidity ? { availableLiquidity } : {}),
-      ...(totalVariableDebt ? { totalVariableDebt } : {}),
-      ...(reserveSize ? { reserveSize } : {}),
+      ...(liquidity ? { liquidity } : {}),
+      ...(borrowed ? { borrowed } : {}),
+      ...(supplied ? { supplied } : {}),
       ...(supplyCap ? { supplyCap } : {}),
       ...(borrowCap ? { borrowCap } : {}),
-      ...(reserveFactor !== undefined ? { reserveFactor } : {}),
-      ...(variableRateSlope1 !== undefined ? { variableRateSlope1 } : {}),
-      ...(variableRateSlope2 !== undefined ? { variableRateSlope2 } : {}),
-      ...(optimalUsageRate !== undefined ? { optimalUsageRate } : {}),
-      ...(baseVariableBorrowRate !== undefined ? { baseVariableBorrowRate } : {}),
+      ...(protocolFee !== undefined ? { protocolFee } : {}),
+      ...(slopeBelowOptimal !== undefined ? { slopeBelowOptimal } : {}),
+      ...(slopeAboveOptimal !== undefined ? { slopeAboveOptimal } : {}),
+      ...(optimalUtilization !== undefined ? { optimalUtilization } : {}),
+      ...(baseBorrowRate !== undefined ? { baseBorrowRate } : {}),
       ...(r.id ? { aaveProReserveId: String(r.id) } : {}),
       // V4 Hub & Spoke addresses
       ...(hub?.id ? { hubId: String(hub.id) } : {}),

@@ -31,17 +31,18 @@ const mockFullReserve = {
   supplyIncentives: [0.01],
   borrowIncentives: [0.02],
   decimals: 6,
-  availableLiquidity: '1000000000000',
-  totalVariableDebt: '800000000000',
-  reserveSize: '1800000000000',
   supplyCap: '10000000000000',
   borrowCap: '8000000000000',
-  reserveFactor: 20,
-  variableRateSlope1: 4,
-  variableRateSlope2: 80,
-  optimalUsageRate: 80,
-  baseVariableBorrowRate: 0.4,
   deficit: '0',
+  // 字段重命名后仅保留新字段名
+  supplied: '1800000000000',
+  borrowed: '800000000000',
+  liquidity: '1000000000000',
+  protocolFee: 20,
+  slopeBelowOptimal: 4,
+  slopeAboveOptimal: 80,
+  optimalUtilization: 80,
+  baseBorrowRate: 0.4,
   aaveProReserveId: '12345',
   meritSupplys: [{ apr: 0.01, link: 'test', startDate: '2024-01-01', endDate: '2024-12-31' }],
   meritBorrows: [{ apr: 0.01, link: 'test', startDate: '2024-01-01', endDate: '2024-12-31' }],
@@ -63,11 +64,11 @@ test('all critical fields defined in EXPECTED_RUNTIME_FIELDS', () => {
     'reserveId',
     'tokenAddress',
     'supplyApy',
-    'reserveFactor',
-    'variableRateSlope1',
-    'variableRateSlope2',
-    'optimalUsageRate',
-    'baseVariableBorrowRate',
+    'protocolFee',
+    'slopeBelowOptimal',
+    'slopeAboveOptimal',
+    'optimalUtilization',
+    'baseBorrowRate',
   ];
   
   for (const field of criticalFields) {
@@ -101,4 +102,60 @@ test('V4 Hub & Spoke addressing fields present in registry', () => {
     assert(EXPECTED_RUNTIME_FIELDS.includes(field as any), `Missing V4 field: ${field}`);
     assert(field in mockFullReserve, `Field not in mock: ${field}`);
   }
+});
+
+// --- 字段重命名完成（Phase 2）：旧字段名已移除，仅保留新字段名 ---
+
+const FIELD_RENAME_MAP: Record<string, string> = {
+  reserveSize: 'supplied',
+  totalVariableDebt: 'borrowed',
+  availableLiquidity: 'liquidity',
+  reserveFactor: 'protocolFee',
+  variableRateSlope1: 'slopeBelowOptimal',
+  variableRateSlope2: 'slopeAboveOptimal',
+  optimalUsageRate: 'optimalUtilization',
+  baseVariableBorrowRate: 'baseBorrowRate',
+};
+
+const OLD_FIELD_NAMES = Object.keys(FIELD_RENAME_MAP);
+const NEW_FIELD_NAMES = Object.values(FIELD_RENAME_MAP);
+
+test('Phase 2: new field names registered in EXPECTED_RUNTIME_FIELDS', () => {
+  const missing: string[] = [];
+  for (const newName of Object.values(FIELD_RENAME_MAP)) {
+    if (!EXPECTED_RUNTIME_FIELDS.includes(newName as any)) {
+      missing.push(newName);
+    }
+  }
+  assert.strictEqual(missing.length, 0, `New field names not in registry: ${missing.join(', ')}`);
+});
+
+test('Phase 2: old field names removed from EXPECTED_RUNTIME_FIELDS', () => {
+  const stillPresent: string[] = [];
+  for (const oldName of OLD_FIELD_NAMES) {
+    if (EXPECTED_RUNTIME_FIELDS.includes(oldName as any)) {
+      stillPresent.push(oldName);
+    }
+  }
+  assert.strictEqual(stillPresent.length, 0, `Old field names still in registry: ${stillPresent.join(', ')}`);
+});
+
+test('Phase 2: new field names present in mock reserve', () => {
+  const missing: string[] = [];
+  for (const newName of NEW_FIELD_NAMES) {
+    if (!(newName in mockFullReserve)) {
+      missing.push(newName);
+    }
+  }
+  assert.strictEqual(missing.length, 0, `New fields missing from mock: ${missing.join(', ')}`);
+});
+
+test('Phase 2: old field names removed from mock reserve', () => {
+  const stillPresent: string[] = [];
+  for (const oldName of OLD_FIELD_NAMES) {
+    if (oldName in mockFullReserve) {
+      stillPresent.push(oldName);
+    }
+  }
+  assert.strictEqual(stillPresent.length, 0, `Old field names still in mock: ${stillPresent.join(', ')}`);
 });

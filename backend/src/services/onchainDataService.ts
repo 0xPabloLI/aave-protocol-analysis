@@ -271,9 +271,9 @@ function apyRatioToAprPercent(apyRatio: number): number {
 export function calculateBaseRateFallback(
   borrowApyRatio: number | null | undefined,
   utilizationPct: number | null | undefined,
-  optimalUsageRate: number | undefined,
-  variableRateSlope1: number | undefined,
-  variableRateSlope2?: number
+  optimalUtilization: number | undefined,
+  slopeBelowOptimal: number | undefined,
+  slopeAboveOptimal?: number
 ): number | null {
   if (borrowApyRatio === null || borrowApyRatio === undefined) {
     return null;
@@ -285,25 +285,25 @@ export function calculateBaseRateFallback(
     utilizationPct !== null &&
     utilizationPct !== undefined &&
     Number.isFinite(utilizationPct) &&
-    optimalUsageRate !== undefined &&
-    Number.isFinite(optimalUsageRate) &&
-    variableRateSlope1 !== undefined &&
-    Number.isFinite(variableRateSlope1)
+    optimalUtilization !== undefined &&
+    Number.isFinite(optimalUtilization) &&
+    slopeBelowOptimal !== undefined &&
+    Number.isFinite(slopeBelowOptimal)
   ) {
-    if (utilizationPct <= optimalUsageRate && optimalUsageRate > 0) {
-      const slope1Contribution = variableRateSlope1 * (utilizationPct / optimalUsageRate);
+    if (utilizationPct <= optimalUtilization && optimalUtilization > 0) {
+      const slope1Contribution = slopeBelowOptimal * (utilizationPct / optimalUtilization);
       const baseRate = borrowRatePct - slope1Contribution;
       if (baseRate >= 0) return baseRate;
     } else if (
-      utilizationPct > optimalUsageRate &&
-      variableRateSlope2 !== undefined &&
-      Number.isFinite(variableRateSlope2)
+      utilizationPct > optimalUtilization &&
+      slopeAboveOptimal !== undefined &&
+      Number.isFinite(slopeAboveOptimal)
     ) {
-      const denom = 100 - optimalUsageRate;
+      const denom = 100 - optimalUtilization;
       if (denom <= 0) return 0;
-      const excessRatio = (utilizationPct - optimalUsageRate) / denom;
-      const slope2Contribution = variableRateSlope2 * excessRatio;
-      const baseRate = borrowRatePct - variableRateSlope1 - slope2Contribution;
+      const excessRatio = (utilizationPct - optimalUtilization) / denom;
+      const slope2Contribution = slopeAboveOptimal * excessRatio;
+      const baseRate = borrowRatePct - slopeBelowOptimal - slope2Contribution;
       if (baseRate >= 0) return baseRate;
     }
   }
