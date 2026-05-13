@@ -489,7 +489,7 @@ function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
           supplyIncentives: protocolSupplyIncentives.length > 0 ? protocolSupplyIncentives : undefined as any,
           borrowIncentives: protocolBorrowIncentives.length > 0 ? protocolBorrowIncentives : undefined as any,
           // Rate-input fields for manual APR calculation (raw strings for precision)
-          ...(decimals !== undefined ? { decimals } : {}),
+          ...(decimals !== undefined && decimals !== 18 ? { decimals } : {}),
           ...(liquidity ? { liquidity } : {}),
           ...(borrowed ? { borrowed } : {}),
           ...(supplied ? { supplied } : {}),

@@ -134,7 +134,7 @@ interface RuntimeReserveData {
   
   // On-chain & SDK fields（用于 APR 模拟计算，可选字段，扁平化到 reserve 中）
   // Raw token 金额为 BigInt-safe string；利率模型参数为 number percent（V3/V4 精度已统一）
-  decimals?: number;                     // 代币精度
+  decimals?: number;                     // 代币精度，仅 ≠ 18 时出现（18 位 token 省略以节省带宽）
   liquidity?: string;                    // 【单位: raw token】可用流动性
   borrowed?: string;                     // 【单位: raw token】总借款量
   supplied?: string;                     // 【单位: raw token】总供应量
@@ -875,7 +875,7 @@ Brevis 对外 contract 已收口到下面这组字段：
 
    | 字段 | 类型 & 单位 | 说明 |
    |------|------------|------|
-   | `decimals` | `number` 整数 | token 精度（用于 raw token 字段的 USD 换算） |
+   | `decimals` | `number` 整数 | token 精度（用于 raw token 字段的 USD 换算）。**仅 ≠ 18 时出现**，18 位 token 省略此字段（前端默认 18）。 |
    | `liquidity` | `string` raw token | 可用流动性。前端换算：`Number(value) / 10^decimals * tokenPrice` |
    | `borrowed` | `string` raw token | 总借款量。前端换算同 |
    | `supplied` | `string` raw token | 总供应量。前端换算同 |
@@ -1004,6 +1004,7 @@ curl http://localhost:3001/api/meta/side-data
   - **2026-03-24**：补充 **per-campaign metrics TTL**、opportunity 整表缓存与 10 分钟 forecast 快照的关系（各 campaign metrics 更新频率可不同）
   - **2026-03-26（breaking）**：Brevis 对外 contract 收口为 canonical 字段：`campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`、`campaignId`；不再暴露 `apr`、`startDate`、`endDate`、`name` 及其他 deprecated 别名
   - **2026-03-26**：补充 Brevis 数据源对比结论：`/sdk/v1/aaveCampaigns` 在当前环境实测为空，Aave 仍以 gRPC 路径为主
+  - **2026-05-13**：`/api/markets` 的 `decimals` 字段不再输出值为 18 的 token（占绝大多数），仅非 18 位 token（如 USDC=6、WBTC=8）保留此字段。前端自动默认 18，无需额外处理。
 
 ## 注意事项
 

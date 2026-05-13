@@ -396,3 +396,50 @@ test('serializeReserveForApi never outputs isActive for V3 reserve', () => {
   const api = serializeReserveForApi(reserve);
   assert.equal('isActive' in api, false);
 });
+
+test('serializeReserveForApi omits decimals when 18', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xdec18',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Dec18',
+    tokenSymbol: 'D18',
+    tokenAddress: '0xdec18',
+    decimals: 18,
+  };
+
+  const api = serializeReserveForApi(reserve);
+  assert.equal('decimals' in api, false);
+});
+
+test('serializeReserveForApi preserves decimals when not 18', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xdec6',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Dec6',
+    tokenSymbol: 'D6',
+    tokenAddress: '0xdec6',
+    decimals: 6,
+  };
+
+  const api = serializeReserveForApi(reserve);
+  assert.equal(api.decimals, 6);
+});
+
+test('serializeReserveForApi omits decimals when absent', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xnodec',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'NoDec',
+    tokenSymbol: 'ND',
+    tokenAddress: '0xnodec',
+  };
+
+  const api = serializeReserveForApi(reserve);
+  assert.equal('decimals' in api, false);
+});

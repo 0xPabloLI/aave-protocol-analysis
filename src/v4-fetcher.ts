@@ -207,7 +207,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(isInactive ? { isActive: false } as const : {}),
       borrowApy,
       ...(borrowDisabled ? { borrowDisabled: true } : {}),
-      ...(decimals !== undefined ? { decimals } : {}),
+      ...(decimals !== undefined && decimals !== 18 ? { decimals } : {}),
       ...(liquidity ? { liquidity } : {}),
       ...(borrowed ? { borrowed } : {}),
       ...(supplied ? { supplied } : {}),
