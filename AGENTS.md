@@ -116,7 +116,6 @@ The submodule is the canonical source for knowledge that spans frontend AND back
 **跨前后端 API/SDK/字段映射:**
 - `aaveapy-doc/field-glossary.md` — API 字段 → 前端展示概念映射表
 - `aaveapy-doc/v3-v4-sdk-field-mapping.md` — V3 vs V4 SDK 字段来源/处理差异
-- `aaveapy-doc/v3-v4-precision-unification-plan.md` — V3/V4 精度统一方案（completed）
 - `aaveapy-doc/v3-v4-incentive-matching.md` — Merit/Merkl/Brevis 激励匹配机制
 
 **前端异常状态适配方案:**

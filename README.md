@@ -200,6 +200,21 @@ The formatted output data contains the following fields. For the full current sc
 - `totalIncentiveBorrowApy` - Total incentive borrow APY (all incentives converted to APY)
 - `totalBorrowApy` - Total borrow APY (native borrowApy + totalIncentiveBorrowApy)
 
+## Data Persistence (✅ Implemented)
+
+Historical market data is persisted to Railway PostgreSQL every 5 minutes for trend analysis, with Cloudflare R2 offline backup.
+
+**Architecture**: cron-write → `persistenceService.ts` → batch INSERT (`market_snapshots` + `market_configs` + `oracle_prices`) → Railway PG; daily `pg_dump` → R2 backup.
+
+**Key tables**:
+- `market_snapshots` — 高频数据（价格/APY/利用率/流动性），每 5 分钟写入，内容哈希去重
+- `market_configs` — 低频数据（利率策略/额度/状态标志），仅内容变化时写入
+- `oracle_prices` — 预言机价格快照
+
+**Cost**: ~$5/月 (Railway Hobby); R2 backup $0/月.
+
+**Design doc**: `docs/plans/2026-05-07-database-persistence-design.md` (Status: Implemented, branch `feat/db-persistence-r2-backup`)
+
 ## Logging System
 
 The project uses [winston](https://github.com/winstonjs/winston) logging library to manage log output.
