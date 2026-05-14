@@ -105,8 +105,9 @@ When touching one area, check its pair:
 
 ## Documentation Placement Rule
 
-### `aaveapy-doc/` (git submodule) — 跨前后端 + 协议知识
-The submodule is the canonical source for knowledge that spans frontend AND backend, or concerns Aave protocol fundamentals. It must be kept current.
+### `aaveapy-doc/` (symlink → `../aaveapy-doc`) — 跨前后端 + 协议知识
+`aaveapy-doc/` is a **symlink** to the sibling `../aaveapy-doc` repo (not a git submodule). The `.gitmodules` entry is a stale remnant and should be ignored. Changes are committed and pushed directly in the symlinked repo. The main repo does not track `aaveapy-doc/` content or ref — only the symlink itself.
+This directory is the canonical source for knowledge that spans frontend AND backend, or concerns Aave protocol fundamentals. It must be kept current.
 
 **Protocol knowledge (合约/费率/状态语义):**
 - `aaveapy-doc/frozen-paused-semantics.md` — isFrozen/isPaused/borrowable 合约层语义
