@@ -11,14 +11,11 @@
  * - In on-chain but not in SDK: RPC returned the reserve but SDK supplyReserves do not include it.
  *
  * Run from repo root after build:
- *   npm run build && cd backend && npm run build && node scripts/validate-sdk-onchain-reserve-match.mjs
- *
- * Or from backend dir:
- *   node scripts/validate-sdk-onchain-reserve-match.mjs
+ *   npm run build && cd backend && npm run build && node scripts/verification/v3-sdk-onchain-match.mjs
  */
 
 import { fetchMarketsData } from '../../dist/index.js';
-import { refreshOnchainCache, getOnchainDataFromCache } from '../dist/services/onchainDataService.js';
+import { refreshOnchainCache, getOnchainDataFromCache } from '../../backend/dist/services/onchainDataService.js';
 
 async function main() {
   console.log('Fetching markets payload (Aave SDK)...');

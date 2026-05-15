@@ -5,16 +5,14 @@
  * baseVariableBorrowRate fallback. Prints which parameter(s) differ.
  *
  * Run from repo root after build:
- *   npm run build && cd backend && npm run build && node scripts/compare-snx-onchain-sdk-params.mjs
- *
- * Or from backend: node scripts/compare-snx-onchain-sdk-params.mjs
+ *   npm run build && cd backend && npm run build && node scripts/verification/v3-snx-onchain-compare.mjs
  */
 
 import { UiPoolDataProvider } from '@aave/contract-helpers';
 import * as AaveAddressBook from '@aave-dao/aave-address-book';
 import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
-import { ethers } from 'ethers';
 import { fetchMarketsData } from '../../dist/index.js';
+import { ethers } from 'ethers';
 
 const CHAIN_ID = 1;
 const POOL_ADDRESS = '0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2';

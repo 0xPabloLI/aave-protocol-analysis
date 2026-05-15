@@ -9,7 +9,7 @@
  * ALL supplyReserves (no filter), so it reports 275. Difference 275-240 = frozen/paused excluded by fetcher.
  *
  * Run from repo root after build:
- *   npm run build && cd backend && npm run build && node scripts/validate-base-rate-fallback.mjs
+ *   npm run build && cd backend && npm run build && node scripts/verification/v3-base-rate-fallback.mjs
  */
 
 import { readFileSync } from 'fs';
@@ -20,7 +20,7 @@ import {
   refreshOnchainCache,
   getOnchainDataFromCache,
   calculateBaseRateFallback,
-} from '../dist/services/onchainDataService.js';
+} from '../../backend/dist/services/onchainDataService.js';
 
 const RAY = BigInt('1000000000000000000000000000');
 const scriptDir = dirname(fileURLToPath(import.meta.url));
