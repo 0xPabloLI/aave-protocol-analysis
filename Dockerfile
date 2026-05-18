@@ -61,6 +61,7 @@ COPY --from=builder /app/dist/ ./dist/
 COPY --from=builder /app/packages/aave-shared-contracts/dist/ ./packages/aave-shared-contracts/dist/
 COPY --from=builder /app/packages/aave-fetcher/dist/ ./packages/aave-fetcher/dist/
 COPY --from=builder /app/backend/dist/ ./backend/dist/
+COPY backend/migrations/ ./backend/migrations/
 
 # Create data and logs directories
 RUN mkdir -p data logs backend/logs

@@ -13,8 +13,9 @@ import { refreshOnchainCache } from './services/onchainDataService.js';
 import { refreshOracleCache } from './services/oracleService.js';
 import { logger } from './logger.js';
 import { explainServerListenError } from './startup.js';
-import { closePool } from './services/dbPool.js';
+import { closePool, getPool, isPersistenceEnabled } from './services/dbPool.js';
 import { getPersistenceStatus } from './services/persistenceService.js';
+import { runMigrations } from './services/autoMigrate.js';
 
 const app = express();
 app.set('etag', 'weak');
@@ -111,6 +112,18 @@ app.get('/api/persistence-status', (_req, res) => {
 // 注意：cron 不会在启动时立即执行，所以需要显式 warmup
 // 所有 API 数据现在使用 cron-write/API-read-only 模式
 logger.info('🔄 Starting cache warmup (all data will be fetched before server accepts requests)...');
+
+// Auto-run pending DB migrations before any cron cycles start
+try {
+  if (isPersistenceEnabled()) {
+    const migrationPool = getPool();
+    await runMigrations(migrationPool);
+  } else {
+    logger.info('💾 Persistence disabled — skipping auto-migration');
+  }
+} catch (error) {
+  logger.error('❌ Auto-migration failed:', error);
+}
 
 // Phase 1: independent caches (can run in parallel)
 Promise.allSettled([
