@@ -1,21 +1,30 @@
 # AGENTS.md (Slim)
 
 ## Project Snapshot
-- Two-service TypeScript repository:
-  - Root data fetcher (`src/`) aggregates Aave + Merit + Merkl + Brevis.
-  - Backend API (`backend/`) serves in-memory snapshots (cron-write / API-read-only).
-- Backend imports from root `dist/index.js`; root rebuild is required after `src/` changes.
+- Monorepo (npm workspaces) with three packages + backend:
+  - `packages/aave-shared-contracts` — shared type definitions (`RuntimeReserveData`, `MarketsPayload`), field registry, validation
+  - `packages/aave-fetcher` — data aggregation (`fetchMarketsData`): Aave SDK + Merit + Merkl + Brevis
+  - `packages/aave-shared-config` — static config constants
+  - `backend/` — API server, in-memory snapshots (cron-write / API-read-only), DB is pure archive (0 SELECT)
+- Dependency direction: shared-contracts ← aave-fetcher ← root/backend (one-way)
+- Root `src/` is a thin re-export layer; backend imports from `@internal/*` packages, NOT from root dist.
 
 ## Core Commands
-### Root
-- `npm run dev` — run fetcher
-- `npm run build` — compile root to `dist/`
+### Root (workspace-aware)
+- `npm run dev` — run fetcher CLI
+- `npm run build` — build shared-contracts → fetcher → root (ordered)
 - `npm run ci:remote` — full CI-equivalent local gate
 
+### Packages
+- `npm run build -w @internal/aave-shared-contracts` — build shared types
+- `npm run build -w @internal/aave-fetcher` — build fetcher
+- `npm run test -w @internal/aave-shared-contracts` — shared contracts tests
+- `npm run test -w @internal/aave-fetcher` — fetcher tests
+
 ### Backend
-- `npm --prefix backend run dev` — run backend
-- `npm --prefix backend run build` — compile backend
-- `npm --prefix backend run test` — backend tests
+- `npm run dev -w aave-dashboard-backend` — run backend
+- `npm run build -w aave-dashboard-backend` — compile backend
+- `npm run test -w aave-dashboard-backend` — backend tests
 
 ## Deployment (Hard Safety Gate)
 
@@ -66,7 +75,10 @@ to the DB service, replacing PostgreSQL with a Node.js container.
 - ES modules only: local TS imports must use `.js` extension in source imports.
 - API fields should omit `undefined` / empty arrays (keep payload lean).
 - Keep cron-write/API-read-only pattern: request handlers should not trigger external fetches.
-- When adding reserve fields, update both root shaping and backend types/serialization.
+- **Workspace boundary**: `packages/aave-shared-contracts` (types only) ← `packages/aave-fetcher` (runtime) ← root/backend.
+- **No root dist imports**: backend MUST NOT import from `../../../dist/index.js`. Use `@internal/aave-shared-contracts` for types, `@internal/aave-fetcher` for runtime.
+- **Serialization stays in backend**: `marketsApiSerialize.ts` produces `MarketWithSpread` in backend only.
+- When adding reserve fields, update `RuntimeReserveData` in `@internal/aave-shared-contracts`, then backend types/serialization.
 
 ## Automated Checks (No Manual Checklist Needed)
 
@@ -75,33 +87,46 @@ Adding new reserve fields to the single `RuntimeReserveData` type requires:
 
 1. **Type Sync**: Update `RuntimeReserveData` → `MarketWithSpread` (backend) → `marketsApiSerialize.ts` serialization
 2. **Runtime Test**: `tests/field-coverage.test.ts` validates all expected fields are present
-3. **Field Registry**: `src/types/runtime-validation.ts` maintains `EXPECTED_RUNTIME_FIELDS` as source of truth
+3. **Field Registry**: `packages/aave-shared-contracts/src/index.ts` maintains `EXPECTED_RUNTIME_FIELDS` as source of truth
 
 **Run tests to verify:**
 ```bash
-npm run build && npm run test
+npm run build && npm run test -w aave-dashboard-backend
 ```
 
 ## Required Coupled Changes
 When touching one area, check its pair:
-- `src/index.ts` (`pruneReserveForRuntime`) ↔ `backend/src/types/index.ts`
+- `packages/aave-shared-contracts/src/index.ts` (types) ↔ `backend/src/types/index.ts` (backend types)
+- `packages/aave-fetcher/src/index.ts` (pruneReserveForRuntime) ↔ `backend/src/types/index.ts`
 - Root output schema ↔ `backend/src/services/marketsApiSerialize.ts`
 - `backend/src/cacheTtl.ts` ↔ `backend/src/services/updateScheduler.ts`
-- Chain/platform mapping ↔ `src/generated/coingecko-platform-by-chain-id.ts`
+- Chain/platform mapping ↔ `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts`
 - `scripts/sync-oracle-pool-configs.ts` ↔ `backend/src/generated/oracle-pool-configs.ts`
+
+### Shared Package Boundaries (Non-Negotiable)
+| Package | Contains | Must NOT contain |
+|---|---|---|
+| `@internal/aave-shared-contracts` | Types, field registry, validation | Runtime fetch logic, serialization |
+| `@internal/aave-fetcher` | `fetchMarketsData`, SDK clients, adapters | Backend API types (`MarketWithSpread`) |
+| `backend` | API server, serialization (`marketsApiSerialize.ts`) | `fetchMarketsData` definition (imports it) |
 
 ## Validation Gate
 - For code changes, run at minimum:
   - `npm run build`
-  - `npm --prefix backend run build`
-  - `npm --prefix backend run test`
+  - `npm run build -w aave-dashboard-backend`
+  - `npm run test -w aave-dashboard-backend`
 - For release-level confidence, prefer `npm run ci:remote`.
+- **Dist import check** (must be empty):
+  ```bash
+  rg "dist/index\.js|\.\.\/\.\.\/\.\.\/dist" backend/src tests
+  ```
 
 ## High-Risk Areas (Coordinate Carefully)
-- Fetch orchestration: `src/index.ts`
-- Incentive adapters: `src/merit-api.ts`, `src/merkl-api.ts`, `src/brevis-api.ts`
-- Token pricing + chain mapping: `src/token-price-resolver.ts`, `src/generated/coingecko-platform-by-chain-id.ts`
+- Fetch orchestration: `packages/aave-fetcher/src/index.ts`
+- Incentive adapters: `packages/aave-fetcher/src/merit-api.ts`, `merkl-api.ts`, `brevis-api.ts`
+- Token pricing + chain mapping: `packages/aave-fetcher/src/token-price-resolver.ts`, `generated/coingecko-platform-by-chain-id.ts`
 - Backend freshness/caching: `backend/src/services/marketsService.ts`, `onchainDataService.ts`, `merklForecastService.ts`, `cacheTtl.ts`
+- Shared contracts: `packages/aave-shared-contracts/src/index.ts` (source of truth for `RuntimeReserveData` and `EXPECTED_RUNTIME_FIELDS`)
 
 ## Documentation Placement Rule
 

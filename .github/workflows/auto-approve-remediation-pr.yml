@@ -43,7 +43,6 @@ jobs:
                 'package.json',
                 'package-lock.json',
                 'backend/package.json',
-                'backend/package-lock.json',
               ]);
               policyLabel = 'CI auto-remediation';
             } else if (branch.startsWith('bot/subgraph-sync-')) {

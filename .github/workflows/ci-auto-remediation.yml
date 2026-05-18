@@ -57,12 +57,9 @@ jobs:
       - name: Attempt dependency remediation
         run: |
           npm audit fix --omit=dev || true
-          npm --prefix backend audit fix --omit=dev || true
 
       - name: Reinstall dependencies for build verification
-        run: |
-          npm ci
-          npm --prefix backend ci
+        run: npm ci
 
       - name: Validate build after remediation
         id: verify
@@ -70,7 +67,7 @@ jobs:
           set +e
           npm run build
           BUILD_ROOT=$?
-          npm --prefix backend run build
+          npm run build -w aave-dashboard-backend
           BUILD_BACKEND=$?
           if [ "$BUILD_ROOT" -eq 0 ] && [ "$BUILD_BACKEND" -eq 0 ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
@@ -106,9 +103,8 @@ jobs:
 
             Actions performed:
             - `npm audit fix --omit=dev`
-            - `npm --prefix backend audit fix --omit=dev`
             - `npm run build`
-            - `npm --prefix backend run build`
+            - `npm run build -w aave-dashboard-backend`
           labels: ci-auto-remediation,dependencies
           base: ${{ steps.branch.outputs.name }}
 

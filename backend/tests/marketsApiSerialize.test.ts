@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { serializeReserveForApi } from '../src/services/marketsApiSerialize.js';
+import { serializeReserveForApi, roundTo6 } from '../src/services/marketsApiSerialize.js';
 import type { RuntimeReserveData } from '../src/services/marketsService.js';
 
 test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => {
@@ -411,6 +411,75 @@ test('serializeReserveForApi omits decimals when 18', () => {
 
   const api = serializeReserveForApi(reserve);
   assert.equal('decimals' in api, false);
+});
+
+test('roundTo6 truncates to 6 decimal places', () => {
+  assert.equal(roundTo6(2.073456789012345), 2.073457);
+  assert.equal(roundTo6(0.123456789), 0.123457);
+});
+
+test('roundTo6 preserves exact 6-decimal values', () => {
+  assert.equal(roundTo6(2.073456), 2.073456);
+});
+
+test('roundTo6 handles zero', () => {
+  assert.equal(roundTo6(0), 0);
+});
+
+test('roundTo6 handles negative values', () => {
+  assert.equal(roundTo6(-0.123456789), -0.123457);
+});
+
+test('roundTo6 eliminates floating point artifacts', () => {
+  assert.equal(roundTo6(5.200000000000001), 5.2);
+});
+
+test('serializeReserveForApi supplyApy is rounded to 6 decimal places', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xprec',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Precision',
+    tokenSymbol: 'PREC',
+    tokenAddress: '0xprec',
+    supplyApy: 0.02073456789012345,
+  };
+
+  const api = serializeReserveForApi(reserve);
+  assert.equal(api.supplyApy, 2.073457);
+});
+
+test('serializeReserveForApi protocolFee zero is omitted', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xzeroFee',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'ZeroFee',
+    tokenSymbol: 'ZFEE',
+    tokenAddress: '0xzeroFee',
+    protocolFee: 0,
+  };
+
+  const api = serializeReserveForApi(reserve);
+  assert.equal('protocolFee' in api, false);
+});
+
+test('serializeReserveForApi protocolFee non-zero is preserved', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xposFee',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'PosFee',
+    tokenSymbol: 'PFEE',
+    tokenAddress: '0xposFee',
+    protocolFee: 10,
+  };
+
+  const api = serializeReserveForApi(reserve);
+  assert.equal(api.protocolFee, 10);
 });
 
 test('serializeReserveForApi preserves decimals when not 18', () => {

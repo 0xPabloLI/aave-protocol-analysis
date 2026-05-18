@@ -16,7 +16,7 @@
 import crypto from 'node:crypto';
 import { getPool, isPersistenceEnabled } from './dbPool.js';
 import { logger } from '../logger.js';
-import type { MarketsPayload, RuntimeReserveData } from '../../../dist/index.js';
+import type { MarketsPayload, RuntimeReserveData } from '@internal/aave-shared-contracts';
 import type { OraclePricesSnapshot } from './oracleService.js';
 
 const PERSIST_INTERVAL_MS = Number.parseInt(process.env.PERSIST_INTERVAL_MS ?? '', 10) || 60 * 1000;
@@ -44,6 +44,28 @@ export function computeHash(data: unknown[]): string {
     .createHash('sha256')
     .update(JSON.stringify(data))
     .digest('hex');
+}
+
+export function computeCampaignKey(
+  source: string,
+  entry: Record<string, unknown>
+): string {
+  if (source === 'merit') {
+    return `${String(entry.link ?? '')}::${String(entry.endDate ?? '')}`;
+  }
+  if (source === 'merkl') {
+    return String(entry.campaignId ?? '');
+  }
+  if (source === 'brevis') {
+    if (entry.campaignId) return String(entry.campaignId);
+    const payload = JSON.stringify([
+      entry.link,
+      entry.campaignStartedAt,
+      entry.campaignEndedAt,
+    ]);
+    return `brevis::${crypto.createHash('sha256').update(payload).digest('hex').slice(0, 16)}`;
+  }
+  throw new Error(`Unknown campaign source: ${source}`);
 }
 
 /** Exposed for tests: reset content-hash maps (simulates process restart). */
@@ -671,4 +693,234 @@ function buildIncentiveDetails(reserve: RuntimeReserveData): IncentiveDetails {
   if (brevis.length) out.brevis = brevis;
 
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign history persistence
+// ---------------------------------------------------------------------------
+
+interface CampaignHistoryRow {
+  reserveId: string;
+  source: string;
+  side: string;
+  campaignKey: string;
+  campaignData: Record<string, unknown>;
+}
+
+const CAMPAIGN_SOURCE_SIDE: [string, string, string][] = [
+  ['meritSupplys', 'merit', 'supply'],
+  ['meritBorrows', 'merit', 'borrow'],
+  ['merklSupplys', 'merkl', 'supply'],
+  ['merklBorrows', 'merkl', 'borrow'],
+  ['merklHolds', 'merkl', 'hold'],
+  ['brevisSupplys', 'brevis', 'supply'],
+  ['brevisBorrows', 'brevis', 'borrow'],
+];
+
+function traverseCampaignEntries(
+  reserve: RuntimeReserveData,
+  onEntry: (
+    entry: Record<string, unknown>,
+    source: string,
+    side: string,
+    groupInfo?: { link: unknown; name: unknown; message: unknown }
+  ) => void
+): void {
+  for (const [arrayKey, source, side] of CAMPAIGN_SOURCE_SIDE) {
+    const campaigns = (reserve as unknown as Record<string, unknown>)[arrayKey] as Array<Record<string, unknown>> | undefined;
+    if (!campaigns || campaigns.length === 0) continue;
+
+    if (source === 'merit') {
+      for (const entry of campaigns) {
+        onEntry(entry, source, side);
+      }
+    } else {
+      for (const group of campaigns) {
+        const breakdowns = (group.breakdowns as Array<Record<string, unknown>>) ?? [];
+        for (const bd of breakdowns) {
+          onEntry(bd, source, side, { link: group.link, name: group.name, message: group.message });
+        }
+      }
+    }
+  }
+}
+
+export function buildCampaignHistoryRows(reserve: RuntimeReserveData): CampaignHistoryRow[] {
+  const rows: CampaignHistoryRow[] = [];
+
+  traverseCampaignEntries(reserve, (entry, source, side, groupInfo) => {
+    const campaignKey = computeCampaignKey(source, entry);
+    rows.push({
+      reserveId: reserve.reserveId,
+      source,
+      side,
+      campaignKey,
+      campaignData: source === 'merit'
+        ? entry
+        : {
+            link: groupInfo?.link,
+            name: groupInfo?.name,
+            message: groupInfo?.message,
+            breakdowns: [entry],
+          },
+    });
+  });
+
+  return rows;
+}
+
+const CAMPAIGN_HISTORY_COLUMNS = [
+  'reserve_id', 'source', 'side', 'campaign_key', 'campaign_data',
+] as const;
+
+export async function persistCampaignHistory(payload: MarketsPayload): Promise<number> {
+  if (!isPersistenceEnabled()) return 0;
+  const pool = getPool();
+
+  const allRows: CampaignHistoryRow[] = [];
+  for (const reserve of payload.data) {
+    allRows.push(...buildCampaignHistoryRows(reserve));
+  }
+  if (allRows.length === 0) return 0;
+
+  let written = 0;
+  const CHUNK = 500;
+  for (let i = 0; i < allRows.length; i += CHUNK) {
+    const chunk = allRows.slice(i, i + CHUNK);
+    const tuples = chunk.map((r) => [
+      r.reserveId,
+      r.source,
+      r.side,
+      r.campaignKey,
+      JSON.stringify(r.campaignData),
+    ]);
+    const { text, values } = buildBulkInsert(
+      'campaign_history',
+      CAMPAIGN_HISTORY_COLUMNS as unknown as string[],
+      tuples,
+      `ON CONFLICT (reserve_id, source, side, campaign_key) DO UPDATE SET
+        campaign_data = EXCLUDED.campaign_data,
+        last_seen_at = NOW(),
+        expired_at = NULL`
+    );
+    const result = await pool.query(text, values);
+    written += result.rowCount ?? 0;
+  }
+  return written;
+}
+
+const EXPIRY_WINDOW_MINUTES = 2;
+
+export async function markExpiredCampaigns(): Promise<number> {
+  if (!isPersistenceEnabled()) return 0;
+  const pool = getPool();
+
+  const result = await pool.query(
+    `UPDATE campaign_history
+     SET expired_at = NOW()
+     WHERE expired_at IS NULL
+       AND last_seen_at < NOW() - INTERVAL '${EXPIRY_WINDOW_MINUTES} minutes'`
+  );
+  return result.rowCount ?? 0;
+}
+
+function computeAprDataHash(source: string, entry: Record<string, unknown>): string {
+  if (source === 'merit') {
+    return crypto.createHash('sha256').update(JSON.stringify([entry.apr, entry.selfApr])).digest('hex');
+  }
+  return crypto.createHash('sha256').update(JSON.stringify([entry.campaignApr])).digest('hex');
+}
+
+function getCanonicalApr(source: string, entry: Record<string, unknown>): number | null {
+  if (source === 'merit') {
+    const apr = entry.apr;
+    return typeof apr === 'number' && Number.isFinite(apr) ? apr : null;
+  }
+  const apr = entry.campaignApr;
+  return typeof apr === 'number' && Number.isFinite(apr) ? apr : null;
+}
+
+const APR_OBS_COLUMNS = [
+  'reserve_id', 'source', 'side', 'campaign_key', 'apr', 'apr_data_hash', 'campaign_data',
+] as const;
+
+export async function appendAprObservations(payload: MarketsPayload): Promise<number> {
+  if (!isPersistenceEnabled()) return 0;
+  const pool = getPool();
+
+  const allRows = new Map<string, { row: CampaignHistoryRow; entry: Record<string, unknown> }>();
+  for (const reserve of payload.data) {
+    traverseCampaignEntries(reserve, (entry, source, side, groupInfo) => {
+      const apr = getCanonicalApr(source, entry);
+      if (apr === null) return;
+      const campaignKey = computeCampaignKey(source, entry);
+      const dedupKey = `${reserve.reserveId}|${source}|${side}|${campaignKey}`;
+      allRows.set(dedupKey, {
+        row: {
+          reserveId: reserve.reserveId,
+          source,
+          side,
+          campaignKey,
+          campaignData: source === 'merit'
+            ? entry
+            : {
+                link: groupInfo?.link,
+                name: groupInfo?.name,
+                message: groupInfo?.message,
+                breakdowns: [entry],
+              },
+        },
+        entry,
+      });
+    });
+  }
+
+  if (allRows.size === 0) return 0;
+
+  const latestHashes = new Map<string, string>();
+  const hashQuery = await pool.query(
+    `SELECT DISTINCT ON (reserve_id, source, side, campaign_key)
+       reserve_id, source, side, campaign_key, apr_data_hash
+     FROM campaign_apr_observations
+     ORDER BY reserve_id, source, side, campaign_key, observed_at DESC`
+  );
+  for (const row of hashQuery.rows) {
+    const key = `${row.reserve_id}|${row.source}|${row.side}|${row.campaign_key}`;
+    latestHashes.set(key, row.apr_data_hash);
+  }
+
+  const newObs: { row: CampaignHistoryRow; apr: number; aprDataHash: string }[] = [];
+  for (const [dedupKey, { row, entry }] of allRows) {
+    const apr = getCanonicalApr(row.source, entry);
+    if (apr === null) continue;
+    const aprDataHash = computeAprDataHash(row.source, entry);
+    if (latestHashes.get(dedupKey) === aprDataHash) continue;
+    newObs.push({ row, apr, aprDataHash });
+  }
+
+  if (newObs.length === 0) return 0;
+
+  let written = 0;
+  const CHUNK = 500;
+  for (let i = 0; i < newObs.length; i += CHUNK) {
+    const chunk = newObs.slice(i, i + CHUNK);
+    const tuples = chunk.map(({ row, apr, aprDataHash }) => [
+      row.reserveId,
+      row.source,
+      row.side,
+      row.campaignKey,
+      apr,
+      aprDataHash,
+      JSON.stringify(row.campaignData),
+    ]);
+    const { text, values } = buildBulkInsert(
+      'campaign_apr_observations',
+      APR_OBS_COLUMNS as unknown as string[],
+      tuples,
+      ''
+    );
+    const result = await pool.query(text, values);
+    written += result.rowCount ?? 0;
+  }
+  return written;
 }

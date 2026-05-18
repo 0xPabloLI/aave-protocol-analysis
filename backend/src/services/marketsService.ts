@@ -13,7 +13,8 @@
  * - If on-chain data missing, fallback calculation for baseVariableBorrowRate
  */
 
-import { fetchMarketsData, type MarketsPayload, type RuntimeReserveData } from '../../../dist/index.js';
+import { fetchMarketsData } from '@internal/aave-fetcher';
+import type { MarketsPayload, RuntimeReserveData } from '@internal/aave-shared-contracts';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { v4FatalConfig } from '../config.js';
 import { withTimeout } from '../lib/timeout.js';

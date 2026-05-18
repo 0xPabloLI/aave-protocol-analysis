@@ -5,7 +5,12 @@ import { getMarketsSnapshot, refreshMarketsSnapshot } from './marketsService.js'
 import { refreshOnchainCache } from './onchainDataService.js';
 import { getCachedOraclePricesSnapshot, refreshOracleCache } from './oracleService.js';
 import { isPersistenceEnabled } from './dbPool.js';
-import { persistSnapshotIfNeeded } from './persistenceService.js';
+import {
+  appendAprObservations,
+  markExpiredCampaigns,
+  persistCampaignHistory,
+  persistSnapshotIfNeeded,
+} from './persistenceService.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
@@ -21,7 +26,7 @@ export function startUpdateScheduler(): void {
   logger.info('📅 Starting cron schedulers (all cron-write/API-read-only):');
   logger.info('   • Markets (V3+V4 merged): every 1 minute at :00');
   logger.info('   • On-chain (deficit, baseRate): every 1 minute at :10');
-  logger.info('   • Persistence (PostgreSQL): every 1 minute at :20');
+  logger.info('   • Persistence (PostgreSQL + campaign history): every 1 minute at :20');
   logger.info('   • Oracle (V3+V4 prices): every 60s (60s TTL, V4 reserveToken 1h cached)');
   logger.info('   • Forecast: every 10 minutes');
   logger.info('   • FDV: every 15 minutes');
@@ -58,6 +63,11 @@ export function startUpdateScheduler(): void {
       const oracleSnapshot = getCachedOraclePricesSnapshot();
       if (isPersistenceEnabled()) {
         await persistSnapshotIfNeeded(marketsSnapshot?.payload ?? null, oracleSnapshot);
+        if (marketsSnapshot?.payload) {
+          await persistCampaignHistory(marketsSnapshot.payload);
+          await markExpiredCampaigns();
+          await appendAprObservations(marketsSnapshot.payload);
+        }
       }
     } catch (error) {
       logger.warn(

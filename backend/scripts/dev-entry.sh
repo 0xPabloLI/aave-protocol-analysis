@@ -16,10 +16,10 @@ elif [ "package.json" -nt "node_modules" ] || { [ -f "package-lock.json" ] && [ 
   npm install --include=dev --no-audit --no-fund
 fi
 
-# Preflight: ensure root dist exists (backend imports from ../dist/index.js)
-if [ ! -f "../dist/index.js" ]; then
-  echo "[dev-entry] root dist/index.js missing — running root build..." >&2
-  (cd .. && npm run build)
+# Preflight: ensure workspace packages are built (backend imports from @internal/* packages)
+if [ ! -d "../packages/aave-shared-contracts/dist" ] || [ ! -d "../packages/aave-fetcher/dist" ]; then
+  echo "[dev-entry] workspace packages not built — running root install & build..." >&2
+  (cd .. && npm install && npm run build)
 fi
 
 case "${1:-}" in

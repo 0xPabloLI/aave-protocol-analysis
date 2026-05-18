@@ -14,12 +14,14 @@
     "dev:watch:reset": "npm run dev:clean && npm run dev:watch",
     "test": "tsx --test tests/*.test.ts",
     "test:api-fields": "RUN_API_FIELDS_TESTS=true tsx --test tests/apiFieldsVerification.test.ts",
-    "prune": "ts-prune -i '.*aave-shared-config/index\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep '^src/' | (grep -q . && exit 1 || exit 0)"
+    "prune": "ts-prune -i '.*aave-shared-config/index\\.d\\.ts' -i '.*aave-shared-contracts/index\\.d\\.ts' -i '.*aave-fetcher/index\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep '^src/' | (grep -q . && exit 1 || exit 0)"
   },
   "dependencies": {
     "@aave-dao/aave-address-book": "^4.49.9",
     "@aave/contract-helpers": "^1.37.1",
-    "@internal/aave-shared-config": "file:../packages/aave-shared-config",
+    "@internal/aave-shared-config": "*",
+    "@internal/aave-shared-contracts": "*",
+    "@internal/aave-fetcher": "*",
     "@types/compression": "^1.8.1",
     "@types/pg": "^8.20.0",
     "compression": "^1.8.1",

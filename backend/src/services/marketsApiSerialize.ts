@@ -3,17 +3,21 @@
  * 内存/cron 路径仍使用比例值，与 on-chain 回退计算一致。
  */
 import type { MarketWithSpread } from '../types/index.js';
-import type { RuntimeReserveData } from './marketsService.js';
+import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 import {
   getBreakdownFieldRule,
   type CampaignForecastType,
 } from '../lib/merklApiContract.js';
 
+export function roundTo6(n: number): number {
+  return Number(n.toFixed(6));
+}
+
 function scaleMeritEntry<T extends { apr: number; selfApr?: number }>(e: T): T {
   return {
     ...e,
-    apr: e.apr * 100,
-    ...(e.selfApr !== undefined ? { selfApr: e.selfApr * 100 } : {}),
+    apr: roundTo6(e.apr * 100),
+    ...(e.selfApr !== undefined ? { selfApr: roundTo6(e.selfApr * 100) } : {}),
   };
 }
 
@@ -26,11 +30,11 @@ function scaleMerklBreakdown<
     totalBudget?: number;
   },
 >(b: T): T {
-  const next = { ...b, campaignApr: b.campaignApr * 100 } as T;
+  const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
   if (Object.prototype.hasOwnProperty.call(b, 'aprCap')) {
     const cap = b.aprCap;
     (next as { aprCap?: number | null }).aprCap =
-      cap === null || cap === undefined ? cap : cap * 100;
+      cap === null || cap === undefined ? cap : roundTo6(cap * 100);
   }
   // 应用 API contract 字段规则
   if (b.campaignType) {
@@ -43,7 +47,7 @@ function scaleMerklBreakdown<
 }
 
 function scaleBrevisBreakdown<T extends { campaignApr: number }>(b: T): T {
-  return { ...b, campaignApr: b.campaignApr * 100 };
+  return { ...b, campaignApr: roundTo6(b.campaignApr * 100) };
 }
 
 function scaleGroupedCampaigns<
@@ -71,12 +75,12 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.utilizationPct !== undefined ? { utilizationPct: reserve.utilizationPct } : {}),
     ...(reserve.aTokenAddress !== undefined ? { aTokenAddress: reserve.aTokenAddress } : {}),
     ...(reserve.vTokenAddress !== undefined ? { vTokenAddress: reserve.vTokenAddress } : {}),
-    ...(reserve.supplyApy !== undefined ? { supplyApy: reserve.supplyApy * 100 } : {}),
+    ...(reserve.supplyApy !== undefined ? { supplyApy: roundTo6(reserve.supplyApy * 100) } : {}),
     ...(reserve.supplyDisabled ? { supplyDisabled: true } : {}),
     ...(reserve.isFrozen ? { isFrozen: true } : {}),
     ...(reserve.isPaused ? { isPaused: true } : {}),
     ...(reserve.isActive === false ? { isActive: false as const } : {}),
-    ...(reserve.borrowApy !== undefined ? { borrowApy: reserve.borrowApy * 100 } : {}),
+    ...(reserve.borrowApy !== undefined ? { borrowApy: roundTo6(reserve.borrowApy * 100) } : {}),
     ...(reserve.borrowDisabled ? { borrowDisabled: true } : {}),
     ...(reserve.decimals !== undefined && reserve.decimals !== 18 ? { decimals: reserve.decimals } : {}),
     ...(reserve.liquidity ? { liquidity: reserve.liquidity } : {}),
@@ -84,19 +88,19 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.supplied ? { supplied: reserve.supplied } : {}),
     ...(reserve.supplyCap ? { supplyCap: reserve.supplyCap } : {}),
     ...(reserve.borrowCap ? { borrowCap: reserve.borrowCap } : {}),
-    ...(reserve.protocolFee !== undefined ? { protocolFee: reserve.protocolFee } : {}),
-    ...(reserve.slopeBelowOptimal !== undefined ? { slopeBelowOptimal: reserve.slopeBelowOptimal } : {}),
-    ...(reserve.slopeAboveOptimal !== undefined ? { slopeAboveOptimal: reserve.slopeAboveOptimal } : {}),
-    ...(reserve.optimalUtilization !== undefined ? { optimalUtilization: reserve.optimalUtilization } : {}),
+    ...(reserve.protocolFee ? { protocolFee: roundTo6(reserve.protocolFee) } : {}),
+    ...(reserve.slopeBelowOptimal !== undefined ? { slopeBelowOptimal: roundTo6(reserve.slopeBelowOptimal) } : {}),
+    ...(reserve.slopeAboveOptimal !== undefined ? { slopeAboveOptimal: roundTo6(reserve.slopeAboveOptimal) } : {}),
+    ...(reserve.optimalUtilization !== undefined ? { optimalUtilization: roundTo6(reserve.optimalUtilization) } : {}),
     ...(reserve.baseBorrowRate !== undefined
-      ? { baseBorrowRate: reserve.baseBorrowRate }
+      ? { baseBorrowRate: roundTo6(reserve.baseBorrowRate) }
       : {}),
     ...(reserve.deficit !== undefined ? { deficit: reserve.deficit } : {}),
     ...(reserve.supplyIncentives?.length
-      ? { supplyIncentives: reserve.supplyIncentives.map((x) => x * 100) }
+      ? { supplyIncentives: reserve.supplyIncentives.map((x) => roundTo6(x * 100)) }
       : {}),
     ...(reserve.borrowIncentives?.length
-      ? { borrowIncentives: reserve.borrowIncentives.map((x) => x * 100) }
+      ? { borrowIncentives: reserve.borrowIncentives.map((x) => roundTo6(x * 100)) }
       : {}),
     ...(reserve.meritSupplys?.length
       ? { meritSupplys: reserve.meritSupplys.map(scaleMeritEntry) }

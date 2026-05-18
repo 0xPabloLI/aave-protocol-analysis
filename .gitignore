@@ -97,6 +97,7 @@ scripts/*
 !scripts/sync-aave-subgraph-deployments.mjs
 !scripts/sync-coingecko-platform-map.ts
 !scripts/sync-oracle-pool-configs.ts
+!scripts/patch-ethers-exports.js
 !scripts/verification/
 
 data/

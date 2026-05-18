@@ -66,3 +66,28 @@ Do not proceed with user requests until these skills are loaded.
 - `railway redeploy` without `--from-source` inherits the corrupted manifest
 
 This is a **hard gate** — do not skip even if the user says "just deploy."
+
+## Schema Design Principle: No Redundant Columns
+
+**When designing a DB table that contains a JSONB column with structured data, for EVERY proposed outer column, ask:**
+
+> "Is this value already present inside the JSONB? If so, does the DB need to query/filter/sort/update it independently?"
+
+If the answer to the second question is **no**, the column belongs in JSONB, not as an outer column.
+
+### Decision framework
+
+| Column usage | Put in outer column | Keep in JSONB |
+|---|---|---|
+| DB queries / filters / range scans against it | ✅ Yes (B-tree index needed) | ❌ No |
+| DB updates it every cycle (e.g. `last_seen_at`) | ✅ Yes (efficient UPDATE) | ❌ No |
+| Read-only, only consumed by frontend / API layer | ❌ Redundant | ✅ Yes |
+| Semantic duplicate of a JSONB field | ❌ Redundant | ✅ Already there |
+
+### Why this matters (real incident: 2026-05-17)
+
+`campaign_history` table design initially had `is_expired`, `expired_at`, and `first_seen_at` as outer columns alongside `campaign_data` JSONB. All three were either semantically derivable from JSONB fields (`endDate`/`startDate`/`campaignEndedAt`) or expressible via `last_seen_at` window queries. Only `last_seen_at` needed to be an outer column because it's updated every cron cycle and used in range queries. The other three columns were eliminated.
+
+### Enforcement
+
+When reviewing a schema design, challenge every non-JSONB column. The default answer should be "keep it in JSONB" unless there's a concrete query/update need for an outer column.
