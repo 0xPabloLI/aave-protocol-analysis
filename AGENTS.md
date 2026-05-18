@@ -45,6 +45,11 @@
 railway up --detach --service aave-protocol-analysis -m "commit message"
 ```
 
+### ⚠️ AI agent deploy rule: only deploy committed code, only commit own session changes
+`railway up` uploads the **working directory** — not a git commit. An AI agent MUST:
+1. Only `railway up` after committing **its own session's changes** — never deploy uncommitted working tree
+2. Never commit changes it did not make in the current session (no `git add -A` of pre-existing dirty state)
+
 ### DB redeploy (only when needed, e.g., after config change)
 ```bash
 railway redeploy --service Postgres-mDWG --from-source -y
