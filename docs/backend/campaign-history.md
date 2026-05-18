@@ -45,6 +45,8 @@ CREATE INDEX idx_campaign_history_reserve_source_seen
   ON campaign_history (reserve_id, source, side, last_seen_at DESC);
 
 -- 真实 APR 曲线基础。只追加观测点，不覆盖。
+-- campaign_data 已移除：完整快照由 campaign_history UPSERT 维护，
+-- observations 表只存 APR 变化点和 hash，避免两表冗余存储。
 CREATE TABLE campaign_apr_observations (
   id              BIGSERIAL     PRIMARY KEY,
   observed_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
@@ -53,8 +55,7 @@ CREATE TABLE campaign_apr_observations (
   side            TEXT          NOT NULL,
   campaign_key    TEXT          NOT NULL,
   apr             DOUBLE PRECISION NOT NULL,    -- 比例值，不是百分值
-  apr_data_hash   TEXT          NOT NULL,       -- APR 相关字段 hash，用于变化检测
-  campaign_data   JSONB         NOT NULL
+  apr_data_hash   TEXT          NOT NULL        -- APR 相关字段 hash，用于变化检测
 );
 
 CREATE INDEX idx_campaign_apr_observations_series
@@ -263,7 +264,7 @@ ORDER BY reserve_id, source, side, last_seen_at DESC;
 | DB migration | `backend/migrations/` | 新增 `campaign_history` + `campaign_apr_observations` 表和索引 |
 | UPSERT 写入 | `persistenceService.ts` | 新增 `persistCampaignHistory()`，UPSERT active campaigns |
 | 过期标记 | `persistenceService.ts` | 新增 `markExpiredCampaigns()`，2 分钟阈值 |
-| APR 观测 | `persistenceService.ts` | APR 相关字段变化时追加 `campaign_apr_observations` |
+| APR 观测 | `persistenceService.ts` | APR 相关字段变化时追加 `campaign_apr_observations`（仅存 apr + hash，不存 campaign_data） |
 | cron 调度 | `updateScheduler.ts` | persist cron 中调用 history 写入 + 过期标记 + APR 观测 |
 | 统一历史 API（后续） | 待整体历史架构确定 | 查询 DB 返回历史 campaign，不改 `/api/markets` 热路径 |
 
@@ -282,4 +283,5 @@ Phase 1 不实现 APY 图表页面，也不承诺图表 API contract。
 - 每个 active campaign 提取 canonical APR：Merit 用 `apr`；Merkl/Brevis 用单 breakdown 的 `campaignApr`
 - 对同一 `(reserve_id, source, side, campaign_key)` 计算 APR 相关 hash
 - 与最新一条 observation 的 `apr_data_hash` 相同则不写；变化时追加一行，`observed_at = now()`
+- **不存 campaign_data**：完整快照已在 `campaign_history` 中 UPSERT 维护，observations 表只存 APR 变化点和 hash，避免两表冗余存储。查询时如需完整快照，JOIN `campaign_history` 即可
 - 后续图表 endpoint 再根据页面设计决定采样、聚合、窗口和返回结构

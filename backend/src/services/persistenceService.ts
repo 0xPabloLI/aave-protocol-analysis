@@ -841,41 +841,25 @@ function getCanonicalApr(source: string, entry: Record<string, unknown>): number
 }
 
 const APR_OBS_COLUMNS = [
-  'reserve_id', 'source', 'side', 'campaign_key', 'apr', 'apr_data_hash', 'campaign_data',
+  'reserve_id', 'source', 'side', 'campaign_key', 'apr', 'apr_data_hash',
 ] as const;
 
 export async function appendAprObservations(payload: MarketsPayload): Promise<number> {
   if (!isPersistenceEnabled()) return 0;
   const pool = getPool();
 
-  const allRows = new Map<string, { row: CampaignHistoryRow; entry: Record<string, unknown> }>();
+  const allEntries = new Map<string, { reserveId: string; source: string; side: string; campaignKey: string; entry: Record<string, unknown> }>();
   for (const reserve of payload.data) {
-    traverseCampaignEntries(reserve, (entry, source, side, groupInfo) => {
+    traverseCampaignEntries(reserve, (entry, source, side) => {
       const apr = getCanonicalApr(source, entry);
       if (apr === null) return;
       const campaignKey = computeCampaignKey(source, entry);
       const dedupKey = `${reserve.reserveId}|${source}|${side}|${campaignKey}`;
-      allRows.set(dedupKey, {
-        row: {
-          reserveId: reserve.reserveId,
-          source,
-          side,
-          campaignKey,
-          campaignData: source === 'merit'
-            ? entry
-            : {
-                link: groupInfo?.link,
-                name: groupInfo?.name,
-                message: groupInfo?.message,
-                breakdowns: [entry],
-              },
-        },
-        entry,
-      });
+      allEntries.set(dedupKey, { reserveId: reserve.reserveId, source, side, campaignKey, entry });
     });
   }
 
-  if (allRows.size === 0) return 0;
+  if (allEntries.size === 0) return 0;
 
   const latestHashes = new Map<string, string>();
   const hashQuery = await pool.query(
@@ -889,13 +873,13 @@ export async function appendAprObservations(payload: MarketsPayload): Promise<nu
     latestHashes.set(key, row.apr_data_hash);
   }
 
-  const newObs: { row: CampaignHistoryRow; apr: number; aprDataHash: string }[] = [];
-  for (const [dedupKey, { row, entry }] of allRows) {
-    const apr = getCanonicalApr(row.source, entry);
+  const newObs: { reserveId: string; source: string; side: string; campaignKey: string; apr: number; aprDataHash: string }[] = [];
+  for (const [dedupKey, { reserveId, source, side, campaignKey, entry }] of allEntries) {
+    const apr = getCanonicalApr(source, entry);
     if (apr === null) continue;
-    const aprDataHash = computeAprDataHash(row.source, entry);
+    const aprDataHash = computeAprDataHash(source, entry);
     if (latestHashes.get(dedupKey) === aprDataHash) continue;
-    newObs.push({ row, apr, aprDataHash });
+    newObs.push({ reserveId, source, side, campaignKey, apr, aprDataHash });
   }
 
   if (newObs.length === 0) return 0;
@@ -904,14 +888,8 @@ export async function appendAprObservations(payload: MarketsPayload): Promise<nu
   const CHUNK = 500;
   for (let i = 0; i < newObs.length; i += CHUNK) {
     const chunk = newObs.slice(i, i + CHUNK);
-    const tuples = chunk.map(({ row, apr, aprDataHash }) => [
-      row.reserveId,
-      row.source,
-      row.side,
-      row.campaignKey,
-      apr,
-      aprDataHash,
-      JSON.stringify(row.campaignData),
+    const tuples = chunk.map(({ reserveId, source, side, campaignKey, apr, aprDataHash }) => [
+      reserveId, source, side, campaignKey, apr, aprDataHash,
     ]);
     const { text, values } = buildBulkInsert(
       'campaign_apr_observations',
