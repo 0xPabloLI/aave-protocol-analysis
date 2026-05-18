@@ -114,41 +114,75 @@ Merkl/Brevis 多 breakdown 的 CampaignGroup 按单 breakdown 拆组存储，每
 
 ---
 
-## Phase 2：历史数据 API（待实现）
+## Phase 2：历史数据 API + 前端集成（待实现）
 
-### 前置决策
+### 前端设计参考
 
-Phase 2 的**数据层**（API route、查询参数、响应结构）可独立定义，**展示层**（过期 campaign 在 UI 中的位置、APR 曲线图交互）依赖前端设计。
+前端已有设计方案：`aaveapy/docs/plans/2026-05-15-recently-ended-campaigns-design.md`
 
-需先确定：
+核心设计：在 IncentiveTooltip 底部追加可折叠「Recently Ended」区块，展示 7 天内结束的过期 campaign，灰显样式，不计入 APY 总和。
 
-1. **API 形式**：独立 endpoint `/api/campaigns/history` vs 合并进 `/api/markets` 响应？
-   - 独立 endpoint 优势：不污染热路径、查询参数灵活、可独立缓存
-   - 合并进 `/api/markets` 优势：前端一次请求拿到全部数据
-   - **建议独立 endpoint**，`/api/markets` 保持内存快照只读
-2. **前端是否需要 APR 曲线图**：决定是否暴露 `campaign_apr_observations` 查询
-3. **过期窗口**：默认返回多少天内的过期 campaign（7 天 vs 30 天）
+该设计基于**前端本地过滤**（从 API 数据中筛 `endDate < now` 且在窗口内的 campaign），但 `/api/markets` 当前不返回过期 campaign。所以 Phase 2 后端需提供数据源。
 
-### 任务清单
+### 关键决策
+
+| 决策 | 结论 | 理由 |
+|------|------|------|
+| API 形式 | **独立 endpoint** | `/api/markets` 保持内存快照只读，避免 DB 查询耦合进热路径 |
+| 过期窗口 | 默认 **7 天** | 与前端设计文档一致，前端 `isRecentlyEnded()` 也用 7 天 |
+| APR 曲线 | **需要** | 用户需求，`campaign_apr_observations` 已就绪 |
+| 数据流向 | 前端按 reserve 按需请求 | IncentiveTooltip 打开时才调，避免首屏增加请求 |
+
+### 后端任务
+
+#### 2A：Campaign History API
 
 | # | 任务 | 文件 | 说明 |
 |---|------|------|------|
-| 1 | 查询函数 | `persistenceService.ts` | `getCampaignHistory(options)` — 支持 reserveId / source / side / windowDays 过滤 |
-| 2 | API route | `routes/campaignHistoryRouter.ts` | `GET /api/campaigns/history?reserveId=&windowDays=7` |
-| 3 | 响应序列化 | 新增或复用 | `campaign_data` JSONB → x100 百分值 + 附带 `expiredAt` / `firstSeenAt` / `lastSeenAt` |
-| 4 | 类型定义 | `types/` | 响应 DTO |
+| 1 | 查询函数 | `persistenceService.ts` | `getCampaignHistory({ reserveId, source?, side?, windowDays? })` — 查 `campaign_history`，`expired_at` 在窗口内或 NULL |
+| 2 | API route | `routes/campaignHistoryRouter.ts` | `GET /api/campaigns/history?reserveId=xxx&side=supply&windowDays=7` |
+| 3 | 响应序列化 | 复用 `marketsApiSerialize.ts` x100 逻辑 | `campaign_data` JSONB → 百分值 + 附带 `expiredAt` / `firstSeenAt` / `lastSeenAt` |
+| 4 | 类型定义 | `types/` | `CampaignHistoryResponse` DTO |
 | 5 | server 集成 | `server.ts` | 挂载 route |
 | 6 | 测试 | `tests/` | 查询逻辑 + API 集成测试 |
 
-### 可选：APR 曲线 API
+#### 2B：APR Series API
 
-如果前端需要 APR 变化曲线：
+| # | 任务 | 文件 | 说明 |
+|---|------|------|------|
+| 7 | 查询函数 | `persistenceService.ts` | `getAprObservations({ reserveId, source, side, campaignKey, from?, to? })` — 查 `campaign_apr_observations` |
+| 8 | API route | `routes/campaignHistoryRouter.ts` | `GET /api/campaigns/apr-series?reserveId=xxx&campaignKey=yyy` |
+| 9 | 响应结构 | — | `{ observations: [{ observedAt, apr }], campaign: { campaignData, expiredAt, ... } }` (JOIN `campaign_history` 取快照) |
+| 10 | 采样策略 | — | 超过 500 点时按小时聚合：`date_trunc('hour', observed_at)` + `avg(apr)` |
 
-| # | 任务 | 说明 |
-|---|------|------|
-| 7 | `getAprObservations(reserveId, campaignKey, range)` | 查 `campaign_apr_observations`，可选 JOIN `campaign_history` 取快照 |
-| 8 | `GET /api/campaigns/apr-series` | 返回 `{ observedAt, apr }[]`，前端自行绘图 |
-| 9 | 采样/聚合策略 | 长时间范围（>30 天）可按小时/天聚合减少数据点 |
+### 前端任务（参考 aaveapy 仓库）
+
+| # | 任务 | 文件 | 说明 |
+|---|------|------|------|
+| F1 | API 调用 | `hooks/useCampaignHistory.ts` | `fetchCampaignHistory(reserveId, side)` → react-query |
+| F2 | Recently Ended 展示 | `IncentiveTooltip.tsx` | 折叠区块，调用 `useCampaignHistory` 获取过期 campaign |
+| F3 | 纯函数 | `lib/recentlyEndedCampaigns.ts` | `isRecentlyEnded()` / `collectRecentlyEndedCampaigns()` |
+| F4 | APR 曲线组件 | 新增 `CampaignAprChart.tsx` | 在 campaign 详情中展示 APR 变化曲线 |
+| F5 | APR 数据获取 | `hooks/useAprSeries.ts` | `fetchAprSeries(reserveId, campaignKey)` → react-query |
+| F6 | 类型 + Zod schema | `types/aave.ts` + `shared/market-contract/schemas.ts` | `CampaignHistoryItem` / `AprSeriesResponse` |
+| F7 | 测试 | `recentlyEndedCampaigns.test.ts` + `IncentiveTooltip.test.tsx` | 边界条件 + 折叠交互 |
+
+### 数据流（Phase 2 完成后）
+
+```text
+[IncentiveTooltip 打开]
+  ├─ 活跃 campaign ← /api/markets（现有，内存快照）
+  └─ Recently Ended ← /api/campaigns/history?reserveId=xxx&side=supply&windowDays=7
+       ↓
+  前端 isRecentlyEnded() 二次过滤（防御性，确保 endDate 一致）
+       ↓
+  灰显渲染，不计入 APY
+
+[APR 曲线图打开]
+  └─ /api/campaigns/apr-series?reserveId=xxx&campaignKey=yyy
+       ↓
+  前端绘图（recharts / visx）
+```
 
 ### 不改动
 
@@ -156,3 +190,4 @@ Phase 2 的**数据层**（API route、查询参数、响应结构）可独立�
 - `RuntimeReserveData` 类型
 - fetcher 过滤逻辑
 - `/api/markets` 热路径
+- 前端 `formatters.ts` APY 计算逻辑（只算活跃的）
