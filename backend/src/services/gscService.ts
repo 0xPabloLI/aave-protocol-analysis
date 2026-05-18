@@ -2,7 +2,6 @@ import { google } from 'googleapis';
 import dayjs from 'dayjs';
 import type { Pool } from 'pg';
 import { logger } from '../logger.js';
-import { setGscFetchSuccess, setGscFetchFailure } from './gscFetchState.js';
 
 const ROW_LIMIT = 25000;
 const MAX_RETRIES = 3;
@@ -72,10 +71,20 @@ async function fetchGscRows(targetDate: string): Promise<GscRow[]> {
 
 async function upsertGscRows(pool: Pool, targetDate: string, rows: GscRow[]): Promise<number> {
   if (rows.length === 0) return 0;
+
+  const validRows = rows.filter(row => {
+    if (row.keys.length < 3) {
+      logger.warn(`GSC row skipped: keys.length=${row.keys.length}, expected 3`);
+      return false;
+    }
+    return true;
+  });
+
+  if (validRows.length === 0) return 0;
   let totalUpserted = 0;
 
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const chunk = rows.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < validRows.length; i += BATCH_SIZE) {
+    const chunk = validRows.slice(i, i + BATCH_SIZE);
     const dates: string[] = [];
     const countries: string[] = [];
     const pages: string[] = [];
@@ -87,24 +96,34 @@ async function upsertGscRows(pool: Pool, targetDate: string, rows: GscRow[]): Pr
 
     for (const row of chunk) {
       dates.push(targetDate);
-      countries.push(row.keys[0] ?? '');
-      pages.push(row.keys[1] ?? '');
-      queries.push(row.keys[2] ?? '');
+      countries.push(row.keys[0]);
+      pages.push(row.keys[1]);
+      queries.push(row.keys[2]);
       clicks.push(row.clicks);
       impressions.push(row.impressions);
       ctrs.push(row.ctr);
       positions.push(row.position);
     }
 
-    const result = await pool.query(
-      `INSERT INTO gsc_daily (date, country, page, query, clicks, impressions, ctr, position)
-       SELECT * FROM UNNEST($1::date[], $2::text[], $3::text[], $4::text[], $5::int[], $6::int[], $7::numeric[], $8::numeric[])
-       ON CONFLICT (date, country, page, query) DO UPDATE SET
-         clicks = EXCLUDED.clicks, impressions = EXCLUDED.impressions,
-         ctr = EXCLUDED.ctr, position = EXCLUDED.position, fetched_at = now()`,
-      [dates, countries, pages, queries, clicks, impressions, ctrs, positions],
-    );
-    totalUpserted += result.rowCount ?? 0;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query(
+        `INSERT INTO gsc_daily (date, country, page, query, clicks, impressions, ctr, position)
+         SELECT * FROM UNNEST($1::date[], $2::text[], $3::text[], $4::text[], $5::int[], $6::int[], $7::numeric[], $8::numeric[])
+         ON CONFLICT (date, country, page, query) DO UPDATE SET
+           clicks = EXCLUDED.clicks, impressions = EXCLUDED.impressions,
+           ctr = EXCLUDED.ctr, position = EXCLUDED.position, fetched_at = now()`,
+        [dates, countries, pages, queries, clicks, impressions, ctrs, positions],
+      );
+      await client.query('COMMIT');
+      totalUpserted += result.rowCount ?? 0;
+    } catch (dbError) {
+      await client.query('ROLLBACK');
+      throw dbError;
+    } finally {
+      client.release();
+    }
   }
 
   return totalUpserted;
@@ -114,7 +133,6 @@ export async function fetchAndPersistGscDaily(pool: Pool): Promise<{ targetDate:
   const targetDate = dayjs().subtract(GSC_DELAY_DAYS, 'day').format('YYYY-MM-DD');
   const rows = await fetchGscRows(targetDate);
   const rowsUpserted = await upsertGscRows(pool, targetDate, rows);
-  setGscFetchSuccess({ targetDate, rowsUpserted });
   logger.info(`GSC fetch: date=${targetDate}, rows=${rows.length}, upserted=${rowsUpserted}`);
   return { targetDate, rowsUpserted };
 }

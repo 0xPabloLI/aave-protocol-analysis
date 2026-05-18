@@ -34,6 +34,11 @@ test('escapeIlike: escapes % and _', async () => {
   assert.equal(escapeIlike('100%_free'), '100\\%\\_free');
 });
 
+test('escapeIlike: escapes backslash', async () => {
+  const { escapeIlike } = await import('../src/utils/escapeIlike.js');
+  assert.equal(escapeIlike('a\\b'), 'a\\\\b');
+});
+
 test('escapeIlike: no special chars', async () => {
   const { escapeIlike } = await import('../src/utils/escapeIlike.js');
   assert.equal(escapeIlike('aave'), 'aave');

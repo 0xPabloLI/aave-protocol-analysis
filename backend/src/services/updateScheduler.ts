@@ -12,7 +12,7 @@ import {
   persistSnapshotIfNeeded,
 } from './persistenceService.js';
 import { fetchAndPersistGscDaily } from './gscService.js';
-import { setGscFetchFailure } from './gscFetchState.js';
+import { setGscFetchSuccess, setGscFetchFailure } from './gscFetchState.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
@@ -131,7 +131,8 @@ export function startUpdateScheduler(): void {
     if (!process.env.GSC_SA_EMAIL) return;
     try {
       const pool = getPool();
-      await fetchAndPersistGscDaily(pool);
+      const result = await fetchAndPersistGscDaily(pool);
+      setGscFetchSuccess(result);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       setGscFetchFailure(msg);

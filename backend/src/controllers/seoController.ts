@@ -91,6 +91,13 @@ export async function getGscData(req: Request, res: Response): Promise<void> {
       paramIdx++;
     }
 
+    const queryFilter = req.query.query as string | undefined;
+    if (queryFilter) {
+      conditions.push(`query ILIKE $${paramIdx}`);
+      params.push(`%${escapeIlike(queryFilter)}%`);
+      paramIdx++;
+    }
+
     const where = `WHERE ${conditions.join(' AND ')}`;
     let fullSql = `${sql} ${where}`;
 
@@ -179,10 +186,32 @@ export async function upsertSemrushSnapshot(req: Request, res: Response): Promis
   }
 }
 
+const BATCH_RATE_LIMIT_WINDOW_MS = 60_000;
+const BATCH_RATE_LIMIT_MAX = 5;
+const batchRateMap = new Map<string, { count: number; windowStart: number }>();
+
+function checkBatchRateLimit(token: string): boolean {
+  const now = Date.now();
+  const entry = batchRateMap.get(token);
+  if (!entry || now - entry.windowStart > BATCH_RATE_LIMIT_WINDOW_MS) {
+    batchRateMap.set(token, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= BATCH_RATE_LIMIT_MAX) return false;
+  entry.count++;
+  return true;
+}
+
 export async function batchUpsertSemrushSnapshots(req: Request, res: Response): Promise<void> {
   try {
     if (!isPersistenceEnabled()) {
       res.status(503).json({ error: 'Database not configured' });
+      return;
+    }
+
+    const token = req.headers['x-admin-token'] as string ?? '';
+    if (!checkBatchRateLimit(token)) {
+      res.status(429).json({ error: 'Batch rate limit exceeded (5 per minute)' });
       return;
     }
 
