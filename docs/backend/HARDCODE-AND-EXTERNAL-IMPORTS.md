@@ -7,7 +7,7 @@
 | On-chain addresses | `@bgd-labs/aave-address-book` | `backend/src/services/onchainDataService.ts` |
 | On-chain reserve reader | `@aave/contract-helpers` (`UiPoolDataProvider`) | `backend/src/services/onchainDataService.ts` |
 | Shared RPC registry | `@internal/aave-shared-config` | `backend/src/services/ethProviderService.ts` |
-| Markets data | `@aave/client` (GraphQL API) | `src/index.ts` (root fetcher) |
+| Markets data | `@aave/client` (GraphQL API) | `packages/aave-fetcher/src/index.ts` (root fetcher) |
 
 ## 2. 当前策略（On-chain Data）
 

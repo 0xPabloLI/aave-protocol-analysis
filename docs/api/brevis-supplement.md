@@ -4,7 +4,7 @@
 
 ---
 
-## 1. 已从 `src/brevis-api.ts` 移除的 client dead API
+## 1. 已从 `packages/aave-fetcher/src/brevis-api.ts` 移除的 client dead API
 
 以下曾在 `BrevisApiClient` 中实现，**全仓库无调用**，与生产路径 `getAaveCampaignsData()`（遍历 Aave protocols + 详情 + 建索引）重复维护成本高，已从源码删除。若需要按 **单个 pool** 拉 `GetAllProtocolDetail` 并打成「宽表」行，可复制下方参考实现到本地脚本或临时分支。
 
@@ -87,7 +87,7 @@ export interface BrevisCampaignInfo {
 | `5002` | Aave borrow action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
 | `5003` | Aave lend_net action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
 | `6001` | Morpho lend action | 官方文档 | Incentra docs: Morpho campaigns (`action`) |
-| `3001` | Aave campaign（当前项目实测为 both） | 外部接口实测 + 项目代码映射 | `data/debug/brevis-raw-data.json` + `src/brevis-api.ts`（`mapActionType`） |
+| `3001` | Aave campaign（当前项目实测为 both） | 外部接口实测 + 项目代码映射 | `data/debug/brevis-raw-data.json` + `packages/aave-fetcher/src/brevis-api.ts`（`mapActionType`） |
 
 本项目当前 `/api/markets` 的 Brevis 解析逻辑中，`actionType` 映射为：
 
@@ -147,4 +147,4 @@ export interface BrevisCampaignInfo {
 
 ### 维护约定
 
-当 `data/debug/brevis-raw-data.json` 出现新的 `type` 或 `status` 数值时，须在本文件同步更新 type/status 对照表，并在 `src/brevis-api.ts` 中更新 `mapActionType` 或 ACTIVE 过滤逻辑（如有需要）。
+当 `data/debug/brevis-raw-data.json` 出现新的 `type` 或 `status` 数值时，须在本文件同步更新 type/status 对照表，并在 `packages/aave-fetcher/src/brevis-api.ts` 中更新 `mapActionType` 或 ACTIVE 过滤逻辑（如有需要）。

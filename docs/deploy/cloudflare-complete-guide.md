@@ -215,7 +215,7 @@ CLOUDFLARE_DYNAMIC_MIN_INTERVAL_MS=25000  # 25 秒
 ### 5.4 重试机制
 
 ```typescript
-// src/merkl-api.ts
+// packages/aave-fetcher/src/merkl-api.ts
 async function fetchWithRetry(url: string, label: string): Promise<Response> {
   // 最多重试 4 次
   // 等待时间：1s → 2s → 4s → 8s（指数退避）

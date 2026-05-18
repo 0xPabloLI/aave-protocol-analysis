@@ -142,9 +142,9 @@ function getRateInputsFromReserve(reserve: ReserveForRateCalc) {
 
 | 顺序 | 文件 | 修改内容 | 说明 |
 |------|------|----------|------|
-| 1 | `src/index.ts` | `RuntimeReserveData` 接口 | Root fetcher 的数据结构定义 |
+| 1 | `packages/aave-shared-contracts/src/index.ts` | `RuntimeReserveData` 接口 | 共享类型定义 |
 | 2 | Fetcher 文件 (如 `src/v4-fetcher.ts`) | 数据填充逻辑 | 从 SDK/API 获取并填充新字段 |
-| 3 | `src/index.ts` | `pruneReserveForRuntime()` | **关键**：必须显式添加字段，否则会被过滤掉 |
+| 3 | `packages/aave-fetcher/src/index.ts` | `pruneReserveForRuntime()` | **关键**：必须显式添加字段，否则会被过滤掉 |
 | 4 | `backend/src/types/index.ts` | `MarketWithSpread` 接口 | API 响应类型定义 |
 | 5 | `backend/src/services/marketsApiSerialize.ts` | `serializeReserveForApi()` | 序列化逻辑 |
 
@@ -155,7 +155,7 @@ function getRateInputsFromReserve(reserve: ReserveForRateCalc) {
 该函数的作用是白名单过滤——只有显式列出的字段才会被传递到 runtime payload。即使前面的步骤都正确，漏掉这一步会导致字段被**静默丢弃**。
 
 ```typescript
-// src/index.ts (第 243 行附近)
+// packages/aave-fetcher/src/index.ts（pruneReserveForRuntime 函数内）
 function pruneReserveForRuntime(item: RuntimeReserveData): RuntimeReserveData {
   return {
     // ... 已有字段
@@ -174,10 +174,10 @@ function pruneReserveForRuntime(item: RuntimeReserveData): RuntimeReserveData {
 npm run build
 
 # 2. 再构建 backend
-npm --prefix backend run build
+npm run build -w aave-dashboard-backend
 
 # 3. 运行 backend 测试
-npm --prefix backend run test
+npm run test -w aave-dashboard-backend
 ```
 
 ### 8.4 V4 Hub/Spoke 字段示例
@@ -207,7 +207,7 @@ npm --prefix backend run test
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │   Root Fetcher  │────▶│   prune function   │────▶│  Backend API    │
-│   (src/index.ts)│     │ (pruneReserveFor  │     │ (backend/src/)   │
+│   (packages/aave-fetcher/src/index.ts)│     │ (pruneReserveFor  │     │ (backend/src/)   │
 │                 │     │   Runtime)         │     │                 │
 └─────────────────┘     └──────────────────┘     └─────────────────┘
        │                                               │
@@ -225,8 +225,9 @@ npm --prefix backend run test
 
 | 层级 | 文件 | 作用 |
 |------|------|------|
-| Root 类型 | `src/index.ts` | `RuntimeReserveData`, `RuntimeReserveData`, `pruneReserveForRuntime()` |
-| Root 获取 | `src/v4-fetcher.ts` | V4 数据获取，填充字段 |
+| Root 类型 | `packages/aave-shared-contracts/src/index.ts` | `RuntimeReserveData` 接口定义 |
+| Root 获取/裁剪 | `packages/aave-fetcher/src/index.ts` | `pruneReserveForRuntime()` |
+| Root 获取 | `packages/aave-fetcher/src/v4-fetcher.ts` | V4 数据获取，填充字段 |
 | Backend 类型 | `backend/src/types/index.ts` | `MarketWithSpread` API 响应接口 |
 | Backend 序列化 | `backend/src/services/marketsApiSerialize.ts` | `serializeReserveForApi()` |
 | Backend 数据模型 | `backend/src/services/marketsService.ts` | 使用 `RuntimeReserveData` |

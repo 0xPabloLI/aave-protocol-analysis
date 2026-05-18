@@ -29,9 +29,9 @@ One data set can pass through more than one layer. The terms below describe the 
 
 ```mermaid
 flowchart LR
-  IDX["src/index.ts (orchestrator)"]
-  MERKL["src/merkl-api.ts (Merkl ingest + indexing)"]
-  MERIT["src/merit-api.ts (Merit ingest + mapping)"]
+  IDX["packages/aave-fetcher/src/index.ts (orchestrator)"]
+  MERKL["packages/aave-fetcher/src/merkl-api.ts (Merkl ingest + indexing)"]
+  MERIT["packages/aave-fetcher/src/merit-api.ts (Merit ingest + mapping)"]
   SHARED["@internal/aave-shared-config (Merkl opportunities fetch/cache)"]
   MKS["backend/marketsService (internalized fetcher + memory snapshot)"]
   FCS["backend/merklForecastService (forecast compute + caches)"]
@@ -60,12 +60,12 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  A["src/index.ts runMarketsFetcher()"] --> B["src/merkl-api.ts processMerklData()"]
+  A["packages/aave-fetcher/src/index.ts runMarketsFetcher()"] --> B["packages/aave-fetcher/src/merkl-api.ts processMerklData()"]
   B --> C["@internal/aave-shared-config snapshot (raw opportunities[])"]
   C --> D["Merkl /v4/opportunities"]
   B -- "writes" --> E["data/runtime/merkl-opportunity-meta-lite.json"]
   B -- "writes" --> F["data/debug/merkl-raw-data.json"]
-  A --> G["src/merit-api.ts fetchMeritData()"]
+  A --> G["packages/aave-fetcher/src/merit-api.ts fetchMeritData()"]
   G -- "writes" --> H["data/runtime/merit-campaign-metadata-cache.json"]
   G -- "writes" --> I["data/debug/merit-raw-data.json"]
   G -- "writes" --> J["data/debug/merit-merkl-raw-data.json"]
@@ -103,9 +103,9 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-  A["Root CLI: runMarketsFetcher()"] --> B["/src/index.ts pipeline"]
-  B --> C["Merit: /src/merit-api.ts"]
-  B --> D["Merkl: /src/merkl-api.ts"]
+  A["Root CLI: runMarketsFetcher()"] --> B["packages/aave-fetcher/src/index.ts pipeline"]
+  B --> C["Merit: packages/aave-fetcher/src/merit-api.ts"]
+  B --> D["Merkl: packages/aave-fetcher/src/merkl-api.ts"]
   B --> E["Brevis"]
   C --> F["data/debug/merit-raw-data.json"]
   C --> G["data/debug/merit-merkl-raw-data.json"]

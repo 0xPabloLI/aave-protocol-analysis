@@ -111,7 +111,7 @@ Frontend (aaveapy)
 ## 1.1 Backend: Data Sources
 
 **Implementation:**
-- `src/index.ts` - Markets data fetcher (Aave SDK)
+- `packages/aave-fetcher/src/index.ts` - Markets data fetcher (Aave SDK)
 - `backend/src/services/onchainDataService.ts` - On-chain data fetcher (RPC)
 
 ### Data Source Architecture
@@ -350,7 +350,7 @@ This keeps first paint fast and bounds failure blast radius.
 
 | 文件 | 说明 |
 |------|------|
-| `src/index.ts` | Markets data fetcher (Aave SDK) |
+| `packages/aave-fetcher/src/index.ts` | Markets data fetcher (Aave SDK) |
 | `backend/src/services/onchainDataService.ts` | On-chain data fetcher (deficit, baseVariableBorrowRate) |
 | `backend/src/services/marketsService.ts` | Unified markets + on-chain data service |
 

@@ -1,5 +1,7 @@
 # AAV-110 开发方案
 
+> **状态**: ✅ 已完成 — 2026-05-17
+
 ## 1. Issue 概述
 将 backend 目前依赖的 root build 产物（`dist/index.js` 中的共享类型如 `MarketsPayload`、`RuntimeReserveData`）拆分到独立的共享 package 中，消除 backend 对 root dist 的跨项目 import 耦合。完成后，backend 通过共享 package 引用类型定义，`fetchMarketsData` 的运行时调用改为从共享 fetcher 包引用，**不再 import root dist**。API 行为完全不变（cron-write/API-read-only 模式不受影响）。
 

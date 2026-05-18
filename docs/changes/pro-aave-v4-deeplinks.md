@@ -23,7 +23,7 @@ Aave V4 使用 `pro.aave.com` 作为前端界面（V3 使用 `app.aave.com`）�
 | 文件 | 改动 |
 |---|---|
 | `src/v4-fetcher.ts` | 接口加字段 + 提取 `r.id` |
-| `src/index.ts` | `RuntimeReserveData`、`RuntimeReserveData` 加字段；`pruneReserveForRuntime` 透传 |
+| `packages/aave-fetcher/src/index.ts` | `RuntimeReserveData`、`RuntimeReserveData` 加字段；`pruneReserveForRuntime` 透传 |
 | `backend/src/types/index.ts` | `MarketWithSpread` 加字段 |
 | `backend/src/services/marketsApiSerialize.ts` | `serializeReserveForApi` 透传 |
 

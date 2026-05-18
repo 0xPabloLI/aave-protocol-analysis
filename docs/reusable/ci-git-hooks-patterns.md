@@ -12,7 +12,7 @@ set -euo pipefail
 
 # === Lock File Drift Prevention ===
 # Auto-stage lock files to prevent local/CI audit drift
-for lockfile in package-lock.json backend/package-lock.json; do
+for lockfile in package-lock.json; do
   if [ -f "$lockfile" ] && ! git diff --quiet -- "$lockfile" 2>/dev/null; then
     echo "[hook] WARNING: $lockfile has unstaged changes"
     echo "[hook] Auto-staging $lockfile to prevent local/CI drift"
@@ -42,7 +42,7 @@ set -euo pipefail
 
 # === Lock File Drift Prevention ===
 # Block push if lock files have uncommitted changes
-for lockfile in package-lock.json backend/package-lock.json; do
+for lockfile in package-lock.json; do
   if [ -f "$lockfile" ] && ! git diff --quiet -- "$lockfile" 2>/dev/null; then
     echo "[hook] ERROR: $lockfile has uncommitted changes"
     echo "[hook] CI will use the committed version, which may differ from local"
@@ -71,8 +71,8 @@ npm run ci:remote
 {
   "scripts": {
     "ci": "npm ci && npm run build && npm run lint && npm run test",
-    "ci:remote": "npm run ci && npm audit --omit=dev --audit-level=high && npm --prefix backend audit --omit=dev --audit-level=moderate",
-    "ci:auto-fix": "npm audit fix --omit=dev || true && npm --prefix backend audit fix --omit=dev || true"
+    "ci:remote": "npm run ci && npm audit --omit=dev --audit-level=high && npm audit --omit=dev --audit-level=moderate",
+    "ci:auto-fix": "npm audit fix --omit=dev || true"
   }
 }
 ```
@@ -304,27 +304,24 @@ This ensures any lock file changes from `npm install` or `npm audit fix` are alw
 
 ## 5. Monorepo Considerations
 
-For projects with multiple `package.json` (e.g., root + backend):
+For projects using npm workspaces (e.g., root + backend):
 
 ```bash
 # CI script
 npm ci
-npm --prefix backend ci
 npm run build
-npm --prefix backend run build
-npm audit --omit=dev --audit-level=high
-npm --prefix backend audit --omit=dev --audit-level=moderate
+npm run build -w aave-dashboard-backend
+npm audit --omit=dev --audit-level=moderate
 ```
 
 ```bash
 # Auto-fix script
 npm audit fix --omit=dev || true
-npm --prefix backend audit fix --omit=dev || true
 ```
 
 ```bash
-# Lock file check (in hooks)
-for lockfile in package-lock.json backend/package-lock.json; do
+# Lock file check (in hooks) — only one lockfile for the whole workspace
+for lockfile in package-lock.json; do
   # ... check each lock file
 done
 ```

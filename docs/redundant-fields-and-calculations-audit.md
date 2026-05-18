@@ -2,7 +2,7 @@
 
 **Purpose**: Inventory of redundant or partially redundant fields, cache metadata, and duplicate logic across the fetcher, Merkl forecast pipeline, and runtime payloads. Intended for engineering review (e.g. Codex) before cleanup PRs.
 
-**Scope**: Root fetcher (`src/`), backend Merkl forecast (`backend/src/services/merklForecast*`, `merklForecastController`), and `merkl-opportunity-meta-lite` / reserve pruning. Does not claim to cover every file in the repo.
+**Scope**: Root fetcher (`packages/aave-fetcher/src/`), backend Merkl forecast (`backend/src/services/merklForecast*`, `merklForecastController`), and `merkl-opportunity-meta-lite` / reserve pruning. Does not claim to cover every file in the repo.
 
 **Last updated**: 2026-03-26
 
@@ -53,7 +53,7 @@ When opportunity metadata always supplies TVL (normal path), **`extractLatestTvl
 
 ### 3.2 Root fetcher alignment
 
-`src/merkl-api.ts` builds the same conceptual meta (`buildForecastCampaignMetaLiteMap`, `campaignTypeHint`, `campaignSnapshot`) for the lite file written by the root fetcher.
+`packages/aave-fetcher/src/merkl-api.ts` builds the same conceptual meta (`buildForecastCampaignMetaLiteMap`, `campaignTypeHint`, `campaignSnapshot`) for the lite file written by the root fetcher.
 
 ---
 
@@ -61,13 +61,13 @@ When opportunity metadata always supplies TVL (normal path), **`extractLatestTvl
 
 | Area | Notes |
 |------|--------|
-| **Budget normalization** | `buildForecastFieldsFromOpportunity` in `src/merkl-api.ts` mirrors the intent of **`extractNormalizedTotalBudget`** in `backend/src/services/merklForecastService.ts` (comment in source references the backend). Two places to update if rules change. |
+| **Budget normalization** | `buildForecastFieldsFromOpportunity` in `packages/aave-fetcher/src/merkl-api.ts` mirrors the intent of **`extractNormalizedTotalBudget`** in `backend/src/services/merklForecastService.ts` (comment in source references the backend). Two places to update if rules change. |
 
 ---
 
 ## 5. `distributionType` on Merkl breakdowns vs runtime prune
 
-`processMerklData` assigns **`distributionType`** on each breakdown. **`pruneMerklBreakdownForRuntime`** in `src/index.ts` does **not** copy **`distributionType`** into the runtime reserve payload.
+`processMerklData` assigns **`distributionType`** on each breakdown. **`pruneMerklBreakdownForRuntime`** in `packages/aave-fetcher/src/index.ts` does **not** copy **`distributionType`** into the runtime reserve payload.
 
 **Implication**: The field is not present on **`/api/markets`** reserve rows as shaped by prune. If nothing else consumes it before prune, it does not affect the public runtime API surface (may still help debugging or future use on non-pruned paths).
 
@@ -96,7 +96,7 @@ Priority is subjective; align with product/API contracts before deleting fields.
 ## 8. References in repo
 
 - Forecast response shaping: `backend/src/controllers/merklForecastController.ts` (`toForecastResponseItem`).
-- Opportunity-only forecast fields on markets payload: `src/merkl-api.ts` (`buildForecastFieldsFromOpportunity`) + `src/index.ts` (`pruneMerklBreakdownForRuntime`).
+- Opportunity-only forecast fields on markets payload: `packages/aave-fetcher/src/merkl-api.ts` (`buildForecastFieldsFromOpportunity`) + `packages/aave-fetcher/src/index.ts` (`pruneMerklBreakdownForRuntime`).
 - Internal state vs REST: `docs/api/api-documentation.md` (Merkl forecast / `MerklForecastState` notes).
 - Cache layers: `docs/merkl-merit-cache-architecture.md`, `docs/backend/data-freshness-mechanism.md`.
 

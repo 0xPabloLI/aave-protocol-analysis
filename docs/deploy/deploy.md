@@ -22,16 +22,15 @@
 对于本地测试，可以直接使用 npm 命令，无需部署脚本：
 
 ```bash
-# 1. 安装依赖
+# 1. 安装依赖（workspace 统一安装）
 npm install
-cd backend && npm install && cd ..
 
 # 2. 构建
 npm run build
-cd backend && npm run build && cd ..
+npm run build -w aave-dashboard-backend
 
 # 3. 运行（需要先获取数据）
-node dist/index.js  # 首次运行获取数据
+node dist/cli.js  # 首次运行获取数据
 cd backend && npm start  # 启动后端服务
 ```
 
@@ -59,20 +58,18 @@ npm install
 npm run build
 
 # 3. 首次运行数据获取（生成初始数据）
-node dist/index.js
+node dist/cli.js
 
-# 4. 安装后端依赖
-cd backend
+# 4. 安装依赖（workspace 统一安装）
 npm install
 
 # 5. 构建后端代码
-npm run build
+npm run build -w aave-dashboard-backend
 
 # 6. 安装 PM2（如果未安装）
 npm install -g pm2
 
 # 7. 启动服务
-cd ..
 pm2 start ecosystem.config.cjs
 
 # 查看状态
@@ -95,21 +92,20 @@ pm2 save
 #### 2.2 本地运行（开发测试）
 
 ```bash
-# 1. 安装根目录依赖
+# 1. 安装依赖（workspace 统一安装）
 npm install
 
 # 2. 构建根目录代码
 npm run build
 
 # 3. 首次运行数据获取
-node dist/index.js
+node dist/cli.js
 
-# 4. 安装后端依赖
-cd backend
+# 4. 安装后端依赖（已由步骤1覆盖，可选）
 npm install
 
 # 5. 构建后端代码
-npm run build
+npm run build -w aave-dashboard-backend
 
 # 6. 启动服务器
 npm start
@@ -214,7 +210,7 @@ curl http://localhost:3001/health
    lsof -i :3001
    ```
 
-2. 后端不依赖 `data/debug/aave-formatted-data.full.json` 启动；若需核对可选 fetcher 产物可 `ls data/debug/`。确认根目录已 `npm run build`（backend 通过 `dist/index.js` 调用 `fetchMarketsData()`）。
+2. 后端不依赖 `data/debug/aave-formatted-data.full.json` 启动；若需核对可选 fetcher 产物可 `ls data/debug/`。确认根目录已 `npm run build`（backend 通过 `@internal/aave-fetcher` 调用 `fetchMarketsData()`）。
 
 3. 查看日志：
    ```bash
@@ -227,7 +223,7 @@ curl http://localhost:3001/health
 2. 查看应用日志中的错误信息
 3. 手动运行数据获取脚本：
    ```bash
-   node dist/index.js
+   node dist/cli.js
    ```
 
 ### PM2 相关问题
@@ -265,7 +261,7 @@ git pull
 
 # 2. 重新构建
 npm run build
-cd backend && npm run build && cd ..
+npm run build -w aave-dashboard-backend
 
 # 3. 重启服务
 pm2 restart aave-backend

@@ -5,7 +5,7 @@
 ## 结论摘要
 
 - **API 所需字段均有数据源覆盖，无缺失。**
-- 来自 **Aave SDK**（`@aave/client` `markets()` → `market.supplyReserves[]`）的字段均已在 `src/index.ts` 的 `buildV3BaseDataset()` 中正确映射。
+- 来自 **Aave SDK**（`@aave/client` `markets()` → `market.supplyReserves[]`）的字段均已在 `packages/aave-fetcher/src/index.ts` 的 `buildV3BaseDataset()` 中正确映射。
 - **baseVariableBorrowRate**、**deficit** 设计上来自链上 RPC（`UiPoolDataProvider.getReservesHumanized()`），非 SDK；缺失时由 backend 做 fallback 或置空。
 - **merit***、**merkl***、**brevis*** 来自外部激励 API，非 SDK。
 
@@ -50,7 +50,7 @@ base-rate 校验报告见 `data/debug/base-rate-fallback-validation-report.json`
 - **目的**：比对 Aave SDK 的 `supplyReserves` 与链上 `UiPoolDataProvider.getReservesHumanized()` 返回的 reserve 集合，按 **reserveId**（`chainId:poolAddress:tokenAddress`）检查是否一致。
 - **链上覆盖**：后端已按 **所有 address-book 市场** 拉取链上数据（同链多市场如 Ethereum 主池、Lido、EtherFi、Horizon 均独立拉取），merge 时用 `reserve.reserveId` 匹配。
 - **脚本**：`backend/scripts/validate-sdk-onchain-reserve-match.mjs`  
-  运行：`npm run build && cd backend && npm run build && node scripts/validate-sdk-onchain-reserve-match.mjs`
+  运行：`npm run build && npm run build -w aave-dashboard-backend && node backend/scripts/validate-sdk-onchain-reserve-match.mjs`
 - **结果**：
   - **仅在 SDK**：payload 中有该 reserve 但链上缓存无对应 reserveId（若覆盖全市场后仍出现，多为 RPC 失败或命名不一致）。
   - **仅在链上**：RPC 返回了该 pool 的 reserve，但 SDK 的 supplyReserves 中未包含（池内有但 API 未暴露为 supply，属预期）。
@@ -128,4 +128,4 @@ base-rate 校验报告见 `data/debug/base-rate-fallback-validation-report.json`
 ---
 
 **校验日期**: 2026-03-15  
-**依据**: `backend/src/types/index.ts`（MarketWithSpread）、`src/index.ts`（buildV3BaseDataset）、`data/debug/aave-all-markets-data.json`（SDK 原始响应）
+**依据**: `backend/src/types/index.ts`（MarketWithSpread）、`packages/aave-fetcher/src/index.ts`（buildV3BaseDataset）、`data/debug/aave-all-markets-data.json`（SDK 原始响应）
