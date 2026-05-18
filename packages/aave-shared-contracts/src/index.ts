@@ -24,7 +24,7 @@ export interface MeritAprEntry {
   lastRoundRewardUsd?: number;
 }
 
-type ForecastCampaignTypeLite =
+export type ForecastCampaignTypeLite =
   | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   | 'DUTCH_AUCTION'
   | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';

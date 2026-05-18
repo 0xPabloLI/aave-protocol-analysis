@@ -7,13 +7,13 @@ import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
 import { merklFetchConfig } from './config.js';
 import {
-  type BaseCampaignBreakdown,
-  type CampaignGroup,
   createMerklConcurrencyLimitedFetch,
   fetchMerklOpportunitiesSnapshot,
   normalizeMerklCampaignTotalBudget,
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
+import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite } from '@internal/aave-shared-contracts';
+export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite } from '@internal/aave-shared-contracts';
 import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
 const merklLimitedFetch = createMerklConcurrencyLimitedFetch(
@@ -90,27 +90,6 @@ async function fetchWithRetry(
 
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
-
-export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
-  /** Annual yield ratio (upstream Merkl `campaign.apr` is percent). */
-  campaignId: string;
-  whitelistOnly?: boolean;
-  /** 见 `merklBreakdownUsesPointsIntensityFields`；为真且 `value` 可解析时 = value÷TVL×1000 */
-  pointsPerThousandUsd?: number;
-  // Opportunity-only forecast fields (no metrics dependency, refreshes with markets)
-  campaignType?: ForecastCampaignTypeLite;
-  totalBudget?: number;
-  /** Annual yield cap as ratio from `distributionSettings.apr`. */
-  aprCap?: number | null;
-  latestTvl?: number;
-  plannedDaily?: number;
-}
-
-/**
- * Merkl Opportunity 分组数据（用于 JSON 输出，避免重复）
- * 一个 opportunity 包含一个链接和多个 breakdowns
- */
-export interface MerklOpportunityGroup extends CampaignGroup<MerklCampaignBreakdown> {}
 
 // API 响应的完整类型（用于类型断言）
 export interface MerklOpportunity {
@@ -220,11 +199,6 @@ export interface MerklOpportunityData {
   name?: string; // Opportunity 名称
   description?: string; // Opportunity 描述（内部使用，最终会转换为 message）
 }
-
-type ForecastCampaignTypeLite =
-  | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  | 'DUTCH_AUCTION'
-  | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
 
 interface CampaignSnapshotLiteForForecastFile {
   id: string;

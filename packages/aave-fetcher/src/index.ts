@@ -1,4 +1,3 @@
-import './env.js';
 import { writeFile, mkdir } from 'fs/promises';
 import { chainId, AaveClient, ChainsFilter } from "@aave/client";
 import { markets, chains } from "@aave/client/actions";

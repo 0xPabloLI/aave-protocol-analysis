@@ -3,9 +3,10 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Install root dependencies (including devDependencies for TypeScript compilation)
+# Install all workspace dependencies (including devDependencies for TypeScript compilation)
 COPY package*.json ./
 COPY packages/ ./packages/
+COPY backend/package*.json ./backend/
 COPY scripts/ ./scripts/
 RUN npm ci
 
@@ -14,14 +15,10 @@ COPY src/ ./src/
 COPY tsconfig.json ./
 RUN npm run build
 
-# Install backend dependencies (including devDependencies for TypeScript compilation)
-COPY backend/package*.json ./backend/
-RUN cd backend && npm ci
-
 # Copy backend source and build
 COPY backend/src/ ./backend/src/
 COPY backend/tsconfig.json ./backend/
-RUN cd backend && npm run build
+RUN npm run build -w aave-dashboard-backend
 
 # Stage 2: Production
 FROM node:20-slim
@@ -52,15 +49,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install production-only dependencies for root
+# Install production-only dependencies
 COPY package*.json ./
-COPY packages/ ./packages/
+COPY packages/aave-shared-contracts/package*.json ./packages/aave-shared-contracts/
+COPY packages/aave-fetcher/package*.json ./packages/aave-fetcher/
+COPY packages/aave-shared-config/package*.json ./packages/aave-shared-config/
 COPY scripts/ ./scripts/
-RUN npm ci --omit=dev
-
-# Install production-only dependencies for backend
-COPY backend/package*.json ./backend/
-RUN cd backend && npm ci --omit=dev
+RUN npm ci --omit=dev -w aave-dashboard-backend
 
 # Copy compiled output from builder
 COPY --from=builder /app/dist/ ./dist/

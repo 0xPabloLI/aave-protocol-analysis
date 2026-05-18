@@ -17,7 +17,7 @@
 大部分脚本需要先构建项目：
 
 ```bash
-npm run build && npm --prefix backend run build
+npm run build && npm run build -w aave-dashboard-backend
 ```
 
 部分脚本依赖 `data/debug/` 目录下的数据文件，需先运行 fetcher 生成。

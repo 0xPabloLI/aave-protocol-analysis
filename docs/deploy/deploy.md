@@ -195,7 +195,7 @@ curl http://localhost:3001/health
 从仓库根目录用根目录的 `Dockerfile` 部署时，**必须使用仓库根作为构建上下文**。
 
 - 在 Railway 项目里，该服务的 **Root Directory** 必须为**空**或 **`.`**（仓库根）。
-- 若 Root Directory 设为 `backend`，构建上下文只有 `backend/` 目录，会出现 `"/backend/tsconfig.json": not found` 等错误，因为 Dockerfile 里使用了 `COPY package*.json`、`COPY packages/`、`COPY backend/...`，这些都相对于**仓库根**。
+- 若 Root Directory 设为 `backend`，构建上下文只有 `backend/` 目录，会出现 `"/backend/tsconfig.json": not found` 等错误，因为 Dockerfile 里使用了 `COPY package*.json`、`COPY packages/*/package*.json`、`COPY backend/...`，这些都相对于**仓库根**。
 
 **修改方式**：Railway 项目 → 选择该服务 → **Settings** → **Build** → 将 **Root Directory** 清空或设为 `.`，保存后重新部署。
 
