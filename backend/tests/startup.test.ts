@@ -45,5 +45,5 @@ test('dev entry script cleans residual backend processes before launching tsx', 
 test('dev clean script also terminates tsx watch parents for this backend', () => {
   const script = readFileSync(new URL('../scripts/dev-clean.sh', import.meta.url), 'utf8');
 
-  assert.match(script, /tsx watch src\/server\.ts/);
+  assert.match(script, /tsx\.\*src\/server\\\.ts/);
 });
