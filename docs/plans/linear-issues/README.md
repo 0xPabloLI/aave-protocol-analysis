@@ -18,7 +18,7 @@
 | Issue | 标题 | 说明 |
 |-------|------|------|
 | AAV-121 | 添加 OpenAPI 文档和 Postman 集合 | 已实现：scripts/generate-openapi.ts, public/openapi.json, public/swagger.html |
-| AAV-122 | 增加前后端传输的压缩方案 | 已实现：后端 server.ts 使用 compression 中间件 (gzip) |
+| AAV-122 | 增加前后端传输的压缩方案 | ✅ 已完成：(1) server.ts 使用 compression 中间件 (gzip)，(2) APY/APR 精度截断至 6 位小数 + protocolFee 零值省略，减少 JSON 原始体积 ~70-140KB |
 | AAV-124 | 增加 sort by supply%，sort by borrow% | 已实现：supplyCapPct/borrowCapPct 排序模式 |
 | AAV-143 | 在 market filter 里面加 search markets | 已实现：FilterBar 已有 searchQuery 搜索功能 |
 | AAV-110 | Refactor: split shared contracts into shared package | ✅ 已完成：packages/aave-shared-contracts + aave-fetcher + npm workspaces |

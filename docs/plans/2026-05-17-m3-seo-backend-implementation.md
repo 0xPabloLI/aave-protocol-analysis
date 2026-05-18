@@ -4,7 +4,7 @@
 
 **Goal:** 在现有 Railway 后端新增 GSC 自动采集 + Semrush 批量种子 + 5 个 REST 接口，为前端 `/admin/seo` Dashboard 提供数据，同时修正原方案的 3 个安全问题 + 5 个改进项。
 
-**Architecture:** 复用现有 `pg` 连接池 + `node-cron` 内嵌调度模式。SEO 路由走 DB 直查（突破现有 0-SELECT 归档原则，但 SEO 数据量小且非实时，可接受）。鉴权用 `SEO_ADMIN_TOKEN` 后端校验（不暴露前端 bundle）。CORS 复用现有 `FRONTEND_URL` 白名单机制。Semrush 数据通过 Lovable `semrush--keyword_research` 工具一次性拉取 6 国核心词，批量 POST 灌库，无需人力持续维护。
+**Architecture:** 复用现有 `pg` 连接池 + `node-cron` 内嵌调度模式。SEO 路由走 DB 直查（突破现有 0-SELECT 归档原则，但 SEO 数据量小且非实时，可接受）。鉴权用 `SEO_ADMIN_TOKEN` 后端校验（不暴露前端 bundle）。CORS 复用现有 `FRONTEND_URL` 白名单机制。Semrush 数据通过 Lovable `keyword_compare` 工具一次性拉取 6 国核心词，批量 POST 灌库，无需人力持续维护。
 
 **Tech Stack:** Express 5, pg 8, node-cron 4, googleapis (新增), dayjs (新增)
 
@@ -39,7 +39,7 @@
 ## Semrush 数据流（Lovable 种子模式）
 
 ```
-Lovable semrush--keyword_research 工具
+Lovable semrush--keyword_compare 工具
   → 拉 BR/FR/TR/US/DE/IN 核心词（$0，走 Lovable quota）
   → 生成 JSON
   → POST /api/seo/semrush/batch 一次性灌库
@@ -979,4 +979,41 @@ git commit -m "docs(seo): add connection pool capacity comment for SEO direct-qu
 
 // 5xx
 { "error": "Internal server error" }
+```
+
+---
+
+## Task 12: Semrush 种子灌库验证
+
+**前置条件：** Task 1–7 已完成（migration 上线 + batch 接口可用 + `SEO_ADMIN_TOKEN` 已配置）
+
+**Step 1: 用 batch 接口灌库**
+
+```bash
+TOKEN="<SEO_ADMIN_TOKEN>"
+BASE="https://api.aaveapy.com/api"
+
+jq -c '{ snapshots: .rows }' docs/plans/semrush-seed-2026-05-18.json | \
+  curl -sS -X POST "$BASE/seo/semrush/batch" \
+    -H "X-Admin-Token: $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d @- | jq .
+```
+
+Expected: `{"upserted": 33, "total": 33}`
+
+**Step 2: 验证数据落库**
+
+Run: `psql "$DATABASE_URL" -c "SELECT count(*), count(DISTINCT country) as countries FROM semrush_snapshots;"`
+Expected: `count=33, countries=6`
+
+**Step 3: 验证幂等（重复灌库不增加行数）**
+
+重复执行 Step 1，然后 Step 2，Expected: `count` 仍为 33。
+
+**Step 4: Commit（如需记录灌库操作）**
+
+```bash
+git add docs/plans/semrush-seed-2026-05-18.json
+git commit -m "feat(seo): add Semrush seed data — 33 keywords across 6 countries"
 ```

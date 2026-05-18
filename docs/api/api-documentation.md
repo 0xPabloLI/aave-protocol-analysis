@@ -162,7 +162,7 @@ interface MerklOpportunityGroup {
   breakdowns: MerklCampaignBreakdown[]; // 该 opportunity 的所有 breakdowns
 }
 
-// `pointsPerThousandUsd`：仅当 breakdown 上 `reward token.type === 'PRETGE'` 时输出（见 `src/merkl-api.ts`）。
+// `pointsPerThousandUsd`：仅当 breakdown 上 `reward token.type === 'PRETGE'` 时输出（见 `packages/aave-fetcher/src/merkl-api.ts`）。
 
 interface MerklCampaignBreakdown {
   campaignApr: number;                  // 活动 APR（百分比数值，来自 Merkl campaign）
