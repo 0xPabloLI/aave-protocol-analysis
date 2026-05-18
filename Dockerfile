@@ -28,7 +28,13 @@ RUN cd backend && npm run build
 # Stage 2: Production
 FROM node:20-slim
 
-# Install Puppeteer/Chromium system dependencies
+# Install Puppeteer/Chromium system dependencies (needed by fetcher package at runtime)
+# Split into two RUN commands to avoid OOM in Railway's build environment
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     libasound2 \
@@ -44,8 +50,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxdamage1 \
     libxrandr2 \
     xdg-utils \
-    wget \
-    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
