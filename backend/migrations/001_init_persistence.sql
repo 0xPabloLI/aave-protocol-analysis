@@ -44,10 +44,16 @@ CREATE INDEX IF NOT EXISTS idx_market_snapshots_ts
     ON market_snapshots (snapshot_ts DESC);
 CREATE INDEX IF NOT EXISTS idx_market_snapshots_reserve_ts
     ON market_snapshots (reserve_id, snapshot_ts DESC);
-CREATE INDEX IF NOT EXISTS idx_market_snapshots_symbol_ts
-    ON market_snapshots (token_symbol, snapshot_ts DESC);
-CREATE INDEX IF NOT EXISTS idx_market_snapshots_chain_ts
-    ON market_snapshots (chain_id, snapshot_ts DESC);
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_market_snapshots_symbol_ts
+      ON market_snapshots (token_symbol, snapshot_ts DESC);
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;
+DO $$ BEGIN
+  CREATE INDEX IF NOT EXISTS idx_market_snapshots_chain_ts
+      ON market_snapshots (chain_id, snapshot_ts DESC);
+EXCEPTION WHEN undefined_column THEN NULL;
+END $$;
 
 
 CREATE TABLE IF NOT EXISTS oracle_source_configs (

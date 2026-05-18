@@ -51,9 +51,8 @@ WORKDIR /app
 
 # Install production-only dependencies
 COPY package*.json ./
-COPY packages/aave-shared-contracts/package*.json ./packages/aave-shared-contracts/
-COPY packages/aave-fetcher/package*.json ./packages/aave-fetcher/
-COPY packages/aave-shared-config/package*.json ./packages/aave-shared-config/
+COPY packages/ ./packages/
+COPY backend/package*.json ./backend/
 COPY scripts/ ./scripts/
 RUN npm ci --omit=dev -w aave-dashboard-backend
 
