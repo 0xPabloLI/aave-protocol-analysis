@@ -16,6 +16,7 @@ All SEO endpoints require `X-Admin-Token` header. Token comparison uses `timingS
 
 - Token not configured → `503`
 - Missing/wrong token → `401`
+- Token length ≠ 64 hex chars → `logger.warn` on first request (config warning)
 
 **M4 BFF pattern:** Vercel Route Handler reads `SEO_ADMIN_TOKEN` (server-only env), injects `X-Admin-Token` when forwarding to Railway. Browser **never** receives the token.
 
@@ -49,6 +50,7 @@ Query GSC data with optional aggregation.
 | `groupBy` | No | Comma-separated: `date,country,page,query` |
 | `country` | No | Comma-separated alpha-3 codes (max 20) |
 | `page` | No | Exact page path match |
+| `query` | No | ILIKE keyword search (e.g. `aave supply`) |
 
 **Constraints:**
 - Date span ≤ `SEO_GSC_MAX_DATE_SPAN_DAYS` (default 90)
@@ -87,6 +89,8 @@ Upsert a single Semrush snapshot.
 ### `POST /api/seo/semrush/batch`
 
 Batch upsert Semrush snapshots (≤5000, single transaction).
+
+**Rate limit:** 5 batch requests per minute per token. Exceed → `429`.
 
 **Body:**
 ```json
@@ -160,3 +164,20 @@ GSC stores API-native alpha-3; Semrush stores 2-letter. M4 uses shared mapping t
 4. Remove `009_...` from `schema_migrations`
 5. Remove SEO/GSC environment variables
 6. `npm uninstall googleapis dayjs` (in backend workspace)
+
+## M4 交接清单
+
+1. Migration `009` 已在目标环境 `schema_migrations` 中
+2. `GET /api/seo/status` → `lastSuccessAt` 非空（GSC cron ≥1 次成功）
+3. Staging 上 5+1 接口 curl 通过；Semrush count ≈ 33
+4. 安全渠道提供 **staging** `SEO_ADMIN_TOKEN`；production token 待 go-live
+5. M4 实现 **Vercel BFF**，不直连 Railway — Route Handler 读 `SEO_ADMIN_TOKEN`（server-only env），转发时设 `X-Admin-Token`
+
+### Lovable M4 接入步骤
+
+1. **Vercel BFF Route Handler** (`app/api/seo/[...path]/route.ts`):
+   - 读 `SEO_ADMIN_TOKEN`（Vercel env，非 `NEXT_PUBLIC_`）
+   - 转发请求至 `https://staging-api.aaveapy.com/api/seo/:path`
+   - 注入 `X-Admin-Token` header
+2. **前端调用** `/api/seo/gsc?from=...&to=...` → BFF → Railway
+3. **无需** 在前端代码中出现任何 token
