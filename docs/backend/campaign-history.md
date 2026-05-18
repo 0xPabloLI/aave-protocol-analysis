@@ -1,24 +1,10 @@
 # Campaign 历史保留方案
 
-Last updated: 2026-05-17
+Last updated: 2026-05-19
 
 ## 背景
 
-当前后端 API 只返回活跃 campaign：过期 campaign 在 root fetcher 层被过滤，不会到达内存快照，前端无法展示近期历史激励数据。本方案在不改动 root fetcher 的前提下，在后端层从上线后开始保留 campaign 历史。
-
-Phase 1 目标：
-
-1. **历史展示基础**：存储活跃 + 近期消失的 campaign，供后续统一历史数据 API 返回
-2. **图表数据库基础**：预留 APR 观测表，但不在 Phase 1 设计图表页面或图表 API
-
-## 核心策略
-
-- **存所有进入活跃快照的 campaign**，UPSERT 去重，不 diff
-- **只存不删**，数据永久保留；查询窗口由 API 层控制
-- **逻辑完全在后端**，不改动 root fetcher（`src/` 下零改动）
-- **显式状态列**：`expired_at` 表示后端检测到 campaign 不再出现在活跃快照的时间
-- **上线后增量历史**：数据库只能从功能上线后开始积累；首次出现时必须仍在活跃快照中
-- **为何不需要侵入 root fetcher**：root fetcher 继续负责过滤过期 campaign；后端持久化层只观察活跃快照成员关系。campaign 首次出现时 UPSERT 到 DB；消失后内存快照不再包含 -> cron 用 `last_seen_at` 标记 `expired_at`
+后端 API 只返回活跃 campaign：过期 campaign 在 root fetcher 层被过滤，前端无法展示历史激励数据。本方案在后端层保留 campaign 历史，不改动 root fetcher。
 
 ## DB Schema
 
@@ -44,9 +30,7 @@ CREATE INDEX idx_campaign_history_status_window
 CREATE INDEX idx_campaign_history_reserve_source_seen
   ON campaign_history (reserve_id, source, side, last_seen_at DESC);
 
--- 真实 APR 曲线基础。只追加观测点，不覆盖。
--- campaign_data 已移除：完整快照由 campaign_history UPSERT 维护，
--- observations 表只存 APR 变化点和 hash，避免两表冗余存储。
+-- APR 时间序列（append-only）。完整快照在 campaign_history 中，此处只存变化点和 hash。
 CREATE TABLE campaign_apr_observations (
   id              BIGSERIAL     PRIMARY KEY,
   observed_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
@@ -65,109 +49,20 @@ CREATE INDEX idx_campaign_apr_observations_latest_hash
   ON campaign_apr_observations (reserve_id, source, side, campaign_key, observed_at DESC);
 ```
 
-### 列设计说明
-
-| 列 | 用途 | 为何是外层列 |
-|----|------|-------------|
-| `reserve_id` | 关联 reserve，去重索引 | DB 查询过滤需要 |
-| `source` | 激励源，去重索引 | DB 查询过滤需要 |
-| `side` | supply / borrow / hold，去重索引 | DB 查询过滤需要 |
-| `campaign_key` | 去重唯一键 | UPSERT ON CONFLICT 需要 |
-| `campaign_data` | 完整快照（比例值），`JSON.stringify()` 直接存入 | 读-only，前端消费，放 JSONB |
-| `first_seen_at` | 首次被后端看到的时间 | 历史展示和排障 |
-| `last_seen_at` | 最后一次在活跃快照中出现 | 过期检测 + 排序 |
-| `expired_at` | 后端检测到它不再出现在活跃快照中的时间 | API 状态过滤，避免只靠 JSONB 时间字段 |
-
-> `campaign_data` 内的 `startDate` / `endDate` / `campaignStartedAt` / `campaignEndedAt` 等字段全部在 JSONB 中，前端自行读取展示，不需要外层冗余列。
-
 ### `expired_at` 和 `endDate` 不是同一件事
 
-- `endDate` / `campaignEndedAt`：campaign 自己声明的业务结束时间，适合前端展示“活动原计划何时结束”
-- `expired_at`：后端系统状态，表示“这个 campaign 已经不再出现在当前活跃快照中”
-- root fetcher 通常会根据 `endDate` / `campaignEndedAt`、Merit 区块范围、上游状态等规则过滤；后端持久化层不重复实现这些业务规则，只看 campaign 是否仍在 root 产出的活跃快照里
-- 正常情况下 `expired_at` 会接近 `endDate`，但不保证相等：上游可能提前取消、延期、短暂漏报，或 root 匹配规则变化导致 campaign 从活跃快照消失
-- API 判断“当前快照是否仍活跃”应看 `expired_at IS NULL` 或当前内存快照 key 集合；展示活动原计划时间再看 `endDate`
+- `endDate` / `campaignEndedAt`：campaign 自己声明的业务结束时间，前端展示用
+- `expired_at`：后端检测到 campaign 不再出现在活跃快照的时间，API 状态过滤用
+- 两者通常接近但不保证相等（上游可能提前取消、延期、短暂漏报）
 
-## 内存快照中 7 个 campaign 数组 -> DB 映射
+### 两表职责
 
-`persistCampaignHistory()` 遍历 `RuntimeReserveData` 的 campaign 数组，按固定映射写入：
+| 表 | 模式 | 职责 |
+|----|------|------|
+| `campaign_history` | UPSERT 去重，每个 key 一行 | 当前状态 + 生命周期（`first_seen_at` / `expired_at`）+ 完整快照 |
+| `campaign_apr_observations` | append-only，APR 变化时追加 | APR 时间序列，绘制变化曲线 |
 
-| # | 数组字段 | source | side |
-|---|---------|--------|------|
-| 1 | `meritSupplys` | merit | supply |
-| 2 | `meritBorrows` | merit | borrow |
-| 3 | `merklSupplys` | merkl | supply |
-| 4 | `merklBorrows` | merkl | borrow |
-| 5 | `merklHolds` | merkl | hold |
-| 6 | `brevisSupplys` | brevis | supply |
-| 7 | `brevisBorrows` | brevis | borrow |
-
-## campaign_data JSONB 结构
-
-存内存快照中的原始形状（比例值），`JSON.stringify()` 直接存入 JSONB。API 响应时再走 `x100` 序列化，与 active campaign 完全一致。
-
-### Merit
-
-对应 `MeritAprEntry` 类型，直接序列化：
-
-```json
-{
-  "apr": 0.0235,
-  "selfApr": 0.01,
-  "link": "https://...",
-  "name": "Merit Round 42",
-  "message": [],
-  "startDate": "2025-05-01T00:00:00Z",
-  "endDate": "2025-05-15T23:59:59Z",
-  "lastRoundRewardUsd": 1500
-}
-```
-
-### Merkl（单 breakdown 拆组的 CampaignGroup）
-
-对应 `MerklCampaignBreakdown` 类型。从 `CampaignGroup` 中拆出单个 breakdown，保留所属 group 的 `link` / `name` / `message`：
-
-```json
-{
-  "link": "https://...",
-  "name": "Merkl Campaign",
-  "message": "...",
-  "breakdowns": [{
-    "campaignApr": 0.018,
-    "campaignStartedAt": "2025-05-01T00:00:00Z",
-    "campaignEndedAt": "2025-05-20T00:00:00Z",
-    "campaignId": "0xabc...",
-    "campaignType": "DUTCH_AUCTION",
-    "totalBudget": 50000,
-    "aprCap": 0.05,
-    "latestTvl": 1200000,
-    "plannedDaily": 150
-  }]
-}
-```
-
-### Brevis（单 breakdown 拆组的 CampaignGroup）
-
-对应 `BrevisCampaignBreakdown` 类型。与 Merkl 相同拆组逻辑，字段不同（无 `aprCap` / `plannedDaily` / `campaignType`）：
-
-```json
-{
-  "link": "https://...",
-  "name": "Brevis Campaign",
-  "message": "...",
-  "breakdowns": [{
-    "campaignApr": 0.012,
-    "campaignStartedAt": "2025-05-01T00:00:00Z",
-    "campaignEndedAt": "2025-05-15T00:00:00Z",
-    "campaignId": "0xdef...",
-    "totalBudget": 30000,
-    "latestTvl": 800000,
-    "perUserRewardCapUsd": 500
-  }]
-}
-```
-
-> Merkl/Brevis 的 CampaignGroup 如果包含多个 breakdown，按单 breakdown 拆组存储：每个 breakdown 独立一行。`campaign_key` 取 breakdown 级别的标识，group 的 `link` / `name` / `message` 携带在 JSONB 内供前端渲染。
+完整快照只在 `campaign_history` 中存一份，`campaign_apr_observations` 不存 `campaign_data`，需快照时 JOIN 即可。
 
 ## 去重键 campaign_key 规则
 
@@ -177,111 +72,87 @@ CREATE INDEX idx_campaign_apr_observations_latest_hash
 | `merkl` | `campaignId` | breakdown 中的 campaignId（必填） |
 | `brevis` | `campaignId` 优先，无则 `hash(link,campaignStartedAt,campaignEndedAt)` | Brevis campaignId 可选 |
 
-说明：
-- 如果上游延期导致 `endDate` / `campaignEndedAt` 变化，fallback key 可能变化并产生新 row
-- 有 `campaignId` 的来源优先用稳定 ID，减少延期或文案变化带来的重复
+## Cron 写入流程
 
-## Cron 操作流程
+persist cron（每分钟 :20）执行：
 
-在现有 persist cron（每分钟 :20）中追加，保持“不删除历史”：
+1. **UPSERT campaign_history**：遍历内存快照 7 个 campaign 数组，`ON CONFLICT DO UPDATE SET campaign_data = EXCLUDED.campaign_data, last_seen_at = NOW(), expired_at = NULL`
+2. **标记过期**：`UPDATE SET expired_at = NOW() WHERE expired_at IS NULL AND last_seen_at < NOW() - 2min`
+3. **APR observation append**：APR hash 变化时追加一行到 `campaign_apr_observations`
 
-```text
-persist cron tick
-  1. 现有 market_snapshots + market_configs 写入
+## campaign_data JSONB 结构
 
-  2. campaign_history UPSERT
-     - 遍历内存快照中所有 reserve 的 7 个 campaign 数组
-     - INSERT ... ON CONFLICT (reserve_id, source, side, campaign_key)
-       DO UPDATE SET
-         campaign_data = EXCLUDED.campaign_data,
-         last_seen_at = now(),
-         expired_at = NULL
+存内存快照原始形状（比例值），API 响应时走 `x100` 序列化。
 
-  3. 标记过期
-     UPDATE campaign_history
-     SET expired_at = now()
-     WHERE expired_at IS NULL
-       AND last_seen_at < now() - interval '2 min'
+### Merit
 
-  4. APR observation append
-     APR 相关字段变化时追加一行到 campaign_apr_observations
+```json
+{ "apr": 0.0235, "selfApr": 0.01, "link": "https://...", "name": "Merit Round 42", "message": [], "startDate": "2025-05-01T00:00:00Z", "endDate": "2025-05-15T23:59:59Z" }
 ```
 
-关键细节：
-- 2 分钟阈值对齐 1 分钟 cron，给单次刷新失败留容错
-- UPSERT 时复位 `expired_at = NULL`，campaign 延期或短暂漏报恢复后可重新变活跃
-- `campaign_apr_observations` 不按每分钟无脑写入；只在 APR 或 APR 相关 `campaign_data` 变化时追加，避免长期数据量失控
+### Merkl / Brevis（单 breakdown 拆组）
 
-## 数据流
-
-```text
-[root fetcher]                  [backend cron]
-  过滤已过期 campaign              refreshMarketsSnapshot()
-  现有逻辑不变                     -> 内存快照含活跃 campaign
-        |                                  |
-        v                                  v
-  [内存快照 active only] -----> UPSERT campaign_history
-                                SET campaign_data + last_seen_at + expired_at=NULL
-                                      |
-                                      v
-                               markExpiredCampaigns()
-                               2min 未出现 -> expired_at=now()
-                                      |
-                                      v
-                              [campaign_history]
-                              active + historical rows
-                                      |
-                         +------------+-------------+
-                         |                          |
-                 unified history API         campaign_apr_observations
-                 route/shape TBD             future chart source
+```json
+{ "link": "https://...", "name": "Merkl Campaign", "breakdowns": [{ "campaignApr": 0.018, "campaignId": "0xabc...", "campaignStartedAt": "...", "campaignEndedAt": "..." }] }
 ```
 
-## API 查询窗口（展示策略，非存储策略）
+Merkl/Brevis 多 breakdown 的 CampaignGroup 按单 breakdown 拆组存储，每个 breakdown 独立一行，group 的 `link` / `name` / `message` 携带在 JSONB 内。
 
-推荐后续并入统一历史数据 API。具体 route/shape 等整体历史架构确定后再定，不在本方案中锁死为 campaign 专属 endpoint。
+## Phase 1 已完成 ✅
 
-查询逻辑：
+| # | 任务 | 状态 |
+|---|------|------|
+| 1 | DB migration (`008_campaign_history.sql`) | ✅ |
+| 2 | `persistCampaignHistory()` UPSERT 写入 | ✅ |
+| 3 | `markExpiredCampaigns()` 过期标记 | ✅ |
+| 4 | `appendAprObservations()` APR 观测写入 | ✅ |
+| 5 | cron 集成 (`updateScheduler.ts`) | ✅ |
+| 6 | `campaign_apr_observations` 去冗余 `campaign_data` (`010_drop_campaign_data_from_observations.sql`) | ✅ |
+| 7 | 单元测试 (`persistenceService.test.ts`) | ✅ |
 
-```sql
-SELECT *
-FROM campaign_history
-WHERE (expired_at IS NULL OR expired_at > now() - interval '7 days')
-  AND ($1::text IS NULL OR reserve_id = $1)
-ORDER BY reserve_id, source, side, last_seen_at DESC;
-```
+**现状**：`campaign_history` 和 `campaign_apr_observations` 通过 cron 每分钟写入，但**没有任何 API 读取**。数据只写不读，是纯归档状态。
 
-- 活跃 campaign：`expired_at IS NULL`，始终返回
-- 近期过期 campaign：`expired_at` 在窗口内，返回并带状态字段
-- 窗口可按需调整为 30 天，纯查询参数变化
-- 前端展示活动原始时间仍读 `campaign_data.endDate` / `campaignEndedAt`
-- 不建议把 DB 查询耦合进 `/api/markets` 热路径；`/api/markets` 保持内存快照只读
+---
 
-## 代码改动范围
+## Phase 2：历史数据 API（待实现）
 
-| 改动点 | 文件 | 变更 |
-|--------|------|------|
-| DB migration | `backend/migrations/` | 新增 `campaign_history` + `campaign_apr_observations` 表和索引 |
-| UPSERT 写入 | `persistenceService.ts` | 新增 `persistCampaignHistory()`，UPSERT active campaigns |
-| 过期标记 | `persistenceService.ts` | 新增 `markExpiredCampaigns()`，2 分钟阈值 |
-| APR 观测 | `persistenceService.ts` | APR 相关字段变化时追加 `campaign_apr_observations`（仅存 apr + hash，不存 campaign_data） |
-| cron 调度 | `updateScheduler.ts` | persist cron 中调用 history 写入 + 过期标记 + APR 观测 |
-| 统一历史 API（后续） | 待整体历史架构确定 | 查询 DB 返回历史 campaign，不改 `/api/markets` 热路径 |
+### 前置决策
 
-不改动：root `src/` 下任何文件、`RuntimeReserveData` 类型、fetcher 过滤逻辑。
+Phase 2 的**数据层**（API route、查询参数、响应结构）可独立定义，**展示层**（过期 campaign 在 UI 中的位置、APR 曲线图交互）依赖前端设计。
 
-## APY 图表预留
+需先确定：
 
-Phase 1 不实现 APY 图表页面，也不承诺图表 API contract。
+1. **API 形式**：独立 endpoint `/api/campaigns/history` vs 合并进 `/api/markets` 响应？
+   - 独立 endpoint 优势：不污染热路径、查询参数灵活、可独立缓存
+   - 合并进 `/api/markets` 优势：前端一次请求拿到全部数据
+   - **建议独立 endpoint**，`/api/markets` 保持内存快照只读
+2. **前端是否需要 APR 曲线图**：决定是否暴露 `campaign_apr_observations` 查询
+3. **过期窗口**：默认返回多少天内的过期 campaign（7 天 vs 30 天）
 
-如果目标只是展示 campaign 存续区间，`campaign_history.first_seen_at` / `last_seen_at` / `expired_at` 已足够。
+### 任务清单
 
-如果目标是绘制 APR 变化曲线，必须读取 `campaign_apr_observations`，因为 `campaign_history` 是 UPSERT 最新状态表，会覆盖旧 APR，不能单独还原时间序列。
+| # | 任务 | 文件 | 说明 |
+|---|------|------|------|
+| 1 | 查询函数 | `persistenceService.ts` | `getCampaignHistory(options)` — 支持 reserveId / source / side / windowDays 过滤 |
+| 2 | API route | `routes/campaignHistoryRouter.ts` | `GET /api/campaigns/history?reserveId=&windowDays=7` |
+| 3 | 响应序列化 | 新增或复用 | `campaign_data` JSONB → x100 百分值 + 附带 `expiredAt` / `firstSeenAt` / `lastSeenAt` |
+| 4 | 类型定义 | `types/` | 响应 DTO |
+| 5 | server 集成 | `server.ts` | 挂载 route |
+| 6 | 测试 | `tests/` | 查询逻辑 + API 集成测试 |
 
-观测表写入策略：
+### 可选：APR 曲线 API
 
-- 每个 active campaign 提取 canonical APR：Merit 用 `apr`；Merkl/Brevis 用单 breakdown 的 `campaignApr`
-- 对同一 `(reserve_id, source, side, campaign_key)` 计算 APR 相关 hash
-- 与最新一条 observation 的 `apr_data_hash` 相同则不写；变化时追加一行，`observed_at = now()`
-- **不存 campaign_data**：完整快照已在 `campaign_history` 中 UPSERT 维护，observations 表只存 APR 变化点和 hash，避免两表冗余存储。查询时如需完整快照，JOIN `campaign_history` 即可
-- 后续图表 endpoint 再根据页面设计决定采样、聚合、窗口和返回结构
+如果前端需要 APR 变化曲线：
+
+| # | 任务 | 说明 |
+|---|------|------|
+| 7 | `getAprObservations(reserveId, campaignKey, range)` | 查 `campaign_apr_observations`，可选 JOIN `campaign_history` 取快照 |
+| 8 | `GET /api/campaigns/apr-series` | 返回 `{ observedAt, apr }[]`，前端自行绘图 |
+| 9 | 采样/聚合策略 | 长时间范围（>30 天）可按小时/天聚合减少数据点 |
+
+### 不改动
+
+- root `src/` 下任何文件
+- `RuntimeReserveData` 类型
+- fetcher 过滤逻辑
+- `/api/markets` 热路径
