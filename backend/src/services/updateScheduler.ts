@@ -4,13 +4,15 @@ import { warmCampaignForecastStatesCache } from '../controllers/merklForecastCon
 import { getMarketsSnapshot, refreshMarketsSnapshot } from './marketsService.js';
 import { refreshOnchainCache } from './onchainDataService.js';
 import { getCachedOraclePricesSnapshot, refreshOracleCache } from './oracleService.js';
-import { isPersistenceEnabled } from './dbPool.js';
+import { isPersistenceEnabled, getPool } from './dbPool.js';
 import {
   appendAprObservations,
   markExpiredCampaigns,
   persistCampaignHistory,
   persistSnapshotIfNeeded,
 } from './persistenceService.js';
+import { fetchAndPersistGscDaily } from './gscService.js';
+import { setGscFetchFailure } from './gscFetchState.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
@@ -31,6 +33,7 @@ export function startUpdateScheduler(): void {
   logger.info('   • Forecast: every 10 minutes');
   logger.info('   • FDV: every 15 minutes');
   logger.info('   • Categories: every 6 hours');
+  logger.info('   • GSC daily fetch: every day at 06:00 UTC');
 
   // Markets refresh every minute at second 0
   schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
@@ -120,6 +123,19 @@ export function startUpdateScheduler(): void {
       logger.warn(
         `Categories warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
       );
+    }
+  });
+
+  // GSC daily fetch at 06:00 UTC.
+  schedule(BACKEND_SCHEDULE_CRON.gscDailyFetchAtSixAmUtc, async () => {
+    if (!process.env.GSC_SA_EMAIL) return;
+    try {
+      const pool = getPool();
+      await fetchAndPersistGscDaily(pool);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setGscFetchFailure(msg);
+      logger.error(`GSC daily fetch failed: ${msg}`);
     }
   });
 }

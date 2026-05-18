@@ -34,6 +34,8 @@ export const BACKEND_SCHEDULE_CRON = {
   campaignForecastWarmEveryTenMinutesAtSecond30: '30 */10 * * * *',
   // Persist memory snapshots to PostgreSQL every minute at :20.
   persistSnapshotsEveryMinuteAtSecond20: '20 * * * * *',
+  // GSC daily fetch at 06:00 UTC
+  gscDailyFetchAtSixAmUtc: '0 0 6 * * *',
 } as const;
 
 export const BACKEND_CACHE_TTL_MS = {

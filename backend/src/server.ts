@@ -5,6 +5,7 @@ import { corsMiddleware } from './middleware/cors.js';
 import { apiCacheHeadersMiddleware } from './middleware/cacheHeaders.js';
 import marketsRouter from './routes/markets.js';
 import metaRouter from './routes/meta.js';
+import { seoRouter } from './routes/seo.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
@@ -73,6 +74,7 @@ app.get('/.well-known/security.txt', (_req, res) => {
 // Routes
 app.use('/api/markets', marketsRouter);
 app.use('/api/meta', metaRouter);
+app.use('/api/seo', seoRouter);
 // Note: /api/rate-inputs endpoint removed - rate-inputs are now merged into /api/markets
 
 const healthHandler = (req: express.Request, res: express.Response) => {

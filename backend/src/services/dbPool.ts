@@ -5,6 +5,9 @@
  * `DATABASE_URL` is not set, `getPool()` throws — `persistenceService` checks
  * `isPersistenceEnabled()` first so the absence of the env var is treated as
  * "persistence disabled" rather than a recurring error.
+ *
+ * Pool max=5: persistence cron (~1 conn/min) + SEO admin直查 (QPS<1) + GSC batch write (brief).
+ * GSC cron uses batch UPSERT, avoiding long-held connections.
  */
 import pg from 'pg';
 import { logger } from '../logger.js';
