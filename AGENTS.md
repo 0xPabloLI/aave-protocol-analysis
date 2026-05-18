@@ -1,12 +1,9 @@
 # AGENTS.md (Slim)
 
 ## Project Snapshot
-- Monorepo (npm workspaces) with three packages + backend:
-  - `packages/aave-shared-contracts` — shared type definitions (`RuntimeReserveData`, `MarketsPayload`), field registry, validation
-  - `packages/aave-fetcher` — data aggregation (`fetchMarketsData`): Aave SDK + Merit + Merkl + Brevis
-  - `packages/aave-shared-config` — static config constants
-  - `backend/` — API server, in-memory snapshots (cron-write / API-read-only), DB is pure archive (0 SELECT)
-- Dependency direction: shared-contracts ← aave-fetcher ← root/backend (one-way)
+- Monorepo (npm workspaces): `packages/aave-shared-contracts` (types) ← `packages/aave-fetcher` (runtime) ← root/backend
+- `packages/aave-shared-config` — static config constants
+- `backend/` — API server, in-memory snapshots (cron-write / API-read-only), DB is pure archive (0 SELECT)
 - Root `src/` is a thin re-export layer; backend imports from `@internal/*` packages, NOT from root dist.
 
 ## Core Commands
@@ -45,11 +42,6 @@
 railway up --detach --service aave-protocol-analysis -m "commit message"
 ```
 
-### ⚠️ AI agent deploy rule: only deploy committed code, only commit own session changes
-`railway up` uploads the **working directory** — not a git commit. An AI agent MUST:
-1. Only `railway up` after committing **its own session's changes** — never deploy uncommitted working tree
-2. Never commit changes it did not make in the current session (no `git add -A` of pre-existing dirty state)
-
 ### DB redeploy (only when needed, e.g., after config change)
 ```bash
 railway redeploy --service Postgres-mDWG --from-source -y
@@ -81,40 +73,7 @@ to the DB service, replacing PostgreSQL with a Node.js container.
 - API fields should omit `undefined` / empty arrays (keep payload lean).
 - Keep cron-write/API-read-only pattern: request handlers should not trigger external fetches.
 - **Workspace boundary**: `packages/aave-shared-contracts` (types only) ← `packages/aave-fetcher` (runtime) ← root/backend.
-- **No root dist imports**: backend MUST NOT import from `../../../dist/index.js`. Use `@internal/aave-shared-contracts` for types, `@internal/aave-fetcher` for runtime.
-- **No hardcoded bin paths in sub-project scripts**: workspace sub-projects (`backend/scripts/`, `packages/*/scripts/`) MUST NOT hardcode `./node_modules/.bin/<tool>` paths. npm workspaces hoist all deps to root `node_modules/`. Use `npx --no-install <tool>` instead — it resolves the hoisted binary correctly.
-- **Serialization stays in backend**: `marketsApiSerialize.ts` produces `MarketWithSpread` in backend only.
-- When adding reserve fields, update `RuntimeReserveData` in `@internal/aave-shared-contracts`, then backend types/serialization.
-
-## Automated Checks (No Manual Checklist Needed)
-
-### Reserve Field Addition
-Adding new reserve fields to the single `RuntimeReserveData` type requires:
-
-1. **Type Sync**: Update `RuntimeReserveData` → `MarketWithSpread` (backend) → `marketsApiSerialize.ts` serialization
-2. **Runtime Test**: `tests/field-coverage.test.ts` validates all expected fields are present
-3. **Field Registry**: `packages/aave-shared-contracts/src/index.ts` maintains `EXPECTED_RUNTIME_FIELDS` as source of truth
-
-**Run tests to verify:**
-```bash
-npm run build && npm run test -w aave-dashboard-backend
-```
-
-## Required Coupled Changes
-When touching one area, check its pair:
-- `packages/aave-shared-contracts/src/index.ts` (types) ↔ `backend/src/types/index.ts` (backend types)
-- `packages/aave-fetcher/src/index.ts` (pruneReserveForRuntime) ↔ `backend/src/types/index.ts`
-- Root output schema ↔ `backend/src/services/marketsApiSerialize.ts`
-- `backend/src/cacheTtl.ts` ↔ `backend/src/services/updateScheduler.ts`
-- Chain/platform mapping ↔ `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts`
-- `scripts/sync-oracle-pool-configs.ts` ↔ `backend/src/generated/oracle-pool-configs.ts`
-
-### Shared Package Boundaries (Non-Negotiable)
-| Package | Contains | Must NOT contain |
-|---|---|---|
-| `@internal/aave-shared-contracts` | Types, field registry, validation | Runtime fetch logic, serialization |
-| `@internal/aave-fetcher` | `fetchMarketsData`, SDK clients, adapters | Backend API types (`MarketWithSpread`) |
-| `backend` | API server, serialization (`marketsApiSerialize.ts`) | `fetchMarketsData` definition (imports it) |
+- Details: see `docs/architecture/workspace-boundaries.md`
 
 ## Validation Gate
 - For code changes, run at minimum:
@@ -122,15 +81,6 @@ When touching one area, check its pair:
   - `npm run build -w aave-dashboard-backend`
   - `npm run test -w aave-dashboard-backend`
 - For release-level confidence, prefer `npm run ci:remote`.
-- **Dist import check** (must be empty):
-  ```bash
-  rg "dist/index\.js|\.\.\/\.\.\/\.\.\/dist" backend/src tests
-  ```
-- **Bin path check** (must pass):
-  ```bash
-  npm run check:bin-paths
-  ```
-  (ensures workspace sub-project scripts use `npx`, not hardcoded `node_modules/.bin/` paths)
 
 ## High-Risk Areas (Coordinate Carefully)
 - Fetch orchestration: `packages/aave-fetcher/src/index.ts`
@@ -161,6 +111,7 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 - `aaveapy-doc/AaveAPY 精确协议标记与前端异常状态适配方案（修订版）.md`
 
 ### `docs/` — 本项目工程文档
+- `docs/architecture/workspace-boundaries.md` — workspace 包边界、耦合变更、字段添加流程
 - `docs/api/api-documentation.md` — API 接口文档
 - `docs/api/brevis-supplement.md` — Brevis 补充说明
 - `docs/backend/data-freshness-mechanism.md` — 数据新鲜度机制
