@@ -21,7 +21,7 @@
 | AAV-122 | 增加前后端传输的压缩方案 | 已实现：后端 server.ts 使用 compression 中间件 (gzip) |
 | AAV-124 | 增加 sort by supply%，sort by borrow% | 已实现：supplyCapPct/borrowCapPct 排序模式 |
 | AAV-143 | 在 market filter 里面加 search markets | 已实现：FilterBar 已有 searchQuery 搜索功能 |
-| AAV-110 | Refactor: split shared contracts into shared package | 部分实现：packages/aave-shared-config 已存在 |
+| AAV-110 | Refactor: split shared contracts into shared package | ✅ 已完成：packages/aave-shared-contracts + aave-fetcher + npm workspaces |
 
 ## Issue 分类统计
 
