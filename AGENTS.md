@@ -77,6 +77,7 @@ to the DB service, replacing PostgreSQL with a Node.js container.
 - Keep cron-write/API-read-only pattern: request handlers should not trigger external fetches.
 - **Workspace boundary**: `packages/aave-shared-contracts` (types only) ← `packages/aave-fetcher` (runtime) ← root/backend.
 - **No root dist imports**: backend MUST NOT import from `../../../dist/index.js`. Use `@internal/aave-shared-contracts` for types, `@internal/aave-fetcher` for runtime.
+- **No hardcoded bin paths in sub-project scripts**: workspace sub-projects (`backend/scripts/`, `packages/*/scripts/`) MUST NOT hardcode `./node_modules/.bin/<tool>` paths. npm workspaces hoist all deps to root `node_modules/`. Use `npx --no-install <tool>` instead — it resolves the hoisted binary correctly.
 - **Serialization stays in backend**: `marketsApiSerialize.ts` produces `MarketWithSpread` in backend only.
 - When adding reserve fields, update `RuntimeReserveData` in `@internal/aave-shared-contracts`, then backend types/serialization.
 
@@ -120,6 +121,11 @@ When touching one area, check its pair:
   ```bash
   rg "dist/index\.js|\.\.\/\.\.\/\.\.\/dist" backend/src tests
   ```
+- **Bin path check** (must pass):
+  ```bash
+  npm run check:bin-paths
+  ```
+  (ensures workspace sub-project scripts use `npx`, not hardcoded `node_modules/.bin/` paths)
 
 ## High-Risk Areas (Coordinate Carefully)
 - Fetch orchestration: `packages/aave-fetcher/src/index.ts`

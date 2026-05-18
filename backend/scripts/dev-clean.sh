@@ -6,9 +6,8 @@ repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 backend_root="$repo_root/backend"
 
 patterns=(
-  "$backend_root/node_modules/.bin/tsx src/server.ts"
-  "$backend_root/node_modules/.bin/tsx watch src/server.ts"
-  "$backend_root/dist/server.js"
+  "tsx.*src/server\.ts"
+  "node.*backend/dist/server\.js"
 )
 
 found=0

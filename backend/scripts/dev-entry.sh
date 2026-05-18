@@ -6,14 +6,14 @@ cd "$(dirname "$0")/.."
 
 bash scripts/dev-clean.sh
 
-# Preflight: ensure backend deps installed (tsx present)
-if [ ! -x "./node_modules/.bin/tsx" ]; then
-  echo "[dev-entry] tsx missing in backend/node_modules — running npm install..." >&2
-  npm install --include=dev --no-audit --no-fund
-# Preflight: package.json/lock newer than node_modules — deps may be stale
-elif [ "package.json" -nt "node_modules" ] || { [ -f "package-lock.json" ] && [ "package-lock.json" -nt "node_modules" ]; }; then
-  echo "[dev-entry] package.json/lock newer than node_modules — running npm install..." >&2
-  npm install --include=dev --no-audit --no-fund
+# Preflight: ensure workspace deps installed (check via npx, which resolves hoisted packages)
+if ! npx --no-install tsx --version >/dev/null 2>&1; then
+  echo "[dev-entry] workspace deps missing — running npm install from root..." >&2
+  (cd .. && npm install)
+# Preflight: root package.json/lock newer than node_modules — deps may be stale
+elif [ "../package.json" -nt "../node_modules" ] || [ "../package-lock.json" -nt "../node_modules" ]; then
+  echo "[dev-entry] root package.json/lock newer than node_modules — running npm install from root..." >&2
+  (cd .. && npm install)
 fi
 
 # Preflight: ensure workspace packages are built (backend imports from @internal/* packages)
@@ -24,10 +24,10 @@ fi
 
 case "${1:-}" in
   --watch)
-    exec ./node_modules/.bin/tsx watch src/server.ts
+    exec npx --no-install tsx watch src/server.ts
     ;;
   "")
-    exec ./node_modules/.bin/tsx src/server.ts
+    exec npx --no-install tsx src/server.ts
     ;;
   *)
     echo "Unknown option: $1" >&2
