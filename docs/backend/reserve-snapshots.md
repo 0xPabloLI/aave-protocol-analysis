@@ -1,75 +1,64 @@
-# AAV-344 后端：Reserve Snapshots 采集、存储与 API
+# AAV-344 后端：Reserve Snapshots 历史 API
 
 ## 1. 目标
-为前端历史趋势展示提供数据基础：定时快照 reserve 全量指标，暴露查询 API。
+为前端历史趋势展示暴露查询 API。**不需要新建表**——直接复用已有 `market_snapshots` 表（每次 cron 已写入全量快照，含预聚合 incentive APR）。
 
-## 2. 数据库设计
+## 2. 数据源：已有 `market_snapshots` 表
 
-### 2.1 `reserve_snapshots` 表
+### 2.1 当前 schema（经 migration 007 重命名后）
 
 ```sql
-CREATE TABLE IF NOT EXISTS reserve_snapshots (
-  id              BIGSERIAL PRIMARY KEY,
-  snapshot_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
-  reserve_id      TEXT         NOT NULL,       -- ReserveWithSpread.reserveId
-  market_name     TEXT         NOT NULL,       -- ReserveWithSpread.marketName
-  chain_name      TEXT         NOT NULL,       -- ReserveWithSpread.chainName
-  chain_id        INTEGER      NOT NULL,       -- ReserveWithSpread.chainId
-  token_symbol    TEXT         NOT NULL,       -- ReserveWithSpread.tokenSymbol
-
-  -- 核心指标（原始链上值，string/bigint；禁止 *Usd 预计算字段）
-  supply_apy      NUMERIC(10,6),              -- ReserveWithSpread.supplyApy
-  borrow_apy      NUMERIC(10,6),              -- ReserveWithSpread.borrowApy
-  token_price     NUMERIC(24,8),              -- ReserveWithSpread.tokenPrice
-  utilization_pct NUMERIC(8,4),              -- ReserveWithSpread.utilizationPct
-  supplied        TEXT,                       -- ReserveWithSpread.supplied (bigint string)
-  borrowed        TEXT,                       -- ReserveWithSpread.borrowed
-  liquidity       TEXT,                       -- ReserveWithSpread.liquidity
-  supply_cap      TEXT,                       -- ReserveWithSpread.supplyCap
-  borrow_cap      TEXT,                       -- ReserveWithSpread.borrowCap
-
-  -- 利率模型
-  base_borrow_rate     NUMERIC(10,6),         -- ReserveWithSpread.baseBorrowRate
-  slope_below_optimal  NUMERIC(10,6),         -- ReserveWithSpread.slopeBelowOptimal
-  slope_above_optimal  NUMERIC(10,6),         -- ReserveWithSpread.slopeAboveOptimal
-  optimal_utilization  NUMERIC(8,4),          -- ReserveWithSpread.optimalUtilization
-  deficit              TEXT,                  -- ReserveWithSpread.deficit
-
-  -- 激励数据（JSONB 存储完整 breakdown 结构）
-  merit_supplys   JSONB,                      -- ReserveWithSpread.meritSupplys
-  merit_borrows   JSONB,                      -- ReserveWithSpread.meritBorrows
-  merkl_supplys   JSONB,                      -- ReserveWithSpread.merklSupplys
-  merkl_borrows   JSONB,                      -- ReserveWithSpread.merklBorrows
-  merkl_holds     JSONB,                      -- ReserveWithSpread.merklHolds
-  brevis_supplys  JSONB,                      -- ReserveWithSpread.brevisSupplys
-  brevis_borrows  JSONB,                      -- ReserveWithSpread.brevisBorrows
-
-  UNIQUE (snapshot_at, reserve_id)
-);
-CREATE INDEX IF NOT EXISTS idx_reserve_snapshots_at       ON reserve_snapshots (snapshot_at DESC);
-CREATE INDEX IF NOT EXISTS idx_reserve_snapshots_reserve   ON reserve_snapshots (reserve_id);
-CREATE INDEX IF NOT EXISTS idx_reserve_snapshots_market    ON reserve_snapshots (market_name, chain_name);
+-- 关键列（完整列见 001_init_persistence.sql + 007_rename_reserve_columns.sql）
+market_snapshots (
+  id                      BIGSERIAL PRIMARY KEY,
+  snapshot_ts             TIMESTAMPTZ NOT NULL,
+  reserve_id              TEXT        NOT NULL,
+  chain_id                INTEGER     NOT NULL,
+  chain_name              TEXT        NOT NULL,
+  market_name             TEXT        NOT NULL,
+  token_symbol            TEXT        NOT NULL,
+  token_name              TEXT        NOT NULL,
+  token_address           TEXT        NOT NULL,
+  decimals                INTEGER,
+  token_price             NUMERIC(24, 8),
+  supply_apy              NUMERIC(12, 6),
+  borrow_apy              NUMERIC(12, 6),
+  utilization_pct         NUMERIC(8, 4),
+  liquidity               NUMERIC(40, 0),      -- 原 available_liquidity
+  borrowed                 NUMERIC(40, 0),      -- 原 total_variable_debt
+  supplied                 NUMERIC(40, 0),      -- 原 reserve_size
+  deficit                 NUMERIC(40, 0),
+  supply_incentives_apr   NUMERIC(12, 6),      -- 预聚合：所有 supply incentive APR 之和
+  borrow_incentives_apr   NUMERIC(12, 6),      -- 预聚合：所有 borrow incentive APR 之和
+  incentive_details       JSONB,               -- 完整 breakdown（merit/merkl/brevis）
+  aave_pro_reserve_id     TEXT,
+  UNIQUE (snapshot_ts, reserve_id)
+)
 ```
 
-### 2.2 命名约定
+### 2.2 关键：预聚合 incentive APR 已存在
+
+后端 `persistenceService.ts` 的 `buildSnapshotRow()` 在每次快照时已经调用：
+- `aggregateSupplyIncentivesApr(reserve)` → 存入 `supply_incentives_apr`
+- `aggregateBorrowIncentivesApr(reserve)` → 存入 `borrow_incentives_apr`
+
+计算逻辑（`persistenceService.ts` L604-L638）：
+```
+legacy supplyIncentives[] × 100
++ merit.apr × 100
++ merkl breakdown.campaignApr × 100
++ brevis breakdown.campaignApr × 100
+```
+
+**前端无需自行聚合 incentive APR，直接读标量列即可。**
+
+### 2.3 命名约定
 - 列名 snake_case（Postgres），API 层 camelCase（对齐 `ReserveWithSpread`）
-- `reserve_id` 为 canonical key（禁止 composite-key fallback）
-- **禁止存储 `*Usd` 预计算字段**，前端通过 `nativeToUsd()` 推导
-- 激励 JSONB 内部结构对齐 `MeritIncentive` / `MerklOpportunityGroup` / `BrevisIncentive`
+- `reserve_id` 为 canonical key
+- **禁止 `*Usd` 字段**（前端通过 `nativeToUsd()` 推导）
+- `incentive_details` JSONB 内部结构对齐 `MeritIncentive` / `MerklOpportunityGroup` / `BrevisIncentive`
 
-## 3. 数据采集与存储
-
-| 项 | 方案 |
-|----|------|
-| 入口 | `backend/src/services/updateScheduler.ts` 新增 cron 任务 |
-| 持久化 | `persistenceService.ts` 新增 `writeReserveSnapshots()` 批量写入 |
-| 数据源 | 复用 `src/index.ts` fetcher 已拿到的 `/api/markets` 全量 reserve |
-| 频率 | 每小时（可配置） |
-| 幂等 | UNIQUE `(snapshot_at, reserve_id)` 防重复 |
-| 架构 | cron-write / API-read-only，历史数据只写入不修改 |
-| 迁移 | `backend/migrations/` 新增 SQL 脚本 |
-
-## 4. API
+## 3. API
 
 ### `GET /api/markets/history`
 
@@ -96,48 +85,65 @@ interface ReserveSnapshotsResponse {
 }
 
 interface ReserveSnapshotItem {
-  snapshotAt: string;
+  snapshotAt: string;            // ISO timestamp
   reserveId: string;
   marketName: string;
   chainName: string;
+  chainId: number;
   tokenSymbol: string;
-  supplyApy?: number;
-  borrowApy?: number;
+  supplyApy?: number;            // 协议基础 supply APY
+  borrowApy?: number;            // 协议基础 borrow APY
+  supplyIncentivesApr?: number;  // 预聚合：所有 supply incentive APR 之和
+  borrowIncentivesApr?: number;  // 预聚合：所有 borrow incentive APR 之和
   tokenPrice?: number;
   utilizationPct?: number;
-  supplied?: string;
+  supplied?: string;             // bigint string
   borrowed?: string;
   liquidity?: string;
-  supplyCap?: string;
-  borrowCap?: string;
-  baseBorrowRate?: number;
-  slopeBelowOptimal?: number;
-  slopeAboveOptimal?: number;
-  optimalUtilization?: number;
   deficit?: string;
-  meritSupplys?: MeritIncentive[];
-  meritBorrows?: MeritIncentive[];
-  merklSupplys?: MerklOpportunityGroup[];
-  merklBorrows?: MerklOpportunityGroup[];
-  merklHolds?: MerklOpportunityGroup[];
-  brevisSupplys?: BrevisIncentive[];
-  brevisBorrows?: BrevisIncentive[];
 }
 ```
 
-**安全**：时间范围上限 90 天，防大范围查询拖垮 DB。
+**注意**：
+- API 只返回图表需要的标量字段，**不返回 `incentive_details` JSONB**（减少传输量，前端趋势图用不到完整 breakdown）
+- `supplyIncentivesApr` / `borrowIncentivesApr` 是后端预聚合值，前端可以直接 `supplyApy + supplyIncentivesApr` 算 total supply APY
+- 时间范围上限 90 天（防大范围查询拖垮 DB）
 
-## 5. 验收标准
-- `reserve_snapshots` 表创建成功，UNIQUE 约束生效
-- cron 每小时写入，无错误，幂等不重复
-- API 正确返回数据，字段对齐 `ReserveWithSpread`，不含 `*Usd`
+### 3.1 实现位置
+
+| 文件 | 内容 |
+|------|------|
+| `backend/src/routes/marketsHistory.ts` | 路由定义 |
+| `backend/src/controllers/marketsHistoryController.ts` | 查询逻辑 + 90 天校验 |
+| `backend/src/services/persistenceService.ts` | 新增 `queryReserveSnapshots()` 方法 |
+
+### 3.2 SQL 查询
+
+```sql
+SELECT snapshot_ts, reserve_id, market_name, chain_name, chain_id, token_symbol,
+       supply_apy, borrow_apy, supply_incentives_apr, borrow_incentives_apr,
+       token_price, utilization_pct, supplied, borrowed, liquidity, deficit
+FROM market_snapshots
+WHERE reserve_id = $1
+  AND snapshot_ts >= $2
+  AND snapshot_ts <= $3
+ORDER BY snapshot_ts ASC
+LIMIT $4;
+```
+
+## 4. 验收标准
+- API 正确返回 `market_snapshots` 数据，字段对齐 `ReserveSnapshotItem`
+- `supplyIncentivesApr` / `borrowIncentivesApr` 为预聚合值，前端无需自行计算
+- 不返回 `incentive_details` JSONB
 - 时间范围上限 90 天限制生效
 - 单元测试 + 集成测试通过
 
-## 6. 依赖
-- 数据库环境支持新增表
-- AAV-139 campaign-history 设计（`docs/backend/campaign-history.md` 需先创建）
+## 5. 依赖
+- `market_snapshots` 表已有 cron 写入（无需改动）
+- `aggregateSupplyIncentivesApr` / `aggregateBorrowIncentivesApr` 已有
 - AAV-301 性能优化（定时任务稳定性）
 
-## 7. 关联文档
+## 6. 关联文档
 - 前端实现方案：[`aaveapy/docs/plans/linear-issues/aav_344_plan.md`](https://github.com/0xPabloLI/aaveapy/blob/main/docs/plans/linear-issues/aav_344_plan.md)（hook、组件、集成方式、移动端适配）
+- 已有 DB schema：`backend/migrations/001_init_persistence.sql` + `007_rename_reserve_columns.sql`
+- 已有预聚合逻辑：`backend/src/services/persistenceService.ts` L585-L638
