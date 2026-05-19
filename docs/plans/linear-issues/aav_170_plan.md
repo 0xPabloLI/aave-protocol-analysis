@@ -1,69 +1,52 @@
-# 开发方案 - AAV-170 后端 onchain RPC 数据获取支持 v4 deficit
+# 开发方案 - AAV-170 后端 onchain RPC 数据获取支持 V4 deficit
 
 ## 1. Issue 概述
 后端需要增强 onchain RPC 数据获取逻辑，使其支持 Aave V4 的 deficit 数据获取。目前 V4 SDK 不直接返回 deficit 字段，需通过后端调用链上 RPC 接口补充该数据，保证后端 API 能完整返回 V4 市场的 deficit 信息。
 
 ## 2. 当前状态
-- 未开始
-- 目前后端 onchainDataService.ts 仅对 V3 deficit 支持较完善，V4 相关缺失
-- V4 数据主要通过 v4-fetcher.ts 获取，但缺少 deficit 字段补充
+- **已完成** ✓
+- 实现于 `backend/src/services/onchainDataService.ts`
+- V4 deficit 通过 `Hub.getSpokeDeficitRay(assetId, spoke)` per-spoke 分量链上 RPC 获取（语义对齐 V3 `reserve.deficit`）
+- Multicall3 批量优化：~94 serial RPC → ~16 batch calls
 
-## 3. 影响范围
-- 后端仓库：aave-protocol-analysis（railway 分支）
-- 主要涉及后端服务中的 onchainDataService.ts、v4-fetcher.ts、marketsService.ts
+## 3. 实现详情
 
-## 4. 实现方案
+### 3.1 V4 deficit 获取路径
+V4 没有 `UiPoolDataProvider.getReservesHumanized()`，采用直接合约调用：
 
-### 4.1 需求分析
-- V4 SDK 不直接返回 deficit，需要调用链上合约的对应方法获取
-- 需在后端 onchainDataService 中新增针对 V4 的 deficit 获取逻辑
-- 将获取的 deficit 数据整合到后端内存快照中，供 API 返回
+1. 遍历 address-book 中 `AaveV4*` 导出，自动发现 Spoke 和 Hub 地址
+2. **Hub asset mapping**（Multicall3 batch）：`getAssetCount()` + N × `getAsset(assetId)` → underlying→assetId 映射
+3. **Per-spoke deficit**（Multicall3 batch）：`getSpokeDeficitRay(assetId, spoke)` → RAY→token units 转换
+4. 以 V4 onchain key 格式 (`{chainId}:{hubName}:{spokeAddress}:{tokenAddr}`) 缓存
 
-### 4.2 具体步骤
+### 3.2 关键设计
+- **Per-spoke deficit**：使用 `getSpokeDeficitRay(assetId, spoke)` 而非 `getAssetDeficitRay(assetId)`，因为 per-spoke 和 V3 `reserve.deficit` 语义对齐
+- **Hub mapping 缓存**：`hubAssetMapping` 跨 Spoke 共享（同一 Hub 只构建一次）
+- **Multicall3 批量化**：每个 Hub 2 batch + 每个 Spoke 1 batch，总计 ~16 RPC calls
+- **Serial fallback**：Multicall3 失败时回退逐个调用，保证可靠性
+- **Spoke→Hub 映射**：`V4_SPOKE_TO_HUB` 硬编码（address-book 结构决定，仅 3 个 Hub，变化频率低）
 
-#### 4.2.1 调研 V4 deficit 获取方式
-- 查阅 Aave V4 官方合约接口，确认 deficit 相关字段或方法（如 getTotalDebt、getAvailableLiquidity 等）
-- 确认 RPC 调用方式（ethers.js 或 web3.js）
+### 3.3 Match 机制
+- **V3 onchain key** = `${chainId}:${poolAddress}:${tokenAddr}` — 直接匹配 `reserve.reserveId`（V3 reserveId 格式相同）
+- **V4 onchain key** = `${chainId}:${hubName}:${spokeAddress}:${tokenAddr}` — marketsService 通过 `(reserve.chainId, reserve.hubName, reserve.spokeAddress, reserve.tokenAddress)` 组合查找
+- V4 reserveId (`{marketName}:{chainId}:{tokenAddr}:{hubName}`) 包含 marketName 前缀，**不能直接匹配** onchain key，需通过 fallback lookup
 
-#### 4.2.2 修改后端代码
+### 3.4 数据流
+```
+Cron → refreshOnchainCache()
+  → V3: UiPoolDataProvider.getReservesHumanized() (existing, 1 call per pool)
+  → V4: Multicall3 aggregate3()
+       → Round 1: getAssetCount + N×getAsset → hubAssetMapping (2 batches per Hub)
+       → Round 2: N×getSpokeDeficitRay → per-spoke deficit (1 batch per Spoke)
+  → poolCache (V3) + v4SpokeCache (V4)
+  → getOnchainDataFromCache() → marketsService.merge
+    → reserve.deficit = onchainData.deficit (而非默认 '0')
+```
 
-- **文件：`src/onchainDataService.ts`**
-  - 新增针对 V4 市场的 deficit 获取函数，调用对应合约方法
-  - 复用现有 RPC provider，确保调用链上数据
-  - 设计接口统一返回 V3/V4 deficit 格式
+## 4. 验收标准
+- ✅ 后端 `/api/markets` 接口返回的 V4 市场数据包含 deficit 字段（非默认 '0'）
+- ✅ 单元测试覆盖 RAY 转换、onchain key 格式、Spoke→Hub 映射完整性、Multicall3 ABI 编解码
+- ✅ 构建和测试通过
 
-- **文件：`src/v4-fetcher.ts`**
-  - 在获取 V4 市场数据后，调用 onchainDataService 的 deficit 获取函数补充数据
-  - 将 deficit 字段合并到 RuntimeReserveData 类型中
-
-- **文件：`backend/src/services/marketsService.ts`**
-  - 确保 marketsService 在构建内存快照时包含 deficit 字段
-  - 处理 V4 市场数据时正确读取和存储 deficit
-
-#### 4.2.3 测试与验证
-- 编写单元测试覆盖 V4 deficit 获取逻辑
-- 集成测试确保 API `/api/markets` 返回的 V4 市场数据包含 deficit 字段且数值正确
-- 本地联调，使用主网或测试网数据验证
-
-### 4.3 数据流变更
-- 数据源：链上 RPC -> onchainDataService (V4 deficit 获取) -> v4-fetcher 补充数据 -> marketsService 组装快照 -> API 返回
-- 保障数据结构兼容前端消费
-
-## 5. 依赖关系
-- 无直接依赖其他未完成 Issue
-- 但建议同步关注 V4 deficit 相关合约接口变动（若有）
-
-## 6. 验收标准
-- 后端 `/api/markets` 接口返回的所有 V4 市场数据均包含准确的 deficit 字段
-- 单元测试覆盖新增的 deficit 获取函数，测试通过
-- 集成测试验证整体数据链路正确
-- 本地及 staging 环境验证无异常，数据符合链上实际
-
-## 7. 复杂度评估
-- Medium
-- 需要理解 V4 合约接口及链上 RPC 调用，涉及后端多模块协作
-- 但已有 V3 类似实现可参考，技术难度适中
-
----
-
-以上为 AAV-170 后端 onchain RPC 支持 V4 deficit 的详细开发方案。
+## 5. 后续
+- Oracle Service 改运行时消费 address-book + 遍历合并 → `docs/plans/address-book-runtime-refactor.md`

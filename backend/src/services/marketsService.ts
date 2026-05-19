@@ -96,9 +96,17 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       let mergedCount = 0;
       let fallbackCount = 0;
 
-      // Merge on-chain data by reserveId (marketName:chainId:tokenAddress)
+      // Merge on-chain data by reserveId
+      // V3: key = `${chainId}:${poolAddress}:${tokenAddr}` (matches reserveId)
+      // V4: key = `${chainId}:${hubName}:${spokeAddress}:${tokenAddr}` (per-spoke deficit)
       for (const reserve of payload.data) {
-        const onchainData = onchainMap.get(reserve.reserveId);
+        let onchainData = onchainMap.get(reserve.reserveId);
+
+        // Fallback: V4 reserves use (chainId, hubName, spokeAddress, tokenAddress) lookup
+        if (!onchainData && (reserve as any).hubName && (reserve as any).spokeAddress) {
+          const v4Key = `${reserve.chainId}:${(reserve as any).hubName}:${(reserve as any).spokeAddress.toLowerCase()}:${reserve.tokenAddress.toLowerCase()}`;
+          onchainData = onchainMap.get(v4Key);
+        }
 
         // deficit: SDK value > on-chain RPC > default '0'
         if ((reserve as any).deficit) {
