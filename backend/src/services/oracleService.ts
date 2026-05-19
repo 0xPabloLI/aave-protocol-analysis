@@ -170,9 +170,22 @@ interface V4SpokeConfig {
   oracleAddress: string;
 }
 
+const SPOKE_NAME_MAP: Record<string, string> = {
+  BLUECHIP: 'Bluechip',
+  ETHENACORRELATED: 'Ethena',
+  ETHENAECOSYSTEM: 'EthenaEcosystem',
+  ETHERFI: 'EtherFi',
+  FOREX: 'Forex',
+  GOLD: 'Gold',
+  KELP: 'Kelp',
+  LIDO: 'Lido',
+  LOMBARDBTC: 'Lombard',
+  MAIN: 'Main',
+};
+
 const V4_SPOKE_CONFIGS: V4SpokeConfig[] = [
   ...SYNCED_V4_SPOKE_CONFIGS.map((c: SyncedV4SpokeConfig): V4SpokeConfig => ({
-    spokeName: c.spokeName,
+    spokeName: SPOKE_NAME_MAP[c.spokeName] ?? c.spokeName,
     chainId: c.chainId,
     chainName: CHAIN_NAME_BY_ID[c.chainId] ?? `Chain${c.chainId}`,
     spokeAddress: c.spokeAddress,
