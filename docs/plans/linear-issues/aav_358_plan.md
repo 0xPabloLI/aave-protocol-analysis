@@ -4,7 +4,7 @@
 V4 reserveId 当前使用 name-based 格式 `${marketName}:${chainId}:${tokenAddr}:${hubName}`（4 段），和 V3 的 address-based 格式不一致。参考 V3 的改动（commit `8181f1a`），将 V4 reserveId 改为 address-based 格式。
 
 ## 2. 当前状态
-- **待实现**
+- **已完成** ✅
 - Linear: AAV-358
 
 ## 3. 问题分析

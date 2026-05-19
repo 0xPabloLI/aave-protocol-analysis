@@ -138,5 +138,5 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 
 ### V4 Onchain Match 机制
 - V3 onchain key = `${chainId}:${poolAddress}:${tokenAddr}` — 直接匹配 reserveId
-- V4 onchain key = `${chainId}:${hubName}:${spokeAddress}:${tokenAddr}` — reserveId 含 marketName 前缀无法直接匹配，需 marketsService fallback lookup
+- V4 onchain key = `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}` — address-based，直接匹配 reserveId，无 fallback
 - 修改 V4 onchain key 格式时，**同步更新测试用例**（曾出现测试 3 段 vs 实现 4 段不一致）

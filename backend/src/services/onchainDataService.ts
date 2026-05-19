@@ -10,7 +10,7 @@
  * - V3: one config per address-book entry (per pool/market), cache key = poolAddress
  * - V4: one config per Spoke, cache key = spokeAddress — per-spoke deficit = per-reserve deficit
  * - Merge key (V3): `${chainId}:${poolAddress}:${tokenAddress}`
- * - Merge key (V4): `${chainId}:${hubName}:${spokeAddress}:${tokenAddress}`
+ * - Merge key (V4): `${chainId}:${spokeAddress}:${tokenAddress}:${hubName}`
  * - Runs independently from markets fetch (async, non-blocking)
  * - Per-pool caching with 30-min TTL
  * - If RPC fails, cached data within TTL is used
@@ -197,19 +197,6 @@ interface V4SpokeConfig {
   defaultRpcUrls: string[];
 }
 
-const V4_SPOKE_NAME_MAP: Record<string, string> = {
-  MAIN_SPOKE: 'Main',
-  BLUECHIP_SPOKE: 'Bluechip',
-  LIDO_ESPOKE: 'Lido',
-  ETHERFI_ESPOKE: 'EtherFi',
-  KELP_ESPOKE: 'Kelp',
-  ETHENA_CORRELATED_SPOKE: 'Ethena',
-  ETHENA_ECOSYSTEM_SPOKE: 'EthenaEcosystem',
-  FOREX_SPOKE: 'Forex',
-  GOLD_SPOKE: 'Gold',
-  LOMBARD_BTC_SPOKE: 'Lombard',
-};
-
 const V4_SPOKE_TO_HUB: Record<string, string> = {
   MAIN_SPOKE: 'CORE_HUB',
   BLUECHIP_SPOKE: 'CORE_HUB',
@@ -248,10 +235,8 @@ function buildV4SpokeConfigs(): V4SpokeConfig[] {
       const hubAddr = hubs[hubKey];
       if (typeof hubAddr !== 'string') continue;
 
-      const spokeName = V4_SPOKE_NAME_MAP[spokeKey] ?? spokeKey;
-
       configs.push({
-        spokeName,
+        spokeName: spokeKey,
         chainId,
         spokeAddress: normalizeAddress(spokeAddr),
         hubAddress: normalizeAddress(hubAddr),
@@ -672,16 +657,16 @@ export function getOnchainDataFromCache(): Map<string, OnchainReserveData> {
     }
   }
 
-  // V4: key = `{chainId}:{hubName}:{spokeAddress}:{tokenAddr}`
+  // V4: key = `{chainId}:{spokeAddress}:{tokenAddr}:{hubName}`
   // Per-spoke deficit (getSpokeDeficitRay), semantically aligned with V3 reserve.deficit
-  // marketsService matches V4 reserves by (chainId, hubName, spokeAddress, tokenAddress)
+  // Key format matches V4 reserveId — direct lookup, no fallback needed
   for (const v4Config of V4_SPOKE_CONFIGS) {
     const entry = v4SpokeCache.get(v4Config.spokeAddress);
     if (!entry) continue;
     const age = now - entry.updatedAt;
     if (age >= ttl) continue;
     for (const [tokenAddr, data] of entry.data) {
-      const key = `${v4Config.chainId}:${v4Config.hubName}:${v4Config.spokeAddress}:${tokenAddr}`;
+      const key = `${v4Config.chainId}:${v4Config.spokeAddress}:${tokenAddr}:${v4Config.hubName}`;
       result.set(key, data);
     }
   }
