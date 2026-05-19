@@ -50,11 +50,10 @@ jobs:
 
       # Backend uses moderate: catches Express path-to-regexp 0.x advisories; elliptic/ethers may
       # still appear in npm audit output as low/informational when no upstream fix exists.
-      - name: Audit runtime dependencies (root high, backend moderate)
-        run: |
-          set -e
-          npm audit --omit=dev --audit-level=high || exit 1
-          npm --prefix backend audit --omit=dev --audit-level=moderate || exit 1
+      # GHSA-848j-6mx2-7j84 (elliptic) and GHSA-58qx-3vcg-4xpx (ws) are excluded:
+      # both come from ethers v5 → Aave SDK, no upstream fix available.
+      - name: Audit runtime dependencies (shared script)
+        run: npm run audit
 
   # NOTE: Auto-remediation is handled by ci-auto-remediation.yml workflow
   # (triggered via workflow_run event when this workflow fails)
