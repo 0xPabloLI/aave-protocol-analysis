@@ -7,7 +7,6 @@ import { getCachedOraclePricesSnapshot, refreshOracleCache } from './oracleServi
 import { isPersistenceEnabled, getPool } from './dbPool.js';
 import {
   appendAprObservations,
-  markExpiredCampaigns,
   persistCampaignHistory,
   persistSnapshotIfNeeded,
 } from './persistenceService.js';
@@ -68,7 +67,6 @@ export function startUpdateScheduler(): void {
         await persistSnapshotIfNeeded(marketsSnapshot?.payload ?? null, oracleSnapshot);
         if (marketsSnapshot?.payload) {
           await persistCampaignHistory(marketsSnapshot.payload);
-          await markExpiredCampaigns();
           await appendAprObservations(marketsSnapshot.payload);
         }
       }

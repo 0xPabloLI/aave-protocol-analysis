@@ -816,7 +816,7 @@ export async function persistCampaignHistory(payload: MarketsPayload): Promise<n
 
 const EXPIRY_WINDOW_MINUTES = 2;
 
-export async function markExpiredCampaigns(): Promise<number> {
+async function markExpiredCampaigns(): Promise<number> {
   if (!isPersistenceEnabled()) return 0;
   const pool = getPool();
 
