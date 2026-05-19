@@ -14,7 +14,7 @@ For each field, the priority chain is: **SDK value > on-chain RPC > fallback/def
 
 | Field | V3 reserve | V4 reserve |
 |-------|-----------|-----------|
-| `deficit` | absent in SDK → RPC → default `'0'` | absent in SDK → RPC (never covers V4) → default `'0'` |
+| `deficit` | absent in SDK → RPC → default `'0'` | absent in SDK → RPC (`Hub.getSpokeDeficitRay(assetId, spoke)` via Multicall3 batch) → RAY→token units |
 | `baseVariableBorrowRate` | absent in SDK → RPC → fallback calculation | **provided by SDK** (HubAsset settings) → kept |
 
 SDK data is fetched every 1 minute (cron at second :00) and replaces the entire payload.
@@ -23,7 +23,7 @@ Since SDK is the freshest source, it takes highest priority.
 
 ### On-chain RPC Coverage
 
-On-chain RPC **only covers V3 pools**. It iterates `AaveAddressBook` entries filtered by `key.startsWith('AaveV3')` (see `onchainDataService.ts:buildPoolConfigs()`). V4 reserves are never queried via RPC.
+On-chain RPC covers **both V3 and V4**. V3 iterates `AaveAddressBook` entries filtered by `key.startsWith('AaveV3')` (see `onchainDataService.ts:buildPoolConfigs()`). V4 iterates `key.startsWith('AaveV4')` entries, extracts Spoke addresses, and fetches per-spoke deficit via `Hub.getSpokeDeficitRay(assetId, spoke)` using Multicall3 batch calls (~94 serial → ~16 batch RPC calls).
 
 ### V4 HubAsset Multi-Hub Index
 
@@ -52,7 +52,7 @@ V3 uses RAY (`decimals=27`) for the same fields.
 | `variableRateSlope2` | `uint256`，RAY（10²⁷） | `string`，RAY，`decimals: 27` | ✅ 一致 |
 | `optimalUsageRate` | `uint256`，RAY（10²⁷） | `string`，RAY，`decimals: 27` | ✅ 一致 |
 | `baseVariableBorrowRate` | `uint256`，RAY（10²⁷），链上读 | V3: On-chain RPC / fallback；V4: **SDK HubAsset settings**（RAY，经 `percentOnChainValueToRay` 转换） | ✅ 精度一致 |
-| `deficit` | `uint256`，raw 代币单位，链上读 | V3: On-chain RPC；V4: 默认 `'0'`（SDK 不提供，RPC 不覆盖 V4） | ✅ 精度一致 |
+| `deficit` | `uint256`，raw 代币单位，链上读 | V3: On-chain RPC；V4: On-chain RPC (`Hub.getSpokeDeficitRay(assetId, spoke)` via Multicall3 → RAY→token units) | ✅ 精度一致 |
 
 ### baseVariableBorrowRate Fallback（SDK 和 RPC 均缺失时）
 
@@ -69,7 +69,7 @@ V3 uses RAY (`decimals=27`) for the same fields.
 - **数值含义与精度**：从 on-chain 切到 Aave SDK 的字段，单位与链上一致（RAW / BPS / RAY），可直接用于原有公式。
 - **类型**：链上是 `uint256`，SDK 用 `string` 传 raw，避免 JS 大数精度问题，前端用 `BigInt` 计算即可。
 - **V3 仅 `deficit` 仍走 on-chain RPC**；`baseVariableBorrowRate` 优先 RPC，fallback 兜底。
-- **V4 `baseVariableBorrowRate` 由 SDK 直接提供**（HubAsset settings），`deficit` 默认 `'0'`。
+- **V4 `baseVariableBorrowRate` 由 SDK 直接提供**（HubAsset settings），`deficit` 通过 `Hub.getSpokeDeficitRay(assetId, spoke)` 链上获取（per-spoke，RAY→token units），使用 Multicall3 批量优化。
 
 ---
 
