@@ -9,10 +9,11 @@ All URLs used across the project, centralized for reference and maintenance.
 | production | `https://api.aaveapy.com` | `https://aaveapy.com` | `main` |
 | staging | `https://staging-api.aaveapy.com` | `https://staging.aaveapy.com` | `railway` |
 | lovable preview | — | `https://aaveapy.lovable.app` | — |
-| local dev | `http://localhost:3001` | `http://localhost:5173` | — |
+| local dev | `http://localhost:3001` | `http://localhost:8080` | — |
 
 - Source: `.github/scripts/deployment-smoke-test-helpers.mjs`, `docs/ci-security-automation.md`
 - Healthcheck: `curl https://staging-api.aaveapy.com/health`
+- Frontend dev server default port: **8080** (configured in `aaveapy/vite.config.ts` L52)
 
 ## 2. Backend API Routes
 
@@ -129,11 +130,26 @@ Full list in `docs/backend/rpc-endpoints.md` and `packages/aave-shared-config/in
 |---|---|---|
 | `FRONTEND_URL` | `https://aaveapy.com` (prod), `https://staging.aaveapy.com` (staging) | Primary frontend |
 | `SEO_ALLOWED_ORIGINS` | `https://aaveapy.lovable.app` | SEO admin (Lovable) |
-| `ALLOWED_DEV_ORIGINS` | `http://localhost:5173` | Local dev |
+| `ALLOWED_DEV_ORIGINS` | `http://localhost:5173`, `http://localhost:8080` | Local dev |
 
 - Source: `backend/src/middleware/cors.ts`, `backend/src/middleware/corsOrigin.ts`
 
-## 8. Infrastructure URLs
+## 8. Developer Tooling URLs (Frontend)
+
+Implemented in `aaveapy/` (sibling frontend repo).
+
+| Page | URL | Description |
+|---|---|---|
+| Swagger UI (API docs) | `http://localhost:8080/swagger.html` | OpenAPI 3.1 spec rendered via swagger-ui-dist |
+| OpenAPI JSON spec | `http://localhost:8080/openapi.json` | Auto-generated from Zod schemas |
+| Production Swagger UI | `https://aaveapy.com/swagger.html` | Same page, production deployment |
+| Staging Swagger UI | `https://staging.aaveapy.com/swagger.html` | Same page, staging deployment |
+
+- Source: `aaveapy/public/swagger.html`, `aaveapy/public/openapi.json`, `aaveapy/scripts/generate-openapi.ts`
+- Zod schemas in `aaveapy/src/lib/apiSchemas.ts` → `generate-openapi.ts` → `public/openapi.json` → Swagger UI
+- CI check: `npm run openapi:check` — regenerates and diffs to detect schema drift
+
+## 9. Infrastructure URLs
 
 | Resource | URL / Pattern | Source |
 |---|---|---|
