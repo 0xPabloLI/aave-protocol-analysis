@@ -81,23 +81,27 @@ test('V4 deficitRay large value (1000e27) converts correctly', () => {
 // V4 onchain cache key format (Hub-based, not Spoke-based)
 // ============================================================
 
-test('V4 onchain key format: {chainId}:{hubName}:{tokenAddr}', () => {
+test('V4 onchain key format: {chainId}:{hubName}:{spokeAddress}:{tokenAddr}', () => {
   const chainId = 1;
   const hubName = 'CORE_HUB';
+  const spokeAddress = '0x1234567890123456789012345678901234567890';
   const tokenAddr = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
-  const key = `${chainId}:${hubName}:${tokenAddr}`;
-  assert.strictEqual(key, '1:CORE_HUB:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2');
+  const key = `${chainId}:${hubName}:${spokeAddress}:${tokenAddr}`;
+  assert.strictEqual(key, '1:CORE_HUB:0x1234567890123456789012345678901234567890:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2');
 });
 
 test('V4 onchain key matches marketsService fallback lookup', () => {
   const reserve = {
     chainId: 1,
     hubName: 'PLUS_HUB',
+    spokeAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
     tokenAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
   };
-  const v4Key = `${reserve.chainId}:${reserve.hubName}:${reserve.tokenAddress.toLowerCase()}`;
+  const v4Key = `${reserve.chainId}:${reserve.hubName}:${reserve.spokeAddress.toLowerCase()}:${reserve.tokenAddress.toLowerCase()}`;
   assert.ok(v4Key.includes('PLUS_HUB'));
   assert.ok(v4Key.startsWith('1:'));
+  const parts = v4Key.split(':');
+  assert.strictEqual(parts.length, 4);
 });
 
 // ============================================================

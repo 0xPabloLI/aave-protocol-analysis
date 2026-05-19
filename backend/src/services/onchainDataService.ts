@@ -441,7 +441,26 @@ async function fetchAndCacheV4Spoke(
   return false;
 }
 
+const MAX_HUB_ASSET_COUNT = 200;
+
 async function buildHubAssetMappingMulticall(
+  provider: providers.Provider,
+  hubAddress: string,
+  hubName: string,
+  rpcUrl: string
+): Promise<Map<string, number>> {
+  try {
+    const mapping = await buildHubAssetMappingMulticallInner(provider, hubAddress, hubName, rpcUrl);
+    if (mapping.size > 0) return mapping;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    logger.debug(`V4 Multicall3 Hub mapping failed for ${hubName}: ${msg}, falling back to serial`);
+  }
+
+  return buildHubAssetMappingSerial(provider, hubAddress, hubName, rpcUrl);
+}
+
+async function buildHubAssetMappingMulticallInner(
   provider: providers.Provider,
   hubAddress: string,
   hubName: string,
@@ -449,48 +468,102 @@ async function buildHubAssetMappingMulticall(
 ): Promise<Map<string, number>> {
   const mapping = new Map<string, number>();
 
-  try {
-    const getAssetCountCalldata = V4_HUB_INTERFACE.encodeFunctionData('getAssetCount');
-    const results = await executeMulticall3(
-      provider,
-      [{ target: hubAddress, allowFailure: false, callData: getAssetCountCalldata }],
-      rpcUrl
-    );
+  const getAssetCountCalldata = V4_HUB_INTERFACE.encodeFunctionData('getAssetCount');
+  const results = await executeMulticall3(
+    provider,
+    [{ target: hubAddress, allowFailure: false, callData: getAssetCountCalldata }],
+    rpcUrl
+  );
 
-    if (!results[0].success) {
-      logger.debug(`V4 Multicall3 getAssetCount failed for ${hubName}`);
+  if (!results[0].success) {
+    logger.debug(`V4 Multicall3 getAssetCount failed for ${hubName}`);
+    return mapping;
+  }
+
+  const assetCountBN = V4_HUB_INTERFACE.decodeFunctionResult('getAssetCount', results[0].returnData)[0];
+  const assetCount = Number(assetCountBN);
+
+  if (assetCount > MAX_HUB_ASSET_COUNT) {
+    logger.warn(`V4 Hub ${hubName} reports ${assetCount} assets (>${MAX_HUB_ASSET_COUNT}), capping to prevent excessive RPC load`);
+    return mapping;
+  }
+
+  const getAssetCalls = [];
+  for (let assetId = 0; assetId < assetCount; assetId++) {
+    const callData = V4_HUB_INTERFACE.encodeFunctionData('getAsset', [assetId]);
+    getAssetCalls.push({ target: hubAddress, allowFailure: true, callData });
+  }
+
+  if (getAssetCalls.length === 0) return mapping;
+
+  const assetResults = await executeMulticall3(provider, getAssetCalls, rpcUrl);
+
+  for (let assetId = 0; assetId < assetResults.length; assetId++) {
+    const r = assetResults[assetId];
+    if (!r.success) continue;
+    try {
+      const asset = V4_HUB_INTERFACE.decodeFunctionResult('getAsset', r.returnData)[0];
+      const underlying = normalizeAddress(String(asset.underlying || ''));
+      if (underlying) mapping.set(underlying, assetId);
+    } catch (e) {
+      logger.debug(`V4 Multicall3 decode getAsset(${assetId}) failed for ${hubName}: ${e}`);
+    }
+  }
+
+  if (mapping.size === 0 && assetCount > 0) {
+    logger.warn(`V4 Multicall3 Hub mapping for ${hubName}: 0/${assetCount} assets decoded successfully — possible ABI mismatch`);
+  } else {
+    logger.debug(`V4 Multicall3 Hub mapping for ${hubName}: ${mapping.size} assets (1 + ${assetCount} calls → 2 Multicall3 batches)`);
+  }
+
+  return mapping;
+}
+
+async function buildHubAssetMappingSerial(
+  provider: providers.Provider,
+  hubAddress: string,
+  hubName: string,
+  rpcUrl: string
+): Promise<Map<string, number>> {
+  const mapping = new Map<string, number>();
+  const hubContract = new Contract(hubAddress, V4_HUB_ABI, provider);
+
+  try {
+    const assetCountBN = await withTimeout(
+      hubContract.getAssetCount(),
+      ONCHAIN_PER_RPC_TIMEOUT_MS,
+      `V4 serial getAssetCount timeout for ${hubName} via ${rpcUrl}`
+    ) as any;
+    const assetCount = Number(assetCountBN);
+
+    if (assetCount > MAX_HUB_ASSET_COUNT) {
+      logger.warn(`V4 Hub ${hubName} reports ${assetCount} assets (>${MAX_HUB_ASSET_COUNT}), capping to prevent excessive RPC load`);
       return mapping;
     }
 
-    const assetCountBN = V4_HUB_INTERFACE.decodeFunctionResult('getAssetCount', results[0].returnData)[0];
-    const assetCount = Number(assetCountBN);
-
-    const getAssetCalls = [];
     for (let assetId = 0; assetId < assetCount; assetId++) {
-      const callData = V4_HUB_INTERFACE.encodeFunctionData('getAsset', [assetId]);
-      getAssetCalls.push({ target: hubAddress, allowFailure: true, callData });
-    }
-
-    if (getAssetCalls.length === 0) return mapping;
-
-    const assetResults = await executeMulticall3(provider, getAssetCalls, rpcUrl);
-
-    for (let assetId = 0; assetId < assetResults.length; assetId++) {
-      const r = assetResults[assetId];
-      if (!r.success) continue;
       try {
-        const asset = V4_HUB_INTERFACE.decodeFunctionResult('getAsset', r.returnData)[0];
+        const asset = await withTimeout(
+          hubContract.getAsset(assetId),
+          ONCHAIN_PER_RPC_TIMEOUT_MS,
+          `V4 serial getAsset(${assetId}) timeout for ${hubName}`
+        ) as any;
         const underlying = normalizeAddress(String(asset.underlying || ''));
         if (underlying) mapping.set(underlying, assetId);
       } catch (e) {
-        logger.debug(`V4 Multicall3 decode getAsset(${assetId}) failed for ${hubName}: ${e}`);
+        const msg = e instanceof Error ? e.message : String(e);
+        logger.debug(`V4 serial getAsset(${assetId}) failed for ${hubName}: ${msg}`);
       }
     }
 
-    logger.debug(`V4 Multicall3 Hub mapping for ${hubName}: ${mapping.size} assets (1 + ${assetCount} calls → 2 Multicall3 batches)`);
+    if (mapping.size === 0 && assetCount > 0) {
+      logger.warn(`V4 serial Hub mapping for ${hubName}: 0/${assetCount} assets decoded — possible ABI mismatch`);
+    } else {
+      logger.debug(`V4 serial Hub mapping for ${hubName}: ${mapping.size} assets via ${1 + assetCount} serial calls`);
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    logger.debug(`V4 Multicall3 Hub mapping failed for ${hubName}: ${msg}`);
+    logger.debug(`V4 serial getAssetCount failed for ${hubName}: ${msg}`);
   }
 
   return mapping;
@@ -502,14 +575,9 @@ async function executeMulticall3(
   rpcUrl: string
 ): Promise<{ success: boolean; returnData: string }[]> {
   const multicall3 = new Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, provider);
-  const encodedCalls = calls.map((c) => ({
-    target: c.target,
-    allowFailure: c.allowFailure,
-    callData: c.callData,
-  }));
 
   const rawResults = await withTimeout(
-    multicall3.callStatic.aggregate3(encodedCalls),
+    multicall3.callStatic.aggregate3(calls),
     ONCHAIN_PER_RPC_TIMEOUT_MS,
     `V4 Multicall3.aggregate3 timeout via ${rpcUrl}`
   ) as { success: boolean; returnData: string }[];

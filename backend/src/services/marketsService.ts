@@ -103,8 +103,8 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         let onchainData = onchainMap.get(reserve.reserveId);
 
         // Fallback: V4 reserves use (chainId, hubName, spokeAddress, tokenAddress) lookup
-        if (!onchainData && (reserve as any).hubName && (reserve as any).spokeAddress) {
-          const v4Key = `${reserve.chainId}:${(reserve as any).hubName}:${(reserve as any).spokeAddress.toLowerCase()}:${reserve.tokenAddress.toLowerCase()}`;
+        if (!onchainData && reserve.hubName && reserve.spokeAddress) {
+          const v4Key = `${reserve.chainId}:${reserve.hubName}:${reserve.spokeAddress.toLowerCase()}:${reserve.tokenAddress.toLowerCase()}`;
           onchainData = onchainMap.get(v4Key);
         }
 
