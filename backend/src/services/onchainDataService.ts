@@ -197,17 +197,17 @@ interface V4SpokeConfig {
   defaultRpcUrls: string[];
 }
 
-const V4_SPOKE_TO_HUB: Record<string, string> = {
-  MAIN_SPOKE: 'CORE_HUB',
-  BLUECHIP_SPOKE: 'CORE_HUB',
-  LIDO_ESPOKE: 'CORE_HUB',
-  ETHERFI_ESPOKE: 'CORE_HUB',
-  KELP_ESPOKE: 'CORE_HUB',
-  ETHENA_CORRELATED_SPOKE: 'PLUS_HUB',
-  ETHENA_ECOSYSTEM_SPOKE: 'PLUS_HUB',
-  FOREX_SPOKE: 'PLUS_HUB',
-  GOLD_SPOKE: 'PLUS_HUB',
-  LOMBARD_BTC_SPOKE: 'PRIME_HUB',
+const V4_SPOKE_TO_HUBS: Record<string, string[]> = {
+  MAIN_SPOKE: ['CORE_HUB'],
+  BLUECHIP_SPOKE: ['CORE_HUB', 'PRIME_HUB'],
+  LIDO_ESPOKE: ['CORE_HUB'],
+  ETHERFI_ESPOKE: ['CORE_HUB'],
+  KELP_ESPOKE: ['CORE_HUB'],
+  ETHENA_CORRELATED_SPOKE: ['PLUS_HUB'],
+  ETHENA_ECOSYSTEM_SPOKE: ['PLUS_HUB'],
+  FOREX_SPOKE: ['PLUS_HUB'],
+  GOLD_SPOKE: ['PLUS_HUB'],
+  LOMBARD_BTC_SPOKE: ['PRIME_HUB'],
 };
 
 function buildV4SpokeConfigs(): V4SpokeConfig[] {
@@ -229,20 +229,22 @@ function buildV4SpokeConfigs(): V4SpokeConfig[] {
       if (spokeKey === 'TREASURY_SPOKE') continue;
       if (typeof spokeAddr !== 'string') continue;
 
-      const hubKey = V4_SPOKE_TO_HUB[spokeKey];
-      if (!hubKey) continue;
+      const hubKeys = V4_SPOKE_TO_HUBS[spokeKey];
+      if (!hubKeys) continue;
 
-      const hubAddr = hubs[hubKey];
-      if (typeof hubAddr !== 'string') continue;
+      for (const hubKey of hubKeys) {
+        const hubAddr = hubs[hubKey];
+        if (typeof hubAddr !== 'string') continue;
 
-      configs.push({
-        spokeName: spokeKey,
-        chainId,
-        spokeAddress: normalizeAddress(spokeAddr),
-        hubAddress: normalizeAddress(hubAddr),
-        hubName: hubKey,
-        defaultRpcUrls: getAaveRpcUrlsByChainId(chainId),
-      });
+        configs.push({
+          spokeName: spokeKey,
+          chainId,
+          spokeAddress: normalizeAddress(spokeAddr),
+          hubAddress: normalizeAddress(hubAddr),
+          hubName: hubKey,
+          defaultRpcUrls: getAaveRpcUrlsByChainId(chainId),
+        });
+      }
     }
   }
 
@@ -407,7 +409,7 @@ async function fetchAndCacheV4Spoke(
         }
       }
 
-      v4SpokeCache.set(config.spokeAddress, {
+      v4SpokeCache.set(`${config.spokeAddress}:${config.hubName}`, {
         data: spokeData,
         updatedAt: Date.now(),
       });
@@ -622,7 +624,7 @@ export async function refreshOnchainCache(): Promise<void> {
         const r = v4Results[i];
         if (r.status === 'fulfilled' && r.value) {
           v4Success++;
-          const entry = v4SpokeCache.get(V4_SPOKE_CONFIGS[i].spokeAddress);
+          const entry = v4SpokeCache.get(`${V4_SPOKE_CONFIGS[i].spokeAddress}:${V4_SPOKE_CONFIGS[i].hubName}`);
           if (entry) v4TotalAssets += entry.data.size;
         }
       }
@@ -661,7 +663,7 @@ export function getOnchainDataFromCache(): Map<string, OnchainReserveData> {
   // Per-spoke deficit (getSpokeDeficitRay), semantically aligned with V3 reserve.deficit
   // Key format matches V4 reserveId — direct lookup, no fallback needed
   for (const v4Config of V4_SPOKE_CONFIGS) {
-    const entry = v4SpokeCache.get(v4Config.spokeAddress);
+    const entry = v4SpokeCache.get(`${v4Config.spokeAddress}:${v4Config.hubName}`);
     if (!entry) continue;
     const age = now - entry.updatedAt;
     if (age >= ttl) continue;
