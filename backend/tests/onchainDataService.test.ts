@@ -112,8 +112,8 @@ test('V4 reserveId spokeAddress is lowercase', () => {
   const spokeAddress = '0xAbCdEf1234AbCdEf1234AbCdEf1234AbCdEf1234';
   const spokeAddressLower = spokeAddress.toLowerCase();
   const reserveId = `1:${spokeAddressLower}:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48:CORE_HUB`;
-  assert.ok(!reserveId.includes('A') || reserveId.indexOf('A') < reserveId.indexOf('0x'));
-  assert.ok(reserveId.includes(spokeAddressLower));
+  const parts = reserveId.split(':');
+  assert.strictEqual(parts[1], spokeAddressLower);
 });
 
 test('V4 onchain key and reserveId are identical — direct Map.get works', () => {
@@ -151,14 +151,16 @@ test('V4 deficit is per-asset (Hub level), same value for all spokes sharing sam
 });
 
 test('V4 reserveId matches v4-fetcher reserveId pattern', () => {
-  const spokeName = 'EthenaEcosystem';
   const chainId = 1;
+  const spokeAddress = '0x1234567890123456789012345678901234567890';
   const tokenAddr = '0xsomeaddress';
   const hubName = 'PLUS_HUB';
-  const marketName = `AaveV4${spokeName.replace(/\s+/g, '')}`;
-  const reserveId = `${marketName}:${chainId}:${tokenAddr}:${hubName}`;
-  assert.ok(reserveId.startsWith('AaveV4'));
+  const reserveId = `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}`;
+  assert.ok(reserveId.startsWith('1:'));
   assert.ok(reserveId.includes(hubName));
+  const parts = reserveId.split(':');
+  assert.strictEqual(parts.length, 4);
+  assert.ok(parts[1].startsWith('0x'));
 });
 
 // ============================================================

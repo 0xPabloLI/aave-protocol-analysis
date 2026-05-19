@@ -138,6 +138,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
 
     const hubName: string = r.asset?.hub?.name ?? 'Unknown';
     const spokeAddress: string = r.spoke?.address ?? '';
+    if (!spokeAddress) continue;
     const spokeAddressLower = spokeAddress.toLowerCase();
     // V4 reserveId 格式: {chainId}:{spokeAddress}:{tokenAddress}:{hubName}
     // address-based，和 V3 (${chainId}:${poolAddress}:${tokenAddr}) 风格一致

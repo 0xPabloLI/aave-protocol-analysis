@@ -2,7 +2,11 @@
 
 Last updated: 2026-05-19
 
-> **关联文档**：`docs/backend/reserve-snapshots.md` — `market_snapshots` 表含 `incentive_details` JSONB 和 `supply_incentives_apr` / `borrow_incentives_apr` 预聚合列，与本文档的 campaign 数据同源但粒度不同。两文档需同步维护。
+> **已被替代**：本方案的核心内容已合并到 `docs/backend/change-detection-and-incentive-normalization.md`。新设计中 `campaign_history` 和 `campaign_apr_observations` 表删除，per-campaign APR 信息内联在 `market_snapshots.incentive_details` JSONB 中，通过 change-detection 写入。
+
+> **关联文档**：
+> - `docs/backend/change-detection-and-incentive-normalization.md` — 新的统一设计（替代本文档）
+> - `docs/backend/reserve-snapshots.md` — `market_snapshots` API
 
 ## 背景
 

@@ -1,6 +1,8 @@
 # AAV-344 后端：Reserve Snapshots 历史 API
 
-> **关联文档**：`docs/backend/campaign-history.md` — `campaign_history` 表和 campaign 归档方案。`market_snapshots.incentive_details` JSONB 与 campaign 数据同源，两文档需同步维护（特别是 `incentive_details` 加厚到 per-campaign 级度时）。
+> **关联文档**：
+> - `docs/backend/change-detection-and-incentive-normalization.md` — change-detection + incentive 归一化设计，影响本表 schema（删除 `supply_incentives_apr` / `borrow_incentives_apr` 列，`incentive_details` 加厚到 per-campaign 级别）
+> - `docs/backend/campaign-history.md` — 已被替代，参考新设计文档
 
 ## 1. 目标
 为前端历史趋势展示暴露查询 API。**不需要新建表**——直接复用已有 `market_snapshots` 表（每次 cron 已写入全量快照，含预聚合 incentive APR）。
