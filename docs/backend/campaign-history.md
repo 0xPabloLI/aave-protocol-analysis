@@ -2,9 +2,13 @@
 
 Last updated: 2026-05-19
 
+> **关联文档**：`docs/backend/reserve-snapshots.md` — `market_snapshots` 表含 `incentive_details` JSONB 和 `supply_incentives_apr` / `borrow_incentives_apr` 预聚合列，与本文档的 campaign 数据同源但粒度不同。两文档需同步维护。
+
 ## 背景
 
-后端 API 只返回活跃 campaign：过期 campaign 在 root fetcher 层被过滤，前端无法展示历史激励数据。本方案在后端层保留 campaign 历史，不改动 root fetcher。
+后端 API 只返回活跃 campaign：过期 campaign 在 fetcher 层被 `filterExpiredCampaigns()` / `isMeritCampaignExpired()` / Brevis status+endTime 过滤掉。前端无法展示历史激励数据。
+
+上游实际返回近期过期 campaign（Merkl `status=LIVE` opportunity 内可含已过期 breakdown；Merit/Brevis 同理），只是项目本地过滤掉了。
 
 ## DB Schema
 
@@ -29,40 +33,23 @@ CREATE INDEX idx_campaign_history_status_window
 
 CREATE INDEX idx_campaign_history_reserve_source_seen
   ON campaign_history (reserve_id, source, side, last_seen_at DESC);
-
--- APR 时间序列（append-only）。完整快照在 campaign_history 中，此处只存变化点和 hash。
-CREATE TABLE campaign_apr_observations (
-  id              BIGSERIAL     PRIMARY KEY,
-  observed_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
-  reserve_id      TEXT          NOT NULL,
-  source          TEXT          NOT NULL,
-  side            TEXT          NOT NULL,
-  campaign_key    TEXT          NOT NULL,
-  apr             DOUBLE PRECISION NOT NULL,    -- 比例值，不是百分值
-  apr_data_hash   TEXT          NOT NULL        -- APR 相关字段 hash，用于变化检测
-);
-
-CREATE INDEX idx_campaign_apr_observations_series
-  ON campaign_apr_observations (reserve_id, source, side, campaign_key, observed_at);
-
-CREATE INDEX idx_campaign_apr_observations_latest_hash
-  ON campaign_apr_observations (reserve_id, source, side, campaign_key, observed_at DESC);
 ```
+
+### 表定位：长期归档
+
+`campaign_history` 是**长期归档表**——存上游不再返回的历史 campaign。近期过期 campaign 的数据源优先从上游获取（数量可控，无需窗口过滤），DB 仅在重启后上游已不返回时兜底。
+
+### `campaign_apr_observations` 已移除
+
+APR 时间序列信息已由 `market_snapshots.incentive_details` JSONB 覆盖（每分钟写入全量快照，含 per-campaign APR）。单 campaign APR 曲线从 `market_snapshots` 查询，`incentive_details` 需加厚到 per-campaign 级别（加 `campaignId`）。未变化期间用上一条记录推导（`LAG()` 或前端本地填充）。
+
+> **关联**：`reserve-snapshots.md` 中 `incentive_details` 当前只存聚合级 APR（`{ side, aprs[] }`），需扩展为 per-campaign 级别（`{ side, campaigns: [{ campaignId, campaignApr, campaignEndedAt }] }`），与本文档 `campaign_data` JSONB 结构对齐。
 
 ### `expired_at` 和 `endDate` 不是同一件事
 
 - `endDate` / `campaignEndedAt`：campaign 自己声明的业务结束时间，前端展示用
-- `expired_at`：后端检测到 campaign 不再出现在活跃快照的时间，API 状态过滤用
+- `expired_at`：后端检测到 campaign 不再出现在活跃快照的时间，DB 归档用
 - 两者通常接近但不保证相等（上游可能提前取消、延期、短暂漏报）
-
-### 两表职责
-
-| 表 | 模式 | 职责 |
-|----|------|------|
-| `campaign_history` | UPSERT 去重，每个 key 一行 | 当前状态 + 生命周期（`first_seen_at` / `expired_at`）+ 完整快照 |
-| `campaign_apr_observations` | append-only，APR 变化时追加 | APR 时间序列，绘制变化曲线 |
-
-完整快照只在 `campaign_history` 中存一份，`campaign_apr_observations` 不存 `campaign_data`，需快照时 JOIN 即可。
 
 ## 去重键 campaign_key 规则
 
@@ -76,9 +63,8 @@ CREATE INDEX idx_campaign_apr_observations_latest_hash
 
 persist cron（每分钟 :20）执行：
 
-1. **UPSERT campaign_history**：遍历内存快照 7 个 campaign 数组，`ON CONFLICT DO UPDATE SET campaign_data = EXCLUDED.campaign_data, last_seen_at = NOW(), expired_at = NULL`
+1. **UPSERT campaign_history**：遍历内存快照 7 个 campaign 数组
 2. **标记过期**：`UPDATE SET expired_at = NOW() WHERE expired_at IS NULL AND last_seen_at < NOW() - 2min`
-3. **APR observation append**：APR hash 变化时追加一行到 `campaign_apr_observations`
 
 ## campaign_data JSONB 结构
 
@@ -105,12 +91,9 @@ Merkl/Brevis 多 breakdown 的 CampaignGroup 按单 breakdown 拆组存储，每
 | 1 | DB migration (`008_campaign_history.sql`) | ✅ |
 | 2 | `persistCampaignHistory()` UPSERT 写入 | ✅ |
 | 3 | `markExpiredCampaigns()` 过期标记 | ✅ |
-| 4 | `appendAprObservations()` APR 观测写入 | ✅ |
-| 5 | cron 集成 (`updateScheduler.ts`) | ✅ |
+| 4 | cron 集成 (`updateScheduler.ts`) | ✅ |
+| 5 | 单元测试 (`persistenceService.test.ts`) | ✅ |
 | 6 | `campaign_apr_observations` 去冗余 `campaign_data` (`010_drop_campaign_data_from_observations.sql`) | ✅ |
-| 7 | 单元测试 (`persistenceService.test.ts`) | ✅ |
-
-**现状**：`campaign_history` 和 `campaign_apr_observations` 通过 cron 每分钟写入，但**没有任何 API 读取**。数据只写不读，是纯归档状态。
 
 ---
 
@@ -120,37 +103,39 @@ Merkl/Brevis 多 breakdown 的 CampaignGroup 按单 breakdown 拆组存储，每
 
 前端已有设计方案：`aaveapy/docs/plans/2026-05-15-recently-ended-campaigns-design.md`
 
-核心设计：在 IncentiveTooltip 底部追加可折叠「Recently Ended」区块，展示 7 天内结束的过期 campaign，灰显样式，不计入 APY 总和。前端从 `/api/markets` 全量数据中本地过滤。
+核心设计：在 IncentiveTooltip 底部追加可折叠「Recently Ended」区块，灰显展示过期 campaign，不计入 APY 总和。
 
 ### 关键决策
 
 | 决策 | 结论 | 理由 |
 |------|------|------|
-| 过期 campaign 数据源 | **合并进 `/api/markets` 响应** | 与前端设计文档一致，前端一个请求拿到全部，本地 `isRecentlyEnded()` 过滤 |
-| 实现方式 | **内存缓存**（方案 B） | cron tick 时从 DB 读 7 天内过期 campaign → 内存 map → API 序列化时合并，零额外查询 |
-| 过期窗口 | 默认 **7 天** | 与前端 `isRecentlyEnded()` 一致 |
-| APR 曲线 | **独立 endpoint** | 按需请求，不在 `/api/markets` 中返回时序数据 |
+| Recently ended 数据源 | **从上游直接获取** | 上游（Merkl/Merit/Brevis）返回近期过期 campaign，数量可控（LIVE opportunity 内刚过期的 breakdown），无需窗口过滤 |
+| 合并进 `/api/markets` | **是** | fetcher 不过滤近期过期 campaign → 内存快照自然包含 → 序列化时标记 `_isExpired: true` |
+| APR 曲线数据源 | **从 `market_snapshots.incentive_details` 查询** | 已有每分钟全量快照，加厚 `incentive_details` 到 per-campaign 级别即可提取单个 campaign APR 曲线 |
+| `campaign_history` 的角色 | **长期归档兜底** | 重启后若上游已不返回某过期 campaign，从 DB 兜底；近期过期优先走上游 |
 
-### 方案 B 架构
+### 架构
 
 ```text
-[cron tick :20]
-  ├─ 现有：refreshMarketsSnapshot() → 内存活跃快照
-  ├─ 现有：persistCampaignHistory() + markExpiredCampaigns()
-  └─ 新增：refreshRecentlyExpiredMap()
-       SELECT FROM campaign_history
-       WHERE expired_at IS NOT NULL
-         AND expired_at > NOW() - INTERVAL '7 days'
-       → 写入内存 Map<reserveId, CampaignHistoryRow[]>
+[fetcher — 不再过滤近期过期 campaign]
+  上游响应 → 保留 campaignEndedAt < now 但仍在 LIVE opportunity 中的 breakdown
+           → 内存快照包含 active + recently ended
+           → each campaign 附带 _isExpired: (endDate < now)
 
 [GET /api/markets]
-  ├─ 现有：serializeReserveForApi(reserve) → 活跃 campaign
-  └─ 新增：从 recentlyExpiredMap 取该 reserve 的过期 campaign
-       → 序列化到 reserve.meritSupplys / merklSupplys / ... 中
-       → 标记 _isExpired: true（前端识别用）
-```
+  serializeReserveForApi(reserve)
+    ├─ active campaign (_isExpired !== true) → 正常渲染
+    └─ recently ended (_isExpired === true) → 灰显，不计入 APY
 
-**内存开销**：7 天内过期 campaign 通常 ≤ 10 条，每条 JSONB ~1KB，总量 < 10KB。
+[APR 曲线]
+  GET /api/campaigns/apr-series?reserveId=xxx&campaignKey=yyy
+    → SELECT FROM market_snapshots, jsonb 提取特定 campaign APR
+    → 不变期间用 LAG() 填充或前端本地 step-fill
+
+[campaign_history 归档]
+  cron 仍 UPSERT + markExpired — 用于长期历史查询
+  重启兜底：若上游已不返回某过期 campaign，从 DB SELECT 填充 recentlyExpiredMap
+```
 
 ### 后端任务
 
@@ -158,22 +143,23 @@ Merkl/Brevis 多 breakdown 的 CampaignGroup 按单 breakdown 拆组存储，每
 
 | # | 任务 | 文件 | 说明 |
 |---|------|------|------|
-| 1 | 查询 + 内存缓存 | `recentlyExpiredService.ts` | `refreshRecentlyExpiredMap()` — cron tick 时查 DB 7 天窗口，写入 `Map<reserveId, CampaignHistoryRow[]>` |
+| 1 | fetcher 改动 | `merkl-api.ts` / `merit-api.ts` / `brevis-api.ts` | `filterExpiredCampaigns()` / `isMeritCampaignExpired()` / Brevis 过滤 — 改为只过滤"很久以前过期的"，保留近期过期的（或全部不过滤，由序列化层标记） |
 | 2 | 类型扩展 | `@internal/aave-shared-contracts` | `RuntimeReserveData` 中 campaign 条目加 `_isExpired?: true` 可选字段 |
-| 3 | 序列化合并 | `marketsApiSerialize.ts` | 序列化 reserve 时从内存 map 追加过期 campaign，复用 x100 逻辑 |
-| 4 | cron 集成 | `updateScheduler.ts` | persist cron 中调用 `refreshRecentlyExpiredMap()` |
-| 5 | 测试 | `tests/` | 查询逻辑 + 内存缓存 + 序列化合并 |
+| 3 | 序列化标记 | `marketsApiSerialize.ts` | 序列化时检查 endDate < now → 标记 `_isExpired: true`；APY 计算排除 `_isExpired` 条目 |
+| 4 | 重启兜底 | `recentlyExpiredService.ts` | `refreshRecentlyExpiredMap()` — 从 `campaign_history` DB 读上游已不返回的过期 campaign，合并到内存快照 |
+| 5 | 测试 | `tests/` | fetcher 过滤 + 序列化标记 + 兜底逻辑 |
 
-#### 2B：APR Series API（独立 endpoint）
+#### 2B：APR 曲线（从 market_snapshots 查询）
 
 | # | 任务 | 文件 | 说明 |
 |---|------|------|------|
-| 6 | 查询函数 | `persistenceService.ts` | `getAprObservations({ reserveId, source, side, campaignKey, from?, to? })` |
-| 7 | API route | `routes/campaignHistoryRouter.ts` | `GET /api/campaigns/apr-series?reserveId=xxx&campaignKey=yyy` |
-| 8 | 响应结构 | — | `{ observations: [{ observedAt, apr }], campaign: { campaignData, expiredAt, ... } }` (JOIN `campaign_history` 取快照) |
-| 9 | 采样策略 | — | 超过 500 点时按小时聚合：`date_trunc('hour', observed_at)` + `avg(apr)` |
-| 10 | server 集成 | `server.ts` | 挂载 route |
-| 11 | 测试 | `tests/` | 查询 + API |
+| 6 | 加厚 `incentive_details` | `persistenceService.ts` | `buildIncentiveDetails()` 改为 per-campaign 级别：加 `campaignId` / `campaignApr` / `campaignEndedAt` |
+| 7 | migration | `011_incentive_details_per_campaign.sql` | 无需 ALTER TABLE（JSONB 结构变更），但记录 schema 变化 |
+| 8 | 查询函数 | `persistenceService.ts` | `getCampaignAprSeries(reserveId, campaignKey, from, to)` — 从 `market_snapshots.incentive_details` JSONB 提取 |
+| 9 | API route | `routes/campaignHistoryRouter.ts` | `GET /api/campaigns/apr-series?reserveId=xxx&campaignKey=yyy` |
+| 10 | 采样策略 | — | 超过 500 点时按小时聚合 |
+| 11 | server 集成 | `server.ts` | 挂载 route |
+| 12 | 测试 | `tests/` | JSONB 提取 + API |
 
 ### 前端任务（参考 aaveapy 仓库）
 
@@ -187,32 +173,8 @@ Merkl/Brevis 多 breakdown 的 CampaignGroup 按单 breakdown 拆组存储，每
 | F6 | APR 数据获取 | `hooks/useAprSeries.ts` | `fetchAprSeries(reserveId, campaignKey)` → react-query |
 | F7 | 测试 | `recentlyEndedCampaigns.test.ts` + `IncentiveTooltip.test.tsx` | 边界条件 + 折叠交互 |
 
-### 数据流（Phase 2 完成后）
-
-```text
-[cron :20]
-  refreshMarketsSnapshot()          → 内存活跃快照
-  persistCampaignHistory()          → DB campaign_history
-  markExpiredCampaigns()            → DB campaign_history.expired_at
-  refreshRecentlyExpiredMap()       → 内存 recentlyExpiredMap (7天窗口)
-
-[GET /api/markets]
-  serializeReserveForApi(reserve)
-    ├─ 活跃 campaign ← 内存快照（现有）
-    └─ 过期 campaign ← recentlyExpiredMap（新增，_isExpired: true）
-
-[前端 IncentiveTooltip]
-  ├─ 活跃 campaign → 正常渲染
-  └─ _isExpired === true → Recently Ended 折叠区块，灰显，不计入 APY
-
-[APR 曲线图]
-  └─ GET /api/campaigns/apr-series?reserveId=xxx&campaignKey=yyy
-       ↓
-  前端绘图
-```
-
 ### 不改动
 
-- root `src/` 下任何文件
-- fetcher 过滤逻辑（活跃 campaign 仍由 fetcher 层过滤）
-- 前端 `formatters.ts` APY 计算逻辑（只算活跃的，即 `_isExpired !== true`）
+- root `src/` 下任何文件（fetcher 在 `packages/aave-fetcher/src/` 中改动）
+- `campaign_history` 表结构（保留长期归档）
+- 前端 `formatters.ts` APY 计算逻辑（只算 `_isExpired !== true` 的）
