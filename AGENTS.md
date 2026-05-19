@@ -127,3 +127,16 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 - Prefer runtime verification/log evidence over speculative explanations.
 - Keep schema convergence across incentive sources; avoid unused fields in public payload.
 - Use exact-origin CORS settings; treat freshness TTL changes as explicit, documented decisions.
+
+## Lessons Learned
+
+### Code Review 对接纪律
+- **逐项验证再实现**：对每个 review 项先独立验证（能否复现？是否真影响生产？是否对本 codebase 正确？），不默认同意
+- **逐项实现+逐项测试**：不要批量修复后一次 commit，应逐项实现、逐项测试、逐项验证
+- **Minor 项先 YAGNI 判断**：如冗余拷贝（<0.01ms 影响），考虑是否值得改
+- **Push back 是正当的**：如果 reviewer 缺乏完整上下文或建议与现有架构冲突，用技术推理 push back
+
+### V4 Onchain Match 机制
+- V3 onchain key = `${chainId}:${poolAddress}:${tokenAddr}` — 直接匹配 reserveId
+- V4 onchain key = `${chainId}:${hubName}:${spokeAddress}:${tokenAddr}` — reserveId 含 marketName 前缀无法直接匹配，需 marketsService fallback lookup
+- 修改 V4 onchain key 格式时，**同步更新测试用例**（曾出现测试 3 段 vs 实现 4 段不一致）
