@@ -17,7 +17,7 @@ V4 没有 `UiPoolDataProvider.getReservesHumanized()`，采用直接合约调用
 1. 遍历 address-book 中 `AaveV4*` 导出，自动发现 Spoke 和 Hub 地址
 2. **Hub asset mapping**（Multicall3 batch）：`getAssetCount()` + N × `getAsset(assetId)` → underlying→assetId 映射
 3. **Per-spoke deficit**（Multicall3 batch）：`getSpokeDeficitRay(assetId, spoke)` → RAY→token units 转换
-4. 以 V4 onchain key 格式 (`{chainId}:{hubName}:{spokeAddress}:{tokenAddr}`) 缓存
+4. 以 V4 onchain key 格式 (`{chainId}:{spokeAddress}:{tokenAddr}:{hubName}`) 缓存
 
 ### 3.2 关键设计
 - **Per-spoke deficit**：使用 `getSpokeDeficitRay(assetId, spoke)` 而非 `getAssetDeficitRay(assetId)`，因为 per-spoke 和 V3 `reserve.deficit` 语义对齐
@@ -28,8 +28,7 @@ V4 没有 `UiPoolDataProvider.getReservesHumanized()`，采用直接合约调用
 
 ### 3.3 Match 机制
 - **V3 onchain key** = `${chainId}:${poolAddress}:${tokenAddr}` — 直接匹配 `reserve.reserveId`（V3 reserveId 格式相同）
-- **V4 onchain key** = `${chainId}:${hubName}:${spokeAddress}:${tokenAddr}` — marketsService 通过 `(reserve.chainId, reserve.hubName, reserve.spokeAddress, reserve.tokenAddress)` 组合查找
-- V4 reserveId (`{marketName}:{chainId}:{tokenAddr}:{hubName}`) 包含 marketName 前缀，**不能直接匹配** onchain key，需通过 fallback lookup
+- **V4 onchain key** = `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}` — address-based，直接匹配 `reserve.reserveId`（AAV-358 统一后无 fallback）
 
 ### 3.4 数据流
 ```

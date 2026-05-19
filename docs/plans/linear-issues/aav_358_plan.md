@@ -31,9 +31,9 @@ V4 reserveId 当前使用 name-based 格式 `${marketName}:${chainId}:${tokenAdd
 `spokeAddress` 本身也不冗余——它区分同一链上不同 spoke 的同一 token（来自同一 hub）。
 
 ### 3.4 冗余映射表
-- `V4_SPOKE_NAME_MAP`（10 行）：spokeKey → spokeName，仅用于构造 marketName，**可删除**
+- `V4_SPOKE_NAME_MAP`（10 行）：spokeKey → spokeName，仅用于构造 marketName，**可删除**（已删除，spokeName 改用 spokeKey 仅用于日志）
 - `V4_SPOKE_TO_HUB`（10 行）：spokeKey → hubKey，**仍需保留**（onchainDataService 内部需要 spoke→hub 映射来获取 hubAddress）
-- `SPOKE_NAME_MAP`（oracleService，11 行）：同 `V4_SPOKE_NAME_MAP`，**可删除**
+- `SPOKE_NAME_MAP`（oracleService，11 行）：**需保留** — `persistenceService` 用 `v4|spokeName` 作 DB key，删除会导致历史记录查找 mismatch
 
 ### 3.5 marketName 可以消除
 
@@ -57,12 +57,11 @@ onchain key 也改为 `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}`，和
 
 ### 4.3 可删除
 - `V4_SPOKE_NAME_MAP` — onchainDataService 中不再需要（marketName 不再使用）
-- `SPOKE_NAME_MAP` — oracleService 中不再需要
-- `marketName` 字段构造 — `AaveV4${spokeName.replace(/\s+/g, '')}` 不再需要
 - marketsService V4 fallback lookup — 直接 `onchainMap.get(reserve.reserveId)`
 
 ### 4.4 需保留
 - `V4_SPOKE_TO_HUB` — onchainDataService 内部仍需 spoke→hub 映射来获取 hubAddress（`getSpokeDeficitRay(assetId, spoke)` 需要 hub 合约）
+- `SPOKE_NAME_MAP` — oracleService 需保留，persistenceService 用 `v4|spokeName` 作 DB key
 - `hubName` — 在 reserveId 中保留（唯一性需要），也作为 `RuntimeReserveData` 可选字段供前端展示
 
 ## 5. 改动范围
@@ -73,7 +72,7 @@ onchain key 也改为 `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}`，和
 | `packages/aave-fetcher/src/v4-fetcher.ts` | reserveId 从 `${marketName}:${chainId}:${token}:${hubName}` → `${chainId}:${spokeAddress}:${token}:${hubName}`；spokeAddress 来自 `r.spoke.address` |
 | `backend/src/services/onchainDataService.ts` | onchain key 从 `${chainId}:${hubName}:${spoke}:${token}` → `${chainId}:${spoke}:${token}:${hubName}`（顺序统一）；删除 `V4_SPOKE_NAME_MAP` |
 | `backend/src/services/marketsService.ts` | 删除 V4 fallback lookup，直接 `onchainMap.get(reserve.reserveId)` |
-| `backend/src/services/oracleService.ts` | 删除 `SPOKE_NAME_MAP`，spoke 配置不再依赖 spokeName |
+| `backend/src/services/oracleService.ts` | `SPOKE_NAME_MAP` 保留（persistenceService DB key 依赖） |
 | `backend/tests/onchainDataService.test.ts` | 更新 key 格式为 4 段（新顺序） |
 
 ### 前端
@@ -93,7 +92,7 @@ onchain key 也改为 `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}`，和
 ## 6. 验收标准
 - V4 reserveId 格式为 `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}`（4 段，address-based）
 - onchain key 和 reserveId 格式一致，直接匹配（无 fallback lookup）
-- 删除 `V4_SPOKE_NAME_MAP` 和 oracleService 的 `SPOKE_NAME_MAP`
+- 删除 `V4_SPOKE_NAME_MAP`；`SPOKE_NAME_MAP` 保留（persistenceService DB key 依赖）
 - `V4_SPOKE_TO_HUB` 保留（内部使用）
 - 所有测试通过
 - 前端同步更新
