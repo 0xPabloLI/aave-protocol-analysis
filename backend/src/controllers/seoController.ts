@@ -46,6 +46,14 @@ export async function getGscData(req: Request, res: Response): Promise<void> {
       res.status(400).json({ error: 'from and to are required' });
       return;
     }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !dayjs(from).isValid()) {
+      res.status(400).json({ error: 'from must be a valid YYYY-MM-DD date' });
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(to) || !dayjs(to).isValid()) {
+      res.status(400).json({ error: 'to must be a valid YYYY-MM-DD date' });
+      return;
+    }
     if (dayjs(from).isAfter(dayjs(to))) {
       res.status(400).json({ error: 'from must be <= to' });
       return;
@@ -189,6 +197,15 @@ export async function upsertSemrushSnapshot(req: Request, res: Response): Promis
 const BATCH_RATE_LIMIT_WINDOW_MS = 60_000;
 const BATCH_RATE_LIMIT_MAX = 5;
 const batchRateMap = new Map<string, { count: number; windowStart: number }>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of batchRateMap) {
+    if (now - entry.windowStart > BATCH_RATE_LIMIT_WINDOW_MS) {
+      batchRateMap.delete(key);
+    }
+  }
+}, BATCH_RATE_LIMIT_WINDOW_MS).unref();
 
 function checkBatchRateLimit(token: string): boolean {
   const now = Date.now();

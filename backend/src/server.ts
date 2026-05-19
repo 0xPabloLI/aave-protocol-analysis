@@ -3,6 +3,7 @@ import express from 'express';
 import compression from 'compression';
 import { corsMiddleware } from './middleware/cors.js';
 import { apiCacheHeadersMiddleware } from './middleware/cacheHeaders.js';
+import { rateLimitMiddleware } from './middleware/rateLimit.js';
 import marketsRouter from './routes/markets.js';
 import metaRouter from './routes/meta.js';
 import { seoRouter } from './routes/seo.js';
@@ -45,7 +46,7 @@ const PORT: number = (() => {
 
 // Middleware
 app.use(corsMiddleware);
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(
   compression({
     // Keep tiny payloads uncompressed to avoid needless CPU overhead.
@@ -53,6 +54,11 @@ app.use(
   })
 );
 app.use(apiCacheHeadersMiddleware);
+
+const apiRateLimit = rateLimitMiddleware(60_000, 120);
+app.use('/api/markets', apiRateLimit);
+app.use('/api/meta', apiRateLimit);
+app.use('/api/seo/semrush/batch', express.json({ limit: '5mb' }));
 
 // Avoid noisy 404s for automatic browser favicon requests.
 // We intentionally return 204 No Content with a cache header instead of serving an icon file.
@@ -81,17 +87,10 @@ const healthHandler = (req: express.Request, res: express.Response) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    // Railway injects RAILWAY_GIT_COMMIT_SHA at runtime; smoke tests poll this
-    // to confirm the new deployment is live before running checks.
     ...(process.env.RAILWAY_GIT_COMMIT_SHA && { commitSha: process.env.RAILWAY_GIT_COMMIT_SHA }),
     environment: {
       nodeEnv: process.env.NODE_ENV || 'development',
       port: PORT,
-      corsMode: ['production', 'staging'].includes(process.env.NODE_ENV || '') && process.env.FRONTEND_URL 
-        ? 'whitelist' 
-        : 'allow-all',
-      frontendUrl: process.env.FRONTEND_URL || 'not set',
-      allowedDevOrigins: process.env.ALLOWED_DEV_ORIGINS || 'not set'
     }
   });
 };
@@ -106,9 +105,7 @@ app.get('/api/health', healthHandler);
 // Useful for catching silent persistence failures (the cron writer never throws
 // up the call stack, so without this endpoint a failed DB connection could go
 // unnoticed for days).
-app.get('/api/persistence-status', (_req, res) => {
-  res.json(getPersistenceStatus());
-});
+// Moved under /api/seo/ to reuse SEO admin auth middleware.
 
 // 启动时预热所有缓存，避免首个请求冷启动
 // 注意：cron 不会在启动时立即执行，所以需要显式 warmup

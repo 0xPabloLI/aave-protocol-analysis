@@ -8,6 +8,7 @@ import {
   batchUpsertSemrushSnapshots,
   deleteSemrushSnapshot,
 } from '../controllers/seoController.js';
+import { getPersistenceStatus } from '../services/persistenceService.js';
 
 const router = Router();
 
@@ -18,5 +19,8 @@ router.get('/semrush', getSemrushSnapshots);
 router.post('/semrush', upsertSemrushSnapshot);
 router.post('/semrush/batch', batchUpsertSemrushSnapshots);
 router.delete('/semrush/:id', deleteSemrushSnapshot);
+router.get('/persistence-status', (_req, res) => {
+  res.json(getPersistenceStatus());
+});
 
 export const seoRouter = router;

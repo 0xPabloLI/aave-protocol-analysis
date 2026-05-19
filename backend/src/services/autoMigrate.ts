@@ -33,7 +33,6 @@ export async function runMigrations(pool: pg.Pool): Promise<void> {
   logger.info(`Found ${files.length} migration(s) in ${MIGRATIONS_DIR}`);
 
   let appliedCount = 0;
-  let failedCount = 0;
 
   for (const file of files) {
     if (applied.has(file)) {
@@ -50,15 +49,11 @@ export async function runMigrations(pool: pg.Pool): Promise<void> {
       appliedCount++;
       logger.info(`Migration ${file} applied`);
     } catch (error) {
-      failedCount++;
-      logger.error(`Migration ${file} failed (continuing to next):`, error);
+      throw new Error(`Migration ${file} failed — aborting remaining migrations. Fix the migration and restart. Error: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
   if (appliedCount > 0) {
     logger.info(`${appliedCount} migration(s) applied successfully`);
-  }
-  if (failedCount > 0) {
-    logger.warn(`${failedCount} migration(s) failed — review logs above`);
   }
 }

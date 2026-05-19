@@ -541,12 +541,17 @@ async function writeOracleChunk(
 // SQL helpers
 // ---------------------------------------------------------------------------
 
+const TABLE_NAME_RE = /^[a-z_][a-z0-9_]*$/;
+
 function buildBulkInsert(
   table: string,
   columns: string[],
   rows: unknown[][],
   onConflict: string
 ): { text: string; values: unknown[] } {
+  if (!TABLE_NAME_RE.test(table)) {
+    throw new Error(`buildBulkInsert: invalid table name "${table}"`);
+  }
   const values: unknown[] = [];
   const placeholders: string[] = [];
   let i = 1;
@@ -819,7 +824,8 @@ export async function markExpiredCampaigns(): Promise<number> {
     `UPDATE campaign_history
      SET expired_at = NOW()
      WHERE expired_at IS NULL
-       AND last_seen_at < NOW() - INTERVAL '${EXPIRY_WINDOW_MINUTES} minutes'`
+       AND last_seen_at < NOW() - make_interval(mins => $1)`,
+    [EXPIRY_WINDOW_MINUTES]
   );
   return result.rowCount ?? 0;
 }

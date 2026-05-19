@@ -8,7 +8,7 @@
 
 import { Request, Response } from 'express';
 import { getMarketsData, type RuntimeReserveData } from '../services/marketsService.js';
-import { serializeMarketsReservesForApi } from '../services/marketsApiSerialize.js';
+import { serializeMarketsReservesForApi, computeSchemaFingerprint } from '../services/marketsApiSerialize.js';
 import { MarketsResponse, MarketWithSpread } from '../types/index.js';
 import { logger } from '../logger.js';
 
@@ -29,6 +29,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
     if (!payload) {
       if (isTooStale) {
         logger.warn('Markets snapshot is too stale; returning 503');
+        res.set('Retry-After', '60');
         res.status(503).json({
           errorCode: 'MARKETS_SNAPSHOT_STALE',
           error: 'Service unavailable',
@@ -38,6 +39,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
       }
 
       logger.warn('Markets snapshot not yet available');
+      res.set('Retry-After', '10');
       res.status(503).json({
         errorCode: 'MARKETS_SNAPSHOT_NOT_READY',
         error: 'Service unavailable',
@@ -65,6 +67,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
         lastUpdated: payload._metadata.timestamp,
         version: MARKETS_API_VERSION,
         staleTimeMs,
+        schemaFingerprint: computeSchemaFingerprint(),
       },
       reserves,
     };
