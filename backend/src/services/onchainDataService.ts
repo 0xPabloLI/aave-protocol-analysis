@@ -182,7 +182,6 @@ const MULTICALL3_ABI = [
 
 const RAY = BigInt(10) ** BigInt(27);
 const V4_HUB_INTERFACE = new utils.Interface(V4_HUB_ABI);
-const MULTICALL3_INTERFACE = new utils.Interface(MULTICALL3_ABI);
 
 // ============================================================
 // V4 Spoke Config (auto-discovered from address-book AaveV4* entries)
@@ -586,7 +585,7 @@ export async function refreshOnchainCache(): Promise<void> {
       const startTime = Date.now();
       const poolAddrs = Array.from(POOL_CONFIGS.keys());
 
-      logger.info(`p Refreshing on-chain cache for ${poolAddrs.length} V3 pools + ${V4_SPOKE_CONFIGS.length} V4 spokes...`);
+      logger.info(`[onchain] Refreshing cache for ${poolAddrs.length} V3 pools + ${V4_SPOKE_CONFIGS.length} V4 spokes...`);
 
       const v3Results = await Promise.allSettled(
         poolAddrs.map((poolAddr) => {
@@ -613,11 +612,31 @@ export async function refreshOnchainCache(): Promise<void> {
 
       const hubAssetMapping = new Map<string, Map<string, number>>();
 
+      // Pre-build Hub asset mappings (sequential to avoid concurrent Map writes)
+      const uniqueHubs = new Set<string>();
+      for (const config of V4_SPOKE_CONFIGS) {
+        uniqueHubs.add(config.hubAddress);
+      }
+      for (const config of V4_SPOKE_CONFIGS) {
+        if (hubAssetMapping.has(config.hubAddress)) continue;
+        const rpcCandidates = ethProviderService.getProvidersForChain(config.chainId, config.defaultRpcUrls);
+        for (const { rpcUrl, provider } of rpcCandidates) {
+          try {
+            const mapping = await buildHubAssetMappingMulticall(provider, config.hubAddress, config.hubName, rpcUrl);
+            if (mapping.size > 0) {
+              hubAssetMapping.set(config.hubAddress, mapping);
+              break;
+            }
+          } catch { /* try next RPC */ }
+        }
+      }
+
       const v4Results = await Promise.allSettled(
         V4_SPOKE_CONFIGS.map((config) => fetchAndCacheV4Spoke(config, hubAssetMapping))
       );
 
       let v4Success = 0;
+      let v4Fail = 0;
       let v4TotalAssets = 0;
 
       for (let i = 0; i < v4Results.length; i++) {
@@ -626,13 +645,15 @@ export async function refreshOnchainCache(): Promise<void> {
           v4Success++;
           const entry = v4SpokeCache.get(`${V4_SPOKE_CONFIGS[i].spokeAddress}:${V4_SPOKE_CONFIGS[i].hubName}`);
           if (entry) v4TotalAssets += entry.data.size;
+        } else {
+          v4Fail++;
         }
       }
 
       const elapsed = Date.now() - startTime;
       logger.info(
-        `b On-chain cache: V3 ${v3TotalReserves} reserves from ${v3Success}/${poolAddrs.length} pools, ` +
-        `V4 ${v4TotalAssets} assets from ${v4Success}/${V4_SPOKE_CONFIGS.length} spokes in ${elapsed}ms`
+        `[onchain] V3 ${v3TotalReserves} reserves from ${v3Success}/${poolAddrs.length} pools, ` +
+        `V4 ${v4TotalAssets} assets from ${v4Success}/${V4_SPOKE_CONFIGS.length} spokes (${v4Fail} failed) in ${elapsed}ms`
       );
     } finally {
       refreshInProgress = null;
