@@ -140,3 +140,8 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 - V3 onchain key = `${chainId}:${poolAddress}:${tokenAddr}` — 直接匹配 reserveId
 - V4 onchain key = `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}` — address-based，直接匹配 reserveId，无 fallback
 - 修改 V4 onchain key 格式时，**同步更新测试用例**（曾出现测试 3 段 vs 实现 4 段不一致）
+
+### 删除映射表前检查 DB 依赖
+- `SPOKE_NAME_MAP` 看似仅用于日志/显示，实则被 `persistenceService` 用作 DB key（`v4|spokeName`）
+- 删除前必须 grep 所有消费方，确认无 DB/persistence 依赖
+- onchainDataService 的 `V4_SPOKE_NAME_MAP` 无 DB 依赖（仅日志），可安全删除
