@@ -114,80 +114,105 @@ Merkl/Brevis 多 breakdown 的 CampaignGroup 按单 breakdown 拆组存储，每
 
 ---
 
-## Phase 2：历史数据 API + 前端集成（待实现）
+## Phase 2：Recently Ended Campaign + APR 曲线（待实现）
 
 ### 前端设计参考
 
 前端已有设计方案：`aaveapy/docs/plans/2026-05-15-recently-ended-campaigns-design.md`
 
-核心设计：在 IncentiveTooltip 底部追加可折叠「Recently Ended」区块，展示 7 天内结束的过期 campaign，灰显样式，不计入 APY 总和。
-
-该设计基于**前端本地过滤**（从 API 数据中筛 `endDate < now` 且在窗口内的 campaign），但 `/api/markets` 当前不返回过期 campaign。所以 Phase 2 后端需提供数据源。
+核心设计：在 IncentiveTooltip 底部追加可折叠「Recently Ended」区块，展示 7 天内结束的过期 campaign，灰显样式，不计入 APY 总和。前端从 `/api/markets` 全量数据中本地过滤。
 
 ### 关键决策
 
 | 决策 | 结论 | 理由 |
 |------|------|------|
-| API 形式 | **独立 endpoint** | `/api/markets` 保持内存快照只读，避免 DB 查询耦合进热路径 |
-| 过期窗口 | 默认 **7 天** | 与前端设计文档一致，前端 `isRecentlyEnded()` 也用 7 天 |
-| APR 曲线 | **需要** | 用户需求，`campaign_apr_observations` 已就绪 |
-| 数据流向 | 前端按 reserve 按需请求 | IncentiveTooltip 打开时才调，避免首屏增加请求 |
+| 过期 campaign 数据源 | **合并进 `/api/markets` 响应** | 与前端设计文档一致，前端一个请求拿到全部，本地 `isRecentlyEnded()` 过滤 |
+| 实现方式 | **内存缓存**（方案 B） | cron tick 时从 DB 读 7 天内过期 campaign → 内存 map → API 序列化时合并，零额外查询 |
+| 过期窗口 | 默认 **7 天** | 与前端 `isRecentlyEnded()` 一致 |
+| APR 曲线 | **独立 endpoint** | 按需请求，不在 `/api/markets` 中返回时序数据 |
+
+### 方案 B 架构
+
+```text
+[cron tick :20]
+  ├─ 现有：refreshMarketsSnapshot() → 内存活跃快照
+  ├─ 现有：persistCampaignHistory() + markExpiredCampaigns()
+  └─ 新增：refreshRecentlyExpiredMap()
+       SELECT FROM campaign_history
+       WHERE expired_at IS NOT NULL
+         AND expired_at > NOW() - INTERVAL '7 days'
+       → 写入内存 Map<reserveId, CampaignHistoryRow[]>
+
+[GET /api/markets]
+  ├─ 现有：serializeReserveForApi(reserve) → 活跃 campaign
+  └─ 新增：从 recentlyExpiredMap 取该 reserve 的过期 campaign
+       → 序列化到 reserve.meritSupplys / merklSupplys / ... 中
+       → 标记 _isExpired: true（前端识别用）
+```
+
+**内存开销**：7 天内过期 campaign 通常 ≤ 10 条，每条 JSONB ~1KB，总量 < 10KB。
 
 ### 后端任务
 
-#### 2A：Campaign History API
+#### 2A：Recently Ended 合并进 /api/markets
 
 | # | 任务 | 文件 | 说明 |
 |---|------|------|------|
-| 1 | 查询函数 | `persistenceService.ts` | `getCampaignHistory({ reserveId, source?, side?, windowDays? })` — 查 `campaign_history`，`expired_at` 在窗口内或 NULL |
-| 2 | API route | `routes/campaignHistoryRouter.ts` | `GET /api/campaigns/history?reserveId=xxx&side=supply&windowDays=7` |
-| 3 | 响应序列化 | 复用 `marketsApiSerialize.ts` x100 逻辑 | `campaign_data` JSONB → 百分值 + 附带 `expiredAt` / `firstSeenAt` / `lastSeenAt` |
-| 4 | 类型定义 | `types/` | `CampaignHistoryResponse` DTO |
-| 5 | server 集成 | `server.ts` | 挂载 route |
-| 6 | 测试 | `tests/` | 查询逻辑 + API 集成测试 |
+| 1 | 查询 + 内存缓存 | `recentlyExpiredService.ts` | `refreshRecentlyExpiredMap()` — cron tick 时查 DB 7 天窗口，写入 `Map<reserveId, CampaignHistoryRow[]>` |
+| 2 | 类型扩展 | `@internal/aave-shared-contracts` | `RuntimeReserveData` 中 campaign 条目加 `_isExpired?: true` 可选字段 |
+| 3 | 序列化合并 | `marketsApiSerialize.ts` | 序列化 reserve 时从内存 map 追加过期 campaign，复用 x100 逻辑 |
+| 4 | cron 集成 | `updateScheduler.ts` | persist cron 中调用 `refreshRecentlyExpiredMap()` |
+| 5 | 测试 | `tests/` | 查询逻辑 + 内存缓存 + 序列化合并 |
 
-#### 2B：APR Series API
+#### 2B：APR Series API（独立 endpoint）
 
 | # | 任务 | 文件 | 说明 |
 |---|------|------|------|
-| 7 | 查询函数 | `persistenceService.ts` | `getAprObservations({ reserveId, source, side, campaignKey, from?, to? })` — 查 `campaign_apr_observations` |
-| 8 | API route | `routes/campaignHistoryRouter.ts` | `GET /api/campaigns/apr-series?reserveId=xxx&campaignKey=yyy` |
-| 9 | 响应结构 | — | `{ observations: [{ observedAt, apr }], campaign: { campaignData, expiredAt, ... } }` (JOIN `campaign_history` 取快照) |
-| 10 | 采样策略 | — | 超过 500 点时按小时聚合：`date_trunc('hour', observed_at)` + `avg(apr)` |
+| 6 | 查询函数 | `persistenceService.ts` | `getAprObservations({ reserveId, source, side, campaignKey, from?, to? })` |
+| 7 | API route | `routes/campaignHistoryRouter.ts` | `GET /api/campaigns/apr-series?reserveId=xxx&campaignKey=yyy` |
+| 8 | 响应结构 | — | `{ observations: [{ observedAt, apr }], campaign: { campaignData, expiredAt, ... } }` (JOIN `campaign_history` 取快照) |
+| 9 | 采样策略 | — | 超过 500 点时按小时聚合：`date_trunc('hour', observed_at)` + `avg(apr)` |
+| 10 | server 集成 | `server.ts` | 挂载 route |
+| 11 | 测试 | `tests/` | 查询 + API |
 
 ### 前端任务（参考 aaveapy 仓库）
 
 | # | 任务 | 文件 | 说明 |
 |---|------|------|------|
-| F1 | API 调用 | `hooks/useCampaignHistory.ts` | `fetchCampaignHistory(reserveId, side)` → react-query |
-| F2 | Recently Ended 展示 | `IncentiveTooltip.tsx` | 折叠区块，调用 `useCampaignHistory` 获取过期 campaign |
-| F3 | 纯函数 | `lib/recentlyEndedCampaigns.ts` | `isRecentlyEnded()` / `collectRecentlyEndedCampaigns()` |
-| F4 | APR 曲线组件 | 新增 `CampaignAprChart.tsx` | 在 campaign 详情中展示 APR 变化曲线 |
-| F5 | APR 数据获取 | `hooks/useAprSeries.ts` | `fetchAprSeries(reserveId, campaignKey)` → react-query |
-| F6 | 类型 + Zod schema | `types/aave.ts` + `shared/market-contract/schemas.ts` | `CampaignHistoryItem` / `AprSeriesResponse` |
+| F1 | Recently Ended 展示 | `IncentiveTooltip.tsx` | 折叠区块，从 `/api/markets` 返回的数据中筛 `_isExpired === true` |
+| F2 | 纯函数 | `lib/recentlyEndedCampaigns.ts` | `isRecentlyEnded()` / `collectRecentlyEndedCampaigns()` |
+| F3 | 类型扩展 | `types/aave.ts` | `MeritIncentive` / `MerklCampaignBreakdown` / `BrevisCampaignBreakdown` 加 `_isExpired?: true` |
+| F4 | Zod schema | `shared/market-contract/schemas.ts` | 对应 schema 扩展 |
+| F5 | APR 曲线组件 | 新增 `CampaignAprChart.tsx` | 调 `/api/campaigns/apr-series`，绘图（recharts / visx） |
+| F6 | APR 数据获取 | `hooks/useAprSeries.ts` | `fetchAprSeries(reserveId, campaignKey)` → react-query |
 | F7 | 测试 | `recentlyEndedCampaigns.test.ts` + `IncentiveTooltip.test.tsx` | 边界条件 + 折叠交互 |
 
 ### 数据流（Phase 2 完成后）
 
 ```text
-[IncentiveTooltip 打开]
-  ├─ 活跃 campaign ← /api/markets（现有，内存快照）
-  └─ Recently Ended ← /api/campaigns/history?reserveId=xxx&side=supply&windowDays=7
-       ↓
-  前端 isRecentlyEnded() 二次过滤（防御性，确保 endDate 一致）
-       ↓
-  灰显渲染，不计入 APY
+[cron :20]
+  refreshMarketsSnapshot()          → 内存活跃快照
+  persistCampaignHistory()          → DB campaign_history
+  markExpiredCampaigns()            → DB campaign_history.expired_at
+  refreshRecentlyExpiredMap()       → 内存 recentlyExpiredMap (7天窗口)
 
-[APR 曲线图打开]
-  └─ /api/campaigns/apr-series?reserveId=xxx&campaignKey=yyy
+[GET /api/markets]
+  serializeReserveForApi(reserve)
+    ├─ 活跃 campaign ← 内存快照（现有）
+    └─ 过期 campaign ← recentlyExpiredMap（新增，_isExpired: true）
+
+[前端 IncentiveTooltip]
+  ├─ 活跃 campaign → 正常渲染
+  └─ _isExpired === true → Recently Ended 折叠区块，灰显，不计入 APY
+
+[APR 曲线图]
+  └─ GET /api/campaigns/apr-series?reserveId=xxx&campaignKey=yyy
        ↓
-  前端绘图（recharts / visx）
+  前端绘图
 ```
 
 ### 不改动
 
 - root `src/` 下任何文件
-- `RuntimeReserveData` 类型
-- fetcher 过滤逻辑
-- `/api/markets` 热路径
-- 前端 `formatters.ts` APY 计算逻辑（只算活跃的）
+- fetcher 过滤逻辑（活跃 campaign 仍由 fetcher 层过滤）
+- 前端 `formatters.ts` APY 计算逻辑（只算活跃的，即 `_isExpired !== true`）
