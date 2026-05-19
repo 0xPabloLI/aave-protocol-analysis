@@ -46,7 +46,7 @@ const PORT: number = (() => {
 
 // Middleware
 app.use(corsMiddleware);
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '256kb' }));
 app.use(
   compression({
     // Keep tiny payloads uncompressed to avoid needless CPU overhead.

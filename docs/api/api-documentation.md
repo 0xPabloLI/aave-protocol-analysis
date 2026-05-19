@@ -24,6 +24,27 @@
 - **字符编码**: UTF-8
 - **端点总数**: **4 条 URL**（若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 3 个逻辑端点）
 
+## Rate Limiting & Security
+
+| 端点 | 速率限制 | 认证 | Body 限制 |
+|------|----------|------|-----------|
+| `GET /api/markets` | 120 req/min per IP | 无（公开） | N/A (GET) |
+| `GET /api/meta/side-data` | 120 req/min per IP | 无（公开） | N/A (GET) |
+| `GET /health`, `/api/health` | 无 | 无（公开） | N/A (GET) |
+| `GET /api/seo/*` | 无 | `X-Admin-Token` (timing-safe) | N/A (GET) |
+| `POST /api/seo/semrush` | 无 | `X-Admin-Token` | 256 KB |
+| `POST /api/seo/semrush/batch` | 5 req/min per token | `X-Admin-Token` | 5 MB (≤5000 条) |
+| `DELETE /api/seo/semrush/:id` | 无 | `X-Admin-Token` | N/A |
+
+### 503 Service Unavailable
+
+`GET /api/markets` 在以下情况返回 503，附带 `Retry-After` 响应头（RFC 7231）：
+
+| 场景 | errorCode | Retry-After | 含义 |
+|------|-----------|-------------|------|
+| 启动 warmup 未完成 | `MARKETS_SNAPSHOT_NOT_READY` | 10 秒 | 数据正在加载，稍后重试 |
+| 数据超过 hardTTL | `MARKETS_SNAPSHOT_STALE` | 60 秒 | cron 持续刷新失败，等待下一轮 |
+
 ## Freshness Contract
 
 API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即"建议刷新提示"而非最终服务边界。真正的 `hardTTL` 由后端 freshness 文档定义；当接口需要硬边界或 fallback 策略时，以后端实现和 `docs/backend/data-freshness-mechanism.md` 为准。

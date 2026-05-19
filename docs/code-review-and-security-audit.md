@@ -27,7 +27,7 @@
 | B1 | `seoAuth` token 长度不匹配时仍通过比较 | `seoAuth.ts:22-25` | 认证行为不清 | 长度 ≠ 64 时仅 warn，但 `safeEqual` 会因长度不等返回 false，导致所有请求被拒绝。运维不友好 | ✅ 已修复 |
 | B2 | GSC 日期格式未验证 | `seoController.ts:43-48` | SQL 错误 | `from`/`to` 未验证是否为有效 ISO 日期格式，无效字符串传给 PostgreSQL 可能报错 | ✅ 已修复 |
 | B3 | 健康检查泄露环境信息 | `server.ts:82-96` | 信息泄露 | `/health` 返回 `nodeEnv`、`corsMode`、`frontendUrl`、`allowedDevOrigins` | ✅ 已修复 |
-| B4 | `express.json()` 无 body 大小限制 | `server.ts:48` | DoS | 默认 100kb 但 SEO batch 需更大 body，应显式设置并区分路由 | ✅ 已修复 |
+| B4 | `express.json()` 无 body 大小限制 | `server.ts:48` | DoS | 默认 100kb 但 SEO batch 需更大 body，应显式设置并区分路由 | ✅ 已修复（全局 256kb，SEO batch 5mb） |
 | B5 | Markets 503 无 Retry-After | `marketsController.ts` | 轮询风暴 | hardTtl 超时返回 503 时未设置 `Retry-After` header | ✅ 已修复 |
 
 ---
