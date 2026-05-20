@@ -116,3 +116,6 @@ SESSION-BOARD.md
 
 # MCP config (contains sensitive tokens)
 .trae/mcp.json
+
+# Git worktrees
+.worktrees/
