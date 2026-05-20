@@ -996,8 +996,8 @@ export async function processMerklData(
       }
     }
 
-    // 过滤掉已过期的 campaign，只保留当前进行中和未来的 campaign
-    const filteredBreakdowns = filterExpiredCampaigns(breakdowns);
+    // 过滤已过期 campaign，每组仅保留最近一条过期
+    const filteredBreakdowns = filterRecentExpiredCampaigns(breakdowns);
 
     // 记录过滤情况
     if (breakdowns.length > filteredBreakdowns.length) {
@@ -1076,21 +1076,36 @@ export async function processMerklData(
 }
 
 /**
- * 过滤掉已过期的 campaign，保留当前进行中和未来的 campaign
- * - 过滤掉：campaignEndedAt < 当前时间（已过期）
- * - 保留：campaignEndedAt >= 当前时间（进行中或未来）
+ * @deprecated 使用 filterRecentExpiredCampaigns 替代，该函数完全过滤过期 campaign
  */
 export function filterExpiredCampaigns(breakdowns: MerklCampaignBreakdown[]): MerklCampaignBreakdown[] {
   const now = new Date();
   return breakdowns.filter(breakdown => {
-    // 如果没有结束时间，保留（可能是无限期的 campaign）
     if (!breakdown.campaignEndedAt) {
       return true;
     }
     const endTime = new Date(breakdown.campaignEndedAt);
-    // 只保留尚未过期的 campaign（endTime >= now）
     return endTime >= now;
   });
+}
+
+export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[]): MerklCampaignBreakdown[] {
+  const now = new Date();
+  const active = breakdowns.filter(b =>
+    !b.campaignEndedAt || new Date(b.campaignEndedAt) >= now
+  );
+  const expired = breakdowns.filter(b =>
+    b.campaignEndedAt && new Date(b.campaignEndedAt) < now
+  );
+  const byType = new Map<string, MerklCampaignBreakdown>();
+  for (const b of expired) {
+    const type = b.campaignType ?? 'UNKNOWN';
+    const existing = byType.get(type);
+    if (!existing || new Date(b.campaignEndedAt!) > new Date(existing.campaignEndedAt!)) {
+      byType.set(type, b);
+    }
+  }
+  return [...active, ...byType.values()];
 }
 
 /**

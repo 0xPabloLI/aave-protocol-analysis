@@ -794,6 +794,9 @@ function isMeritCampaignMetadataEnded(endDateRaw?: string): boolean {
   return hasEndedByMeritEndDate(endDateRaw);
 }
 
+/**
+ * @deprecated 使用 filterRecentExpiredMerit 替代，该函数在主流程中不再调用
+ */
 async function isMeritCampaignExpired(
   chainKey: string,
   endDateRaw: string | undefined,
@@ -831,6 +834,17 @@ async function isMeritCampaignExpired(
   if (hasEndedByMeritEndDate(endDateRaw, now.getTime())) return true;
 
   return false;
+}
+
+export function filterRecentExpiredMerit<T extends { endDate?: string }>(entries: T[]): T[] {
+  const now = new Date();
+  const active = entries.filter(e => !e.endDate || new Date(e.endDate) >= now);
+  const expired = entries.filter(e => e.endDate && new Date(e.endDate) < now);
+  if (expired.length === 0) return active;
+  const latest = expired.reduce((a, b) =>
+    new Date(a.endDate!) > new Date(b.endDate!) ? a : b
+  );
+  return [...active, latest];
 }
 
 /**
@@ -1193,7 +1207,6 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
 
     // 第二遍遍历：处理每个 baseKey，合并 self 和非 self
     const currentBlockCache = new Map<string, number | null>();
-    let expiredCampaignsFiltered = 0;
     const collectTargetMeritRoundTargets = (): Map<string, MeritRoundEstimateTarget> => {
       const targets = new Map<string, MeritRoundEstimateTarget>();
       for (const [baseKey, group] of baseKeyMap.entries()) {
@@ -1262,14 +1275,6 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       const finalMessage = message || [];
       
       const { supplyTokens, borrowTokens, chainKey } = nonSelfInfo;
-
-      // 过滤掉历史 campaign，只保留进行中和未来的 campaign
-      const isExpired = await isMeritCampaignExpired(chainKey, endDate, endBlock, currentBlockCache);
-      if (isExpired) {
-        expiredCampaignsFiltered++;
-        logger.info(`   🗑️ Filtered expired Merit campaign ${baseKey} (endDate: ${endDate || 'N/A'}, endBlock: ${endBlock || 'N/A'})`);
-        continue;
-      }
 
       const borrowTargets = borrowTokens.filter(t => t !== 'multiple');
       const supplyTargets = supplyTokens.filter(t => t !== 'multiple');
@@ -1425,8 +1430,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       }
     }
 
-    if (expiredCampaignsFiltered > 0) {
-      logger.info(`🗑️ Filtered out ${expiredCampaignsFiltered} expired Merit campaign(s)`);
+    // 对每个 indexKey 的 meritSupplys 和 meritBorrows 应用最近过期过滤
+    for (const key of Object.keys(meritData)) {
+      meritData[key].meritSupplys = filterRecentExpiredMerit(meritData[key].meritSupplys);
+      meritData[key].meritBorrows = filterRecentExpiredMerit(meritData[key].meritBorrows);
     }
 
     logger.info(`✅ Indexed Merit data for ${Object.keys(meritData).length} chain-token combinations`);

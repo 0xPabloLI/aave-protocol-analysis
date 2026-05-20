@@ -46,6 +46,7 @@ export function computeHash(data: unknown[]): string {
     .digest('hex');
 }
 
+// ts-prune-ignore-next
 export function computeCampaignKey(
   source: string,
   entry: Record<string, unknown>
@@ -183,7 +184,7 @@ const MARKET_COLUMNS = [
   'snapshot_ts', 'reserve_id',
   'token_price', 'supply_apy', 'borrow_apy', 'utilization_pct',
   'liquidity', 'borrowed', 'supplied', 'deficit',
-  'supply_incentives_apr', 'borrow_incentives_apr', 'incentive_details',
+  'incentive_details',
 ] as const;
 
 const MARKET_CONFIG_COLUMNS = [
@@ -314,8 +315,6 @@ function buildSnapshotRow(reserve: RuntimeReserveData, snapshotTs: string): unkn
     nullableBigintString(reserve.borrowed),
     nullableBigintString(reserve.supplied),
     nullableBigintString(reserve.deficit),
-    aggregateSupplyIncentivesApr(reserve),
-    aggregateBorrowIncentivesApr(reserve),
     JSON.stringify(buildIncentiveDetails(reserve)),
   ];
 }
@@ -583,328 +582,185 @@ function nullableBigintString(v: unknown): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Incentive aggregation
+// Per-campaign IncentiveDetails
 // ---------------------------------------------------------------------------
 
-/** Sum of all supply-side incentive APRs as a percentage (e.g. 5.5 = 5.5%). */
-export function aggregateSupplyIncentivesApr(reserve: RuntimeReserveData): number | null {
-  return aggregateIncentivesApr(
-    reserve.supplyIncentives,
-    reserve.meritSupplys,
-    reserve.merklSupplys,
-    reserve.brevisSupplys
-  );
+export interface MeritCampaignEntry {
+  key: string;
+  apr: number;
+  name?: string;
+  endDate: string;
+  link: string;
 }
 
-/** Sum of all borrow-side incentive APRs as a percentage. */
-export function aggregateBorrowIncentivesApr(reserve: RuntimeReserveData): number | null {
-  return aggregateIncentivesApr(
-    reserve.borrowIncentives,
-    reserve.meritBorrows,
-    reserve.merklBorrows,
-    reserve.brevisBorrows
-  );
+export interface MerklBreakdownEntry {
+  key: string;
+  apr: number;
+  type?: string;
+  endDate: string;
+  startDate: string;
 }
 
-function aggregateIncentivesApr(
-  legacy: number[] | undefined,
-  merit: { apr?: number }[] | undefined,
-  merkl: { breakdowns?: { campaignApr?: number | null }[] }[] | undefined,
-  brevis: { breakdowns?: { campaignApr?: number | null }[] }[] | undefined
-): number | null {
-  let total = 0;
-  let any = false;
-
-  for (const v of legacy ?? []) {
-    if (Number.isFinite(v)) {
-      total += v * 100; // legacy ratios → percent
-      any = true;
-    }
-  }
-  for (const m of merit ?? []) {
-    if (typeof m.apr === 'number' && Number.isFinite(m.apr)) {
-      total += m.apr * 100; // merit apr is ratio
-      any = true;
-    }
-  }
-  for (const group of merkl ?? []) {
-    for (const b of group.breakdowns ?? []) {
-      if (typeof b.campaignApr === 'number' && Number.isFinite(b.campaignApr)) {
-        total += b.campaignApr * 100;
-        any = true;
-      }
-    }
-  }
-  for (const group of brevis ?? []) {
-    for (const b of group.breakdowns ?? []) {
-      if (typeof b.campaignApr === 'number' && Number.isFinite(b.campaignApr)) {
-        total += b.campaignApr * 100;
-        any = true;
-      }
-    }
-  }
-  return any ? Number(total.toFixed(6)) : null;
+export interface MerklGroupEntry {
+  groupId: string;
+  link: string;
+  name?: string;
+  message?: string | null;
+  breakdowns: MerklBreakdownEntry[];
 }
 
-interface IncentiveDetails {
+export interface BrevisBreakdownEntry {
+  key: string;
+  apr: number;
+  startDate: string;
+  endDate: string;
+}
+
+export interface BrevisGroupEntry {
+  groupId: string;
+  link: string;
+  breakdowns: BrevisBreakdownEntry[];
+}
+
+export interface PerCampaignIncentiveDetails {
   legacySupply?: number[];
   legacyBorrow?: number[];
-  merit?: { side: 'supply' | 'borrow'; apr: number }[];
-  merkl?: { side: 'supply' | 'borrow' | 'hold'; aprs: number[] }[];
-  brevis?: { side: 'supply' | 'borrow'; aprs: number[] }[];
+  meritSupplys?: MeritCampaignEntry[];
+  meritBorrows?: MeritCampaignEntry[];
+  merklSupplys?: MerklGroupEntry[];
+  merklBorrows?: MerklGroupEntry[];
+  merklHolds?: MerklGroupEntry[];
+  brevisSupplys?: BrevisGroupEntry[];
+  brevisBorrows?: BrevisGroupEntry[];
 }
 
-function buildIncentiveDetails(reserve: RuntimeReserveData): IncentiveDetails {
-  const out: IncentiveDetails = {};
+export function buildIncentiveDetails(reserve: RuntimeReserveData): PerCampaignIncentiveDetails {
+  const out: PerCampaignIncentiveDetails = {};
+
   if (reserve.supplyIncentives?.length) out.legacySupply = reserve.supplyIncentives;
   if (reserve.borrowIncentives?.length) out.legacyBorrow = reserve.borrowIncentives;
 
-  const merit: IncentiveDetails['merit'] = [];
+  const meritSupplys: MeritCampaignEntry[] = [];
   for (const m of reserve.meritSupplys ?? []) {
-    if (typeof m.apr === 'number') merit.push({ side: 'supply', apr: m.apr });
+    const key = `${String(m.link ?? '')}::${String(m.endDate ?? '')}`;
+    if (!key || key === '::') {
+      logger.warn(`buildIncentiveDetails: skipping merit supply entry with invalid key (reserveId=${reserve.reserveId})`);
+      continue;
+    }
+    meritSupplys.push({ key, apr: m.apr, name: m.name, endDate: m.endDate, link: m.link });
   }
+  if (meritSupplys.length) out.meritSupplys = meritSupplys;
+
+  const meritBorrows: MeritCampaignEntry[] = [];
   for (const m of reserve.meritBorrows ?? []) {
-    if (typeof m.apr === 'number') merit.push({ side: 'borrow', apr: m.apr });
-  }
-  if (merit.length) out.merit = merit;
-
-  const merkl: IncentiveDetails['merkl'] = [];
-  for (const [side, list] of [
-    ['supply', reserve.merklSupplys] as const,
-    ['borrow', reserve.merklBorrows] as const,
-    ['hold', reserve.merklHolds] as const,
-  ]) {
-    for (const group of list ?? []) {
-      const aprs = (group.breakdowns ?? [])
-        .map((b) => b.campaignApr)
-        .filter((v): v is number => typeof v === 'number');
-      if (aprs.length) merkl.push({ side, aprs });
+    const key = `${String(m.link ?? '')}::${String(m.endDate ?? '')}`;
+    if (!key || key === '::') {
+      logger.warn(`buildIncentiveDetails: skipping merit borrow entry with invalid key (reserveId=${reserve.reserveId})`);
+      continue;
     }
+    meritBorrows.push({ key, apr: m.apr, name: m.name, endDate: m.endDate, link: m.link });
   }
-  if (merkl.length) out.merkl = merkl;
+  if (meritBorrows.length) out.meritBorrows = meritBorrows;
 
-  const brevis: IncentiveDetails['brevis'] = [];
-  for (const [side, list] of [
-    ['supply', reserve.brevisSupplys] as const,
-    ['borrow', reserve.brevisBorrows] as const,
-  ]) {
-    for (const group of list ?? []) {
-      const aprs = (group.breakdowns ?? [])
-        .map((b) => b.campaignApr)
-        .filter((v): v is number => typeof v === 'number');
-      if (aprs.length) brevis.push({ side, aprs });
-    }
-  }
-  if (brevis.length) out.brevis = brevis;
+  if (reserve.merklSupplys?.length) out.merklSupplys = buildMerklGroups(reserve.merklSupplys, reserve.reserveId);
+  if (reserve.merklBorrows?.length) out.merklBorrows = buildMerklGroups(reserve.merklBorrows, reserve.reserveId);
+  if (reserve.merklHolds?.length) out.merklHolds = buildMerklGroups(reserve.merklHolds, reserve.reserveId);
+
+  if (reserve.brevisSupplys?.length) out.brevisSupplys = buildBrevisGroups(reserve.brevisSupplys, reserve.reserveId);
+  if (reserve.brevisBorrows?.length) out.brevisBorrows = buildBrevisGroups(reserve.brevisBorrows, reserve.reserveId);
 
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Campaign history persistence
-// ---------------------------------------------------------------------------
-
-interface CampaignHistoryRow {
-  reserveId: string;
-  source: string;
-  side: string;
-  campaignKey: string;
-  campaignData: Record<string, unknown>;
+function buildMerklGroups(
+  groups: Array<{ link: string; name?: string; message?: string | null; breakdowns: Array<{ campaignApr: number; campaignId: string; campaignStartedAt: string; campaignEndedAt: string; type?: string }> }>,
+  _reserveId: string
+): MerklGroupEntry[] {
+  return groups.map((group) => ({
+    groupId: crypto.createHash('sha256').update(group.link).digest('hex').slice(0, 16),
+    link: group.link,
+    name: group.name,
+    message: group.message ?? null,
+    breakdowns: (group.breakdowns ?? []).map((bd) => ({
+      key: bd.campaignId ?? '',
+      apr: bd.campaignApr,
+      type: bd.type,
+      endDate: bd.campaignEndedAt,
+      startDate: bd.campaignStartedAt,
+    })),
+  }));
 }
 
-const CAMPAIGN_SOURCE_SIDE: [string, string, string][] = [
-  ['meritSupplys', 'merit', 'supply'],
-  ['meritBorrows', 'merit', 'borrow'],
-  ['merklSupplys', 'merkl', 'supply'],
-  ['merklBorrows', 'merkl', 'borrow'],
-  ['merklHolds', 'merkl', 'hold'],
-  ['brevisSupplys', 'brevis', 'supply'],
-  ['brevisBorrows', 'brevis', 'borrow'],
-];
+function buildBrevisGroups(
+  groups: Array<{ link: string; breakdowns: Array<{ campaignApr: number; campaignId?: string; campaignStartedAt: string; campaignEndedAt: string }> }>,
+  _reserveId: string
+): BrevisGroupEntry[] {
+  return groups.map((group) => ({
+    groupId: crypto.createHash('sha256').update(group.link).digest('hex').slice(0, 16),
+    link: group.link,
+    breakdowns: (group.breakdowns ?? []).map((bd) => ({
+      key: bd.campaignId ?? crypto.createHash('sha256').update(JSON.stringify([bd.campaignStartedAt, bd.campaignEndedAt, bd.campaignApr])).digest('hex').slice(0, 16),
+      apr: bd.campaignApr,
+      startDate: bd.campaignStartedAt,
+      endDate: bd.campaignEndedAt,
+    })),
+  }));
+}
 
-function traverseCampaignEntries(
-  reserve: RuntimeReserveData,
-  onEntry: (
-    entry: Record<string, unknown>,
-    source: string,
-    side: string,
-    groupInfo?: { link: unknown; name: unknown; message: unknown }
-  ) => void
-): void {
-  for (const [arrayKey, source, side] of CAMPAIGN_SOURCE_SIDE) {
-    const campaigns = (reserve as unknown as Record<string, unknown>)[arrayKey] as Array<Record<string, unknown>> | undefined;
-    if (!campaigns || campaigns.length === 0) continue;
+// ── In-memory SUM derivation ────────────────────────────────────────────────
 
-    if (source === 'merit') {
-      for (const entry of campaigns) {
-        onEntry(entry, source, side);
-      }
-    } else {
-      for (const group of campaigns) {
-        const breakdowns = (group.breakdowns as Array<Record<string, unknown>>) ?? [];
-        for (const bd of breakdowns) {
-          onEntry(bd, source, side, { link: group.link, name: group.name, message: group.message });
-        }
-      }
+function isEntryExpired(endDate: string | undefined, now: Date): boolean {
+  if (!endDate) return false;
+  const ts = Date.parse(endDate);
+  if (!Number.isFinite(ts)) return false;
+  return now.getTime() > ts;
+}
+
+// ts-prune-ignore-next
+export function sumIncentiveAprFromDetails(
+  details: PerCampaignIncentiveDetails | null | undefined,
+  side: 'supply' | 'borrow',
+  now?: Date
+): number | null {
+  if (!details) return null;
+  const refNow = now ?? new Date();
+  let total = 0;
+  let any = false;
+
+  if (side === 'supply' && details.legacySupply?.length) {
+    for (const v of details.legacySupply) {
+      if (Number.isFinite(v)) { total += v * 100; any = true; }
     }
   }
+  if (side === 'borrow' && details.legacyBorrow?.length) {
+    for (const v of details.legacyBorrow) {
+      if (Number.isFinite(v)) { total += v * 100; any = true; }
+    }
+  }
+
+  const meritEntries = side === 'supply' ? details.meritSupplys : details.meritBorrows;
+  for (const m of meritEntries ?? []) {
+    if (isEntryExpired(m.endDate, refNow)) continue;
+    if (typeof m.apr === 'number' && Number.isFinite(m.apr)) { total += m.apr * 100; any = true; }
+  }
+
+  const merklGroups = side === 'supply' ? details.merklSupplys : details.merklBorrows;
+  for (const group of merklGroups ?? []) {
+    for (const bd of group.breakdowns ?? []) {
+      if (isEntryExpired(bd.endDate, refNow)) continue;
+      if (typeof bd.apr === 'number' && Number.isFinite(bd.apr)) { total += bd.apr * 100; any = true; }
+    }
+  }
+
+  const brevisGroups = side === 'supply' ? details.brevisSupplys : details.brevisBorrows;
+  for (const group of brevisGroups ?? []) {
+    for (const bd of group.breakdowns ?? []) {
+      if (isEntryExpired(bd.endDate, refNow)) continue;
+      if (typeof bd.apr === 'number' && Number.isFinite(bd.apr)) { total += bd.apr * 100; any = true; }
+    }
+  }
+
+  return any ? Number(total.toFixed(6)) : null;
 }
 
-export function buildCampaignHistoryRows(reserve: RuntimeReserveData): CampaignHistoryRow[] {
-  const rows: CampaignHistoryRow[] = [];
 
-  traverseCampaignEntries(reserve, (entry, source, side, groupInfo) => {
-    const campaignKey = computeCampaignKey(source, entry);
-    rows.push({
-      reserveId: reserve.reserveId,
-      source,
-      side,
-      campaignKey,
-      campaignData: source === 'merit'
-        ? entry
-        : {
-            link: groupInfo?.link,
-            name: groupInfo?.name,
-            message: groupInfo?.message,
-            breakdowns: [entry],
-          },
-    });
-  });
-
-  return rows;
-}
-
-const CAMPAIGN_HISTORY_COLUMNS = [
-  'reserve_id', 'source', 'side', 'campaign_key', 'campaign_data',
-] as const;
-
-export async function persistCampaignHistory(payload: MarketsPayload): Promise<number> {
-  if (!isPersistenceEnabled()) return 0;
-  const pool = getPool();
-
-  const allRows: CampaignHistoryRow[] = [];
-  for (const reserve of payload.data) {
-    allRows.push(...buildCampaignHistoryRows(reserve));
-  }
-  if (allRows.length === 0) return 0;
-
-  let written = 0;
-  const CHUNK = 500;
-  for (let i = 0; i < allRows.length; i += CHUNK) {
-    const chunk = allRows.slice(i, i + CHUNK);
-    const tuples = chunk.map((r) => [
-      r.reserveId,
-      r.source,
-      r.side,
-      r.campaignKey,
-      JSON.stringify(r.campaignData),
-    ]);
-    const { text, values } = buildBulkInsert(
-      'campaign_history',
-      CAMPAIGN_HISTORY_COLUMNS as unknown as string[],
-      tuples,
-      `ON CONFLICT (reserve_id, source, side, campaign_key) DO UPDATE SET
-        campaign_data = EXCLUDED.campaign_data,
-        last_seen_at = NOW(),
-        expired_at = NULL`
-    );
-    const result = await pool.query(text, values);
-    written += result.rowCount ?? 0;
-  }
-  return written;
-}
-
-const EXPIRY_WINDOW_MINUTES = 2;
-
-async function markExpiredCampaigns(): Promise<number> {
-  if (!isPersistenceEnabled()) return 0;
-  const pool = getPool();
-
-  const result = await pool.query(
-    `UPDATE campaign_history
-     SET expired_at = NOW()
-     WHERE expired_at IS NULL
-       AND last_seen_at < NOW() - make_interval(mins => $1)`,
-    [EXPIRY_WINDOW_MINUTES]
-  );
-  return result.rowCount ?? 0;
-}
-
-function computeAprDataHash(source: string, entry: Record<string, unknown>): string {
-  if (source === 'merit') {
-    return crypto.createHash('sha256').update(JSON.stringify([entry.apr, entry.selfApr])).digest('hex');
-  }
-  return crypto.createHash('sha256').update(JSON.stringify([entry.campaignApr])).digest('hex');
-}
-
-function getCanonicalApr(source: string, entry: Record<string, unknown>): number | null {
-  if (source === 'merit') {
-    const apr = entry.apr;
-    return typeof apr === 'number' && Number.isFinite(apr) ? apr : null;
-  }
-  const apr = entry.campaignApr;
-  return typeof apr === 'number' && Number.isFinite(apr) ? apr : null;
-}
-
-const APR_OBS_COLUMNS = [
-  'reserve_id', 'source', 'side', 'campaign_key', 'apr', 'apr_data_hash',
-] as const;
-
-export async function appendAprObservations(payload: MarketsPayload): Promise<number> {
-  if (!isPersistenceEnabled()) return 0;
-  const pool = getPool();
-
-  const allEntries = new Map<string, { reserveId: string; source: string; side: string; campaignKey: string; entry: Record<string, unknown> }>();
-  for (const reserve of payload.data) {
-    traverseCampaignEntries(reserve, (entry, source, side) => {
-      const apr = getCanonicalApr(source, entry);
-      if (apr === null) return;
-      const campaignKey = computeCampaignKey(source, entry);
-      const dedupKey = `${reserve.reserveId}|${source}|${side}|${campaignKey}`;
-      allEntries.set(dedupKey, { reserveId: reserve.reserveId, source, side, campaignKey, entry });
-    });
-  }
-
-  if (allEntries.size === 0) return 0;
-
-  const latestHashes = new Map<string, string>();
-  const hashQuery = await pool.query(
-    `SELECT DISTINCT ON (reserve_id, source, side, campaign_key)
-       reserve_id, source, side, campaign_key, apr_data_hash
-     FROM campaign_apr_observations
-     ORDER BY reserve_id, source, side, campaign_key, observed_at DESC`
-  );
-  for (const row of hashQuery.rows) {
-    const key = `${row.reserve_id}|${row.source}|${row.side}|${row.campaign_key}`;
-    latestHashes.set(key, row.apr_data_hash);
-  }
-
-  const newObs: { reserveId: string; source: string; side: string; campaignKey: string; apr: number; aprDataHash: string }[] = [];
-  for (const [dedupKey, { reserveId, source, side, campaignKey, entry }] of allEntries) {
-    const apr = getCanonicalApr(source, entry);
-    if (apr === null) continue;
-    const aprDataHash = computeAprDataHash(source, entry);
-    if (latestHashes.get(dedupKey) === aprDataHash) continue;
-    newObs.push({ reserveId, source, side, campaignKey, apr, aprDataHash });
-  }
-
-  if (newObs.length === 0) return 0;
-
-  let written = 0;
-  const CHUNK = 500;
-  for (let i = 0; i < newObs.length; i += CHUNK) {
-    const chunk = newObs.slice(i, i + CHUNK);
-    const tuples = chunk.map(({ reserveId, source, side, campaignKey, apr, aprDataHash }) => [
-      reserveId, source, side, campaignKey, apr, aprDataHash,
-    ]);
-    const { text, values } = buildBulkInsert(
-      'campaign_apr_observations',
-      APR_OBS_COLUMNS as unknown as string[],
-      tuples,
-      ''
-    );
-    const result = await pool.query(text, values);
-    written += result.rowCount ?? 0;
-  }
-  return written;
-}

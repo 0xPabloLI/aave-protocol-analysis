@@ -47,6 +47,25 @@ export function pruneBrevisCampaignForRuntime(campaign: BrevisCampaignItem): Bre
   };
 }
 
+export function filterRecentExpiredBrevis<T extends { breakdowns?: Array<{ campaignEndedAt?: string }> }>(items: T[]): T[] {
+  const now = new Date();
+  const active = items.filter(item => {
+    const bd = item.breakdowns ?? [];
+    return bd.length === 0 || bd.some(b => !b.campaignEndedAt || new Date(b.campaignEndedAt) >= now);
+  });
+  const expired = items.filter(item => {
+    const bd = item.breakdowns ?? [];
+    return bd.length > 0 && bd.every(b => b.campaignEndedAt && new Date(b.campaignEndedAt) < now);
+  });
+  if (expired.length === 0) return active;
+  const latest = expired.reduce((a, b) => {
+    const aEnd = Math.max(...(a.breakdowns ?? []).map(bd => bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0));
+    const bEnd = Math.max(...(b.breakdowns ?? []).map(bd => bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0));
+    return aEnd >= bEnd ? a : b;
+  });
+  return [...active, latest];
+}
+
 // Brevis 数据项结构（类似 MeritDataItem）
 export interface BrevisDataItem {
   brevisSupplys: BrevisCampaignItem[];
@@ -620,11 +639,6 @@ export class BrevisApiClient {
               continue;
             }
 
-            // 过滤掉已经结束的活动（保留进行中和未来活动）
-            if (endTime > 0 && endTime < now) {
-              continue;
-            }
-
             const tokenAddressLower =
               typeof token?.addr === 'string' ? token.addr.trim().toLowerCase() : '';
             // 与 Aave reserve 合并只按 underlying token 地址匹配，无 addr 则跳过（不用 pool id 占位）
@@ -680,6 +694,12 @@ export class BrevisApiClient {
           logger.warn(`⚠️ 获取 protocol ${protocol.id} 详情失败: ${error.message}`);
           continue;
         }
+      }
+
+      // 对每个 indexKey 的 brevisSupplys 和 brevisBorrows 应用最近过期过滤
+      for (const key of Object.keys(campaignsIndex)) {
+        campaignsIndex[key].brevisSupplys = filterRecentExpiredBrevis(campaignsIndex[key].brevisSupplys);
+        campaignsIndex[key].brevisBorrows = filterRecentExpiredBrevis(campaignsIndex[key].brevisBorrows);
       }
 
       const totalSupply = Object.values(campaignsIndex).reduce((sum, item) => sum + item.brevisSupplys.length, 0);

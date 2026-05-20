@@ -1,9 +1,12 @@
 # AGENTS.md (Slim)
 
 ## Project Snapshot
-- Monorepo (npm workspaces): `packages/aave-shared-contracts` (types) ← `packages/aave-fetcher` (runtime) ← root/backend
-- `packages/aave-shared-config` — static config constants
-- `backend/` — API server, in-memory snapshots (cron-write / API-read-only), DB is pure archive (0 SELECT)
+- Monorepo (npm workspaces) with three packages + backend:
+  - `packages/aave-shared-contracts` — shared type definitions (`RuntimeReserveData`, `MarketsPayload`), field registry, validation
+  - `packages/aave-fetcher` — data aggregation (`fetchMarketsData`): Aave SDK + Merit + Merkl + Brevis
+  - `packages/aave-shared-config` — static config constants
+  - `backend/` — API server, in-memory snapshots (cron-write / API-read-only), DB is pure archive (0 SELECT)
+- Dependency direction: shared-contracts ← aave-fetcher ← root/backend (one-way)
 - Root `src/` is a thin re-export layer; backend imports from `@internal/*` packages, NOT from root dist.
 
 ## Core Commands
@@ -73,7 +76,40 @@ to the DB service, replacing PostgreSQL with a Node.js container.
 - API fields should omit `undefined` / empty arrays (keep payload lean).
 - Keep cron-write/API-read-only pattern: request handlers should not trigger external fetches.
 - **Workspace boundary**: `packages/aave-shared-contracts` (types only) ← `packages/aave-fetcher` (runtime) ← root/backend.
-- Details: see `docs/architecture/workspace-boundaries.md`
+- **No root dist imports**: backend MUST NOT import from `../../../dist/index.js`. Use `@internal/aave-shared-contracts` for types, `@internal/aave-fetcher` for runtime.
+- **No hardcoded bin paths in sub-project scripts**: workspace sub-projects (`backend/scripts/`, `packages/*/scripts/`) MUST NOT hardcode `./node_modules/.bin/<tool>` paths. npm workspaces hoist all deps to root `node_modules/`. Use `npx --no-install <tool>` instead — it resolves the hoisted binary correctly.
+- **Serialization stays in backend**: `marketsApiSerialize.ts` produces `MarketWithSpread` in backend only.
+- When adding reserve fields, update `RuntimeReserveData` in `@internal/aave-shared-contracts`, then backend types/serialization.
+
+## Automated Checks (No Manual Checklist Needed)
+
+### Reserve Field Addition
+Adding new reserve fields to the single `RuntimeReserveData` type requires:
+
+1. **Type Sync**: Update `RuntimeReserveData` → `MarketWithSpread` (backend) → `marketsApiSerialize.ts` serialization
+2. **Runtime Test**: `tests/field-coverage.test.ts` validates all expected fields are present
+3. **Field Registry**: `packages/aave-shared-contracts/src/index.ts` maintains `EXPECTED_RUNTIME_FIELDS` as source of truth
+
+**Run tests to verify:**
+```bash
+npm run build && npm run test -w aave-dashboard-backend
+```
+
+## Required Coupled Changes
+When touching one area, check its pair:
+- `packages/aave-shared-contracts/src/index.ts` (types) ↔ `backend/src/types/index.ts` (backend types)
+- `packages/aave-fetcher/src/index.ts` (pruneReserveForRuntime) ↔ `backend/src/types/index.ts`
+- Root output schema ↔ `backend/src/services/marketsApiSerialize.ts`
+- `backend/src/cacheTtl.ts` ↔ `backend/src/services/updateScheduler.ts`
+- Chain/platform mapping ↔ `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts`
+- `scripts/sync-oracle-pool-configs.ts` ↔ `backend/src/generated/oracle-pool-configs.ts`
+
+### Shared Package Boundaries (Non-Negotiable)
+| Package | Contains | Must NOT contain |
+|---|---|---|
+| `@internal/aave-shared-contracts` | Types, field registry, validation | Runtime fetch logic, serialization |
+| `@internal/aave-fetcher` | `fetchMarketsData`, SDK clients, adapters | Backend API types (`MarketWithSpread`) |
+| `backend` | API server, serialization (`marketsApiSerialize.ts`) | `fetchMarketsData` definition (imports it) |
 
 ## Validation Gate
 - For code changes, run at minimum:
@@ -81,6 +117,15 @@ to the DB service, replacing PostgreSQL with a Node.js container.
   - `npm run build -w aave-dashboard-backend`
   - `npm run test -w aave-dashboard-backend`
 - For release-level confidence, prefer `npm run ci:remote`.
+- **Dist import check** (must be empty):
+  ```bash
+  rg "dist/index\.js|\.\.\/\.\.\/\.\.\/dist" backend/src tests
+  ```
+- **Bin path check** (must pass):
+  ```bash
+  npm run check:bin-paths
+  ```
+  (ensures workspace sub-project scripts use `npx`, not hardcoded `node_modules/.bin/` paths)
 
 ## High-Risk Areas (Coordinate Carefully)
 - Fetch orchestration: `packages/aave-fetcher/src/index.ts`
@@ -111,13 +156,13 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 - `aaveapy-doc/AaveAPY 精确协议标记与前端异常状态适配方案（修订版）.md`
 
 ### `docs/` — 本项目工程文档
-- `docs/architecture/workspace-boundaries.md` — workspace 包边界、耦合变更、字段添加流程
 - `docs/api/api-documentation.md` — API 接口文档
 - `docs/api/brevis-supplement.md` — Brevis 补充说明
 - `docs/backend/data-freshness-mechanism.md` — 数据新鲜度机制
 - `docs/development-best-practices.md` — 开发最佳实践
 - `docs/merkl-merit-cache-architecture.md` — 缓存架构
 - `docs/deploy/cloudflare-complete-guide.md` — 部署指南
+- `docs/plans/README.md` — Plan 目录规范（活跃在 `plans/`，完成后移入 `plans/executed/`）
 
 ### Agent 查询优先级
 当被问到跨前后端或协议相关问题时，Agent 必须**优先搜索 `aaveapy-doc/` 子模块**寻找答案，`docs/` 仅作为本项目工程实现细节的补充。
@@ -127,21 +172,3 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 - Prefer runtime verification/log evidence over speculative explanations.
 - Keep schema convergence across incentive sources; avoid unused fields in public payload.
 - Use exact-origin CORS settings; treat freshness TTL changes as explicit, documented decisions.
-
-## Lessons Learned
-
-### Code Review 对接纪律
-- **逐项验证再实现**：对每个 review 项先独立验证（能否复现？是否真影响生产？是否对本 codebase 正确？），不默认同意
-- **逐项实现+逐项测试**：不要批量修复后一次 commit，应逐项实现、逐项测试、逐项验证
-- **Minor 项先 YAGNI 判断**：如冗余拷贝（<0.01ms 影响），考虑是否值得改
-- **Push back 是正当的**：如果 reviewer 缺乏完整上下文或建议与现有架构冲突，用技术推理 push back
-
-### V4 Onchain Match 机制
-- V3 onchain key = `${chainId}:${poolAddress}:${tokenAddr}` — 直接匹配 reserveId
-- V4 onchain key = `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}` — address-based，直接匹配 reserveId，无 fallback
-- 修改 V4 onchain key 格式时，**同步更新测试用例**（曾出现测试 3 段 vs 实现 4 段不一致）
-
-### 删除映射表前检查 DB 依赖
-- `SPOKE_NAME_MAP` 看似仅用于日志/显示，实则被 `persistenceService` 用作 DB key（`v4|spokeName`）
-- 删除前必须 grep 所有消费方，确认无 DB/persistence 依赖
-- onchainDataService 的 `V4_SPOKE_NAME_MAP` 无 DB 依赖（仅日志），可安全删除
