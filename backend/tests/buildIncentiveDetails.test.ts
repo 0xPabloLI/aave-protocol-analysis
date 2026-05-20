@@ -128,17 +128,6 @@ test('buildIncentiveDetails: legacy fields preserved', () => {
   assert.deepEqual(details.legacyBorrow, [0.03]);
 });
 
-test('buildIncentiveDetails: _isExpired does NOT appear in output', () => {
-  const r = baseReserve({
-    meritSupplys: [{ apr: 0.01, link: 'x', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritSupplys'],
-    merklSupplys: [{ link: 'l', breakdowns: [{ campaignApr: 0.01, campaignId: 's1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }] as unknown as RuntimeReserveData['merklSupplys'],
-    brevisSupplys: [{ link: 'l', breakdowns: [{ campaignApr: 0.01, campaignId: 'bs1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }] as unknown as RuntimeReserveData['brevisSupplys'],
-  });
-  const details = buildIncentiveDetails(r);
-  const json = JSON.stringify(details);
-  assert.ok(!json.includes('_isExpired'));
-});
-
 test('buildIncentiveDetails: merit entry with missing key fields is skipped', () => {
   const r = baseReserve({
     meritSupplys: [
@@ -154,25 +143,7 @@ test('buildIncentiveDetails: empty reserve produces minimal output', () => {
   assert.deepEqual(details, {});
 });
 
-// ── _isExpired not in DB output (Task 9.4 — expanded) ────────────────────
-
-test('buildIncentiveDetails: _isExpired absent from all nested structures', () => {
-  const r = baseReserve({
-    supplyIncentives: [0.01],
-    borrowIncentives: [0.02],
-    meritSupplys: [{ apr: 0.01, link: 'x', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritSupplys'],
-    meritBorrows: [{ apr: 0.01, link: 'y', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritBorrows'],
-    merklSupplys: [{ link: 'l', breakdowns: [{ campaignApr: 0.01, campaignId: 's1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }] as unknown as RuntimeReserveData['merklSupplys'],
-    merklBorrows: [{ link: 'l', breakdowns: [{ campaignApr: 0.01, campaignId: 'b1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }] as unknown as RuntimeReserveData['merklBorrows'],
-    merklHolds: [{ link: 'l', breakdowns: [{ campaignApr: 0.01, campaignId: 'h1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }] as unknown as RuntimeReserveData['merklHolds'],
-    brevisSupplys: [{ link: 'l', breakdowns: [{ campaignApr: 0.01, campaignId: 'bs1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }] as unknown as RuntimeReserveData['brevisSupplys'],
-    brevisBorrows: [{ link: 'l', breakdowns: [{ campaignApr: 0.01, campaignId: 'bb1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }] as unknown as RuntimeReserveData['brevisBorrows'],
-  });
-  const details = buildIncentiveDetails(r);
-  const json = JSON.stringify(details);
-  assert.ok(!json.includes('_isExpired'), '_isExpired should not appear in DB output');
-  assert.ok(!Object.keys(details).some(k => k === '_isExpired'), 'top-level _isExpired key absent');
-});
+// ── Performance test: buildIncentiveDetails < 1ms (Task 10.1) ──────────────────
 
 // ── Performance test: buildIncentiveDetails < 1ms (Task 10.1) ────────────
 

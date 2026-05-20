@@ -47,7 +47,7 @@ Last updated: 2026-05-19
 | 聚合 incentive APR 列 | 删除 `supply_incentives_apr` / `borrow_incentives_apr` | 冗余，可由新 JSONB SUM 推导 |
 | `campaign_history` | 删除 | first/last_seen_at 可由 `incentive_details` 时间序列推导（见 §3.4） |
 | `campaign_apr_observations` | 删除 | APR 时间序列由 `incentive_details` JSONB 提取（见 §3.4） |
-| `_isExpired` 标志 | 序列化时动态计算，**不写 JSONB** | endDate 是固定值，过期判定取决于当前时间；写入时冻结会导致回放错误 |
+| `_isExpired` 标志 | 已移除（前端用 `endDate` 自行判断过期，后端 APY 聚合用 `endDate < now`） | `_isExpired` 是 `endDate` 的冗余派生值，前端 29 处过期判断全部基于 `endDate`，不依赖此字段 |
 | Recently ended campaign 来源 | 上游 LIVE opportunities 不过滤近期过期 | Merkl LIVE opp 内含刚过期 breakdown；按 (opportunity, campaignType) 去重只保留最近一条过期 |
 
 ## 3. 表变更
@@ -445,7 +445,7 @@ APY 累加路径排除 `_isExpired === true` 的条目；前端展示路径用 `
 | 1 | `buildIncentiveDetails()` 改为 per-campaign 结构 | `persistenceService.ts` L637 | ✅ 已实施 (2026-05-20) |
 | 2 | 停止写入 `supply_incentives_apr` / `borrow_incentives_apr` 两列（`MARKET_COLUMNS` 已移除） | `persistenceService.ts` L183-188 | ✅ 已实施 (2026-05-20) |
 | 3 | `/api/markets` 改为从 `incentive_details` SUM 推导聚合 APR（`sumIncentiveAprFromDetails`） | `persistenceService.ts` L720-764 | ✅ 已实施 (2026-05-20) |
-| 4 | 序列化时按 `now()` 计算 `_isExpired` 标志 | `marketsApiSerialize.ts` L13-19 | ✅ 已实施 (2026-05-20) |
+| 4 | 序列化时按 `now()` 计算 `_isExpired` 标志 | `marketsApiSerialize.ts` L13-19 | ❌ 已移除（前端用 `endDate` 自行判断，`_isExpired` 是冗余派生字段） |
 | 5 | fetcher: `filterRecentExpiredCampaigns()` | `merkl-api.ts` / `merit-api.ts` / `brevis-api.ts` | ✅ 已实施 (2026-05-20) |
 | 6 | 建 view: `v_campaign_history` / `v_campaign_apr_observations` | `migrations/011_*.sql` | 🟡 待实施 |
 | 7 | Staging 验证 view 业务等价 | — | 🟡 待实施 |

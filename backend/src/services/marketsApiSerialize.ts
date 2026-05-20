@@ -10,28 +10,16 @@ import {
   type CampaignForecastType,
 } from '../lib/merklApiContract.js';
 
-export function computeIsExpired(endDate?: string | null, now?: Date): boolean {
-  if (!endDate) return false;
-  const ts = Date.parse(endDate);
-  if (!Number.isFinite(ts)) return false;
-  const refNow = now ?? new Date();
-  return refNow.getTime() > ts;
-}
-
 export function roundTo6(n: number): number {
   return Number(n.toFixed(6));
 }
 
-function scaleMeritEntry<T extends { apr: number; selfApr?: number; endDate?: string }>(e: T, now?: Date): T & { _isExpired?: boolean } {
-  const result: T & { _isExpired?: boolean } = {
+function scaleMeritEntry<T extends { apr: number; selfApr?: number }>(e: T): T {
+  return {
     ...e,
     apr: roundTo6(e.apr * 100),
     ...(e.selfApr !== undefined ? { selfApr: roundTo6(e.selfApr * 100) } : {}),
   };
-  if (e.endDate) {
-    result._isExpired = computeIsExpired(e.endDate, now);
-  }
-  return result;
 }
 
 function scaleMerklBreakdown<
@@ -41,10 +29,9 @@ function scaleMerklBreakdown<
     campaignType?: CampaignForecastType;
     plannedDaily?: number;
     totalBudget?: number;
-    campaignEndedAt?: string;
   },
->(b: T, now?: Date): T & { _isExpired?: boolean } {
-  const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T & { _isExpired?: boolean };
+>(b: T): T {
+  const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
   if (Object.prototype.hasOwnProperty.call(b, 'aprCap')) {
     const cap = b.aprCap;
     (next as { aprCap?: number | null }).aprCap =
@@ -56,34 +43,25 @@ function scaleMerklBreakdown<
       delete (next as Record<string, unknown>)[field];
     }
   }
-  if (b.campaignEndedAt) {
-    next._isExpired = computeIsExpired(b.campaignEndedAt, now);
-  }
   return next;
 }
 
-function scaleBrevisBreakdown<T extends { campaignApr: number; campaignEndedAt?: string }>(b: T, now?: Date): T & { _isExpired?: boolean } {
-  const result: T & { _isExpired?: boolean } = { ...b, campaignApr: roundTo6(b.campaignApr * 100) };
-  if (b.campaignEndedAt) {
-    result._isExpired = computeIsExpired(b.campaignEndedAt, now);
-  }
-  return result;
+function scaleBrevisBreakdown<T extends { campaignApr: number }>(b: T): T {
+  return { ...b, campaignApr: roundTo6(b.campaignApr * 100) };
 }
 
 function scaleGroupedCampaigns<
   TBreakdown extends { campaignApr: number },
   TGroup extends { breakdowns: TBreakdown[] },
->(groups: TGroup[] | undefined, scaleBreakdown: (breakdown: TBreakdown, now?: Date) => TBreakdown, now?: Date): TGroup[] | undefined {
+>(groups: TGroup[] | undefined, scaleBreakdown: (breakdown: TBreakdown) => TBreakdown): TGroup[] | undefined {
   if (!groups?.length) return undefined;
   return groups.map((group) => ({
     ...group,
-    breakdowns: group.breakdowns.map((bd) => scaleBreakdown(bd, now)),
+    breakdowns: group.breakdowns.map((bd) => scaleBreakdown(bd)),
   }));
 }
 
 export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithSpread {
-  const now = new Date();
-
   const out: MarketWithSpread = {
     reserveId: reserve.reserveId,
     marketName: reserve.marketName,
@@ -119,25 +97,25 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
       : {}),
     ...(reserve.deficit !== undefined ? { deficit: reserve.deficit } : {}),
     ...(reserve.meritSupplys?.length
-      ? { meritSupplys: reserve.meritSupplys.map((e) => scaleMeritEntry(e, now)) }
+      ? { meritSupplys: reserve.meritSupplys.map((e) => scaleMeritEntry(e)) }
       : {}),
     ...(reserve.meritBorrows?.length
-      ? { meritBorrows: reserve.meritBorrows.map((e) => scaleMeritEntry(e, now)) }
+      ? { meritBorrows: reserve.meritBorrows.map((e) => scaleMeritEntry(e)) }
       : {}),
     ...(reserve.merklSupplys?.length
-      ? { merklSupplys: scaleGroupedCampaigns(reserve.merklSupplys, scaleMerklBreakdown, now) }
+      ? { merklSupplys: scaleGroupedCampaigns(reserve.merklSupplys, scaleMerklBreakdown) }
       : {}),
     ...(reserve.merklBorrows?.length
-      ? { merklBorrows: scaleGroupedCampaigns(reserve.merklBorrows, scaleMerklBreakdown, now) }
+      ? { merklBorrows: scaleGroupedCampaigns(reserve.merklBorrows, scaleMerklBreakdown) }
       : {}),
     ...(reserve.merklHolds?.length
-      ? { merklHolds: scaleGroupedCampaigns(reserve.merklHolds, scaleMerklBreakdown, now) }
+      ? { merklHolds: scaleGroupedCampaigns(reserve.merklHolds, scaleMerklBreakdown) }
       : {}),
     ...(reserve.brevisSupplys?.length
-      ? { brevisSupplys: scaleGroupedCampaigns(reserve.brevisSupplys, scaleBrevisBreakdown, now) }
+      ? { brevisSupplys: scaleGroupedCampaigns(reserve.brevisSupplys, scaleBrevisBreakdown) }
       : {}),
     ...(reserve.brevisBorrows?.length
-      ? { brevisBorrows: scaleGroupedCampaigns(reserve.brevisBorrows, scaleBrevisBreakdown, now) }
+      ? { brevisBorrows: scaleGroupedCampaigns(reserve.brevisBorrows, scaleBrevisBreakdown) }
       : {}),
     // V4 Hub & Spoke addresses (only for V4 markets)
     ...(reserve.hubId ? { hubId: reserve.hubId } : {}),

@@ -63,7 +63,6 @@ export interface MarketWithSpread {
     startDate: string;
     endDate: string;
     lastRoundRewardUsd?: number;
-    _isExpired?: boolean;
   }>;
   meritBorrows?: Array<{
     apr: number;
@@ -74,13 +73,12 @@ export interface MarketWithSpread {
     startDate: string;
     endDate: string;
     lastRoundRewardUsd?: number;
-    _isExpired?: boolean;
   }>;
-  merklSupplys?: CampaignGroup<MerklMarketBreakdown & { _isExpired?: boolean }>[];
-  merklBorrows?: CampaignGroup<MerklMarketBreakdown & { _isExpired?: boolean }>[];
-  merklHolds?: CampaignGroup<MerklMarketBreakdown & { _isExpired?: boolean }>[];
-  brevisSupplys?: CampaignGroup<BrevisMarketBreakdown & { _isExpired?: boolean }>[];
-  brevisBorrows?: CampaignGroup<BrevisMarketBreakdown & { _isExpired?: boolean }>[];
+  merklSupplys?: CampaignGroup<MerklMarketBreakdown>[];
+  merklBorrows?: CampaignGroup<MerklMarketBreakdown>[];
+  merklHolds?: CampaignGroup<MerklMarketBreakdown>[];
+  brevisSupplys?: CampaignGroup<BrevisMarketBreakdown>[];
+  brevisBorrows?: CampaignGroup<BrevisMarketBreakdown>[];
   // V4 Hub & Spoke addresses for contract interaction (only present for V4 markets)
   hubId?: string;
   hubName?: string;
