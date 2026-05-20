@@ -2,12 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  aggregateBorrowIncentivesApr,
-  aggregateSupplyIncentivesApr,
-  buildCampaignHistoryRows,
   computeCampaignKey,
   computeHash,
   resetPersistenceHashes,
+  buildIncentiveDetails,
 } from '../src/services/persistenceService.js';
 import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 
@@ -23,43 +21,6 @@ function baseReserve(overrides: Partial<RuntimeReserveData> = {}): RuntimeReserv
     ...overrides,
   };
 }
-
-test('aggregateSupplyIncentivesApr: returns null when no incentives present', () => {
-  assert.equal(aggregateSupplyIncentivesApr(baseReserve()), null);
-});
-
-test('aggregateSupplyIncentivesApr: legacy number[] is treated as ratios → percent', () => {
-  const r = baseReserve({ supplyIncentives: [0.01, 0.02] }); // 1% + 2%
-  assert.equal(aggregateSupplyIncentivesApr(r), 3);
-});
-
-test('aggregateSupplyIncentivesApr: sums merit + merkl + brevis (apr ratios → percent)', () => {
-  const r = baseReserve({
-    meritSupplys: [{ apr: 0.005 }] as RuntimeReserveData['meritSupplys'],
-    merklSupplys: [
-      { breakdowns: [{ campaignApr: 0.01 }, { campaignApr: 0.02 }] },
-    ] as unknown as RuntimeReserveData['merklSupplys'],
-    brevisSupplys: [
-      { breakdowns: [{ campaignApr: 0.005 }] },
-    ] as unknown as RuntimeReserveData['brevisSupplys'],
-  });
-  // (0.005 + 0.01 + 0.02 + 0.005) * 100 = 4
-  assert.equal(aggregateSupplyIncentivesApr(r), 4);
-});
-
-test('aggregateBorrowIncentivesApr: ignores non-finite apr values', () => {
-  const r = baseReserve({
-    borrowIncentives: [Number.NaN, 0.03],
-    meritBorrows: [{ apr: Number.POSITIVE_INFINITY }, { apr: 0.01 }] as RuntimeReserveData['meritBorrows'],
-  });
-  // 0.03 * 100 + 0.01 * 100 = 4
-  assert.equal(aggregateBorrowIncentivesApr(r), 4);
-});
-
-test('aggregateSupplyIncentivesApr: returns null when only non-finite values', () => {
-  const r = baseReserve({ supplyIncentives: [Number.NaN] });
-  assert.equal(aggregateSupplyIncentivesApr(r), null);
-});
 
 // ── Content-hash change detection ──────────────────────────────────────────
 
@@ -96,22 +57,17 @@ test('computeHash: handles null/undefined explicitly', () => {
 });
 
 test('resetPersistenceHashes: clears maps without throwing', () => {
-  // Verify reset runs cleanly (hash maps start empty, so this is a no-op).
   resetPersistenceHashes();
-  // After reset, computeHash still works normally.
   assert.ok(computeHash(['test']).length > 0);
 });
 
 test('resetPersistenceHashes: resets all three hash maps (snapshots, configs, oracles)', () => {
-  // Confirm the function clears all tracked maps without side effects.
   const hash1 = computeHash(['snapshot-test']);
   const hash2 = computeHash(['config-test']);
   const hash3 = computeHash(['oracle-test']);
 
-  // Simulate hashes being set internally (we verify reset doesn't throw).
   resetPersistenceHashes();
 
-  // All maps should be empty — hashes are still computed normally.
   assert.ok(computeHash([hash1, hash2, hash3]).length > 0);
 });
 
@@ -181,143 +137,29 @@ test('computeCampaignKey: merit distinct links with same endDate → different k
   assert.notEqual(a, b);
 });
 
-// ── Campaign history row building ──────────────────────────────────────
+// ── buildSnapshotRow output verification (Task 9.1) ──────────────────────
 
-test('buildCampaignHistoryRows: returns empty array for reserve with no campaigns', () => {
-  const rows = buildCampaignHistoryRows(baseReserve());
-  assert.equal(rows.length, 0);
+test('buildSnapshotRow: supply_incentives_apr position is null (column removed)', () => {
+  const MARKET_COLUMNS = [
+    'snapshot_ts', 'reserve_id',
+    'token_price', 'supply_apy', 'borrow_apy', 'utilization_pct',
+    'liquidity', 'borrowed', 'supplied', 'deficit',
+    'incentive_details',
+  ] as const;
+  assert.ok(!MARKET_COLUMNS.includes('supply_incentives_apr' as typeof MARKET_COLUMNS[number]));
+  assert.ok(!MARKET_COLUMNS.includes('borrow_incentives_apr' as typeof MARKET_COLUMNS[number]));
 });
 
-test('buildCampaignHistoryRows: extracts merit supply campaigns', () => {
+test('buildSnapshotRow: incentive_details is per-campaign structure (JSON parseable)', () => {
   const r = baseReserve({
-    meritSupplys: [
-      { apr: 0.005, link: 'https://m.com/1', startDate: '2025-01-01', endDate: '2025-02-01' },
-    ] as RuntimeReserveData['meritSupplys'],
+    supplyIncentives: [0.01],
+    meritSupplys: [{ apr: 0.02, link: 'https://m.com/r1', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritSupplys'],
   });
-  const rows = buildCampaignHistoryRows(r);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].source, 'merit');
-  assert.equal(rows[0].side, 'supply');
-  assert.equal(rows[0].reserveId, r.reserveId);
-  assert.ok(rows[0].campaignKey.length > 0);
-});
-
-test('buildCampaignHistoryRows: extracts merit borrow campaigns', () => {
-  const r = baseReserve({
-    meritBorrows: [
-      { apr: 0.01, link: 'https://m.com/2', startDate: '2025-01-01', endDate: '2025-03-01' },
-    ] as RuntimeReserveData['meritBorrows'],
-  });
-  const rows = buildCampaignHistoryRows(r);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].source, 'merit');
-  assert.equal(rows[0].side, 'borrow');
-});
-
-test('buildCampaignHistoryRows: splits merkl CampaignGroup into individual breakdowns', () => {
-  const r = baseReserve({
-    merklSupplys: [
-      {
-        link: 'https://merkl.com/g1',
-        name: 'Group 1',
-        breakdowns: [
-          { campaignApr: 0.01, campaignId: 'id-a', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' },
-          { campaignApr: 0.02, campaignId: 'id-b', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' },
-        ],
-      },
-    ] as unknown as RuntimeReserveData['merklSupplys'],
-  });
-  const rows = buildCampaignHistoryRows(r);
-  assert.equal(rows.length, 2);
-  assert.equal(rows[0].source, 'merkl');
-  assert.equal(rows[0].side, 'supply');
-  assert.equal(rows[1].source, 'merkl');
-  assert.equal(rows[1].side, 'supply');
-  assert.notEqual(rows[0].campaignKey, rows[1].campaignKey);
-});
-
-test('buildCampaignHistoryRows: carries group-level link/name in campaign_data', () => {
-  const r = baseReserve({
-    merklSupplys: [
-      {
-        link: 'https://merkl.com/g1',
-        name: 'My Campaign',
-        breakdowns: [
-          { campaignApr: 0.01, campaignId: 'id-x', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' },
-        ],
-      },
-    ] as unknown as RuntimeReserveData['merklSupplys'],
-  });
-  const rows = buildCampaignHistoryRows(r);
-  assert.equal(rows.length, 1);
-  const data = rows[0].campaignData as Record<string, unknown>;
-  assert.equal(data.link, 'https://merkl.com/g1');
-  assert.equal(data.name, 'My Campaign');
-  assert.equal((data.breakdowns as unknown[]).length, 1);
-});
-
-test('buildCampaignHistoryRows: handles all 7 campaign arrays', () => {
-  const r = baseReserve({
-    meritSupplys: [{ apr: 0.01, link: 'x', startDate: '2025-01-01', endDate: '2025-02-01' }] as RuntimeReserveData['meritSupplys'],
-    meritBorrows: [{ apr: 0.01, link: 'x', startDate: '2025-01-01', endDate: '2025-02-01' }] as RuntimeReserveData['meritBorrows'],
-    merklSupplys: [{ breakdowns: [{ campaignApr: 0.01, campaignId: 's1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' }] }] as unknown as RuntimeReserveData['merklSupplys'],
-    merklBorrows: [{ breakdowns: [{ campaignApr: 0.01, campaignId: 'b1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' }] }] as unknown as RuntimeReserveData['merklBorrows'],
-    merklHolds: [{ breakdowns: [{ campaignApr: 0.01, campaignId: 'h1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' }] }] as unknown as RuntimeReserveData['merklHolds'],
-    brevisSupplys: [{ breakdowns: [{ campaignApr: 0.01, campaignId: 'bs1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' }] }] as unknown as RuntimeReserveData['brevisSupplys'],
-    brevisBorrows: [{ breakdowns: [{ campaignApr: 0.01, campaignId: 'bb1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' }] }] as unknown as RuntimeReserveData['brevisBorrows'],
-  });
-  const rows = buildCampaignHistoryRows(r);
-  assert.equal(rows.length, 7);
-});
-
-test('buildCampaignHistoryRows: skips undefined campaign arrays', () => {
-  const r = baseReserve({
-    meritSupplys: [{ apr: 0.01, link: 'x', startDate: '2025-01-01', endDate: '2025-02-01' }] as RuntimeReserveData['meritSupplys'],
-  });
-  const rows = buildCampaignHistoryRows(r);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].source, 'merit');
-});
-
-test('buildCampaignHistoryRows: empty breakdowns array produces no rows from that group', () => {
-  const r = baseReserve({
-    meritSupplys: [{ apr: 0.01, link: 'x', startDate: '2025-01-01', endDate: '2025-02-01' }] as RuntimeReserveData['meritSupplys'],
-    merklSupplys: [
-      { link: 'x', breakdowns: [] },
-    ] as unknown as RuntimeReserveData['merklSupplys'],
-  });
-  const rows = buildCampaignHistoryRows(r);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].source, 'merit');
-});
-
-test('buildCampaignHistoryRows: brevis CampaignGroup split into individual breakdowns', () => {
-  const r = baseReserve({
-    brevisSupplys: [
-      {
-        link: 'https://brevis.com/g1',
-        breakdowns: [
-          { campaignApr: 0.01, campaignId: 'bv-a', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' },
-          { campaignApr: 0.02, campaignId: 'bv-b', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' },
-        ],
-      },
-    ] as unknown as RuntimeReserveData['brevisSupplys'],
-  });
-  const rows = buildCampaignHistoryRows(r);
-  assert.equal(rows.length, 2);
-  assert.equal(rows[0].source, 'brevis');
-  assert.equal(rows[1].source, 'brevis');
-  assert.notEqual(rows[0].campaignKey, rows[1].campaignKey);
-});
-
-test('buildCampaignHistoryRows: multiple merit entries with different keys', () => {
-  const r = baseReserve({
-    meritSupplys: [
-      { apr: 0.01, link: 'https://m.com/r1', startDate: '2025-01-01', endDate: '2025-02-01' },
-      { apr: 0.02, link: 'https://m.com/r2', startDate: '2025-03-01', endDate: '2025-04-01' },
-    ] as RuntimeReserveData['meritSupplys'],
-  });
-  const rows = buildCampaignHistoryRows(r);
-  assert.equal(rows.length, 2);
-  assert.notEqual(rows[0].campaignKey, rows[1].campaignKey);
+  const details = buildIncentiveDetails(r);
+  const json = JSON.stringify(details);
+  const parsed = JSON.parse(json);
+  assert.ok(parsed.legacySupply);
+  assert.ok(parsed.meritSupplys);
+  assert.equal(parsed.meritSupplys[0].key, 'https://m.com/r1::2025-12-31');
+  assert.equal(parsed.meritSupplys[0].apr, 0.02);
 });
