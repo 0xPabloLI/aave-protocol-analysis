@@ -17,6 +17,7 @@ RUN npm run build
 
 # Copy backend source and build
 COPY backend/src/ ./backend/src/
+COPY backend/scripts/ ./backend/scripts/
 COPY backend/tsconfig.json ./backend/
 RUN npm run build -w aave-dashboard-backend
 
