@@ -794,47 +794,7 @@ function isMeritCampaignMetadataEnded(endDateRaw?: string): boolean {
   return hasEndedByMeritEndDate(endDateRaw);
 }
 
-/**
- * @deprecated 使用 filterRecentExpiredMerit 替代，该函数在主流程中不再调用
- */
-async function isMeritCampaignExpired(
-  chainKey: string,
-  endDateRaw: string | undefined,
-  endBlockRaw: string | undefined,
-  currentBlockCache: Map<string, number | null>
-): Promise<boolean> {
-  const now = new Date();
-  const parsedEndDate = parseMeritEndDate(endDateRaw);
-  const hasEndBlock = typeof endBlockRaw === 'string' && endBlockRaw.trim() !== '';
 
-  // Use endBlock in two cases:
-  // 1) endDate missing/unparseable (fallback path)
-  // 2) endDate is today (final-day precision)
-  const shouldUseEndBlock =
-    hasEndBlock && (!parsedEndDate || isSameUtcDay(parsedEndDate, now));
-
-  if (shouldUseEndBlock) {
-    const endBlock = parseInt(endBlockRaw!, 10);
-    if (!Number.isNaN(endBlock)) {
-      // Merit campaign block ranges are aligned to Ethereum mainnet block height,
-      // not the reserve's chain-specific height (for example Celo).
-      const meritBlockReferenceChain = 'ethereum';
-      if (!currentBlockCache.has(meritBlockReferenceChain)) {
-        const currentBlock = await getCurrentBlockNumberCached(meritBlockReferenceChain);
-        currentBlockCache.set(meritBlockReferenceChain, currentBlock);
-      }
-
-      const currentBlock = currentBlockCache.get(meritBlockReferenceChain);
-      if (currentBlock !== null && currentBlock !== undefined) {
-        return currentBlock >= endBlock;
-      }
-    }
-  }
-
-  if (hasEndedByMeritEndDate(endDateRaw, now.getTime())) return true;
-
-  return false;
-}
 
 export function filterRecentExpiredMerit<T extends { endDate?: string }>(entries: T[]): T[] {
   const now = new Date();

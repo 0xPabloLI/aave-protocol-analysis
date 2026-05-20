@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  computeCampaignKey,
   computeHash,
   resetPersistenceHashes,
   buildIncentiveDetails,
@@ -69,72 +68,6 @@ test('resetPersistenceHashes: resets all three hash maps (snapshots, configs, or
   resetPersistenceHashes();
 
   assert.ok(computeHash([hash1, hash2, hash3]).length > 0);
-});
-
-// ── Campaign key computation ────────────────────────────────────────────
-
-test('computeCampaignKey: merit uses link::endDate', () => {
-  const entry = { link: 'https://merit.example.com/round-42', endDate: '2025-05-15T23:59:59Z' };
-  const key = computeCampaignKey('merit', entry);
-  assert.equal(key, 'https://merit.example.com/round-42::2025-05-15T23:59:59Z');
-});
-
-test('computeCampaignKey: merit same link different endDate → different key', () => {
-  const a = computeCampaignKey('merit', { link: 'https://x.com/1', endDate: '2025-01-01' });
-  const b = computeCampaignKey('merit', { link: 'https://x.com/1', endDate: '2025-06-01' });
-  assert.notEqual(a, b);
-});
-
-test('computeCampaignKey: merkl uses campaignId', () => {
-  const entry = { campaignId: '0xabc123def456' };
-  const key = computeCampaignKey('merkl', entry);
-  assert.equal(key, '0xabc123def456');
-});
-
-test('computeCampaignKey: brevis with campaignId uses it directly', () => {
-  const entry = { campaignId: '0xbrevis001' };
-  const key = computeCampaignKey('brevis', entry);
-  assert.equal(key, '0xbrevis001');
-});
-
-test('computeCampaignKey: brevis without campaignId falls back to hash', () => {
-  const entry = {
-    link: 'https://brevis.example.com/c1',
-    campaignStartedAt: '2025-05-01T00:00:00Z',
-    campaignEndedAt: '2025-05-15T00:00:00Z',
-  };
-  const key = computeCampaignKey('brevis', entry);
-  assert.ok(key.length > 0);
-  assert.ok(key.startsWith('brevis::'));
-});
-
-test('computeCampaignKey: brevis fallback hash is deterministic', () => {
-  const entry = {
-    link: 'https://brevis.example.com/c1',
-    campaignStartedAt: '2025-05-01T00:00:00Z',
-    campaignEndedAt: '2025-05-15T00:00:00Z',
-  };
-  const a = computeCampaignKey('brevis', entry);
-  const b = computeCampaignKey('brevis', { ...entry });
-  assert.equal(a, b);
-});
-
-test('computeCampaignKey: brevis fallback hash differs when link differs', () => {
-  const a = computeCampaignKey('brevis', { link: 'https://x.com/a', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' });
-  const b = computeCampaignKey('brevis', { link: 'https://x.com/b', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' });
-  assert.notEqual(a, b);
-});
-
-test('computeCampaignKey: brevis fallback hash differs when dates differ', () => {
-  const a = computeCampaignKey('brevis', { link: 'https://x.com/c', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-01' });
-  const b = computeCampaignKey('brevis', { link: 'https://x.com/c', campaignStartedAt: '2025-02-01', campaignEndedAt: '2025-06-01' });
-  assert.notEqual(a, b);
-});
-
-test('computeCampaignKey: merit distinct links with same endDate → different key', () => {
-  const a = computeCampaignKey('merit', { link: 'https://m.com/1', endDate: '2025-01-01' });
-  const b = computeCampaignKey('merit', { link: 'https://m.com/2', endDate: '2025-01-01' });
-  assert.notEqual(a, b);
 });
 
 // ── buildSnapshotRow output verification (Task 9.1) ──────────────────────

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { utils } from 'ethers';
 
 import { calculateBaseRateFallback } from '../src/services/onchainDataService.js';
+import { V4_SPOKE_ENTRIES } from '../src/services/addressBookRegistry.js';
 
 test('calculateBaseRateFallback returns null when borrowApy is missing', () => {
   assert.strictEqual(calculateBaseRateFallback(null, 80, 80, 4, 80), null);
@@ -167,51 +168,31 @@ test('V4 reserveId matches v4-fetcher reserveId pattern', () => {
 // V4 Spoke-to-Hub mapping completeness
 // ============================================================
 
-test('V4_SPOKE_TO_HUBS mapping covers all known Ethereum mainnet spokes', () => {
-  const V4_SPOKE_TO_HUBS: Record<string, string[]> = {
-    MAIN_SPOKE: ['CORE_HUB'],
-    BLUECHIP_SPOKE: ['CORE_HUB', 'PRIME_HUB'],
-    LIDO_ESPOKE: ['CORE_HUB'],
-    ETHERFI_ESPOKE: ['CORE_HUB'],
-    KELP_ESPOKE: ['CORE_HUB'],
-    ETHENA_CORRELATED_SPOKE: ['PLUS_HUB'],
-    ETHENA_ECOSYSTEM_SPOKE: ['PLUS_HUB'],
-    FOREX_SPOKE: ['PLUS_HUB'],
-    GOLD_SPOKE: ['PLUS_HUB'],
-    LOMBARD_BTC_SPOKE: ['PRIME_HUB'],
-  };
-
+test('V4_SPOKE_ENTRIES covers all known Ethereum mainnet spokes', () => {
   const knownSpokes = [
     'MAIN_SPOKE', 'BLUECHIP_SPOKE', 'LIDO_ESPOKE', 'ETHERFI_ESPOKE', 'KELP_ESPOKE',
     'ETHENA_CORRELATED_SPOKE', 'ETHENA_ECOSYSTEM_SPOKE', 'FOREX_SPOKE', 'GOLD_SPOKE',
     'LOMBARD_BTC_SPOKE',
   ];
 
+  const spokeKeysFromRegistry = new Set(V4_SPOKE_ENTRIES.map(e => e.spokeKey));
   for (const spoke of knownSpokes) {
-    assert.ok(V4_SPOKE_TO_HUBS[spoke], `Missing mapping for ${spoke}`);
+    assert.ok(spokeKeysFromRegistry.has(spoke), `Missing entry for ${spoke}`);
   }
 
-  const allHubs = new Set(V4_SPOKE_TO_HUBS.BLUECHIP_SPOKE);
-  assert.ok(allHubs.has('CORE_HUB'));
-  assert.ok(allHubs.has('PRIME_HUB'));
+  const bluechipHubs = V4_SPOKE_ENTRIES
+    .filter(e => e.spokeKey === 'BLUECHIP_SPOKE')
+    .map(e => e.hubKey);
+  assert.ok(bluechipHubs.includes('CORE_HUB'));
+  assert.ok(bluechipHubs.includes('PRIME_HUB'));
 });
 
 test('V4 multi-hub: BLUECHIP_SPOKE queries both CORE_HUB and PRIME_HUB', () => {
-  const V4_SPOKE_TO_HUBS: Record<string, string[]> = {
-    MAIN_SPOKE: ['CORE_HUB'],
-    BLUECHIP_SPOKE: ['CORE_HUB', 'PRIME_HUB'],
-    LIDO_ESPOKE: ['CORE_HUB'],
-    ETHERFI_ESPOKE: ['CORE_HUB'],
-    KELP_ESPOKE: ['CORE_HUB'],
-    ETHENA_CORRELATED_SPOKE: ['PLUS_HUB'],
-    ETHENA_ECOSYSTEM_SPOKE: ['PLUS_HUB'],
-    FOREX_SPOKE: ['PLUS_HUB'],
-    GOLD_SPOKE: ['PLUS_HUB'],
-    LOMBARD_BTC_SPOKE: ['PRIME_HUB'],
-  };
-  assert.strictEqual(V4_SPOKE_TO_HUBS.BLUECHIP_SPOKE.length, 2);
-  assert.ok(V4_SPOKE_TO_HUBS.BLUECHIP_SPOKE.includes('CORE_HUB'));
-  assert.ok(V4_SPOKE_TO_HUBS.BLUECHIP_SPOKE.includes('PRIME_HUB'));
+  const bluechipEntries = V4_SPOKE_ENTRIES.filter(e => e.spokeKey === 'BLUECHIP_SPOKE');
+  const hubKeys = bluechipEntries.map(e => e.hubKey);
+  assert.strictEqual(hubKeys.length, 2);
+  assert.ok(hubKeys.includes('CORE_HUB'));
+  assert.ok(hubKeys.includes('PRIME_HUB'));
 });
 
 test('V4 cache key is spokeAddress:hubName (supports same spoke, different hub)', () => {

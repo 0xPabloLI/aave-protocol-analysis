@@ -18,7 +18,7 @@ import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { mkdir, rename, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { SYNCED_V3_POOL_CONFIGS, SYNCED_V4_SPOKE_CONFIGS, type SyncedV3PoolConfig, type SyncedV4SpokeConfig } from '../generated/oracle-pool-configs.js';
+import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -114,8 +114,7 @@ const V4_ORACLE_ABI = [
 ];
 
 // ============================================================
-// V3 Pool Configs (auto-synced from @aave-dao/aave-address-book)
-// Run `npm run sync:oracle-pool-configs` to refresh.
+// V3 Pool Configs (runtime-derived from address-book via registry)
 // ============================================================
 interface V3PoolConfig {
   poolKey: string;
@@ -149,18 +148,22 @@ const CHAIN_NAME_BY_ID: Record<number, string> = {
   1666600000: 'Harmony',
 };
 
-const V3_POOL_CONFIGS: V3PoolConfig[] = SYNCED_V3_POOL_CONFIGS.map((c: SyncedV3PoolConfig): V3PoolConfig => ({
-  poolKey: c.poolKey,
-  chainId: c.chainId,
-  chainName: CHAIN_NAME_BY_ID[c.chainId] ?? `Chain${c.chainId}`,
-  poolAddress: c.poolAddress,
-  oracleAddress: c.oracleAddress,
-}));
+const V3_POOL_CONFIGS: V3PoolConfig[] = V3_ENTRIES
+  .filter((e) => !!e.oracleAddress)
+  .map((e) => ({
+    poolKey: e.poolKey,
+    chainId: e.chainId,
+    chainName: CHAIN_NAME_BY_ID[e.chainId] ?? `Chain${e.chainId}`,
+    poolAddress: e.poolAddress,
+    oracleAddress: e.oracleAddress!,
+  }));
 
 // ============================================================
-// V4 Spoke Configs (auto-synced from @aave-dao/aave-address-book)
-// Run `npm run sync:oracle-pool-configs` to refresh.
-// TREASURY_SPOKE (Horizons) excluded: no oracle in address-book & contract has no oracle getter.
+// V4 Spoke Configs (runtime-derived from address-book via registry)
+// spokeKey is the raw address-book key (e.g. MAIN_SPOKE) — used as spokeName.
+// TREASURY_SPOKE excluded: no oracle address in address-book (handled by registry).
+// Multi-hub spokes (e.g. BLUECHIP_SPOKE) produce per-hub entries for onchain use,
+// but oracle fetches per spoke — deduplicate by spokeAddress here.
 // ============================================================
 interface V4SpokeConfig {
   spokeName: string;
@@ -170,28 +173,24 @@ interface V4SpokeConfig {
   oracleAddress: string;
 }
 
-const SPOKE_NAME_MAP: Record<string, string> = {
-  BLUECHIP: 'Bluechip',
-  ETHENACORRELATED: 'Ethena',
-  ETHENAECOSYSTEM: 'EthenaEcosystem',
-  ETHERFI: 'EtherFi',
-  FOREX: 'Forex',
-  GOLD: 'Gold',
-  KELP: 'Kelp',
-  LIDO: 'Lido',
-  LOMBARDBTC: 'Lombard',
-  MAIN: 'Main',
-};
-
-const V4_SPOKE_CONFIGS: V4SpokeConfig[] = [
-  ...SYNCED_V4_SPOKE_CONFIGS.map((c: SyncedV4SpokeConfig): V4SpokeConfig => ({
-    spokeName: SPOKE_NAME_MAP[c.spokeName] ?? c.spokeName,
-    chainId: c.chainId,
-    chainName: CHAIN_NAME_BY_ID[c.chainId] ?? `Chain${c.chainId}`,
-    spokeAddress: c.spokeAddress,
-    oracleAddress: c.oracleAddress,
-  })),
-];
+const V4_SPOKE_CONFIGS: V4SpokeConfig[] = (() => {
+  const seen = new Set<string>();
+  const result: V4SpokeConfig[] = [];
+  for (const e of V4_SPOKE_ENTRIES) {
+    if (!e.oracleAddress) continue;
+    // Deduplicate by spokeAddress: multi-hub spokes have same spokeAddress/oracleAddress
+    if (seen.has(e.spokeAddress)) continue;
+    seen.add(e.spokeAddress);
+    result.push({
+      spokeName: e.spokeKey,
+      chainId: e.chainId,
+      chainName: CHAIN_NAME_BY_ID[e.chainId] ?? `Chain${e.chainId}`,
+      spokeAddress: e.spokeAddress,
+      oracleAddress: e.oracleAddress,
+    });
+  }
+  return result;
+})();
 
 // ============================================================
 // Data Types

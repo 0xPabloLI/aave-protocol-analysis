@@ -1075,20 +1075,6 @@ export async function processMerklData(
   return { index: merklData };
 }
 
-/**
- * @deprecated 使用 filterRecentExpiredCampaigns 替代，该函数完全过滤过期 campaign
- */
-export function filterExpiredCampaigns(breakdowns: MerklCampaignBreakdown[]): MerklCampaignBreakdown[] {
-  const now = new Date();
-  return breakdowns.filter(breakdown => {
-    if (!breakdown.campaignEndedAt) {
-      return true;
-    }
-    const endTime = new Date(breakdown.campaignEndedAt);
-    return endTime >= now;
-  });
-}
-
 export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[]): MerklCampaignBreakdown[] {
   const now = new Date();
   const active = breakdowns.filter(b =>

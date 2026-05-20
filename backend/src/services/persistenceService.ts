@@ -46,28 +46,6 @@ export function computeHash(data: unknown[]): string {
     .digest('hex');
 }
 
-// ts-prune-ignore-next
-export function computeCampaignKey(
-  source: string,
-  entry: Record<string, unknown>
-): string {
-  if (source === 'merit') {
-    return `${String(entry.link ?? '')}::${String(entry.endDate ?? '')}`;
-  }
-  if (source === 'merkl') {
-    return String(entry.campaignId ?? '');
-  }
-  if (source === 'brevis') {
-    if (entry.campaignId) return String(entry.campaignId);
-    const payload = JSON.stringify([
-      entry.link,
-      entry.campaignStartedAt,
-      entry.campaignEndedAt,
-    ]);
-    return `brevis::${crypto.createHash('sha256').update(payload).digest('hex').slice(0, 16)}`;
-  }
-  throw new Error(`Unknown campaign source: ${source}`);
-}
 
 /** Exposed for tests: reset content-hash maps (simulates process restart). */
 // ts-prune-ignore-next
@@ -716,6 +694,11 @@ function isEntryExpired(endDate: string | undefined, now: Date): boolean {
   return now.getTime() > ts;
 }
 
+/**
+ * Sum per-campaign APR from incentive details for a given side.
+ * merklHolds 不参与聚合 — hold 是 Merkl HOLD action，与 supply/borrow 是不同的 action，
+ * 前端不会把 hold APR 加到 supply/borrow 总 APR 中。
+ */
 // ts-prune-ignore-next
 export function sumIncentiveAprFromDetails(
   details: PerCampaignIncentiveDetails | null | undefined,

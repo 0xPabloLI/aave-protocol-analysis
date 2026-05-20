@@ -31,8 +31,7 @@
     "check:bin-paths": "bash scripts/check-no-hardcoded-bin-paths.sh",
     "prune": "ts-prune -i '.*(aave-shared-config|aave-shared-contracts|aave-fetcher)/(dist/)?index\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v '^src/' | (grep -q . && exit 1 || exit 0)",
     "test": "tsx --test tests/**/*.test.ts",
-    "sync:coingecko-platform-map": "tsx scripts/sync-coingecko-platform-map.ts",
-    "sync:oracle-pool-configs": "tsx scripts/sync-oracle-pool-configs.ts"
+    "sync:coingecko-platform-map": "tsx scripts/sync-coingecko-platform-map.ts"
   },
   "dependencies": {
     "@aave/client": "^0.6.1",

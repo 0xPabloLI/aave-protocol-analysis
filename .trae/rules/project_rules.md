@@ -67,6 +67,53 @@ Do not proceed with user requests until these skills are loaded.
 
 This is a **hard gate** — do not skip even if the user says "just deploy."
 
+## Frontend Cache Version Bump Rule (Critical)
+
+**When the backend API response schema changes in a way that makes old cached data incompatible, you MUST bump `CACHE_VERSION` in the frontend repo (`aaveapy/src/lib/cache.ts`).**
+
+### Triggers (any one of these → bump required)
+
+| Change type | Example |
+|---|---|
+| Field renamed or removed | `reserveSizeUsd` → deleted |
+| Field value semantics changed | APY from ratio → percent |
+| Field format changed | reserveId from name-based → address-based |
+| New required field added | adding `spokeAddress` to all entries |
+| Array element shape changed | incentive object restructured |
+
+### NOT triggers (no bump needed)
+
+| Change type | Example |
+|---|---|
+| New optional field added | adding `?hubAddress` (old cache just misses it) |
+| Backend-only internal changes | fetcher refactor, DB schema change |
+| Field value change within same semantics | price updated from 1.5 to 1.6 |
+
+### How to bump
+
+In `aaveapy/src/lib/cache.ts`, increment `CACHE_VERSION`:
+
+```typescript
+// Bump cache version when schema changes.
+const CACHE_VERSION = 'X.Y.Z';  // ← increment this
+```
+
+The existing mechanism in `getCacheEntry()` automatically discards old-version cache:
+```typescript
+if (entry.version !== CACHE_VERSION) {
+  localStorage.removeItem(key);
+  return null;
+}
+```
+
+### Why this matters (real incident: 2026-05-19)
+
+V4 reserveId format changed from `${marketName}:${chainId}:${token}:${hubName}` to `${chainId}:${spokeAddress}:${tokenAddress}:${hubName}`. Without a version bump, users with cached old-format data would see stale/inconsistent reserveIds until cache naturally expires. The version bump forces a clean fetch on next page load.
+
+### Enforcement
+
+When reviewing a PR that changes backend API response shape, ask: "Does the frontend `CACHE_VERSION` need a bump?"
+
 ## Schema Design Principle: No Redundant Columns
 
 **When designing a DB table that contains a JSONB column with structured data, for EVERY proposed outer column, ask:**

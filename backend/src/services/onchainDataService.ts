@@ -24,12 +24,12 @@
 
 import { Contract, providers, utils } from 'ethers';
 import { UiPoolDataProvider } from '@aave/contract-helpers';
-import * as AaveAddressBook from '@aave-dao/aave-address-book';
 import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { withTimeout } from '../lib/timeout.js';
 import { ethProviderService } from './ethProviderService.js';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
+import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
 
 const ONCHAIN_PER_RPC_TIMEOUT_MS = 15_000;
 
@@ -66,37 +66,17 @@ function normalizeAddress(addr: string): string {
   return addr.toLowerCase().trim();
 }
 
-function buildPoolConfigs(): Map<string, OnchainConfig> {
-  const configs = new Map<string, OnchainConfig>();
-
-  for (const [key, value] of Object.entries(AaveAddressBook)) {
-    if (!key.startsWith('AaveV3')) continue;
-    if (!value || typeof value !== 'object') continue;
-    if (key.includes('Sepolia') || key.includes('Fuji')) continue;
-
-    const chainId = Number((value as any).CHAIN_ID);
-    const poolAddress = normalizeAddress(String((value as any).POOL || ''));
-    const uiPoolDataProviderAddress = (value as any).UI_POOL_DATA_PROVIDER;
-    const poolAddressesProvider = (value as any).POOL_ADDRESSES_PROVIDER;
-
-    if (!Number.isFinite(chainId) || chainId <= 0) continue;
-    if (!poolAddress) continue;
-    if (typeof uiPoolDataProviderAddress !== 'string') continue;
-    if (typeof poolAddressesProvider !== 'string') continue;
-
-    configs.set(poolAddress, {
-      poolAddress,
-      chainId,
-      uiPoolDataProviderAddress,
-      poolAddressesProvider,
-      defaultRpcUrls: getAaveRpcUrlsByChainId(chainId),
-    });
-  }
-
-  return configs;
-}
-
-const POOL_CONFIGS = buildPoolConfigs();
+const POOL_CONFIGS = new Map<string, OnchainConfig>(
+  V3_ENTRIES
+    .filter((e) => e.uiPoolDataProviderAddress && e.poolAddressesProvider)
+    .map((e) => [e.poolAddress, {
+      poolAddress: e.poolAddress,
+      chainId: e.chainId,
+      uiPoolDataProviderAddress: e.uiPoolDataProviderAddress!,
+      poolAddressesProvider: e.poolAddressesProvider!,
+      defaultRpcUrls: getAaveRpcUrlsByChainId(e.chainId),
+    }]),
+);
 
 // ============================================================
 // V4 Hub ABI (minimal: getAssetCount + getAsset + getSpokeDeficitRay)
@@ -184,8 +164,9 @@ const RAY = BigInt(10) ** BigInt(27);
 const V4_HUB_INTERFACE = new utils.Interface(V4_HUB_ABI);
 
 // ============================================================
-// V4 Spoke Config (auto-discovered from address-book AaveV4* entries)
+// V4 Spoke Config (runtime-derived from address-book via registry)
 // Need spoke address for getSpokeDeficitRay(assetId, spoke)
+// Multi-hub: BLUECHIP_SPOKE → 2 entries (CORE_HUB + PRIME_HUB)
 // ============================================================
 interface V4SpokeConfig {
   spokeName: string;
@@ -196,61 +177,14 @@ interface V4SpokeConfig {
   defaultRpcUrls: string[];
 }
 
-const V4_SPOKE_TO_HUBS: Record<string, string[]> = {
-  MAIN_SPOKE: ['CORE_HUB'],
-  BLUECHIP_SPOKE: ['CORE_HUB', 'PRIME_HUB'],
-  LIDO_ESPOKE: ['CORE_HUB'],
-  ETHERFI_ESPOKE: ['CORE_HUB'],
-  KELP_ESPOKE: ['CORE_HUB'],
-  ETHENA_CORRELATED_SPOKE: ['PLUS_HUB'],
-  ETHENA_ECOSYSTEM_SPOKE: ['PLUS_HUB'],
-  FOREX_SPOKE: ['PLUS_HUB'],
-  GOLD_SPOKE: ['PLUS_HUB'],
-  LOMBARD_BTC_SPOKE: ['PRIME_HUB'],
-};
-
-function buildV4SpokeConfigs(): V4SpokeConfig[] {
-  const configs: V4SpokeConfig[] = [];
-
-  for (const [key, value] of Object.entries(AaveAddressBook)) {
-    if (!key.startsWith('AaveV4')) continue;
-    if (!value || typeof value !== 'object') continue;
-
-    const chainId = Number((value as any).CHAIN_ID);
-    if (!Number.isFinite(chainId) || chainId <= 0) continue;
-
-    const hubs = (value as any).HUBS;
-    const spokes = (value as any).SPOKES;
-    if (!hubs || !spokes) continue;
-
-    for (const [spokeKey, spokeAddr] of Object.entries(spokes as Record<string, any>)) {
-      if (!spokeKey.endsWith('_SPOKE') && !spokeKey.endsWith('_ESPOKE')) continue;
-      if (spokeKey === 'TREASURY_SPOKE') continue;
-      if (typeof spokeAddr !== 'string') continue;
-
-      const hubKeys = V4_SPOKE_TO_HUBS[spokeKey];
-      if (!hubKeys) continue;
-
-      for (const hubKey of hubKeys) {
-        const hubAddr = hubs[hubKey];
-        if (typeof hubAddr !== 'string') continue;
-
-        configs.push({
-          spokeName: spokeKey,
-          chainId,
-          spokeAddress: normalizeAddress(spokeAddr),
-          hubAddress: normalizeAddress(hubAddr),
-          hubName: hubKey,
-          defaultRpcUrls: getAaveRpcUrlsByChainId(chainId),
-        });
-      }
-    }
-  }
-
-  return configs;
-}
-
-const V4_SPOKE_CONFIGS = buildV4SpokeConfigs();
+const V4_SPOKE_CONFIGS: V4SpokeConfig[] = V4_SPOKE_ENTRIES.map((e) => ({
+  spokeName: e.spokeKey,
+  chainId: e.chainId,
+  spokeAddress: e.spokeAddress,
+  hubAddress: e.hubAddress,
+  hubName: e.hubKey,
+  defaultRpcUrls: getAaveRpcUrlsByChainId(e.chainId),
+}));
 
 const poolCache = new Map<string, ChainCacheEntry>();
 
@@ -338,6 +272,8 @@ async function fetchAndCacheV4Spoke(
         hubAssetMapping.set(config.hubAddress, underlyingToAssetId);
       }
 
+      // V4 spokeData only stores deficit; baseVariableBorrowRate is not available
+      // per-spoke in V4 (V3 exposes it via UiPoolDataProvider.getReservesHumanized).
       const spokeData = new Map<string, OnchainReserveData>();
       const deficitCalls: { underlying: string; assetId: number; callData: string }[] = [];
 

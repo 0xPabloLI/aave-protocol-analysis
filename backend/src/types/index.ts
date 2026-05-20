@@ -54,8 +54,6 @@ export interface MarketWithSpread {
   optimalUtilization?: number;
   baseBorrowRate?: number; // percent (e.g., 0 means 0%)
   deficit?: string; // raw token units - for accurate supply APY calculation
-  supplyIncentives?: number[];
-  borrowIncentives?: number[];
   meritSupplys?: Array<{
     apr: number;
     selfApr?: number;

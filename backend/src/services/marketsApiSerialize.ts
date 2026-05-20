@@ -209,8 +209,6 @@ export function computeSchemaFingerprint(): string {
     optimalUtilization: 1,
     baseBorrowRate: 0.01,
     deficit: '1',
-    supplyIncentives: [0.01],
-    borrowIncentives: [0.01],
     meritSupplys: [{
       apr: 0.01, link: '__fingerprint__',
       startDate: '2025-01-01', endDate: '2025-01-01',
@@ -263,11 +261,31 @@ export function computeSchemaFingerprint(): string {
   };
 
   const serialized = serializeReserveForApi(canonical);
-  const keys = Object.keys(serialized).sort();
+  const keyPaths = collectNestedKeyPaths(serialized).sort();
   _cachedFingerprint = createHash('sha256')
-    .update(keys.join(','))
+    .update(keyPaths.join(','))
     .digest('hex')
     .slice(0, 12);
 
   return _cachedFingerprint;
+}
+
+function collectNestedKeyPaths(obj: unknown, prefix: string = ''): string[] {
+  if (obj === null || obj === undefined || typeof obj !== 'object') return [];
+  const paths: string[] = [];
+  if (Array.isArray(obj)) {
+    if (obj.length > 0) {
+      paths.push(...collectNestedKeyPaths(obj[0], prefix));
+    }
+    return paths;
+  }
+  for (const key of Object.keys(obj as Record<string, unknown>)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    paths.push(path);
+    const value = (obj as Record<string, unknown>)[key];
+    if (value !== null && value !== undefined && typeof value === 'object') {
+      paths.push(...collectNestedKeyPaths(value, path));
+    }
+  }
+  return paths;
 }

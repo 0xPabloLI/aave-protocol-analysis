@@ -16,7 +16,6 @@ When touching one area, check its pair:
 - Root output schema ↔ `backend/src/services/marketsApiSerialize.ts`
 - `backend/src/cacheTtl.ts` ↔ `backend/src/services/updateScheduler.ts`
 - Chain/platform mapping ↔ `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts`
-- `scripts/sync-oracle-pool-configs.ts` ↔ `backend/src/generated/oracle-pool-configs.ts`
 
 ## Reserve Field Addition
 
