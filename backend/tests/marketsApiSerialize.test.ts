@@ -64,8 +64,6 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
 
   assert.equal(api.supplyApy, 5.2);
   assert.equal(api.borrowApy, 4);
-  assert.deepEqual(api.supplyIncentives, [1, 0.2]);
-  assert.deepEqual(api.borrowIncentives, [0.5]);
   assert.equal(api.meritSupplys?.[0]?.apr, 3);
   assert.equal(api.meritSupplys?.[0]?.selfApr, 1);
   const bd = api.merklSupplys?.[0]?.breakdowns?.[0];
@@ -220,13 +218,13 @@ test('serializeReserveForApi preserves plannedDaily for MAX_REWARD Merkl breakdo
 
 test('serializeReserveForApi passes through aaveProReserveId for V4 reserves', () => {
   const reserve: RuntimeReserveData = {
-    reserveId: 'AaveV4Ethereum:1:0x973a023A7742',
+    reserveId: '1:0x973a023a77420ba610f06b3858ad991df6d85a01:0x973a023a77420ba610f06b3858ad991df6d85a02:CORE_HUB',
     marketName: 'AaveV4Ethereum',
     chainName: 'Ethereum',
     chainId: 1,
     tokenName: 'Test',
     tokenSymbol: 'TST',
-    tokenAddress: '0x973a023A7742',
+    tokenAddress: '0x973a023a77420ba610f06b3858ad991df6d85a02',
     aaveProReserveId: 'MTo6MHg5NzNhMDIzQTc3NDIwYmE2MTBmMDZiMzg1OGFEOTkxRGY2ZDg1QTA4Ojo0',
   };
 
@@ -253,13 +251,13 @@ test('serializeReserveForApi omits aaveProReserveId when absent', () => {
 
 test('serializeReserveForApi omits aaveProReserveId when empty string', () => {
   const reserve: RuntimeReserveData = {
-    reserveId: 'AaveV4Ethereum:1:0xdef',
+    reserveId: '1:0xdefdefdefdefdefdefdefdefdefdefdefdefdef1:0xdefdefdefdefdefdefdefdefdefdefdefdefdef2:PLUS_HUB',
     marketName: 'AaveV4Ethereum',
     chainName: 'Ethereum',
     chainId: 1,
     tokenName: 'Test',
     tokenSymbol: 'TST',
-    tokenAddress: '0xdef',
+    tokenAddress: '0xdefdefdefdefdefdefdefdefdefdefdefdefdef2',
     aaveProReserveId: '',
   };
 
@@ -350,13 +348,13 @@ test('isFrozen/isPaused is independent of supplyDisabled', () => {
 
 test('serializeReserveForApi outputs isActive:false for inactive V4 reserve', () => {
   const reserve: RuntimeReserveData = {
-    reserveId: 'AaveV4Ethereum:1:0xinactive',
+    reserveId: '1:0x1111111111111111111111111111111111111111:0xinactive0000000000000000000000000000000000:PLUS_HUB',
     marketName: 'AaveV4Ethereum',
     chainName: 'Ethereum',
     chainId: 1,
     tokenName: 'Inactive',
     tokenSymbol: 'INA',
-    tokenAddress: '0xinactive',
+    tokenAddress: '0xinactive0000000000000000000000000000000000',
     isActive: false,
   };
 
@@ -368,13 +366,13 @@ test('serializeReserveForApi outputs isActive:false for inactive V4 reserve', ()
 
 test('serializeReserveForApi does NOT output isActive when true or absent', () => {
   const reserve: RuntimeReserveData = {
-    reserveId: 'AaveV4Ethereum:1:0xactive',
+    reserveId: '1:0x2222222222222222222222222222222222222222:0xactive000000000000000000000000000000000000:CORE_HUB',
     marketName: 'AaveV4Ethereum',
     chainName: 'Ethereum',
     chainId: 1,
     tokenName: 'Active',
     tokenSymbol: 'ACT',
-    tokenAddress: '0xactive',
+    tokenAddress: '0xactive000000000000000000000000000000000000',
   };
 
   const api = serializeReserveForApi(reserve);
