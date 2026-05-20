@@ -16,17 +16,21 @@ interface GscRow {
   position: number;
 }
 
-async function getGscClient() {
+let cachedClient: ReturnType<typeof google.webmasters> | null = null;
+
+function getGscClient() {
+  if (cachedClient) return cachedClient;
   const auth = new google.auth.JWT({
     email: process.env.GSC_SA_EMAIL,
     key: process.env.GSC_SA_PRIVATE_KEY?.replace(/\\n/g, '\n'),
     scopes: ['https://www.googleapis.com/auth/webmasters.readonly'],
   });
-  return google.webmasters({ version: 'v3', auth });
+  cachedClient = google.webmasters({ version: 'v3', auth });
+  return cachedClient;
 }
 
 async function fetchGscRows(targetDate: string): Promise<GscRow[]> {
-  const webmasters = await getGscClient();
+  const webmasters = getGscClient();
   const allRows: GscRow[] = [];
   let startRow = 0;
 
