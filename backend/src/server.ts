@@ -16,7 +16,7 @@ import { refreshOracleCache } from './services/oracleService.js';
 import { logger } from './logger.js';
 import { explainServerListenError } from './startup.js';
 import { closePool, getPool, isPersistenceEnabled } from './services/dbPool.js';
-import { getPersistenceStatus } from './services/persistenceService.js';
+import { getPersistenceStatus, warmConfigHashes } from './services/persistenceService.js';
 import { runMigrations } from './services/autoMigrate.js';
 
 const app = express();
@@ -117,6 +117,8 @@ try {
   if (isPersistenceEnabled()) {
     const migrationPool = getPool();
     await runMigrations(migrationPool);
+
+    await warmConfigHashes();
   } else {
     logger.info('💾 Persistence disabled — skipping auto-migration');
   }

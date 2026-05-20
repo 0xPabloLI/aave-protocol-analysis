@@ -273,9 +273,11 @@ FROM latest;
 
 > **性能注意**：删除 `supply_incentives_apr` 列后，`/api/markets` 热路径每次都要做上面这种 SUM 展开。建议在内存中缓存（marketsService 已有 in-memory snapshot），不要在请求路径做 JSONB 展开。
 
-### 3.2 `market_configs` — 行级 change-detection
+### 3.2 `market_configs` — 行级 change-detection + warm-start dedup
 
 **已实施**。配置变更极少（rate model、reserve factor），行级命中率接近 100%。
+
+**Warm-start（2026-05-21 实施）**：`content_hash TEXT` 列持久化每次写入的 SHA-256 hash。进程启动时 `warmConfigHashes()` 从 DB 读取每个 `reserve_id` 最新行的 `content_hash` 填充内存 map，使首 tick 也能被 change-detection 拦截。Migration `013_market_configs_content_hash.sql` 同时清理了历史重复行（保留每个 `reserve_id` 最新一条）。
 
 ### 3.3 `oracle_prices` — 行级 change-detection
 

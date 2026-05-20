@@ -8,6 +8,10 @@
  * - Content-hash change detection: only writes rows whose data actually changed
  *   since the last successful persist. Eliminates ~90%+ duplicate writes when
  *   Aave rates are stable across consecutive 5-min cycles.
+ * - For market_configs, the content hash is also persisted in a DB column
+ *   (content_hash). On process restart, warmConfigHashes() loads these hashes
+ *   from DB to pre-fill the in-memory map, so the first persist tick is a
+ *   no-op when nothing changed (instead of writing all 354 rows).
  * - Idempotent via `ON CONFLICT (snapshot_ts, …) DO NOTHING` so a double
  *   call after a process restart does not duplicate rows.
  * - Failures only log a warning and never propagate, so persistence cannot
@@ -32,8 +36,9 @@ let warnedDisabled = false;
 // ── Content-hash change detection ──────────────────────────────────────────
 // Each reserve/oracle-price row is hashed after a successful write. On the
 // next persist cycle, only rows whose hash differs from the stored one are
-// written. After a process restart these maps are empty → first cycle writes
-// everything (acceptable: restart is infrequent).
+// written. For market_configs, the hash is also persisted in the content_hash
+// column so that on process restart we can warm the in-memory map from DB
+// (see warmConfigHashes), avoiding a full rewrite of unchanged rows.
 
 const marketRowHashes = new Map<string, string>(); // key: reserveId → sha256 (snapshot table)
 const marketConfigHashes = new Map<string, string>(); // key: reserveId → sha256 (config table)
@@ -53,6 +58,43 @@ export function resetPersistenceHashes(): void {
   marketRowHashes.clear();
   marketConfigHashes.clear();
   oraclePriceHashes.clear();
+}
+
+/**
+ * Warm marketConfigHashes from the latest rows in DB.
+ * After a process restart, the in-memory map is empty, causing the first
+ * persist tick to write all 354 rows even when unchanged. By loading the
+ * content_hash of the latest row per reserve_id from DB, the first tick
+ * becomes a no-op when nothing changed.
+ *
+ * Must be called after DB migrations (so content_hash column exists)
+ * and before the cron scheduler starts.
+ */
+export async function warmConfigHashes(): Promise<number> {
+  if (!isPersistenceEnabled()) return 0;
+
+  const pool = getPool();
+  const result = await pool.query(`
+    SELECT reserve_id, content_hash
+    FROM market_configs mc
+    WHERE content_hash IS NOT NULL
+      AND snapshot_ts = (
+        SELECT MAX(snapshot_ts)
+        FROM market_configs sub
+        WHERE sub.reserve_id = mc.reserve_id
+      )
+  `);
+
+  for (const row of result.rows) {
+    if (row.reserve_id && row.content_hash) {
+      marketConfigHashes.set(row.reserve_id, row.content_hash);
+    }
+  }
+
+  if (result.rows.length > 0) {
+    logger.info(`💾 Warmed config hashes from DB: ${result.rows.length} reserves`);
+  }
+  return result.rows.length;
 }
 
 export interface PersistenceStatus {
@@ -177,6 +219,7 @@ const MARKET_CONFIG_COLUMNS = [
   'supply_disabled', 'borrow_disabled', 'is_frozen', 'is_paused',
   'hub_id', 'hub_name', 'hub_address',
   'spoke_id', 'spoke_name', 'spoke_address',
+  'content_hash',
 ] as const;
 
 interface MarketPersistResult {
@@ -243,17 +286,16 @@ async function persistMarketConfigsTable(
 ): Promise<number> {
   const pool = getPool();
 
-  const allRows = payload.data.map((reserve) => ({
-    reserveId: reserve.reserveId,
-    row: buildConfigRow(reserve, snapshotTs),
-  }));
+  const allRows = payload.data.map((reserve) => {
+    const { row, hash } = buildConfigRow(reserve, snapshotTs);
+    return { reserveId: reserve.reserveId, row, hash };
+  });
   if (allRows.length === 0) return 0;
 
-  const changed: { reserveId: string; row: unknown[]; newHash: string }[] = [];
-  for (const { reserveId, row } of allRows) {
-    const newHash = computeHash(row.slice(1));
-    if (marketConfigHashes.get(reserveId) === newHash) continue;
-    changed.push({ reserveId, row, newHash });
+  const changed: { reserveId: string; row: unknown[]; hash: string }[] = [];
+  for (const { reserveId, row, hash } of allRows) {
+    if (marketConfigHashes.get(reserveId) === hash) continue;
+    changed.push({ reserveId, row, hash });
   }
 
   if (changed.length === 0) {
@@ -275,7 +317,7 @@ async function persistMarketConfigsTable(
     written += result.rowCount ?? 0;
 
     for (const c of changed.slice(i, i + CHUNK)) {
-      marketConfigHashes.set(c.reserveId, c.newHash);
+      marketConfigHashes.set(c.reserveId, c.hash);
     }
   }
   return written;
@@ -297,8 +339,8 @@ function buildSnapshotRow(reserve: RuntimeReserveData, snapshotTs: string): unkn
   ];
 }
 
-function buildConfigRow(reserve: RuntimeReserveData, snapshotTs: string): unknown[] {
-  return [
+export function buildConfigRow(reserve: RuntimeReserveData, snapshotTs: string): { row: unknown[]; hash: string } {
+  const data = [
     snapshotTs,
     reserve.reserveId,
     reserve.chainId,
@@ -329,6 +371,8 @@ function buildConfigRow(reserve: RuntimeReserveData, snapshotTs: string): unknow
     reserve.spokeName ?? null,
     reserve.spokeAddress ?? null,
   ];
+  const hash = computeHash(data.slice(1));
+  return { row: [...data, hash], hash };
 }
 
 // ---------------------------------------------------------------------------

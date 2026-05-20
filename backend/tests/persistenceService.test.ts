@@ -5,6 +5,7 @@ import {
   computeHash,
   resetPersistenceHashes,
   buildIncentiveDetails,
+  buildConfigRow,
 } from '../src/services/persistenceService.js';
 import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 
@@ -95,4 +96,43 @@ test('buildSnapshotRow: incentive_details is per-campaign structure (JSON parsea
   assert.ok(parsed.meritSupplys);
   assert.equal(parsed.meritSupplys[0].key, 'https://m.com/r1::2025-12-31');
   assert.equal(parsed.meritSupplys[0].apr, 0.02);
+});
+
+// ── buildConfigRow: content_hash warm-start dedup ──────────────────────────
+
+test('buildConfigRow: returns { row, hash } with hash as last element of row', () => {
+  const r = baseReserve();
+  const { row, hash } = buildConfigRow(r, '2026-05-21T00:00:00.000Z');
+  assert.equal(typeof hash, 'string');
+  assert.ok(hash.length > 0);
+  assert.equal(row[row.length - 1], hash, 'hash must be the last element (content_hash column)');
+});
+
+test('buildConfigRow: same reserve + same ts → same hash', () => {
+  const r = baseReserve();
+  const a = buildConfigRow(r, '2026-05-21T00:00:00.000Z');
+  const b = buildConfigRow(r, '2026-05-21T00:00:00.000Z');
+  assert.equal(a.hash, b.hash);
+});
+
+test('buildConfigRow: different reserve data → different hash', () => {
+  const r1 = baseReserve();
+  const r2 = baseReserve({ tokenSymbol: 'DAI' });
+  const a = buildConfigRow(r1, '2026-05-21T00:00:00.000Z');
+  const b = buildConfigRow(r2, '2026-05-21T00:00:00.000Z');
+  assert.notEqual(a.hash, b.hash);
+});
+
+test('buildConfigRow: hash excludes snapshot_ts (only content fields)', () => {
+  const r = baseReserve();
+  const a = buildConfigRow(r, '2026-05-21T00:00:00.000Z');
+  const b = buildConfigRow(r, '2026-05-22T00:00:00.000Z');
+  assert.equal(a.hash, b.hash, 'same config content must produce same hash regardless of ts');
+});
+
+test('buildConfigRow: row length matches MARKET_CONFIG_COLUMNS count', () => {
+  const MARKET_CONFIG_COLUMNS_COUNT = 30;
+  const r = baseReserve();
+  const { row } = buildConfigRow(r, '2026-05-21T00:00:00.000Z');
+  assert.equal(row.length, MARKET_CONFIG_COLUMNS_COUNT, `expected ${MARKET_CONFIG_COLUMNS_COUNT} columns (including content_hash)`);
 });
