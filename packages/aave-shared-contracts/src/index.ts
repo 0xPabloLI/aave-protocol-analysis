@@ -53,6 +53,13 @@ export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
 
 export interface BrevisCampaignItem extends CampaignGroup<BrevisCampaignBreakdown> {}
 
+export interface MerklCampaignAccess {
+  campaignId: string;
+  chainId: number;
+  whitelist: string[];
+  blacklist: string[];
+}
+
 // ============================================================
 // Core data types
 // ============================================================
@@ -114,6 +121,7 @@ export interface MarketsPayload {
     profile: string;
   };
   data: RuntimeReserveData[];
+  campaignAccess?: MerklCampaignAccess[];
 }
 
 // ============================================================

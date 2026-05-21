@@ -12,8 +12,8 @@ import {
   normalizeMerklCampaignTotalBudget,
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
-import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite } from '@internal/aave-shared-contracts';
-export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite } from '@internal/aave-shared-contracts';
+import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess } from '@internal/aave-shared-contracts';
+export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess } from '@internal/aave-shared-contracts';
 import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
 const merklLimitedFetch = createMerklConcurrencyLimitedFetch(
@@ -794,7 +794,7 @@ export function merklBreakdownUsesPointsIntensityFields(
 
 export async function processMerklData(
   options?: ProcessMerklDataOptions
-): Promise<{ index: Record<string, MerklOpportunityData[]> }> {
+): Promise<{ index: Record<string, MerklOpportunityData[]>; campaignAccess: MerklCampaignAccess[] }> {
   const priceSourceStats: Record<UsdPriceSource, number> = {
     snapshot: 0,
     reserve: 0,
@@ -853,7 +853,7 @@ export async function processMerklData(
         lastSuccessfulAt: fallback.lastSuccessfulAt,
       };
 
-      return { index: fallback.index };
+      return { index: fallback.index, campaignAccess: [] };
     }
 
     if (fallback && !isFallbackSnapshotFreshEnough(fallback)) {
@@ -882,6 +882,7 @@ export async function processMerklData(
   logger.info(`Processing ${liveOpportunities.length} live Merkl opportunities`);
   
   const campaignDetailsCache = new Map<string, MerklCampaignDetails | null>();
+  const campaignAccessMap = new Map<string, MerklCampaignAccess>();
   for (const opp of liveOpportunities) {
     if (!Array.isArray(opp.campaigns)) continue;
     opp.campaigns.forEach((campaign) => {
@@ -895,6 +896,17 @@ export async function processMerklData(
         apr: Number(campaign.apr || 0) / 100,
         whitelistOnly: isCampaignWhitelistOnly(campaign),
       });
+      const params = campaign.params ?? {};
+      const wl = Array.isArray(params.whitelist) ? (params.whitelist as string[]).filter(Boolean) : [];
+      const bl = Array.isArray(params.blacklist) ? (params.blacklist as string[]).filter(Boolean) : [];
+      if (wl.length > 0 || bl.length > 0) {
+        campaignAccessMap.set(id, {
+          campaignId: id,
+          chainId: opp.chainId ?? 0,
+          whitelist: wl,
+          blacklist: bl,
+        });
+      }
     });
   }
 
@@ -1072,7 +1084,12 @@ export async function processMerklData(
     };
   }
 
-  return { index: merklData };
+  const campaignAccessArr = Array.from(campaignAccessMap.values());
+  if (campaignAccessArr.length > 0) {
+    logger.info(`📋 Campaign access: ${campaignAccessArr.length} campaigns with whitelist/blacklist data`);
+  }
+
+  return { index: merklData, campaignAccess: campaignAccessArr };
 }
 
 export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[]): MerklCampaignBreakdown[] {

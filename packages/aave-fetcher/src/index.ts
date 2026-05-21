@@ -460,7 +460,7 @@ function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
 type MeritDataIndex = Record<string, MeritDataItem>;
 type MerklDataIndex = Record<string, MerklOpportunityData[]>;
 type BrevisDataIndex = Record<string, BrevisDataItem>;
-type MerklProcessedData = { index: MerklDataIndex };
+type MerklProcessedData = { index: MerklDataIndex; campaignAccess?: import('@internal/aave-shared-contracts').MerklCampaignAccess[] };
 
 function buildReserveTokenPriceMap(baseDataset: RuntimeReserveData[]): Map<string, number> {
   const map = new Map<string, number>();
@@ -1317,6 +1317,7 @@ export async function fetchMarketsData(options?: {
       profile: 'runtime-minimal',
     },
     data: runtimeData,
+    ...(merklResult.campaignAccess?.length ? { campaignAccess: merklResult.campaignAccess } : {}),
   };
 
   // Write debug files (non-blocking, never fail the cron)
