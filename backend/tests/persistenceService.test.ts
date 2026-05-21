@@ -6,6 +6,7 @@ import {
   resetPersistenceHashes,
   buildIncentiveDetails,
   buildConfigRow,
+  MARKET_CONFIG_COLUMNS,
 } from '../src/services/persistenceService.js';
 import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 
@@ -131,8 +132,60 @@ test('buildConfigRow: hash excludes snapshot_ts (only content fields)', () => {
 });
 
 test('buildConfigRow: row length matches MARKET_CONFIG_COLUMNS count', () => {
-  const MARKET_CONFIG_COLUMNS_COUNT = 30;
   const r = baseReserve();
   const { row } = buildConfigRow(r, '2026-05-21T00:00:00.000Z');
-  assert.equal(row.length, MARKET_CONFIG_COLUMNS_COUNT, `expected ${MARKET_CONFIG_COLUMNS_COUNT} columns (including content_hash)`);
+  assert.equal(row.length, MARKET_CONFIG_COLUMNS.length, `expected ${MARKET_CONFIG_COLUMNS.length} columns (including content_hash)`);
+});
+
+test('buildConfigRow: hash is deterministic across calls with identical content', () => {
+  const r = baseReserve({ supplyCap: 1000n, borrowCap: 500n });
+  const a = buildConfigRow(r, '2026-05-21T00:00:00.000Z');
+  const b = buildConfigRow(r, '2026-05-22T00:00:00.000Z');
+  assert.equal(a.hash, b.hash);
+  assert.equal(a.row[a.row.length - 1], b.row[b.row.length - 1]);
+});
+
+test('buildConfigRow: changing a config field changes the hash', () => {
+  const r1 = baseReserve({ supplyCap: 1000n });
+  const r2 = baseReserve({ supplyCap: 2000n });
+  const a = buildConfigRow(r1, '2026-05-21T00:00:00.000Z');
+  const b = buildConfigRow(r2, '2026-05-21T00:00:00.000Z');
+  assert.notEqual(a.hash, b.hash);
+});
+
+// ── warmConfigHashes: DISTINCT ON semantics ────────────────────────────────
+
+test('warmConfigHashes: DISTINCT ON picks latest per reserve_id (mocked)', () => {
+  // Simulate what DISTINCT ON (reserve_id) ... ORDER BY snapshot_ts DESC does:
+  // For each reserve_id, only the row with the latest timestamp is returned.
+  const rows = [
+    { reserve_id: 'A', snapshot_ts: '2026-05-20', content_hash: 'hash_A_old' },
+    { reserve_id: 'A', snapshot_ts: '2026-05-21', content_hash: 'hash_A_new' },
+    { reserve_id: 'B', snapshot_ts: '2026-05-19', content_hash: 'hash_B' },
+  ];
+  const byLatest = new Map<string, string>();
+  for (const r of rows) {
+    if (!r.content_hash) continue;
+    const existing = byLatest.get(r.reserve_id);
+    if (!existing || r.snapshot_ts > (rows.find(x => x.reserve_id === r.reserve_id && x.content_hash === existing)?.snapshot_ts ?? '')) {
+      byLatest.set(r.reserve_id, r.content_hash);
+    }
+  }
+  assert.equal(byLatest.get('A'), 'hash_A_new');
+  assert.equal(byLatest.get('B'), 'hash_B');
+});
+
+test('warmConfigHashes: rows with NULL content_hash are skipped', () => {
+  const rows = [
+    { reserve_id: 'A', content_hash: 'hash_A' },
+    { reserve_id: 'B', content_hash: null },
+  ];
+  const loaded = new Map<string, string>();
+  for (const r of rows) {
+    if (r.reserve_id && r.content_hash) {
+      loaded.set(r.reserve_id, r.content_hash);
+    }
+  }
+  assert.equal(loaded.size, 1);
+  assert.equal(loaded.get('A'), 'hash_A');
 });

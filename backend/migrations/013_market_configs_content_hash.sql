@@ -11,6 +11,11 @@
 -- Cleanup: Delete older duplicate rows per reserve_id, keeping only the latest.
 BEGIN;
 
+-- Lock table to prevent concurrent INSERTs from the app during DELETE.
+-- Deployments stop the old container before running migrations, but this
+-- guards against edge cases (e.g., slow drain, manual psql session).
+LOCK TABLE market_configs IN EXCLUSIVE MODE;
+
 ALTER TABLE market_configs ADD COLUMN IF NOT EXISTS content_hash TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_market_configs_content_hash

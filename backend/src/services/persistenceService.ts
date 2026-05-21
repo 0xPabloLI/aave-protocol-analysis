@@ -75,14 +75,10 @@ export async function warmConfigHashes(): Promise<number> {
 
   const pool = getPool();
   const result = await pool.query(`
-    SELECT reserve_id, content_hash
-    FROM market_configs mc
+    SELECT DISTINCT ON (reserve_id) reserve_id, content_hash
+    FROM market_configs
     WHERE content_hash IS NOT NULL
-      AND snapshot_ts = (
-        SELECT MAX(snapshot_ts)
-        FROM market_configs sub
-        WHERE sub.reserve_id = mc.reserve_id
-      )
+    ORDER BY reserve_id, snapshot_ts DESC
   `);
 
   for (const row of result.rows) {
@@ -207,7 +203,7 @@ const MARKET_COLUMNS = [
   'incentive_details',
 ] as const;
 
-const MARKET_CONFIG_COLUMNS = [
+export const MARKET_CONFIG_COLUMNS = [
   'snapshot_ts', 'reserve_id',
   'chain_id', 'chain_name', 'market_name',
   'token_symbol', 'token_name', 'token_address', 'decimals',
