@@ -3,8 +3,10 @@ import type { NextFunction, Request, Response } from 'express';
 const CACHE_CONTROL = {
   // Core real-time APIs: always revalidate to match frontend staleTime expectations.
   coreRealtime: 'no-cache, must-revalidate',
-  // Public side-data API with slower update cadence.
-  coingeckoFdv: 'public, max-age=60, s-maxage=300, stale-while-revalidate=300',
+  // Public side-data API (categories=6h, FDV=15m, forecast=10m); s-maxage aligned to
+  // the shortest source TTL (forecast=10m) so edge cache never serves data older than
+  // any individual source's freshness contract.
+  sideDataMeta: 'public, max-age=60, s-maxage=600, stale-while-revalidate=600',
   // Never cache health checks.
   noStore: 'no-store',
 } as const;
@@ -31,8 +33,7 @@ export function apiCacheHeadersMiddleware(req: Request, res: Response, next: Nex
   }
 
   if (path.startsWith('/api/meta/side-data')) {
-    // Meta payload contains FDV (5m), forecast (10m), and categories (6h); use the shortest TTL.
-    setCacheControlIfMissing(res, CACHE_CONTROL.coingeckoFdv);
+    setCacheControlIfMissing(res, CACHE_CONTROL.sideDataMeta);
     next();
     return;
   }
