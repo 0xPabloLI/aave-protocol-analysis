@@ -1,6 +1,6 @@
 # Incentive Normalization — Production Migration 执行文档
 
-> 变更范围：per-campaign JSONB + DROP 冗余列/表 + 视图替代物理表
+> 变更范围：per-campaign JSONB + DROP 冗余列/表
 > Staging 验证日期：2026-05-20
 > Production 执行日期：待定
 
@@ -9,7 +9,7 @@
 | 条件 | 验证方法 |
 |------|----------|
 | Staging 已全量验证通过 | `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}` |
-| 最新代码已推送到 main | `git log --oneline -1` 确认包含 `bfc75f9`（Dockerfile 修复）和 `aff2b1b`（code review fixes） |
+| 最新代码已推送到 main | `git log --oneline -1` 确认包含 Dockerfile 修复和 code review fixes |
 | Railway CLI 已登录 | `railway status` |
 | Production DB 可连接 | `psql "$DATABASE_URL" -c "SELECT 1"` |
 
@@ -22,7 +22,7 @@
 railway status
 
 # 部署（Dockerfile 含 COPY backend/scripts/ 修复）
-railway up --detach --service aave-protocol-analysis -m "incentive normalization: per-campaign JSONB, _isExpired, SUM derivation"
+railway up --detach --service aave-protocol-analysis -m "incentive normalization: per-campaign JSONB, SUM derivation"
 ```
 
 **等待**：build (~3min) + healthcheck (~3min) + 首次 cron tick (~30s)
@@ -42,8 +42,6 @@ import sys, json
 data = json.load(sys.stdin)
 reserves = data.get('reserves', [])
 print(f'Total reserves: {len(reserves)}')
-has_expired = sum(1 for r in reserves for m in r.get('meritSupplys', []) + r.get('meritBorrows', []) if '_isExpired' in m)
-print(f'merit entries with _isExpired: {has_expired}')
 has_legacy = sum(1 for r in reserves if 'supplyIncentives' in r or 'borrowIncentives' in r)
 print(f'reserves with legacy fields: {has_legacy} (should be 0)')
 "
@@ -52,7 +50,6 @@ print(f'reserves with legacy fields: {has_legacy} (should be 0)')
 **预期输出**：
 - `status=ok`
 - `Total reserves: ~354+`
-- `merit entries with _isExpired: N`（N > 0）
 - `reserves with legacy fields: 0`
 
 **回退点**：如果 healthcheck 失败或 API 返回异常 → `railway rollback`
@@ -90,56 +87,14 @@ pg_restore --list backup_before_migration_*.dump | head -20
 
 **回退点**：如果备份失败 → **不执行后续 migration**
 
-### Step 5: 评估 Production 数据量
+### Step 5: 执行 Migration 012 — DROP 列/表
 
-```bash
-psql "$DATABASE_URL" -c "
-SELECT
-  (SELECT COUNT(*) FROM market_snapshots) as snapshot_count,
-  (SELECT COUNT(*) FROM market_snapshots WHERE incentive_details IS NOT NULL) as with_incentive_count,
-  (SELECT pg_size_pretty(pg_total_relation_size('market_snapshots'))) as table_size;
-"
-```
-
-如果 `snapshot_count` > 10000，建议先用 `EXPLAIN ANALYZE` 评估 view 性能：
-
-```bash
-psql "$DATABASE_URL" -c "
-EXPLAIN ANALYZE SELECT * FROM v_campaign_history LIMIT 10;
-"
-```
-
-### Step 6: 执行 Migration 011 — 建视图
-
-```bash
-psql "$DATABASE_URL" \
-  -f backend/migrations/011_create_campaign_views.sql
-```
-
-**验证**：
-
-```bash
-psql "$DATABASE_URL" -c "
-SELECT viewname FROM pg_views
-WHERE viewname IN ('v_campaign_history', 'v_campaign_apr_observations');
-
-SELECT COUNT(*) as history_count FROM v_campaign_history;
-SELECT COUNT(*) as observations_count FROM v_campaign_apr_observations;
-"
-```
-
-**回退点**：如果 view 创建失败 → 检查 `incentive_details` JSONB 结构是否与 view 定义匹配。View 是 `CREATE OR REPLACE`，可安全重试。
-
-### Step 7: 执行 Migration 012 — DROP 列/表
-
-> **⚠️ 此步不可逆**。确认 Step 5-6 全部通过后再执行。
+> **⚠️ 此步不可逆**。确认 Step 1-4 全部通过后再执行。
 
 ```bash
 psql "$DATABASE_URL" \
   -f backend/migrations/012_drop_incentive_columns_and_campaign_tables.sql
 ```
-
-012 内含前置断言：如果 `v_campaign_history` view 不存在，会 RAISE EXCEPTION 阻止执行。
 
 **验证**：
 
@@ -155,15 +110,10 @@ WHERE table_name='market_snapshots'
 SELECT tablename FROM pg_tables
 WHERE tablename IN ('campaign_history', 'campaign_apr_observations');
 -- 预期：0 rows
-
--- 确认 view 仍存在
-SELECT viewname FROM pg_views
-WHERE viewname IN ('v_campaign_history', 'v_campaign_apr_observations');
--- 预期：2 rows
 "
 ```
 
-### Step 8: 最终验证
+### Step 6: 最终验证
 
 ```bash
 # API health
@@ -186,9 +136,8 @@ print(f'With brevisSupplys: {sum(1 for r in reserves if r.get(\"brevisSupplys\")
 | 场景 | 回退方法 |
 |------|----------|
 | Step 1-2: 新代码异常 | `railway rollback` 回退到上一版本 |
-| Step 6: view 创建失败 | 无影响，代码不依赖 view |
-| Step 7: DROP 后需回退 | **只能从备份恢复**：`pg_restore --clean --dbname="$DATABASE_URL" backup_before_migration_*.dump`，然后 `railway rollback` 回退代码 |
-| Step 8: API 异常 | 检查日志：`railway logs --service aave-protocol-analysis` |
+| Step 5: DROP 后需回退 | **只能从备份恢复**：`pg_restore --clean --dbname="$DATABASE_URL" backup_before_migration_*.dump`，然后 `railway rollback` 回退代码 |
+| Step 6: API 异常 | 检查日志：`railway logs --service aave-protocol-analysis` |
 
 ## 4. 监控清单（24h）
 
@@ -198,26 +147,22 @@ print(f'With brevisSupplys: {sum(1 for r in reserves if r.get(\"brevisSupplys\")
 | Reserve count | `curl /api/markets` → `len(reserves)` | < 300 |
 | Cron tick 频率 | Railway deploy logs | 间隔 > 5min |
 | DB disk usage | Railway metrics | > 80% |
-| `_isExpired` 计算正确 | 抽查 reserve 的 endDate vs 当前时间 | 过期但 _isExpired=false |
 | SUM 推导 APR 正确 | 对比前端展示 vs 手动 SUM | 偏差 > 0.01% |
 
 ## 5. 关键注意事项
 
-1. **Migration 顺序严格**：011 → 012，不可逆序。012 有前置断言保护。
-2. **`_isExpired` 不入库**：仅在 API 序列化时计算。历史数据回放时会重算。
-3. **`supplyIncentivesApr`/`borrowIncentivesApr`**：不再从 DB 列读取，改为内存 SUM 推导。API 响应中这两个字段仍存在，但值来自 `sumIncentiveAprFromDetails()`。
-4. **`merklHolds` 不参与聚合 APR**：hold 侧仅展示，不加入 supply/borrow 总 incentive APR。
-5. **Schema fingerprint 已变更**：从 `9823bce08f02` → `eb0204d2d263`。前端需同步更新 `schema-fingerprint.ts`。
+1. **`_isExpired` 不入库**：仅在 API 序列化时计算。历史数据回放时会重算。
+2. **`supplyIncentivesApr`/`borrowIncentivesApr`**：不再从 DB 列读取，改为内存 SUM 推导。API 响应中这两个字段仍存在，但值来自 `sumIncentiveAprFromDetails()`。
+3. **`merklHolds` 不参与聚合 APR**：hold 侧仅展示，不加入 supply/borrow 总 incentive APR。
+4. **Schema fingerprint 已变更**：前端需同步更新 `schema-fingerprint.ts`。
 
 ## 6. Staging 执行记录（2026-05-20）
 
 | Step | 结果 | 备注 |
 |------|------|------|
 | 1 部署 | ✅ | Dockerfile 修复 `COPY backend/scripts/` |
-| 2 验证 | ✅ | 354 reserves, `_isExpired` 存在 |
+| 2 验证 | ✅ | 354 reserves |
 | 3 cron tick | ✅ | 自动执行 |
 | 4 备份 | — | Staging 未做备份（可接受） |
-| 5 数据量 | ✅ | snapshot_count 小，无需 EXPLAIN |
-| 6 Migration 011 | ✅ | v_campaign_history: 30 rows, v_campaign_apr_observations: 120 rows |
-| 7 Migration 012 | ✅ | 列/表已 DROP，view 保留 |
-| 8 验证 | ✅ | /health ok, 354 reserves, legacy 字段不存在 |
+| 5 Migration 012 | ✅ | 列/表已 DROP |
+| 6 验证 | ✅ | /health ok, 354 reserves, legacy 字段不存在 |

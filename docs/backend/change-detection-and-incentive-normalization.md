@@ -449,8 +449,8 @@ APY 累加路径排除 `_isExpired === true` 的条目；前端展示路径用 `
 | 3 | `/api/markets` 改为从 `incentive_details` SUM 推导聚合 APR（`sumIncentiveAprFromDetails`） | `persistenceService.ts` L720-764 | ✅ 已实施 (2026-05-20) |
 | 4 | 序列化时按 `now()` 计算 `_isExpired` 标志 | `marketsApiSerialize.ts` L13-19 | ❌ 已移除（前端用 `endDate` 自行判断，`_isExpired` 是冗余派生字段） |
 | 5 | fetcher: `filterRecentExpiredCampaigns()` | `merkl-api.ts` / `merit-api.ts` / `brevis-api.ts` | ✅ 已实施 (2026-05-20) |
-| 6 | 建 view: `v_campaign_history` / `v_campaign_apr_observations` | `migrations/011_*.sql` | 🟡 待实施 |
-| 7 | Staging 验证 view 业务等价 | — | 🟡 待实施 |
+| 6 | ~~建 view~~ → 已删除（无消费者，`incentive_details` JSONB 已是唯一数据源） | — | ❌ 已取消 |
+| 7 | ~~Staging 验证 view 业务等价~~ | — | ❌ 已取消 |
 | 8 | Migration: DROP 两列 + DROP 两表 | `migrations/012_*.sql` | ✅ 已实施 (migration 已存在) |
 | 9 | API 查询: LOCF（PG 原生方案，见 §3.1.4） | `persistenceService.ts` + route | 🟡 待实施 |
 | 10 | 单测 + e2e 测试 | `tests/` | ✅ 已实施 (2026-05-20) |
