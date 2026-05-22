@@ -1,92 +1,29 @@
-// 复用 RuntimeReserveData 类型定义
-// 注意：这个文件需要从主项目的 src/index.ts 中导出类型
-import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
+import type {
+  RuntimeReserveData,
+  ApiMeritAprEntry,
+  ApiMerklOpportunityGroup,
+  ApiBrevisCampaignItem,
+} from '@internal/aave-shared-contracts';
 
-type MerklMarketBreakdown = BaseCampaignBreakdown & {
-  campaignId: string;
-  whitelistOnly?: boolean;
-  pointsPerThousandUsd?: number;
-  campaignType?: string;
-  totalBudget?: number;
-  aprCap?: number | null;
-  latestTvl?: number;
-  plannedDaily?: number;
-};
-
-type BrevisMarketBreakdown = BaseCampaignBreakdown & {
-  totalBudget?: number;
-  latestTvl?: number;
-  perUserRewardCapUsd?: number;
-};
-
-/** GET /api/markets 响应形状；收益率类数字为百分数（序列化层由比例 ×100）。 */
-export interface MarketWithSpread {
-  reserveId: string;
-  marketName: string;
-  chainName: string;
-  chainId: number;
-  tokenName: string;
-  tokenSymbol: string;
-  tokenAddress: string;
-  aaveProReserveId?: string;
-  tokenPrice?: number;
-  utilizationPct?: number;
-  aTokenAddress?: string | null;
-  vTokenAddress?: string | null;
+/** GET /api/markets 响应形状；收益率类数字为百分数（序列化层由比例 ×100）。
+ *  从 RuntimeReserveData 派生：覆写 nullable 漂移字段 + 激励子类型截断。 */
+export type MarketWithSpread = Omit<
+  RuntimeReserveData,
+  | 'supplyApy' | 'borrowApy'
+  | 'meritSupplys' | 'meritBorrows'
+  | 'merklSupplys' | 'merklBorrows' | 'merklHolds'
+  | 'brevisSupplys' | 'brevisBorrows'
+> & {
   supplyApy?: number | null;
-  supplyDisabled?: boolean;
-  isFrozen?: boolean;
-  isPaused?: boolean;
-  isActive?: false;
   borrowApy?: number | null;
-  borrowDisabled?: boolean;
-  // Rate-input fields for manual APR calculation (from Aave SDK)
-  decimals?: number;
-  supplyCap?: string;
-  borrowCap?: string;
-  // 字段重命名后仅保留新字段名
-  supplied?: string;
-  borrowed?: string;
-  liquidity?: string;
-  protocolFee?: number;
-  slopeBelowOptimal?: number;
-  slopeAboveOptimal?: number;
-  optimalUtilization?: number;
-  baseBorrowRate?: number; // percent (e.g., 0 means 0%)
-  deficit?: string; // raw token units - for accurate supply APY calculation
-  meritSupplys?: Array<{
-    apr: number;
-    selfApr?: number;
-    link: string;
-    name?: string;
-    message?: unknown;
-    startDate: string;
-    endDate: string;
-    lastRoundRewardUsd?: number;
-  }>;
-  meritBorrows?: Array<{
-    apr: number;
-    selfApr?: number;
-    link: string;
-    name?: string;
-    message?: unknown;
-    startDate: string;
-    endDate: string;
-    lastRoundRewardUsd?: number;
-  }>;
-  merklSupplys?: CampaignGroup<MerklMarketBreakdown>[];
-  merklBorrows?: CampaignGroup<MerklMarketBreakdown>[];
-  merklHolds?: CampaignGroup<MerklMarketBreakdown>[];
-  brevisSupplys?: CampaignGroup<BrevisMarketBreakdown>[];
-  brevisBorrows?: CampaignGroup<BrevisMarketBreakdown>[];
-  // V4 Hub & Spoke addresses for contract interaction (only present for V4 markets)
-  hubId?: string;
-  hubName?: string;
-  hubAddress?: string;
-  spokeId?: string;
-  spokeName?: string;
-  spokeAddress?: string;
-}
+  meritSupplys?: ApiMeritAprEntry[];
+  meritBorrows?: ApiMeritAprEntry[];
+  merklSupplys?: ApiMerklOpportunityGroup[];
+  merklBorrows?: ApiMerklOpportunityGroup[];
+  merklHolds?: ApiMerklOpportunityGroup[];
+  brevisSupplys?: ApiBrevisCampaignItem[];
+  brevisBorrows?: ApiBrevisCampaignItem[];
+};
 
 export interface MarketsResponse {
   snapshot: {

@@ -18,53 +18,11 @@
 
 import { AaveClient, chainId as v4ChainId } from '@aave/client-v4';
 import { chains, reserves } from '@aave/client-v4/actions';
+import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 import { logger } from './logger.js';
 import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
 
-// Re-use types from V3 — we import only the type to avoid circular deps.
-// The actual interface is defined in index.ts; we duplicate the minimal shape here.
-interface V4FormattedReserveData {
-  reserveId: string;
-  marketName: string;
-  chainName: string;
-  chainId: number;
-  tokenName: string;
-  tokenSymbol: string;
-  tokenAddress: string;
-  tokenPrice?: number;
-  utilizationPct?: number;
-  aTokenAddress: string | null;
-  vTokenAddress: string | null;
-  supplyApy: number | undefined;
-  supplyDisabled?: boolean;
-  isFrozen?: boolean;
-  isPaused?: boolean;
-  isActive?: false;
-  borrowApy: number | undefined;
-  borrowDisabled?: boolean;
-  supplyIncentives?: number[];
-  borrowIncentives?: number[];
-  decimals?: number;
-  availableLiquidity?: string;
-  totalVariableDebt?: string;
-  reserveSize?: string;
-  supplyCap?: string;
-  borrowCap?: string;
-  // Rate-model fields are percent numbers (e.g., 9 = 9%) after unification.
-  reserveFactor?: number;
-  variableRateSlope1?: number;
-  variableRateSlope2?: number;
-  optimalUsageRate?: number;
-  baseVariableBorrowRate?: number;
-  aaveProReserveId?: string;
-  // V4 Hub & Spoke addresses for contract interaction
-  hubId?: string;
-  hubName?: string;
-  hubAddress?: string;
-  spokeId?: string;
-  spokeName?: string;
-  spokeAddress?: string;
-}
+type V4FormattedReserveData = RuntimeReserveData;
 
 // V4 uses its own client instance (points to the same api.aave.com/graphql)
 const v4Client = AaveClient.create();

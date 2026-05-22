@@ -74,8 +74,8 @@ export interface RuntimeReserveData {
   tokenAddress: string;
   tokenPrice?: number;
   utilizationPct?: number;
-  aTokenAddress?: string;
-  vTokenAddress?: string;
+  aTokenAddress?: string | null;
+  vTokenAddress?: string | null;
   supplyApy?: number;
   supplyDisabled?: boolean;
   isFrozen?: boolean;
@@ -112,6 +112,33 @@ export interface RuntimeReserveData {
   spokeName?: string;
   spokeAddress?: string;
 }
+
+// ============================================================
+// API layer types (derived from runtime types)
+// ============================================================
+
+export type ApiMeritAprEntry = Pick<
+  MeritAprEntry,
+  'apr' | 'selfApr' | 'link' | 'name' | 'message' | 'startDate' | 'endDate' | 'lastRoundRewardUsd'
+>;
+
+export type ApiMerklBreakdown = Pick<
+  MerklCampaignBreakdown,
+  | 'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
+  | 'whitelistOnly' | 'pointsPerThousandUsd' | 'campaignType'
+  | 'totalBudget' | 'aprCap' | 'latestTvl' | 'plannedDaily'
+>;
+
+export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown>;
+
+export type ApiBrevisBreakdown = Pick<
+  BrevisCampaignBreakdown,
+  'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
+  | 'totalBudget' | 'latestTvl' | 'perUserRewardCapUsd'
+  | 'budgetNormalizedAmount' | 'budgetTokenSymbol'
+>;
+
+export type ApiBrevisCampaignItem = CampaignGroup<ApiBrevisBreakdown>;
 
 export interface MarketsPayload {
   _metadata: {

@@ -302,7 +302,7 @@ async function buildMarketsBaseDataset(v3Markets: any[], options?: {
     // Option 1: V4 now has retry logic (3 attempts with backoff), matching V3 reliability.
     // Option 2: When v4Fatal=true, V4 failure throws (equal importance to V3).
     const v4Result = await fetchV4ReservesData({ throwOnFinalFailure: v4Fatal });
-    v4Dataset = v4Result.mapped as unknown as RuntimeReserveData[];
+    v4Dataset = v4Result.mapped;
     v4Raw = v4Result.raw;
     if (v4Dataset.length > 0) {
       logger.info(`✅ Fetched ${v4Dataset.length} V4 reserves`);
