@@ -279,8 +279,16 @@ interface MerklSuccessfulSnapshot {
   lastSuccessfulAt?: string;
 }
 
-let lastMerklSuccessfulSnapshot: MerklSuccessfulSnapshot | null = null;
-let lastMerklFetchError: string | null = null;
+const _merklState = {
+  lastSuccessfulSnapshot: null as MerklSuccessfulSnapshot | null,
+  lastFetchError: null as string | null,
+};
+
+/** @internal test-only hook to reset all mutable state */
+export function resetMerklState(): void {
+  _merklState.lastSuccessfulSnapshot = null;
+  _merklState.lastFetchError = null;
+}
 
 const getRecord = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -337,7 +345,7 @@ const readDiskFallbackSnapshot = async (): Promise<MerklFallbackSnapshot | null>
 };
 
 const resolveMerklFallbackSnapshot = async (): Promise<MerklFallbackSnapshot | null> => {
-  const memorySnapshot = lastMerklSuccessfulSnapshot;
+  const memorySnapshot = _merklState.lastSuccessfulSnapshot;
   if (memorySnapshot !== null && Object.keys(memorySnapshot.index).length > 0) {
     return {
       source: 'memory',
@@ -653,12 +661,12 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
       ttlMs: OPPORTUNITIES_SOFT_TTL_MS,
       fetchImpl: fetch as unknown as typeof globalThis.fetch,
     })) as MerklOpportunity[];
-    lastMerklFetchError = null;
+    _merklState.lastFetchError = null;
     logger.info(`✅ Fetched ${allOpportunities.length} live opportunities from Merkl`);
     return allOpportunities;
   } catch (error) {
     logger.error('❌ Error fetching Merkl opportunities:', error);
-    lastMerklFetchError = error instanceof Error ? error.message : String(error);
+    _merklState.lastFetchError = error instanceof Error ? error.message : String(error);
     return [];
   }
 }
@@ -845,13 +853,13 @@ export async function processMerklData(
           reason: 'merkl-opportunities-empty',
           fallbackSource: fallback.source,
           lastSuccessfulAt: fallback.lastSuccessfulAt,
-          ...(lastMerklFetchError ? { lastFetchError: lastMerklFetchError } : {}),
+          ...(_merklState.lastFetchError ? { lastFetchError: _merklState.lastFetchError } : {}),
           fetchedOpportunities: fetchedOpportunities.length,
           usedOpportunities: fallback.liveOpportunities.length,
         },
       });
 
-      lastMerklSuccessfulSnapshot = {
+      _merklState.lastSuccessfulSnapshot = {
         rawOpportunities: fallback.rawOpportunities,
         liveOpportunities: fallback.liveOpportunities,
         processedData: fallback.processedData,
@@ -876,7 +884,7 @@ export async function processMerklData(
     staleStatus = {
       stale: true,
       reason: fallback ? 'merkl-opportunities-empty-fallback-expired' : 'merkl-opportunities-empty-no-fallback',
-      ...(lastMerklFetchError ? { lastFetchError: lastMerklFetchError } : {}),
+      ...(_merklState.lastFetchError ? { lastFetchError: _merklState.lastFetchError } : {}),
       fetchedOpportunities: fetchedOpportunities.length,
       usedOpportunities: 0,
     };
@@ -1085,7 +1093,7 @@ export async function processMerklData(
   });
 
   if (!staleStatus.stale && Object.keys(merklData).length > 0) {
-    lastMerklSuccessfulSnapshot = {
+    _merklState.lastSuccessfulSnapshot = {
       rawOpportunities: opportunities,
       liveOpportunities,
       processedData,

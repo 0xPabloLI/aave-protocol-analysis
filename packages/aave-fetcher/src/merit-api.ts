@@ -141,13 +141,26 @@ type MeritCampaignMetadataEntry = {
   message?: MeritCampaignInfo[];
 };
 
-let meritRoundEstimateCache:
-  | Map<string, MeritRoundEstimateCacheEntry>
-  | null = null;
-let meritRoundEstimateLastFetchMeta: MeritRoundEstimateFetchMeta | null = null;
-let meritRoundEstimateLastGlobalScanAtMs: number | null = null;
-let meritCampaignMetadataMemoryCache: Record<string, MeritCampaignMetadataEntry> | null = null;
-let meritCampaignMetadataLoadedFromDisk = false;
+const _meritState = {
+  roundEstimateCache: null as Map<string, MeritRoundEstimateCacheEntry> | null,
+  roundEstimateLastFetchMeta: null as MeritRoundEstimateFetchMeta | null,
+  roundEstimateLastGlobalScanAtMs: null as number | null,
+  campaignMetadataMemoryCache: null as Record<string, MeritCampaignMetadataEntry> | null,
+  campaignMetadataLoadedFromDisk: false,
+  browserInstance: null as Browser | null,
+  pageSemaphore: null as Semaphore | null,
+};
+
+/** @internal test-only hook to reset all mutable state */
+export function resetMeritState(): void {
+  _meritState.roundEstimateCache = null;
+  _meritState.roundEstimateLastFetchMeta = null;
+  _meritState.roundEstimateLastGlobalScanAtMs = null;
+  _meritState.campaignMetadataMemoryCache = null;
+  _meritState.campaignMetadataLoadedFromDisk = false;
+  _meritState.browserInstance = null;
+  _meritState.pageSemaphore = null;
+}
 
 const toIsoOrNull = (value: number | null | undefined): string | null => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
@@ -302,9 +315,9 @@ const fetchMeritRoundEstimates = async (
     .replace('chainId=%7BchainId%7D', 'chainId=42220')
     .replace('page=%7Bpage%7D', 'page=0');
   let pagesScanned = 0;
-  const cache = meritRoundEstimateCache ?? new Map<string, MeritRoundEstimateCacheEntry>();
-  if (!meritRoundEstimateCache) {
-    meritRoundEstimateCache = cache;
+  const cache = _meritState.roundEstimateCache ?? new Map<string, MeritRoundEstimateCacheEntry>();
+  if (!_meritState.roundEstimateCache) {
+    _meritState.roundEstimateCache = cache;
   }
 
   const targetEntries = targets && targets.size > 0 ? Array.from(targets.entries()) : [];
@@ -320,10 +333,10 @@ const fetchMeritRoundEstimates = async (
   if (
     targetEntries.length > 0 &&
     dueKeys.size > 0 &&
-    meritRoundEstimateLastGlobalScanAtMs !== null &&
-    nowMs - meritRoundEstimateLastGlobalScanAtMs < MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS
+    _meritState.roundEstimateLastGlobalScanAtMs !== null &&
+    nowMs - _meritState.roundEstimateLastGlobalScanAtMs < MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS
   ) {
-    meritRoundEstimateLastFetchMeta = {
+    _meritState.roundEstimateLastFetchMeta = {
       requestTemplateUrl,
       firstPageUrl,
       pagesScanned: 0,
@@ -339,7 +352,7 @@ const fetchMeritRoundEstimates = async (
 
   // If no target key is due, return cached estimates directly.
   if (targetEntries.length > 0 && keysToFetch.size === 0) {
-    meritRoundEstimateLastFetchMeta = {
+    _meritState.roundEstimateLastFetchMeta = {
       requestTemplateUrl,
       firstPageUrl,
       pagesScanned: 0,
@@ -500,7 +513,7 @@ const fetchMeritRoundEstimates = async (
   }
 
   if (pagesScanned > 0) {
-    meritRoundEstimateLastGlobalScanAtMs = nowMs;
+    _meritState.roundEstimateLastGlobalScanAtMs = nowMs;
   }
 
   // Update per-key cache entries (including negative-cache timestamps for misses).
@@ -526,7 +539,7 @@ const fetchMeritRoundEstimates = async (
   });
 
   const result = new Map<string, MeritRoundEstimateBase>();
-  meritRoundEstimateLastFetchMeta = {
+  _meritState.roundEstimateLastFetchMeta = {
     requestTemplateUrl,
     firstPageUrl,
     pagesScanned,
@@ -624,7 +637,7 @@ const serializeMeritRoundEstimates = (
 };
 
 const serializeMeritRoundEstimateCache = () => {
-  if (!meritRoundEstimateCache) return {};
+  if (!_meritState.roundEstimateCache) return {};
 
   const serialized: Record<
     string,
@@ -651,7 +664,7 @@ const serializeMeritRoundEstimateCache = () => {
     }
   > = {};
 
-  for (const [key, entry] of meritRoundEstimateCache.entries()) {
+  for (const [key, entry] of _meritState.roundEstimateCache.entries()) {
     serialized[key] = {
       lastRoundRewardUsd: entry.estimate?.latestAmountUsd ?? null,
       lastRoundCampaignId: entry.estimate?.latestCampaignId ?? null,
@@ -821,15 +834,15 @@ export function filterRecentExpiredMerit<T extends { endDate?: string }>(entries
  * 如果缺少任何必填字段，说明之前爬虫出问题了，需要重新获取
  */
 function clearMeritCampaignMetadataMemoryCache(): void {
-  meritCampaignMetadataMemoryCache = null;
-  meritCampaignMetadataLoadedFromDisk = false;
+  _meritState.campaignMetadataMemoryCache = null;
+  _meritState.campaignMetadataLoadedFromDisk = false;
 }
 
 async function loadCachedMeritCampaignMetadata(): Promise<Record<string, MeritCampaignMetadataEntry>> {
-  if (meritCampaignMetadataMemoryCache) {
-    return meritCampaignMetadataMemoryCache;
+  if (_meritState.campaignMetadataMemoryCache) {
+    return _meritState.campaignMetadataMemoryCache;
   }
-  if (meritCampaignMetadataLoadedFromDisk) {
+  if (_meritState.campaignMetadataLoadedFromDisk) {
     return {};
   }
   try {
@@ -950,13 +963,13 @@ async function loadCachedMeritCampaignMetadata(): Promise<Record<string, MeritCa
       logger.info(`📦 Loaded Merit campaign metadata cache from ${loadedFromLabel}`);
     }
     
-    meritCampaignMetadataMemoryCache = validatedTimeRanges;
-    meritCampaignMetadataLoadedFromDisk = true;
-    return meritCampaignMetadataMemoryCache;
+    _meritState.campaignMetadataMemoryCache = validatedTimeRanges;
+    _meritState.campaignMetadataLoadedFromDisk = true;
+    return _meritState.campaignMetadataMemoryCache;
   } catch (error) {
     // 文件不存在或解析失败，返回空对象（会触发所有条目重新获取）
     logger.info('📦 No cached merit campaign metadata found, will fetch all entries');
-    meritCampaignMetadataLoadedFromDisk = true;
+    _meritState.campaignMetadataLoadedFromDisk = true;
     return {};
   }
 }
@@ -1412,19 +1425,19 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         maxPages: MERIT_ROUND_ESTIMATE_MAX_PAGES,
         globalCooldownMs: MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS,
         requestTemplateUrl:
-          meritRoundEstimateLastFetchMeta?.requestTemplateUrl ??
+          _meritState.roundEstimateLastFetchMeta?.requestTemplateUrl ??
           `${MERKL_BASE_URL}/opportunities?chainId={chainId}&status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&creatorSlug=${MERIT_ROUND_CREATOR_SLUG_FILTER}&page={page}`,
         firstPageUrl:
-          meritRoundEstimateLastFetchMeta?.firstPageUrl ??
+          _meritState.roundEstimateLastFetchMeta?.firstPageUrl ??
           `${MERKL_BASE_URL}/opportunities?chainId=42220&status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&creatorSlug=${MERIT_ROUND_CREATOR_SLUG_FILTER}&page=0`,
-        pagesScanned: meritRoundEstimateLastFetchMeta?.pagesScanned ?? 0,
-        pagesScannedByChain: meritRoundEstimateLastFetchMeta?.pagesScannedByChain ?? {},
-        chainIdsScanned: meritRoundEstimateLastFetchMeta?.chainIdsScanned ?? [],
-        hitCacheOnly: meritRoundEstimateLastFetchMeta?.hitCacheOnly ?? false,
+        pagesScanned: _meritState.roundEstimateLastFetchMeta?.pagesScanned ?? 0,
+        pagesScannedByChain: _meritState.roundEstimateLastFetchMeta?.pagesScannedByChain ?? {},
+        chainIdsScanned: _meritState.roundEstimateLastFetchMeta?.chainIdsScanned ?? [],
+        hitCacheOnly: _meritState.roundEstimateLastFetchMeta?.hitCacheOnly ?? false,
         queryShape:
           'status=PAST&type=JSON_AIRDROP&campaigns=true&items=100&creatorSlug=aave&chainId={chainId}&page={page}',
-        lastGlobalScanAtMs: meritRoundEstimateLastGlobalScanAtMs,
-        lastGlobalScanAtIso: toIsoOrNull(meritRoundEstimateLastGlobalScanAtMs),
+        lastGlobalScanAtMs: _meritState.roundEstimateLastGlobalScanAtMs,
+        lastGlobalScanAtIso: toIsoOrNull(_meritState.roundEstimateLastGlobalScanAtMs),
       },
       targets: serializeMeritRoundEstimateTargets(targetMeritRoundTargets),
       lastRoundRewards: serializeMeritRoundEstimates(meritRoundEstimates),
@@ -1436,8 +1449,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       timestamp: new Date().toISOString(),
       campaignMetadataByKey: timeRanges,
     }, { space: 0 });
-    meritCampaignMetadataMemoryCache = timeRanges;
-    meritCampaignMetadataLoadedFromDisk = true;
+    _meritState.campaignMetadataMemoryCache = timeRanges;
+    _meritState.campaignMetadataLoadedFromDisk = true;
     logger.info(`💾 Merit campaign metadata cache saved to ${MERIT_CAMPAIGN_METADATA_CACHE_PATH}`);
 
     const meritRawDataPath = join(DEBUG_DATA_DIR, 'merit-raw-data.json');
@@ -1712,37 +1725,34 @@ export function getMeritDataFromMarket(
 // Browser Instance Management (Production-Grade)
 // ============================================================================
 
-// 全局浏览器实例（复用以提高性能）
-let browserInstance: Browser | null = null;
-
 /**
  * 获取或创建浏览器实例（单例模式）
  * PRODUCTION-GRADE: 检查连接状态，自动恢复断开的连接
  */
 async function getBrowser(): Promise<Browser> {
   // 如果浏览器存在，检查连接状态
-  if (browserInstance) {
+  if (_meritState.browserInstance) {
     try {
       // 尝试获取页面列表来验证连接
-      await browserInstance.pages();
-      return browserInstance;
+      await _meritState.browserInstance.pages();
+      return _meritState.browserInstance;
     } catch (error) {
       // 浏览器已断开，清除实例
       logger.warn('⚠️ Browser instance disconnected, will create new one');
-      browserInstance = null;
+      _meritState.browserInstance = null;
     }
   }
 
   // 创建新浏览器实例
   try {
-    browserInstance = await puppeteer.launch({
+    _meritState.browserInstance = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
     logger.info('✅ Browser instance created');
-    return browserInstance;
+    return _meritState.browserInstance;
   } catch (error) {
-    browserInstance = null;
+    _meritState.browserInstance = null;
     throw error;
   }
 }
@@ -1790,15 +1800,14 @@ function createSemaphore(concurrency: number): Semaphore {
 
 // 全局 semaphore，默认并发数：2（安全默认值）
 const DEFAULT_PAGE_CONCURRENCY = 2;
-let pageSemaphore: Semaphore | null = null;
 
 function getPageSemaphore(): Semaphore {
-  if (!pageSemaphore) {
+  if (!_meritState.pageSemaphore) {
     const concurrency = Number(process.env.PUPPETEER_PAGE_CONCURRENCY ?? DEFAULT_PAGE_CONCURRENCY);
-    pageSemaphore = createSemaphore(concurrency);
+    _meritState.pageSemaphore = createSemaphore(concurrency);
     logger.info(`📊 Created local Puppeteer page semaphore with concurrency=${concurrency} (controls browser.newPage() calls)`);
   }
-  return pageSemaphore;
+  return _meritState.pageSemaphore;
 }
 
 /**
@@ -1806,14 +1815,14 @@ function getPageSemaphore(): Semaphore {
  * PRODUCTION-GRADE: 使用 browser.close() 而不是 disconnect()
  */
 export async function closeBrowser(): Promise<void> {
-  if (browserInstance) {
+  if (_meritState.browserInstance) {
     try {
-      await browserInstance.close();
+      await _meritState.browserInstance.close();
       logger.info('✅ Browser instance closed');
     } catch (error) {
       logger.error('❌ Error closing browser instance:', error);
     } finally {
-      browserInstance = null;
+      _meritState.browserInstance = null;
     }
   }
 }
