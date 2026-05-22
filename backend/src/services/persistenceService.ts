@@ -45,6 +45,12 @@ const marketConfigHashes = new Map<string, string>(); // key: reserveId → sha2
 const oraclePriceHashes = new Map<string, string>(); // key: chainId|tokenAddr|configId → sha256
 
 export function computeHash(data: unknown[]): string {
+  // JSON.stringify is deterministic within the same V8 version (ECMA-262
+  // mandates Number.prototype.toString output). Hashes stored in DB are
+  // compared against hashes recomputed at runtime, so a V8 major upgrade
+  // could theoretically break this — in practice V8 toString is stable
+  // across LTS releases. If a Node.js major upgrade ever causes a mismatch,
+  // the safe fallback is a one-time full rewrite (same as process restart).
   return crypto
     .createHash('sha256')
     .update(JSON.stringify(data))

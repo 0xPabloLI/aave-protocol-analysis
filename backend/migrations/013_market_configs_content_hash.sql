@@ -14,6 +14,8 @@ BEGIN;
 -- Lock table to prevent concurrent INSERTs from the app during DELETE.
 -- Deployments stop the old container before running migrations, but this
 -- guards against edge cases (e.g., slow drain, manual psql session).
+-- Assumes single-instance deployment (Railway stops old before starting new).
+-- If running with multiple instances, ensure only one runs migrations.
 LOCK TABLE market_configs IN EXCLUSIVE MODE;
 
 ALTER TABLE market_configs ADD COLUMN IF NOT EXISTS content_hash TEXT;

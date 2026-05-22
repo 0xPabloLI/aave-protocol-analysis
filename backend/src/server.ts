@@ -124,6 +124,7 @@ try {
   }
 } catch (error) {
   logger.error('❌ Auto-migration failed:', error);
+  logger.warn('⚠️  Warm-start dedup may not work — first cron tick will write all config rows');
 }
 
 // Phase 1: independent caches (can run in parallel)

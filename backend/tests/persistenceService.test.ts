@@ -156,8 +156,6 @@ test('buildConfigRow: changing a config field changes the hash', () => {
 // ── warmConfigHashes: DISTINCT ON semantics ────────────────────────────────
 
 test('warmConfigHashes: DISTINCT ON picks latest per reserve_id (mocked)', () => {
-  // Simulate what DISTINCT ON (reserve_id) ... ORDER BY snapshot_ts DESC does:
-  // For each reserve_id, only the row with the latest timestamp is returned.
   const rows = [
     { reserve_id: 'A', snapshot_ts: '2026-05-20', content_hash: 'hash_A_old' },
     { reserve_id: 'A', snapshot_ts: '2026-05-21', content_hash: 'hash_A_new' },
@@ -188,4 +186,20 @@ test('warmConfigHashes: rows with NULL content_hash are skipped', () => {
   }
   assert.equal(loaded.size, 1);
   assert.equal(loaded.get('A'), 'hash_A');
+});
+
+test('warmConfigHashes: when persistence disabled, returns 0 without DB call', async () => {
+  delete process.env.DATABASE_URL;
+  const { warmConfigHashes } = await import('../src/services/persistenceService.js');
+  const count = await warmConfigHashes();
+  assert.equal(count, 0);
+});
+
+test('buildConfigRow: content field count = columns - 2 (minus snapshot_ts and content_hash)', () => {
+  const r = baseReserve();
+  const { row, hash } = buildConfigRow(r, '2026-05-21T00:00:00.000Z');
+  const contentFields = row.slice(1, -1);
+  assert.equal(contentFields.length, MARKET_CONFIG_COLUMNS.length - 2, 'content fields should be columns minus snapshot_ts and content_hash');
+  const recomputedHash = computeHash(contentFields);
+  assert.equal(hash, recomputedHash, 'hash should match recomputed hash from content fields');
 });
