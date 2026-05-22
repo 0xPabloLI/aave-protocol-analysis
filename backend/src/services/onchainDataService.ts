@@ -7,7 +7,7 @@
  *     - Step 2: Hub.getSpokeDeficitRay(assetId, spoke) → per-spoke deficit (aligned with V3 reserve.deficit)
  *
  * Architecture:
- * - V3: one config per address-book entry (per pool/market), cache key = poolAddress
+ * - V3: one config per address-book entry (per pool/market), cache key = `${chainId}:${poolAddress}`
  * - V4: one config per Spoke, cache key = spokeAddress — per-spoke deficit = per-reserve deficit
  * - Merge key (V3): `${chainId}:${poolAddress}:${tokenAddress}`
  * - Merge key (V4): `${chainId}:${spokeAddress}:${tokenAddress}:${hubName}`
@@ -16,7 +16,7 @@
  * - If RPC fails, cached data within TTL is used
  * - If no cached data, fields are absent (with fallback calculation for baseVariableBorrowRate)
  *
- * V4 RPC calls (optimized with Multicall3, pre-deployed at 0xcA11bde05977b6962E52E3F19a7a4e4f080A7e34):
+ * V4 RPC calls (optimized with Multicall3, pre-deployed at 0xCa11bdE05977b6962E52e3f19a7a4E4F080a7E34):
  *   - Per Hub: 2 Multicall3 batches (1 getAssetCount + N getAsset → 1 batch, N getSpokeDeficitRay → 1 batch per spoke)
  *   - Hub asset mapping cached across spokes sharing the same Hub
  *   - Total: ~6 Multicall3 batches (3 Hubs × 2) + 10 spoke deficit batches ≈ 16 RPC calls (down from ~94)
@@ -66,10 +66,14 @@ function normalizeAddress(addr: string): string {
   return addr.toLowerCase().trim();
 }
 
-const POOL_CONFIGS = new Map<string, OnchainConfig>(
+function poolConfigKey(chainId: number, poolAddress: string): string {
+  return `${chainId}:${poolAddress}`;
+}
+
+export const POOL_CONFIGS = new Map<string, OnchainConfig>(
   V3_ENTRIES
     .filter((e) => e.uiPoolDataProviderAddress && e.poolAddressesProvider)
-    .map((e) => [e.poolAddress, {
+    .map((e) => [poolConfigKey(e.chainId, e.poolAddress), {
       poolAddress: e.poolAddress,
       chainId: e.chainId,
       uiPoolDataProviderAddress: e.uiPoolDataProviderAddress!,
@@ -130,9 +134,9 @@ const V4_HUB_ABI = [
 ];
 
 // ============================================================
-// Multicall3 ABI (pre-deployed on Ethereum at 0xcA11bde05977b6962E52E3F19a7a4e4f080A7e34)
+// Multicall3 ABI (pre-deployed on Ethereum at 0xCa11bdE05977b6962E52e3f19a7a4E4F080a7E34)
 // ============================================================
-const MULTICALL3_ADDRESS = '0xcA11bde05977b6962E52E3F19a7a4e4f080A7e34';
+const MULTICALL3_ADDRESS = '0xCa11bdE05977b6962E52e3f19a7a4E4F080a7E34';
 const MULTICALL3_ABI = [
   {
     inputs: [{
@@ -238,7 +242,7 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
         }
       }
 
-      poolCache.set(config.poolAddress, {
+      poolCache.set(poolConfigKey(config.chainId, config.poolAddress), {
         data: chainData,
         updatedAt: Date.now(),
       });
@@ -307,8 +311,6 @@ async function fetchAndCacheV4Spoke(
                 } catch {
                   spokeData.set(underlying, { deficit: deficitRayStr });
                 }
-              } else {
-                spokeData.set(underlying, { deficit: '0' });
               }
             } catch (e) {
               logger.debug(`V4 Multicall3 decode getSpokeDeficitRay for ${underlying} failed: ${e}`);
@@ -334,8 +336,6 @@ async function fetchAndCacheV4Spoke(
                 } catch {
                   spokeData.set(underlying, { deficit: deficitRayStr });
                 }
-              } else {
-                spokeData.set(underlying, { deficit: '0' });
               }
             } catch (e2) {
               logger.debug(`V4 getSpokeDeficitRay(${assetId}, ${config.spokeName}) failed: ${e2}`);
@@ -519,13 +519,13 @@ export async function refreshOnchainCache(): Promise<void> {
   refreshInProgress = (async () => {
     try {
       const startTime = Date.now();
-      const poolAddrs = Array.from(POOL_CONFIGS.keys());
+      const poolKeys = Array.from(POOL_CONFIGS.keys());
 
-      logger.info(`[onchain] Refreshing cache for ${poolAddrs.length} V3 pools + ${V4_SPOKE_CONFIGS.length} V4 spokes...`);
+      logger.info(`[onchain] Refreshing cache for ${poolKeys.length} V3 pools + ${V4_SPOKE_CONFIGS.length} V4 spokes...`);
 
       const v3Results = await Promise.allSettled(
-        poolAddrs.map((poolAddr) => {
-          const config = POOL_CONFIGS.get(poolAddr);
+        poolKeys.map((poolKey) => {
+          const config = POOL_CONFIGS.get(poolKey);
           if (!config) return Promise.resolve(false);
           return fetchAndCacheChain(config);
         })
@@ -539,7 +539,7 @@ export async function refreshOnchainCache(): Promise<void> {
         const r = v3Results[i];
         if (r.status === 'fulfilled' && r.value) {
           v3Success++;
-          const entry = poolCache.get(poolAddrs[i]);
+          const entry = poolCache.get(poolKeys[i]);
           if (entry) v3TotalReserves += entry.data.size;
         } else {
           v3Fail++;
@@ -588,7 +588,7 @@ export async function refreshOnchainCache(): Promise<void> {
 
       const elapsed = Date.now() - startTime;
       logger.info(
-        `[onchain] V3 ${v3TotalReserves} reserves from ${v3Success}/${poolAddrs.length} pools, ` +
+        `[onchain] V3 ${v3TotalReserves} reserves from ${v3Success}/${poolKeys.length} pools, ` +
         `V4 ${v4TotalAssets} assets from ${v4Success}/${V4_SPOKE_CONFIGS.length} spokes (${v4Fail} failed) in ${elapsed}ms`
       );
     } finally {
@@ -605,13 +605,13 @@ export function getOnchainDataFromCache(): Map<string, OnchainReserveData> {
   const ttl = BACKEND_CACHE_TTL_MS.onchainTtlMs;
 
   // V3: key = `${chainId}:${poolAddress}:${tokenAddr}`
-  for (const [poolAddress, entry] of poolCache) {
+  for (const [poolKey, entry] of poolCache) {
     const age = now - entry.updatedAt;
     if (age >= ttl) continue;
-    const config = POOL_CONFIGS.get(poolAddress);
+    const config = POOL_CONFIGS.get(poolKey);
     if (!config) continue;
     for (const [tokenAddr, data] of entry.data) {
-      const reserveId = `${config.chainId}:${poolAddress}:${tokenAddr}`;
+      const reserveId = `${config.chainId}:${config.poolAddress}:${tokenAddr}`;
       result.set(reserveId, data);
     }
   }

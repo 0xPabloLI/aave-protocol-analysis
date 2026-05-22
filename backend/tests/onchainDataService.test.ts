@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { utils } from 'ethers';
 
-import { calculateBaseRateFallback } from '../src/services/onchainDataService.js';
-import { V4_SPOKE_ENTRIES } from '../src/services/addressBookRegistry.js';
+import { calculateBaseRateFallback, POOL_CONFIGS } from '../src/services/onchainDataService.js';
+import { V4_SPOKE_ENTRIES, V3_ENTRIES } from '../src/services/addressBookRegistry.js';
 
 test('calculateBaseRateFallback returns null when borrowApy is missing', () => {
   assert.strictEqual(calculateBaseRateFallback(null, 80, 80, 4, 80), null);
@@ -212,11 +212,11 @@ test('V4 cache key is spokeAddress:hubName (supports same spoke, different hub)'
 // Multicall3 optimization tests
 // ============================================================
 
-test('Multicall3 pre-deployed address is correct', () => {
-  const MULTICALL3_ADDRESS = '0xcA11bde05977b6962E52E3F19a7a4e4f080A7e34';
-  assert.ok(MULTICALL3_ADDRESS.startsWith('0x'));
-  assert.strictEqual(MULTICALL3_ADDRESS.length, 42);
-  assert.ok(MULTICALL3_ADDRESS.toLowerCase() === MULTICALL3_ADDRESS.toLowerCase());
+test('Multicall3 pre-deployed address passes EIP-55 checksum validation', () => {
+  const MULTICALL3_ADDRESS = '0xCa11bdE05977b6962E52e3f19a7a4E4F080a7E34';
+  // ethers v5 getAddress() validates EIP-55 checksum; throws if mismatched
+  const validated = utils.getAddress(MULTICALL3_ADDRESS);
+  assert.strictEqual(validated, MULTICALL3_ADDRESS, 'EIP-55 checksum mismatch');
 });
 
 test('V4 Hub ABI encodes getAssetCount correctly', () => {
@@ -334,5 +334,70 @@ test('Multicall3 fallback: serial path preserves same deficit conversion logic',
   for (const { ray, expected } of testCases) {
     const result = (BigInt(ray) / RAY).toString();
     assert.strictEqual(result, expected, `RAY conversion for ${ray} should be ${expected}`);
+  }
+});
+
+// ============================================================
+// POOL_CONFIGS: V3 pool deduplication tests
+// ============================================================
+
+test('POOL_CONFIGS has unique entries for all V3 pools (no CREATE2 key collision)', () => {
+  // All V3 entries that qualify for onchain must be in POOL_CONFIGS.
+  // 4 pools (Arbitrum, Avalanche, Optimism, Polygon) share the same
+  // CREATE2 pool address, but they are on different chains and must
+  // each have their own independent onchain config.
+  const qualifyingCount = V3_ENTRIES.filter(
+    (e) => e.uiPoolDataProviderAddress && e.poolAddressesProvider
+  ).length;
+
+  assert.strictEqual(
+    POOL_CONFIGS.size,
+    qualifyingCount,
+    `Expected ${qualifyingCount} POOL_CONFIGS entries, got ${POOL_CONFIGS.size}. ` +
+    'CREATE2 address collision: pools on different chains sharing the same poolAddress ' +
+    'are overwriting each other in the Map.'
+  );
+});
+
+test('POOL_CONFIGS entries have distinct (chainId, poolAddress) pairs', () => {
+  const pairs = new Set<string>();
+  for (const config of POOL_CONFIGS.values()) {
+    const pair = `${config.chainId}:${config.poolAddress}`;
+    assert.ok(!pairs.has(pair), `Duplicate (chainId:poolAddress) pair: ${pair}`);
+    pairs.add(pair);
+  }
+});
+
+// ============================================================
+// V4 zero-deficit filtering: don't store deficit='0' entries
+// ============================================================
+
+test('V4 spoke deficit=0 should not be stored (downstream fallback to 0 is safe)', () => {
+  // Simulating the deficit processing logic: only store non-zero values.
+  // This matches the downstream behavior where missing onchain deficit
+  // defaults to '0' in marketsService.ts.
+  const RAY = BigInt(10) ** BigInt(27);
+  const spokeData = new Map<string, { deficit?: string }>();
+
+  const testCases = [
+    { ray: '0', expectedStored: false },
+    { ray: String(RAY * BigInt(1)), expectedStored: true },
+    { ray: String(RAY * BigInt(5)), expectedStored: true },
+    { ray: String(RAY * BigInt(0)), expectedStored: false },
+  ];
+
+  for (const { ray, expectedStored } of testCases) {
+    spokeData.clear();
+    if (ray !== '0') {
+      const amount = BigInt(ray) / RAY;
+      spokeData.set(ray, { deficit: amount.toString() });
+    }
+    // Zero deficit → not stored, same as `deficitRayStr !== '0'` gate
+    const wasStored = spokeData.has(ray);
+    assert.strictEqual(
+      wasStored,
+      expectedStored,
+      `deficitRay=${ray}: ${expectedStored ? 'should be stored' : 'should NOT be stored'}`
+    );
   }
 });
