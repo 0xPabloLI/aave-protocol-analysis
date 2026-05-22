@@ -10,7 +10,13 @@ test('calculateBaseRateFallback returns null when borrowApy is missing', () => {
   assert.strictEqual(calculateBaseRateFallback(undefined, 80, 80, 4, 80), null);
 });
 
-test('calculateBaseRateFallback returns 0 for zero-rate scenario', () => {
+test('calculateBaseRateFallback returns null when borrowApy is non-finite', () => {
+  assert.strictEqual(calculateBaseRateFallback(Infinity, 80, 80, 4, 80), null);
+  assert.strictEqual(calculateBaseRateFallback(NaN, 80, 80, 4, 80), null);
+  assert.strictEqual(calculateBaseRateFallback(-2, 80, 80, 4, 80), null);
+});
+
+test('calculateBaseRateFallback returns 0 for zero-rate scenario (valid computation)', () => {
   const result = calculateBaseRateFallback(0, 0, 80, 4, 80);
   assert.strictEqual(result, 0);
 });
@@ -21,25 +27,44 @@ test('calculateBaseRateFallback util <= optimal with positive optimal', () => {
   assert.ok(result! >= 0);
 });
 
-test('calculateBaseRateFallback util > optimal with slope2', () => {
-  const result = calculateBaseRateFallback(0.08, 90, 80, 4, 80);
+test('calculateBaseRateFallback util > optimal with slope2 (realistic params)', () => {
+  const result = calculateBaseRateFallback(0.1, 90, 80, 2, 8);
+  assert.ok(result !== null);
   assert.ok(Number.isFinite(result!));
   assert.ok(result! >= 0);
 });
 
-test('calculateBaseRateFallback returns 0 when optimal is 0 or missing', () => {
-  assert.strictEqual(calculateBaseRateFallback(0.05, 80, undefined, 4, 80), 0);
-  assert.strictEqual(calculateBaseRateFallback(0.05, 80, 0, 4, 80), 0);
+test('calculateBaseRateFallback returns null when optimal is 0 or missing (cannot compute)', () => {
+  assert.strictEqual(calculateBaseRateFallback(0.05, 80, undefined, 4, 80), null);
+  assert.strictEqual(calculateBaseRateFallback(0.05, 80, 0, 4, 80), null);
 });
 
-test('calculateBaseRateFallback fallback when util > optimal and slope2 missing', () => {
+test('calculateBaseRateFallback returns null when slope1 is missing', () => {
+  assert.strictEqual(calculateBaseRateFallback(0.05, 80, 80, undefined), null);
+});
+
+test('calculateBaseRateFallback returns null when util > optimal and slope2 missing', () => {
   const result = calculateBaseRateFallback(0.08, 90, 80, 4);
-  assert.strictEqual(result, 0);
+  assert.strictEqual(result, null);
 });
 
-test('calculateBaseRateFallback returns 0 when computed baseRate is negative', () => {
+test('calculateBaseRateFallback returns null when computed baseRate is negative', () => {
   const result = calculateBaseRateFallback(0.001, 50, 80, 100, 80);
-  assert.strictEqual(result, 0);
+  assert.strictEqual(result, null);
+});
+
+test('calculateBaseRateFallback returns null when denom <= 0 (optimal >= 100, util > optimal)', () => {
+  assert.strictEqual(calculateBaseRateFallback(0.05, 150, 100, 4, 80), null);
+  assert.strictEqual(calculateBaseRateFallback(0.05, 101, 100, 4, 80), null);
+});
+
+test('calculateBaseRateFallback distinguishes 0 result from null (semantic correctness)', () => {
+  const zeroResult = calculateBaseRateFallback(0, 0, 80, 4, 80);
+  assert.strictEqual(zeroResult, 0);
+  assert.ok(zeroResult !== null);
+
+  const nullResult = calculateBaseRateFallback(0.05, 80, undefined, 4, 80);
+  assert.strictEqual(nullResult, null);
 });
 
 // ============================================================
