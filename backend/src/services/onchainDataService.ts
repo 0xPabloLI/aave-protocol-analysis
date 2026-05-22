@@ -499,7 +499,7 @@ async function executeMulticall3(
   const multicall3 = new Contract(MULTICALL3_ADDRESS, MULTICALL3_ABI, provider);
 
   const rawResults = await withTimeout(
-    multicall3.callStatic.aggregate3(calls),
+    multicall3.callStatic.aggregate3(calls, { gasLimit: 10_000_000 }),
     ONCHAIN_PER_RPC_TIMEOUT_MS,
     `V4 Multicall3.aggregate3 timeout via ${rpcUrl}`
   ) as { success: boolean; returnData: string }[];
