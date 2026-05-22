@@ -177,3 +177,17 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 ## Lessons Learned
 - **中间态产物在使命完成后必须立即清理**：迁移安全路径中的临时中间态（如兼容函数、桥接列、过渡视图），一旦最终步骤执行完成且验证通过，必须立即删除，不要留到"下次清理"。
 - **设计选项 ≠ 必经步骤**：文档中提出的可选方案需先验证是否有实际消费者，无消费者则直接跳过，不要机械写入任务清单并执行。
+
+## Agent skills
+
+### Issue tracker
+
+Issues tracked in **Linear** via MCP tools. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles with default label strings. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
