@@ -1184,30 +1184,8 @@ export async function fetchMarketsData(options?: {
   // 并发获取 Merit、Merkl 和 Brevis 数据
   logger.info('🚀 Starting incentive data fetching concurrently...');
   
-  const meritPromise = fetchMeritData().catch((error) => {
-    logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-    return {} as MeritDataIndex;
-  });
-  const merklPromise = processMerklData({
-    reserveTokenPriceByChainAndAddress,
-  }).catch((error) => {
-    logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-    return { index: {} as MerklDataIndex } as MerklProcessedData;
-  });
-  const brevisPromise = fetchBrevisAprs(baseDataset).catch((error) => {
-    logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-    return {} as BrevisDataIndex;
-  });
-
-  const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
-  
-  const meritData: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
-  const merklResult: MerklProcessedData =
-    results[1].status === 'fulfilled'
-      ? (results[1].value as MerklProcessedData)
-      : { index: {} as MerklDataIndex };
-  const merklData: MerklDataIndex = merklResult.index;
-  const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
+  const { meritPromise, merklPromise, brevisPromise } = launchIncentiveFetches(reserveTokenPriceByChainAndAddress, baseDataset);
+  const { merit: meritData, merkl: merklData, brevis: brevisData, merklResult } = await awaitIncentiveResults(meritPromise, merklPromise, brevisPromise);
 
   // Enrich with incentive data
   logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
