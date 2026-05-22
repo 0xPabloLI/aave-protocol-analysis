@@ -514,17 +514,17 @@ function enrichDatasetWithIncentiveData(
       
       // 收集所有 matchedOpportunities 中的 breakdowns
       for (const opp of matchedOpportunities) {
+        const netPositionConstraint = extractNetPositionConstraint(opp, item.tokenAddress, reserveLookup);
         if (opp.opportunityLink) {
           if (opp.supply.length > 0) {
-            // 为 CSV 格式化：添加 opportunityLink（临时用于格式化）
             const supplyWithLinks = opp.supply.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
             supplyBreakdowns.push(...supplyWithLinks);
-            // 为 JSON：按 opportunity 分组（不包含 link 在 breakdown 中）
             supplyOpportunities.push({
               link: opp.opportunityLink || '',
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
+              ...(netPositionConstraint && { netPositionConstraint }),
               breakdowns: opp.supply
             });
           }
@@ -536,6 +536,7 @@ function enrichDatasetWithIncentiveData(
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
+              ...(netPositionConstraint && { netPositionConstraint }),
               breakdowns: opp.borrow
             });
           }
@@ -547,6 +548,7 @@ function enrichDatasetWithIncentiveData(
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
+              ...(netPositionConstraint && { netPositionConstraint }),
               breakdowns: opp.hold
             });
           }
@@ -558,6 +560,7 @@ function enrichDatasetWithIncentiveData(
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
+              ...(netPositionConstraint && { netPositionConstraint }),
               breakdowns: opp.supply
             });
           }
@@ -568,6 +571,7 @@ function enrichDatasetWithIncentiveData(
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
+              ...(netPositionConstraint && { netPositionConstraint }),
               breakdowns: opp.borrow
             });
           }
@@ -578,6 +582,7 @@ function enrichDatasetWithIncentiveData(
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
+              ...(netPositionConstraint && { netPositionConstraint }),
               breakdowns: opp.hold
             });
           }
@@ -980,50 +985,13 @@ export async function runMarketsFetcher(): Promise<void> {
     // 超时时间设置较长（10分钟），因为大多数时候数据有缓存，等一等没关系
     logger.info('🚀 Starting incentive data fetching concurrently (Merit, Merkl, Brevis running simultaneously)...');
     
-    // 同时启动三个任务（并发执行）
-    const meritPromise = fetchMeritData().catch((error) => {
-      logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-      return {} as MeritDataIndex;
-    });
-    const merklPromise = processMerklData({
-      reserveTokenPriceByChainAndAddress,
-    }).catch((error) => {
-      logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-      return { index: {} as MerklDataIndex } as MerklProcessedData;
-    });
-    const brevisPromise = fetchBrevisAprs(baseDataset).catch((error) => {
-      logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-      return {} as BrevisDataIndex;
-    });
+    const { meritPromise, merklPromise, brevisPromise } = launchIncentiveFetches(reserveTokenPriceByChainAndAddress, baseDataset);
     
-    // 设置超时时间（10分钟），避免某个任务卡住导致所有数据被卡住
-    // 超时时间较长，因为大多数时候数据有缓存，网络问题等一等没关系
-    const INCENTIVE_DATA_TIMEOUT_MS = 10 * 60 * 1000; // 10 分钟
+    const INCENTIVE_DATA_TIMEOUT_MS = 10 * 60 * 1000;
     
-    // 创建一个包装函数，用于在超时后提取已完成的结果
     const getCompletedResults = async (): Promise<{ merit: MeritDataIndex; merkl: MerklDataIndex; brevis: BrevisDataIndex }> => {
-      // 等待所有任务完成或超时
-      const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
-      
-      const meritData: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
-      const merklResult: MerklProcessedData =
-        results[1].status === 'fulfilled'
-          ? (results[1].value as MerklProcessedData)
-          : { index: {} as MerklDataIndex };
-      const merklData: MerklDataIndex = merklResult.index;
-      const brevisData: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
-      
-      if (results[0].status === 'rejected') {
-        logger.warn(`⚠️ Merit data fetching was rejected, using empty data`);
-      }
-      if (results[1].status === 'rejected') {
-        logger.warn(`⚠️ Merkl data fetching was rejected, using empty data`);
-      }
-      if (results[2].status === 'rejected') {
-        logger.warn(`⚠️ Brevis data fetching was rejected, using empty data`);
-      }
-      
-      return { merit: meritData, merkl: merklData, brevis: brevisData };
+      const { merit, merkl, brevis } = await awaitIncentiveResults(meritPromise, merklPromise, brevisPromise);
+      return { merit, merkl, brevis };
     };
     
     // 创建超时 Promise（带取消功能）
@@ -1150,6 +1118,47 @@ export async function runMarketsFetcher(): Promise<void> {
       logger.error('❌ Failed to save error data:', writeError);
     }
   }
+}
+
+interface IncentiveResults {
+  merit: MeritDataIndex;
+  merkl: MerklDataIndex;
+  brevis: BrevisDataIndex;
+  merklResult: MerklProcessedData;
+}
+
+async function awaitIncentiveResults(
+  meritPromise: Promise<MeritDataIndex>,
+  merklPromise: Promise<MerklProcessedData>,
+  brevisPromise: Promise<BrevisDataIndex>,
+): Promise<IncentiveResults> {
+  const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
+  const merit: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
+  const merklResult: MerklProcessedData =
+    results[1].status === 'fulfilled'
+      ? (results[1].value as MerklProcessedData)
+      : { index: {} as MerklDataIndex };
+  const merkl: MerklDataIndex = merklResult.index;
+  const brevis: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
+  return { merit, merkl, brevis, merklResult };
+}
+
+function launchIncentiveFetches(reserveTokenPriceByChainAndAddress: Map<string, number>, baseDataset: RuntimeReserveData[]) {
+  const meritPromise = fetchMeritData().catch((error) => {
+    logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return {} as MeritDataIndex;
+  });
+  const merklPromise = processMerklData({
+    reserveTokenPriceByChainAndAddress,
+  }).catch((error) => {
+    logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { index: {} as MerklDataIndex } as MerklProcessedData;
+  });
+  const brevisPromise = fetchBrevisAprs(baseDataset).catch((error) => {
+    logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
+    return {} as BrevisDataIndex;
+  });
+  return { meritPromise, merklPromise, brevisPromise };
 }
 
 // 导出数据获取函数供 backend 内化使用（cron-write/API-read-only 模式）
