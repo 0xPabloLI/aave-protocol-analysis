@@ -189,6 +189,11 @@ const toIsoFromUnixLike = (value: unknown): string => {
 };
 
 // Merkl 数据结构：每个 opportunity 存储一次
+export interface NetPositionConstraint {
+  sourceSide: 'supply' | 'borrow';
+  offsetReserveIds: string[];
+}
+
 export interface MerklOpportunityData {
   supply: MerklCampaignBreakdown[];
   borrow: MerklCampaignBreakdown[];
@@ -199,6 +204,7 @@ export interface MerklOpportunityData {
   name?: string;
   description?: string;
   opportunityType?: string;
+  offsetTokenAddresses?: string[];
 }
 
 interface CampaignSnapshotLiteForForecastFile {
@@ -1024,6 +1030,8 @@ export async function processMerklData(
       continue;
     }
 
+    const offsetTokenAddresses = extractOffsetTokenAddresses(opp);
+
     // 创建 opportunity 数据对象，根据 action 直接设置对应数组
     const opportunityData: MerklOpportunityData = {
       supply: opp.action === 'LEND' ? filteredBreakdowns : [],
@@ -1035,6 +1043,7 @@ export async function processMerklData(
       ...(opp.name && { name: opp.name }),
       ...(opp.description && { description: opp.description }),
       ...(opp.type && { opportunityType: opp.type }),
+      ...(offsetTokenAddresses.length > 0 && { offsetTokenAddresses }),
     };
     
     // 创建索引键并添加到索引
@@ -1111,6 +1120,49 @@ export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[
     }
   }
   return [...active, ...byType.values()];
+}
+
+function extractOffsetTokenAddresses(opp: MerklOpportunity): string[] {
+  if (!Array.isArray(opp.campaigns)) return [];
+  const seen = new Set<string>();
+  for (const campaign of opp.campaigns) {
+    const tokens: unknown = campaign?.params?.tokens;
+    if (Array.isArray(tokens)) {
+      for (const t of tokens) {
+        const addr = typeof t === 'string' ? t.toLowerCase() : (typeof t === 'object' && t !== null && typeof (t as any).address === 'string') ? (t as any).address.toLowerCase() : null;
+        if (addr && !seen.has(addr)) seen.add(addr);
+      }
+    }
+  }
+  return [...seen];
+}
+
+export function extractNetPositionConstraint(
+  opp: MerklOpportunityData,
+  sourceTokenAddress: string,
+  reserveLookup: Map<string, { reserveId: string }>
+): NetPositionConstraint | null {
+  const type = opp.opportunityType;
+  if (!type || !type.startsWith('AAVE_NET_')) return null;
+
+  const sourceSide: 'supply' | 'borrow' = type === 'AAVE_NET_BORROWING' ? 'borrow' : 'supply';
+
+  const sourceAddrLower = sourceTokenAddress.toLowerCase();
+  const offsetReserveIds: string[] = [];
+  const seen = new Set<string>();
+
+  for (const addr of (opp.offsetTokenAddresses ?? [])) {
+    const addrLower = addr.toLowerCase();
+    if (addrLower === sourceAddrLower) continue;
+    const reserve = reserveLookup.get(`${opp.chainId}:${addrLower}`);
+    if (reserve && !seen.has(reserve.reserveId)) {
+      seen.add(reserve.reserveId);
+      offsetReserveIds.push(reserve.reserveId);
+    }
+  }
+
+  if (offsetReserveIds.length === 0) return null;
+  return { sourceSide, offsetReserveIds };
 }
 
 /**

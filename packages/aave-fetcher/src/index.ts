@@ -17,7 +17,8 @@ import {
   MerklOpportunityGroup,
   processMerklData,
   findMatchingMerklOpportunities,
-  formatMerklBreakdown
+  formatMerklBreakdown,
+  extractNetPositionConstraint
 } from './merkl-api.js';
 import {
   MeritDataItem,
@@ -26,6 +27,7 @@ import {
   getMeritDataFromMarket
 } from './merit-api.js';
 import type { BrevisCampaignBreakdown, BrevisCampaignItem, BrevisDataItem } from './brevis-api.js';
+import { pruneMeritEntry, pruneMerklGroup, pruneBrevisItem } from './incentive-prune.js';
 import {
   checkAndReportSessionStatus,
   closeBrowserInstances
@@ -480,6 +482,12 @@ function enrichDatasetWithIncentiveData(
   merklData: MerklDataIndex,
   brevisData: BrevisDataIndex
 ): RuntimeReserveData[] {
+  const reserveLookup = new Map<string, { reserveId: string }>();
+  for (const r of baseDataset) {
+    const key = `${r.chainId}:${r.tokenAddress.toLowerCase()}`;
+    reserveLookup.set(key, { reserveId: r.reserveId });
+  }
+
   return baseDataset.map(item => {
     const meritItemData = getMeritDataFromMarket(item.marketName, item.chainName, item.tokenSymbol, meritData);
     
@@ -609,128 +617,13 @@ function enrichDatasetWithIncentiveData(
     
     if (item.aTokenAddress === null) item.aTokenAddress = undefined;
     if (item.vTokenAddress === null) item.vTokenAddress = undefined;
-    if (item.meritSupplys) {
-      item.meritSupplys = item.meritSupplys.map(e => ({
-        apr: e.apr,
-        ...(e.selfApr !== undefined ? { selfApr: e.selfApr } : {}),
-        link: e.link,
-        ...(e.name ? { name: e.name } : {}),
-        ...(e.message ? { message: e.message } : {}),
-        startDate: e.startDate,
-        endDate: e.endDate,
-        ...(e.lastRoundRewardUsd !== undefined ? { lastRoundRewardUsd: e.lastRoundRewardUsd } : {}),
-      }));
-    }
-    if (item.meritBorrows) {
-      item.meritBorrows = item.meritBorrows.map(e => ({
-        apr: e.apr,
-        ...(e.selfApr !== undefined ? { selfApr: e.selfApr } : {}),
-        link: e.link,
-        ...(e.name ? { name: e.name } : {}),
-        ...(e.message ? { message: e.message } : {}),
-        startDate: e.startDate,
-        endDate: e.endDate,
-        ...(e.lastRoundRewardUsd !== undefined ? { lastRoundRewardUsd: e.lastRoundRewardUsd } : {}),
-      }));
-    }
-    if (item.merklSupplys) {
-      item.merklSupplys = item.merklSupplys.map(g => ({
-        link: g.link,
-        ...(g.name ? { name: g.name } : {}),
-        ...(g.message ? { message: g.message } : {}),
-        breakdowns: (g.breakdowns ?? []).map(b => ({
-          campaignApr: b.campaignApr,
-          campaignStartedAt: b.campaignStartedAt,
-          campaignEndedAt: b.campaignEndedAt,
-          campaignId: b.campaignId,
-          ...(b.whitelistOnly !== undefined ? { whitelistOnly: b.whitelistOnly } : {}),
-          ...(b.pointsPerThousandUsd !== undefined ? { pointsPerThousandUsd: b.pointsPerThousandUsd } : {}),
-          ...(b.campaignType ? {
-            campaignType: b.campaignType,
-            totalBudget: b.totalBudget,
-            aprCap: b.aprCap,
-            latestTvl: b.latestTvl,
-            plannedDaily: b.plannedDaily,
-          } : {}),
-        })),
-      }));
-    }
-    if (item.merklBorrows) {
-      item.merklBorrows = item.merklBorrows.map(g => ({
-        link: g.link,
-        ...(g.name ? { name: g.name } : {}),
-        ...(g.message ? { message: g.message } : {}),
-        breakdowns: (g.breakdowns ?? []).map(b => ({
-          campaignApr: b.campaignApr,
-          campaignStartedAt: b.campaignStartedAt,
-          campaignEndedAt: b.campaignEndedAt,
-          campaignId: b.campaignId,
-          ...(b.whitelistOnly !== undefined ? { whitelistOnly: b.whitelistOnly } : {}),
-          ...(b.pointsPerThousandUsd !== undefined ? { pointsPerThousandUsd: b.pointsPerThousandUsd } : {}),
-          ...(b.campaignType ? {
-            campaignType: b.campaignType,
-            totalBudget: b.totalBudget,
-            aprCap: b.aprCap,
-            latestTvl: b.latestTvl,
-            plannedDaily: b.plannedDaily,
-          } : {}),
-        })),
-      }));
-    }
-    if (item.merklHolds) {
-      item.merklHolds = item.merklHolds.map(g => ({
-        link: g.link,
-        ...(g.name ? { name: g.name } : {}),
-        ...(g.message ? { message: g.message } : {}),
-        breakdowns: (g.breakdowns ?? []).map(b => ({
-          campaignApr: b.campaignApr,
-          campaignStartedAt: b.campaignStartedAt,
-          campaignEndedAt: b.campaignEndedAt,
-          campaignId: b.campaignId,
-          ...(b.whitelistOnly !== undefined ? { whitelistOnly: b.whitelistOnly } : {}),
-          ...(b.pointsPerThousandUsd !== undefined ? { pointsPerThousandUsd: b.pointsPerThousandUsd } : {}),
-          ...(b.campaignType ? {
-            campaignType: b.campaignType,
-            totalBudget: b.totalBudget,
-            aprCap: b.aprCap,
-            latestTvl: b.latestTvl,
-            plannedDaily: b.plannedDaily,
-          } : {}),
-        })),
-      }));
-    }
-    if (item.brevisSupplys) {
-      item.brevisSupplys = item.brevisSupplys.map(g => ({
-        link: g.link,
-        ...(g.name ? { name: g.name } : {}),
-        ...(g.message ? { message: g.message } : {}),
-        breakdowns: (g.breakdowns ?? []).map(b => ({
-          campaignApr: b.campaignApr,
-          campaignStartedAt: b.campaignStartedAt,
-          campaignEndedAt: b.campaignEndedAt,
-          ...(b.latestTvl !== undefined ? { latestTvl: b.latestTvl } : {}),
-          ...(b.totalBudget !== undefined ? { totalBudget: b.totalBudget } : {}),
-          ...(b.perUserRewardCapUsd !== undefined ? { perUserRewardCapUsd: b.perUserRewardCapUsd } : {}),
-          ...(b.campaignId ? { campaignId: b.campaignId } : {}),
-        })),
-      }));
-    }
-    if (item.brevisBorrows) {
-      item.brevisBorrows = item.brevisBorrows.map(g => ({
-        link: g.link,
-        ...(g.name ? { name: g.name } : {}),
-        ...(g.message ? { message: g.message } : {}),
-        breakdowns: (g.breakdowns ?? []).map(b => ({
-          campaignApr: b.campaignApr,
-          campaignStartedAt: b.campaignStartedAt,
-          campaignEndedAt: b.campaignEndedAt,
-          ...(b.latestTvl !== undefined ? { latestTvl: b.latestTvl } : {}),
-          ...(b.totalBudget !== undefined ? { totalBudget: b.totalBudget } : {}),
-          ...(b.perUserRewardCapUsd !== undefined ? { perUserRewardCapUsd: b.perUserRewardCapUsd } : {}),
-          ...(b.campaignId ? { campaignId: b.campaignId } : {}),
-        })),
-      }));
-    }
+    if (item.meritSupplys) item.meritSupplys = item.meritSupplys.map(pruneMeritEntry);
+    if (item.meritBorrows) item.meritBorrows = item.meritBorrows.map(pruneMeritEntry);
+    if (item.merklSupplys) item.merklSupplys = item.merklSupplys.map(pruneMerklGroup);
+    if (item.merklBorrows) item.merklBorrows = item.merklBorrows.map(pruneMerklGroup);
+    if (item.merklHolds) item.merklHolds = item.merklHolds.map(pruneMerklGroup);
+    if (item.brevisSupplys) item.brevisSupplys = item.brevisSupplys.map(pruneBrevisItem);
+    if (item.brevisBorrows) item.brevisBorrows = item.brevisBorrows.map(pruneBrevisItem);
     return item;
   });
 }
