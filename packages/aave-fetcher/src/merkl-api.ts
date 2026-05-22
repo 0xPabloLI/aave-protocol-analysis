@@ -195,9 +195,10 @@ export interface MerklOpportunityData {
   hold: MerklCampaignBreakdown[];
   marketName: string;
   chainId: number;
-  opportunityLink?: string; // Merkl opportunity 详情页链接（内部使用，最终会转换为 link）
-  name?: string; // Opportunity 名称
-  description?: string; // Opportunity 描述（内部使用，最终会转换为 message）
+  opportunityLink?: string;
+  name?: string;
+  description?: string;
+  opportunityType?: string;
 }
 
 interface CampaignSnapshotLiteForForecastFile {
@@ -1032,7 +1033,8 @@ export async function processMerklData(
       chainId: opp.chainId,
       ...(opportunityLink && { opportunityLink }),
       ...(opp.name && { name: opp.name }),
-      ...(opp.description && { description: opp.description })
+      ...(opp.description && { description: opp.description }),
+      ...(opp.type && { opportunityType: opp.type }),
     };
     
     // 创建索引键并添加到索引

@@ -516,6 +516,7 @@ function enrichDatasetWithIncentiveData(
               link: opp.opportunityLink || '',
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
+              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               breakdowns: opp.supply
             });
           }
@@ -526,6 +527,7 @@ function enrichDatasetWithIncentiveData(
               link: opp.opportunityLink || '',
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
+              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               breakdowns: opp.borrow
             });
           }
@@ -536,17 +538,18 @@ function enrichDatasetWithIncentiveData(
               link: opp.opportunityLink || '',
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
+              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               breakdowns: opp.hold
             });
           }
         } else {
-          // 如果没有链接，直接添加 breakdowns
           if (opp.supply.length > 0) {
             supplyBreakdowns.push(...opp.supply);
             supplyOpportunities.push({
-              link: '', // 空链接，但保持结构一致
+              link: '',
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
+              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               breakdowns: opp.supply
             });
           }
@@ -556,6 +559,7 @@ function enrichDatasetWithIncentiveData(
               link: '',
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
+              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               breakdowns: opp.borrow
             });
           }
@@ -565,6 +569,7 @@ function enrichDatasetWithIncentiveData(
               link: '',
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
+              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               breakdowns: opp.hold
             });
           }

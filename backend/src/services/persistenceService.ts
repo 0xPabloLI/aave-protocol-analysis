@@ -631,6 +631,7 @@ export interface MerklGroupEntry {
   name?: string;
   message?: string | null;
   breakdowns: MerklBreakdownEntry[];
+  opportunityType?: string;
 }
 
 export interface BrevisBreakdownEntry {
@@ -697,7 +698,7 @@ export function buildIncentiveDetails(reserve: RuntimeReserveData): PerCampaignI
 }
 
 function buildMerklGroups(
-  groups: Array<{ link: string; name?: string; message?: string | null; breakdowns: Array<{ campaignApr: number; campaignId: string; campaignStartedAt: string; campaignEndedAt: string; type?: string }> }>,
+  groups: Array<{ link: string; name?: string; message?: string | null; opportunityType?: string; breakdowns: Array<{ campaignApr: number; campaignId: string; campaignStartedAt: string; campaignEndedAt: string; type?: string }> }>,
   _reserveId: string
 ): MerklGroupEntry[] {
   return groups.map((group) => ({
@@ -705,6 +706,7 @@ function buildMerklGroups(
     link: group.link,
     name: group.name,
     message: group.message ?? null,
+    opportunityType: group.opportunityType,
     breakdowns: (group.breakdowns ?? []).map((bd) => ({
       key: bd.campaignId ?? '',
       apr: bd.campaignApr,

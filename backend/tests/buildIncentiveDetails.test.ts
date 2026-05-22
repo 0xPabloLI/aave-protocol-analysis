@@ -93,6 +93,43 @@ test('buildIncentiveDetails: MerklGroupEntry structure correct', () => {
   assert.equal(bd.startDate, '2025-01-01');
 });
 
+test('buildIncentiveDetails: MerklGroupEntry preserves opportunityType', () => {
+  const r = baseReserve({
+    merklBorrows: [
+      {
+        link: 'https://merkl.com/net-borrow',
+        name: 'Net Borrow USDe',
+        message: 'Users who net borrow...',
+        opportunityType: 'AAVE_NET_BORROWING',
+        breakdowns: [
+          { campaignApr: 0.05, campaignId: 'nb-1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' },
+        ],
+      },
+    ] as unknown as RuntimeReserveData['merklBorrows'],
+  });
+  const details = buildIncentiveDetails(r);
+  const group = details.merklBorrows?.[0];
+  assert.ok(group);
+  assert.equal(group!.opportunityType, 'AAVE_NET_BORROWING');
+});
+
+test('buildIncentiveDetails: MerklGroupEntry without opportunityType is undefined', () => {
+  const r = baseReserve({
+    merklSupplys: [
+      {
+        link: 'https://merkl.com/plain',
+        breakdowns: [
+          { campaignApr: 0.03, campaignId: 'p-1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' },
+        ],
+      },
+    ] as unknown as RuntimeReserveData['merklSupplys'],
+  });
+  const details = buildIncentiveDetails(r);
+  const group = details.merklSupplys?.[0];
+  assert.ok(group);
+  assert.equal(group!.opportunityType, undefined);
+});
+
 test('buildIncentiveDetails: BrevisGroupEntry structure correct', () => {
   const r = baseReserve({
     brevisSupplys: [

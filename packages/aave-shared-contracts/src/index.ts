@@ -192,10 +192,8 @@ export function validateRuntimeReserveShape(
 type ExpectedField = typeof EXPECTED_RUNTIME_FIELDS[number];
 type RuntimeKeys = keyof RuntimeReserveData;
 
-type ValidateAllFieldsCovered = {
-  [K in RuntimeKeys]: K extends ExpectedField ? true : never;
-}[RuntimeKeys];
+type _AllFieldsCovered = Exclude<RuntimeKeys, ExpectedField>;
+type _NoExtraFields = Exclude<ExpectedField, RuntimeKeys>;
 
-type ValidateNoExtraFields = {
-  [K in ExpectedField]: K extends RuntimeKeys ? true : never;
-}[ExpectedField];
+const __allFieldsCovered: _AllFieldsCovered = null as never;
+const __noExtraFields: _NoExtraFields = null as never;

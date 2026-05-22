@@ -32,6 +32,7 @@ export interface CampaignGroup<TBreakdown extends BaseCampaignBreakdown = BaseCa
   name?: string;
   message?: string;
   breakdowns: TBreakdown[];
+  opportunityType?: string;
 }
 
 export declare const AAVE_RPC_URLS_BY_CHAIN_KEY: Readonly<Record<string, readonly string[]>>;
