@@ -175,5 +175,5 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 - Use exact-origin CORS settings; treat freshness TTL changes as explicit, documented decisions.
 
 ## Lessons Learned
-- **中间态产物在使命完成后必须立即清理**：迁移安全路径中的临时中间态（如 view、deprecated 函数、旧列兼容写入），一旦最终步骤执行完成且验证通过，必须立即删除，不要留到"下次清理"。在设计评审阶段就应质疑每个中间态是否有消费者，无消费者则直接跳过不建。
-- **设计选项 ≠ 必经步骤**：文档中的"建 view 替代物理表"是设计选项，需要验证是否有代码/外部工具消费它，而不是机械写入任务清单并执行。
+- **中间态产物在使命完成后必须立即清理**：迁移安全路径中的临时中间态（如兼容函数、桥接列、过渡视图），一旦最终步骤执行完成且验证通过，必须立即删除，不要留到"下次清理"。
+- **设计选项 ≠ 必经步骤**：文档中提出的可选方案需先验证是否有实际消费者，无消费者则直接跳过，不要机械写入任务清单并执行。
