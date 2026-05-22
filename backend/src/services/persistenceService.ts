@@ -703,15 +703,23 @@ export function buildIncentiveDetails(reserve: RuntimeReserveData): PerCampaignI
 
 function buildMerklGroups(
   groups: Array<{ link: string; name?: string; message?: string | null; opportunityType?: string; netPositionConstraint?: { sourceSide: 'supply' | 'borrow'; offsetReserveIds: string[] } | null; breakdowns: Array<{ campaignApr: number; campaignId: string; campaignStartedAt: string; campaignEndedAt: string; type?: string }> }>,
-  _reserveId: string
+  _reserveId: string,
+  _existingEntries?: MerklGroupEntry[]
 ): MerklGroupEntry[] {
-  return groups.map((group) => ({
+  const existingByLink = new Map<string, MerklGroupEntry>();
+  for (const entry of (_existingEntries ?? [])) {
+    existingByLink.set(entry.link, entry);
+  }
+  return groups.map((group) => {
+    const existing = existingByLink.get(group.link);
+    const constraint = group.netPositionConstraint ?? existing?.netPositionConstraint ?? null;
+    return {
     groupId: crypto.createHash('sha256').update(group.link).digest('hex').slice(0, 16),
     link: group.link,
     name: group.name,
     message: group.message ?? null,
     opportunityType: group.opportunityType,
-    netPositionConstraint: group.netPositionConstraint,
+    netPositionConstraint: constraint,
     breakdowns: (group.breakdowns ?? []).map((bd) => ({
       key: bd.campaignId ?? '',
       apr: bd.campaignApr,
@@ -719,7 +727,8 @@ function buildMerklGroups(
       endDate: bd.campaignEndedAt,
       startDate: bd.campaignStartedAt,
     })),
-  }));
+    };
+  });
 }
 
 function buildBrevisGroups(

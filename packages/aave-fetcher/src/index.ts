@@ -18,7 +18,7 @@ import {
   processMerklData,
   findMatchingMerklOpportunities,
   formatMerklBreakdown,
-  extractNetPositionConstraint
+  detectNetPositionConstraint
 } from './merkl-api.js';
 import {
   MeritDataItem,
@@ -476,19 +476,19 @@ function buildReserveTokenPriceMap(baseDataset: RuntimeReserveData[]): Map<strin
   return map;
 }
 
-function enrichDatasetWithIncentiveData(
+async function enrichDatasetWithIncentiveData(
   baseDataset: RuntimeReserveData[],
   meritData: MeritDataIndex,
   merklData: MerklDataIndex,
   brevisData: BrevisDataIndex
-): RuntimeReserveData[] {
-  const reserveLookup = new Map<string, { reserveId: string }>();
+): Promise<RuntimeReserveData[]> {
+  const reserveLookup = new Map<string, { reserveId: string; tokenSymbol: string }>();
   for (const r of baseDataset) {
     const key = `${r.chainId}:${r.tokenAddress.toLowerCase()}`;
-    reserveLookup.set(key, { reserveId: r.reserveId });
+    reserveLookup.set(key, { reserveId: r.reserveId, tokenSymbol: r.tokenSymbol });
   }
 
-  return baseDataset.map(item => {
+  return Promise.all(baseDataset.map(async item => {
     const meritItemData = getMeritDataFromMarket(item.marketName, item.chainName, item.tokenSymbol, meritData);
     
     // 如果有 Merit 数据，直接更新对应字段
@@ -514,7 +514,7 @@ function enrichDatasetWithIncentiveData(
       
       // 收集所有 matchedOpportunities 中的 breakdowns
       for (const opp of matchedOpportunities) {
-        const netPositionConstraint = extractNetPositionConstraint(opp, item.tokenAddress, reserveLookup);
+        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, reserveLookup);
         if (opp.opportunityLink) {
           if (opp.supply.length > 0) {
             const supplyWithLinks = opp.supply.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
@@ -630,7 +630,7 @@ function enrichDatasetWithIncentiveData(
     if (item.brevisSupplys) item.brevisSupplys = item.brevisSupplys.map(pruneBrevisItem);
     if (item.brevisBorrows) item.brevisBorrows = item.brevisBorrows.map(pruneBrevisItem);
     return item;
-  });
+  }));
 }
 
 
@@ -1053,7 +1053,7 @@ export async function runMarketsFetcher(): Promise<void> {
     
     // 第二步：将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
     logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
-    const enrichedData = enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
+    const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
     
     logger.info(`🎯 Final dataset contains ${enrichedData.length} token combinations`);
     
@@ -1189,7 +1189,7 @@ export async function fetchMarketsData(options?: {
 
   // Enrich with incentive data
   logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
-  const enrichedData = enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
+  const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
   const runtimeData = enrichedData;
 
   logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves`);

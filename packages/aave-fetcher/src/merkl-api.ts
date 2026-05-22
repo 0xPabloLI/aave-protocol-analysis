@@ -1145,6 +1145,44 @@ function extractOffsetTokenAddresses(opp: MerklOpportunity): string[] {
   return [...seen];
 }
 
+export async function detectNetPositionConstraint(
+  opp: MerklOpportunityData,
+  sourceTokenAddress: string,
+  reserveLookup: Map<string, { reserveId: string; tokenSymbol?: string }>,
+  cachedConstraint?: NetPositionConstraint | null,
+  llmFn?: () => Promise<import('./merklLlmClient.js').LlmAnalysisResult | null>,
+): Promise<NetPositionConstraint | null> {
+  const layer1 = extractNetPositionConstraint(opp, sourceTokenAddress, reserveLookup);
+  if (layer1) return layer1;
+
+  if (cachedConstraint) return cachedConstraint;
+
+  if (!llmFn) return null;
+
+  const llmResult = await llmFn();
+  if (!llmResult) return null;
+
+  const { sourceSide, offsetTokenSymbols } = llmResult;
+  if (!offsetTokenSymbols || offsetTokenSymbols.length === 0) return null;
+
+  const offsetReserveIds: string[] = [];
+  const seen = new Set<string>();
+  for (const symbol of offsetTokenSymbols) {
+    let found = false;
+    for (const reserve of reserveLookup.values()) {
+      if (reserve.tokenSymbol === symbol && !seen.has(reserve.reserveId)) {
+        seen.add(reserve.reserveId);
+        offsetReserveIds.push(reserve.reserveId);
+        found = true;
+        break;
+      }
+    }
+    if (!found) return null;
+  }
+
+  return { sourceSide, offsetReserveIds };
+}
+
 export function extractNetPositionConstraint(
   opp: MerklOpportunityData,
   sourceTokenAddress: string,
