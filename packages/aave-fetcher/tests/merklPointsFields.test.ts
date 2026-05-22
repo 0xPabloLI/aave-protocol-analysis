@@ -5,7 +5,7 @@ import {
   merklBreakdownUsesPointsIntensityFields,
   merklPointsFieldsFromBreakdownValue,
   type MerklOpportunity,
-} from '../../src/merkl-api.js';
+} from '../src/merkl-api.js';
 
 function oppWithTvl(tvl: number | undefined, protocolId?: string): MerklOpportunity {
   return {

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { BrevisCampaignItem } from '../../src/brevis-api.js';
-import { pruneBrevisCampaignForRuntime } from '../../src/brevis-api.js';
+import type { BrevisCampaignItem } from '../src/brevis-api.js';
+import { pruneBrevisCampaignForRuntime } from '../src/brevis-api.js';
 
 test('BrevisCampaignItem API-facing shape omits legacy raw reward field names', () => {
   const item: BrevisCampaignItem = {

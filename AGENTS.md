@@ -7,7 +7,7 @@
   - `packages/aave-shared-config` — static config constants
   - `backend/` — API server, in-memory snapshots (cron-write / API-read-only), DB is pure archive (0 SELECT)
 - Dependency direction: shared-contracts ← aave-fetcher ← root/backend (one-way)
-- Root `src/` is a thin re-export layer; backend imports from `@internal/*` packages, NOT from root dist.
+- Root `src/` = CLI entry (`cli.ts`) + package re-export (`index.ts`); backend imports from `@internal/*` packages, NOT from root dist.
 
 ## Core Commands
 ### Root (workspace-aware)

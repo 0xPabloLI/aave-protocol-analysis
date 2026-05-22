@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isCampaignWhitelistOnly } from '../../src/merkl-api.js';
+import { isCampaignWhitelistOnly } from '../src/merkl-api.js';
 
 test('isCampaignWhitelistOnly returns false when whitelist is empty', () => {
   assert.equal(
