@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EXPECTED_RUNTIME_FIELDS, validateRuntimeReserveShape } from '../src/types/runtime-validation.js';
+import { EXPECTED_RUNTIME_FIELDS, validateRuntimeReserveShape } from '@internal/aave-shared-contracts';
 
 // 模拟一个完整的 FormattedReserveData 对象（包含所有可能的字段）
 const mockFullReserve = {
