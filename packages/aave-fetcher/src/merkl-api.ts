@@ -1215,6 +1215,8 @@ export function extractNetPositionConstraint(
   const offsetReserveIds: string[] = [];
   const seen = new Set<string>();
 
+  const debugMissing: string[] = [];
+
   for (const addr of (opp.offsetTokenAddresses ?? [])) {
     const addrLower = addr.toLowerCase();
     if (!isNetType && addrLower === sourceAddrLower) continue;
@@ -1223,10 +1225,39 @@ export function extractNetPositionConstraint(
     if (reserve && !seen.has(reserve.reserveId)) {
       seen.add(reserve.reserveId);
       offsetReserveIds.push(reserve.reserveId);
+    } else {
+      debugMissing.push(lookupKey);
     }
   }
 
-  if (offsetReserveIds.length === 0) return null;
+  if (offsetReserveIds.length === 0) {
+    logger.warn(`⚠️ extractNetPositionConstraint: no offsetReserveIds for opp "${opp.name}" type=${type} chain=${opp.chainId} sourceToken=${sourceAddrLower} offsetAddrs=${JSON.stringify(opp.offsetTokenAddresses)} missingKeys=${JSON.stringify(debugMissing)} reserveLookupSize=${reserveLookup.size}`);
+    return null;
+  }
+
+  // Fallback: if offset only points to the source token itself (isolated net opp),
+  // expand to all reserves in the same pool as offset candidates.
+  // A reserveId format is "chainId:poolAddress:tokenAddress"
+  if (offsetReserveIds.length === 1) {
+    const srcReserveId = offsetReserveIds[0]!;
+    const parts = srcReserveId.split(':');
+    if (parts.length === 3) {
+      const poolPrefix = `${parts[0]}:${parts[1]}:`;
+      const expandedIds: string[] = [];
+      const seenExpanded = new Set<string>();
+      for (const reserve of reserveLookup.values()) {
+        if (reserve.reserveId.startsWith(poolPrefix) && !seenExpanded.has(reserve.reserveId)) {
+          seenExpanded.add(reserve.reserveId);
+          expandedIds.push(reserve.reserveId);
+        }
+      }
+      if (expandedIds.length > 1) {
+        logger.info(`ℹ️ extractNetPositionConstraint: expanding isolated opp "${opp.name}" from 1 to ${expandedIds.length} offsetReserveIds (same pool)`);
+        return { sourceSide, offsetReserveIds: expandedIds };
+      }
+    }
+  }
+
   return { sourceSide, offsetReserveIds };
 }
 

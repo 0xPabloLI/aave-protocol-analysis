@@ -499,7 +499,9 @@ async function enrichDatasetWithIncentiveData(
     }
     
     // 获取对应的 Merkl 数据并更新
-    const matchedOpportunities = findMatchingMerklOpportunities(item, merklData);
+    // Determine protocol version from marketName (V3: AaveV3*, V4: AaveV4*)
+    const reserveProtocolVersion: 'v3' | 'v4' = item.marketName.startsWith('AaveV4') ? 'v4' : 'v3';
+    const matchedOpportunities = findMatchingMerklOpportunities(item, merklData, reserveProtocolVersion);
     
     if (matchedOpportunities.length > 0) {
       // 用于 CSV 格式化的平铺 breakdowns（带 opportunityLink 以保持对应关系）
