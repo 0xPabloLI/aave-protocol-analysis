@@ -8,7 +8,7 @@ type SideDataPayload = {
   generatedAt: string;
   partial: boolean;
   categories?: { uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[]; fetchedAt: string; staleTimeMs: number };
-  fdv?: { items: Array<{ id: string; symbol: string | null; name: string | null; fdvUsd: number | null; source: string }>; fetchedAt: string; staleTimeMs: number };
+  fdv?: { items: Array<{ symbol: string | null; fdvUsd: number | null }>; fetchedAt: string; staleTimeMs: number };
   forecast?: ForecastSnapshot;
   campaignAccess?: {
     campaigns: Record<string, { chainId: number; whitelist: string[]; blacklist: string[] }>;

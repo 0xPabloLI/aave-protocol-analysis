@@ -519,11 +519,8 @@ Merkl 返回里历史上存在两套命名：
 {
   "items": [
     {
-      "id": "binancecoin",
-      "symbol": "bnb",
-      "name": "BNB",
-      "fdvUsd": 123456789012,
-      "source": "coinmarketcap"
+      "symbol": "BNB",
+      "fdvUsd": 123456789012
     }
   ],
   "fetchedAt": "2026-03-09T12:00:00.000Z",
@@ -531,9 +528,8 @@ Merkl 返回里历史上存在两套命名：
 }
 ```
 
-- `items`: FDV 条目数组（id、symbol、name、fdvUsd、source）
+- `items`: FDV 条目数组（symbol、fdvUsd；id/name/source 仅内部使用，不暴露于 API 契约）
 - `fetchedAt`: 数据获取时间（ISO 8601）
-- `source`: `"coinmarketcap"` 或 `"coingecko_fallback"`
 
 **状态码**: `200` 成功，`500` 服务端错误
 
@@ -606,11 +602,8 @@ Merkl 返回里历史上存在两套命名：
   "fdv": {
     "items": [
       {
-        "id": "binancecoin",
         "symbol": "BNB",
-        "name": "BNB",
-        "fdvUsd": 123456789012,
-        "source": "coinmarketcap"
+        "fdvUsd": 123456789012
       }
     ],
     "fetchedAt": "2026-03-09T12:00:00.000Z",
