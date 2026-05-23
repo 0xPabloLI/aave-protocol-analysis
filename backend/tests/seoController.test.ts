@@ -29,6 +29,35 @@ test('VALID_GROUP_BY contains expected values', async () => {
   assert.deepEqual([...VALID_GROUP_BY], ['date', 'country', 'page', 'query']);
 });
 
+test('parseCountryList: single country', async () => {
+  const { parseCountryList } = await import('../src/controllers/seoController.js');
+  assert.deepEqual(parseCountryList('us'), ['us']);
+});
+
+test('parseCountryList: comma-separated countries', async () => {
+  const { parseCountryList } = await import('../src/controllers/seoController.js');
+  assert.deepEqual(parseCountryList('br,fr,tr,us,de,in'), ['br', 'fr', 'tr', 'us', 'de', 'in']);
+});
+
+test('parseCountryList: trims whitespace', async () => {
+  const { parseCountryList } = await import('../src/controllers/seoController.js');
+  assert.deepEqual(parseCountryList(' br , fr , us '), ['br', 'fr', 'us']);
+});
+
+test('parseCountryList: filters empty segments', async () => {
+  const { parseCountryList } = await import('../src/controllers/seoController.js');
+  assert.deepEqual(parseCountryList('us,,br,'), ['us', 'br']);
+});
+
+test('parseCountryList: caps at 20 entries', async () => {
+  const { parseCountryList } = await import('../src/controllers/seoController.js');
+  const input = Array.from({ length: 30 }, (_, i) => `c${i}`).join(',');
+  const result = parseCountryList(input);
+  assert.equal(result.length, 20);
+  assert.equal(result[0], 'c0');
+  assert.equal(result[19], 'c19');
+});
+
 test('escapeIlike: escapes % and _', async () => {
   const { escapeIlike } = await import('../src/utils/escapeIlike.js');
   assert.equal(escapeIlike('100%_free'), '100\\%\\_free');

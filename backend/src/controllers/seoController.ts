@@ -15,6 +15,10 @@ const METRIC_SELECT = `
   CASE WHEN SUM(impressions) > 0 THEN (SUM(position * impressions) / SUM(impressions))::numeric(7,2) ELSE 0 END AS position
 `;
 
+export function parseCountryList(raw: string): string[] {
+  return raw.split(',').map(c => c.trim()).filter(Boolean).slice(0, 20);
+}
+
 function buildGscQuery(groups: GroupBy[]): { sql: string; hasGroupBy: boolean } {
   if (groups.length === 0) {
     return {
@@ -86,7 +90,7 @@ export async function getGscData(req: Request, res: Response): Promise<void> {
 
     const country = req.query.country as string | undefined;
     if (country) {
-      const countries = country.split(',').slice(0, 20);
+      const countries = parseCountryList(country);
       conditions.push(`country = ANY($${paramIdx}::text[])`);
       params.push(countries);
       paramIdx++;
@@ -96,13 +100,6 @@ export async function getGscData(req: Request, res: Response): Promise<void> {
     if (page) {
       conditions.push(`page = $${paramIdx}`);
       params.push(page);
-      paramIdx++;
-    }
-
-    const queryFilter = req.query.query as string | undefined;
-    if (queryFilter) {
-      conditions.push(`query ILIKE $${paramIdx}`);
-      params.push(`%${escapeIlike(queryFilter)}%`);
       paramIdx++;
     }
 
@@ -138,8 +135,9 @@ export async function getSemrushSnapshots(req: Request, res: Response): Promise<
 
     const country = req.query.country as string | undefined;
     if (country) {
-      conditions.push(`country = $${paramIdx}`);
-      params.push(country);
+      const countries = parseCountryList(country);
+      conditions.push(`country = ANY($${paramIdx}::text[])`);
+      params.push(countries);
       paramIdx++;
     }
 
