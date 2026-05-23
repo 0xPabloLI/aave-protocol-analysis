@@ -133,8 +133,8 @@ async function upsertGscRows(pool: Pool, targetDate: string, rows: GscRow[]): Pr
   return totalUpserted;
 }
 
-export async function fetchAndPersistGscDaily(pool: Pool): Promise<{ targetDate: string; rowsUpserted: number }> {
-  const targetDate = dayjs().subtract(GSC_DELAY_DAYS, 'day').format('YYYY-MM-DD');
+export async function fetchAndPersistGscDaily(pool: Pool, targetDateOverride?: string): Promise<{ targetDate: string; rowsUpserted: number }> {
+  const targetDate = targetDateOverride ?? dayjs().subtract(GSC_DELAY_DAYS, 'day').format('YYYY-MM-DD');
   const rows = await fetchGscRows(targetDate);
   const rowsUpserted = await upsertGscRows(pool, targetDate, rows);
   logger.info(`GSC fetch: date=${targetDate}, rows=${rows.length}, upserted=${rowsUpserted}`);

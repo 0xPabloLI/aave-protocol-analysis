@@ -333,13 +333,19 @@ export async function triggerGscFetch(req: Request, res: Response): Promise<void
     return;
   }
   const overrideSiteUrl = req.body?.siteUrl as string | undefined;
+  const overrideDaysAgo = req.body?.daysAgo as number | undefined;
   const originalSiteUrl = process.env.GSC_SITE_URL;
   if (overrideSiteUrl) {
     process.env.GSC_SITE_URL = overrideSiteUrl;
   }
   try {
     const pool = getPool();
-    const result = await fetchAndPersistGscDaily(pool);
+    const targetDate = overrideDaysAgo
+      ? dayjs().subtract(overrideDaysAgo, 'day').format('YYYY-MM-DD')
+      : undefined;
+    const result = targetDate
+      ? await fetchAndPersistGscDaily(pool, targetDate)
+      : await fetchAndPersistGscDaily(pool);
     setGscFetchSuccess(result);
     res.json({ ok: true, siteUrl: process.env.GSC_SITE_URL, ...result });
   } catch (error) {
