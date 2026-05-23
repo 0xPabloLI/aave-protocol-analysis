@@ -15,15 +15,17 @@
  * - Per-pool caching with 30-min TTL
  * - If RPC fails, cached data within TTL is used
  * - If no cached data, fields are absent (with fallback calculation for baseVariableBorrowRate)
+ * Architecture:
  *
- * V4 RPC calls (serial, Multicall3 was removed due to persistent aggregate3 revert):
- *   - Hub mapping: getAssetCount + N getAsset → 1+17=18 calls per Hub (shared across spokes)
- *   - Deficit: N getSpokeDeficitRay per spoke → 17 calls per spoke
- *   - Spokes are fetched sequentially to avoid ECONNRESET from concurrent flooding
- *   - Total per refresh: 3 Hubs × 18 + 11 spokes × 17 ≈ 241 RPC calls (sequential)
+ * V4 RPC calls use Multicall3 with serial fallback:
+ *   - Per Hub: 2 Multicall3 batches (getAssetCount + N getAsset → 1st batch, N deficit → 1 batch per spoke)
+ *   - Multicall3 uses provider.call() (raw eth_call) to avoid ethers.js callStatic issues with payable functions
+ *   - Hub asset mapping cached across spokes sharing the same Hub
+ *   - Spokes fetched sequentially to avoid ECONNRESET from concurrent flooding
+ *   - Target: ~16 Multicall3 batches (3 Hub × 2 + 10 spoke deficit) → ~35 RPC calls (down from ~241 serial)
  */
 
-import { Contract, providers } from 'ethers';
+import { Contract, providers, utils } from 'ethers';
 import { UiPoolDataProvider } from '@aave/contract-helpers';
 import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { withTimeout } from '../lib/timeout.js';
@@ -135,6 +137,65 @@ const V4_HUB_ABI = [
 ];
 
 const RAY = BigInt(10) ** BigInt(27);
+const V4_HUB_INTERFACE = new utils.Interface(V4_HUB_ABI);
+
+// ============================================================
+// Multicall3 — pre-deployed on Ethereum at 0xCa11bdE05977b6962E52e3f19a7a4E4F080a7e34
+// Uses provider.call() (raw eth_call) instead of contract.callStatic to avoid
+// ethers.js v5 stateMutability issues: aggregate3 is payable, not view.
+// ============================================================
+const MULTICALL3_ADDRESS = '0xCa11bdE05977b6962E52e3f19a7a4E4F080a7e34';
+const MULTICALL3_ABI = [
+  {
+    inputs: [{
+      components: [
+        { internalType: 'address', name: 'target', type: 'address' },
+        { internalType: 'bool', name: 'allowFailure', type: 'bool' },
+        { internalType: 'bytes', name: 'callData', type: 'bytes' },
+      ],
+      internalType: 'struct Multicall3.Call3[]',
+      name: 'calls',
+      type: 'tuple[]',
+    }],
+    name: 'aggregate3',
+    outputs: [{
+      components: [
+        { internalType: 'bool', name: 'success', type: 'bool' },
+        { internalType: 'bytes', name: 'returnData', type: 'bytes' },
+      ],
+      internalType: 'struct Multicall3.Result[]',
+      name: 'returnData',
+      type: 'tuple[]',
+    }],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+];
+
+async function executeMulticall3(
+  provider: providers.Provider,
+  calls: { target: string; allowFailure: boolean; callData: string }[],
+  rpcUrl: string
+): Promise<{ success: boolean; returnData: string }[]> {
+  const multicall3Iface = new utils.Interface(MULTICALL3_ABI);
+  const encodedData = multicall3Iface.encodeFunctionData('aggregate3', [calls]);
+
+  const rawResult = await withTimeout(
+    provider.call({
+      to: MULTICALL3_ADDRESS,
+      data: encodedData,
+    }, 'latest'),
+    ONCHAIN_PER_RPC_TIMEOUT_MS,
+    `V4 Multicall3.aggregate3 timeout via ${rpcUrl}`
+  );
+
+  const decoded = multicall3Iface.decodeFunctionResult('aggregate3', rawResult);
+  // decoded[0] = Result[]; each Result → { success: bool, returnData: bytes }
+  return (decoded[0] as any[]).map((r: any) => ({
+    success: r.success,
+    returnData: r.returnData,
+  }));
+}
 
 // ============================================================
 // V4 Spoke Config (runtime-derived from address-book via registry)
@@ -240,7 +301,7 @@ async function fetchAndCacheV4Spoke(
     try {
       let underlyingToAssetId = hubAssetMapping.get(config.hubAddress);
       if (!underlyingToAssetId) {
-        underlyingToAssetId = await buildHubAssetMappingSerial(provider, config.hubAddress, config.hubName, rpcUrl);
+        underlyingToAssetId = await buildHubAssetMappingMulticall(provider, config.hubAddress, config.hubName, rpcUrl);
         if (underlyingToAssetId.size === 0) continue;
         hubAssetMapping.set(config.hubAddress, underlyingToAssetId);
       }
@@ -250,25 +311,70 @@ async function fetchAndCacheV4Spoke(
       const spokeData = new Map<string, OnchainReserveData>();
 
       if (underlyingToAssetId.size > 0) {
-        const hubContract = new Contract(config.hubAddress, V4_HUB_ABI, provider);
+        // Try Multicall3 batch for deficit queries first
+        const deficitCalls: { underlying: string; callData: string }[] = [];
         for (const [underlying, assetId] of underlyingToAssetId) {
+          const callData = V4_HUB_INTERFACE.encodeFunctionData('getSpokeDeficitRay', [assetId, config.spokeAddress]);
+          deficitCalls.push({ underlying, callData });
+        }
+
+        let batchOk = false;
+        if (deficitCalls.length > 0) {
           try {
-            const deficitRay = await withTimeout(
-              hubContract.getSpokeDeficitRay(assetId, config.spokeAddress),
-              ONCHAIN_PER_RPC_TIMEOUT_MS,
-              `V4 getSpokeDeficitRay(${assetId}, ${config.spokeName}) timeout`
-            ) as any;
-            const deficitRayStr = String(deficitRay);
-            if (deficitRayStr !== '0') {
+            const multicallCalls = deficitCalls.map((c) => ({
+              target: config.hubAddress,
+              allowFailure: true,
+              callData: c.callData,
+            }));
+            const results = await executeMulticall3(provider, multicallCalls, rpcUrl);
+
+            for (let i = 0; i < results.length; i++) {
+              const r = results[i];
+              const { underlying } = deficitCalls[i];
+              if (!r.success) continue;
               try {
-                const deficitUnderlying = BigInt(deficitRayStr) / RAY;
-                spokeData.set(underlying, { deficit: deficitUnderlying.toString() });
-              } catch {
-                spokeData.set(underlying, { deficit: deficitRayStr });
+                const deficitRay = V4_HUB_INTERFACE.decodeFunctionResult('getSpokeDeficitRay', r.returnData)[0];
+                const deficitRayStr = String(deficitRay);
+                if (deficitRayStr !== '0') {
+                  try {
+                    const deficitUnderlying = BigInt(deficitRayStr) / RAY;
+                    spokeData.set(underlying, { deficit: deficitUnderlying.toString() });
+                  } catch {
+                    spokeData.set(underlying, { deficit: deficitRayStr });
+                  }
+                }
+              } catch (e) {
+                logger.debug(`V4 Multicall3 decode getSpokeDeficitRay for ${underlying} failed: ${e}`);
               }
             }
-          } catch (e2) {
-            logger.debug(`V4 getSpokeDeficitRay(${assetId}, ${config.spokeName}) failed: ${e2}`);
+            batchOk = true;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            logger.debug(`V4 Multicall3 deficit batch failed for ${config.spokeName}: ${msg}, falling back to serial`);
+          }
+        }
+
+        if (!batchOk) {
+          const hubContract = new Contract(config.hubAddress, V4_HUB_ABI, provider);
+          for (const [underlying, assetId] of underlyingToAssetId) {
+            try {
+              const deficitRay = await withTimeout(
+                hubContract.getSpokeDeficitRay(assetId, config.spokeAddress),
+                ONCHAIN_PER_RPC_TIMEOUT_MS,
+                `V4 getSpokeDeficitRay(${assetId}, ${config.spokeName}) timeout`
+              ) as any;
+              const deficitRayStr = String(deficitRay);
+              if (deficitRayStr !== '0') {
+                try {
+                  const deficitUnderlying = BigInt(deficitRayStr) / RAY;
+                  spokeData.set(underlying, { deficit: deficitUnderlying.toString() });
+                } catch {
+                  spokeData.set(underlying, { deficit: deficitRayStr });
+                }
+              }
+            } catch (e2) {
+              logger.debug(`V4 getSpokeDeficitRay(${assetId}, ${config.spokeName}) failed: ${e2}`);
+            }
           }
         }
       }
@@ -293,6 +399,82 @@ async function fetchAndCacheV4Spoke(
 }
 
 const MAX_HUB_ASSET_COUNT = 200;
+
+async function buildHubAssetMappingMulticall(
+  provider: providers.Provider,
+  hubAddress: string,
+  hubName: string,
+  rpcUrl: string
+): Promise<Map<string, number>> {
+  try {
+    const mapping = await buildHubAssetMappingMulticallInner(provider, hubAddress, hubName, rpcUrl);
+    if (mapping.size > 0) return mapping;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    logger.debug(`V4 Multicall3 Hub mapping failed for ${hubName}: ${msg}, falling back to serial`);
+  }
+
+  return buildHubAssetMappingSerial(provider, hubAddress, hubName, rpcUrl);
+}
+
+async function buildHubAssetMappingMulticallInner(
+  provider: providers.Provider,
+  hubAddress: string,
+  hubName: string,
+  rpcUrl: string
+): Promise<Map<string, number>> {
+  const mapping = new Map<string, number>();
+
+  const getAssetCountCalldata = V4_HUB_INTERFACE.encodeFunctionData('getAssetCount');
+  const results = await executeMulticall3(
+    provider,
+    [{ target: hubAddress, allowFailure: false, callData: getAssetCountCalldata }],
+    rpcUrl
+  );
+
+  if (!results[0].success) {
+    logger.debug(`V4 Multicall3 getAssetCount failed for ${hubName}`);
+    return mapping;
+  }
+
+  const assetCountBN = V4_HUB_INTERFACE.decodeFunctionResult('getAssetCount', results[0].returnData)[0];
+  const assetCount = Number(assetCountBN);
+
+  if (assetCount > MAX_HUB_ASSET_COUNT) {
+    logger.warn(`V4 Hub ${hubName} reports ${assetCount} assets (>${MAX_HUB_ASSET_COUNT}), capping to prevent excessive RPC load`);
+    return mapping;
+  }
+
+  const getAssetCalls = [];
+  for (let assetId = 0; assetId < assetCount; assetId++) {
+    const callData = V4_HUB_INTERFACE.encodeFunctionData('getAsset', [assetId]);
+    getAssetCalls.push({ target: hubAddress, allowFailure: true, callData });
+  }
+
+  if (getAssetCalls.length === 0) return mapping;
+
+  const assetResults = await executeMulticall3(provider, getAssetCalls, rpcUrl);
+
+  for (let assetId = 0; assetId < assetResults.length; assetId++) {
+    const r = assetResults[assetId];
+    if (!r.success) continue;
+    try {
+      const asset = V4_HUB_INTERFACE.decodeFunctionResult('getAsset', r.returnData)[0];
+      const underlying = normalizeAddress(String(asset.underlying || ''));
+      if (underlying) mapping.set(underlying, assetId);
+    } catch (e) {
+      logger.debug(`V4 Multicall3 decode getAsset(${assetId}) failed for ${hubName}: ${e}`);
+    }
+  }
+
+  if (mapping.size === 0 && assetCount > 0) {
+    logger.warn(`V4 Multicall3 Hub mapping for ${hubName}: 0/${assetCount} assets decoded successfully — possible ABI mismatch`);
+  } else {
+    logger.debug(`V4 Multicall3 Hub mapping for ${hubName}: ${mapping.size} assets (1 + ${assetCount} calls → 2 Multicall3 batches)`);
+  }
+
+  return mapping;
+}
 
 async function buildHubAssetMappingSerial(
   provider: providers.Provider,
@@ -392,7 +574,7 @@ export async function refreshOnchainCache(): Promise<void> {
         const rpcCandidates = ethProviderService.getProvidersForChain(config.chainId, config.defaultRpcUrls);
         for (const { rpcUrl, provider } of rpcCandidates) {
           try {
-            const mapping = await buildHubAssetMappingSerial(provider, config.hubAddress, config.hubName, rpcUrl);
+            const mapping = await buildHubAssetMappingMulticall(provider, config.hubAddress, config.hubName, rpcUrl);
             if (mapping.size > 0) {
               hubAssetMapping.set(config.hubAddress, mapping);
               break;
