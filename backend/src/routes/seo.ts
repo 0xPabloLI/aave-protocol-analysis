@@ -4,6 +4,7 @@ import {
   getSeoStatus,
   getGscData,
   triggerGscFetch,
+  listGscSites,
   getSemrushSnapshots,
   upsertSemrushSnapshot,
   batchUpsertSemrushSnapshots,
@@ -17,6 +18,7 @@ router.use(seoAuthMiddleware);
 router.get('/status', getSeoStatus);
 router.get('/gsc', getGscData);
 router.post('/gsc/trigger', triggerGscFetch);
+router.get('/gsc/sites', listGscSites);
 router.get('/semrush', getSemrushSnapshots);
 router.post('/semrush', upsertSemrushSnapshot);
 router.post('/semrush/batch', batchUpsertSemrushSnapshots);

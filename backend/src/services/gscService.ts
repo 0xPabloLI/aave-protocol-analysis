@@ -141,5 +141,5 @@ export async function fetchAndPersistGscDaily(pool: Pool): Promise<{ targetDate:
   return { targetDate, rowsUpserted };
 }
 
-export { fetchGscRows, upsertGscRows };
+export { fetchGscRows, upsertGscRows, getGscClient };
 export type { GscRow };
