@@ -104,6 +104,13 @@ export async function getGscData(req: Request, res: Response): Promise<void> {
       paramIdx++;
     }
 
+    const queryFilter = req.query.query as string | undefined;
+    if (queryFilter) {
+      conditions.push(`query ILIKE $${paramIdx}`);
+      params.push(`%${escapeIlike(queryFilter)}%`);
+      paramIdx++;
+    }
+
     const where = `WHERE ${conditions.join(' AND ')}`;
     let fullSql = `${sql} ${where}`;
 
@@ -332,32 +339,23 @@ export async function triggerGscFetch(req: Request, res: Response): Promise<void
     res.status(503).json({ error: 'GSC_SA_EMAIL not configured — GSC fetch is disabled' });
     return;
   }
-  const overrideSiteUrl = req.body?.siteUrl as string | undefined;
-  const overrideDaysAgo = req.body?.daysAgo as number | undefined;
-  const dataState = (req.body?.dataState as 'final' | 'all') ?? 'final';
-  const originalSiteUrl = process.env.GSC_SITE_URL;
-  if (overrideSiteUrl) {
-    process.env.GSC_SITE_URL = overrideSiteUrl;
-  }
+  const siteUrl = (req.query.siteUrl as string | undefined) ?? process.env.GSC_SITE_URL;
+  const rawDaysAgo = req.query.daysAgo ? parseInt(req.query.daysAgo as string, 10) : undefined;
+  const daysAgo = rawDaysAgo && rawDaysAgo >= 1 && rawDaysAgo <= 365 ? rawDaysAgo : undefined;
+  const dataState = (req.query.dataState as 'final' | 'all') ?? 'final';
   try {
     const pool = getPool();
-    const targetDate = overrideDaysAgo
-      ? dayjs().subtract(overrideDaysAgo, 'day').format('YYYY-MM-DD')
+    const targetDate = daysAgo
+      ? dayjs().subtract(daysAgo, 'day').format('YYYY-MM-DD')
       : undefined;
-    const result = targetDate
-      ? await fetchAndPersistGscDaily(pool, targetDate, dataState)
-      : await fetchAndPersistGscDaily(pool, undefined, dataState);
+    const result = await fetchAndPersistGscDaily(pool, targetDate, dataState, siteUrl);
     setGscFetchSuccess(result);
-    res.json({ ok: true, siteUrl: process.env.GSC_SITE_URL, ...result });
+    res.json({ ok: true, siteUrl, ...result });
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     setGscFetchFailure(msg);
     logger.error(`GSC manual trigger failed: ${msg}`);
     res.status(500).json({ error: msg });
-  } finally {
-    if (overrideSiteUrl) {
-      process.env.GSC_SITE_URL = originalSiteUrl;
-    }
   }
 }
 

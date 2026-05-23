@@ -72,3 +72,13 @@ test('escapeIlike: no special chars', async () => {
   const { escapeIlike } = await import('../src/utils/escapeIlike.js');
   assert.equal(escapeIlike('aave'), 'aave');
 });
+
+test('parseCountryList: empty string returns empty array', async () => {
+  const { parseCountryList } = await import('../src/controllers/seoController.js');
+  assert.deepEqual(parseCountryList(''), []);
+});
+
+test('parseCountryList: single comma returns empty array', async () => {
+  const { parseCountryList } = await import('../src/controllers/seoController.js');
+  assert.deepEqual(parseCountryList(','), []);
+});

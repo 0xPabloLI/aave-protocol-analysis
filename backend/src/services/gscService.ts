@@ -29,14 +29,15 @@ function getGscClient() {
   return cachedClient;
 }
 
-async function fetchGscRows(targetDate: string, dataState: 'final' | 'all' = 'final'): Promise<GscRow[]> {
+async function fetchGscRows(targetDate: string, dataState: 'final' | 'all' = 'final', siteUrl?: string): Promise<GscRow[]> {
   const webmasters = getGscClient();
   const allRows: GscRow[] = [];
   let startRow = 0;
+  const resolvedSiteUrl = siteUrl ?? process.env.GSC_SITE_URL!;
 
   for (;;) {
     const params = {
-      siteUrl: process.env.GSC_SITE_URL!,
+      siteUrl: resolvedSiteUrl,
       requestBody: {
         startDate: targetDate,
         endDate: targetDate,
@@ -133,9 +134,9 @@ async function upsertGscRows(pool: Pool, targetDate: string, rows: GscRow[]): Pr
   return totalUpserted;
 }
 
-export async function fetchAndPersistGscDaily(pool: Pool, targetDateOverride?: string, dataState: 'final' | 'all' = 'final'): Promise<{ targetDate: string; rowsUpserted: number }> {
+export async function fetchAndPersistGscDaily(pool: Pool, targetDateOverride?: string, dataState: 'final' | 'all' = 'final', siteUrl?: string): Promise<{ targetDate: string; rowsUpserted: number }> {
   const targetDate = targetDateOverride ?? dayjs().subtract(GSC_DELAY_DAYS, 'day').format('YYYY-MM-DD');
-  const rows = await fetchGscRows(targetDate, dataState);
+  const rows = await fetchGscRows(targetDate, dataState, siteUrl);
   const rowsUpserted = await upsertGscRows(pool, targetDate, rows);
   logger.info(`GSC fetch: date=${targetDate}, rows=${rows.length}, upserted=${rowsUpserted}`);
   return { targetDate, rowsUpserted };

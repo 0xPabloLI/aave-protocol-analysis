@@ -35,6 +35,8 @@
 | `POST /api/seo/semrush` | 无 | `X-Admin-Token` | 256 KB |
 | `POST /api/seo/semrush/batch` | 5 req/min per token | `X-Admin-Token` | 5 MB (≤5000 条) |
 | `DELETE /api/seo/semrush/:id` | 无 | `X-Admin-Token` | N/A |
+| `POST /api/seo/gsc/trigger` | 无 | `X-Admin-Token` | N/A |
+| `GET /api/seo/gsc/sites` | 无 | `X-Admin-Token` | N/A (GET) |
 
 ### 503 Service Unavailable
 
@@ -1046,3 +1048,23 @@ curl http://localhost:3001/api/meta/side-data
 6. **更新机制**: 数据更新是异步的，更新过程中会返回缓存数据
 7. **过滤逻辑**: 所有排序和过滤应在客户端完成，API 不提供查询参数
 8. **CoinGecko 分类数据**: `/api/coingecko-categories` 接口提供稳定币和以太坊相关代币的分类信息，数据缓存 6 小时
+
+## SEO Admin API
+
+所有 SEO 端点需要 `X-Admin-Token` header（64 hex chars，timing-safe 比较）。
+
+### `POST /api/seo/gsc/trigger`
+
+手动触发 GSC 数据抓取。Query params:
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `daysAgo` | int | 3 | 回溯天数（1-365） |
+| `dataState` | `final`\|`all` | `final` | Google API dataState |
+| `siteUrl` | string | `GSC_SITE_URL` env | 覆盖 GSC siteUrl |
+
+返回 `{ ok, siteUrl, targetDate, rowsUpserted }`。当 `GSC_SA_EMAIL` 未配置时返回 503。
+
+### `GET /api/seo/gsc/sites`
+
+列出 Google Search Console 中已验证的网站及权限。当 `GSC_SA_EMAIL` 未配置时返回 503。

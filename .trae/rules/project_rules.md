@@ -67,41 +67,6 @@ Do not proceed with user requests until these skills are loaded.
 
 This is a **hard gate** — do not skip even if the user says "just deploy."
 
-## Frontend Cache Invalidation Rule (Critical)
-
-### Dual-Fingerprint Mechanism
-
-The frontend uses **two complementary fingerprints** for cache invalidation:
-
-| Mechanism | Location | Trigger | Scope |
-|---|---|---|---|
-| `SCHEMA_FP` | `aaveapy/src/shared/schema-fingerprint.ts` | Frontend deploy (baked into bundle) | Immediate on page load |
-| `CACHE_VERSION` | `aaveapy/src/lib/cache.ts` | Manual bump | Non-schema reasons |
-| `meta.schemaFingerprint` | Backend API response → frontend `fetchMarkets()` | Runtime drift detection | Lazy (on next cache access) |
-
-### When to bump CACHE_VERSION
-
-`SCHEMA_FP` handles API shape changes automatically — when the backend schema fingerprint changes, sync it to the frontend via manual copy (see Workflow below). `CACHE_VERSION` is for non-schema reasons only:
-
-| Reason | Example |
-|---|---|
-| Value format change (same schema) | APY from ratio → percent |
-| Data fix requiring cache purge | Incorrect prices shipped |
-| Cached data semantics changed | Same field, different meaning |
-
-### Schema Fingerprint Sync Workflow
-
-```
-Backend build → gen:schema-fp computes SCHEMA_FP
-  ↓
-Manual copy to aaveapy/src/shared/schema-fingerprint.ts
-  ↓
-Both repos deployed independently
-  ↓
-Frontend deploy → effectiveFp changes → old cache invalidated immediately
-Backend deploy → meta.schemaFingerprint updates → drift detection on next API call
-```
-
 ## Schema Design Principle: No Redundant Columns
 
 **When designing a DB table that contains a JSONB column with structured data, for EVERY proposed outer column, ask:**

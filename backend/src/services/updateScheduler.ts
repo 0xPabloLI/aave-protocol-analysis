@@ -120,7 +120,10 @@ export function startUpdateScheduler(): void {
 
   // GSC daily fetch at 06:00 UTC.
   schedule(BACKEND_SCHEDULE_CRON.gscDailyFetchAtSixAmUtc, async () => {
-    if (!process.env.GSC_SA_EMAIL) return;
+    if (!process.env.GSC_SA_EMAIL) {
+      logger.info('GSC daily fetch skipped: GSC_SA_EMAIL not configured');
+      return;
+    }
     try {
       const pool = getPool();
       const result = await fetchAndPersistGscDaily(pool);
