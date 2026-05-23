@@ -1137,12 +1137,17 @@ function extractOffsetTokenAddresses(opp: MerklOpportunity): string[] {
     const tokens: unknown = campaign?.params?.tokens;
     if (Array.isArray(tokens)) {
       for (const t of tokens) {
-        const addr = typeof t === 'string' ? t.toLowerCase() : (typeof t === 'object' && t !== null && typeof (t as any).address === 'string') ? (t as any).address.toLowerCase() : null;
+        const addr = typeof t === 'string'
+          ? t.toLowerCase()
+          : (typeof t === 'object' && t !== null && typeof (t as any).underlyingToken === 'string')
+            ? (t as any).underlyingToken.toLowerCase()
+            : null;
         if (addr && !seen.has(addr)) seen.add(addr);
       }
     }
   }
-  return [...seen];
+  const result = [...seen];
+  return result;
 }
 
 export async function detectNetPositionConstraint(
@@ -1200,7 +1205,8 @@ export function extractNetPositionConstraint(
   for (const addr of (opp.offsetTokenAddresses ?? [])) {
     const addrLower = addr.toLowerCase();
     if (addrLower === sourceAddrLower) continue;
-    const reserve = reserveLookup.get(`${opp.chainId}:${addrLower}`);
+    const lookupKey = `${opp.chainId}:${addrLower}`;
+    const reserve = reserveLookup.get(lookupKey);
     if (reserve && !seen.has(reserve.reserveId)) {
       seen.add(reserve.reserveId);
       offsetReserveIds.push(reserve.reserveId);

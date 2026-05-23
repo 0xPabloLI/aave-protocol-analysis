@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express';
 import dayjs from 'dayjs';
 import { getPool, isPersistenceEnabled } from '../services/dbPool.js';
-import { getGscFetchState } from '../services/gscFetchState.js';
+import { getGscFetchState, setGscFetchSuccess, setGscFetchFailure } from '../services/gscFetchState.js';
+import { fetchAndPersistGscDaily } from '../services/gscService.js';
 import { escapeIlike } from '../utils/escapeIlike.js';
 import { logger } from '../logger.js';
 
@@ -324,6 +325,24 @@ export async function deleteSemrushSnapshot(req: Request, res: Response): Promis
 
 export function getSeoStatus(_req: Request, res: Response): void {
   res.json({ gsc: getGscFetchState() });
+}
+
+export async function triggerGscFetch(_req: Request, res: Response): Promise<void> {
+  if (!process.env.GSC_SA_EMAIL) {
+    res.status(503).json({ error: 'GSC_SA_EMAIL not configured — GSC fetch is disabled' });
+    return;
+  }
+  try {
+    const pool = getPool();
+    const result = await fetchAndPersistGscDaily(pool);
+    setGscFetchSuccess(result);
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    setGscFetchFailure(msg);
+    logger.error(`GSC manual trigger failed: ${msg}`);
+    res.status(500).json({ error: msg });
+  }
 }
 
 export { buildGscQuery, VALID_GROUP_BY };

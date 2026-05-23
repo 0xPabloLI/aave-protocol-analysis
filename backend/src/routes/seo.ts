@@ -3,6 +3,7 @@ import { seoAuthMiddleware } from '../middleware/seoAuth.js';
 import {
   getSeoStatus,
   getGscData,
+  triggerGscFetch,
   getSemrushSnapshots,
   upsertSemrushSnapshot,
   batchUpsertSemrushSnapshots,
@@ -15,6 +16,7 @@ const router = Router();
 router.use(seoAuthMiddleware);
 router.get('/status', getSeoStatus);
 router.get('/gsc', getGscData);
+router.post('/gsc/trigger', triggerGscFetch);
 router.get('/semrush', getSemrushSnapshots);
 router.post('/semrush', upsertSemrushSnapshot);
 router.post('/semrush/batch', batchUpsertSemrushSnapshots);
