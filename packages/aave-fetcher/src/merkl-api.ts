@@ -200,11 +200,24 @@ export interface MerklOpportunityData {
   hold: MerklCampaignBreakdown[];
   marketName: string;
   chainId: number;
+  /** Protocol version derived from Merkl opportunity type (e.g. AAVE_V4_HUB_SUPPLY = v4). */
+  protocolVersion: 'v3' | 'v4';
   opportunityLink?: string;
   name?: string;
   description?: string;
   opportunityType?: string;
   offsetTokenAddresses?: string[];
+}
+
+/**
+ * Derive protocol version from Merkl opportunity type.
+ * Rule: if type contains "V4" → 'v4', otherwise → 'v3'.
+ * This covers all known types (AAVE_NET_LENDING, AAVE_V4_HUB_SUPPLY, etc.)
+ * and future unknown types.
+ */
+export function deriveProtocolVersion(opportunityType: string | undefined): 'v3' | 'v4' {
+  if (!opportunityType) return 'v3';
+  return opportunityType.toUpperCase().includes('V4') ? 'v4' : 'v3';
 }
 
 interface CampaignSnapshotLiteForForecastFile {
@@ -960,7 +973,8 @@ export async function processMerklData(
       continue;
     }
     
-    // 只有在 chainId === 1 时才需要解析 marketName
+    // Derive protocol version from opportunity type (V4 → v4, else v3)
+    const protocolVersion = deriveProtocolVersion(opp.type);
     const marketName = opp.chainId === 1 
       ? parseMarketNameFromOpportunityName(opp.name, opp.chainId)
       : 'Unknown';
@@ -1047,6 +1061,7 @@ export async function processMerklData(
       hold: opp.action === 'HOLD' ? filteredBreakdowns : [],
       marketName,
       chainId: opp.chainId,
+      protocolVersion,
       ...(opportunityLink && { opportunityLink }),
       ...(opp.name && { name: opp.name }),
       ...(opp.description && { description: opp.description }),
@@ -1054,11 +1069,8 @@ export async function processMerklData(
       ...(offsetTokenAddresses.length > 0 && { offsetTokenAddresses }),
     };
     
-    // 创建索引键并添加到索引
-    // 只有 chainId === 1 时才在索引键中包含 marketName
-    const indexKey = opp.chainId === 1
-      ? `${marketName}-${opp.chainId}-${explorerAddress}`
-      : `${opp.chainId}-${explorerAddress}`;
+    // 创建索引键：chainId + explorerAddress（protocolVersion 在匹配时过滤，不需要在 key 中）
+    const indexKey = `${opp.chainId}-${explorerAddress}`;
     
     if (!merklData[indexKey]) {
       merklData[indexKey] = [];
@@ -1199,12 +1211,13 @@ export function extractNetPositionConstraint(
   const sourceSide: 'supply' | 'borrow' = type === 'AAVE_NET_BORROWING' ? 'borrow' : 'supply';
 
   const sourceAddrLower = sourceTokenAddress.toLowerCase();
+  const isNetType = type === 'AAVE_NET_LENDING' || type === 'AAVE_NET_BORROWING';
   const offsetReserveIds: string[] = [];
   const seen = new Set<string>();
 
   for (const addr of (opp.offsetTokenAddresses ?? [])) {
     const addrLower = addr.toLowerCase();
-    if (addrLower === sourceAddrLower) continue;
+    if (!isNetType && addrLower === sourceAddrLower) continue;
     const lookupKey = `${opp.chainId}:${addrLower}`;
     const reserve = reserveLookup.get(lookupKey);
     if (reserve && !seen.has(reserve.reserveId)) {
@@ -1218,11 +1231,19 @@ export function extractNetPositionConstraint(
 }
 
 /**
- * 根据 token 地址查找匹配的 Merkl opportunities
+ * 根据 token 地址查找匹配的 Merkl opportunities，按 protocol version 过滤。
+ * V3 reserve 只匹配 V3 opportunities，V4 reserve 只匹配 V4 opportunities。
  */
 export function findMatchingMerklOpportunities(
-  item: { chainId: number; marketName: string; tokenAddress: string; aTokenAddress?: string | null; vTokenAddress?: string | null },
-  merklData: Record<string, MerklOpportunityData[]>
+  item: {
+    chainId: number;
+    marketName: string;
+    tokenAddress: string;
+    aTokenAddress?: string | null;
+    vTokenAddress?: string | null;
+  },
+  merklData: Record<string, MerklOpportunityData[]>,
+  protocolVersion: 'v3' | 'v4',
 ): MerklOpportunityData[] {
   const matchedOpportunities: MerklOpportunityData[] = [];
   const seenOpportunities = new Set<MerklOpportunityData>();
@@ -1236,14 +1257,12 @@ export function findMatchingMerklOpportunities(
   
   // 检查每个地址是否在索引中
   for (const tokenAddr of tokenAddressesToCheck) {
-    const indexKey = item.chainId === 1
-      ? `${item.marketName}-${item.chainId}-${tokenAddr}`
-      : `${item.chainId}-${tokenAddr}`;
+    const indexKey = `${item.chainId}-${tokenAddr}`;
     
     const matchingOpportunities = merklData[indexKey];
     if (matchingOpportunities?.length > 0) {
       for (const opp of matchingOpportunities) {
-        if (!seenOpportunities.has(opp)) {
+        if (!seenOpportunities.has(opp) && opp.protocolVersion === protocolVersion) {
           seenOpportunities.add(opp);
           matchedOpportunities.push(opp);
         }

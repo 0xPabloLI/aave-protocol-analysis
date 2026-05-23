@@ -105,6 +105,51 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['1:0xpool:0xusdc'] });
   });
 
+  it('Bug3: AAVE_NET_LENDING includes self token as offset (same-token net position)', async () => {
+    const opp: MerklOpportunityData = {
+      supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
+      borrow: [], hold: [],
+      marketName: 'AaveV3MegaETH', chainId: 4326,
+      opportunityType: 'AAVE_NET_LENDING',
+      offsetTokenAddresses: ['0xusdm'],
+    };
+    const lookup = makeReserveLookup([
+      { reserveId: '4326:0xpool:0xusdm', chainId: 4326, tokenAddress: '0xusdm' },
+    ]);
+    const result = await detectNetPositionConstraint(opp, '0xusdm', lookup);
+    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['4326:0xpool:0xusdm'] });
+  });
+
+  it('Bug3: AAVE_NET_BORROWING includes self token as offset', async () => {
+    const opp: MerklOpportunityData = {
+      supply: [], borrow: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }], hold: [],
+      marketName: 'AaveV3Ethereum', chainId: 1,
+      opportunityType: 'AAVE_NET_BORROWING',
+      offsetTokenAddresses: ['0xgho'],
+    };
+    const lookup = makeReserveLookup([
+      { reserveId: '1:0xpool:0xgho', chainId: 1, tokenAddress: '0xgho' },
+    ]);
+    const result = await detectNetPositionConstraint(opp, '0xgho', lookup);
+    assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['1:0xpool:0xgho'] });
+  });
+
+  it('Bug3: AAVE_NET_LENDING with cross+same tokens includes self and others', async () => {
+    const opp: MerklOpportunityData = {
+      supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
+      borrow: [], hold: [],
+      marketName: 'AaveV3Ethereum', chainId: 1,
+      opportunityType: 'AAVE_NET_LENDING',
+      offsetTokenAddresses: ['0xusde', '0xgho'],
+    };
+    const lookup = makeReserveLookup([
+      { reserveId: '1:0xpool:0xusde', chainId: 1, tokenAddress: '0xusde' },
+      { reserveId: '1:0xpool:0xgho', chainId: 1, tokenAddress: '0xgho' },
+    ]);
+    const result = await detectNetPositionConstraint(opp, '0xusde', lookup);
+    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusde', '1:0xpool:0xgho'] });
+  });
+
   it('LLM returns null when offsetTokenSymbols not found in lookup', async () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],

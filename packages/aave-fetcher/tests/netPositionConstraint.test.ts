@@ -118,7 +118,7 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
     assert.equal(result, null);
   });
 
-  it('excludes the source reserve token from offsetReserveIds (dedup)', () => {
+  it('includes self token in offsetReserveIds for AAVE_NET types (Bug3 fix)', () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [],
@@ -135,7 +135,7 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
     const result = extractNetPositionConstraint(opp, '0xusdt', lookup);
     assert.deepEqual(result, {
       sourceSide: 'supply',
-      offsetReserveIds: ['1:0xpool:0xusde'],
+      offsetReserveIds: ['1:0xpool:0xusdt', '1:0xpool:0xusde'],
     });
   });
 });
