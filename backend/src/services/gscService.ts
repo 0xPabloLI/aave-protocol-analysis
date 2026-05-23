@@ -29,7 +29,7 @@ function getGscClient() {
   return cachedClient;
 }
 
-async function fetchGscRows(targetDate: string): Promise<GscRow[]> {
+async function fetchGscRows(targetDate: string, dataState: 'final' | 'all' = 'final'): Promise<GscRow[]> {
   const webmasters = getGscClient();
   const allRows: GscRow[] = [];
   let startRow = 0;
@@ -43,7 +43,7 @@ async function fetchGscRows(targetDate: string): Promise<GscRow[]> {
         dimensions: ['country', 'page', 'query'],
         rowLimit: ROW_LIMIT,
         startRow,
-        dataState: 'final' as const,
+        dataState: dataState as const,
       },
     };
 
@@ -133,9 +133,9 @@ async function upsertGscRows(pool: Pool, targetDate: string, rows: GscRow[]): Pr
   return totalUpserted;
 }
 
-export async function fetchAndPersistGscDaily(pool: Pool, targetDateOverride?: string): Promise<{ targetDate: string; rowsUpserted: number }> {
+export async function fetchAndPersistGscDaily(pool: Pool, targetDateOverride?: string, dataState: 'final' | 'all' = 'final'): Promise<{ targetDate: string; rowsUpserted: number }> {
   const targetDate = targetDateOverride ?? dayjs().subtract(GSC_DELAY_DAYS, 'day').format('YYYY-MM-DD');
-  const rows = await fetchGscRows(targetDate);
+  const rows = await fetchGscRows(targetDate, dataState);
   const rowsUpserted = await upsertGscRows(pool, targetDate, rows);
   logger.info(`GSC fetch: date=${targetDate}, rows=${rows.length}, upserted=${rowsUpserted}`);
   return { targetDate, rowsUpserted };

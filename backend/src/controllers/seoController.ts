@@ -334,6 +334,7 @@ export async function triggerGscFetch(req: Request, res: Response): Promise<void
   }
   const overrideSiteUrl = req.body?.siteUrl as string | undefined;
   const overrideDaysAgo = req.body?.daysAgo as number | undefined;
+  const dataState = (req.body?.dataState as 'final' | 'all') ?? 'final';
   const originalSiteUrl = process.env.GSC_SITE_URL;
   if (overrideSiteUrl) {
     process.env.GSC_SITE_URL = overrideSiteUrl;
@@ -344,8 +345,8 @@ export async function triggerGscFetch(req: Request, res: Response): Promise<void
       ? dayjs().subtract(overrideDaysAgo, 'day').format('YYYY-MM-DD')
       : undefined;
     const result = targetDate
-      ? await fetchAndPersistGscDaily(pool, targetDate)
-      : await fetchAndPersistGscDaily(pool);
+      ? await fetchAndPersistGscDaily(pool, targetDate, dataState)
+      : await fetchAndPersistGscDaily(pool, undefined, dataState);
     setGscFetchSuccess(result);
     res.json({ ok: true, siteUrl: process.env.GSC_SITE_URL, ...result });
   } catch (error) {
