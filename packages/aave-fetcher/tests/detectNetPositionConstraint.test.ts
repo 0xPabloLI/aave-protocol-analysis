@@ -165,56 +165,5 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     assert.equal(result, null);
   });
 
-  it('Isolated AAVE_NET_LENDING (self-only offset) expands to same-pool reserves', async () => {
-    const opp: MerklOpportunityData = {
-      supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
-      borrow: [], hold: [],
-      marketName: 'AaveV3EthereumHorizon', chainId: 1,
-      opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: ['0xrlusd'],
-    };
-    const lookup = makeReserveLookup([
-      { reserveId: '1:0xpool:0xrlusd', chainId: 1, tokenAddress: '0xrlusd' },
-      { reserveId: '1:0xpool:0xgho', chainId: 1, tokenAddress: '0xgho' },
-      { reserveId: '1:0xpool:0xusdc', chainId: 1, tokenAddress: '0xusdc' },
-    ]);
-    const result = await detectNetPositionConstraint(opp, '0xrlusd', lookup);
-    assert.equal(result!.sourceSide, 'supply');
-    assert.equal(result!.offsetReserveIds.length, 3);
-    assert.ok(result!.offsetReserveIds.includes('1:0xpool:0xrlusd'));
-    assert.ok(result!.offsetReserveIds.includes('1:0xpool:0xgho'));
-    assert.ok(result!.offsetReserveIds.includes('1:0xpool:0xusdc'));
-  });
 
-  it('Isolated AAVE_NET_LENDING with single reserve in pool returns that single reserve', async () => {
-    const opp: MerklOpportunityData = {
-      supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
-      borrow: [], hold: [],
-      marketName: 'AaveV3MegaETH', chainId: 4326,
-      opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: ['0xusdm'],
-    };
-    const lookup = makeReserveLookup([
-      { reserveId: '4326:0xpool:0xusdm', chainId: 4326, tokenAddress: '0xusdm' },
-    ]);
-    const result = await detectNetPositionConstraint(opp, '0xusdm', lookup);
-    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['4326:0xpool:0xusdm'] });
-  });
-
-  it('Multi-offset AAVE_NET_LENDING does NOT expand (only self-only triggers expansion)', async () => {
-    const opp: MerklOpportunityData = {
-      supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
-      borrow: [], hold: [],
-      marketName: 'AaveV3Plasma', chainId: 1,
-      opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: ['0xgho', '0xusdt0'],
-    };
-    const lookup = makeReserveLookup([
-      { reserveId: '1:0xpool:0xgho', chainId: 1, tokenAddress: '0xgho' },
-      { reserveId: '1:0xpool:0xusdt0', chainId: 1, tokenAddress: '0xusdt0' },
-      { reserveId: '1:0xpool:0xusdc', chainId: 1, tokenAddress: '0xusdc' },
-    ]);
-    const result = await detectNetPositionConstraint(opp, '0xgho', lookup);
-    assert.equal(result!.offsetReserveIds.length, 2);
-  });
 });

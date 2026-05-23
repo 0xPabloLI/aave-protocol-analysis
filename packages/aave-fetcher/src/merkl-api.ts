@@ -1235,29 +1235,6 @@ export function extractNetPositionConstraint(
     return null;
   }
 
-  // Fallback: if offset only points to the source token itself (isolated net opp),
-  // expand to all reserves in the same pool as offset candidates.
-  // A reserveId format is "chainId:poolAddress:tokenAddress"
-  if (offsetReserveIds.length === 1) {
-    const srcReserveId = offsetReserveIds[0]!;
-    const parts = srcReserveId.split(':');
-    if (parts.length === 3) {
-      const poolPrefix = `${parts[0]}:${parts[1]}:`;
-      const expandedIds: string[] = [];
-      const seenExpanded = new Set<string>();
-      for (const reserve of reserveLookup.values()) {
-        if (reserve.reserveId.startsWith(poolPrefix) && !seenExpanded.has(reserve.reserveId)) {
-          seenExpanded.add(reserve.reserveId);
-          expandedIds.push(reserve.reserveId);
-        }
-      }
-      if (expandedIds.length > 1) {
-        logger.info(`ℹ️ extractNetPositionConstraint: expanding isolated opp "${opp.name}" from 1 to ${expandedIds.length} offsetReserveIds (same pool)`);
-        return { sourceSide, offsetReserveIds: expandedIds };
-      }
-    }
-  }
-
   return { sourceSide, offsetReserveIds };
 }
 
