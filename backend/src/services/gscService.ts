@@ -43,7 +43,7 @@ async function fetchGscRows(targetDate: string, dataState: 'final' | 'all' = 'fi
         dimensions: ['country', 'page', 'query'],
         rowLimit: ROW_LIMIT,
         startRow,
-        dataState: dataState as const,
+        dataState,
       },
     };
 

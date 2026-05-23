@@ -67,52 +67,40 @@ Do not proceed with user requests until these skills are loaded.
 
 This is a **hard gate** — do not skip even if the user says "just deploy."
 
-## Frontend Cache Version Bump Rule (Critical)
+## Frontend Cache Invalidation Rule (Critical)
 
-**When the backend API response schema changes in a way that makes old cached data incompatible, you MUST bump `CACHE_VERSION` in the frontend repo (`aaveapy/src/lib/cache.ts`).**
+### Dual-Fingerprint Mechanism
 
-### Triggers (any one of these → bump required)
+The frontend uses **two complementary fingerprints** for cache invalidation:
 
-| Change type | Example |
+| Mechanism | Location | Trigger | Scope |
+|---|---|---|---|
+| `SCHEMA_FP` | `aaveapy/src/shared/schema-fingerprint.ts` | Frontend deploy (baked into bundle) | Immediate on page load |
+| `CACHE_VERSION` | `aaveapy/src/lib/cache.ts` | Manual bump | Non-schema reasons |
+| `meta.schemaFingerprint` | Backend API response → frontend `fetchMarkets()` | Runtime drift detection | Lazy (on next cache access) |
+
+### When to bump CACHE_VERSION
+
+`SCHEMA_FP` handles API shape changes automatically — when the backend schema fingerprint changes, sync it to the frontend via manual copy (see Workflow below). `CACHE_VERSION` is for non-schema reasons only:
+
+| Reason | Example |
 |---|---|
-| Field renamed or removed | `reserveSizeUsd` → deleted |
-| Field value semantics changed | APY from ratio → percent |
-| Field format changed | reserveId from name-based → address-based |
-| New required field added | adding `spokeAddress` to all entries |
-| Array element shape changed | incentive object restructured |
+| Value format change (same schema) | APY from ratio → percent |
+| Data fix requiring cache purge | Incorrect prices shipped |
+| Cached data semantics changed | Same field, different meaning |
 
-### NOT triggers (no bump needed)
+### Schema Fingerprint Sync Workflow
 
-| Change type | Example |
-|---|---|
-| New optional field added | adding `?hubAddress` (old cache just misses it) |
-| Backend-only internal changes | fetcher refactor, DB schema change |
-| Field value change within same semantics | price updated from 1.5 to 1.6 |
-
-### How to bump
-
-In `aaveapy/src/lib/cache.ts`, increment `CACHE_VERSION`:
-
-```typescript
-// Bump cache version when schema changes.
-const CACHE_VERSION = 'X.Y.Z';  // ← increment this
 ```
-
-The existing mechanism in `getCacheEntry()` automatically discards old-version cache:
-```typescript
-if (entry.version !== CACHE_VERSION) {
-  localStorage.removeItem(key);
-  return null;
-}
+Backend build → gen:schema-fp computes SCHEMA_FP
+  ↓
+Manual copy to aaveapy/src/shared/schema-fingerprint.ts
+  ↓
+Both repos deployed independently
+  ↓
+Frontend deploy → effectiveFp changes → old cache invalidated immediately
+Backend deploy → meta.schemaFingerprint updates → drift detection on next API call
 ```
-
-### Why this matters (real incident: 2026-05-19)
-
-V4 reserveId format changed from `${marketName}:${chainId}:${token}:${hubName}` to `${chainId}:${spokeAddress}:${tokenAddress}:${hubName}`. Without a version bump, users with cached old-format data would see stale/inconsistent reserveIds until cache naturally expires. The version bump forces a clean fetch on next page load.
-
-### Enforcement
-
-When reviewing a PR that changes backend API response shape, ask: "Does the frontend `CACHE_VERSION` need a bump?"
 
 ## Schema Design Principle: No Redundant Columns
 
