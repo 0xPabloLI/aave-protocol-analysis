@@ -22,12 +22,13 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       marketName: 'AaveV3Ethereum',
       chainId: 1,
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: ['0xusde', '0xgho'],
+      offsetTokenAddresses: [
+        { address: '0xusde', reserveId: '1:0xpool:0xusde' },
+        { address: '0xgho', reserveId: '1:0xpool:0xgho' },
+      ],
     };
     const lookup = makeReserveLookup([
       { reserveId: '1:0xpool:0xusdt', chainId: 1, tokenAddress: '0xusdt' },
-      { reserveId: '1:0xpool:0xusde', chainId: 1, tokenAddress: '0xusde' },
-      { reserveId: '1:0xpool:0xgho', chainId: 1, tokenAddress: '0xgho' },
     ]);
     const result = extractNetPositionConstraint(opp, '0xusdt', lookup);
     assert.deepEqual(result, {
@@ -44,11 +45,10 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       marketName: 'AaveV3Ethereum',
       chainId: 1,
       opportunityType: 'AAVE_NET_BORROWING',
-      offsetTokenAddresses: ['0xusdc'],
+      offsetTokenAddresses: [{ address: '0xusdc', reserveId: '1:0xpool:0xusdc' }],
     };
     const lookup = makeReserveLookup([
       { reserveId: '1:0xpool:0xusde', chainId: 1, tokenAddress: '0xusde' },
-      { reserveId: '1:0xpool:0xusdc', chainId: 1, tokenAddress: '0xusdc' },
     ]);
     const result = extractNetPositionConstraint(opp, '0xusde', lookup);
     assert.deepEqual(result, {
@@ -65,7 +65,10 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       marketName: 'AaveV3Ethereum',
       chainId: 1,
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: ['0xusde', '0xunknown'],
+      offsetTokenAddresses: [
+        { address: '0xusde', reserveId: '1:0xpool:0xusde' },
+        { address: '0xunknown' },
+      ],
     };
     const lookup = makeReserveLookup([
       { reserveId: '1:0xpool:0xusdt', chainId: 1, tokenAddress: '0xusdt' },
@@ -126,12 +129,12 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       marketName: 'AaveV3Ethereum',
       chainId: 1,
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: ['0xusdt', '0xusde'],
+      offsetTokenAddresses: [
+        { address: '0xusdt', reserveId: '1:0xpool:0xusdt' },
+        { address: '0xusde', reserveId: '1:0xpool:0xusde' },
+      ],
     };
-    const lookup = makeReserveLookup([
-      { reserveId: '1:0xpool:0xusdt', chainId: 1, tokenAddress: '0xusdt' },
-      { reserveId: '1:0xpool:0xusde', chainId: 1, tokenAddress: '0xusde' },
-    ]);
+    const lookup = makeReserveLookup([]);
     const result = extractNetPositionConstraint(opp, '0xusdt', lookup);
     assert.deepEqual(result, {
       sourceSide: 'supply',

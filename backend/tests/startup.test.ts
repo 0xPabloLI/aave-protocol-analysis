@@ -38,8 +38,28 @@ test('dev entry script cleans residual backend processes before launching tsx', 
   const script = readFileSync(new URL('../scripts/dev-entry.sh', import.meta.url), 'utf8');
 
   assert.match(script, /bash scripts\/dev-clean\.sh/);
-  assert.match(script, /exec .*tsx src\/server\.ts/);
+  assert.match(script, /tsx src\/server\.ts/);
   assert.match(script, /--watch\)/);
+});
+
+test('dev entry script has self-repair preflight for missing deps', () => {
+  const script = readFileSync(new URL('../scripts/dev-entry.sh', import.meta.url), 'utf8');
+
+  assert.match(script, /package\.json.*dependencies/, 'should read deps dynamically from package.json');
+  assert.match(script, /require\.resolve/, 'should test deps via require.resolve');
+  assert.match(script, /_needs_install/, 'should use install flag to gate npm install');
+  assert.match(script, /_missing/, 'should report which deps are missing');
+  assert.match(script, /npm install/, 'should run npm install when deps missing');
+});
+
+test('dev entry script has runtime self-repair loop on MODULE_NOT_FOUND', () => {
+  const script = readFileSync(new URL('../scripts/dev-entry.sh', import.meta.url), 'utf8');
+
+  assert.match(script, /_max_repair/, 'should define max repair attempts');
+  assert.match(script, /_attempt/, 'should track attempt counter');
+  assert.match(script, /_exit=\$\?/, 'should capture process exit code');
+  assert.match(script, /runtime dep missing/, 'should log runtime dep missing');
+  assert.match(script, /npm install.*attempt/, 'should reinstall on runtime failure');
 });
 
 test('dev clean script also terminates tsx watch parents for this backend', () => {

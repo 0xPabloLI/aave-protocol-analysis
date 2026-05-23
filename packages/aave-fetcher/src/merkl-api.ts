@@ -194,6 +194,11 @@ export interface NetPositionConstraint {
   offsetReserveIds: string[];
 }
 
+export interface OffsetTokenInfo {
+  address: string;
+  reserveId?: string;
+}
+
 export interface MerklOpportunityData {
   supply: MerklCampaignBreakdown[];
   borrow: MerklCampaignBreakdown[];
@@ -206,7 +211,7 @@ export interface MerklOpportunityData {
   name?: string;
   description?: string;
   opportunityType?: string;
-  offsetTokenAddresses?: string[];
+  offsetTokenAddresses?: OffsetTokenInfo[];
 }
 
 /**
@@ -252,6 +257,7 @@ interface ForecastCampaignMetaLite {
 interface ProcessMerklDataOptions {
   reserveTokenPriceByChainAndAddress?: Map<string, number>;
   priceSourceStats?: Record<UsdPriceSource, number>;
+  reserveLookup?: Map<string, { reserveId: string }>;
 }
 
 interface MerklStaleStatus {
@@ -1052,7 +1058,7 @@ export async function processMerklData(
       continue;
     }
 
-    const offsetTokenAddresses = extractOffsetTokenAddresses(opp);
+    const offsetTokenAddresses = extractOffsetTokenAddresses(opp, mergedOptions.reserveLookup ?? new Map());
 
     // 创建 opportunity 数据对象，根据 action 直接设置对应数组
     const opportunityData: MerklOpportunityData = {
@@ -1142,9 +1148,13 @@ export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[
   return [...active, ...byType.values()];
 }
 
-function extractOffsetTokenAddresses(opp: MerklOpportunity): string[] {
+function extractOffsetTokenAddresses(
+  opp: MerklOpportunity,
+  reserveLookup: Map<string, { reserveId: string }>,
+): OffsetTokenInfo[] {
   if (!Array.isArray(opp.campaigns)) return [];
   const seen = new Set<string>();
+  const rawAddrs: string[] = [];
   for (const campaign of opp.campaigns) {
     const tokens: unknown = campaign?.params?.tokens;
     if (Array.isArray(tokens)) {
@@ -1154,12 +1164,18 @@ function extractOffsetTokenAddresses(opp: MerklOpportunity): string[] {
           : (typeof t === 'object' && t !== null && typeof (t as any).underlyingToken === 'string')
             ? (t as any).underlyingToken.toLowerCase()
             : null;
-        if (addr && !seen.has(addr)) seen.add(addr);
+        if (addr && !seen.has(addr)) {
+          seen.add(addr);
+          rawAddrs.push(addr);
+        }
       }
     }
   }
-  const result = [...seen];
-  return result;
+  return rawAddrs.map(addr => {
+    const lookupKey = `${opp.chainId}:${addr}`;
+    const reserve = reserveLookup.get(lookupKey);
+    return { address: addr, ...(reserve && { reserveId: reserve.reserveId }) };
+  });
 }
 
 export async function detectNetPositionConstraint(
@@ -1203,7 +1219,7 @@ export async function detectNetPositionConstraint(
 export function extractNetPositionConstraint(
   opp: MerklOpportunityData,
   sourceTokenAddress: string,
-  reserveLookup: Map<string, { reserveId: string }>
+  reserveLookup: Map<string, { reserveId: string }>,
 ): NetPositionConstraint | null {
   const type = opp.opportunityType;
   if (!type || !type.startsWith('AAVE_NET_')) return null;
@@ -1217,16 +1233,20 @@ export function extractNetPositionConstraint(
 
   const debugMissing: string[] = [];
 
-  for (const addr of (opp.offsetTokenAddresses ?? [])) {
-    const addrLower = addr.toLowerCase();
-    if (!isNetType && addrLower === sourceAddrLower) continue;
-    const lookupKey = `${opp.chainId}:${addrLower}`;
-    const reserve = reserveLookup.get(lookupKey);
-    if (reserve && !seen.has(reserve.reserveId)) {
-      seen.add(reserve.reserveId);
-      offsetReserveIds.push(reserve.reserveId);
-    } else {
-      debugMissing.push(lookupKey);
+  for (const info of (opp.offsetTokenAddresses ?? [])) {
+    if (!isNetType && info.address.toLowerCase() === sourceAddrLower) continue;
+    if (info.reserveId && !seen.has(info.reserveId)) {
+      seen.add(info.reserveId);
+      offsetReserveIds.push(info.reserveId);
+    } else if (!info.reserveId) {
+      const lookupKey = `${opp.chainId}:${info.address.toLowerCase()}`;
+      const reserve = reserveLookup.get(lookupKey);
+      if (reserve && !seen.has(reserve.reserveId)) {
+        seen.add(reserve.reserveId);
+        offsetReserveIds.push(reserve.reserveId);
+      } else {
+        debugMissing.push(lookupKey);
+      }
     }
   }
 

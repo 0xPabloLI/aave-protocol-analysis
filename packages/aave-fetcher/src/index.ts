@@ -20,6 +20,8 @@ import {
   formatMerklBreakdown,
   detectNetPositionConstraint
 } from './merkl-api.js';
+import { buildLlmPrompt, callLlmWithFallback } from './merklLlmClient.js';
+import type { LlmClientConfig } from './merklLlmClient.js';
 import {
   MeritDataItem,
   MeritAprEntry,
@@ -488,6 +490,10 @@ async function enrichDatasetWithIncentiveData(
     reserveLookup.set(key, { reserveId: r.reserveId, tokenSymbol: r.tokenSymbol });
   }
 
+  const llmApiKey = process.env.LLM_API_KEY;
+  const llmBaseUrl = process.env.LLM_BASE_URL;
+  const llmConfig: LlmClientConfig | undefined = llmApiKey && llmBaseUrl ? { apiKey: llmApiKey, baseUrl: llmBaseUrl } : undefined;
+
   return Promise.all(baseDataset.map(async item => {
     const meritItemData = getMeritDataFromMarket(item.marketName, item.chainName, item.tokenSymbol, meritData);
     
@@ -499,7 +505,6 @@ async function enrichDatasetWithIncentiveData(
     }
     
     // 获取对应的 Merkl 数据并更新
-    // Determine protocol version from marketName (V3: AaveV3*, V4: AaveV4*)
     const reserveProtocolVersion: 'v3' | 'v4' = item.marketName.startsWith('AaveV4') ? 'v4' : 'v3';
     const matchedOpportunities = findMatchingMerklOpportunities(item, merklData, reserveProtocolVersion);
     
@@ -516,7 +521,11 @@ async function enrichDatasetWithIncentiveData(
       
       // 收集所有 matchedOpportunities 中的 breakdowns
       for (const opp of matchedOpportunities) {
-        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, reserveLookup);
+        const llmFn = llmConfig ? () => {
+          const prompt = buildLlmPrompt({ type: opp.opportunityType ?? 'unknown', action: opp.name ?? opp.opportunityType ?? 'unknown', description: opp.description ?? '', tokenSymbols: [item.tokenSymbol] });
+          return callLlmWithFallback(prompt, llmConfig);
+        } : undefined;
+        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, reserveLookup, undefined, llmFn);
         if (opp.opportunityLink) {
           if (opp.supply.length > 0) {
             const supplyWithLinks = opp.supply.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
@@ -1150,8 +1159,14 @@ function launchIncentiveFetches(reserveTokenPriceByChainAndAddress: Map<string, 
     logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
     return {} as MeritDataIndex;
   });
+  const reserveLookupForMerkl = new Map<string, { reserveId: string }>();
+  for (const r of baseDataset) {
+    const key = `${r.chainId}:${r.tokenAddress.toLowerCase()}`;
+    reserveLookupForMerkl.set(key, { reserveId: r.reserveId });
+  }
   const merklPromise = processMerklData({
     reserveTokenPriceByChainAndAddress,
+    reserveLookup: reserveLookupForMerkl,
   }).catch((error) => {
     logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
     return { index: {} as MerklDataIndex } as MerklProcessedData;
