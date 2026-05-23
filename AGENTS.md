@@ -25,6 +25,7 @@
 - `npm run dev -w aave-dashboard-backend` — run backend
 - `npm run build -w aave-dashboard-backend` — compile backend
 - `npm run test -w aave-dashboard-backend` — backend tests
+- Log files: `backend/logs/error.log` (errors only), `backend/logs/combined.log` (all levels), rotated with suffixes (`error1.log`, `combined1.log`, etc.)
 
 ## Deployment (Hard Safety Gate)
 

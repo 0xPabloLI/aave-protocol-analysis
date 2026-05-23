@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { utils } from 'ethers';
+import { utils, providers } from 'ethers';
 
-import { calculateBaseRateFallback, POOL_CONFIGS } from '../src/services/onchainDataService.js';
+import { calculateBaseRateFallback, POOL_CONFIGS, executeMulticall3, V4_HUB_INTERFACE, MULTICALL3_ADDRESS } from '../src/services/onchainDataService.js';
 import { V4_SPOKE_ENTRIES, V3_ENTRIES } from '../src/services/addressBookRegistry.js';
 
 test('calculateBaseRateFallback returns null when borrowApy is missing', () => {
@@ -425,4 +425,47 @@ test('V4 spoke deficit=0 should not be stored (downstream fallback to 0 is safe)
       `deficitRay=${ray}: ${expectedStored ? 'should be stored' : 'should NOT be stored'}`
     );
   }
+});
+
+// ============================================================
+// Integration: real RPC Multicall3 aggregate3 call
+// Verifies the provider.call() fix actually works against live Ethereum RPC.
+// Root cause (2026-05-23): MULTICALL3_ADDRESS was a typo/fake address
+//   Wrong: 0xCa11bdE05977b6962E52e3f19a7a4E4F080a7E34 (no contract, 0 bytes code)
+//   Right: 0xcA11bde05977b3631167028862bE2a173976CA11 (canonical CREATE2 deployment)
+// This test now passes and guards against address regression.
+// ============================================================
+
+test('Integration: Multicall3 aggregate3 via provider.call() succeeds against live RPC', { timeout: 15_000 }, async () => {
+  // Use a public RPC (no auth needed)
+  const rpcUrl = 'https://ethereum-rpc.publicnode.com';
+  const provider = new providers.StaticJsonRpcProvider(rpcUrl, 1);
+
+  // Get a CORE_HUB address from V4 spoke entries
+  const coreHubEntry = V4_SPOKE_ENTRIES.find(e => e.hubKey === 'CORE_HUB');
+  assert.ok(coreHubEntry, 'No CORE_HUB entry found in V4 spoke entries');
+  const hubAddress = coreHubEntry!.hubAddress;
+  assert.ok(hubAddress.startsWith('0x'), `Invalid hub address: ${hubAddress}`);
+
+  // Encode getAssetCount() call
+  const getAssetCountCalldata = V4_HUB_INTERFACE.encodeFunctionData('getAssetCount');
+
+  // Call Multicall3 aggregate3 via provider.call() — this is the fixed path
+  const results = await executeMulticall3(
+    provider,
+    [{ target: hubAddress, allowFailure: false, callData: getAssetCountCalldata }],
+    rpcUrl
+  );
+
+  assert.ok(Array.isArray(results), 'aggregate3 should return an array');
+  assert.strictEqual(results.length, 1, 'should have 1 result for 1 sub-call');
+
+  // The call should succeed — if it reverts, the fix didn't work
+  assert.ok(results[0].success, `getAssetCount via aggregate3 reverted — provider.call() fix failed. returnData=${results[0].returnData}`);
+
+  // Decode and verify assetCount is a positive number
+  const assetCount = V4_HUB_INTERFACE.decodeFunctionResult('getAssetCount', results[0].returnData)[0];
+  const count = Number(assetCount);
+  assert.ok(count > 0, `CORE_HUB assetCount should be > 0, got ${count}`);
+  assert.ok(count < 300, `CORE_HUB assetCount should be < 300, got ${count}`);
 });

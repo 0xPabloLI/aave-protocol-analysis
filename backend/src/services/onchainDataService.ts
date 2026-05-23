@@ -88,7 +88,7 @@ export const POOL_CONFIGS = new Map<string, OnchainConfig>(
 // ============================================================
 // V4 Hub ABI (minimal: getAssetCount + getAsset + getSpokeDeficitRay)
 // ============================================================
-const V4_HUB_ABI = [
+export const V4_HUB_ABI = [
   {
     inputs: [],
     name: 'getAssetCount',
@@ -137,14 +137,14 @@ const V4_HUB_ABI = [
 ];
 
 const RAY = BigInt(10) ** BigInt(27);
-const V4_HUB_INTERFACE = new utils.Interface(V4_HUB_ABI);
+export const V4_HUB_INTERFACE = new utils.Interface(V4_HUB_ABI);
 
 // ============================================================
-// Multicall3 — pre-deployed on Ethereum at 0xCa11bdE05977b6962E52e3f19a7a4E4F080a7e34
+// Multicall3 — canonical CREATE2 deployment at 0xcA11bde05977b3631167028862bE2a173976CA11
 // Uses provider.call() (raw eth_call) instead of contract.callStatic to avoid
 // ethers.js v5 stateMutability issues: aggregate3 is payable, not view.
 // ============================================================
-const MULTICALL3_ADDRESS = '0xCa11bdE05977b6962E52e3f19a7a4E4F080a7e34';
+export const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
 const MULTICALL3_ABI = [
   {
     inputs: [{
@@ -172,7 +172,7 @@ const MULTICALL3_ABI = [
   },
 ];
 
-async function executeMulticall3(
+export async function executeMulticall3(
   provider: providers.Provider,
   calls: { target: string; allowFailure: boolean; callData: string }[],
   rpcUrl: string
