@@ -484,10 +484,12 @@ async function enrichDatasetWithIncentiveData(
   merklData: MerklDataIndex,
   brevisData: BrevisDataIndex
 ): Promise<RuntimeReserveData[]> {
-  const reserveLookup = new Map<string, { reserveId: string; tokenSymbol: string }>();
+  const reserveLookup = new Map<string, { reserveId: string; tokenSymbol: string }[]>();
   for (const r of baseDataset) {
     const key = `${r.chainId}:${r.tokenAddress.toLowerCase()}`;
-    reserveLookup.set(key, { reserveId: r.reserveId, tokenSymbol: r.tokenSymbol });
+    const entry = { reserveId: r.reserveId, tokenSymbol: r.tokenSymbol };
+    const existing = reserveLookup.get(key);
+    if (existing) { existing.push(entry); } else { reserveLookup.set(key, [entry]); }
   }
 
   const llmApiKey = process.env.LLM_API_KEY;
@@ -1159,10 +1161,12 @@ function launchIncentiveFetches(reserveTokenPriceByChainAndAddress: Map<string, 
     logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
     return {} as MeritDataIndex;
   });
-  const reserveLookupForMerkl = new Map<string, { reserveId: string }>();
+  const reserveLookupForMerkl = new Map<string, { reserveId: string }[]>();
   for (const r of baseDataset) {
     const key = `${r.chainId}:${r.tokenAddress.toLowerCase()}`;
-    reserveLookupForMerkl.set(key, { reserveId: r.reserveId });
+    const entry = { reserveId: r.reserveId };
+    const existing = reserveLookupForMerkl.get(key);
+    if (existing) { existing.push(entry); } else { reserveLookupForMerkl.set(key, [entry]); }
   }
   const merklPromise = processMerklData({
     reserveTokenPriceByChainAndAddress,

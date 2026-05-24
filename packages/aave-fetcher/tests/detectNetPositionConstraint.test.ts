@@ -5,11 +5,13 @@ import type { MerklOpportunityData, NetPositionConstraint } from '../src/merkl-a
 import type { LlmAnalysisResult } from '../src/merklLlmClient.js';
 import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 
-const makeReserveLookup = (reserves: Partial<RuntimeReserveData>[]): Map<string, Partial<RuntimeReserveData>> => {
-  const map = new Map<string, Partial<RuntimeReserveData>>();
+const makeReserveLookup = (reserves: Partial<RuntimeReserveData>[]): Map<string, { reserveId: string; tokenSymbol?: string }[]> => {
+  const map = new Map<string, { reserveId: string; tokenSymbol?: string }[]>();
   for (const r of reserves) {
     const key = `${r.chainId}:${(r.tokenAddress ?? '').toLowerCase()}`;
-    map.set(key, r);
+    const entry = { reserveId: r.reserveId ?? '', tokenSymbol: r.tokenSymbol };
+    const existing = map.get(key);
+    if (existing) { existing.push(entry); } else { map.set(key, [entry]); }
   }
   return map;
 };
@@ -20,7 +22,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
-      marketName: 'AaveV3Plasma', chainId: 1,
+      marketName: 'AaveV3Plasma', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
       offsetTokenAddresses: [
         { address: '0xusde', reserveId: '1:0xpool:0xusde' },
@@ -35,7 +37,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
-      marketName: 'AaveV3Ethereum', chainId: 1,
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_SUPPLY',
       description: 'USDT0 supply minus USDT0, USDe, GHO borrows',
     };
@@ -48,7 +50,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
-      marketName: 'AaveV3Ethereum', chainId: 1,
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_SUPPLY',
       description: 'USDtb supply — borrowers excluded',
     };
@@ -67,7 +69,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
-      marketName: 'AaveV3Ethereum', chainId: 1,
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_SUPPLY',
     };
     const mockLlm = async (): Promise<LlmAnalysisResult | null> => null;
@@ -78,7 +80,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
   it('returns null when all layers fail and no LLM provided', async () => {
     const opp: MerklOpportunityData = {
       supply: [], borrow: [], hold: [],
-      marketName: 'AaveV3Ethereum', chainId: 1,
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_SUPPLY',
     };
     const result = await detectNetPositionConstraint(opp, '0xusdt', makeReserveLookup([]));
@@ -89,7 +91,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
-      marketName: 'AaveV3Ethereum', chainId: 1,
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'MULTILOG_DUTCH',
       description: 'USDC borrow minus USDC supply',
     };
@@ -108,7 +110,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
-      marketName: 'AaveV3MegaETH', chainId: 4326,
+      marketName: 'AaveV3MegaETH', chainId: 4326, protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
       offsetTokenAddresses: [{ address: '0xusdm', reserveId: '4326:0xpool:0xusdm' }],
     };
@@ -119,7 +121,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
   it('Bug3: AAVE_NET_BORROWING includes self token as offset', async () => {
     const opp: MerklOpportunityData = {
       supply: [], borrow: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }], hold: [],
-      marketName: 'AaveV3Ethereum', chainId: 1,
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_BORROWING',
       offsetTokenAddresses: [{ address: '0xgho', reserveId: '1:0xpool:0xgho' }],
     };
@@ -131,7 +133,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
-      marketName: 'AaveV3Ethereum', chainId: 1,
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
       offsetTokenAddresses: [
         { address: '0xusde', reserveId: '1:0xpool:0xusde' },
@@ -146,7 +148,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
-      marketName: 'AaveV3Ethereum', chainId: 1,
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_SUPPLY',
     };
     const mockLlm = async (): Promise<LlmAnalysisResult | null> => ({
@@ -157,5 +159,59 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     assert.equal(result, null);
   });
 
+  it('V3/V4 collision: V3 opp resolves V3 reserveId, not V4', async () => {
+    const opp: MerklOpportunityData = {
+      supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
+      borrow: [], hold: [],
+      marketName: 'AaveV3EthereumHorizon', chainId: 1, protocolVersion: 'v3',
+      opportunityType: 'AAVE_NET_LENDING',
+      offsetTokenAddresses: [
+        { address: '0xrlusd' },
+      ],
+    };
+    const lookup = makeReserveLookup([
+      { reserveId: '1:0xv3pool:0xrlusd', chainId: 1, tokenAddress: '0xrlusd', tokenSymbol: 'RLUSD' },
+      { reserveId: '1:0xv4spoke:0xrlusd:Core', chainId: 1, tokenAddress: '0xrlusd', tokenSymbol: 'RLUSD' },
+    ]);
+    const result = await detectNetPositionConstraint(opp, '0xrlusd', lookup);
+    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xv3pool:0xrlusd'] });
+  });
+
+  it('V3/V4 collision: V4 opp resolves V4 reserveId', async () => {
+    const opp: MerklOpportunityData = {
+      supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
+      borrow: [], hold: [],
+      marketName: 'AaveV4Ethereum', chainId: 1, protocolVersion: 'v4',
+      opportunityType: 'AAVE_NET_LENDING',
+      offsetTokenAddresses: [
+        { address: '0xrlusd' },
+      ],
+    };
+    const lookup = makeReserveLookup([
+      { reserveId: '1:0xv3pool:0xrlusd', chainId: 1, tokenAddress: '0xrlusd', tokenSymbol: 'RLUSD' },
+      { reserveId: '1:0xv4spoke:0xrlusd:Core', chainId: 1, tokenAddress: '0xrlusd', tokenSymbol: 'RLUSD' },
+    ]);
+    const result = await detectNetPositionConstraint(opp, '0xrlusd', lookup);
+    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xv4spoke:0xrlusd:Core'] });
+  });
+
+  it('V3/V4 collision: LLM fallback filters by protocolVersion', async () => {
+    const opp: MerklOpportunityData = {
+      supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
+      borrow: [], hold: [],
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
+      opportunityType: 'AAVE_SUPPLY',
+    };
+    const lookup = makeReserveLookup([
+      { reserveId: '1:0xv3pool:0xusdc', chainId: 1, tokenAddress: '0xusdc', tokenSymbol: 'USDC' },
+      { reserveId: '1:0xv4spoke:0xusdc:Core', chainId: 1, tokenAddress: '0xusdc', tokenSymbol: 'USDC' },
+    ]);
+    const mockLlm = async (): Promise<LlmAnalysisResult | null> => ({
+      sourceSide: 'borrow',
+      offsetTokenSymbols: ['USDC'],
+    });
+    const result = await detectNetPositionConstraint(opp, '0xusdc', lookup, undefined, mockLlm);
+    assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['1:0xv3pool:0xusdc'] });
+  });
 
 });
