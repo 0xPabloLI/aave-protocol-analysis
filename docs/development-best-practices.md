@@ -49,7 +49,7 @@ The frontend cache (`aaveapy/src/lib/cache.ts`) uses two complementary fingerpri
 | Mechanism | Where | Trigger | Latency |
 |---|---|---|---|
 | `SCHEMA_FP` | `aaveapy/src/shared/schema-fingerprint.ts` (baked into bundle) | Frontend deploy | **Instant** (page load) |
-| `meta.schemaFingerprint` | Backend API response → `fetchMarkets()` drift detection | Backend deploy | Lazy (next cache access) |
+| `snapshot.schemaFingerprint` | Backend API response → `fetchMarkets()` drift detection | Backend deploy | Lazy (next cache access) |
 | `CACHE_VERSION` | `aaveapy/src/lib/cache.ts` | Manual bump | Next deploy |
 
 `SCHEMA_FP` is a hash of all API response field names, computed by the backend build script (`backend/scripts/generate-schema-fp.ts`) and written to `packages/aave-shared-config/schema-fingerprint.ts`. When the API shape changes, the hash changes.
@@ -69,7 +69,7 @@ When you change the backend API response shape and want frontend cache to invali
    - Frontend: vercel deploy
 ```
 
-**Why manual copy?** Backend and frontend are independent deploy pipelines with no automatic cross-repo channel. The `meta.schemaFingerprint` field in the API response provides a safety net for users who haven't refreshed after a backend-only deploy, but the primary invalidation comes from the baked-in `SCHEMA_FP` in the frontend bundle.
+**Why manual copy?** Backend and frontend are independent deploy pipelines with no automatic cross-repo channel. The `snapshot.schemaFingerprint` field in the API response provides a safety net for users who haven't refreshed after a backend-only deploy, but the primary invalidation comes from the baked-in `SCHEMA_FP` in the frontend bundle.
 
 **When to bump `CACHE_VERSION` instead:** Only for non-schema reasons that require a cache purge (value format change, data fix). Schema shape changes are handled by `SCHEMA_FP` automatically.
 
