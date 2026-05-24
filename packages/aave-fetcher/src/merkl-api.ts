@@ -12,7 +12,7 @@ import {
   normalizeMerklCampaignTotalBudget,
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
-import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess } from '@internal/aave-shared-contracts';
+import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, RuntimeReserveData } from '@internal/aave-shared-contracts';
 export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess } from '@internal/aave-shared-contracts';
 import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
@@ -215,14 +215,85 @@ export interface MerklOpportunityData {
 }
 
 /**
- * Derive protocol version from Merkl opportunity type.
- * Rule: if type contains "V4" → 'v4', otherwise → 'v3'.
- * This covers all known types (AAVE_NET_LENDING, AAVE_V4_HUB_SUPPLY, etc.)
- * and future unknown types.
+ * Build protocol version lookup tables from baseDataset.
+ * 
+ * Unambiguous lookup: chainId + aToken/vToken/spoke address → version.
+ *   - V3 reserves contribute aToken/vToken
+ *   - V4 reserves contribute aToken/vToken + spokeAddress
+ * 
+ * V4 underlying lookup: chainId + underlying token → true (V4 only).
+ *   - V3 reserves are excluded because V3 never uses underlying token as explorerAddress.
+ *   - This handles V4 Hub Supply where explorerAddress = underlying token.
  */
-export function deriveProtocolVersion(opportunityType: string | undefined): 'v3' | 'v4' {
-  if (!opportunityType) return 'v3';
-  return opportunityType.toUpperCase().includes('V4') ? 'v4' : 'v3';
+export function buildProtocolVersionLookup(
+  baseDataset: RuntimeReserveData[]
+): {
+  unambiguous: Map<string, 'v3' | 'v4'>;
+  v4Underlying: Map<string, true>;
+} {
+  const unambiguous = new Map<string, 'v3' | 'v4'>();
+  const v4Underlying = new Map<string, true>();
+
+  for (const r of baseDataset) {
+    const isV4 = r.marketName.startsWith('AaveV4');
+    const version: 'v3' | 'v4' = isV4 ? 'v4' : 'v3';
+    const chainId = r.chainId;
+
+    if (r.aTokenAddress) {
+      unambiguous.set(`${chainId}:${r.aTokenAddress.toLowerCase()}`, version);
+    }
+    if (r.vTokenAddress) {
+      unambiguous.set(`${chainId}:${r.vTokenAddress.toLowerCase()}`, version);
+    }
+    if (r.spokeAddress) {
+      unambiguous.set(`${chainId}:${r.spokeAddress.toLowerCase()}`, version);
+    }
+
+    // V4 underlying token → separate lookup (shared with V3, so unambiguous lookup can't use it)
+    if (isV4 && r.tokenAddress) {
+      v4Underlying.set(`${chainId}:${r.tokenAddress.toLowerCase()}`, true);
+    }
+  }
+
+  return { unambiguous, v4Underlying };
+}
+
+/**
+ * Derive protocol version from Merkl opportunity data.
+ * 
+ * Priority (ADR-0018):
+ *   1. type starts with AAVE_V4_           → v4  (zero-cost: Merkl naming convention)
+ *   2. Unambiguous address lookup (aToken/vToken/spoke) → v3/v4
+ *   3. V4 underlying token lookup           → v4  (safe: V3 never uses underlying as explorerAddress)
+ *   4. Default                               → v3  (conservative)
+ */
+export function deriveProtocolVersion(
+  opportunityType: string | undefined,
+  explorerAddress: string | undefined,
+  chainId: number,
+  unambiguousLookup: Map<string, 'v3' | 'v4'>,
+  v4UnderlyingLookup: Map<string, true>,
+): 'v3' | 'v4' {
+  // Step 1: type prefix check (fastest, catches all current V4 types)
+  if (opportunityType && opportunityType.toUpperCase().startsWith('AAVE_V4_')) {
+    return 'v4';
+  }
+
+  if (!explorerAddress) {
+    return 'v3';
+  }
+
+  const key = `${chainId}:${explorerAddress.toLowerCase()}`;
+
+  // Step 2: unambiguous address lookup
+  const version = unambiguousLookup.get(key);
+  if (version) return version;
+
+  // Step 3: V4 underlying token lookup
+  if (v4UnderlyingLookup.has(key)) return 'v4';
+
+  // Step 4: default
+  return 'v3';
 }
 
 interface CampaignSnapshotLiteForForecastFile {
@@ -258,6 +329,7 @@ interface ProcessMerklDataOptions {
   reserveTokenPriceByChainAndAddress?: Map<string, number>;
   priceSourceStats?: Record<UsdPriceSource, number>;
   reserveLookup?: Map<string, { reserveId: string }>;
+  baseDataset?: RuntimeReserveData[];
 }
 
 interface MerklStaleStatus {
@@ -840,6 +912,11 @@ export async function processMerklData(
     ...options,
     priceSourceStats,
   };
+
+  // Build protocol version lookup tables from baseDataset (ADR-0018)
+  const protocolLookup = options?.baseDataset
+    ? buildProtocolVersionLookup(options.baseDataset)
+    : { unambiguous: new Map<string, 'v3' | 'v4'>(), v4Underlying: new Map<string, true>() };
   let opportunities = fetchedOpportunities;
   let staleStatus: MerklStaleStatus = {
     stale: false,
@@ -979,8 +1056,14 @@ export async function processMerklData(
       continue;
     }
     
-    // Derive protocol version from opportunity type (V4 → v4, else v3)
-    const protocolVersion = deriveProtocolVersion(opp.type);
+    // Derive protocol version from opportunity (ADR-0018 4-step priority)
+    const protocolVersion = deriveProtocolVersion(
+      opp.type,
+      opp.explorerAddress,
+      opp.chainId,
+      protocolLookup.unambiguous,
+      protocolLookup.v4Underlying,
+    );
     const marketName = opp.chainId === 1 
       ? parseMarketNameFromOpportunityName(opp.name, opp.chainId)
       : 'Unknown';

@@ -70,6 +70,8 @@ export function filterRecentExpiredBrevis<T extends { breakdowns?: Array<{ campa
 export interface BrevisDataItem {
   brevisSupplys: BrevisCampaignItem[];
   brevisBorrows: BrevisCampaignItem[];
+  /** Protocol version. Currently only V3. */
+  protocolVersion: 'v3' | 'v4';
 }
 
 export class BrevisApiClient {
@@ -679,7 +681,7 @@ export class BrevisApiClient {
             const indexKey = `${protocol.chainId}-${tokenAddressLower}`;
 
             if (!campaignsIndex[indexKey]) {
-              campaignsIndex[indexKey] = { brevisSupplys: [], brevisBorrows: [] };
+              campaignsIndex[indexKey] = { brevisSupplys: [], brevisBorrows: [], protocolVersion: 'v3' };
             }
 
             // 根据 actionType 添加到对应的数组

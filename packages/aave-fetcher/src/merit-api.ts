@@ -66,6 +66,8 @@ export interface MeritAprEntry {
 export interface MeritDataItem {
   meritSupplys: MeritAprEntry[];
   meritBorrows: MeritAprEntry[];
+  /** Protocol version. Currently only V3. */
+  protocolVersion: 'v3' | 'v4';
 }
 
 /** Merit `actionsAPR` is percent; pipeline / snapshot use annual yield ratio. */
@@ -1074,7 +1076,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       if (!(indexKey in meritData)) {
         meritData[indexKey] = {
           meritSupplys: [],
-          meritBorrows: []
+          meritBorrows: [],
+          protocolVersion: 'v3',
         };
       }
       return meritData[indexKey]!;

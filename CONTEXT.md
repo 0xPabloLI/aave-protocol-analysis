@@ -133,8 +133,12 @@ _Avoid_: reward, emission
 _Avoid_: campaignBreakdown（已归并）
 
 **CampaignGroup**:
-按逻辑分组的一组 **Campaign** 容器。例如 Merkl 中同一 opportunity 下的多个 Campaign。
+按逻辑分组的一组 **Campaign** 容器。例如 Merkl 中同一 opportunity 下的多个 Campaign。每个 CampaignGroup 通过 **protocolVersion** (`'v3'` | `'v4'`) 绑定到对应协议版本的 Reserve，确保 V3/V4 激励来源不会交叉污染。Merit 和 Brevis 目前仅服务于 V3。
 _Avoid_: opportunity（Merkl 术语，与通用概念混淆）
+
+**protocolVersion**:
+CampaignGroup 的协议版本标签 (`'v3'` | `'v4'`)。Merkl 的 protocolVersion 通过 4-step 优先级推导（ADR-0018）：1) type 前缀 `AAVE_V4_` → `v4`；2) explorerAddress 反查无歧义地址(aToken/vToken/spoke) → 对应版本；3) explorerAddress 匹配 V4 underlying token → `v4`；4) 默认 → `v3`。Merit 和 Brevis 暂固定为 `v3`。
+_Avoid_: version, networkVersion
 
 **supplyIncentives** / **borrowIncentives**:
 供应/借贷激励 APR 值数组（已序列化的数值，非结构化对象）。包含所有源的聚合 APR。

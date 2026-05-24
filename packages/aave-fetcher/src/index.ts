@@ -1167,6 +1167,7 @@ function launchIncentiveFetches(reserveTokenPriceByChainAndAddress: Map<string, 
   const merklPromise = processMerklData({
     reserveTokenPriceByChainAndAddress,
     reserveLookup: reserveLookupForMerkl,
+    baseDataset,
   }).catch((error) => {
     logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
     return { index: {} as MerklDataIndex } as MerklProcessedData;
