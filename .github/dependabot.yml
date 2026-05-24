@@ -1,13 +1,35 @@
 version: 2
 updates:
+  # ── Targeted: @aave-dao/aave-address-book version upgrades ──
+  # Regular version-update PRs for address-book only; CI-green auto-merges.
   - package-ecosystem: npm
     directory: "/"
+    target-branch: railway
+    schedule:
+      interval: weekly
+      day: monday
+      time: "02:00"
+      timezone: UTC
+    open-pull-requests-limit: 5
+    allow:
+      - dependency-name: "@aave-dao/aave-address-book"
+        dependency-type: direct
+    labels:
+      - dependencies
+      - address-book-upgrade
+    commit-message:
+      prefix: "chore"
+      include: scope
+
+  # ── Security-only: root ───────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/"
+    target-branch: railway
     schedule:
       interval: weekly
       day: monday
       time: "03:00"
       timezone: UTC
-    # Disable regular version-update PRs; keep security updates enabled.
     open-pull-requests-limit: 0
     labels:
       - dependencies
@@ -20,14 +42,15 @@ updates:
         patterns:
           - "*"
 
+  # ── Security-only: backend ────────────────────────────────
   - package-ecosystem: npm
     directory: "/backend"
+    target-branch: railway
     schedule:
       interval: weekly
       day: monday
       time: "03:10"
       timezone: UTC
-    # Disable regular version-update PRs; keep security updates enabled.
     open-pull-requests-limit: 0
     labels:
       - dependencies
@@ -40,14 +63,15 @@ updates:
         patterns:
           - "*"
 
+  # ── Security-only: workers ────────────────────────────────
   - package-ecosystem: npm
     directory: "/workers"
+    target-branch: railway
     schedule:
       interval: weekly
       day: monday
       time: "03:15"
       timezone: UTC
-    # Disable regular version-update PRs; keep security updates enabled.
     open-pull-requests-limit: 0
     labels:
       - dependencies
@@ -60,14 +84,15 @@ updates:
         patterns:
           - "*"
 
+  # ── Security-only: GitHub Actions ─────────────────────────
   - package-ecosystem: github-actions
     directory: "/"
+    target-branch: railway
     schedule:
       interval: weekly
       day: monday
       time: "03:20"
       timezone: UTC
-    # Disable regular version-update PRs; keep security updates enabled.
     open-pull-requests-limit: 0
     labels:
       - dependencies

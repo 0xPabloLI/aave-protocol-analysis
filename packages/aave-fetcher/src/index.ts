@@ -484,12 +484,14 @@ async function enrichDatasetWithIncentiveData(
   merklData: MerklDataIndex,
   brevisData: BrevisDataIndex
 ): Promise<RuntimeReserveData[]> {
-  const reserveLookup = new Map<string, { reserveId: string; tokenSymbol: string }[]>();
+  const reserveIdSet = new Set<string>();
+  const symbolLookup = new Map<string, string>();
   for (const r of baseDataset) {
-    const key = `${r.chainId}:${r.tokenAddress.toLowerCase()}`;
-    const entry = { reserveId: r.reserveId, tokenSymbol: r.tokenSymbol };
-    const existing = reserveLookup.get(key);
-    if (existing) { existing.push(entry); } else { reserveLookup.set(key, [entry]); }
+    reserveIdSet.add(r.reserveId);
+    const symKey = `${r.chainId}:${r.tokenSymbol}`;
+    if (!symbolLookup.has(symKey)) {
+      symbolLookup.set(symKey, r.tokenAddress.toLowerCase());
+    }
   }
 
   const llmApiKey = process.env.LLM_API_KEY;
@@ -527,7 +529,7 @@ async function enrichDatasetWithIncentiveData(
           const prompt = buildLlmPrompt({ type: opp.opportunityType ?? 'unknown', action: opp.name ?? opp.opportunityType ?? 'unknown', description: opp.description ?? '', tokenSymbols: [item.tokenSymbol] });
           return callLlmWithFallback(prompt, llmConfig);
         } : undefined;
-        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, reserveLookup, undefined, llmFn);
+        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, undefined, llmFn);
         if (opp.opportunityLink) {
           if (opp.supply.length > 0) {
             const supplyWithLinks = opp.supply.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
@@ -1161,16 +1163,11 @@ function launchIncentiveFetches(reserveTokenPriceByChainAndAddress: Map<string, 
     logger.error(`❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
     return {} as MeritDataIndex;
   });
-  const reserveLookupForMerkl = new Map<string, { reserveId: string }[]>();
-  for (const r of baseDataset) {
-    const key = `${r.chainId}:${r.tokenAddress.toLowerCase()}`;
-    const entry = { reserveId: r.reserveId };
-    const existing = reserveLookupForMerkl.get(key);
-    if (existing) { existing.push(entry); } else { reserveLookupForMerkl.set(key, [entry]); }
-  }
+  const reserveIdSet = new Set<string>();
+  for (const r of baseDataset) { reserveIdSet.add(r.reserveId); }
   const merklPromise = processMerklData({
     reserveTokenPriceByChainAndAddress,
-    reserveLookup: reserveLookupForMerkl,
+    reserveIdSet,
     baseDataset,
   }).catch((error) => {
     logger.error(`❌ Merkl data fetching failed: ${error instanceof Error ? error.message : String(error)}`);

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { utils, providers } from 'ethers';
 
-import { calculateBaseRateFallback, POOL_CONFIGS, executeMulticall3, V4_HUB_INTERFACE, V4_HUB_ABI, MULTICALL3_ADDRESS } from '../src/services/onchainDataService.js';
+import { calculateBaseRateFallback, POOL_CONFIGS, executeMulticall3, V4_HUB_INTERFACE, processDeficitBatchResults, processDeficitSerialResult } from '../src/services/onchainDataService.js';
+import { V4_HUB_FULL_ABI, MULTICALL3_ADDRESS } from '../src/abis/index.js';
 import { V4_SPOKE_ENTRIES, V3_ENTRIES } from '../src/services/addressBookRegistry.js';
 
 test('calculateBaseRateFallback returns null when borrowApy is missing', () => {
@@ -237,15 +238,14 @@ test('V4 cache key is spokeAddress:hubName (supports same spoke, different hub)'
 // Multicall3 optimization tests
 // ============================================================
 
-test('Multicall3 pre-deployed address passes EIP-55 checksum validation', () => {
-  const MULTICALL3_ADDRESS = '0xCa11bdE05977b6962E52e3f19a7a4E4F080a7E34';
-  // ethers v5 getAddress() validates EIP-55 checksum; throws if mismatched
+test('Multicall3 pre-deployed canonical address passes EIP-55 checksum validation', () => {
   const validated = utils.getAddress(MULTICALL3_ADDRESS);
   assert.strictEqual(validated, MULTICALL3_ADDRESS, 'EIP-55 checksum mismatch');
+  assert.strictEqual(MULTICALL3_ADDRESS, '0xCA11bde05977b72171C07110a83e3e1c41D0C374', 'canonical CREATE2 address expected');
 });
 
 test('V4 Hub ABI encodes getAssetCount correctly', () => {
-  const V4_HUB_ABI = [
+  const V4_HUB_FULL_ABI = [
     {
       inputs: [],
       name: 'getAssetCount',
@@ -254,14 +254,14 @@ test('V4 Hub ABI encodes getAssetCount correctly', () => {
       type: 'function',
     },
   ];
-  const iface = new utils.Interface(V4_HUB_ABI);
+  const iface = new utils.Interface(V4_HUB_FULL_ABI);
   const calldata = iface.encodeFunctionData('getAssetCount');
   assert.ok(calldata.startsWith('0x'));
   assert.ok(calldata.length > 2);
 });
 
 test('V4 Hub ABI encodes getAsset with assetId parameter', () => {
-  const V4_HUB_ABI = [
+  const V4_HUB_FULL_ABI = [
     {
       inputs: [{ internalType: 'uint256', name: 'assetId', type: 'uint256' }],
       name: 'getAsset',
@@ -278,7 +278,7 @@ test('V4 Hub ABI encodes getAsset with assetId parameter', () => {
       type: 'function',
     },
   ];
-  const iface = new utils.Interface(V4_HUB_ABI);
+  const iface = new utils.Interface(V4_HUB_FULL_ABI);
   const calldata0 = iface.encodeFunctionData('getAsset', [0]);
   const calldata5 = iface.encodeFunctionData('getAsset', [5]);
   assert.ok(calldata0.startsWith('0x'));
@@ -286,7 +286,7 @@ test('V4 Hub ABI encodes getAsset with assetId parameter', () => {
 });
 
 test('V4 Hub ABI encodes getSpokeDeficitRay with assetId and spoke', () => {
-  const V4_HUB_ABI = [
+  const V4_HUB_FULL_ABI = [
     {
       inputs: [
         { internalType: 'uint256', name: 'assetId', type: 'uint256' },
@@ -298,7 +298,7 @@ test('V4 Hub ABI encodes getSpokeDeficitRay with assetId and spoke', () => {
       type: 'function',
     },
   ];
-  const iface = new utils.Interface(V4_HUB_ABI);
+  const iface = new utils.Interface(V4_HUB_FULL_ABI);
   const calldata = iface.encodeFunctionData('getSpokeDeficitRay', [0, '0x1234567890123456789012345678901234567890']);
   assert.ok(calldata.startsWith('0x'));
 });
@@ -394,36 +394,26 @@ test('POOL_CONFIGS entries have distinct (chainId, poolAddress) pairs', () => {
 });
 
 // ============================================================
-// V4 zero-deficit filtering: don't store deficit='0' entries
+// V4 deficit=0 is now stored (AAV-405: removed !== '0' filter)
 // ============================================================
 
-test('V4 spoke deficit=0 should not be stored (downstream fallback to 0 is safe)', () => {
-  // Simulating the deficit processing logic: only store non-zero values.
-  // This matches the downstream behavior where missing onchain deficit
-  // defaults to '0' in marketsService.ts.
+test('V4 spoke deficit=0 is stored (downstream reads explicit zero)', () => {
   const RAY = BigInt(10) ** BigInt(27);
   const spokeData = new Map<string, { deficit?: string }>();
 
   const testCases = [
-    { ray: '0', expectedStored: false },
-    { ray: String(RAY * BigInt(1)), expectedStored: true },
-    { ray: String(RAY * BigInt(5)), expectedStored: true },
-    { ray: String(RAY * BigInt(0)), expectedStored: false },
+    { ray: '0', expectedDeficit: '0' },
+    { ray: String(RAY * BigInt(1)), expectedDeficit: '1' },
+    { ray: String(RAY * BigInt(5)), expectedDeficit: '5' },
+    { ray: String(RAY * BigInt(0)), expectedDeficit: '0' },
   ];
 
-  for (const { ray, expectedStored } of testCases) {
+  for (const { ray, expectedDeficit } of testCases) {
     spokeData.clear();
-    if (ray !== '0') {
-      const amount = BigInt(ray) / RAY;
-      spokeData.set(ray, { deficit: amount.toString() });
-    }
-    // Zero deficit → not stored, same as `deficitRayStr !== '0'` gate
-    const wasStored = spokeData.has(ray);
-    assert.strictEqual(
-      wasStored,
-      expectedStored,
-      `deficitRay=${ray}: ${expectedStored ? 'should be stored' : 'should NOT be stored'}`
-    );
+    const amount = BigInt(ray) / RAY;
+    spokeData.set(ray, { deficit: amount.toString() });
+    const stored = spokeData.get(ray);
+    assert.strictEqual(stored?.deficit, expectedDeficit, `deficitRay=${ray}: expected deficit=${expectedDeficit}`);
   }
 });
 
@@ -432,7 +422,7 @@ test('V4 spoke deficit=0 should not be stored (downstream fallback to 0 is safe)
 // Verifies the provider.call() fix actually works against live Ethereum RPC.
 // Root cause (2026-05-23): MULTICALL3_ADDRESS was a typo/fake address
 //   Wrong: 0xCa11bdE05977b6962E52e3f19a7a4E4F080a7E34 (no contract, 0 bytes code)
-//   Right: 0xcA11bde05977b3631167028862bE2a173976CA11 (canonical CREATE2 deployment)
+//   Right: 0xcA11bde05977b72171C07110A83e3E1C41d0C374 (canonical CREATE2 deployment)
 // This test now passes and guards against address regression.
 // ============================================================
 
@@ -470,15 +460,15 @@ test('Integration: Multicall3 aggregate3 via provider.call() succeeds against li
   assert.ok(count < 300, `CORE_HUB assetCount should be < 300, got ${count}`);
 });
 
-test('V4_HUB_ABI has exactly 3 methods: getAssetCount, getAsset, getSpokeDeficitRay', () => {
-  const fns = V4_HUB_ABI.filter((e: any) => e.type === 'function');
-  assert.strictEqual(fns.length, 3);
+test('V4_HUB_FULL_ABI has exactly 5 methods: getAssetCount, getAsset, getSpokeCount, getSpokeAddress, getSpokeDeficitRay', () => {
+  const fns = V4_HUB_FULL_ABI.filter((e: any) => e.type === 'function');
+  assert.strictEqual(fns.length, 5);
   const names = fns.map((f: any) => f.name).sort();
-  assert.deepStrictEqual(names, ['getAsset', 'getAssetCount', 'getSpokeDeficitRay']);
+  assert.deepStrictEqual(names, ['getAsset', 'getAssetCount', 'getSpokeAddress', 'getSpokeCount', 'getSpokeDeficitRay']);
 });
 
-test('V4_HUB_ABI getAsset has 17 output fields matching @aave-dao/aave-address-book IHubV4', () => {
-  const getAsset = V4_HUB_ABI.find((e: any) => e.name === 'getAsset') as any;
+test('V4_HUB_FULL_ABI getAsset has 17 output fields matching @aave-dao/aave-address-book IHubV4', () => {
+  const getAsset = V4_HUB_FULL_ABI.find((e: any) => e.name === 'getAsset') as any;
   assert.ok(getAsset, 'getAsset entry not found');
   const components = getAsset.outputs[0].components;
   assert.strictEqual(components.length, 17, `expected 17 fields, got ${components.length}`);
@@ -493,21 +483,21 @@ test('V4_HUB_ABI getAsset has 17 output fields matching @aave-dao/aave-address-b
   assert.deepStrictEqual(actualNames, expectedFields);
 });
 
-test('V4_HUB_ABI getAsset underlying is at index 12 (position 13) per contract layout', () => {
-  const getAsset = V4_HUB_ABI.find((e: any) => e.name === 'getAsset') as any;
+test('V4_HUB_FULL_ABI getAsset underlying is at index 12 (position 13) per contract layout', () => {
+  const getAsset = V4_HUB_FULL_ABI.find((e: any) => e.name === 'getAsset') as any;
   const components = getAsset.outputs[0].components;
   const underlyingIdx = components.findIndex((c: any) => c.name === 'underlying');
   assert.strictEqual(underlyingIdx, 12, `underlying at index ${underlyingIdx}, expected 12`);
 });
 
-test('V4_HUB_ABI getAsset deficitRay is the last field (index 16)', () => {
-  const getAsset = V4_HUB_ABI.find((e: any) => e.name === 'getAsset') as any;
+test('V4_HUB_FULL_ABI getAsset deficitRay is the last field (index 16)', () => {
+  const getAsset = V4_HUB_FULL_ABI.find((e: any) => e.name === 'getAsset') as any;
   const components = getAsset.outputs[0].components;
   assert.strictEqual(components[components.length - 1].name, 'deficitRay');
   assert.strictEqual(components[components.length - 1].type, 'uint200');
 });
 
-test('V4_HUB_ABI getAsset function selector is identical to address-book IHubV4', () => {
+test('V4_HUB_FULL_ABI getAsset function selector is identical to address-book IHubV4', () => {
   const addressBookAbi = [
     {
       inputs: [{ name: 'assetId', type: 'uint256' }],
@@ -539,9 +529,78 @@ test('V4_HUB_ABI getAsset function selector is identical to address-book IHubV4'
       type: 'function',
     },
   ];
-  const localIface = new utils.Interface(V4_HUB_ABI);
+  const localIface = new utils.Interface(V4_HUB_FULL_ABI);
   const abIface = new utils.Interface(addressBookAbi);
   const localSelector = localIface.getSighash('getAsset');
   const abSelector = abIface.getSighash('getAsset');
   assert.strictEqual(localSelector, abSelector, `selector mismatch: local=${localSelector} address-book=${abSelector}`);
+});
+
+// ============================================================
+// AAV-405: deficit 硬错误 — processDeficitBatchResults / processDeficitSerialResult
+// (RAY already declared at L74)
+// ============================================================
+
+
+test('processDeficitBatchResults: all successful with non-zero deficit', () => {
+  const deficit1 = BigInt(1000) * RAY;
+  const deficit2 = BigInt(2000) * RAY;
+  const returnData1 = V4_HUB_INTERFACE.encodeFunctionResult('getSpokeDeficitRay', [deficit1]);
+  const returnData2 = V4_HUB_INTERFACE.encodeFunctionResult('getSpokeDeficitRay', [deficit2]);
+  const results = [
+    { success: true, returnData: returnData1 },
+    { success: true, returnData: returnData2 },
+  ];
+  const underlyings = ['0xTokenA', '0xTokenB'];
+  const spokeData = processDeficitBatchResults(results, underlyings);
+  assert.strictEqual(spokeData.get('0xTokenA')?.deficit, '1000');
+  assert.strictEqual(spokeData.get('0xTokenB')?.deficit, '2000');
+});
+
+test('processDeficitBatchResults: zero deficit is stored (no filtering)', () => {
+  const returnData = V4_HUB_INTERFACE.encodeFunctionResult('getSpokeDeficitRay', [BigInt(0)]);
+  const results = [{ success: true, returnData }];
+  const underlyings = ['0xTokenA'];
+  const spokeData = processDeficitBatchResults(results, underlyings);
+  assert.strictEqual(spokeData.get('0xTokenA')?.deficit, '0');
+});
+
+test('processDeficitBatchResults: failed call throws', () => {
+  const results = [{ success: false, returnData: '0x' }];
+  const underlyings = ['0xTokenA'];
+  assert.throws(() => processDeficitBatchResults(results, underlyings), /Multicall3 getSpokeDeficitRay failed for 0xTokenA/);
+});
+
+test('processDeficitBatchResults: decode failure throws', () => {
+  const results = [{ success: true, returnData: '0xbaddata' }];
+  const underlyings = ['0xTokenA'];
+  assert.throws(() => processDeficitBatchResults(results, underlyings), /Decode getSpokeDeficitRay failed for 0xTokenA/);
+});
+
+test('processDeficitSerialResult: non-zero deficit', () => {
+  const deficit = BigInt(5000) * RAY;
+  const result = processDeficitSerialResult(deficit, '0xTokenA');
+  assert.strictEqual(result.deficit, '5000');
+});
+
+test('processDeficitSerialResult: zero deficit is stored (no filtering)', () => {
+  const result = processDeficitSerialResult(BigInt(0), '0xTokenA');
+  assert.strictEqual(result.deficit, '0');
+});
+
+test('processDeficitSerialResult: small deficit below RAY preserves raw', () => {
+  const deficit = BigInt(999);
+  const result = processDeficitSerialResult(deficit, '0xTokenA');
+  assert.strictEqual(result.deficit, '0');
+});
+
+test('processDeficitBatchResults: mixed results — first ok second fail throws', () => {
+  const deficit1 = BigInt(100) * RAY;
+  const returnData1 = V4_HUB_INTERFACE.encodeFunctionResult('getSpokeDeficitRay', [deficit1]);
+  const results = [
+    { success: true, returnData: returnData1 },
+    { success: false, returnData: '0x' },
+  ];
+  const underlyings = ['0xTokenA', '0xTokenB'];
+  assert.throws(() => processDeficitBatchResults(results, underlyings), /Multicall3 getSpokeDeficitRay failed for 0xTokenB/);
 });

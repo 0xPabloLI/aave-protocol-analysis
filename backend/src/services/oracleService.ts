@@ -19,6 +19,7 @@ import { mkdir, rename, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
+import { IPool_ABI, IAaveOracle_ABI, ISpokeV4_ABI, V4_ORACLE_PRICES_ABI } from '../abis/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,80 +39,6 @@ async function writeJsonAtomic(
   await writeFile(tempPath, payload, 'utf-8');
   await rename(tempPath, filePath);
 }
-
-// ============================================================
-// V3 Pool ABI (minimal: getReservesList)
-// ============================================================
-const V3_POOL_ABI = [
-  {
-    inputs: [],
-    name: 'getReservesList',
-    outputs: [{ internalType: 'address[]', name: '', type: 'address[]' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-];
-
-// ============================================================
-// V3 Oracle ABI (minimal: getAssetsPrices)
-// ============================================================
-const V3_ORACLE_ABI = [
-  {
-    inputs: [{ internalType: 'address[]', name: 'assets', type: 'address[]' }],
-    name: 'getAssetsPrices',
-    outputs: [{ internalType: 'uint256[]', name: '', type: 'uint256[]' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-];
-
-// ============================================================
-// V4 Spoke ABI (minimal: getReserveCount + getReserve)
-// ============================================================
-const V4_SPOKE_ABI = [
-  {
-    inputs: [],
-    name: 'getReserveCount',
-    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-  {
-    inputs: [{ internalType: 'uint256', name: 'reserveId', type: 'uint256' }],
-    name: 'getReserve',
-    outputs: [
-      {
-        components: [
-          { internalType: 'address', name: 'underlying', type: 'address' },
-          { internalType: 'address', name: 'hub', type: 'address' },
-          { internalType: 'uint16', name: 'assetId', type: 'uint16' },
-          { internalType: 'uint8', name: 'decimals', type: 'uint8' },
-          { internalType: 'uint24', name: 'collateralRisk', type: 'uint24' },
-          { internalType: 'uint8', name: 'flags', type: 'uint8' },
-          { internalType: 'uint32', name: 'dynamicConfigKey', type: 'uint32' },
-        ],
-        internalType: 'struct ISpoke.Reserve',
-        name: '',
-        type: 'tuple',
-      },
-    ],
-    stateMutability: 'view',
-    type: 'function',
-  },
-];
-
-// ============================================================
-// V4 Oracle ABI (minimal: getReservesPrices)
-// ============================================================
-const V4_ORACLE_ABI = [
-  {
-    inputs: [{ internalType: 'uint256[]', name: 'reserveIds', type: 'uint256[]' }],
-    name: 'getReservesPrices',
-    outputs: [{ internalType: 'uint256[]', name: '', type: 'uint256[]' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-];
 
 // ============================================================
 // V3 Pool Configs (runtime-derived from address-book via registry)
@@ -249,8 +176,8 @@ async function fetchV3PoolPrices(
   provider: providers.Provider,
   rpcUrl: string
 ): Promise<V3OraclePoolResult> {
-  const poolContract = new Contract(config.poolAddress, V3_POOL_ABI, provider);
-  const oracleContract = new Contract(config.oracleAddress, V3_ORACLE_ABI, provider);
+  const poolContract = new Contract(config.poolAddress, IPool_ABI, provider);
+  const oracleContract = new Contract(config.oracleAddress, IAaveOracle_ABI, provider);
 
   const assets: string[] = await withTimeout(
     poolContract.getReservesList(),
@@ -293,8 +220,8 @@ async function fetchV4SpokePrices(
   provider: providers.Provider,
   rpcUrl: string
 ): Promise<V4OracleSpokeResult> {
-  const spokeContract = new Contract(config.spokeAddress, V4_SPOKE_ABI, provider);
-  const oracleContract = new Contract(config.oracleAddress, V4_ORACLE_ABI, provider);
+  const spokeContract = new Contract(config.spokeAddress, ISpokeV4_ABI, provider);
+  const oracleContract = new Contract(config.oracleAddress, V4_ORACLE_PRICES_ABI, provider);
 
   const reserveCountBN = await withTimeout(
     spokeContract.getReserveCount(),

@@ -199,21 +199,43 @@ export interface OffsetTokenInfo {
   reserveId?: string;
 }
 
-export type ReserveLookupEntry = { reserveId: string; tokenSymbol?: string };
-export type ReserveLookup = Map<string, ReserveLookupEntry[]>;
-
-function inferProtocolVersionFromReserveId(reserveId: string): 'v3' | 'v4' | null {
+export function inferVersionFromReserveId(reserveId: string): 'v3' | 'v4' | null {
   const segments = reserveId.split(':').length;
   if (segments === 3) return 'v3';
   if (segments >= 4) return 'v4';
   return null;
 }
 
-function findReserveIdByProtocolVersion(
-  entries: ReserveLookupEntry[],
-  protocolVersion: 'v3' | 'v4',
-): ReserveLookupEntry | undefined {
-  return entries.find(e => inferProtocolVersionFromReserveId(e.reserveId) === protocolVersion) ?? entries[0];
+export function extractPoolSpokePrefix(reserveId: string): string | null {
+  const parts = reserveId.split(':');
+  if (parts.length < 3) return null;
+  return `${parts[0]}:${parts[1]}`;
+}
+
+export function resolveOffsetReserveIds(
+  oppReserveId: string,
+  offsetTokenAddress: string,
+  reserveIdSet: Set<string>,
+): string[] {
+  const version = inferVersionFromReserveId(oppReserveId);
+  const prefix = extractPoolSpokePrefix(oppReserveId);
+  if (!prefix || !version) return [];
+
+  const normalizedAddr = offsetTokenAddress.toLowerCase();
+
+  if (version === 'v3') {
+    const candidate = `${prefix}:${normalizedAddr}`;
+    return reserveIdSet.has(candidate) ? [candidate] : [];
+  }
+
+  const base = `${prefix}:${normalizedAddr}`;
+  const results: string[] = [];
+  for (const rid of reserveIdSet) {
+    if (rid.startsWith(base + ':')) {
+      results.push(rid);
+    }
+  }
+  return results;
 }
 
 export interface MerklOpportunityData {
@@ -345,7 +367,7 @@ interface ForecastCampaignMetaLite {
 interface ProcessMerklDataOptions {
   reserveTokenPriceByChainAndAddress?: Map<string, number>;
   priceSourceStats?: Record<UsdPriceSource, number>;
-  reserveLookup?: ReserveLookup;
+  reserveIdSet?: Set<string>;
   baseDataset?: RuntimeReserveData[];
 }
 
@@ -1065,6 +1087,17 @@ export async function processMerklData(
   // Build forecast meta map early so breakdowns can be enriched with opportunity-only forecast data
   const forecastCampaignMetaLite = buildForecastCampaignMetaLiteMap(liveOpportunities);
 
+  // 反查 Map: chainId:tokenAddress → reserveId（用于从 opp 的 explorerAddress 反查对应 reserveId）
+  const tokenAddrToReserveId = new Map<string, string>();
+  if (mergedOptions.baseDataset) {
+    for (const r of mergedOptions.baseDataset) {
+      const key = `${r.chainId}:${r.tokenAddress.toLowerCase()}`;
+      if (!tokenAddrToReserveId.has(key)) {
+        tokenAddrToReserveId.set(key, r.reserveId);
+      }
+    }
+  }
+
   // 处理所有 live opportunities（现在可以快速从缓存中获取数据）
   for (const opp of liveOpportunities) {
     if (!opp.explorerAddress) {
@@ -1158,7 +1191,13 @@ export async function processMerklData(
       continue;
     }
 
-    const offsetTokenAddresses = extractOffsetTokenAddresses(opp, mergedOptions.reserveLookup ?? new Map(), protocolVersion);
+    // 反查 opp 对应的 reserveId
+    const oppReserveId = tokenAddrToReserveId.get(`${opp.chainId}:${explorerAddress}`);
+    const reserveIdSet = mergedOptions.reserveIdSet ?? new Set<string>();
+
+    const offsetTokenAddresses = oppReserveId
+      ? extractOffsetTokenAddresses(opp, oppReserveId, reserveIdSet)
+      : [];
 
     // 创建 opportunity 数据对象，根据 action 直接设置对应数组
     const opportunityData: MerklOpportunityData = {
@@ -1250,8 +1289,8 @@ export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[
 
 function extractOffsetTokenAddresses(
   opp: MerklOpportunity,
-  reserveLookup: ReserveLookup,
-  protocolVersion: 'v3' | 'v4',
+  oppReserveId: string,
+  reserveIdSet: Set<string>,
 ): OffsetTokenInfo[] {
   if (!Array.isArray(opp.campaigns)) return [];
   const seen = new Set<string>();
@@ -1273,22 +1312,22 @@ function extractOffsetTokenAddresses(
     }
   }
   return rawAddrs.map(addr => {
-    const lookupKey = `${opp.chainId}:${addr}`;
-    const entries = reserveLookup.get(lookupKey);
-    if (!entries || entries.length === 0) return { address: addr };
-    const matched = findReserveIdByProtocolVersion(entries, protocolVersion);
-    return { address: addr, ...(matched && { reserveId: matched.reserveId }) };
+    const resolvedIds = resolveOffsetReserveIds(oppReserveId, addr, reserveIdSet);
+    if (resolvedIds.length === 1) return { address: addr, reserveId: resolvedIds[0] };
+    return { address: addr };
   });
 }
 
 export async function detectNetPositionConstraint(
   opp: MerklOpportunityData,
   sourceTokenAddress: string,
-  reserveLookup: Map<string, { reserveId: string; tokenSymbol?: string }[]>,
+  oppReserveId: string,
+  reserveIdSet: Set<string>,
+  symbolLookup: Map<string, string>,
   cachedConstraint?: NetPositionConstraint | null,
   llmFn?: () => Promise<import('./merklLlmClient.js').LlmAnalysisResult | null>,
 ): Promise<NetPositionConstraint | null> {
-  const layer1 = extractNetPositionConstraint(opp, sourceTokenAddress, reserveLookup);
+  const layer1 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet);
   if (layer1) return layer1;
 
   if (cachedConstraint) return cachedConstraint;
@@ -1301,26 +1340,19 @@ export async function detectNetPositionConstraint(
   const { sourceSide, offsetTokenSymbols } = llmResult;
   if (!offsetTokenSymbols || offsetTokenSymbols.length === 0) return null;
 
-  const protocolVersion = opp.protocolVersion;
   const offsetReserveIds: string[] = [];
   const seen = new Set<string>();
   for (const symbol of offsetTokenSymbols) {
-    let found = false;
-    for (const entries of reserveLookup.values()) {
-      for (const entry of entries) {
-        if (entry.tokenSymbol === symbol && !seen.has(entry.reserveId)) {
-          const entryVersion = inferProtocolVersionFromReserveId(entry.reserveId);
-          if (entryVersion === protocolVersion || !entryVersion) {
-            seen.add(entry.reserveId);
-            offsetReserveIds.push(entry.reserveId);
-            found = true;
-            break;
-          }
-        }
+    const tokenAddr = symbolLookup.get(`${opp.chainId}:${symbol}`);
+    if (!tokenAddr) return null;
+    const resolvedIds = resolveOffsetReserveIds(oppReserveId, tokenAddr.toLowerCase(), reserveIdSet);
+    if (resolvedIds.length === 0) return null;
+    for (const rid of resolvedIds) {
+      if (!seen.has(rid)) {
+        seen.add(rid);
+        offsetReserveIds.push(rid);
       }
-      if (found) break;
     }
-    if (!found) return null;
   }
 
   return { sourceSide, offsetReserveIds };
@@ -1329,7 +1361,8 @@ export async function detectNetPositionConstraint(
 export function extractNetPositionConstraint(
   opp: MerklOpportunityData,
   sourceTokenAddress: string,
-  reserveLookup: ReserveLookup,
+  oppReserveId: string,
+  reserveIdSet: Set<string>,
 ): NetPositionConstraint | null {
   const type = opp.opportunityType;
   if (!type || !type.startsWith('AAVE_NET_')) return null;
@@ -1342,7 +1375,6 @@ export function extractNetPositionConstraint(
   const seen = new Set<string>();
 
   const debugMissing: string[] = [];
-  const protocolVersion = opp.protocolVersion;
 
   for (const info of (opp.offsetTokenAddresses ?? [])) {
     if (!isNetType && info.address.toLowerCase() === sourceAddrLower) continue;
@@ -1350,22 +1382,21 @@ export function extractNetPositionConstraint(
       seen.add(info.reserveId);
       offsetReserveIds.push(info.reserveId);
     } else if (!info.reserveId) {
-      const lookupKey = `${opp.chainId}:${info.address.toLowerCase()}`;
-      const entries = reserveLookup.get(lookupKey);
-      if (entries && entries.length > 0) {
-        const matched = findReserveIdByProtocolVersion(entries, protocolVersion);
-        if (matched && !seen.has(matched.reserveId)) {
-          seen.add(matched.reserveId);
-          offsetReserveIds.push(matched.reserveId);
+      const resolvedIds = resolveOffsetReserveIds(oppReserveId, info.address.toLowerCase(), reserveIdSet);
+      for (const rid of resolvedIds) {
+        if (!seen.has(rid)) {
+          seen.add(rid);
+          offsetReserveIds.push(rid);
         }
-      } else {
-        debugMissing.push(lookupKey);
+      }
+      if (resolvedIds.length === 0) {
+        debugMissing.push(info.address.toLowerCase());
       }
     }
   }
 
   if (offsetReserveIds.length === 0) {
-    logger.warn(`⚠️ extractNetPositionConstraint: no offsetReserveIds for opp "${opp.name}" type=${type} chain=${opp.chainId} sourceToken=${sourceAddrLower} offsetAddrs=${JSON.stringify(opp.offsetTokenAddresses)} missingKeys=${JSON.stringify(debugMissing)} reserveLookupSize=${reserveLookup.size}`);
+    logger.warn(`⚠️ extractNetPositionConstraint: no offsetReserveIds for opp "${opp.name}" type=${type} chain=${opp.chainId} sourceToken=${sourceAddrLower} offsetAddrs=${JSON.stringify(opp.offsetTokenAddresses)} missingAddrs=${JSON.stringify(debugMissing)} reserveIdSetSize=${reserveIdSet.size}`);
     return null;
   }
 

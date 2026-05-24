@@ -3,15 +3,12 @@ import assert from 'node:assert/strict';
 import { detectNetPositionConstraint } from '../src/merkl-api.js';
 import type { MerklOpportunityData, NetPositionConstraint } from '../src/merkl-api.js';
 import type { LlmAnalysisResult } from '../src/merklLlmClient.js';
-import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 
-const makeReserveLookup = (reserves: Partial<RuntimeReserveData>[]): Map<string, { reserveId: string; tokenSymbol?: string }[]> => {
-  const map = new Map<string, { reserveId: string; tokenSymbol?: string }[]>();
-  for (const r of reserves) {
-    const key = `${r.chainId}:${(r.tokenAddress ?? '').toLowerCase()}`;
-    const entry = { reserveId: r.reserveId ?? '', tokenSymbol: r.tokenSymbol };
-    const existing = map.get(key);
-    if (existing) { existing.push(entry); } else { map.set(key, [entry]); }
+const makeReserveIdSet = (reserveIds: string[]): Set<string> => new Set(reserveIds);
+const makeSymbolLookup = (entries: [number, string, string][]): Map<string, string> => {
+  const map = new Map<string, string>();
+  for (const [chainId, symbol, address] of entries) {
+    map.set(`${chainId}:${symbol}`, address);
   }
   return map;
 };
@@ -29,7 +26,9 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
         { address: '0xgho', reserveId: '1:0xpool:0xgho' },
       ],
     };
-    const result = await detectNetPositionConstraint(opp, '0xusdt', makeReserveLookup([]));
+    const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusdt', '1:0xpool:0xusde', '1:0xpool:0xgho']);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet, symbolLookup);
     assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusde', '1:0xpool:0xgho'] });
   });
 
@@ -42,7 +41,9 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
       description: 'USDT0 supply minus USDT0, USDe, GHO borrows',
     };
     const cached: NetPositionConstraint = { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusde'] };
-    const result = await detectNetPositionConstraint(opp, '0xusdt0', makeReserveLookup([]), cached);
+    const reserveIdSet = makeReserveIdSet([]);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xusdt0', '1:0xpool:0xusdt0', reserveIdSet, symbolLookup, cached);
     assert.deepEqual(result, cached);
   });
 
@@ -54,14 +55,13 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
       opportunityType: 'AAVE_SUPPLY',
       description: 'USDtb supply — borrowers excluded',
     };
-    const lookup = makeReserveLookup([
-      { reserveId: '1:0xpool:0xusdtb', chainId: 1, tokenAddress: '0xusdtb', tokenSymbol: 'USDtb' },
-    ]);
+    const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusdtb']);
+    const symbolLookup = makeSymbolLookup([[1, 'USDtb', '0xusdtb']]);
     const mockLlm = async (): Promise<LlmAnalysisResult | null> => ({
       sourceSide: 'supply',
       offsetTokenSymbols: ['USDtb'],
     });
-    const result = await detectNetPositionConstraint(opp, '0xusdtb', lookup, undefined, mockLlm);
+    const result = await detectNetPositionConstraint(opp, '0xusdtb', '1:0xpool:0xusdtb', reserveIdSet, symbolLookup, undefined, mockLlm);
     assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusdtb'] });
   });
 
@@ -73,7 +73,9 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
       opportunityType: 'AAVE_SUPPLY',
     };
     const mockLlm = async (): Promise<LlmAnalysisResult | null> => null;
-    const result = await detectNetPositionConstraint(opp, '0xusdt', makeReserveLookup([]), undefined, mockLlm);
+    const reserveIdSet = makeReserveIdSet([]);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet, symbolLookup, undefined, mockLlm);
     assert.equal(result, null);
   });
 
@@ -83,11 +85,13 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
       marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_SUPPLY',
     };
-    const result = await detectNetPositionConstraint(opp, '0xusdt', makeReserveLookup([]));
+    const reserveIdSet = makeReserveIdSet([]);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet, symbolLookup);
     assert.equal(result, null);
   });
 
-  it('LLM offsetTokenSymbols resolved via reserveLookup (symbol→address→reserveId)', async () => {
+  it('LLM offsetTokenSymbols resolved via symbolLookup + reserveIdSet', async () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
@@ -95,14 +99,13 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
       opportunityType: 'MULTILOG_DUTCH',
       description: 'USDC borrow minus USDC supply',
     };
-    const lookup = makeReserveLookup([
-      { reserveId: '1:0xpool:0xusdc', chainId: 1, tokenAddress: '0xusdc', tokenSymbol: 'USDC' },
-    ]);
+    const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusdc']);
+    const symbolLookup = makeSymbolLookup([[1, 'USDC', '0xusdc']]);
     const mockLlm = async (): Promise<LlmAnalysisResult | null> => ({
       sourceSide: 'borrow',
       offsetTokenSymbols: ['USDC'],
     });
-    const result = await detectNetPositionConstraint(opp, '0xusdc', lookup, undefined, mockLlm);
+    const result = await detectNetPositionConstraint(opp, '0xusdc', '1:0xpool:0xusdc', reserveIdSet, symbolLookup, undefined, mockLlm);
     assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['1:0xpool:0xusdc'] });
   });
 
@@ -114,7 +117,9 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
       opportunityType: 'AAVE_NET_LENDING',
       offsetTokenAddresses: [{ address: '0xusdm', reserveId: '4326:0xpool:0xusdm' }],
     };
-    const result = await detectNetPositionConstraint(opp, '0xusdm', makeReserveLookup([]));
+    const reserveIdSet = makeReserveIdSet(['4326:0xpool:0xusdm']);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xusdm', '4326:0xpool:0xusdm', reserveIdSet, symbolLookup);
     assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['4326:0xpool:0xusdm'] });
   });
 
@@ -125,7 +130,9 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
       opportunityType: 'AAVE_NET_BORROWING',
       offsetTokenAddresses: [{ address: '0xgho', reserveId: '1:0xpool:0xgho' }],
     };
-    const result = await detectNetPositionConstraint(opp, '0xgho', makeReserveLookup([]));
+    const reserveIdSet = makeReserveIdSet(['1:0xpool:0xgho']);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xgho', '1:0xpool:0xgho', reserveIdSet, symbolLookup);
     assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['1:0xpool:0xgho'] });
   });
 
@@ -140,11 +147,13 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
         { address: '0xgho', reserveId: '1:0xpool:0xgho' },
       ],
     };
-    const result = await detectNetPositionConstraint(opp, '0xusde', makeReserveLookup([]));
+    const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusde', '1:0xpool:0xgho']);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xusde', '1:0xpool:0xusde', reserveIdSet, symbolLookup);
     assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusde', '1:0xpool:0xgho'] });
   });
 
-  it('LLM returns null when offsetTokenSymbols not found in lookup', async () => {
+  it('LLM returns null when offsetTokenSymbols not found in symbolLookup', async () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
@@ -155,63 +164,64 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
       sourceSide: 'supply',
       offsetTokenSymbols: ['UNKNOWN_TOKEN'],
     });
-    const result = await detectNetPositionConstraint(opp, '0xusdt', makeReserveLookup([]), undefined, mockLlm);
+    const reserveIdSet = makeReserveIdSet([]);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet, symbolLookup, undefined, mockLlm);
     assert.equal(result, null);
   });
 
-  it('V3/V4 collision: V3 opp resolves V3 reserveId, not V4', async () => {
+  it('Bug5: V3 opp resolves offset via pool prefix, not cross-pool', async () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
       marketName: 'AaveV3EthereumHorizon', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: [
-        { address: '0xrlusd' },
-      ],
+      offsetTokenAddresses: [{ address: '0xrlusd' }],
     };
-    const lookup = makeReserveLookup([
-      { reserveId: '1:0xv3pool:0xrlusd', chainId: 1, tokenAddress: '0xrlusd', tokenSymbol: 'RLUSD' },
-      { reserveId: '1:0xv4spoke:0xrlusd:Core', chainId: 1, tokenAddress: '0xrlusd', tokenSymbol: 'RLUSD' },
+    const reserveIdSet = makeReserveIdSet([
+      '1:0xhorizonPool:0xrlusd',
+      '1:0xmainPool:0xrlusd',
     ]);
-    const result = await detectNetPositionConstraint(opp, '0xrlusd', lookup);
-    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xv3pool:0xrlusd'] });
+    const symbolLookup = makeSymbolLookup([]);
+    const oppReserveId = '1:0xhorizonPool:0xsourceToken';
+    const result = await detectNetPositionConstraint(opp, '0xsourceToken', oppReserveId, reserveIdSet, symbolLookup);
+    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xhorizonPool:0xrlusd'] });
   });
 
-  it('V3/V4 collision: V4 opp resolves V4 reserveId', async () => {
+  it('Bug5: V4 opp resolves offset via spoke prefix, across hubs', async () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
       marketName: 'AaveV4Ethereum', chainId: 1, protocolVersion: 'v4',
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: [
-        { address: '0xrlusd' },
-      ],
+      offsetTokenAddresses: [{ address: '0xrlusd' }],
     };
-    const lookup = makeReserveLookup([
-      { reserveId: '1:0xv3pool:0xrlusd', chainId: 1, tokenAddress: '0xrlusd', tokenSymbol: 'RLUSD' },
-      { reserveId: '1:0xv4spoke:0xrlusd:Core', chainId: 1, tokenAddress: '0xrlusd', tokenSymbol: 'RLUSD' },
+    const reserveIdSet = makeReserveIdSet([
+      '1:0xv4spoke:0xrlusd:Core',
+      '1:0xv4spoke:0xrlusd:Lido',
+      '1:0xmainPool:0xrlusd',
     ]);
-    const result = await detectNetPositionConstraint(opp, '0xrlusd', lookup);
-    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xv4spoke:0xrlusd:Core'] });
+    const symbolLookup = makeSymbolLookup([]);
+    const oppReserveId = '1:0xv4spoke:0xsourceToken:Core';
+    const result = await detectNetPositionConstraint(opp, '0xsourceToken', oppReserveId, reserveIdSet, symbolLookup);
+    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xv4spoke:0xrlusd:Core', '1:0xv4spoke:0xrlusd:Lido'] });
   });
 
-  it('V3/V4 collision: LLM fallback filters by protocolVersion', async () => {
+  it('Bug5: LLM fallback uses symbolLookup + oppReserveId for pool-scoped resolution', async () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
       marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_SUPPLY',
     };
-    const lookup = makeReserveLookup([
-      { reserveId: '1:0xv3pool:0xusdc', chainId: 1, tokenAddress: '0xusdc', tokenSymbol: 'USDC' },
-      { reserveId: '1:0xv4spoke:0xusdc:Core', chainId: 1, tokenAddress: '0xusdc', tokenSymbol: 'USDC' },
-    ]);
+    const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusdc']);
+    const symbolLookup = makeSymbolLookup([[1, 'USDC', '0xusdc']]);
     const mockLlm = async (): Promise<LlmAnalysisResult | null> => ({
       sourceSide: 'borrow',
       offsetTokenSymbols: ['USDC'],
     });
-    const result = await detectNetPositionConstraint(opp, '0xusdc', lookup, undefined, mockLlm);
-    assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['1:0xv3pool:0xusdc'] });
+    const result = await detectNetPositionConstraint(opp, '0xusdc', '1:0xpool:0xusdc', reserveIdSet, symbolLookup, undefined, mockLlm);
+    assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['1:0xpool:0xusdc'] });
   });
 
 });

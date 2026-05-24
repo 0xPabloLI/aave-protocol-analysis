@@ -33,6 +33,7 @@ import { ethProviderService } from './ethProviderService.js';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
+import { V4_HUB_FULL_ABI, MULTICALL3_ABI, MULTICALL3_ADDRESS } from '../abis/index.js';
 
 const ONCHAIN_PER_RPC_TIMEOUT_MS = 15_000;
 
@@ -85,98 +86,55 @@ export const POOL_CONFIGS = new Map<string, OnchainConfig>(
     }]),
 );
 
-// ============================================================
-// V4 Hub ABI — getAsset field order from @aave-dao/aave-address-book IHubV4
-// (address-book ./abis entry does not export IHubV4_ABI; values inlined here)
-// Local addition: getSpokeDeficitRay (not in address-book)
-// ============================================================
-export const V4_HUB_ABI = [
-  {
-    inputs: [],
-    name: 'getAssetCount',
-    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-  {
-    inputs: [{ internalType: 'uint256', name: 'assetId', type: 'uint256' }],
-    name: 'getAsset',
-    outputs: [
-      {
-        components: [
-          { internalType: 'uint120', name: 'liquidity', type: 'uint120' },
-          { internalType: 'uint120', name: 'realizedFees', type: 'uint120' },
-          { internalType: 'uint8', name: 'decimals', type: 'uint8' },
-          { internalType: 'uint120', name: 'addedShares', type: 'uint120' },
-          { internalType: 'uint120', name: 'swept', type: 'uint120' },
-          { internalType: 'int200', name: 'premiumOffsetRay', type: 'int200' },
-          { internalType: 'uint120', name: 'drawnShares', type: 'uint120' },
-          { internalType: 'uint120', name: 'premiumShares', type: 'uint120' },
-          { internalType: 'uint16', name: 'liquidityFee', type: 'uint16' },
-          { internalType: 'uint120', name: 'drawnIndex', type: 'uint120' },
-          { internalType: 'uint96', name: 'drawnRate', type: 'uint96' },
-          { internalType: 'uint40', name: 'lastUpdateTimestamp', type: 'uint40' },
-          { internalType: 'address', name: 'underlying', type: 'address' },
-          { internalType: 'address', name: 'irStrategy', type: 'address' },
-          { internalType: 'address', name: 'reinvestmentController', type: 'address' },
-          { internalType: 'address', name: 'feeReceiver', type: 'address' },
-          { internalType: 'uint200', name: 'deficitRay', type: 'uint200' },
-        ],
-        internalType: 'struct IHub.Asset',
-        name: '',
-        type: 'tuple',
-      },
-    ],
-    stateMutability: 'view',
-    type: 'function',
-  },
-  {
-    inputs: [
-      { internalType: 'uint256', name: 'assetId', type: 'uint256' },
-      { internalType: 'address', name: 'spoke', type: 'address' },
-    ],
-    name: 'getSpokeDeficitRay',
-    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-];
-
 const RAY = BigInt(10) ** BigInt(27);
-export const V4_HUB_INTERFACE = new utils.Interface(V4_HUB_ABI);
+export const V4_HUB_INTERFACE = new utils.Interface(V4_HUB_FULL_ABI);
+
+export function processDeficitBatchResults(
+  results: { success: boolean; returnData: string }[],
+  underlyings: string[]
+): Map<string, OnchainReserveData> {
+  const spokeData = new Map<string, OnchainReserveData>();
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const underlying = underlyings[i];
+    if (!r.success) {
+      throw new Error(`Multicall3 getSpokeDeficitRay failed for ${underlying}`);
+    }
+    let deficitRay: bigint;
+    try {
+      deficitRay = V4_HUB_INTERFACE.decodeFunctionResult('getSpokeDeficitRay', r.returnData)[0];
+    } catch (e) {
+      throw new Error(`Decode getSpokeDeficitRay failed for ${underlying}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const deficitRayStr = String(deficitRay);
+    try {
+      const deficitUnderlying = BigInt(deficitRayStr) / RAY;
+      spokeData.set(underlying, { deficit: deficitUnderlying.toString() });
+    } catch {
+      spokeData.set(underlying, { deficit: deficitRayStr });
+    }
+  }
+  return spokeData;
+}
+
+export function processDeficitSerialResult(
+  deficitRay: bigint,
+  underlying: string
+): OnchainReserveData {
+  const deficitRayStr = String(deficitRay);
+  try {
+    const deficitUnderlying = BigInt(deficitRayStr) / RAY;
+    return { deficit: deficitUnderlying.toString() };
+  } catch {
+    return { deficit: deficitRayStr };
+  }
+}
 
 // ============================================================
-// Multicall3 — canonical CREATE2 deployment at 0xcA11bde05977b3631167028862bE2a173976CA11
-// Uses provider.call() (raw eth_call) instead of contract.callStatic to avoid
+// Multicall3 — uses provider.call() (raw eth_call) instead of contract.callStatic to avoid
 // ethers.js v5 stateMutability issues: aggregate3 is payable, not view.
+// ABI and canonical CREATE2 address imported from bridge layer.
 // ============================================================
-export const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
-const MULTICALL3_ABI = [
-  {
-    inputs: [{
-      components: [
-        { internalType: 'address', name: 'target', type: 'address' },
-        { internalType: 'bool', name: 'allowFailure', type: 'bool' },
-        { internalType: 'bytes', name: 'callData', type: 'bytes' },
-      ],
-      internalType: 'struct Multicall3.Call3[]',
-      name: 'calls',
-      type: 'tuple[]',
-    }],
-    name: 'aggregate3',
-    outputs: [{
-      components: [
-        { internalType: 'bool', name: 'success', type: 'bool' },
-        { internalType: 'bytes', name: 'returnData', type: 'bytes' },
-      ],
-      internalType: 'struct Multicall3.Result[]',
-      name: 'returnData',
-      type: 'tuple[]',
-    }],
-    stateMutability: 'payable',
-    type: 'function',
-  },
-];
 
 export async function executeMulticall3(
   provider: providers.Provider,
@@ -333,26 +291,9 @@ async function fetchAndCacheV4Spoke(
               callData: c.callData,
             }));
             const results = await executeMulticall3(provider, multicallCalls, rpcUrl);
-
-            for (let i = 0; i < results.length; i++) {
-              const r = results[i];
-              const { underlying } = deficitCalls[i];
-              if (!r.success) continue;
-              try {
-                const deficitRay = V4_HUB_INTERFACE.decodeFunctionResult('getSpokeDeficitRay', r.returnData)[0];
-                const deficitRayStr = String(deficitRay);
-                if (deficitRayStr !== '0') {
-                  try {
-                    const deficitUnderlying = BigInt(deficitRayStr) / RAY;
-                    spokeData.set(underlying, { deficit: deficitUnderlying.toString() });
-                  } catch {
-                    spokeData.set(underlying, { deficit: deficitRayStr });
-                  }
-                }
-              } catch (e) {
-                logger.debug(`V4 Multicall3 decode getSpokeDeficitRay for ${underlying} failed: ${e}`);
-              }
-            }
+            const underlyings = deficitCalls.map((c) => c.underlying);
+            const batchSpokeData = processDeficitBatchResults(results, underlyings);
+            for (const [key, val] of batchSpokeData) spokeData.set(key, val);
             batchOk = true;
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -361,26 +302,15 @@ async function fetchAndCacheV4Spoke(
         }
 
         if (!batchOk) {
-          const hubContract = new Contract(config.hubAddress, V4_HUB_ABI, provider);
+          const hubContract = new Contract(config.hubAddress, V4_HUB_FULL_ABI, provider);
           for (const [underlying, assetId] of underlyingToAssetId) {
-            try {
-              const deficitRay = await withTimeout(
-                hubContract.getSpokeDeficitRay(assetId, config.spokeAddress),
-                ONCHAIN_PER_RPC_TIMEOUT_MS,
-                `V4 getSpokeDeficitRay(${assetId}, ${config.spokeName}) timeout`
-              ) as any;
-              const deficitRayStr = String(deficitRay);
-              if (deficitRayStr !== '0') {
-                try {
-                  const deficitUnderlying = BigInt(deficitRayStr) / RAY;
-                  spokeData.set(underlying, { deficit: deficitUnderlying.toString() });
-                } catch {
-                  spokeData.set(underlying, { deficit: deficitRayStr });
-                }
-              }
-            } catch (e2) {
-              logger.debug(`V4 getSpokeDeficitRay(${assetId}, ${config.spokeName}) failed: ${e2}`);
-            }
+            const deficitRay = await withTimeout(
+              hubContract.getSpokeDeficitRay(assetId, config.spokeAddress),
+              ONCHAIN_PER_RPC_TIMEOUT_MS,
+              `V4 getSpokeDeficitRay(${assetId}, ${config.spokeName}) timeout`
+            ) as any;
+            const result = processDeficitSerialResult(BigInt(String(deficitRay)), underlying);
+            spokeData.set(underlying, result);
           }
         }
       }
@@ -489,7 +419,7 @@ async function buildHubAssetMappingSerial(
   rpcUrl: string
 ): Promise<Map<string, number>> {
   const mapping = new Map<string, number>();
-  const hubContract = new Contract(hubAddress, V4_HUB_ABI, provider);
+  const hubContract = new Contract(hubAddress, V4_HUB_FULL_ABI, provider);
 
   try {
     const assetCountBN = await withTimeout(
