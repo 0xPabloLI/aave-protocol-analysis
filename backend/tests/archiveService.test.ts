@@ -92,22 +92,19 @@ test('default threshold is 3GB = 3221225472 bytes', () => {
   assert.strictEqual(3 * 1024 * 1024 * 1024, 3221225472);
 });
 
-test('archive_jobs table SQL: migration 015 exists and is well-formed', async () => {
+test('archive_jobs table SQL: squash migration 001 includes archive_jobs', async () => {
   const { readFileSync } = await import('fs');
   const { resolve, dirname } = await import('path');
   const { fileURLToPath } = await import('url');
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  const sql = readFileSync(resolve(__dirname, '../migrations/015_archive_jobs.sql'), 'utf8');
-  assert.ok(sql.includes('CREATE TABLE'), 'must contain CREATE TABLE');
-  assert.ok(sql.includes('archive_jobs'), 'must create archive_jobs table');
+  const sql = readFileSync(resolve(__dirname, '../migrations/001_init_schema.sql'), 'utf8');
+  assert.ok(sql.includes('archive_jobs'), 'squash must create archive_jobs table');
   assert.ok(sql.includes('triggered_at'), 'must have triggered_at column');
   assert.ok(sql.includes('workflow_run_id'), 'must have workflow_run_id column');
   assert.ok(sql.includes('status'), 'must have status column');
   assert.ok(sql.includes('pg_size_bytes'), 'must have pg_size_bytes column');
   assert.ok(sql.includes('cleaned_at'), 'must have cleaned_at column');
   assert.ok(sql.includes('error_message'), 'must have error_message column');
-  assert.ok(sql.includes('BEGIN'), 'must wrap in transaction');
-  assert.ok(sql.includes('COMMIT'), 'must commit transaction');
 });
 
 test('db-backup workflow supports mode input', async () => {

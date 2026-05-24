@@ -123,8 +123,8 @@ try {
     logger.info('💾 Persistence disabled — skipping auto-migration');
   }
 } catch (error) {
-  logger.error('❌ Auto-migration failed:', error);
-  logger.warn('⚠️  Warm-start dedup may not work — first cron tick will write all config rows');
+  logger.error('❌ Auto-migration failed — refusing to start with incomplete schema:', error);
+  process.exit(1);
 }
 
 // Phase 1: independent caches (can run in parallel)

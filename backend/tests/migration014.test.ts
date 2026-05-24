@@ -7,44 +7,58 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(__dirname, '..', 'migrations');
 
-const migration014Path = join(migrationsDir, '014_fix_oracle_null_unique.sql');
-const migration014 = readFileSync(migration014Path, 'utf8');
+const squashPath = join(migrationsDir, '001_init_schema.sql');
+const squash = readFileSync(squashPath, 'utf8');
 
-test('migration 014 exists', () => {
-  assert.ok(existsSync(migration014Path), '014_fix_oracle_null_unique.sql must exist');
+test('squash migration 001_init_schema.sql exists', () => {
+  assert.ok(existsSync(squashPath), '001_init_schema.sql must exist');
 });
 
-test('migration 014: replaces NULL with empty string in spoke_address', () => {
-  assert.match(migration014, /UPDATE\s+oracle_source_configs\s+SET\s+spoke_address\s*=\s*''\s+WHERE\s+spoke_address\s+IS\s+NULL/is);
+test('squash: oracle_source_configs pool_address and spoke_address are NOT NULL', () => {
+  assert.match(squash, /pool_address\s+TEXT\s+NOT\s+NULL\s+DEFAULT\s+''/);
+  assert.match(squash, /spoke_address\s+TEXT\s+NOT\s+NULL\s+DEFAULT\s+''/);
 });
 
-test('migration 014: replaces NULL with empty string in pool_address', () => {
-  assert.match(migration014, /UPDATE\s+oracle_source_configs\s+SET\s+pool_address\s*=\s*''\s+WHERE\s+pool_address\s+IS\s+NULL/is);
+test('squash: oracle_source_configs has unique constraint with all NOT NULL columns', () => {
+  assert.match(squash, /CONSTRAINT\s+oracle_source_configs_unique_key\s+UNIQUE\s*\(\s*source\s*,\s*pool_key\s*,\s*chain_id\s*,\s*pool_address\s*,\s*oracle_address\s*,\s*spoke_address\s*\)/is);
 });
 
-test('migration 014: deduplicates oracle_source_configs (keeps MIN id)', () => {
-  assert.match(migration014, /DELETE\s+FROM\s+oracle_source_configs\s+WHERE\s+id\s+NOT\s+IN\s*\(\s*SELECT\s+MIN\s*\(\s*id\s*\)/is);
+test('squash: market_configs has content_hash column', () => {
+  assert.match(squash, /content_hash\s+TEXT/);
 });
 
-test('migration 014: deduplicates oracle_prices (keeps MIN id)', () => {
-  assert.match(migration014, /DELETE\s+FROM\s+oracle_prices\s+WHERE\s+id\s+NOT\s+IN\s*\(\s*SELECT\s+MIN\s*\(\s*id\s*\)/is);
+test('squash: archive_jobs table exists', () => {
+  assert.match(squash, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+archive_jobs/is);
+  assert.match(squash, /triggered_at/);
+  assert.match(squash, /workflow_run_id/);
+  assert.match(squash, /pg_size_bytes/);
+  assert.match(squash, /cleaned_at/);
+  assert.match(squash, /error_message/);
 });
 
-test('migration 014: makes pool_address and spoke_address NOT NULL', () => {
-  assert.match(migration014, /ALTER\s+COLUMN\s+pool_address\s+SET\s+NOT\s+NULL/is);
-  assert.match(migration014, /ALTER\s+COLUMN\s+spoke_address\s+SET\s+NOT\s+NULL/is);
+test('squash: market_snapshots uses renamed columns (liquidity, borrowed, supplied)', () => {
+  assert.match(squash, /liquidity\s+NUMERIC/);
+  assert.match(squash, /borrowed\s+NUMERIC/);
+  assert.match(squash, /supplied\s+NUMERIC/);
+  assert.doesNotMatch(squash, /available_liquidity/);
+  assert.doesNotMatch(squash, /total_variable_debt/);
+  assert.doesNotMatch(squash, /reserve_size/);
 });
 
-test('migration 014: adds unique constraint with all NOT NULL columns', () => {
-  assert.match(migration014, /ADD\s+CONSTRAINT\s+\w+\s+UNIQUE\s*\(\s*source\s*,\s*pool_key\s*,\s*chain_id\s*,\s*pool_address\s*,\s*oracle_address\s*,\s*spoke_address\s*\)/is);
+test('squash: no campaign tables (they were created then dropped)', () => {
+  const createTableStatements = squash.match(/CREATE\s+TABLE[^(]*\([^;]*\);/gs) ?? [];
+  for (const stmt of createTableStatements) {
+    assert.doesNotMatch(stmt, /campaign_history/, 'no campaign_history CREATE TABLE');
+    assert.doesNotMatch(stmt, /campaign_apr_observations/, 'no campaign_apr_observations CREATE TABLE');
+  }
 });
 
-test('migration 014: runs VACUUM FULL on both tables', () => {
-  assert.match(migration014, /VACUUM\s+FULL\s+.*oracle_source_configs/is);
-  assert.match(migration014, /VACUUM\s+FULL\s+.*oracle_prices/is);
+test('squash: no supply_incentives_apr / borrow_incentives_apr (dropped in 012)', () => {
+  assert.doesNotMatch(squash, /supply_incentives_apr/);
+  assert.doesNotMatch(squash, /borrow_incentives_apr/);
 });
 
-test('migration 014: wraps in transaction (BEGIN/COMMIT)', () => {
-  assert.match(migration014, /^BEGIN/m);
-  assert.match(migration014, /COMMIT/m);
+test('squash: wraps in transaction (BEGIN/COMMIT)', () => {
+  assert.match(squash, /^BEGIN/m);
+  assert.match(squash, /COMMIT/m);
 });
