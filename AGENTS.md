@@ -64,10 +64,8 @@ to the DB service, replacing PostgreSQL with a Node.js container.
 - Verify: `railway status` → app should show `● Online`, DB should show `● Online`
 - Verify: `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}`
 
-## Mandatory Session Workflow
-1. **Bootstrap first** (every new session — BEFORE any other action):
-   - **Codex**: `~/.codex/superpowers/.codex/superpowers-codex bootstrap && ~/.codex/superpowers/.codex/superpowers-codex use-skill brainstorming`
-   - **CodeArts**: Use the `skill` tool to load `using-superpowers`, then load `brainstorming`. This is mandatory — do not skip even for simple questions.
+## Session Workflow
+1. **Bootstrap when needed**: For substantial implementation, debugging, or design sessions, load `using-superpowers` via skill tool. Load `brainstorming` only for feature design, behavior changes, or solution exploration — skip for lightweight inspection, explanation, and routine work.
 2. **Hook policy**: do not bypass local hooks (`pre-commit`/`pre-push`), which enforce `ci:remote` and lockfile consistency.
 3. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
 4. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`.

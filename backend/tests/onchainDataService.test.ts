@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { utils, providers } from 'ethers';
 
-import { calculateBaseRateFallback, POOL_CONFIGS, executeMulticall3, V4_HUB_INTERFACE, MULTICALL3_ADDRESS } from '../src/services/onchainDataService.js';
+import { calculateBaseRateFallback, POOL_CONFIGS, executeMulticall3, V4_HUB_INTERFACE, V4_HUB_ABI, MULTICALL3_ADDRESS } from '../src/services/onchainDataService.js';
 import { V4_SPOKE_ENTRIES, V3_ENTRIES } from '../src/services/addressBookRegistry.js';
 
 test('calculateBaseRateFallback returns null when borrowApy is missing', () => {
@@ -468,4 +468,80 @@ test('Integration: Multicall3 aggregate3 via provider.call() succeeds against li
   const count = Number(assetCount);
   assert.ok(count > 0, `CORE_HUB assetCount should be > 0, got ${count}`);
   assert.ok(count < 300, `CORE_HUB assetCount should be < 300, got ${count}`);
+});
+
+test('V4_HUB_ABI has exactly 3 methods: getAssetCount, getAsset, getSpokeDeficitRay', () => {
+  const fns = V4_HUB_ABI.filter((e: any) => e.type === 'function');
+  assert.strictEqual(fns.length, 3);
+  const names = fns.map((f: any) => f.name).sort();
+  assert.deepStrictEqual(names, ['getAsset', 'getAssetCount', 'getSpokeDeficitRay']);
+});
+
+test('V4_HUB_ABI getAsset has 17 output fields matching @aave-dao/aave-address-book IHubV4', () => {
+  const getAsset = V4_HUB_ABI.find((e: any) => e.name === 'getAsset') as any;
+  assert.ok(getAsset, 'getAsset entry not found');
+  const components = getAsset.outputs[0].components;
+  assert.strictEqual(components.length, 17, `expected 17 fields, got ${components.length}`);
+
+  const expectedFields = [
+    'liquidity', 'realizedFees', 'decimals', 'addedShares', 'swept',
+    'premiumOffsetRay', 'drawnShares', 'premiumShares', 'liquidityFee',
+    'drawnIndex', 'drawnRate', 'lastUpdateTimestamp', 'underlying',
+    'irStrategy', 'reinvestmentController', 'feeReceiver', 'deficitRay',
+  ];
+  const actualNames = components.map((c: any) => c.name);
+  assert.deepStrictEqual(actualNames, expectedFields);
+});
+
+test('V4_HUB_ABI getAsset underlying is at index 12 (position 13) per contract layout', () => {
+  const getAsset = V4_HUB_ABI.find((e: any) => e.name === 'getAsset') as any;
+  const components = getAsset.outputs[0].components;
+  const underlyingIdx = components.findIndex((c: any) => c.name === 'underlying');
+  assert.strictEqual(underlyingIdx, 12, `underlying at index ${underlyingIdx}, expected 12`);
+});
+
+test('V4_HUB_ABI getAsset deficitRay is the last field (index 16)', () => {
+  const getAsset = V4_HUB_ABI.find((e: any) => e.name === 'getAsset') as any;
+  const components = getAsset.outputs[0].components;
+  assert.strictEqual(components[components.length - 1].name, 'deficitRay');
+  assert.strictEqual(components[components.length - 1].type, 'uint200');
+});
+
+test('V4_HUB_ABI getAsset function selector is identical to address-book IHubV4', () => {
+  const addressBookAbi = [
+    {
+      inputs: [{ name: 'assetId', type: 'uint256' }],
+      name: 'getAsset',
+      outputs: [{
+        components: [
+          { name: 'liquidity', type: 'uint120' },
+          { name: 'realizedFees', type: 'uint120' },
+          { name: 'decimals', type: 'uint8' },
+          { name: 'addedShares', type: 'uint120' },
+          { name: 'swept', type: 'uint120' },
+          { name: 'premiumOffsetRay', type: 'int200' },
+          { name: 'drawnShares', type: 'uint120' },
+          { name: 'premiumShares', type: 'uint120' },
+          { name: 'liquidityFee', type: 'uint16' },
+          { name: 'drawnIndex', type: 'uint120' },
+          { name: 'drawnRate', type: 'uint96' },
+          { name: 'lastUpdateTimestamp', type: 'uint40' },
+          { name: 'underlying', type: 'address' },
+          { name: 'irStrategy', type: 'address' },
+          { name: 'reinvestmentController', type: 'address' },
+          { name: 'feeReceiver', type: 'address' },
+          { name: 'deficitRay', type: 'uint200' },
+        ],
+        name: '',
+        type: 'tuple',
+      }],
+      stateMutability: 'view',
+      type: 'function',
+    },
+  ];
+  const localIface = new utils.Interface(V4_HUB_ABI);
+  const abIface = new utils.Interface(addressBookAbi);
+  const localSelector = localIface.getSighash('getAsset');
+  const abSelector = abIface.getSighash('getAsset');
+  assert.strictEqual(localSelector, abSelector, `selector mismatch: local=${localSelector} address-book=${abSelector}`);
 });

@@ -86,7 +86,9 @@ export const POOL_CONFIGS = new Map<string, OnchainConfig>(
 );
 
 // ============================================================
-// V4 Hub ABI (minimal: getAssetCount + getAsset + getSpokeDeficitRay)
+// V4 Hub ABI — getAsset field order from @aave-dao/aave-address-book IHubV4
+// (address-book ./abis entry does not export IHubV4_ABI; values inlined here)
+// Local addition: getSpokeDeficitRay (not in address-book)
 // ============================================================
 export const V4_HUB_ABI = [
   {
@@ -102,18 +104,22 @@ export const V4_HUB_ABI = [
     outputs: [
       {
         components: [
-          { internalType: 'address', name: 'underlying', type: 'address' },
-          { internalType: 'uint8', name: 'decimals', type: 'uint8' },
           { internalType: 'uint120', name: 'liquidity', type: 'uint120' },
-          { internalType: 'uint120', name: 'swept', type: 'uint120' },
+          { internalType: 'uint120', name: 'realizedFees', type: 'uint120' },
+          { internalType: 'uint8', name: 'decimals', type: 'uint8' },
           { internalType: 'uint120', name: 'addedShares', type: 'uint120' },
+          { internalType: 'uint120', name: 'swept', type: 'uint120' },
+          { internalType: 'int200', name: 'premiumOffsetRay', type: 'int200' },
           { internalType: 'uint120', name: 'drawnShares', type: 'uint120' },
           { internalType: 'uint120', name: 'premiumShares', type: 'uint120' },
-          { internalType: 'int200', name: 'premiumOffsetRay', type: 'int200' },
+          { internalType: 'uint16', name: 'liquidityFee', type: 'uint16' },
           { internalType: 'uint120', name: 'drawnIndex', type: 'uint120' },
           { internalType: 'uint96', name: 'drawnRate', type: 'uint96' },
           { internalType: 'uint40', name: 'lastUpdateTimestamp', type: 'uint40' },
-          { internalType: 'uint120', name: 'realizedFees', type: 'uint120' },
+          { internalType: 'address', name: 'underlying', type: 'address' },
+          { internalType: 'address', name: 'irStrategy', type: 'address' },
+          { internalType: 'address', name: 'reinvestmentController', type: 'address' },
+          { internalType: 'address', name: 'feeReceiver', type: 'address' },
           { internalType: 'uint200', name: 'deficitRay', type: 'uint200' },
         ],
         internalType: 'struct IHub.Asset',

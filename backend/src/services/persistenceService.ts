@@ -385,9 +385,9 @@ interface OracleConfigKey {
   source: 'v3' | 'v4';
   poolKey: string;
   chainId: number;
-  poolAddress: string | null;
+  poolAddress: string;
   oracleAddress: string;
-  spokeAddress: string | null;
+  spokeAddress: string;
 }
 
 interface OracleRow {
@@ -419,7 +419,7 @@ async function ensureOracleSourceConfigs(
       chainId: v3.chainId,
       poolAddress: v3.poolAddress.toLowerCase(),
       oracleAddress: v3.oracleAddress.toLowerCase(),
-      spokeAddress: null,
+      spokeAddress: '',
     });
   }
   for (const v4 of snap.v4) {
@@ -427,7 +427,7 @@ async function ensureOracleSourceConfigs(
       source: 'v4',
       poolKey: v4.spokeName,
       chainId: v4.chainId,
-      poolAddress: null,
+      poolAddress: '',
       oracleAddress: v4.oracleAddress.toLowerCase(),
       spokeAddress: v4.spokeAddress.toLowerCase(),
     });

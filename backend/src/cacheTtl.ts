@@ -36,6 +36,8 @@ export const BACKEND_SCHEDULE_CRON = {
   persistSnapshotsEveryMinuteAtSecond20: '20 * * * * *',
   // GSC daily fetch at 06:00 UTC
   gscDailyFetchAtSixAmUtc: '0 0 6 * * *',
+  // Archive-clean pipeline: check DB size every hour at :40
+  archiveCheckEveryHourAtMinute40: '0 40 * * * *',
 } as const;
 
 export const BACKEND_CACHE_TTL_MS = {

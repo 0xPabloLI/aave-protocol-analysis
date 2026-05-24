@@ -10,6 +10,7 @@ import {
 } from './persistenceService.js';
 import { fetchAndPersistGscDaily } from './gscService.js';
 import { setGscFetchSuccess, setGscFetchFailure } from './gscFetchState.js';
+import { runArchiveCheck } from './archiveService.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
@@ -31,6 +32,7 @@ export function startUpdateScheduler(): void {
   logger.info('   • FDV: every 15 minutes');
   logger.info('   • Categories: every 6 hours');
   logger.info('   • GSC daily fetch: every day at 06:00 UTC');
+  logger.info('   • Archive-clean pipeline: every hour at :40');
 
   // Markets refresh every minute at second 0
   schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
@@ -132,6 +134,22 @@ export function startUpdateScheduler(): void {
       const msg = error instanceof Error ? error.message : String(error);
       setGscFetchFailure(msg);
       logger.error(`GSC daily fetch failed: ${msg}`);
+    }
+  });
+
+  // Archive-clean pipeline: check DB size every hour, trigger GitHub Actions
+  // workflow if over threshold, then clean PG on next check after workflow completes.
+  schedule(BACKEND_SCHEDULE_CRON.archiveCheckEveryHourAtMinute40, async () => {
+    if (!isPersistenceEnabled()) return;
+    try {
+      const result = await runArchiveCheck();
+      if (result.action !== 'skipped_below_threshold' && result.action !== 'skipped_no_db') {
+        logger.info(`Archive check: action=${result.action}, pgSize=${(result.pgSizeBytes / 1024 / 1024).toFixed(0)}MB, threshold=${(result.thresholdBytes / 1024 / 1024).toFixed(0)}MB`);
+      }
+    } catch (error) {
+      logger.warn(
+        `Archive check failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   });
 }

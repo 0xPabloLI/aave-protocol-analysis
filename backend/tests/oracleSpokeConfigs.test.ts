@@ -43,3 +43,36 @@ test('registry header documents design decisions', () => {
   assert.match(registrySource, /spokeKey.*spokeName/i);
   assert.match(registrySource, /BLUECHIP_SPOKE.*CORE_HUB.*PRIME_HUB/i);
 });
+
+// ── NULL bug guard: ensureOracleSourceConfigs must use '' not null ────────
+
+const persistenceSource = readFileSync(join(__dirname, '..', 'src', 'services', 'persistenceService.ts'), 'utf8');
+
+test('ensureOracleSourceConfigs: V3 spokeAddress is empty string, not null', () => {
+  assert.doesNotMatch(
+    persistenceSource,
+    /spokeAddress:\s*null/,
+    'spokeAddress must be empty string (\'\') not null — NULL breaks ON CONFLICT unique constraint'
+  );
+});
+
+test('ensureOracleSourceConfigs: V4 poolAddress is empty string, not null', () => {
+  assert.doesNotMatch(
+    persistenceSource,
+    /poolAddress:\s*null/,
+    'poolAddress must be empty string (\'\') not null — NULL breaks ON CONFLICT unique constraint'
+  );
+});
+
+test('OracleConfigKey interface: poolAddress and spokeAddress are string, not string | null', () => {
+  assert.doesNotMatch(
+    persistenceSource,
+    /poolAddress:\s*string\s*\|\s*null/,
+    'poolAddress type must be `string` (empty string for V4), not `string | null`'
+  );
+  assert.doesNotMatch(
+    persistenceSource,
+    /spokeAddress:\s*string\s*\|\s*null/,
+    'spokeAddress type must be `string` (empty string for V3), not `string | null`'
+  );
+});
