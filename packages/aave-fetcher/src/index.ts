@@ -300,10 +300,18 @@ async function buildMarketsBaseDataset(v3Markets: any[], options?: {
   let v4Dataset: RuntimeReserveData[] = [];
   let v4Raw: V4FetchResult['raw'] = { reserves: [] };
   const v4Fatal = options?.v4Fatal ?? false;
+  // V4 fetch isolation: independent timeout prevents slow V4 API from
+  // consuming the outer 60s Markets fetch timeout and blocking V3 data.
+  const V4_FETCH_TIMEOUT_MS = 25_000;
   try {
     // Option 1: V4 now has retry logic (3 attempts with backoff), matching V3 reliability.
     // Option 2: When v4Fatal=true, V4 failure throws (equal importance to V3).
-    const v4Result = await fetchV4ReservesData({ throwOnFinalFailure: v4Fatal });
+    const v4Result = await Promise.race([
+      fetchV4ReservesData({ throwOnFinalFailure: v4Fatal }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('V4 fetch timeout (non-fatal)')), V4_FETCH_TIMEOUT_MS)
+      ),
+    ]);
     v4Dataset = v4Result.mapped;
     v4Raw = v4Result.raw;
     if (v4Dataset.length > 0) {
