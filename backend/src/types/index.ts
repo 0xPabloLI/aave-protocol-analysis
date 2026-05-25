@@ -31,6 +31,7 @@ export interface MarketsResponse {
     version: 'snapshot-v3';
     staleTimeMs: number;
     schemaFingerprint?: string; // Hash of API response field names; changes when shape changes
+    deficitFallbackReserveIds: string[]; // ReserveIds where deficit fell back to '0' (no onchain data)
   };
   reserves: MarketWithSpread[];
 }

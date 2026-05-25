@@ -1087,14 +1087,22 @@ export async function processMerklData(
   // Build forecast meta map early so breakdowns can be enriched with opportunity-only forecast data
   const forecastCampaignMetaLite = buildForecastCampaignMetaLiteMap(liveOpportunities);
 
-  // 反查 Map: chainId:tokenAddress → reserveId（用于从 opp 的 explorerAddress 反查对应 reserveId）
+  // 反查 Map: chainId:address → reserveId（用于从 opp 的 explorerAddress 反查对应 reserveId）
+  // explorerAddress 可能是 underlying token、aToken、vToken 或 spoke 地址
   const tokenAddrToReserveId = new Map<string, string>();
   if (mergedOptions.baseDataset) {
     for (const r of mergedOptions.baseDataset) {
-      const key = `${r.chainId}:${r.tokenAddress.toLowerCase()}`;
-      if (!tokenAddrToReserveId.has(key)) {
-        tokenAddrToReserveId.set(key, r.reserveId);
-      }
+      const addMapping = (addr: string | undefined | null) => {
+        if (!addr) return;
+        const key = `${r.chainId}:${addr.toLowerCase()}`;
+        if (!tokenAddrToReserveId.has(key)) {
+          tokenAddrToReserveId.set(key, r.reserveId);
+        }
+      };
+      addMapping(r.tokenAddress);
+      addMapping(r.aTokenAddress);
+      addMapping(r.vTokenAddress);
+      addMapping(r.spokeAddress);
     }
   }
 

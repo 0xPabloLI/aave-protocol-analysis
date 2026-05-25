@@ -34,9 +34,28 @@ const MARKETS_FETCH_TIMEOUT_MS = 60_000; // 60 seconds
 // Re-export types for other modules
 export type { MarketsPayload, RuntimeReserveData };
 
+export interface ResolveReserveDeficitResult {
+  deficit: string;
+  isFallback: boolean;
+}
+
+export function resolveReserveDeficit(
+  sdkDeficit: string | undefined,
+  onchainDeficit: string | undefined
+): ResolveReserveDeficitResult {
+  if (sdkDeficit !== undefined && sdkDeficit !== '') {
+    return { deficit: sdkDeficit, isFallback: false };
+  }
+  if (onchainDeficit !== undefined) {
+    return { deficit: onchainDeficit, isFallback: false };
+  }
+  return { deficit: '0', isFallback: true };
+}
+
 interface MarketsSnapshot {
   payload: MarketsPayload;
   fetchedAt: number;
+  deficitFallbackReserveIds: string[];
 }
 
 // In-memory snapshot (cron-write, API-read-only)
@@ -96,6 +115,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
 
       let mergedCount = 0;
       let fallbackCount = 0;
+      const deficitFallbackReserveIds: string[] = [];
 
       // Merge on-chain data by reserveId
       // V3: key = `${chainId}:${poolAddress}:${tokenAddr}` (matches reserveId)
@@ -104,12 +124,12 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         let onchainData = onchainMap.get(reserve.reserveId);
 
         // deficit: SDK value > on-chain RPC > default '0'
-        if ((reserve as any).deficit) {
-          // SDK already provided deficit — keep it
-        } else if (onchainData?.deficit !== undefined) {
-          (reserve as any).deficit = onchainData.deficit;
-        } else {
-          (reserve as any).deficit = '0';
+        const sdkDeficit = (reserve as any).deficit as string | undefined;
+        const onchainDeficit = onchainData?.deficit;
+        const { deficit, isFallback } = resolveReserveDeficit(sdkDeficit, onchainDeficit);
+        (reserve as any).deficit = deficit;
+        if (isFallback) {
+          deficitFallbackReserveIds.push(reserve.reserveId);
         }
 
         // baseBorrowRate: SDK value > on-chain RPC > fallback calculation
@@ -164,6 +184,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       const newSnapshot: MarketsSnapshot = {
         payload,
         fetchedAt: Date.now(),
+        deficitFallbackReserveIds,
       };
 
       snapshot = newSnapshot;
@@ -208,6 +229,7 @@ export function getMarketsData(): {
   hardTtlMs: number;
   ageMs: number | null;
   isTooStale: boolean;
+  deficitFallbackReserveIds: string[];
 } {
   if (!snapshot) {
     logger.warn('Markets snapshot not yet populated; returning null');
@@ -217,6 +239,7 @@ export function getMarketsData(): {
       hardTtlMs: BACKEND_CACHE_TTL_MS.marketsHardTtlMs,
       ageMs: null,
       isTooStale: false,
+      deficitFallbackReserveIds: [],
     };
   }
 
@@ -236,6 +259,7 @@ export function getMarketsData(): {
       hardTtlMs: BACKEND_CACHE_TTL_MS.marketsHardTtlMs,
     ageMs,
     isTooStale,
+    deficitFallbackReserveIds: snapshot.deficitFallbackReserveIds,
   };
 }
 

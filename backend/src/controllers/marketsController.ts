@@ -23,7 +23,7 @@ export const MARKETS_API_VERSION = 'snapshot-v3';
  */
 export async function getMarkets(req: Request, res: Response): Promise<void> {
   try {
-    const { payload, staleTimeMs, hardTtlMs, ageMs, isTooStale } = getMarketsData();
+    const { payload, staleTimeMs, hardTtlMs, ageMs, isTooStale, deficitFallbackReserveIds } = getMarketsData();
 
     // If no snapshot yet (cold start before warmup completes)
     if (!payload) {
@@ -68,6 +68,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
         version: MARKETS_API_VERSION,
         staleTimeMs,
         schemaFingerprint: computeSchemaFingerprint(),
+        deficitFallbackReserveIds,
       },
       reserves,
     };

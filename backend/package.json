@@ -12,9 +12,9 @@
     "dev:reset": "npm run dev:clean && npm run dev",
     "dev:watch": "bash scripts/dev-entry.sh --watch",
     "dev:watch:reset": "npm run dev:clean && npm run dev:watch",
-    "test": "tsx --test tests/*.test.ts",
-    "gen:schema-fp": "tsx scripts/generate-schema-fp.ts",
-    "test:api-fields": "RUN_API_FIELDS_TESTS=true tsx --test tests/apiFieldsVerification.test.ts",
+    "test": "npx --no-install tsx --test tests/*.test.ts",
+    "gen:schema-fp": "npx --no-install tsx scripts/generate-schema-fp.ts",
+    "test:api-fields": "RUN_API_FIELDS_TESTS=true npx --no-install tsx --test tests/apiFieldsVerification.test.ts",
     "prune": "ts-prune -i '.*(aave-shared-config|aave-shared-contracts|aave-fetcher)/(dist/)?index\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v 'SEMRUSH_TO_GSC' | grep '^src/' | (grep -q . && exit 1 || exit 0)"
   },
   "dependencies": {
