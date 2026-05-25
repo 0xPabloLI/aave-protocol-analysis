@@ -52,6 +52,7 @@ jobs:
       - name: Install postgresql-client-18
         run: |
           set -euo pipefail
+          sudo apt-get remove -y postgresql-client-16 || true
           sudo install -d /usr/share/postgresql-common/pgdg
           sudo curl -fsSLo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
             https://www.postgresql.org/media/keys/ACCC4CF8.asc
@@ -60,7 +61,8 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -y
           sudo apt-get install -y postgresql-client-18
-          pg_dump --version
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/18/bin/pg_dump --version
 
       - name: Dump ${{ matrix.environment }} database
         env:
@@ -73,7 +75,7 @@ jobs:
           fi
           STAMP="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
           FILE="${{ matrix.environment }}-aave-pg-${STAMP}.dump"
-          pg_dump "$DATABASE_URL" -Fc -Z9 -f "$FILE"
+          /usr/lib/postgresql/18/bin/pg_dump "$DATABASE_URL" -Fc -Z9 -f "$FILE"
           ls -lh "$FILE"
           echo "BACKUP_FILE=$FILE" >> "$GITHUB_ENV"
 
