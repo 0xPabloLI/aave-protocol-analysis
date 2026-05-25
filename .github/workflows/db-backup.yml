@@ -1,0 +1,123 @@
+name: Database Backup to Cloudflare R2
+
+# PG dump → upload to Cloudflare R2 (S3-compatible).
+#
+# Modes:
+#   daily  (default): writes to R2 daily/ prefix, scheduled 03:00 UTC
+#   archive:          writes to R2 archive/ prefix (permanent), triggered on-demand
+#
+# After a successful archive backup, the daily/ prefix can be cleared
+# (archive is the DR source; daily is just a recent-rotation convenience).
+#
+# Uses matrix strategy to back up both staging and production.
+#
+# Required GitHub Secrets:
+#   DATABASE_URL_PUBLIC_STAGING     Railway staging PG public connection string
+#   DATABASE_URL_PUBLIC_PRODUCTION  Railway production PG public connection string
+#   R2_ENDPOINT                     https://<account-id>.r2.cloudflarestorage.com
+#   R2_ACCESS_KEY_ID                Cloudflare R2 API token Access Key
+#   R2_SECRET_ACCESS_KEY            Cloudflare R2 API token Secret
+#   R2_BUCKET                       Bucket name (e.g. aave-db-backups)
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC daily → defaults to mode=daily
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Backup mode: daily or archive'
+        required: false
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - archive
+
+permissions: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [staging, production]
+    concurrency:
+      group: db-backup-${{ matrix.environment }}
+      cancel-in-progress: false
+    env:
+      MODE: ${{ github.event.inputs.mode || 'daily' }}
+    steps:
+      - name: Install postgresql-client-17
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSLo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client-17
+          pg_dump --version
+
+      - name: Dump ${{ matrix.environment }} database
+        env:
+          DATABASE_URL: ${{ matrix.environment == 'staging' && secrets.DATABASE_URL_PUBLIC_STAGING || secrets.DATABASE_URL_PUBLIC_PRODUCTION }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL_PUBLIC_${{ matrix.environment }} secret is not set" >&2
+            exit 1
+          fi
+          STAMP="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+          FILE="${{ matrix.environment }}-aave-pg-${STAMP}.dump"
+          pg_dump "$DATABASE_URL" -Fc -Z9 -f "$FILE"
+          ls -lh "$FILE"
+          echo "BACKUP_FILE=$FILE" >> "$GITHUB_ENV"
+
+      - name: Upload to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT:           ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET:             ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          R2_KEY="${MODE}/${BACKUP_FILE}"
+          aws s3 cp "$BACKUP_FILE" "s3://${R2_BUCKET}/${R2_KEY}" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --region auto \
+            --no-progress
+          echo "R2_KEY=$R2_KEY" >> "$GITHUB_ENV"
+
+      - name: Verify upload
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT:           ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET:             ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          aws s3 ls "s3://${R2_BUCKET}/${R2_KEY}" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --region auto
+
+      - name: Clear daily/ prefix after successful archive
+        if: env.MODE == 'archive'
+        env:
+          AWS_ACCESS_KEY_ID:     ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT:           ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET:             ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          echo "Archive backup succeeded — clearing daily/ prefix for ${{ matrix.environment }}"
+          DAILY_PREFIX="daily/${{ matrix.environment }}-aave-pg-"
+          aws s3 rm "s3://${R2_BUCKET}/daily/" \
+            --recursive \
+            --exclude "*" \
+            --include "${{ matrix.environment }}-aave-pg-*" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --region auto || true
