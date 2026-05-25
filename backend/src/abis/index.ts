@@ -10,7 +10,6 @@
 export { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 export { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
 export { IAaveOracle_ABI } from '@aave-dao/aave-address-book/abis/IAaveOracle';
-export { IAaveOracleV4_ABI } from '@aave-dao/aave-address-book/abis/IAaveOracleV4';
 export { IPool_ABI } from '@aave-dao/aave-address-book/abis/IPool';
 
 // ── Layer 2: Local supplements ─────────────────────────────

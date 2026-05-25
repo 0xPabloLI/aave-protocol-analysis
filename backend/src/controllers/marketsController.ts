@@ -13,7 +13,7 @@ import { MarketsResponse, MarketWithSpread } from '../types/index.js';
 import { logger } from '../logger.js';
 
 /** API version — bumped when breaking changes (field renames) are introduced. */
-export const MARKETS_API_VERSION = 'markets-v3';
+export const MARKETS_API_VERSION = 'snapshot-v3';
 
 /**
  * GET /api/markets

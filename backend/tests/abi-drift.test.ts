@@ -4,7 +4,6 @@ import {
   IHubV4_ABI,
   ISpokeV4_ABI,
   IAaveOracle_ABI,
-  IAaveOracleV4_ABI,
   IPool_ABI,
   HUB_EXTENSIONS_ABI,
   V4_ORACLE_PRICES_ABI,
@@ -44,9 +43,6 @@ test('IAaveOracle_ABI has getAssetsPrices and getAssetPrice', () => {
   assert.ok(hasFn(IAaveOracle_ABI, 'getAssetPrice'));
 });
 
-test('IAaveOracleV4_ABI has getReserveSource', () => {
-  assert.ok(hasFn(IAaveOracleV4_ABI, 'getReserveSource'));
-});
 
 test('IPool_ABI has getReservesList and >= 60 function entries', () => {
   assert.ok(hasFn(IPool_ABI, 'getReservesList'));
@@ -90,7 +86,6 @@ const DRIFT_SPECS: Record<string, { abi: ReadonlyAbi; methods: string[]; minFnCo
   IHubV4:        { abi: IHubV4_ABI,       methods: ['getAssetCount', 'getAsset', 'getSpokeCount', 'getSpokeAddress'], minFnCount: 4 },
   ISpokeV4:      { abi: ISpokeV4_ABI,     methods: ['getReserveCount', 'getReserve', 'ORACLE'],                       minFnCount: 3 },
   IAaveOracle:   { abi: IAaveOracle_ABI,   methods: ['getAssetsPrices', 'getAssetPrice'],                              minFnCount: 8 },
-  IAaveOracleV4: { abi: IAaveOracleV4_ABI, methods: ['getReserveSource'],                                               minFnCount: 1 },
   IPool:         { abi: IPool_ABI,         methods: ['getReservesList'],                                                minFnCount: 60 },
 };
 

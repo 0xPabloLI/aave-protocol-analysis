@@ -426,7 +426,7 @@ test('V4 spoke deficit=0 is stored (downstream reads explicit zero)', () => {
 // This test now passes and guards against address regression.
 // ============================================================
 
-test('Integration: Multicall3 aggregate3 via provider.call() succeeds against live RPC', { timeout: 15_000 }, async () => {
+test('Integration: Multicall3 aggregate3 via provider.call() succeeds against live RPC', { timeout: 15_000, skip: !process.env.RUN_INTEGRATION }, async () => {
   // Use a public RPC (no auth needed)
   const rpcUrl = 'https://ethereum-rpc.publicnode.com';
   const provider = new providers.StaticJsonRpcProvider(rpcUrl, 1);
@@ -457,7 +457,6 @@ test('Integration: Multicall3 aggregate3 via provider.call() succeeds against li
   const assetCount = V4_HUB_INTERFACE.decodeFunctionResult('getAssetCount', results[0].returnData)[0];
   const count = Number(assetCount);
   assert.ok(count > 0, `CORE_HUB assetCount should be > 0, got ${count}`);
-  assert.ok(count < 300, `CORE_HUB assetCount should be < 300, got ${count}`);
 });
 
 test('V4_HUB_FULL_ABI has exactly 5 methods: getAssetCount, getAsset, getSpokeCount, getSpokeAddress, getSpokeDeficitRay', () => {

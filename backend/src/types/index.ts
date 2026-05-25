@@ -28,7 +28,7 @@ export type MarketWithSpread = Omit<
 export interface MarketsResponse {
   snapshot: {
     lastUpdated: string; // ISO timestamp
-    version: 'markets-v3';
+    version: 'snapshot-v3';
     staleTimeMs: number;
     schemaFingerprint?: string; // Hash of API response field names; changes when shape changes
   };
