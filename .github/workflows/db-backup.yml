@@ -49,7 +49,7 @@ jobs:
     env:
       MODE: ${{ github.event.inputs.mode || 'daily' }}
     steps:
-      - name: Install postgresql-client-17
+      - name: Install postgresql-client-18
         run: |
           set -euo pipefail
           sudo install -d /usr/share/postgresql-common/pgdg
@@ -59,7 +59,7 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -y
-          sudo apt-get install -y postgresql-client-17
+          sudo apt-get install -y postgresql-client-18
           pg_dump --version
 
       - name: Dump ${{ matrix.environment }} database
