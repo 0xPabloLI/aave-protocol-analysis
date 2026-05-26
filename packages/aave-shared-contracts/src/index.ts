@@ -146,6 +146,10 @@ export interface MarketsPayload {
     version: string;
     dataCount: number;
     profile: string;
+    /** Side-channel: whether V3 fetch succeeded in this refresh (for backend stale fallback). */
+    _v3Succeeded?: boolean;
+    /** Side-channel: whether V4 fetch succeeded in this refresh (for backend stale fallback). */
+    _v4Succeeded?: boolean;
   };
   data: RuntimeReserveData[];
   campaignAccess?: MerklCampaignAccess[];

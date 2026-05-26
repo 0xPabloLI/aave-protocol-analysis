@@ -1,0 +1,351 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mergeWithPartialStale } from '../src/services/marketsService.js';
+import type { PartialStaleMergeInput } from '../src/services/marketsService.js';
+import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
+
+const FIVE_MINUTES = 5 * 60 * 1000;
+
+/** Minimal V3 reserve (no hubId). */
+function makeV3(overrides?: Partial<RuntimeReserveData>): RuntimeReserveData {
+  return {
+    reserveId: `1:0xpool:0xusdc`,
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenSymbol: 'USDC',
+    tokenName: 'USD Coin',
+    tokenAddress: '0xusdc',
+    tokenPrice: 1,
+    supplyApy: 0.03,
+    borrowApy: 0.05,
+    utilizationPct: 0.6,
+    supplyCap: '10000000',
+    borrowCap: '8000000',
+    supplied: '5000000',
+    borrowed: '3000000',
+    liquidity: '2000000',
+    decimals: 6,
+    deficit: '0',
+    aTokenAddress: '0xatoken',
+    vTokenAddress: '0xvtoken',
+    marketName: 'Aave V3 Main',
+    supplyDisabled: false,
+    borrowDisabled: false,
+    isFrozen: false,
+    isPaused: false,
+    supplyIncentives: [],
+    borrowIncentives: [],
+    meritSupplys: [],
+    meritBorrows: [],
+    merklSupplys: [],
+    merklBorrows: [],
+    merklHolds: [],
+    brevisSupplys: [],
+    brevisBorrows: [],
+    ...overrides,
+  } as RuntimeReserveData;
+}
+
+/** Minimal V4 reserve (has hubId). */
+function makeV4(overrides?: Partial<RuntimeReserveData>): RuntimeReserveData {
+  return {
+    reserveId: `42161:0xspoke:0xv4usdt:CORE_HUB`,
+    chainName: 'Arbitrum',
+    chainId: 42161,
+    tokenSymbol: 'USDT',
+    tokenName: 'Tether USD',
+    tokenAddress: '0xv4usdt',
+    tokenPrice: 1,
+    supplyApy: 0.04,
+    borrowApy: 0.06,
+    utilizationPct: 0.7,
+    supplyCap: '5000000',
+    borrowCap: '4000000',
+    supplied: '3000000',
+    borrowed: '2000000',
+    liquidity: '1000000',
+    decimals: 6,
+    deficit: '0',
+    aTokenAddress: '0xatokenv4',
+    vTokenAddress: '0xvtokenv4',
+    marketName: 'Aave V4',
+    aaveProReserveId: '42161:0xspoke:0xv4usdt:0xhub:CORE_HUB',
+    hubId: '1',
+    hubName: 'CORE_HUB',
+    hubAddress: '0xhub',
+    spokeId: '1',
+    spokeName: 'BLUECHIP_SPOKE',
+    spokeAddress: '0xspoke',
+    supplyDisabled: false,
+    borrowDisabled: false,
+    isFrozen: false,
+    isPaused: false,
+    supplyIncentives: [],
+    borrowIncentives: [],
+    meritSupplys: [],
+    meritBorrows: [],
+    merklSupplys: [],
+    merklBorrows: [],
+    merklHolds: [],
+    brevisSupplys: [],
+    brevisBorrows: [],
+    ...overrides,
+  } as RuntimeReserveData;
+}
+
+function baseInput(overrides: Partial<PartialStaleMergeInput>): PartialStaleMergeInput {
+  return {
+    freshData: [],
+    v3Succeeded: true,
+    v4Succeeded: true,
+    staleV3Data: [],
+    staleV4Data: [],
+    v3FetchedAt: null,
+    v4FetchedAt: null,
+    hardTtlMs: FIVE_MINUTES,
+    now: Date.now(),
+    ...overrides,
+  };
+}
+
+// ── ACCEPTANCE: both success ──────────────────────────────────
+
+test('both succeed → full merged dataset, both fetchedAt updated', () => {
+  const now = Date.now();
+  const freshV3 = makeV3({ tokenSymbol: 'USDC' });
+  const freshV4 = makeV4({ tokenSymbol: 'USDT' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV3, freshV4],
+    v3Succeeded: true,
+    v4Succeeded: true,
+    v3FetchedAt: null,
+    v4FetchedAt: null,
+    now,
+  }));
+
+  assert.equal(result.mergedData.length, 2);
+  assert.ok(result.mergedData.find(r => r.tokenSymbol === 'USDC'));
+  assert.ok(result.mergedData.find(r => r.tokenSymbol === 'USDT'));
+  assert.equal(result.newV3FetchedAt, now);
+  assert.equal(result.newV4FetchedAt, now);
+  assert.equal(result.v3Fresh, true);
+  assert.equal(result.v4Fresh, true);
+  assert.equal(result.newStaleV3Data.length, 1);
+  assert.equal(result.newStaleV4Data.length, 1);
+});
+
+// ── V3 TIMEOUT + V4 OK → V3 stale fallback ────────────────────
+
+test('V3 timeout + V4 OK → V3 uses stale, V4 uses new', () => {
+  const now = Date.now();
+  const staleV3 = makeV3({ tokenSymbol: 'DAI' });
+  const freshV4 = makeV4({ tokenSymbol: 'USDT' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV4], // V3 timed out, only V4 data
+    v3Succeeded: false,
+    v4Succeeded: true,
+    staleV3Data: [staleV3],
+    staleV4Data: [],
+    v3FetchedAt: now - 60_000, // 1 minute ago, within TTL
+    v4FetchedAt: null,
+    now,
+  }));
+
+  assert.equal(result.mergedData.length, 2);
+  assert.ok(result.mergedData.find(r => r.tokenSymbol === 'DAI'));
+  assert.ok(result.mergedData.find(r => r.tokenSymbol === 'USDT'));
+  // V3 stale unchanged (no fresh V3), V4 fetchedAt updated
+  assert.equal(result.newV3FetchedAt, now - 60_000); // unchanged
+  assert.equal(result.newV4FetchedAt, now); // updated
+  assert.equal(result.newStaleV3Data.length, 1); // still the old stale
+  assert.equal(result.newStaleV4Data.length, 1); // new V4 data
+  assert.equal(result.v3Fresh, false);
+  assert.equal(result.v4Fresh, true);
+});
+
+// ── V4 TIMEOUT + V3 OK → V4 stale fallback ────────────────────
+
+test('V4 timeout + V3 OK → V4 uses stale, V3 uses new', () => {
+  const now = Date.now();
+  const freshV3 = makeV3({ tokenSymbol: 'USDC' });
+  const staleV4 = makeV4({ tokenSymbol: 'WETH' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV3], // V4 timed out, only V3 data
+    v3Succeeded: true,
+    v4Succeeded: false,
+    staleV3Data: [],
+    staleV4Data: [staleV4],
+    v3FetchedAt: null,
+    v4FetchedAt: now - 120_000, // 2 minutes ago, within TTL
+    now,
+  }));
+
+  assert.equal(result.mergedData.length, 2);
+  assert.ok(result.mergedData.find(r => r.tokenSymbol === 'USDC'));
+  assert.ok(result.mergedData.find(r => r.tokenSymbol === 'WETH'));
+  assert.equal(result.newV3FetchedAt, now); // updated
+  assert.equal(result.newV4FetchedAt, now - 120_000); // unchanged
+  assert.equal(result.v3Fresh, true);
+  assert.equal(result.v4Fresh, false);
+});
+
+// ── V3 stale expired ──────────────────────────────────────────
+
+test('V3 timeout + v3FetchedAt > hardTtl → V3 = []', () => {
+  const now = Date.now();
+  const staleV3 = makeV3({ tokenSymbol: 'DAI' });
+  const freshV4 = makeV4({ tokenSymbol: 'USDT' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV4],
+    v3Succeeded: false,
+    v4Succeeded: true,
+    staleV3Data: [staleV3],
+    staleV4Data: [],
+    v3FetchedAt: now - (FIVE_MINUTES + 1), // just past TTL
+    v4FetchedAt: null,
+    now,
+  }));
+
+  assert.equal(result.mergedData.length, 1);
+  // Only V4 — V3 stale expired
+  assert.equal(result.mergedData[0].tokenSymbol, 'USDT');
+  assert.equal(result.v3Fresh, false);
+  assert.equal(result.v4Fresh, true);
+});
+
+// ── V4 stale expired ──────────────────────────────────────────
+
+test('V4 timeout + v4FetchedAt > hardTtl → V4 = []', () => {
+  const now = Date.now();
+  const freshV3 = makeV3({ tokenSymbol: 'USDC' });
+  const staleV4 = makeV4({ tokenSymbol: 'WETH' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV3],
+    v3Succeeded: true,
+    v4Succeeded: false,
+    staleV3Data: [],
+    staleV4Data: [staleV4],
+    v3FetchedAt: null,
+    v4FetchedAt: now - (FIVE_MINUTES + 1),
+    now,
+  }));
+
+  assert.equal(result.mergedData.length, 1);
+  assert.equal(result.mergedData[0].tokenSymbol, 'USDC');
+});
+
+// ── Both timeout + both stale within TTL → all stale ─────────
+
+test('both timeout + both stale within TTL → merged with all stale', () => {
+  const now = Date.now();
+  const staleV3 = makeV3({ tokenSymbol: 'DAI' });
+  const staleV4 = makeV4({ tokenSymbol: 'WETH' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [], // both timed out
+    v3Succeeded: false,
+    v4Succeeded: false,
+    staleV3Data: [staleV3],
+    staleV4Data: [staleV4],
+    v3FetchedAt: now - 60_000, // within TTL
+    v4FetchedAt: now - 120_000, // within TTL
+    now,
+  }));
+
+  assert.equal(result.mergedData.length, 2);
+  assert.equal(result.v3Fresh, false);
+  assert.equal(result.v4Fresh, false);
+});
+
+// ── Both timeout + both stale expired → empty ─────────────────
+
+test('both timeout + both stale expired → mergedData = []', () => {
+  const now = Date.now();
+  const staleV3 = makeV3({ tokenSymbol: 'DAI' });
+  const staleV4 = makeV4({ tokenSymbol: 'WETH' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [],
+    v3Succeeded: false,
+    v4Succeeded: false,
+    staleV3Data: [staleV3],
+    staleV4Data: [staleV4],
+    v3FetchedAt: now - (FIVE_MINUTES + 1),
+    v4FetchedAt: now - (FIVE_MINUTES + 1),
+    now,
+  }));
+
+  assert.equal(result.mergedData.length, 0);
+  assert.equal(result.v3Fresh, false);
+  assert.equal(result.v4Fresh, false);
+});
+
+// ── Edge: never fetched (fetchedAt = null) → no stale fallback ─
+
+test('V3 never fetched → timeout means V3 = []', () => {
+  const now = Date.now();
+  const freshV4 = makeV4({ tokenSymbol: 'USDT' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV4],
+    v3Succeeded: false,
+    v4Succeeded: true,
+    staleV3Data: [],
+    staleV4Data: [],
+    v3FetchedAt: null, // never fetched
+    v4FetchedAt: null,
+    now,
+  }));
+
+  assert.equal(result.mergedData.length, 1);
+  assert.equal(result.mergedData[0].tokenSymbol, 'USDT');
+  assert.equal(result.v3Fresh, false);
+});
+
+// ── Backward compat: _v3Succeeded/_v4Succeeded absent → treat as success ─
+
+test('both succeeded with empty stale → fresh data only', () => {
+  const freshV3 = makeV3({ tokenSymbol: 'USDC' });
+  const freshV4 = makeV4({ tokenSymbol: 'USDT' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV3, freshV4],
+    v3Succeeded: true,
+    v4Succeeded: true,
+    staleV3Data: [],
+    staleV4Data: [],
+    v3FetchedAt: null,
+    v4FetchedAt: null,
+    now: Date.now(),
+  }));
+
+  assert.equal(result.mergedData.length, 2);
+  assert.equal(result.v3Fresh, true);
+  assert.equal(result.v4Fresh, true);
+});
+
+// ── Edge: only V4 data in stale (V3 was never fetched) ────────
+
+test('only V4 stale available + both timeout → V4 stale used, V3 empty', () => {
+  const now = Date.now();
+  const staleV4 = makeV4({ tokenSymbol: 'WETH' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [],
+    v3Succeeded: false,
+    v4Succeeded: false,
+    staleV3Data: [],
+    staleV4Data: [staleV4],
+    v3FetchedAt: null,
+    v4FetchedAt: now - 60_000,
+    now,
+  }));
+
+  assert.equal(result.mergedData.length, 1);
+  assert.equal(result.mergedData[0].tokenSymbol, 'WETH');
+});

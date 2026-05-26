@@ -56,21 +56,120 @@ interface MarketsSnapshot {
   payload: MarketsPayload;
   fetchedAt: number;
   deficitFallbackReserveIds: string[];
+  /** Per-side V3 data from the most recent successful V3 fetch. */
+  v3Data: RuntimeReserveData[];
+  /** Per-side V4 data from the most recent successful V4 fetch. */
+  v4Data: RuntimeReserveData[];
+  /** Timestamp of the most recent successful V3 fetch, or null if never succeeded. */
+  v3FetchedAt: number | null;
+  /** Timestamp of the most recent successful V4 fetch, or null if never succeeded. */
+  v4FetchedAt: number | null;
 }
 
 // In-memory snapshot (cron-write, API-read-only)
 let snapshot: MarketsSnapshot | null = null;
 
+// Per-side stale caches (survive across refresh cycles)
+let staleV3Data: RuntimeReserveData[] = [];
+let staleV4Data: RuntimeReserveData[] = [];
+let v3FetchedAt: number | null = null;
+let v4FetchedAt: number | null = null;
+
 // Refresh lock to prevent concurrent refreshes
 let refreshInProgress: Promise<MarketsSnapshot> | null = null;
 
 /**
- * Refresh the markets snapshot.
+ * Pure function: merge fresh fetcher data with per-side stale fallback.
+ *
+ * Split fresh data by protocol version (V3: no hubId, V4: has hubId).
+ * For each side that failed, use stale data if within hardTtlMs.
+ * Returns merged dataset and updated stale state.
+ */
+export interface PartialStaleMergeInput {
+  freshData: RuntimeReserveData[];
+  v3Succeeded: boolean;
+  v4Succeeded: boolean;
+  staleV3Data: RuntimeReserveData[];
+  staleV4Data: RuntimeReserveData[];
+  v3FetchedAt: number | null;
+  v4FetchedAt: number | null;
+  hardTtlMs: number;
+  now: number;
+}
+
+export interface PartialStaleMergeResult {
+  mergedData: RuntimeReserveData[];
+  newStaleV3Data: RuntimeReserveData[];
+  newStaleV4Data: RuntimeReserveData[];
+  newV3FetchedAt: number | null;
+  newV4FetchedAt: number | null;
+  v3Fresh: boolean;
+  v4Fresh: boolean;
+}
+
+export function mergeWithPartialStale(input: PartialStaleMergeInput): PartialStaleMergeResult {
+  const { freshData, v3Succeeded, v4Succeeded, staleV3Data, staleV4Data, v3FetchedAt, v4FetchedAt, hardTtlMs, now } = input;
+
+  // Split fresh data by protocol version.
+  // hubId is only present on V4 RuntimeReserveData, not part of the union type —
+  // using (r as any) is safe because the runtime convention is reliable (V3 reserves never have hubId).
+  const freshV3 = freshData.filter(r => !(r as any).hubId);
+  const freshV4 = freshData.filter(r => !!(r as any).hubId);
+
+  // Update stale caches for successful sides
+  let newStaleV3Data = staleV3Data;
+  let newStaleV4Data = staleV4Data;
+  let newV3FetchedAt = v3FetchedAt;
+  let newV4FetchedAt = v4FetchedAt;
+
+  if (v3Succeeded && freshV3.length > 0) {
+    newStaleV3Data = freshV3;
+    newV3FetchedAt = now;
+  }
+  if (v4Succeeded && freshV4.length > 0) {
+    newStaleV4Data = freshV4;
+    newV4FetchedAt = now;
+  }
+
+  // Build merged dataset: start with fresh data, add stale fallbacks
+  let mergedData: RuntimeReserveData[] = [...freshV3, ...freshV4];
+
+  if (!v3Succeeded) {
+    if (newV3FetchedAt !== null && (now - newV3FetchedAt) <= hardTtlMs) {
+      mergedData = [...staleV3Data, ...mergedData];
+    }
+    // else: V3 stale expired, keep V3 = [] in merged data
+  }
+
+  if (!v4Succeeded) {
+    if (newV4FetchedAt !== null && (now - newV4FetchedAt) <= hardTtlMs) {
+      mergedData = [...mergedData, ...staleV4Data];
+    }
+    // else: V4 stale expired, keep V4 = [] in merged data
+  }
+
+  return {
+    mergedData,
+    newStaleV3Data,
+    newStaleV4Data,
+    newV3FetchedAt,
+    newV4FetchedAt,
+    v3Fresh: v3Succeeded,
+    v4Fresh: v4Succeeded,
+  };
+}
+
+/**
+ * Refresh the markets snapshot with per-side partial stale merge.
+ *
+ * V3 and V4 fetch concurrently with independent 35s timeouts.
+ * If one side fails, its stale data (from the last successful fetch)
+ * is used as fallback within marketsHardTtlMs. If stale data has expired,
+ * that side is dropped. Only when BOTH sides fail and BOTH stale caches
+ * are expired do we throw (snapshot not updated).
+ * 
  * Called by cron and startup warmup.
  * Uses a lock to prevent concurrent refreshes.
- * 
- * Fetches markets from Aave API, then merges on-chain data from cache.
- * On-chain cache is maintained independently (async, non-blocking).
  */
 export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
   // If refresh is already in progress, wait for it
@@ -83,30 +182,48 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       const startTime = Date.now();
       logger.info(`🔄 Starting markets refresh (v4Fatal=${v4FatalConfig.v4Fatal})...`);
 
-      // Fetch markets from Aave API
+      // Fetch markets from Aave API (V3+V4 concurrent with per-side timeouts)
       const payload = await withTimeout(
         fetchMarketsData({ v4Fatal: v4FatalConfig.v4Fatal }),
         MARKETS_FETCH_TIMEOUT_MS,
         'Markets fetch timeout'
       );
 
-      if (payload.data.length === 0) {
-        const previous = snapshot;
-        if (previous) {
-          const ageMs = Date.now() - previous.fetchedAt;
-          if (ageMs <= BACKEND_CACHE_TTL_MS.marketsHardTtlMs) {
-            logger.warn(
-              `⚠️ Markets refresh returned empty dataset; keeping previous snapshot ` +
-              `(age=${Math.round(ageMs / 1000)}s, hardTtl=${Math.round(
-                BACKEND_CACHE_TTL_MS.marketsHardTtlMs / 1000
-              )}s)`
-            );
-            return previous;
-          }
-        }
+      // Read side-channel flags from _metadata (backward compat: treat absent as success)
+      const v3Succeeded = payload._metadata._v3Succeeded ?? true;
+      const v4Succeeded = payload._metadata._v4Succeeded ?? true;
 
-        throw new Error('Markets refresh returned empty dataset and no fresh fallback snapshot is available');
+      const now = Date.now();
+      const hardTtl = BACKEND_CACHE_TTL_MS.marketsHardTtlMs;
+
+      // Merge fresh data with per-side stale fallback (pure function)
+      const mergeResult = mergeWithPartialStale({
+        freshData: payload.data,
+        v3Succeeded,
+        v4Succeeded,
+        staleV3Data,
+        staleV4Data,
+        v3FetchedAt,
+        v4FetchedAt,
+        hardTtlMs: hardTtl,
+        now,
+      });
+
+      // Update module-level stale caches
+      staleV3Data = mergeResult.newStaleV3Data;
+      staleV4Data = mergeResult.newStaleV4Data;
+      v3FetchedAt = mergeResult.newV3FetchedAt;
+      v4FetchedAt = mergeResult.newV4FetchedAt;
+
+      // If all data is empty after merge → both sides failed + stale expired
+      if (mergeResult.mergedData.length === 0) {
+        throw new Error(
+          'Both V3 and V4 fetch failed and no stale data within TTL is available'
+        );
       }
+
+      // Update payload.data with the merged dataset (may include stale data)
+      (payload as any).data = mergeResult.mergedData;
 
       // Read on-chain data from cache (async, non-blocking)
       // Cache is maintained by separate cron job
@@ -118,9 +235,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       const deficitFallbackReserveIds: string[] = [];
 
       // Merge on-chain data by reserveId
-      // V3: key = `${chainId}:${poolAddress}:${tokenAddr}` (matches reserveId)
-      // V4: key = `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}` (matches reserveId)
-      for (const reserve of payload.data) {
+      for (const reserve of mergeResult.mergedData) {
         let onchainData = onchainMap.get(reserve.reserveId);
 
         // deficit: SDK value > on-chain RPC > default '0'
@@ -156,7 +271,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
 
       // Oracle price override: if oracle diff > 1%, use oracle price
       let oracleOverrideCount = 0;
-      for (const reserve of payload.data) {
+      for (const reserve of mergeResult.mergedData) {
         let oraclePrice: number | undefined;
 
         if (reserve.spokeAddress) {
@@ -183,8 +298,12 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
 
       const newSnapshot: MarketsSnapshot = {
         payload,
-        fetchedAt: Date.now(),
+        fetchedAt: now,
         deficitFallbackReserveIds,
+        v3Data: staleV3Data,
+        v4Data: staleV4Data,
+        v3FetchedAt,
+        v4FetchedAt,
       };
 
       snapshot = newSnapshot;
@@ -193,9 +312,13 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         setCampaignAccessSnapshot(payload.campaignAccess);
       }
 
-      const elapsed = Date.now() - startTime;
+      const v3FreshLabel = mergeResult.v3Fresh ? 'fresh' : 'stale';
+      const v4FreshLabel = mergeResult.v4Fresh ? 'fresh' : 'stale';
+      const elapsed = now - startTime;
       logger.info(
-        `✅ Markets refresh: ${payload.data.length} reserves in ${elapsed}ms ` +
+        `✅ Markets refresh: ${mergeResult.mergedData.length} reserves ` +
+        `(V3:${mergeResult.newStaleV3Data.length}/${v3FreshLabel}, V4:${mergeResult.newStaleV4Data.length}/${v4FreshLabel}) ` +
+        `in ${elapsed}ms ` +
         `(on-chain: ${mergedCount} merged, ${fallbackCount} fallback, ` +
         `oracle: ${oracleOverrideCount} overridden, ` +
         `cache: ${cacheStatus.freshPools}/${cacheStatus.poolCount} fresh)`

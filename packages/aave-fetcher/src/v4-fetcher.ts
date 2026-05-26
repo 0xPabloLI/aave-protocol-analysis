@@ -35,16 +35,6 @@ export interface V4FetchResult {
 }
 
 /**
- * JSON replacer that converts BigInt to strings so the raw SDK response
- * can be written to debug files.
- */
-// ts-prune-ignore-next
-export function bigintReplacer(_key: string, value: unknown): unknown {
-  if (typeof value === 'bigint') return value.toString();
-  return value;
-}
-
-/**
  * Fetch all V4 reserves and map them to the RuntimeReserveData shape.
  * Also returns the raw SDK response for debug purposes.
  *
