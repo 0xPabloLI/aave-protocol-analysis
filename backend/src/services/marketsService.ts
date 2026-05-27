@@ -17,7 +17,7 @@ import { fetchMarketsData } from '@internal/aave-fetcher';
 import type { MarketsFetchResult, MarketsPayload, RuntimeReserveData } from '@internal/aave-shared-contracts';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { v4FatalConfig } from '../config.js';
-import { withTimeout } from '../lib/timeout.js';
+import { withTimeout } from '@internal/aave-rpc-infra';
 import { logger } from '../logger.js';
 import {
   getOnchainDataFromCache,

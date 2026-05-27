@@ -11,8 +11,7 @@
 
 import { Contract, providers } from 'ethers';
 import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
-import { providerPool } from '@internal/aave-rpc-infra';
-import { withTimeout } from '../lib/timeout.js';
+import { providerPool, withTimeout } from '@internal/aave-rpc-infra';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { mkdir, rename, writeFile } from 'fs/promises';

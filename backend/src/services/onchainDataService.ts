@@ -28,8 +28,7 @@
 import { Contract, providers, utils } from 'ethers';
 import { UiPoolDataProvider } from '@aave/contract-helpers';
 import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
-import { providerPool, executeMulticall3 } from '@internal/aave-rpc-infra';
-import { withTimeout } from '../lib/timeout.js';
+import { providerPool, executeMulticall3, withTimeout } from '@internal/aave-rpc-infra';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
