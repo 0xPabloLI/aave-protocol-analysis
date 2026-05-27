@@ -44,27 +44,37 @@ const consoleFormat = winston.format.combine(
 );
 
 // 创建 logger 实例
+// 在生产环境中，禁用 Console transport 以避免过度日志输出
+// 生产环境只使用文件输出，开发环境保留 Console 输出
+const transports: winston.transport[] = [
+  // 错误日志文件（只记录 error 级别）
+  new winston.transports.File({
+    filename: join(LOGS_DIR, 'error.log'),
+    level: 'error',
+    maxsize: 5242880, // 5MB
+    maxFiles: 5,
+  }),
+  // 所有日志文件
+  new winston.transports.File({
+    filename: join(LOGS_DIR, 'combined.log'),
+    maxsize: 5242880, // 5MB
+    maxFiles: 5,
+  }),
+];
+
+// 只在开发环境启用 Console 输出，避免生产环境过度日志
+if (process.env.NODE_ENV !== 'production') {
+  transports.push(
+    new winston.transports.Console({
+      format: consoleFormat,
+    })
+  );
+}
+
 export const logger = winston.createLogger({
   level: 'info',
   format: logFormat,
   defaultMeta: { service: 'aave-markets-data' },
-  transports: [
-    // 错误日志文件（只记录 error 级别）
-    new winston.transports.File({
-      filename: join(LOGS_DIR, 'error.log'),
-      level: 'error',
-      maxsize: 5242880, // 5MB
-      maxFiles: 5,
-    }),
-    // 所有日志文件
-    new winston.transports.File({
-      filename: join(LOGS_DIR, 'combined.log'),
-      maxsize: 5242880, // 5MB
-      maxFiles: 5,
-    }),
-    // 控制台输出
-    new winston.transports.Console({
-      format: consoleFormat,
-    }),
-  ],
+  transports,
 });
+
