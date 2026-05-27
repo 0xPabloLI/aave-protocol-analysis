@@ -43,9 +43,9 @@ const consoleFormat = winston.format.combine(
   })
 );
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 // 创建 logger 实例
-// 在生产环境中，禁用 Console transport 以避免过度日志输出
-// 生产环境只使用文件输出，开发环境保留 Console 输出
 const transports: winston.transport[] = [
   // 错误日志文件（只记录 error 级别）
   new winston.transports.File({
@@ -62,8 +62,8 @@ const transports: winston.transport[] = [
   }),
 ];
 
-// 只在开发环境启用 Console 输出，避免生产环境过度日志
-if (process.env.NODE_ENV !== 'production') {
+// 非生产环境才输出到控制台（Railway/Docker 生产环境已有文件日志，避免 stdout 高流量）
+if (!isProduction) {
   transports.push(
     new winston.transports.Console({
       format: consoleFormat,
@@ -77,4 +77,3 @@ export const logger = winston.createLogger({
   defaultMeta: { service: 'aave-markets-data' },
   transports,
 });
-

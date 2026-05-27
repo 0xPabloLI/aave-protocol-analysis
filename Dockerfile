@@ -50,6 +50,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Set production environment (also gates Console transport in logger)
+ENV NODE_ENV=production
+
 # Install production-only dependencies
 COPY package*.json ./
 COPY packages/ ./packages/
