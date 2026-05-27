@@ -142,5 +142,9 @@ export async function fetchAndPersistGscDaily(pool: Pool, targetDateOverride?: s
   return { targetDate, rowsUpserted };
 }
 
-export { fetchGscRows, upsertGscRows, getGscClient };
+function setGscClientForTest(client: ReturnType<typeof google.webmasters>) {
+  cachedClient = client;
+}
+
+export { fetchGscRows, upsertGscRows, getGscClient, setGscClientForTest };
 export type { GscRow };
