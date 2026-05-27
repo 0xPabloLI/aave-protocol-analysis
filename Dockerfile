@@ -75,4 +75,6 @@ RUN mkdir -p data logs backend/logs
 
 EXPOSE 3001
 
-CMD ["node", "backend/dist/server.js"]
+# --max-old-space-size=800: GC triggers at 800MB, well below Railway's 1GB limit
+# This prevents OOM crashes by forcing GC before container memory is exhausted
+CMD ["node", "--max-old-space-size=800", "backend/dist/server.js"]

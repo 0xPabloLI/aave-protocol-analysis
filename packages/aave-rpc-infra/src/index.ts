@@ -33,17 +33,21 @@ export type ProviderPoolOptions = {
 
 const DEFAULT_FAILURE_THRESHOLD = 2;
 const DEFAULT_SUPPRESSION_MS = 5 * 60_000;
+const DEFAULT_PROVIDER_TTL_MS = 30 * 60_000; // 30 min — evict unused providers
 
 export class ProviderPool {
   private providerByKey = new Map<string, providers.StaticJsonRpcProvider>();
   private endpointHealthByKey = new Map<string, EndpointHealth>();
+  private providerLastUsedAt = new Map<string, number>();
   private readonly failureThreshold: number;
   private readonly suppressionMs: number;
+  private readonly providerTtlMs: number;
   private readonly now: () => number;
 
-  constructor(options: ProviderPoolOptions = {}) {
+  constructor(options: ProviderPoolOptions & { providerTtlMs?: number } = {}) {
     this.failureThreshold = Math.max(1, options.failureThreshold ?? DEFAULT_FAILURE_THRESHOLD);
     this.suppressionMs = Math.max(1_000, options.suppressionMs ?? DEFAULT_SUPPRESSION_MS);
+    this.providerTtlMs = Math.max(60_000, options.providerTtlMs ?? DEFAULT_PROVIDER_TTL_MS);
     this.now = options.now ?? Date.now;
   }
 
@@ -114,6 +118,7 @@ export class ProviderPool {
         provider = new providers.StaticJsonRpcProvider(rpcUrl, chainId);
         this.providerByKey.set(key, provider);
       }
+      this.providerLastUsedAt.set(key, this.now());
       const candidate = { rpcUrl, provider };
       const health = this.endpointHealthByKey.get(key);
       if (this.isSuppressed(health)) {
@@ -132,10 +137,25 @@ export class ProviderPool {
       return a.index - b.index;
     });
 
+    // Evict stale providers to prevent unbounded memory growth
+    this.cleanupStaleProviders();
+
     return [
       ...healthyCandidates.map(({ rpcUrl, provider }) => ({ rpcUrl, provider })),
       ...suppressedCandidates,
     ];
+  }
+
+  /** Remove provider + health entries unused for longer than providerTtlMs */
+  private cleanupStaleProviders(): void {
+    const cutoff = this.now() - this.providerTtlMs;
+    for (const [key, lastUsed] of this.providerLastUsedAt.entries()) {
+      if (lastUsed < cutoff) {
+        this.providerByKey.delete(key);
+        this.endpointHealthByKey.delete(key);
+        this.providerLastUsedAt.delete(key);
+      }
+    }
   }
 }
 
