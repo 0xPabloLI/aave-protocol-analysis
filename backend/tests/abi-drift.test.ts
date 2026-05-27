@@ -1,12 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  ISpokeV4_ABI,
-  IAaveOracle_ABI,
-  IPool_ABI,
-  V4_ORACLE_PRICES_ABI,
-  V4_HUB_FULL_ABI,
-} from '../src/abis/index.js';
+import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
+import { IAaveOracle_ABI } from '@aave-dao/aave-address-book/abis/IAaveOracle';
+import { IPool_ABI } from '@aave-dao/aave-address-book/abis/IPool';
+import { V4_HUB_FULL_ABI } from '@internal/aave-rpc-infra';
+import { V4_ORACLE_PRICES_ABI } from '../src/abis/index.js';
 import { HUB_EXTENSIONS_ABI, MULTICALL3_ABI } from '@internal/aave-rpc-infra';
 import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 
@@ -21,7 +19,7 @@ function hasFn(abi: ReadonlyAbi, name: string): boolean {
   return abi.some((x) => x.type === 'function' && x.name === name);
 }
 
-// ── Layer 1: Upstream re-exports ───────────────────────────
+// ── Upstream ABI contracts ────────────────────────────────
 
 test('IHubV4_ABI has address-book methods (getAssetCount, getAsset, getSpokeCount, getSpokeAddress)', () => {
   const names = fnNames(IHubV4_ABI);
@@ -48,7 +46,7 @@ test('IPool_ABI has getReservesList and >= 60 function entries', () => {
   assert.ok(fnNames(IPool_ABI).length >= 60, `only ${fnNames(IPool_ABI).length} functions`);
 });
 
-// ── Layer 2: Local supplements ─────────────────────────────
+// ── Local supplements ─────────────────────────────────────
 
 test('HUB_EXTENSIONS_ABI has getSpokeDeficitRay (only)', () => {
   assert.ok(hasFn(HUB_EXTENSIONS_ABI, 'getSpokeDeficitRay'));
@@ -65,7 +63,7 @@ test('MULTICALL3_ABI has aggregate3 (only)', () => {
   assert.strictEqual(fnNames(MULTICALL3_ABI).length, 1);
 });
 
-// ── Layer 3: Merged composites ─────────────────────────────
+// ── Shared-package composites ────────────────────────────
 
 test('V4_HUB_FULL_ABI = IHubV4 + hub-extensions', () => {
   assert.ok(hasFn(V4_HUB_FULL_ABI, 'getAssetCount'));
@@ -75,6 +73,16 @@ test('V4_HUB_FULL_ABI = IHubV4 + hub-extensions', () => {
   const extCount = fnNames(HUB_EXTENSIONS_ABI).length;
   const fullCount = fnNames(V4_HUB_FULL_ABI).length;
   assert.strictEqual(fullCount, baseCount + extCount);
+});
+
+// ── Overlap detection ──────────────────────────────────────
+// Local supplements must not duplicate methods already in upstream.
+
+test('V4_ORACLE_PRICES_ABI does not overlap IAaveOracle_ABI', () => {
+  const upstreamNames = new Set(fnNames(IAaveOracle_ABI));
+  for (const name of fnNames(V4_ORACLE_PRICES_ABI)) {
+    assert.ok(!upstreamNames.has(name), `V4_ORACLE_PRICES_ABI.${name} already in IAaveOracle_ABI — remove local supplement`);
+  }
 });
 
 // ── ABI drift detection ────────────────────────────────────

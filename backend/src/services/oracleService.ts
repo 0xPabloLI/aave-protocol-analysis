@@ -18,7 +18,10 @@ import { mkdir, rename, writeFile } from 'fs/promises';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
-import { IPool_ABI, IAaveOracle_ABI, ISpokeV4_ABI, V4_ORACLE_PRICES_ABI } from '../abis/index.js';
+import { IPool_ABI } from '@aave-dao/aave-address-book/abis/IPool';
+import { IAaveOracle_ABI } from '@aave-dao/aave-address-book/abis/IAaveOracle';
+import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
+import { V4_ORACLE_PRICES_ABI } from '../abis/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

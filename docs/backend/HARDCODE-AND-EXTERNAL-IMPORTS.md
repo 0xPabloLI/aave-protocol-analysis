@@ -18,45 +18,26 @@
 
 ## 2.1 ABI 来源策略
 
-所有合约 ABI 集中在 [backend/src/abis/](../../backend/src/abis/) 三层架构，业务文件**禁止**本地硬编码 ABI，必须从 `../abis/index.js` 导入。
+所有合约 ABI 遵循 **upstream + local 二层架构**。业务文件**禁止**本地硬编码 ABI。
 
-### 三层结构
+### 二层结构
 
-| 层 | 含义 | 文件 |
-|---|---|---|
-| L1 — Upstream re-export | 直接从 `@aave-dao/aave-address-book` 转出 | `abis/index.ts` 顶部 4 个 `export` |
-| L2 — Local supplements | 上游未提供的方法 / 通用预部署合约 | `hub-extensions.ts`、`v4-oracle-prices.ts`、`multicall3.ts` |
-| L3 — Merged composites | L1 + L2 拼接的复合 ABI | `V4_HUB_FULL_ABI = [...IHubV4_ABI, ...HUB_EXTENSIONS_ABI]` |
+| 层 | 含义 | 来源 | 细分 |
+|---|---|---|---|
+| Upstream | 上游包原生导出 | `@aave-dao/aave-address-book/abis/*` | upstream |
+| Upstream | 共享包导出 | `@internal/aave-rpc-infra` | shared |
+| Local | 后端本地补充（仅 `V4_ORACLE_PRICES_ABI`） | `backend/src/abis/` | local |
 
-### 当前 ABI 归属表
-
-| ABI 名 | 来源层 | 备注 |
-|---|---|---|
-| `IHubV4_ABI` | L1 | 上游：`getAssetCount` / `getAsset` / `getSpokeCount` / `getSpokeAddress` |
-| `ISpokeV4_ABI` | L1 | 上游完整 Spoke 接口 |
-| `IAaveOracle_ABI` | L1 | V3 oracle |
-| `IPool_ABI` | L1 | V3 pool |
-| `HUB_EXTENSIONS_ABI` | L2 | 仅 `getSpokeDeficitRay`（address-book 未提供，target 仍是 hubAddress） |
-| `V4_ORACLE_PRICES_ABI` | L2 | 仅 `getReservesPrices`（address-book 的 `IAaveOracleV4_ABI` 只有 `getReserveSource`，不适用） |
-| `MULTICALL3_ABI` + `MULTICALL3_ADDRESS` | L2 | 通用预部署合约，与 Aave 无关 |
-| `V4_HUB_FULL_ABI` | L3 | `IHubV4_ABI + HUB_EXTENSIONS_ABI`，用于 onchainDataService 全量调用 |
-
-### 深层导入路径合法性
-
-`@aave-dao/aave-address-book` 的 `exports` 字段声明了 `"./*"` 通配符（→ `dist/*.js`），所以：
-
-```typescript
-import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4'
-```
-
-是**官方支持的入口**，不依赖任何 workaround。上游 `./abis` index.js 确实遗漏了 V4 系列的 re-export，但通过通配符路径直读子模块即可，build + runtime 验证均通过。
+`abis/index.ts` 只 re-export 本地定义。上游 ABI 由消费侧直接从上游包 import。
 
 ### 约束
 
-- `backend/src/services/**` 内**禁止**出现 inline ABI 数组字面量；新增 ABI 必须先进 `abis/`
-- 上游已有的 ABI 一律走 L1 re-export，不要拷贝
-- 上游缺失但本地需要的方法 → L2 单独文件；如需与上游合并 → L3 composite
-- 业务侧统一从 `../abis/index.js` 导入，禁止业务文件直接写 `@aave-dao/aave-address-book/abis/*` 深层路径（保持单一入口）
+- `backend/src/services/**` 内**禁止** inline ABI 数组字面量
+- services **禁止** `from '@aave-dao/aave-address-book'` 根 barrel import（用 `/abis/*` 深路径）
+- `addressBookRegistry.ts` 例外（它导入地址数据，非 ABI）
+- CI 测试：`no-inline-abi.test.ts` + `abi-drift.test.ts`
+
+详见 [abi-bridge-layer-review.md](./abi-bridge-layer-review.md)
 
 ## 3. 环境变量
 
@@ -131,3 +112,4 @@ node -e "const a = require('@bgd-labs/aave-address-book'); Object.keys(a).filter
 | `POOL` | 核心借贷池合约 |
 | `ORACLE` | 价格预言机 |
 | `AAVE_PROTOCOL_DATA_PROVIDER` | 协议数据读取（备用） |
+| `MULTICALL3_ADDRESS` | Multicall3 聚合合约（CREATE2 确定性地址 `0xcA11bde05977b72171C07110a83e3e1c41D0C374`）；来源：`@internal/aave-rpc-infra` |

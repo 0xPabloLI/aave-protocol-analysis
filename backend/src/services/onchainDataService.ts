@@ -32,7 +32,7 @@ import { providerPool, executeMulticall3, withTimeout } from '@internal/aave-rpc
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
-import { V4_HUB_FULL_ABI } from '../abis/index.js';
+import { V4_HUB_FULL_ABI } from '@internal/aave-rpc-infra';
 
 const ONCHAIN_PER_RPC_TIMEOUT_MS = 15_000;
 

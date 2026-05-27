@@ -4,7 +4,7 @@ import { utils, providers } from 'ethers';
 
 import { calculateBaseRateFallback, POOL_CONFIGS, V4_HUB_INTERFACE, processDeficitBatchResults, processDeficitSerialResult } from '../src/services/onchainDataService.js';
 import { executeMulticall3 } from '@internal/aave-rpc-infra';
-import { V4_HUB_FULL_ABI } from '../src/abis/index.js';
+import { V4_HUB_FULL_ABI } from '@internal/aave-rpc-infra';
 import { MULTICALL3_ADDRESS } from '@internal/aave-rpc-infra';
 import { V4_SPOKE_ENTRIES, V3_ENTRIES } from '../src/services/addressBookRegistry.js';
 
