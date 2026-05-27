@@ -337,7 +337,7 @@ export async function fetchV4ReservesWithTimeout(options?: {
       throw new Error('V4 data fetch returned empty dataset (v4Fatal=true)');
     }
 
-    logger.error('❌ V4 SDK anomaly: empty dataset after retries, triggering RPC fallback');
+    logger.warn('⚠️ V4 SDK returned empty dataset after retries, triggering RPC fallback');
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     if (v4Fatal) {
@@ -354,11 +354,15 @@ export async function fetchV4ReservesWithTimeout(options?: {
         setTimeout(() => reject(new Error('V4 RPC fallback timeout')), V4_RPC_FALLBACK_TIMEOUT_MS)
       ),
     ]);
-    if (rpcResult.reserves.length > 0 && rpcResult.errors.length === 0) {
-      logger.warn(`⚠️ V4 RPC fallback succeeded with ${rpcResult.reserves.length} reserves`);
+    if (rpcResult.reserves.length > 0) {
+      if (rpcResult.errors.length === 0) {
+        logger.warn(`⚠️ V4 RPC fallback succeeded with ${rpcResult.reserves.length} reserves`);
+      } else {
+        logger.warn(`⚠️ V4 RPC fallback partial success: ${rpcResult.reserves.length} reserves, ${rpcResult.errors.length} spoke errors`);
+      }
       return { mapped: rpcResult.reserves, raw: { reserves: [] }, source: 'rpc' };
     }
-    logger.error(`❌ V4 RPC fallback returned incomplete dataset (${rpcResult.reserves.length} reserves, ${rpcResult.errors.length} errors)`);
+    logger.error(`❌ V4 RPC fallback returned empty dataset (${rpcResult.errors.length} errors)`);
   } catch (error) {
     logger.error(`❌ V4 RPC fallback failed: ${error instanceof Error ? error.message : String(error)}`);
   }

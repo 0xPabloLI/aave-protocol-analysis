@@ -1,5 +1,5 @@
 {
-  "name": "@internal/aave-fetcher",
+  "name": "@internal/aave-rpc-infra",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -20,23 +20,13 @@
     "test": "tsx --test tests/**/*.test.ts"
   },
   "dependencies": {
-    "@aave/client": "^0.6.1",
-    "@aave/client-v4": "npm:@aave/client@^4.1.1",
     "@aave-dao/aave-address-book": "^4.52.3",
-    "@internal/aave-rpc-infra": "*",
     "@internal/aave-shared-config": "*",
     "@internal/aave-shared-contracts": "*",
-    "@types/puppeteer": "^5.4.7",
-    "cheerio": "^1.1.2",
-    "dotenv": "^17.3.1",
-    "node-fetch": "^3.3.2",
-    "puppeteer": "^24.35.0",
-    "winston": "^3.19.0",
-    "zod": "^4.3.6"
+    "ethers": "^5.8.0"
   },
   "devDependencies": {
-    "@types/cheerio": "^0.22.35",
-    "@types/node": "^25.4.0",
+    "@types/node": "^20.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   }

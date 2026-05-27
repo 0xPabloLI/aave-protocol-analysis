@@ -37,7 +37,7 @@ if [ "$_needs_install" -eq 1 ]; then
 fi
 
 # Preflight: ensure workspace packages are built (backend imports from @internal/* packages)
-if [ ! -d "../packages/aave-shared-contracts/dist" ] || [ ! -d "../packages/aave-fetcher/dist" ]; then
+if [ ! -d "../packages/aave-shared-contracts/dist" ] || [ ! -d "../packages/aave-rpc-infra/dist" ] || [ ! -d "../packages/aave-fetcher/dist" ]; then
   echo "[dev-entry] workspace packages not built — running root install & build..." >&2
   (cd .. && npm install && npm run build)
 fi

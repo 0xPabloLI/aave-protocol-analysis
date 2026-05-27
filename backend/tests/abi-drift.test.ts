@@ -1,15 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  IHubV4_ABI,
   ISpokeV4_ABI,
   IAaveOracle_ABI,
   IPool_ABI,
-  HUB_EXTENSIONS_ABI,
   V4_ORACLE_PRICES_ABI,
-  MULTICALL3_ABI,
   V4_HUB_FULL_ABI,
 } from '../src/abis/index.js';
+import { HUB_EXTENSIONS_ABI, MULTICALL3_ABI } from '@internal/aave-rpc-infra';
+import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 
 type AbiEntry = { type: string; name?: string };
 type ReadonlyAbi = readonly AbiEntry[];

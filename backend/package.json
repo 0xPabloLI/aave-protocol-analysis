@@ -15,12 +15,13 @@
     "test": "npx --no-install tsx --test tests/*.test.ts",
     "gen:schema-fp": "npx --no-install tsx scripts/generate-schema-fp.ts",
     "test:api-fields": "RUN_API_FIELDS_TESTS=true npx --no-install tsx --test tests/apiFieldsVerification.test.ts",
-    "prune": "ts-prune -i '.*(aave-shared-config|aave-shared-contracts|aave-fetcher)/(dist/)?index\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v 'SEMRUSH_TO_GSC' | grep '^src/' | (grep -q . && exit 1 || exit 0)"
+    "prune": "ts-prune -i '.*(aave-shared-config|aave-shared-contracts|aave-rpc-infra|aave-fetcher)/(dist/)?index\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v 'SEMRUSH_TO_GSC' | grep '^src/' | (grep -q . && exit 1 || exit 0)"
   },
   "dependencies": {
     "@aave-dao/aave-address-book": "^4.52.3",
     "@aave/contract-helpers": "^1.37.1",
     "@internal/aave-fetcher": "*",
+    "@internal/aave-rpc-infra": "*",
     "@internal/aave-shared-config": "*",
     "@internal/aave-shared-contracts": "*",
     "@types/compression": "^1.8.1",

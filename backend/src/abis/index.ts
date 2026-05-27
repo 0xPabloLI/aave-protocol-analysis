@@ -2,24 +2,17 @@
  * ABI Bridge Layer — single entry point for all ABI consumption.
  *
  * Layer 1: Re-exported from @aave-dao/aave-address-book (upstream source of truth)
- * Layer 2: Local supplements (methods not in address-book)
- * Layer 3: Merged composites (e.g., V4_HUB_FULL_ABI = IHubV4 + hub-extensions)
+ * Layer 2: Re-exported from @internal/aave-rpc-infra (shared RPC infra)
+ * Layer 3: Local supplements (methods not in either upstream)
  */
 
-// ── Layer 1: Upstream ──────────────────────────────────────
-export { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
+// ── Layer 1: Upstream (address-book) ───────────────────────
 export { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
 export { IAaveOracle_ABI } from '@aave-dao/aave-address-book/abis/IAaveOracle';
 export { IPool_ABI } from '@aave-dao/aave-address-book/abis/IPool';
 
-// ── Layer 2: Local supplements ─────────────────────────────
-export { HUB_EXTENSIONS_ABI } from './hub-extensions.js';
+// ── Layer 2: Shared RPC infra ──────────────────────────────
+export { V4_HUB_FULL_ABI } from '@internal/aave-rpc-infra';
+
+// ── Layer 3: Local supplements ─────────────────────────────
 export { V4_ORACLE_PRICES_ABI } from './v4-oracle-prices.js';
-export { MULTICALL3_ABI, MULTICALL3_ADDRESS } from './multicall3.js';
-
-// ── Layer 3: Merged composites ─────────────────────────────
-import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
-import { HUB_EXTENSIONS_ABI } from './hub-extensions.js';
-
-/** Full V4 Hub ABI: address-book base + local extensions (getSpokeDeficitRay) */
-export const V4_HUB_FULL_ABI = [...IHubV4_ABI, ...HUB_EXTENSIONS_ABI];

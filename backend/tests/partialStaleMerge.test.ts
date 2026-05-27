@@ -1,10 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeWithPartialStale } from '../src/services/marketsService.js';
+import { getFetchResultOrDefault, mergeWithPartialStale } from '../src/services/marketsService.js';
 import type { PartialStaleMergeInput } from '../src/services/marketsService.js';
 import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 
 const FIVE_MINUTES = 5 * 60 * 1000;
+
+test('missing fetchResult envelope defaults both sides to SDK success', () => {
+  const result = getFetchResultOrDefault({
+    timestamp: new Date().toISOString(),
+    version: '2.0-runtime-minimal',
+    dataCount: 0,
+    profile: 'runtime-minimal',
+  });
+
+  assert.deepEqual(result, {
+    v3: { success: true, source: 'sdk' },
+    v4: { success: true, source: 'sdk' },
+  });
+});
 
 /** Minimal V3 reserve (no hubId). */
 function makeV3(overrides?: Partial<RuntimeReserveData>): RuntimeReserveData {
@@ -307,7 +321,7 @@ test('V3 never fetched → timeout means V3 = []', () => {
   assert.equal(result.v3Fresh, false);
 });
 
-// ── Backward compat: _v3Succeeded/_v4Succeeded absent → treat as success ─
+// ── Backward compat: missing fetchResult envelope → treat as SDK success ─
 
 test('both succeeded with empty stale → fresh data only', () => {
   const freshV3 = makeV3({ tokenSymbol: 'USDC' });

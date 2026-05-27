@@ -18,6 +18,21 @@ test('MarketsResponse.snapshot includes deficitFallbackReserveIds', () => {
   assert.equal(response.snapshot.deficitFallbackReserveIds.length, 0);
 });
 
+test('MarketsResponse.snapshot includes v4FallbackReserveIds', () => {
+  const response: MarketsResponse = {
+    snapshot: {
+      lastUpdated: new Date().toISOString(),
+      version: 'snapshot-v3',
+      staleTimeMs: 0,
+      schemaFingerprint: 'test',
+      deficitFallbackReserveIds: [],
+      v4FallbackReserveIds: ['1:0xspoke:0xtoken:CORE_HUB'],
+    },
+    reserves: [],
+  };
+  assert.deepEqual(response.snapshot.v4FallbackReserveIds, ['1:0xspoke:0xtoken:CORE_HUB']);
+});
+
 test('MarketsResponse.snapshot deficitFallbackReserveIds can contain reserveIds', () => {
   const response: MarketsResponse = {
     snapshot: {

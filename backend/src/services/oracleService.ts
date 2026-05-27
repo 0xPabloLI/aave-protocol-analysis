@@ -11,8 +11,8 @@
 
 import { Contract, providers } from 'ethers';
 import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
+import { providerPool } from '@internal/aave-rpc-infra';
 import { withTimeout } from '../lib/timeout.js';
-import { ethProviderService } from './ethProviderService.js';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { mkdir, rename, writeFile } from 'fs/promises';
@@ -324,7 +324,7 @@ export async function refreshOracleCache(): Promise<void> {
           logger.debug(`⏭️  Oracle V3: Skipping ${config.poolKey} (chain ${config.chainId}), no RPC URLs`);
           return null;
         }
-        const candidates = ethProviderService.getProvidersForChain(config.chainId, rpcUrls);
+        const candidates = providerPool.getProvidersForChain(config.chainId, rpcUrls);
         if (candidates.length === 0) {
           logger.warn(`⏭️  Oracle V3: Skipping ${config.poolKey} (chain ${config.chainId}), no healthy RPC`);
           return null;
@@ -332,12 +332,12 @@ export async function refreshOracleCache(): Promise<void> {
         for (const candidate of candidates) {
           try {
             const result = await fetchV3PoolPrices(config, candidate.provider, candidate.rpcUrl);
-            ethProviderService.reportProviderSuccess(config.chainId, candidate.rpcUrl);
+            providerPool.reportProviderSuccess(config.chainId, candidate.rpcUrl);
             logger.debug(`✅ Oracle V3: ${config.poolKey} - ${Object.keys(result.assets).length} assets via ${candidate.rpcUrl}`);
             return result;
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            ethProviderService.reportProviderFailure(config.chainId, candidate.rpcUrl, message);
+            providerPool.reportProviderFailure(config.chainId, candidate.rpcUrl, message);
             logger.warn(`❌ Oracle V3: ${config.poolKey} failed via ${candidate.rpcUrl}: ${message}`);
           }
         }
@@ -351,7 +351,7 @@ export async function refreshOracleCache(): Promise<void> {
           logger.debug(`⏭️  Oracle V4: Skipping ${config.spokeName} (chain ${config.chainId}), no RPC URLs`);
           return null;
         }
-        const candidates = ethProviderService.getProvidersForChain(config.chainId, rpcUrls);
+        const candidates = providerPool.getProvidersForChain(config.chainId, rpcUrls);
         if (candidates.length === 0) {
           logger.warn(`⏭️  Oracle V4: Skipping ${config.spokeName} (chain ${config.chainId}), no healthy RPC`);
           return null;
@@ -359,12 +359,12 @@ export async function refreshOracleCache(): Promise<void> {
         for (const candidate of candidates) {
           try {
             const result = await fetchV4SpokePrices(config, candidate.provider, candidate.rpcUrl);
-            ethProviderService.reportProviderSuccess(config.chainId, candidate.rpcUrl);
+            providerPool.reportProviderSuccess(config.chainId, candidate.rpcUrl);
             logger.debug(`✅ Oracle V4: ${config.spokeName} - ${Object.keys(result.reserves).length} reserves via ${candidate.rpcUrl}`);
             return result;
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            ethProviderService.reportProviderFailure(config.chainId, candidate.rpcUrl, message);
+            providerPool.reportProviderFailure(config.chainId, candidate.rpcUrl, message);
             logger.warn(`❌ Oracle V4: ${config.spokeName} failed via ${candidate.rpcUrl}: ${message}`);
           }
         }

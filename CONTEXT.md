@@ -182,6 +182,21 @@ _Avoid_: expiry, timeout
 直接从链上合约读取的数据（deficit、利率模型参数），区别于 SDK 聚合数据。由独立 cron 刷新，per-Pool 缓存。
 _Avoid_: chainData, contractData
 
+**fetchResult** (envelope):
+`MarketsPayload._metadata.fetchResult.{v3,v4}` 的 per-side fetch 结果信封，含 `{ success: boolean, source: 'sdk' | 'rpc' | 'stale' }`。fetcher 写入，backend 读取以驱动 stale merge 决策。是 fetcher → backend 的稳定契约。取代早期扁平的 `_v3Succeeded` / `_v4Succeeded` 下划线字段。详见 ADR-0022。
+_Avoid_: \_v3Succeeded, \_v4Succeeded（已被结构化字段取代）
+
+**fallbackSource**:
+Reserve 数据兜底来源分类。优先级 `sdk > rpc > stale > none`：SDK 主路径失败时依次降级。
+- `sdk`：Aave SDK 聚合数据（正常路径）
+- `rpc`：fetcher 包内 inline 直读 Hub+Spoke（V4 SDK 空集时触发，详见 ADR-0021）
+- `stale`：backend 层 per-side staleData（RPC 也失败时兜底，详见 ADR-0020）
+- `none`：所有兜底均失败，该 side 数据为空
+
+**staleData** (per-side):
+backend 在 `marketsService.ts` 维护的 V3/V4 各自独立的上次成功 fetch 数据。`v3FetchedAt`/`v4FetchedAt` 独立时间戳，受 `marketsHardTtlMs` 限制；过期后该 side 直接为空（merged dataset 中该 side 缺位，不影响另一 side）。是三层兜底中的 last resort。详见 ADR-0020。
+_Avoid_: cache（与 OnchainData cache 混淆），fallbackSnapshot（snapshot 是合并后的产物，不是 per-side）
+
 ---
 
 ## Flagged Ambiguities

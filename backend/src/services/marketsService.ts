@@ -14,7 +14,7 @@
  */
 
 import { fetchMarketsData } from '@internal/aave-fetcher';
-import type { MarketsPayload, RuntimeReserveData } from '@internal/aave-shared-contracts';
+import type { MarketsFetchResult, MarketsPayload, RuntimeReserveData } from '@internal/aave-shared-contracts';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { v4FatalConfig } from '../config.js';
 import { withTimeout } from '../lib/timeout.js';
@@ -33,6 +33,13 @@ const MARKETS_FETCH_TIMEOUT_MS = 60_000; // 60 seconds
 
 // Re-export types for other modules
 export type { MarketsPayload, RuntimeReserveData };
+
+export function getFetchResultOrDefault(metadata: MarketsPayload['_metadata']): MarketsFetchResult {
+  return metadata.fetchResult ?? {
+    v3: { success: true, source: 'sdk' },
+    v4: { success: true, source: 'sdk' },
+  };
+}
 
 export interface ResolveReserveDeficitResult {
   deficit: string;
@@ -56,6 +63,7 @@ interface MarketsSnapshot {
   payload: MarketsPayload;
   fetchedAt: number;
   deficitFallbackReserveIds: string[];
+  v4FallbackReserveIds: string[];
   /** Per-side V3 data from the most recent successful V3 fetch. */
   v3Data: RuntimeReserveData[];
   /** Per-side V4 data from the most recent successful V4 fetch. */
@@ -189,9 +197,10 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         'Markets fetch timeout'
       );
 
-      // Read side-channel flags from _metadata (backward compat: treat absent as success)
-      const v3Succeeded = payload._metadata._v3Succeeded ?? true;
-      const v4Succeeded = payload._metadata._v4Succeeded ?? true;
+      // Read structured side-channel envelope from _metadata (backward compat: treat absent as SDK success)
+      const fetchResult = getFetchResultOrDefault(payload._metadata);
+      const v3Succeeded = fetchResult.v3.success;
+      const v4Succeeded = fetchResult.v4.success;
 
       const now = Date.now();
       const hardTtl = BACKEND_CACHE_TTL_MS.marketsHardTtlMs;
@@ -233,6 +242,11 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       let mergedCount = 0;
       let fallbackCount = 0;
       const deficitFallbackReserveIds: string[] = [];
+      const v4FallbackReserveIds = fetchResult.v4.source === 'rpc'
+        ? mergeResult.mergedData
+          .filter((reserve) => !!reserve.hubId)
+          .map((reserve) => reserve.reserveId)
+        : [];
 
       // Merge on-chain data by reserveId
       for (const reserve of mergeResult.mergedData) {
@@ -300,6 +314,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         payload,
         fetchedAt: now,
         deficitFallbackReserveIds,
+        v4FallbackReserveIds,
         v3Data: staleV3Data,
         v4Data: staleV4Data,
         v3FetchedAt,
@@ -353,6 +368,7 @@ export function getMarketsData(): {
   ageMs: number | null;
   isTooStale: boolean;
   deficitFallbackReserveIds: string[];
+  v4FallbackReserveIds: string[];
 } {
   if (!snapshot) {
     logger.warn('Markets snapshot not yet populated; returning null');
@@ -363,6 +379,7 @@ export function getMarketsData(): {
       ageMs: null,
       isTooStale: false,
       deficitFallbackReserveIds: [],
+      v4FallbackReserveIds: [],
     };
   }
 
@@ -383,6 +400,7 @@ export function getMarketsData(): {
     ageMs,
     isTooStale,
     deficitFallbackReserveIds: snapshot.deficitFallbackReserveIds,
+    v4FallbackReserveIds: snapshot.v4FallbackReserveIds,
   };
 }
 

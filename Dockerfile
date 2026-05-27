@@ -60,6 +60,7 @@ RUN npm ci --omit=dev -w aave-dashboard-backend
 # Copy compiled output from builder
 COPY --from=builder /app/dist/ ./dist/
 COPY --from=builder /app/packages/aave-shared-contracts/dist/ ./packages/aave-shared-contracts/dist/
+COPY --from=builder /app/packages/aave-rpc-infra/dist/ ./packages/aave-rpc-infra/dist/
 COPY --from=builder /app/packages/aave-fetcher/dist/ ./packages/aave-fetcher/dist/
 COPY --from=builder /app/backend/dist/ ./backend/dist/
 

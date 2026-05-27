@@ -140,16 +140,26 @@ export type ApiBrevisBreakdown = Pick<
 
 export type ApiBrevisCampaignItem = CampaignGroup<ApiBrevisBreakdown>;
 
+export type FetchSource = 'sdk' | 'rpc' | 'stale' | 'none';
+
+export interface SideFetchResult {
+  success: boolean;
+  source: FetchSource;
+}
+
+export interface MarketsFetchResult {
+  v3: SideFetchResult;
+  v4: SideFetchResult;
+}
+
 export interface MarketsPayload {
   _metadata: {
     timestamp: string;
     version: string;
     dataCount: number;
     profile: string;
-    /** Side-channel: whether V3 fetch succeeded in this refresh (for backend stale fallback). */
-    _v3Succeeded?: boolean;
-    /** Side-channel: whether V4 fetch succeeded in this refresh (for backend stale fallback). */
-    _v4Succeeded?: boolean;
+    /** Per-side fetch result envelope used by backend stale fallback and source tracking. */
+    fetchResult?: MarketsFetchResult;
   };
   data: RuntimeReserveData[];
   campaignAccess?: MerklCampaignAccess[];

@@ -227,7 +227,7 @@ describe('fetchV4ReservesWithTimeout — v4Fatal support (DI)', () => {
     assert.equal(result.source, 'rpc');
   });
 
-  it('v4Fatal=false + V4 SDK rejects + RPC partial errors → returns none for stale fallback', async () => {
+  it('v4Fatal=false + V4 SDK rejects + RPC partial errors → returns partial RPC data', async () => {
     const mod = await import('../dist/index.js');
 
     const mockFetchV4 = async () => {
@@ -243,7 +243,30 @@ describe('fetchV4ReservesWithTimeout — v4Fatal support (DI)', () => {
       }),
     });
 
-    assert.equal(result.mapped.length, 0);
-    assert.equal(result.source, 'none');
+    assert.equal(result.mapped.length, 1);
+    assert.equal(result.mapped[0].tokenSymbol, 'PARTIAL-USDT');
+    assert.equal(result.source, 'rpc');
+  });
+
+  it('v4Fatal=false + V4 SDK returns empty (no throw) + RPC succeeds → returns RPC data', async () => {
+    const mod = await import('../dist/index.js');
+
+    const mockFetchV4 = async () => ({
+      mapped: [],
+      raw: { reserves: [] },
+    });
+
+    const result = await mod.fetchV4ReservesWithTimeout({
+      v4Fatal: false,
+      _fetchV4Fn: mockFetchV4,
+      _fetchV4RpcFn: async () => ({
+        reserves: [makeV4Reserve({ tokenSymbol: 'RPC-ETH' })],
+        errors: [],
+      }),
+    });
+
+    assert.equal(result.mapped.length, 1);
+    assert.equal(result.mapped[0].tokenSymbol, 'RPC-ETH');
+    assert.equal(result.source, 'rpc');
   });
 });

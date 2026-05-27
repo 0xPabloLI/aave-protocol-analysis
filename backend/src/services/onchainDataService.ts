@@ -28,12 +28,12 @@
 import { Contract, providers, utils } from 'ethers';
 import { UiPoolDataProvider } from '@aave/contract-helpers';
 import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
+import { providerPool, executeMulticall3 } from '@internal/aave-rpc-infra';
 import { withTimeout } from '../lib/timeout.js';
-import { ethProviderService } from './ethProviderService.js';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
-import { V4_HUB_FULL_ABI, MULTICALL3_ABI, MULTICALL3_ADDRESS } from '../abis/index.js';
+import { V4_HUB_FULL_ABI } from '../abis/index.js';
 
 const ONCHAIN_PER_RPC_TIMEOUT_MS = 15_000;
 
@@ -131,35 +131,10 @@ export function processDeficitSerialResult(
 }
 
 // ============================================================
-// Multicall3 — uses provider.call() (raw eth_call) instead of contract.callStatic to avoid
+// Multicall3 — imported from @internal/aave-rpc-infra
+// Uses provider.call() (raw eth_call) instead of contract.callStatic to avoid
 // ethers.js v5 stateMutability issues: aggregate3 is payable, not view.
-// ABI and canonical CREATE2 address imported from bridge layer.
 // ============================================================
-
-export async function executeMulticall3(
-  provider: providers.Provider,
-  calls: { target: string; allowFailure: boolean; callData: string }[],
-  rpcUrl: string
-): Promise<{ success: boolean; returnData: string }[]> {
-  const multicall3Iface = new utils.Interface(MULTICALL3_ABI);
-  const encodedData = multicall3Iface.encodeFunctionData('aggregate3', [calls]);
-
-  const rawResult = await withTimeout(
-    provider.call({
-      to: MULTICALL3_ADDRESS,
-      data: encodedData,
-    }, 'latest'),
-    ONCHAIN_PER_RPC_TIMEOUT_MS,
-    `V4 Multicall3.aggregate3 timeout via ${rpcUrl}`
-  );
-
-  const decoded = multicall3Iface.decodeFunctionResult('aggregate3', rawResult);
-  // decoded[0] = Result[]; each Result → { success: bool, returnData: bytes }
-  return (decoded[0] as any[]).map((r: any) => ({
-    success: r.success,
-    returnData: r.returnData,
-  }));
-}
 
 // ============================================================
 // V4 Spoke Config (runtime-derived from address-book via registry)
@@ -191,7 +166,7 @@ const v4SpokeCache = new Map<string, ChainCacheEntry>();
 let refreshInProgress: Promise<void> | null = null;
 
 async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
-  const rpcCandidates = ethProviderService.getProvidersForChain(config.chainId, config.defaultRpcUrls);
+  const rpcCandidates = providerPool.getProvidersForChain(config.chainId, config.defaultRpcUrls);
   logger.debug(
     `On-chain RPC order for ${config.poolAddress}: ${rpcCandidates.map((c) => c.rpcUrl).join(' -> ')}`
   );
@@ -241,12 +216,12 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
         updatedAt: Date.now(),
       });
 
-      ethProviderService.reportProviderSuccess(config.chainId, rpcUrl);
+      providerPool.reportProviderSuccess(config.chainId, rpcUrl);
       logger.debug(`On-chain fetch succeeded for ${config.poolAddress} via ${rpcUrl}`);
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      ethProviderService.reportProviderFailure(config.chainId, rpcUrl, message);
+      providerPool.reportProviderFailure(config.chainId, rpcUrl, message);
       logger.debug(`On-chain fetch failed for ${config.poolAddress} via ${rpcUrl}: ${message}`);
     }
   }
@@ -259,7 +234,7 @@ async function fetchAndCacheV4Spoke(
   config: V4SpokeConfig,
   hubAssetMapping: Map<string, Map<string, number>>
 ): Promise<boolean> {
-  const rpcCandidates = ethProviderService.getProvidersForChain(config.chainId, config.defaultRpcUrls);
+  const rpcCandidates = providerPool.getProvidersForChain(config.chainId, config.defaultRpcUrls);
 
   for (const { rpcUrl, provider } of rpcCandidates) {
     try {
@@ -290,7 +265,7 @@ async function fetchAndCacheV4Spoke(
               allowFailure: true,
               callData: c.callData,
             }));
-            const results = await executeMulticall3(provider, multicallCalls, rpcUrl);
+            const results = await executeMulticall3(provider, multicallCalls, { label: `V4 deficit batch for ${config.spokeName} via ${rpcUrl}` });
             const underlyings = deficitCalls.map((c) => c.underlying);
             const batchSpokeData = processDeficitBatchResults(results, underlyings);
             for (const [key, val] of batchSpokeData) spokeData.set(key, val);
@@ -320,12 +295,12 @@ async function fetchAndCacheV4Spoke(
         updatedAt: Date.now(),
       });
 
-      ethProviderService.reportProviderSuccess(config.chainId, rpcUrl);
+      providerPool.reportProviderSuccess(config.chainId, rpcUrl);
       logger.debug(`V4 on-chain fetch succeeded for ${config.spokeName} (${spokeData.size} assets) via ${rpcUrl}`);
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      ethProviderService.reportProviderFailure(config.chainId, rpcUrl, message);
+      providerPool.reportProviderFailure(config.chainId, rpcUrl, message);
       logger.debug(`V4 on-chain fetch failed for ${config.spokeName} via ${rpcUrl}: ${message}`);
     }
   }
@@ -365,7 +340,7 @@ async function buildHubAssetMappingMulticallInner(
   const results = await executeMulticall3(
     provider,
     [{ target: hubAddress, allowFailure: false, callData: getAssetCountCalldata }],
-    rpcUrl
+    { label: `V4 getAssetCount for ${hubName} via ${rpcUrl}` }
   );
 
   if (!results[0].success) {
@@ -389,7 +364,7 @@ async function buildHubAssetMappingMulticallInner(
 
   if (getAssetCalls.length === 0) return mapping;
 
-  const assetResults = await executeMulticall3(provider, getAssetCalls, rpcUrl);
+  const assetResults = await executeMulticall3(provider, getAssetCalls, { label: `V4 getAsset batch for ${hubName} via ${rpcUrl}` });
 
   for (let assetId = 0; assetId < assetResults.length; assetId++) {
     const r = assetResults[assetId];
@@ -507,7 +482,7 @@ export async function refreshOnchainCache(): Promise<void> {
       }
       for (const config of V4_SPOKE_CONFIGS) {
         if (hubAssetMapping.has(config.hubAddress)) continue;
-        const rpcCandidates = ethProviderService.getProvidersForChain(config.chainId, config.defaultRpcUrls);
+        const rpcCandidates = providerPool.getProvidersForChain(config.chainId, config.defaultRpcUrls);
         for (const { rpcUrl, provider } of rpcCandidates) {
           try {
             const mapping = await buildHubAssetMappingMulticall(provider, config.hubAddress, config.hubName, rpcUrl);

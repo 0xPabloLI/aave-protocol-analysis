@@ -16,6 +16,48 @@
 - **发现机制**：动态解析 `@bgd-labs/aave-address-book` 的 `AaveV3*` 导出
 - **缓存**：RPC 失败时使用 5 分钟内的缓存数据
 
+## 2.1 ABI 来源策略
+
+所有合约 ABI 集中在 [backend/src/abis/](../../backend/src/abis/) 三层架构，业务文件**禁止**本地硬编码 ABI，必须从 `../abis/index.js` 导入。
+
+### 三层结构
+
+| 层 | 含义 | 文件 |
+|---|---|---|
+| L1 — Upstream re-export | 直接从 `@aave-dao/aave-address-book` 转出 | `abis/index.ts` 顶部 4 个 `export` |
+| L2 — Local supplements | 上游未提供的方法 / 通用预部署合约 | `hub-extensions.ts`、`v4-oracle-prices.ts`、`multicall3.ts` |
+| L3 — Merged composites | L1 + L2 拼接的复合 ABI | `V4_HUB_FULL_ABI = [...IHubV4_ABI, ...HUB_EXTENSIONS_ABI]` |
+
+### 当前 ABI 归属表
+
+| ABI 名 | 来源层 | 备注 |
+|---|---|---|
+| `IHubV4_ABI` | L1 | 上游：`getAssetCount` / `getAsset` / `getSpokeCount` / `getSpokeAddress` |
+| `ISpokeV4_ABI` | L1 | 上游完整 Spoke 接口 |
+| `IAaveOracle_ABI` | L1 | V3 oracle |
+| `IPool_ABI` | L1 | V3 pool |
+| `HUB_EXTENSIONS_ABI` | L2 | 仅 `getSpokeDeficitRay`（address-book 未提供，target 仍是 hubAddress） |
+| `V4_ORACLE_PRICES_ABI` | L2 | 仅 `getReservesPrices`（address-book 的 `IAaveOracleV4_ABI` 只有 `getReserveSource`，不适用） |
+| `MULTICALL3_ABI` + `MULTICALL3_ADDRESS` | L2 | 通用预部署合约，与 Aave 无关 |
+| `V4_HUB_FULL_ABI` | L3 | `IHubV4_ABI + HUB_EXTENSIONS_ABI`，用于 onchainDataService 全量调用 |
+
+### 深层导入路径合法性
+
+`@aave-dao/aave-address-book` 的 `exports` 字段声明了 `"./*"` 通配符（→ `dist/*.js`），所以：
+
+```typescript
+import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4'
+```
+
+是**官方支持的入口**，不依赖任何 workaround。上游 `./abis` index.js 确实遗漏了 V4 系列的 re-export，但通过通配符路径直读子模块即可，build + runtime 验证均通过。
+
+### 约束
+
+- `backend/src/services/**` 内**禁止**出现 inline ABI 数组字面量；新增 ABI 必须先进 `abis/`
+- 上游已有的 ABI 一律走 L1 re-export，不要拷贝
+- 上游缺失但本地需要的方法 → L2 单独文件；如需与上游合并 → L3 composite
+- 业务侧统一从 `../abis/index.js` 导入，禁止业务文件直接写 `@aave-dao/aave-address-book/abis/*` 深层路径（保持单一入口）
+
 ## 3. 环境变量
 
 - RPC 不支持环境变量覆写，统一来自 shared RPC registry

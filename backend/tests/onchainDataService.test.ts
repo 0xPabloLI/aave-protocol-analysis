@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { utils, providers } from 'ethers';
 
-import { calculateBaseRateFallback, POOL_CONFIGS, executeMulticall3, V4_HUB_INTERFACE, processDeficitBatchResults, processDeficitSerialResult } from '../src/services/onchainDataService.js';
-import { V4_HUB_FULL_ABI, MULTICALL3_ADDRESS } from '../src/abis/index.js';
+import { calculateBaseRateFallback, POOL_CONFIGS, V4_HUB_INTERFACE, processDeficitBatchResults, processDeficitSerialResult } from '../src/services/onchainDataService.js';
+import { executeMulticall3 } from '@internal/aave-rpc-infra';
+import { V4_HUB_FULL_ABI } from '../src/abis/index.js';
+import { MULTICALL3_ADDRESS } from '@internal/aave-rpc-infra';
 import { V4_SPOKE_ENTRIES, V3_ENTRIES } from '../src/services/addressBookRegistry.js';
 
 test('calculateBaseRateFallback returns null when borrowApy is missing', () => {
@@ -444,7 +446,7 @@ test('Integration: Multicall3 aggregate3 via provider.call() succeeds against li
   const results = await executeMulticall3(
     provider,
     [{ target: hubAddress, allowFailure: false, callData: getAssetCountCalldata }],
-    rpcUrl
+    { label: `integration getAssetCount via ${rpcUrl}` }
   );
 
   assert.ok(Array.isArray(results), 'aggregate3 should return an array');
