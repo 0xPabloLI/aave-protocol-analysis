@@ -1326,6 +1326,43 @@ function extractOffsetTokenAddresses(
   });
 }
 
+export function detectNetPositionByHeuristic(
+  opp: MerklOpportunityData,
+  oppReserveId: string,
+  reserveIdSet: Set<string>,
+  symbolLookup: Map<string, string>,
+): NetPositionConstraint | null {
+  const text = `${opp.name ?? ''} ${opp.description ?? ''}`.toLowerCase();
+  const netIndicators = ['net lend', 'net borrow', 'net supply', 'net position', 'excluding borrower', 'excluding supplier', 'excluding lender', 'minus borrow', 'minus supply', 'net usde', 'net gho', 'net eth', 'net usdc', 'net usdt', 'net dai', 'net wbtc', 'net weeth'];
+  const isNet = netIndicators.some(kw => text.includes(kw));
+  if (!isNet) return null;
+
+  const type = opp.opportunityType?.toLowerCase() ?? '';
+  const sourceSide: 'supply' | 'borrow' = type.includes('borrow') || text.includes('net borrow') ? 'borrow' : 'supply';
+
+  const offsetReserveIds: string[] = [];
+  const seen = new Set<string>();
+  if (seen.add(oppReserveId)) {
+    // source token is always an offset in net positions
+  }
+  for (const ota of (opp.offsetTokenAddresses ?? [])) {
+    const resolvedIds = resolveOffsetReserveIds(oppReserveId, ota.address.toLowerCase(), reserveIdSet);
+    for (const rid of resolvedIds) {
+      if (!seen.has(rid)) {
+        seen.add(rid);
+        offsetReserveIds.push(rid);
+      }
+    }
+  }
+  if (offsetReserveIds.length === 0) {
+    const selfRid = reserveIdSet.has(oppReserveId) ? oppReserveId : null;
+    if (selfRid) offsetReserveIds.push(selfRid);
+  }
+  if (offsetReserveIds.length === 0) return null;
+
+  return { sourceSide, offsetReserveIds };
+}
+
 export async function detectNetPositionConstraint(
   opp: MerklOpportunityData,
   sourceTokenAddress: string,
@@ -1340,30 +1377,31 @@ export async function detectNetPositionConstraint(
 
   if (cachedConstraint) return cachedConstraint;
 
-  if (!llmFn) return null;
-
-  const llmResult = await llmFn();
-  if (!llmResult) return null;
-
-  const { sourceSide, offsetTokenSymbols } = llmResult;
-  if (!offsetTokenSymbols || offsetTokenSymbols.length === 0) return null;
-
-  const offsetReserveIds: string[] = [];
-  const seen = new Set<string>();
-  for (const symbol of offsetTokenSymbols) {
-    const tokenAddr = symbolLookup.get(`${opp.chainId}:${symbol}`);
-    if (!tokenAddr) return null;
-    const resolvedIds = resolveOffsetReserveIds(oppReserveId, tokenAddr.toLowerCase(), reserveIdSet);
-    if (resolvedIds.length === 0) return null;
-    for (const rid of resolvedIds) {
-      if (!seen.has(rid)) {
-        seen.add(rid);
-        offsetReserveIds.push(rid);
+  if (llmFn) {
+    const llmResult = await llmFn();
+    if (llmResult) {
+      const { sourceSide, offsetTokenSymbols } = llmResult;
+      if (offsetTokenSymbols && offsetTokenSymbols.length > 0) {
+        const offsetReserveIds: string[] = [];
+        const seen = new Set<string>();
+        for (const symbol of offsetTokenSymbols) {
+          const tokenAddr = symbolLookup.get(`${opp.chainId}:${symbol}`);
+          if (!tokenAddr) return detectNetPositionByHeuristic(opp, oppReserveId, reserveIdSet, symbolLookup);
+          const resolvedIds = resolveOffsetReserveIds(oppReserveId, tokenAddr.toLowerCase(), reserveIdSet);
+          if (resolvedIds.length === 0) return detectNetPositionByHeuristic(opp, oppReserveId, reserveIdSet, symbolLookup);
+          for (const rid of resolvedIds) {
+            if (!seen.has(rid)) {
+              seen.add(rid);
+              offsetReserveIds.push(rid);
+            }
+          }
+        }
+        if (offsetReserveIds.length > 0) return { sourceSide, offsetReserveIds };
       }
     }
   }
 
-  return { sourceSide, offsetReserveIds };
+  return detectNetPositionByHeuristic(opp, oppReserveId, reserveIdSet, symbolLookup);
 }
 
 export function extractNetPositionConstraint(

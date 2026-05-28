@@ -498,6 +498,9 @@ async function enrichDatasetWithIncentiveData(
   const llmBaseUrl = process.env.LLM_BASE_URL;
   const llmConfig: LlmClientConfig | undefined = llmApiKey && llmBaseUrl ? { apiKey: llmApiKey, baseUrl: llmBaseUrl } : undefined;
 
+  const openrouterApiKey = process.env.OPENROUTER_API_KEY;
+  const openrouterConfig: LlmClientConfig | undefined = openrouterApiKey ? { apiKey: openrouterApiKey, baseUrl: 'https://openrouter.ai/api/v1' } : undefined;
+
   return Promise.all(baseDataset.map(async item => {
     const meritItemData = getMeritDataFromMarket(item.marketName, item.chainName, item.tokenSymbol, meritData);
     
@@ -525,9 +528,19 @@ async function enrichDatasetWithIncentiveData(
       
       // 收集所有 matchedOpportunities 中的 breakdowns
       for (const opp of matchedOpportunities) {
-        const llmFn = llmConfig ? () => {
-          const prompt = buildLlmPrompt({ type: opp.opportunityType ?? 'unknown', action: opp.name ?? opp.opportunityType ?? 'unknown', description: opp.description ?? '', tokenSymbols: [item.tokenSymbol] });
-          return callLlmWithFallback(prompt, llmConfig);
+        const offsetSymbols: string[] = [];
+        for (const ota of (opp.offsetTokenAddresses ?? [])) {
+          for (const [key, addr] of symbolLookup) {
+            if (addr.toLowerCase() === ota.address.toLowerCase()) {
+              offsetSymbols.push(key.split(':')[1]);
+              break;
+            }
+          }
+        }
+        const uniqueTokenSymbols = [...new Set([item.tokenSymbol, ...offsetSymbols])];
+        const llmFn = (llmConfig || openrouterConfig) ? () => {
+          const prompt = buildLlmPrompt({ type: opp.opportunityType ?? 'unknown', action: opp.name ?? opp.opportunityType ?? 'unknown', description: opp.description ?? '', tokenSymbols: uniqueTokenSymbols });
+          return callLlmWithFallback(prompt, llmConfig, openrouterConfig);
         } : undefined;
         const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, undefined, llmFn);
         if (opp.opportunityLink) {

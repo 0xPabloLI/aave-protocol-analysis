@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LLM_FALLBACK_MODELS,
+  OPENROUTER_FREE_MODELS,
+  buildModelChain,
   parseSseStream,
   parseMarkdownWrappedJson,
   parseLlmResponse,
@@ -19,12 +21,12 @@ function mockFetch(responseBody: unknown, ok = true, contentType = 'application/
 }
 
 describe('B3: LLM client — model list + response parsing', () => {
-  it('LLM_FALLBACK_MODELS has 12 entries', () => {
-    assert.equal(LLM_FALLBACK_MODELS.length, 12);
+  it('LLM_FALLBACK_MODELS has 11 entries', () => {
+    assert.equal(LLM_FALLBACK_MODELS.length, 11);
   });
 
   it('LLM_FALLBACK_MODELS entries are unique', () => {
-    assert.equal(new Set(LLM_FALLBACK_MODELS).size, 12);
+    assert.equal(new Set(LLM_FALLBACK_MODELS).size, 11);
   });
 
   it('LLM_FALLBACK_MODELS first entry is claude-haiku-4.5', () => {
@@ -91,6 +93,34 @@ describe('B3: LLM client — model list + response parsing', () => {
     assert.equal(parseLlmResponse('{"sourceSide":"supply","offsetTokenSymbols":"not-array"}'), null);
   });
 
+  it('OPENROUTER_FREE_MODELS has 20 entries', () => {
+    assert.equal(OPENROUTER_FREE_MODELS.length, 20);
+  });
+
+  it('OPENROUTER_FREE_MODELS entries end with :free or are openrouter/free', () => {
+    for (const m of OPENROUTER_FREE_MODELS) {
+      assert.ok(m.endsWith(':free') || m === 'openrouter/free', `${m} should end with :free or be openrouter/free`);
+    }
+  });
+
+  it('buildModelChain combines primary + openrouter models', () => {
+    const primary = { apiKey: 'p', baseUrl: 'https://p.com/v1' };
+    const openrouter = { apiKey: 'o', baseUrl: 'https://openrouter.ai/api/v1' };
+    const chain = buildModelChain(primary, openrouter);
+    assert.equal(chain.length, 11 + 20);
+    assert.equal(chain[0].config.apiKey, 'p');
+    assert.equal(chain[11].config.apiKey, 'o');
+  });
+
+  it('buildModelChain with only openrouter returns only openrouter models', () => {
+    const openrouter = { apiKey: 'o', baseUrl: 'https://openrouter.ai/api/v1' };
+    const chain = buildModelChain(undefined, openrouter);
+    assert.equal(chain.length, 20);
+    for (const entry of chain) {
+      assert.equal(entry.config.apiKey, 'o');
+    }
+  });
+
   it('buildLlmPrompt includes opportunity type and description', () => {
     const prompt = buildLlmPrompt({
       type: 'AAVE_SUPPLY',
@@ -112,6 +142,8 @@ describe('B3: LLM client — model list + response parsing', () => {
     });
     assert.ok(prompt.includes('sourceSide'));
     assert.ok(prompt.includes('offsetTokenSymbols'));
+    assert.ok(prompt.includes('Aave'));
+    assert.ok(prompt.includes('EXAMPLES'));
   });
 });
 
@@ -122,7 +154,7 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
     const fetch = mockFetch({
       choices: [{ message: { content: '{"sourceSide":"supply","offsetTokenSymbols":["USDe"]}' } }],
     });
-    const result = await callLlmWithFallback('test prompt', config, fetch);
+    const result = await callLlmWithFallback('test prompt', config, undefined, fetch);
     assert.deepEqual(result, { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] });
   });
 
@@ -130,7 +162,7 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
     const fetch = mockFetch({
       choices: [{ message: { content: 'null' } }],
     });
-    const result = await callLlmWithFallback('test prompt', config, fetch);
+    const result = await callLlmWithFallback('test prompt', config, undefined, fetch);
     assert.equal(result, null);
   });
 
@@ -144,21 +176,21 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
         { status: 200, headers: { 'content-type': 'application/json' } }
       ) as Response;
     };
-    const result = await callLlmWithFallback('test prompt', config, fetch);
+    const result = await callLlmWithFallback('test prompt', config, undefined, fetch);
     assert.deepEqual(result, { sourceSide: 'borrow', offsetTokenSymbols: ['GHO'] });
     assert.equal(callCount, 2);
   });
 
   it('returns null when all models fail', async () => {
     const fetch = async () => new Response('error', { status: 500 }) as Response;
-    const result = await callLlmWithFallback('test prompt', { ...config, totalTimeoutMs: 100 }, fetch);
+    const result = await callLlmWithFallback('test prompt', { ...config, totalTimeoutMs: 100 }, undefined, fetch);
     assert.equal(result, null);
   });
 
   it('handles SSE streaming response', async () => {
     const sseBody = 'data: {"choices":[{"delta":{"content":"{\\"sourceSide\\":\\"supply\\",\\"offsetTokenSymbols\\":[\\"USDe\\"]}"}}]}\ndata: [DONE]\n';
     const fetch = mockFetch(sseBody, true, 'text/event-stream');
-    const result = await callLlmWithFallback('test prompt', config, fetch);
+    const result = await callLlmWithFallback('test prompt', config, undefined, fetch);
     assert.deepEqual(result, { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] });
   });
 
@@ -166,7 +198,21 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
     const slowFetch = async () => new Promise<Response>((resolve) => {
       setTimeout(() => resolve(new Response('timeout', { status: 500 })), 10000);
     });
-    const result = await callLlmWithFallback('test prompt', { ...config, totalTimeoutMs: 50 }, slowFetch);
+    const result = await callLlmWithFallback('test prompt', { ...config, totalTimeoutMs: 50 }, undefined, slowFetch);
     assert.equal(result, null);
+  });
+
+  it('returns null when no config provided', async () => {
+    const result = await callLlmWithFallback('test prompt', undefined, undefined);
+    assert.equal(result, null);
+  });
+
+  it('uses openrouter models when only openrouterConfig provided', async () => {
+    const openrouterConfig = { apiKey: 'or-key', baseUrl: 'https://openrouter.ai/api/v1', totalTimeoutMs: 5000 };
+    const fetch = mockFetch({
+      choices: [{ message: { content: '{"sourceSide":"supply","offsetTokenSymbols":["USDe"]}' } }],
+    });
+    const result = await callLlmWithFallback('test prompt', undefined, openrouterConfig, fetch);
+    assert.deepEqual(result, { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] });
   });
 });

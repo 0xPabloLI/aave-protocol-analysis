@@ -14,9 +14,49 @@ export const LLM_FALLBACK_MODELS = [
   'deepseek-v4-pro',
   'gpt-5.2',
   'qwen3.5-397b-a17b',
-  'openrouter/free',
   'nematron-3-super-120b',
 ] as const;
+
+export const OPENROUTER_FREE_MODELS = [
+  'deepseek/deepseek-v4-flash:free',
+  'qwen/qwen3-coder:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+  'google/gemma-4-31b-it:free',
+  'google/gemma-4-26b-a4b-it:free',
+  'moonshotai/kimi-k2.6:free',
+  'minimax/minimax-m2.5:free',
+  'qwen/qwen3-next-80b-a3b-instruct:free',
+  'poolside/laguna-m.1:free',
+  'poolside/laguna-xs.2:free',
+  'nvidia/nemotron-3-nano-30b-a3b:free',
+  'nousresearch/hermes-3-llama-3.1-405b:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'openai/gpt-oss-120b:free',
+  'z-ai/glm-4.5-air:free',
+  'openai/gpt-oss-20b:free',
+  'nvidia/nemotron-nano-12b-v2-vl:free',
+  'nvidia/nemotron-nano-9b-v2:free',
+  'meta-llama/llama-3.2-3b-instruct:free',
+  'openrouter/free',
+] as const;
+
+export function buildModelChain(
+  primaryConfig?: LlmClientConfig,
+  openrouterConfig?: LlmClientConfig,
+): Array<{ model: string; config: LlmClientConfig }> {
+  const chain: Array<{ model: string; config: LlmClientConfig }> = [];
+  if (primaryConfig) {
+    for (const model of LLM_FALLBACK_MODELS) {
+      chain.push({ model, config: primaryConfig });
+    }
+  }
+  if (openrouterConfig) {
+    for (const model of OPENROUTER_FREE_MODELS) {
+      chain.push({ model, config: openrouterConfig });
+    }
+  }
+  return chain;
+}
 
 export function parseSseStream(raw: string): string {
   let content = '';
@@ -93,22 +133,35 @@ export function buildLlmPrompt(opp: {
   description: string;
   tokenSymbols: string[];
 }): string {
-  return `Analyze this Merkl opportunity for net lending/borrowing constraints.
+  return `You are analyzing a DeFi incentive opportunity on Aave protocol for net position constraints.
 
-type: ${opp.type}
-action: ${opp.action}
-description: ${opp.description}
-tokens: ${opp.tokenSymbols.join(', ')}
+CONTEXT: In Aave, users can supply (deposit) or borrow assets. Some Merkl campaigns reward only the NET position — meaning the reward is calculated after offsetting positions in related tokens. For example, "net USDe lending" means the reward is on (USDe supply − USDe borrow), so borrow positions offset the supply reward.
 
-Does this opportunity reward only the NET position (i.e., supply minus borrow of offset tokens)?
-If yes, return JSON: { "sourceSide": "supply"|"borrow", "offsetTokenSymbols": ["Y1","Y2"] }
-- sourceSide = "supply" if the reward is on net lending (supply - borrow)
-- sourceSide = "borrow" if the reward is on net borrowing (borrow - supply)
-- offsetTokenSymbols = tokens whose positions offset the rewarded side
+OPPORTUNITY:
+- type: ${opp.type}
+- action: ${opp.action}
+- description: ${opp.description}
+- tokens: ${opp.tokenSymbols.join(', ')}
 
-If no net constraint, return: null
+QUESTION: Does this opportunity reward only the NET position (i.e., one side minus the opposite side of offset tokens)?
 
-Respond with ONLY the JSON or null, no explanation.`;
+If YES, return JSON (no other text):
+{ "sourceSide": "supply", "offsetTokenSymbols": ["Token1","Token2"] }
+
+Rules:
+- sourceSide = "supply" if the reward is on net lending (supply side minus borrow of offset tokens)
+- sourceSide = "borrow" if the reward is on net borrowing (borrow side minus supply of offset tokens)
+- offsetTokenSymbols = exact token symbols whose opposite-direction positions offset the rewarded side
+- Include ALL offset tokens mentioned in the description
+
+If NO net constraint (e.g., the reward is on the full/gross position), return: null
+
+EXAMPLES:
+- "Supply USDe, excluding borrowers of USDe and GHO" → {"sourceSide":"supply","offsetTokenSymbols":["USDe","GHO"]}
+- "Borrow GHO, net of GHO suppliers" → {"sourceSide":"borrow","offsetTokenSymbols":["GHO"]}
+- "Supply USDC" (no mention of net/excluding/offset) → null
+
+Respond with ONLY the JSON or null.`;
 }
 
 export interface LlmClientConfig {
@@ -123,14 +176,18 @@ const DEFAULT_PER_MODEL_RETRIES = 2;
 
 export async function callLlmWithFallback(
   prompt: string,
-  config: LlmClientConfig,
+  primaryConfig?: LlmClientConfig,
+  openrouterConfig?: LlmClientConfig,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<LlmAnalysisResult | null> {
-  const timeout = config.totalTimeoutMs ?? DEFAULT_TOTAL_TIMEOUT_MS;
-  const retries = config.perModelRetries ?? DEFAULT_PER_MODEL_RETRIES;
+  const chain = buildModelChain(primaryConfig, openrouterConfig);
+  if (chain.length === 0) return null;
+
+  const timeout = (primaryConfig?.totalTimeoutMs ?? openrouterConfig?.totalTimeoutMs) ?? DEFAULT_TOTAL_TIMEOUT_MS;
+  const retries = (primaryConfig?.perModelRetries ?? openrouterConfig?.perModelRetries) ?? DEFAULT_PER_MODEL_RETRIES;
   const deadline = Date.now() + timeout;
 
-  for (const model of LLM_FALLBACK_MODELS) {
+  for (const { model, config } of chain) {
     if (Date.now() >= deadline) break;
     for (let attempt = 0; attempt < retries; attempt++) {
       if (Date.now() >= deadline) break;
