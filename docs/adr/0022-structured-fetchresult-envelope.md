@@ -1,6 +1,7 @@
 # ADR-0022: Structured `fetchResult` Envelope (Replacing Flat `_v3Succeeded`/`_v4Succeeded`)
 
 Date: 2026-05-26
+References: AAV-388, ADR-0020
 
 ## Status
 

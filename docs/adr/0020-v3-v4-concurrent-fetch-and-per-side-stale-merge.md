@@ -1,6 +1,7 @@
 # ADR-0020: V3/V4 Concurrent Fetch + Per-Side Partial Stale Merge
 
 Date: 2026-05-26
+References: AAV-388, PRD c6ab55629364
 
 ## Status
 
