@@ -60,6 +60,12 @@ export const normalizeCampaignType = (value: unknown): CampaignForecastType | nu
   if (normalized.includes('FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
     return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
   }
+  if (normalized.includes('AAVE_NET_APR')) {
+    return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+  }
+  if (normalized.includes('AAVE_V4_NET_APR')) {
+    return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+  }
   return null;
 };
 
