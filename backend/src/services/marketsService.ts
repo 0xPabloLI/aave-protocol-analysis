@@ -14,6 +14,7 @@
  */
 
 import { fetchMarketsData } from '@internal/aave-fetcher';
+import type { NetPositionConstraint } from '@internal/aave-fetcher';
 import type { MarketsFetchResult, MarketsPayload, RuntimeReserveData } from '@internal/aave-shared-contracts';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { v4FatalConfig } from '../config.js';
@@ -190,9 +191,12 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       const startTime = Date.now();
       logger.info(`🔄 Starting markets refresh (v4Fatal=${v4FatalConfig.v4Fatal})...`);
 
+      // Extract cached constraints from previous snapshot for LLM Layer 2 cache
+      const cachedConstraints = snapshot ? extractConstraintMap(snapshot.payload.data) : undefined;
+
       // Fetch markets from Aave API (V3+V4 concurrent with per-side timeouts)
       const payload = await withTimeout(
-        fetchMarketsData({ v4Fatal: v4FatalConfig.v4Fatal }),
+        fetchMarketsData({ v4Fatal: v4FatalConfig.v4Fatal, cachedConstraints }),
         MARKETS_FETCH_TIMEOUT_MS,
         'Markets fetch timeout'
       );
@@ -443,5 +447,17 @@ export function getMarketsData(): {
  */
 export async function warmMarketsCache(): Promise<void> {
   await refreshMarketsSnapshot();
+}
+
+function extractConstraintMap(reserves: RuntimeReserveData[]): Map<string, NetPositionConstraint> {
+  const map = new Map<string, NetPositionConstraint>();
+  for (const r of reserves) {
+    for (const group of [...(r.merklSupplys ?? []), ...(r.merklBorrows ?? []), ...(r.merklHolds ?? [])]) {
+      if (group.netPositionConstraint && group.link) {
+        map.set(group.link, group.netPositionConstraint);
+      }
+    }
+  }
+  return map;
 }
 

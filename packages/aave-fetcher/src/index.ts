@@ -18,7 +18,8 @@ import {
   processMerklData,
   findMatchingMerklOpportunities,
   formatMerklBreakdown,
-  detectNetPositionConstraint
+  detectNetPositionConstraint,
+  NetPositionConstraint
 } from './merkl-api.js';
 import { buildLlmPrompt, callLlmWithFallback } from './merklLlmClient.js';
 import type { LlmClientConfig } from './merklLlmClient.js';
@@ -47,6 +48,7 @@ export type {
   BrevisCampaignItem,
 } from '@internal/aave-shared-contracts';
 export type { MeritAprEntry } from '@internal/aave-shared-contracts';
+export type { NetPositionConstraint } from './merkl-api.js';
 
 export function getDataDir(): string {
   return process.env.FETCHER_DATA_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
@@ -482,7 +484,8 @@ async function enrichDatasetWithIncentiveData(
   baseDataset: RuntimeReserveData[],
   meritData: MeritDataIndex,
   merklData: MerklDataIndex,
-  brevisData: BrevisDataIndex
+  brevisData: BrevisDataIndex,
+  cachedConstraints?: Map<string, NetPositionConstraint>
 ): Promise<RuntimeReserveData[]> {
   const reserveIdSet = new Set<string>();
   const symbolLookup = new Map<string, string>();
@@ -542,7 +545,7 @@ async function enrichDatasetWithIncentiveData(
           const prompt = buildLlmPrompt({ type: opp.opportunityType ?? 'unknown', action: opp.name ?? opp.opportunityType ?? 'unknown', description: opp.description ?? '', tokenSymbols: uniqueTokenSymbols });
           return callLlmWithFallback(prompt, llmConfig, openrouterConfig);
         } : undefined;
-        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, undefined, llmFn);
+        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, opp.opportunityLink ? cachedConstraints?.get(opp.opportunityLink) : undefined, llmFn);
         if (opp.opportunityLink) {
           if (opp.supply.length > 0) {
             const supplyWithLinks = opp.supply.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
@@ -1198,6 +1201,7 @@ function launchIncentiveFetches(reserveTokenPriceByChainAndAddress: Map<string, 
 // ts-prune-ignore-next
 export async function fetchMarketsData(options?: {
   v4Fatal?: boolean;
+  cachedConstraints?: Map<string, NetPositionConstraint>;
 }): Promise<MarketsPayload> {
   // 🧹 启动时检查并清理 Cloudflare browser sessions
   logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
@@ -1221,7 +1225,7 @@ export async function fetchMarketsData(options?: {
 
   // Enrich with incentive data
   logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
-  const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
+  const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData, options?.cachedConstraints);
   const runtimeData = enrichedData;
 
   logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves`);

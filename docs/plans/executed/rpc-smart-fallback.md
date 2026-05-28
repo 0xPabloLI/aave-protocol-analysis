@@ -1,3 +1,5 @@
+> **Status: Executed** (2026-05-28) — design doc superseded by PRD `2026-05-23-rpc-smart-fallback.md`.
+
 # RPC Smart Fallback：错误分类 → 智能降级
 
 ## 问题

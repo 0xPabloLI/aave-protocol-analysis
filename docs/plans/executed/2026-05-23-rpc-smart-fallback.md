@@ -1,6 +1,6 @@
 # PRD: RPC Smart Fallback — 错误分类驱动的智能降级
 
-> **Status: Active** — awaiting implementation.
+> **Status: Executed** (2026-05-28) — commit `546351c` + review fixes after.
 
 ## Problem Statement
 
