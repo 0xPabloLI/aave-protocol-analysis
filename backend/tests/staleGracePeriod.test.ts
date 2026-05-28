@@ -5,13 +5,12 @@ import { mergeWithPartialStale, getFetchResultOrDefault } from '../src/services/
 import type { PartialStaleMergeInput } from '../src/services/marketsService.js';
 import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 
-test('Fix 5: marketsHardTtlMs is 10 minutes (not 5)', () => {
+test('hardTtl is 5 minutes (kept at original value)', () => {
   assert.equal(
     BACKEND_CACHE_TTL_MS.marketsHardTtlMs,
-    BACKEND_TIME_MS.tenMinutes,
-    'hardTtl should be 10min to give 2x buffer over 5min softTtl'
+    BACKEND_TIME_MS.fiveMinutes,
   );
-  assert.equal(BACKEND_CACHE_TTL_MS.marketsHardTtlMs, 10 * 60 * 1000);
+  assert.equal(BACKEND_CACHE_TTL_MS.marketsHardTtlMs, 5 * 60 * 1000);
 });
 
 test('Fix 2: stale snapshot still returns payload (not null) — mergeWithPartialStale preserves data', () => {

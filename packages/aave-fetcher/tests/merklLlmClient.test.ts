@@ -23,16 +23,8 @@ function mockFetch(responseBody: unknown, ok = true, contentType = 'application/
 }
 
 describe('B3: LLM client — model list + response parsing', () => {
-  it('LLM_FALLBACK_MODELS has 11 entries', () => {
-    assert.equal(LLM_FALLBACK_MODELS.length, 11);
-  });
-
-  it('LLM_FALLBACK_MODELS entries are unique', () => {
-    assert.equal(new Set(LLM_FALLBACK_MODELS).size, 11);
-  });
-
-  it('LLM_FALLBACK_MODELS first entry is claude-haiku-4.5', () => {
-    assert.equal(LLM_FALLBACK_MODELS[0], 'claude-haiku-4.5');
+  it('LLM_FALLBACK_MODELS is empty (paid models resolved dynamically)', () => {
+    assert.equal(LLM_FALLBACK_MODELS.length, 0);
   });
 
   it('parseSseStream extracts content from SSE lines', () => {
@@ -95,29 +87,23 @@ describe('B3: LLM client — model list + response parsing', () => {
     assert.equal(parseLlmResponse('{"sourceSide":"supply","offsetTokenSymbols":"not-array"}'), null);
   });
 
-  it('OPENROUTER_FREE_MODELS_FALLBACK has 20 entries', () => {
-    assert.equal(OPENROUTER_FREE_MODELS_FALLBACK.length, 20);
-  });
-
-  it('OPENROUTER_FREE_MODELS_FALLBACK entries end with :free or are openrouter/free', () => {
-    for (const m of OPENROUTER_FREE_MODELS_FALLBACK) {
-      assert.ok(m.endsWith(':free') || m === 'openrouter/free', `${m} should end with :free or be openrouter/free`);
-    }
+  it('OPENROUTER_FREE_MODELS_FALLBACK has 1 entry (openrouter/free)', () => {
+    assert.equal(OPENROUTER_FREE_MODELS_FALLBACK.length, 1);
+    assert.equal(OPENROUTER_FREE_MODELS_FALLBACK[0], 'openrouter/free');
   });
 
   it('buildModelChain combines primary + openrouter models', async () => {
     const primary = { apiKey: 'p', baseUrl: 'https://p.com/v1' };
     const openrouter = { apiKey: 'o', baseUrl: 'https://openrouter.ai/api/v1' };
     const chain = await buildModelChain(primary, openrouter);
-    assert.equal(chain.length, 11 + 20);
-    assert.equal(chain[0].config.apiKey, 'p');
-    assert.equal(chain[11].config.apiKey, 'o');
+    assert.ok(chain.length > 0);
+    assert.equal(chain[0].config.apiKey, 'o');
   });
 
   it('buildModelChain with only openrouter returns only openrouter models', async () => {
     const openrouter = { apiKey: 'o', baseUrl: 'https://openrouter.ai/api/v1' };
     const chain = await buildModelChain(undefined, openrouter);
-    assert.equal(chain.length, 20);
+    assert.ok(chain.length >= 1);
     for (const entry of chain) {
       assert.equal(entry.config.apiKey, 'o');
     }
@@ -143,8 +129,8 @@ describe('B3: LLM client — model list + response parsing', () => {
     resetOpenRouterCache();
     const fetch = async () => new Response('error', { status: 500 }) as Response;
     const result = await fetchOpenRouterFreeModels(fetch);
-    assert.equal(result.length, 20);
-    assert.equal(result[0], OPENROUTER_FREE_MODELS_FALLBACK[0]);
+    assert.equal(result.length, 1);
+    assert.equal(result[0], 'openrouter/free');
     resetOpenRouterCache();
   });
 
@@ -228,22 +214,25 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
   const config = { apiKey: 'test-key', baseUrl: 'https://example.com/v1', totalTimeoutMs: 5000 };
 
   it('returns parsed result on first model success', async () => {
+    resetOpenRouterCache();
     const fetch = mockFetch({
       choices: [{ message: { content: '{"sourceSide":"supply","offsetTokenSymbols":["USDe"]}' } }],
     });
-    const result = await callLlmWithFallback('test prompt', config, undefined, fetch);
+    const result = await callLlmWithFallback('test prompt', undefined, config, fetch);
     assert.deepEqual(result, { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] });
   });
 
   it('returns null when LLM says null', async () => {
+    resetOpenRouterCache();
     const fetch = mockFetch({
       choices: [{ message: { content: 'null' } }],
     });
-    const result = await callLlmWithFallback('test prompt', config, undefined, fetch);
+    const result = await callLlmWithFallback('test prompt', undefined, config, fetch);
     assert.equal(result, null);
   });
 
   it('falls back to next model on non-ok response', async () => {
+    resetOpenRouterCache();
     let callCount = 0;
     const fetch = async (_url: string, _opts: RequestInit) => {
       callCount++;
@@ -253,29 +242,32 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
         { status: 200, headers: { 'content-type': 'application/json' } }
       ) as Response;
     };
-    const result = await callLlmWithFallback('test prompt', config, undefined, fetch);
+    const result = await callLlmWithFallback('test prompt', undefined, config, fetch);
     assert.deepEqual(result, { sourceSide: 'borrow', offsetTokenSymbols: ['GHO'] });
-    assert.equal(callCount, 2);
+    assert.ok(callCount >= 2);
   });
 
   it('returns null when all models fail', async () => {
+    resetOpenRouterCache();
     const fetch = async () => new Response('error', { status: 500 }) as Response;
-    const result = await callLlmWithFallback('test prompt', { ...config, totalTimeoutMs: 100 }, undefined, fetch);
+    const result = await callLlmWithFallback('test prompt', undefined, { ...config, totalTimeoutMs: 100 }, fetch);
     assert.equal(result, null);
   });
 
   it('handles SSE streaming response', async () => {
+    resetOpenRouterCache();
     const sseBody = 'data: {"choices":[{"delta":{"content":"{\\"sourceSide\\":\\"supply\\",\\"offsetTokenSymbols\\":[\\"USDe\\"]}"}}]}\ndata: [DONE]\n';
     const fetch = mockFetch(sseBody, true, 'text/event-stream');
-    const result = await callLlmWithFallback('test prompt', config, undefined, fetch);
+    const result = await callLlmWithFallback('test prompt', undefined, config, fetch);
     assert.deepEqual(result, { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] });
   });
 
   it('respects totalTimeoutMs', async () => {
+    resetOpenRouterCache();
     const slowFetch = async () => new Promise<Response>((resolve) => {
       setTimeout(() => resolve(new Response('timeout', { status: 500 })), 10000);
     });
-    const result = await callLlmWithFallback('test prompt', { ...config, totalTimeoutMs: 50 }, undefined, slowFetch);
+    const result = await callLlmWithFallback('test prompt', undefined, { ...config, totalTimeoutMs: 50 }, slowFetch);
     assert.equal(result, null);
   });
 
@@ -285,6 +277,7 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
   });
 
   it('uses openrouter models when only openrouterConfig provided', async () => {
+    resetOpenRouterCache();
     const openrouterConfig = { apiKey: 'or-key', baseUrl: 'https://openrouter.ai/api/v1', totalTimeoutMs: 5000 };
     const fetch = mockFetch({
       choices: [{ message: { content: '{"sourceSide":"supply","offsetTokenSymbols":["USDe"]}' } }],

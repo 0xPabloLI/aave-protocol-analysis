@@ -39,18 +39,9 @@ export function startUpdateScheduler(): void {
     try {
       await refreshMarketsSnapshot();
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      logger.warn(`Markets refresh scheduler failed: ${msg}, retrying in 30s`);
-      setTimeout(async () => {
-        try {
-          await refreshMarketsSnapshot();
-          logger.info('Markets refresh retry succeeded');
-        } catch (retryError) {
-          logger.warn(
-            `Markets refresh retry also failed: ${retryError instanceof Error ? retryError.message : String(retryError)}`
-          );
-        }
-      }, 30_000);
+      logger.warn(
+        `Markets refresh scheduler failed: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   });
 

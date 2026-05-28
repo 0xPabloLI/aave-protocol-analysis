@@ -43,7 +43,7 @@ export const BACKEND_SCHEDULE_CRON = {
 export const BACKEND_CACHE_TTL_MS = {
   // Markets near-realtime family.
   marketsSoftTtlMs: BACKEND_TIME_MS.oneMinute,
-  marketsHardTtlMs: BACKEND_TIME_MS.tenMinutes,
+  marketsHardTtlMs: BACKEND_TIME_MS.fiveMinutes,
   // On-chain data TTL: 30 min (deficit/baseVariableBorrowRate change infrequently)
   onchainTtlMs: BACKEND_TIME_MS.thirtyMinutes,
   // Oracle price TTL: 60s (prices update ~every block; V4 reserveToken mapping has 1h own TTL)
