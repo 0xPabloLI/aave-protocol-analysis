@@ -2,8 +2,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LLM_FALLBACK_MODELS,
-  OPENROUTER_FREE_MODELS,
+  OPENROUTER_FREE_MODELS_FALLBACK,
   buildModelChain,
+  fetchOpenRouterFreeModels,
+  resetOpenRouterCache,
   parseSseStream,
   parseMarkdownWrappedJson,
   parseLlmResponse,
@@ -93,32 +95,107 @@ describe('B3: LLM client — model list + response parsing', () => {
     assert.equal(parseLlmResponse('{"sourceSide":"supply","offsetTokenSymbols":"not-array"}'), null);
   });
 
-  it('OPENROUTER_FREE_MODELS has 20 entries', () => {
-    assert.equal(OPENROUTER_FREE_MODELS.length, 20);
+  it('OPENROUTER_FREE_MODELS_FALLBACK has 20 entries', () => {
+    assert.equal(OPENROUTER_FREE_MODELS_FALLBACK.length, 20);
   });
 
-  it('OPENROUTER_FREE_MODELS entries end with :free or are openrouter/free', () => {
-    for (const m of OPENROUTER_FREE_MODELS) {
+  it('OPENROUTER_FREE_MODELS_FALLBACK entries end with :free or are openrouter/free', () => {
+    for (const m of OPENROUTER_FREE_MODELS_FALLBACK) {
       assert.ok(m.endsWith(':free') || m === 'openrouter/free', `${m} should end with :free or be openrouter/free`);
     }
   });
 
-  it('buildModelChain combines primary + openrouter models', () => {
+  it('buildModelChain combines primary + openrouter models', async () => {
     const primary = { apiKey: 'p', baseUrl: 'https://p.com/v1' };
     const openrouter = { apiKey: 'o', baseUrl: 'https://openrouter.ai/api/v1' };
-    const chain = buildModelChain(primary, openrouter);
+    const chain = await buildModelChain(primary, openrouter);
     assert.equal(chain.length, 11 + 20);
     assert.equal(chain[0].config.apiKey, 'p');
     assert.equal(chain[11].config.apiKey, 'o');
   });
 
-  it('buildModelChain with only openrouter returns only openrouter models', () => {
+  it('buildModelChain with only openrouter returns only openrouter models', async () => {
     const openrouter = { apiKey: 'o', baseUrl: 'https://openrouter.ai/api/v1' };
-    const chain = buildModelChain(undefined, openrouter);
+    const chain = await buildModelChain(undefined, openrouter);
     assert.equal(chain.length, 20);
     for (const entry of chain) {
       assert.equal(entry.config.apiKey, 'o');
     }
+  });
+
+  it('fetchOpenRouterFreeModels returns fetched models on success', async () => {
+    resetOpenRouterCache();
+    const fakeModels = [
+      { id: 'deepseek/deepseek-v4-flash:free', context_length: 128000 },
+      { id: 'qwen/qwen3-coder:free', context_length: 64000 },
+      { id: 'openrouter/free', context_length: 32000 },
+    ];
+    const fetch = async () => new Response(JSON.stringify({ data: fakeModels }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }) as Response;
+    const result = await fetchOpenRouterFreeModels(fetch);
+    assert.equal(result.length, 3);
+    assert.equal(result[0], 'deepseek/deepseek-v4-flash:free');
+    resetOpenRouterCache();
+  });
+
+  it('fetchOpenRouterFreeModels falls back to FALLBACK on fetch error', async () => {
+    resetOpenRouterCache();
+    const fetch = async () => new Response('error', { status: 500 }) as Response;
+    const result = await fetchOpenRouterFreeModels(fetch);
+    assert.equal(result.length, 20);
+    assert.equal(result[0], OPENROUTER_FREE_MODELS_FALLBACK[0]);
+    resetOpenRouterCache();
+  });
+
+  it('fetchOpenRouterFreeModels uses cache on second call', async () => {
+    resetOpenRouterCache();
+    let callCount = 0;
+    const fetch = async () => {
+      callCount++;
+      return new Response(JSON.stringify({ data: [
+        { id: 'test/model:free', context_length: 100000 },
+      ] }), { status: 200, headers: { 'content-type': 'application/json' } }) as Response;
+    };
+    const first = await fetchOpenRouterFreeModels(fetch);
+    assert.equal(callCount, 1);
+    const second = await fetchOpenRouterFreeModels(fetch);
+    assert.equal(callCount, 1);
+    assert.deepEqual(first, second);
+    resetOpenRouterCache();
+  });
+
+  it('resetOpenRouterCache clears cache', async () => {
+    resetOpenRouterCache();
+    let callCount = 0;
+    const fetch = async () => {
+      callCount++;
+      return new Response(JSON.stringify({ data: [
+        { id: 'test/model:free', context_length: 100000 },
+      ] }), { status: 200, headers: { 'content-type': 'application/json' } }) as Response;
+    };
+    await fetchOpenRouterFreeModels(fetch);
+    assert.equal(callCount, 1);
+    resetOpenRouterCache();
+    await fetchOpenRouterFreeModels(fetch);
+    assert.equal(callCount, 2);
+  });
+
+  it('fetchOpenRouterFreeModels sorts by context_length descending', async () => {
+    resetOpenRouterCache();
+    const fakeModels = [
+      { id: 'small/model:free', context_length: 32000 },
+      { id: 'big/model:free', context_length: 200000 },
+      { id: 'mid/model:free', context_length: 128000 },
+    ];
+    const fetch = async () => new Response(JSON.stringify({ data: fakeModels }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }) as Response;
+    const result = await fetchOpenRouterFreeModels(fetch);
+    assert.equal(result[0], 'big/model:free');
+    assert.equal(result[1], 'mid/model:free');
+    assert.equal(result[2], 'small/model:free');
+    resetOpenRouterCache();
   });
 
   it('buildLlmPrompt includes opportunity type and description', () => {

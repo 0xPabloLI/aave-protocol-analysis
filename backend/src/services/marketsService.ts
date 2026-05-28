@@ -248,9 +248,30 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
           .map((reserve) => reserve.reserveId)
         : [];
 
+      // SDK hub.name → addressBookRegistry hubKey mapping
+      const SDK_HUB_TO_HUBKEY: Record<string, string> = {
+        Core: 'CORE_HUB',
+        Prime: 'PRIME_HUB',
+        Plus: 'PLUS_HUB',
+      };
+
       // Merge on-chain data by reserveId
       for (const reserve of mergeResult.mergedData) {
         let onchainData = onchainMap.get(reserve.reserveId);
+        // V4: SDK returns hub.name as "Core"/"Prime"/"Plus" but onchainMap uses
+        // hubKey "CORE_HUB"/"PRIME_HUB"/"PLUS_HUB" from addressBookRegistry.
+        // If direct lookup fails and this is a V4 reserve, remap and retry.
+        if (!onchainData && (reserve as any).hubId) {
+          const parts = reserve.reserveId.split(':');
+          if (parts.length === 4) {
+            const sdkHubName = parts[3];
+            const hubKey = SDK_HUB_TO_HUBKEY[sdkHubName];
+            if (hubKey) {
+              const remappedId = `${parts[0]}:${parts[1]}:${parts[2]}:${hubKey}`;
+              onchainData = onchainMap.get(remappedId);
+            }
+          }
+        }
 
         // deficit: SDK value > on-chain RPC > default '0'
         const sdkDeficit = (reserve as any).deficit as string | undefined;
