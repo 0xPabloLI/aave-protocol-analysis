@@ -17,7 +17,7 @@
     "backend"
   ],
   "scripts": {
-    "build": "npm run build -w @internal/aave-shared-contracts -w @internal/aave-fetcher && tsc",
+    "build": "npm run build -w @internal/aave-shared-contracts -w @internal/aave-rpc-infra -w @internal/aave-fetcher && tsc",
     "dev": "tsx src/cli.ts",
     "dev:watch": "tsx watch src/cli.ts",
     "start": "node dist/cli.js",
@@ -29,7 +29,7 @@
     "deploy": "./deploy.sh",
     "mcp:context7": "node .cursor/context7-server.js",
     "check:bin-paths": "bash scripts/check-no-hardcoded-bin-paths.sh",
-    "prune": "ts-prune -i '.*(aave-shared-config|aave-shared-contracts|aave-fetcher)/(dist/)?index\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v '^src/' | (grep -q . && exit 1 || exit 0)",
+    "prune": "ts-prune -i '\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v '^src/' | (grep -q . && exit 1 || exit 0)",
     "test": "tsx --test tests/**/*.test.ts",
     "sync:coingecko-platform-map": "tsx scripts/sync-coingecko-platform-map.ts"
   },

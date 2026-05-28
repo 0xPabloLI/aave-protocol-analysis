@@ -300,12 +300,12 @@ async function fetchAndCacheV4Spoke(
       logger.warn(`All RPC endpoints failed for V4 hub mapping ${config.hubName}, using cached spoke data`);
       return false;
     }
-    if (underlyingToAssetId.size > 0) {
-      hubAssetMapping.set(config.hubAddress, underlyingToAssetId);
+    if (underlyingToAssetId!.size > 0) {
+      hubAssetMapping.set(config.hubAddress, underlyingToAssetId!);
     }
   }
 
-  if (underlyingToAssetId.size === 0) {
+  if (underlyingToAssetId!.size === 0) {
     v4SpokeCache.set(cacheKey, { data: new Map(), updatedAt: Date.now() });
     return true;
   }
