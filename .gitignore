@@ -99,6 +99,7 @@ scripts/*
 !scripts/sync-oracle-pool-configs.ts
 !scripts/patch-ethers-exports.js
 !scripts/check-no-hardcoded-bin-paths.sh
+!scripts/check-workspace-coverage.sh
 !scripts/check-no-omit-dev-in-ci-autofix.sh
 !scripts/verification/
 
