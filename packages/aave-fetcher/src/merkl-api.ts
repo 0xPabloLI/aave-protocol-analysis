@@ -549,10 +549,10 @@ const normalizeForecastCampaignTypeLite = (value: unknown): ForecastCampaignType
     return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
   }
   if (normalized.includes('AAVE_NET_APR')) {
-    return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+    return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
   }
   if (normalized.includes('AAVE_V4_NET_APR')) {
-    return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+    return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
   }
   return null;
 };
@@ -1332,43 +1332,6 @@ function extractOffsetTokenAddresses(
   });
 }
 
-export function detectNetPositionByHeuristic(
-  opp: MerklOpportunityData,
-  oppReserveId: string,
-  reserveIdSet: Set<string>,
-  symbolLookup: Map<string, string>,
-): NetPositionConstraint | null {
-  const text = `${opp.name ?? ''} ${opp.description ?? ''}`.toLowerCase();
-  const netIndicators = ['net lend', 'net borrow', 'net supply', 'net position', 'excluding borrower', 'excluding supplier', 'excluding lender', 'minus borrow', 'minus supply', 'net usde', 'net gho', 'net eth', 'net usdc', 'net usdt', 'net dai', 'net wbtc', 'net weeth'];
-  const isNet = netIndicators.some(kw => text.includes(kw));
-  if (!isNet) return null;
-
-  const type = opp.opportunityType?.toLowerCase() ?? '';
-  const sourceSide: 'supply' | 'borrow' = type.includes('borrow') || text.includes('net borrow') ? 'borrow' : 'supply';
-
-  const offsetReserveIds: string[] = [];
-  const seen = new Set<string>();
-  if (seen.add(oppReserveId)) {
-    // source token is always an offset in net positions
-  }
-  for (const ota of (opp.offsetTokenAddresses ?? [])) {
-    const resolvedIds = resolveOffsetReserveIds(oppReserveId, ota.address.toLowerCase(), reserveIdSet);
-    for (const rid of resolvedIds) {
-      if (!seen.has(rid)) {
-        seen.add(rid);
-        offsetReserveIds.push(rid);
-      }
-    }
-  }
-  if (offsetReserveIds.length === 0) {
-    const selfRid = reserveIdSet.has(oppReserveId) ? oppReserveId : null;
-    if (selfRid) offsetReserveIds.push(selfRid);
-  }
-  if (offsetReserveIds.length === 0) return null;
-
-  return { sourceSide, offsetReserveIds };
-}
-
 export async function detectNetPositionConstraint(
   opp: MerklOpportunityData,
   sourceTokenAddress: string,
@@ -1392,9 +1355,9 @@ export async function detectNetPositionConstraint(
         const seen = new Set<string>();
         for (const symbol of offsetTokenSymbols) {
           const tokenAddr = symbolLookup.get(`${opp.chainId}:${symbol}`);
-          if (!tokenAddr) return detectNetPositionByHeuristic(opp, oppReserveId, reserveIdSet, symbolLookup);
+          if (!tokenAddr) return null;
           const resolvedIds = resolveOffsetReserveIds(oppReserveId, tokenAddr.toLowerCase(), reserveIdSet);
-          if (resolvedIds.length === 0) return detectNetPositionByHeuristic(opp, oppReserveId, reserveIdSet, symbolLookup);
+          if (resolvedIds.length === 0) return null;
           for (const rid of resolvedIds) {
             if (!seen.has(rid)) {
               seen.add(rid);
@@ -1407,7 +1370,7 @@ export async function detectNetPositionConstraint(
     }
   }
 
-  return detectNetPositionByHeuristic(opp, oppReserveId, reserveIdSet, symbolLookup);
+  return null;
 }
 
 export function extractNetPositionConstraint(
