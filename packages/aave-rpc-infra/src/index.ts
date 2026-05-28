@@ -29,11 +29,34 @@ export type ProviderPoolOptions = {
   failureThreshold?: number;
   suppressionMs?: number;
   now?: () => number;
+  errorClassifier?: ErrorClassifier;
+};
+
+export type ErrorClass = 'retry_next_rpc' | 'try_fallback';
+
+export type ErrorClassifier = (error: unknown) => ErrorClass;
+
+export type ExecuteWithFallbackOptions = {
+  perAttemptTimeoutMs?: number;
+  label?: string;
 };
 
 const DEFAULT_FAILURE_THRESHOLD = 2;
 const DEFAULT_SUPPRESSION_MS = 5 * 60_000;
 const DEFAULT_PROVIDER_TTL_MS = 30 * 60_000; // 30 min — evict unused providers
+
+function defaultErrorClassifier(error: unknown): ErrorClass {
+  const msg = error instanceof Error ? error.message : String(error);
+  const code = (error as any)?.code;
+  if (typeof code === 'string') {
+    const networkCodes = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'NETWORK_ERROR', 'SERVER_ERROR']);
+    if (networkCodes.has(code)) return 'retry_next_rpc';
+  }
+  if (msg.includes('CALL_EXCEPTION') || msg.includes('UNPREDICTABLE_GAS_LIMIT')) {
+    return 'try_fallback';
+  }
+  return 'retry_next_rpc';
+}
 
 export class ProviderPool {
   private providerByKey = new Map<string, providers.StaticJsonRpcProvider>();
@@ -43,12 +66,14 @@ export class ProviderPool {
   private readonly suppressionMs: number;
   private readonly providerTtlMs: number;
   private readonly now: () => number;
+  readonly errorClassifier: ErrorClassifier;
 
   constructor(options: ProviderPoolOptions & { providerTtlMs?: number } = {}) {
     this.failureThreshold = Math.max(1, options.failureThreshold ?? DEFAULT_FAILURE_THRESHOLD);
     this.suppressionMs = Math.max(1_000, options.suppressionMs ?? DEFAULT_SUPPRESSION_MS);
     this.providerTtlMs = Math.max(60_000, options.providerTtlMs ?? DEFAULT_PROVIDER_TTL_MS);
     this.now = options.now ?? Date.now;
+    this.errorClassifier = options.errorClassifier ?? defaultErrorClassifier;
   }
 
   private endpointKey(chainId: number, rpcUrl: string): string {
@@ -144,6 +169,47 @@ export class ProviderPool {
       ...healthyCandidates.map(({ rpcUrl, provider }) => ({ rpcUrl, provider })),
       ...suppressedCandidates,
     ];
+  }
+
+  async executeWithFallback<T>(
+    chainId: number,
+    rpcUrls: string[],
+    execs: {
+      primary: (provider: providers.Provider) => Promise<T>;
+      fallback?: (provider: providers.Provider) => Promise<T>;
+    },
+    _options?: ExecuteWithFallbackOptions,
+  ): Promise<T> {
+    const candidates = this.getProvidersForChain(chainId, rpcUrls);
+    const errors: Array<{ rpcUrl: string; message: string }> = [];
+
+    for (const { rpcUrl, provider } of candidates) {
+      try {
+        const result = await execs.primary(provider);
+        this.reportProviderSuccess(chainId, rpcUrl);
+        return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.reportProviderFailure(chainId, rpcUrl, message);
+        errors.push({ rpcUrl, message });
+
+        const errorClass = this.errorClassifier(error);
+        if (errorClass === 'try_fallback' && execs.fallback) {
+          try {
+            const fallbackResult = await execs.fallback(provider);
+            this.reportProviderSuccess(chainId, rpcUrl);
+            return fallbackResult;
+          } catch (fallbackError) {
+            const fbMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+            this.reportProviderFailure(chainId, rpcUrl, fbMsg);
+            errors.push({ rpcUrl, message: `fallback: ${fbMsg}` });
+          }
+        }
+      }
+    }
+
+    const details = errors.map(e => `  ${e.rpcUrl}: ${e.message}`).join('\n');
+    throw new Error(`executeWithFallback: all ${rpcUrls.length} RPCs failed for chain ${chainId}\n${details}`);
   }
 
   /** Remove provider + health entries unused for longer than providerTtlMs */
@@ -320,7 +386,7 @@ export function getDefaultV4SpokeEntries(): V4SpokeEntry[] {
   return entries;
 }
 
-type ProviderPoolLike = Pick<ProviderPool, 'getProvidersForChain' | 'reportProviderFailure' | 'reportProviderSuccess'>;
+type ProviderPoolLike = Pick<ProviderPool, 'getProvidersForChain' | 'reportProviderFailure' | 'reportProviderSuccess' | 'errorClassifier' | 'executeWithFallback'>;
 
 export interface FetchV4ReservesViaRpcOptions {
   entries?: V4SpokeEntry[];
@@ -501,18 +567,6 @@ async function fetchEntryReservesSerial(
   return reserves;
 }
 
-async function fetchEntryReserves(
-  provider: providers.Provider,
-  entry: V4SpokeEntry,
-  timeoutMs: number,
-): Promise<RuntimeReserveData[]> {
-  try {
-    return await fetchEntryReservesMulticall(provider, entry, timeoutMs);
-  } catch {
-    return await fetchEntryReservesSerial(provider, entry, timeoutMs);
-  }
-}
-
 export async function fetchV4ReservesViaRpc(
   options: FetchV4ReservesViaRpcOptions,
 ): Promise<FetchV4ReservesViaRpcResult> {
@@ -523,22 +577,20 @@ export async function fetchV4ReservesViaRpc(
   const errors: string[] = [];
 
   for (const entry of options.entries ?? getDefaultV4SpokeEntries()) {
-    const candidates = activePool.getProvidersForChain(entry.chainId, rpcUrlsByChainId(entry.chainId));
-    let entrySucceeded = false;
-    for (const { rpcUrl, provider } of candidates) {
-      try {
-        reserves.push(...await fetchEntryReserves(provider, entry, timeoutMs));
-        activePool.reportProviderSuccess(entry.chainId, rpcUrl);
-        entrySucceeded = true;
-        break;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        activePool.reportProviderFailure(entry.chainId, rpcUrl, message);
-        errors.push(`${entry.spokeName}/${entry.hubName} via ${rpcUrl}: ${message}`);
-      }
-    }
-    if (!entrySucceeded && candidates.length === 0) {
-      errors.push(`${entry.spokeName}/${entry.hubName}: no RPC candidates for chain ${entry.chainId}`);
+    try {
+      const entryReserves = await activePool.executeWithFallback(
+        entry.chainId,
+        rpcUrlsByChainId(entry.chainId),
+        {
+          primary: (p: providers.Provider) => fetchEntryReservesMulticall(p, entry, timeoutMs),
+          fallback: (p: providers.Provider) => fetchEntryReservesSerial(p, entry, timeoutMs),
+        },
+        { label: `fetchV4Reserves:${entry.spokeName}` },
+      );
+      reserves.push(...entryReserves);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${entry.spokeName}/${entry.hubName}: ${message}`);
     }
   }
 

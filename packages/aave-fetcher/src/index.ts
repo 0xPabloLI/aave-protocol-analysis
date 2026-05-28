@@ -37,8 +37,6 @@ import {
 import { fetchV4ReservesData } from './v4-fetcher.js';
 import type { V4FetchResult } from './v4-fetcher.js';
 import type { RuntimeReserveData, MarketsPayload } from '@internal/aave-shared-contracts';
-import { fetchV4ReservesViaRpc } from '@internal/aave-rpc-infra';
-
 export type { RuntimeReserveData, MarketsPayload } from '@internal/aave-shared-contracts';
 export type {
   MerklCampaignBreakdown,
@@ -281,105 +279,53 @@ async function fetchBrevisAprs(
 
 
 /**
- * Build the base dataset from V3 markets + V4 reserves (pure sync).
- * V3/V4 fetch and timeout logic is handled by callers (fetchMarketsData, runMarketsFetcher).
+ * Build the base dataset from V3 markets + V4 reserves.
+ * Shared by both backend (fetchMarketsData) and root (runMarketsFetcher).
  *
  * @param v3Markets - V3 market data from fetchRawMarketData()
- * @param v4Reserves - V4 reserve data (mapped RuntimeReserveData array)
+ * @param options.v4Fatal - If true, V4 fetch failure is fatal (throws).
+ *                           Makes V3 and V4 equally important — if either fails, the entire refresh fails.
+ *                           Default: false (V4 failure is non-fatal, graceful degradation).
  */
-export function buildMarketsBaseDataset(
-  v3Markets: any[],
-  v4Reserves: RuntimeReserveData[],
-): {
+async function buildMarketsBaseDataset(v3Markets: any[], options?: {
+  v4Fatal?: boolean;
+}): Promise<{
   baseDataset: RuntimeReserveData[];
   v3Count: number;
   v4Count: number;
-} {
+  v4Dataset: RuntimeReserveData[];
+  v4Raw: V4FetchResult['raw'];
+}> {
   const v3Dataset = buildV3BaseDataset(v3Markets);
-  const baseDataset = [...v3Dataset, ...v4Reserves];
-  logger.info(`📊 Unified dataset: ${baseDataset.length} reserves (V3: ${v3Dataset.length}, V4: ${v4Reserves.length})`);
-  return { baseDataset, v3Count: v3Dataset.length, v4Count: v4Reserves.length };
-}
-
-/** V3 and V4 fetch timeout per side (ms). */
-const FETCH_TIMEOUT_PER_SIDE_MS = 35_000;
-const V4_RPC_FALLBACK_TIMEOUT_MS = 15_000;
-
-/**
- * Fetch V4 reserves with timeout and v4Fatal support.
- * Returns { mapped, raw, source } on success, or throws in fatal mode.
- */
-export async function fetchV4ReservesWithTimeout(options?: {
-  v4Fatal?: boolean;
-  /** Dependency injection for testing: override fetchV4ReservesData. */
-  _fetchV4Fn?: typeof fetchV4ReservesData;
-  /** Dependency injection for testing: override RPC fallback. */
-  _fetchV4RpcFn?: typeof fetchV4ReservesViaRpc;
-}): Promise<{ mapped: RuntimeReserveData[]; raw: V4FetchResult['raw']; source: 'sdk' | 'rpc' | 'none' }> {
+  let v4Dataset: RuntimeReserveData[] = [];
+  let v4Raw: V4FetchResult['raw'] = { reserves: [] };
   const v4Fatal = options?.v4Fatal ?? false;
-  const fetchV4 = options?._fetchV4Fn ?? fetchV4ReservesData;
-  const fetchV4Rpc = options?._fetchV4RpcFn ?? fetchV4ReservesViaRpc;
-  const timeoutLabel = v4Fatal ? 'FATAL' : 'non-fatal';
   try {
-    const result = await Promise.race([
-      fetchV4({ throwOnFinalFailure: v4Fatal }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`V4 fetch timeout (${timeoutLabel})`)), FETCH_TIMEOUT_PER_SIDE_MS)
-      ),
-    ]);
-
-    if (result.mapped.length > 0) {
-      logger.info(`✅ Fetched ${result.mapped.length} V4 reserves`);
-      return { ...result, source: 'sdk' };
-    }
-
-    if (v4Fatal) {
+    // Option 1: V4 now has retry logic (3 attempts with backoff), matching V3 reliability.
+    // Option 2: When v4Fatal=true, V4 failure throws (equal importance to V3).
+    const v4Result = await fetchV4ReservesData({ throwOnFinalFailure: v4Fatal });
+    v4Dataset = v4Result.mapped;
+    v4Raw = v4Result.raw;
+    if (v4Dataset.length > 0) {
+      logger.info(`✅ Fetched ${v4Dataset.length} V4 reserves`);
+    } else if (v4Fatal) {
+      // Option 2: Empty V4 dataset is fatal when v4Fatal=true
       throw new Error('V4 data fetch returned empty dataset (v4Fatal=true)');
+    } else {
+      logger.warn(`⚠️ V4 data fetch returned empty dataset after retries (non-fatal)`);
     }
-
-    logger.warn('⚠️ V4 SDK returned empty dataset after retries, triggering RPC fallback');
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     if (v4Fatal) {
+      // Option 2: V4 failure is fatal — throw to make the entire refresh fail
       logger.error(`❌ V4 data fetching failed (FATAL — v4Fatal=true): ${errorMsg}`);
-      throw error;
+      throw new Error(`V4 data fetch failed (fatal): ${errorMsg}`);
     }
-    logger.error(`❌ V4 SDK fetch failed (non-fatal), triggering RPC fallback: ${errorMsg}`);
+    logger.error(`❌ V4 data fetching failed (non-fatal): ${errorMsg}`);
   }
-
-  try {
-    const rpcResult = await Promise.race([
-      fetchV4Rpc({ timeoutMs: V4_RPC_FALLBACK_TIMEOUT_MS }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('V4 RPC fallback timeout')), V4_RPC_FALLBACK_TIMEOUT_MS)
-      ),
-    ]);
-    if (rpcResult.reserves.length > 0) {
-      if (rpcResult.errors.length === 0) {
-        logger.warn(`⚠️ V4 RPC fallback succeeded with ${rpcResult.reserves.length} reserves`);
-      } else {
-        logger.warn(`⚠️ V4 RPC fallback partial success: ${rpcResult.reserves.length} reserves, ${rpcResult.errors.length} spoke errors`);
-      }
-      return { mapped: rpcResult.reserves, raw: { reserves: [] }, source: 'rpc' };
-    }
-    logger.error(`❌ V4 RPC fallback returned empty dataset (${rpcResult.errors.length} errors)`);
-  } catch (error) {
-    logger.error(`❌ V4 RPC fallback failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
-
-  return { mapped: [], raw: { reserves: [] }, source: 'none' };
-}
-
-/**
- * Fetch V3 market data with timeout.
- */
-async function fetchV3MarketsWithTimeout(): Promise<MarketData> {
-  return Promise.race([
-    fetchRawMarketData(),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('V3 fetch timeout')), FETCH_TIMEOUT_PER_SIDE_MS)
-    ),
-  ]);
+  const baseDataset = [...v3Dataset, ...v4Dataset];
+  logger.info(`📊 Unified dataset: ${baseDataset.length} reserves (V3: ${v3Dataset.length}, V4: ${v4Dataset.length})`);
+  return { baseDataset, v3Count: v3Dataset.length, v4Count: v4Dataset.length, v4Dataset, v4Raw };
 }
 
 // 从 Aave V3 市场数据创建基础数据集
@@ -1038,36 +984,15 @@ export async function runMarketsFetcher(): Promise<void> {
   }
 
   try {
-    // 并发获取 V3 和 V4 市场数据
-    logger.info('🚀 Fetching V3 and V4 market data concurrently...');
-    const [v3Settled, v4Settled] = await Promise.allSettled([
-      fetchV3MarketsWithTimeout(),
-      fetchV4ReservesWithTimeout({ v4Fatal: false }),
-    ]);
-
-    let v3Markets: any[] = [];
-    let v3MarketData: MarketData | null = null;
-    if (v3Settled.status === 'fulfilled') {
-      v3MarketData = v3Settled.value;
-      v3Markets = v3MarketData.markets;
-    } else {
-      logger.error(`❌ V3 fetch failed: ${v3Settled.reason}`);
-      throw new Error(`V3 data fetch failed: ${v3Settled.reason}`);
-    }
-
-    let v4Reserves: RuntimeReserveData[] = [];
-    if (v4Settled.status === 'fulfilled') {
-      v4Reserves = v4Settled.value.mapped;
-    } else {
-      logger.error(`❌ V4 fetch failed (non-fatal): ${v4Settled.reason}`);
-    }
+    // 从所有链获取市场数据（已包含保存原始数据到文件）
+    const marketData = await fetchRawMarketData();
     
     // 格式化数据并保存到新文件
     logger.info('\n📊 Formatting market data...');
     
     // 第一步：从 Aave V3 + V4 创建统一基础数据集
     logger.info('📊 Creating unified base dataset (V3 + V4)...');
-    const { baseDataset, v3Count, v4Count } = buildMarketsBaseDataset(v3Markets, v4Reserves);
+    const { baseDataset, v3Count, v4Count } = await buildMarketsBaseDataset(marketData.markets);
     const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
 
     // 并发获取 Merit、Merkl 和 Brevis 数据（它们之间没有依赖关系）
@@ -1151,7 +1076,7 @@ export async function runMarketsFetcher(): Promise<void> {
     const debugFormattedJsonFullPath = join(DEBUG_DATA_DIR, 'v3v4-enriched-full.json');
     const debugPayload = {
       _metadata: {
-        timestamp: v3MarketData!.timestamp,
+        timestamp: marketData.timestamp,
         version: '2.0-debug-full',
         dataCount: enrichedData.length,
         profile: 'debug-full',
@@ -1174,13 +1099,13 @@ export async function runMarketsFetcher(): Promise<void> {
     logger.info(`📈 CSV data saved to ${csvPath}`);
     logger.info(`📁 Debug data dir: ${DEBUG_DATA_DIR}`);
     logger.info(`📁 Export data dir: ${EXPORT_DATA_DIR}`);
-    logger.info(`📈 Total markets: ${v3MarketData!.markets.length}`);
+    logger.info(`📈 Total markets: ${marketData.markets.length}`);
     logger.info(`🪙 Total reserves: ${enrichedData.length}`);
-    logger.info(`🌐 Networks discovered: ${v3MarketData!.totalNetworks}`);
-    logger.info(`✅ Supported networks: ${v3MarketData!.networkInfo.length}`);
-    logger.info(`⛓️ Supported chains: ${v3MarketData!.chainIds.length}`);
-    if (v3MarketData!.errors.length > 0) {
-      logger.warn(`❌ Failed chains: ${v3MarketData!.errors.length}`);
+    logger.info(`🌐 Networks discovered: ${marketData.totalNetworks}`);
+    logger.info(`✅ Supported networks: ${marketData.networkInfo.length}`);
+    logger.info(`⛓️ Supported chains: ${marketData.chainIds.length}`);
+    if (marketData.errors.length > 0) {
+      logger.warn(`❌ Failed chains: ${marketData.errors.length}`);
     }
   } catch (error) {
     logger.error('💥 Unexpected error:', error);
@@ -1265,44 +1190,14 @@ export async function fetchMarketsData(options?: {
   logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
   await checkAndReportSessionStatus();
 
-  // 并发获取 V3 和 V4 市场数据（各 35s 超时）
-  logger.info('\n🚀 Fetching V3 and V4 market data concurrently...');
-  const v4Fatal = options?.v4Fatal ?? false;
-  const [v3Settled, v4Settled] = await Promise.allSettled([
-    fetchV3MarketsWithTimeout(),
-    fetchV4ReservesWithTimeout({ v4Fatal }),
-  ]);
-
-  // V3 result
-  let v3Markets: any[] = [];
-  let timestamp: string = new Date().toISOString();
-  if (v3Settled.status === 'fulfilled') {
-    v3Markets = v3Settled.value.markets;
-    timestamp = v3Settled.value.timestamp;
-  } else {
-    logger.error(`❌ V3 fetch failed: ${v3Settled.reason}`);
-  }
-
-  // V4 result
-  let v4Reserves: RuntimeReserveData[] = [];
-  let v4Raw: V4FetchResult['raw'] = { reserves: [] };
-  let v4Source: 'sdk' | 'rpc' | 'none' = 'none';
-  if (v4Settled.status === 'fulfilled') {
-    v4Reserves = v4Settled.value.mapped;
-    v4Raw = v4Settled.value.raw;
-    v4Source = v4Settled.value.source;
-  } else if (v4Fatal) {
-    // V4 failure is fatal — throw to make entire refresh fail
-    const errorMsg = v4Settled.reason instanceof Error ? v4Settled.reason.message : String(v4Settled.reason);
-    logger.error(`❌ V4 fetch failed (FATAL — v4Fatal=true): ${errorMsg}`);
-    throw new Error(`V4 data fetch failed (fatal): ${errorMsg}`);
-  } else {
-    logger.error(`❌ V4 fetch failed (non-fatal): ${v4Settled.reason}`);
-  }
-
-  // 格式化数据（V3 + V4 unified, pure sync）
+  // 从所有链获取市场数据
+  const marketData = await fetchRawMarketData();
+  
+  // 格式化数据（V3 + V4 unified）
   logger.info('\n📊 Formatting market data...');
-  const { baseDataset, v3Count, v4Count } = buildMarketsBaseDataset(v3Markets, v4Reserves);
+  const { baseDataset, v3Count, v4Count, v4Raw } = await buildMarketsBaseDataset(marketData.markets, {
+    v4Fatal: options?.v4Fatal,
+  });
   const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
 
   // 并发获取 Merit、Merkl 和 Brevis 数据
@@ -1320,20 +1215,10 @@ export async function fetchMarketsData(options?: {
 
   const payload: MarketsPayload = {
     _metadata: {
-      timestamp,
+      timestamp: marketData.timestamp,
       version: '2.0-runtime-minimal',
       dataCount: runtimeData.length,
       profile: 'runtime-minimal',
-      fetchResult: {
-        v3: {
-          success: v3Settled.status === 'fulfilled',
-          source: v3Settled.status === 'fulfilled' ? 'sdk' : 'none',
-        },
-        v4: {
-          success: v4Settled.status === 'fulfilled' && v4Source !== 'none',
-          source: v4Source,
-        },
-      },
     },
     data: runtimeData,
     ...(merklResult.campaignAccess?.length ? { campaignAccess: merklResult.campaignAccess } : {}),
@@ -1345,14 +1230,6 @@ export async function fetchMarketsData(options?: {
   });
 
   return payload;
-}
-
-/**
- * JSON replacer that converts BigInt to strings for debug file serialization.
- */
-function bigintReplacer(_key: string, value: unknown): unknown {
-  if (typeof value === 'bigint') return value.toString();
-  return value;
 }
 
 /**
@@ -1398,7 +1275,7 @@ async function writeDebugSnapshot(
         },
         reserves: v4Raw.reserves,
       },
-      bigintReplacer as any,
+      (_key: string, value: unknown) => typeof value === 'bigint' ? value.toString() : value,
       2,
     );
     await writeFile(join(DEBUG_DATA_DIR, 'v4-raw-sdk-response.json'), rawJson, 'utf-8');

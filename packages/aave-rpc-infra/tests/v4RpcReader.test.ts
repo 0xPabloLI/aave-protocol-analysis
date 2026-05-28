@@ -121,12 +121,16 @@ test('fetchV4ReservesViaRpc maps V4 Hub+Spoke data into RuntimeReserveData', asy
     hubAddress,
   }];
 
+  const mockProvider = provider as any;
   const result = await fetchV4ReservesViaRpc({
     entries,
     providerPool: {
-      getProvidersForChain: () => [{ rpcUrl: 'mock-rpc', provider: provider as any }],
+      getProvidersForChain: () => [{ rpcUrl: 'mock-rpc', provider: mockProvider }],
       reportProviderSuccess: () => undefined,
       reportProviderFailure: () => undefined,
+      errorClassifier: () => 'retry_next_rpc' as const,
+      executeWithFallback: async (_chainId: number, _urls: string[], execs: { primary: (p: any) => Promise<any> }) =>
+        execs.primary(mockProvider),
     },
     rpcUrlsByChainId: () => ['mock-rpc'],
   });
@@ -183,12 +187,16 @@ test('fetchV4ReservesViaRpc returns partial results when one entry fails', async
     { spokeName: 'LIDO_ESPOKE', chainId: 1, spokeAddress: spokeB, hubName: 'CORE_HUB', hubAddress: hubB },
   ];
 
+  const mockProvider2 = provider as any;
   const result = await fetchV4ReservesViaRpc({
     entries,
     providerPool: {
-      getProvidersForChain: () => [{ rpcUrl: 'mock-rpc', provider: provider as any }],
+      getProvidersForChain: () => [{ rpcUrl: 'mock-rpc', provider: mockProvider2 }],
       reportProviderSuccess: () => undefined,
       reportProviderFailure: () => undefined,
+      errorClassifier: () => 'retry_next_rpc' as const,
+      executeWithFallback: async (_chainId: number, _urls: string[], execs: { primary: (p: any) => Promise<any> }) =>
+        execs.primary(mockProvider2),
     },
     rpcUrlsByChainId: () => ['mock-rpc'],
   });

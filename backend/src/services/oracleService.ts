@@ -176,7 +176,6 @@ let refreshInProgress: Promise<void> | null = null;
 async function fetchV3PoolPrices(
   config: V3PoolConfig,
   provider: providers.Provider,
-  rpcUrl: string
 ): Promise<V3OraclePoolResult> {
   const poolContract = new Contract(config.poolAddress, IPool_ABI, provider);
   const oracleContract = new Contract(config.oracleAddress, IAaveOracle_ABI, provider);
@@ -184,14 +183,14 @@ async function fetchV3PoolPrices(
   const assets: string[] = await withTimeout(
     poolContract.getReservesList(),
     ORACLE_RPC_TIMEOUT_MS,
-    `V3 Pool getReservesList timeout for ${config.poolKey} via ${rpcUrl}`
+    `V3 Pool getReservesList timeout for ${config.poolKey}`
   ) as string[];
 
   const rawPrices: string[] = (
     await withTimeout(
       oracleContract.getAssetsPrices(assets),
       ORACLE_RPC_TIMEOUT_MS,
-      `V3 Oracle getAssetsPrices timeout for ${config.poolKey} via ${rpcUrl}`
+      `V3 Oracle getAssetsPrices timeout for ${config.poolKey}`
     ) as any[]
   ).map((p: any) => p.toString());
 
@@ -220,7 +219,6 @@ async function fetchV3PoolPrices(
 async function fetchV4SpokePrices(
   config: V4SpokeConfig,
   provider: providers.Provider,
-  rpcUrl: string
 ): Promise<V4OracleSpokeResult> {
   const spokeContract = new Contract(config.spokeAddress, ISpokeV4_ABI, provider);
   const oracleContract = new Contract(config.oracleAddress, V4_ORACLE_PRICES_ABI, provider);
@@ -228,7 +226,7 @@ async function fetchV4SpokePrices(
   const reserveCountBN = await withTimeout(
     spokeContract.getReserveCount(),
     ORACLE_RPC_TIMEOUT_MS,
-    `V4 Spoke getReserveCount timeout for ${config.spokeName} via ${rpcUrl}`
+    `V4 Spoke getReserveCount timeout for ${config.spokeName}`
   ) as any;
 
   const reserveCount = Number(reserveCountBN);
@@ -248,7 +246,7 @@ async function fetchV4SpokePrices(
     await withTimeout(
       oracleContract.getReservesPrices(reserveIds),
       ORACLE_RPC_TIMEOUT_MS,
-      `V4 Oracle getReservesPrices timeout for ${config.spokeName} via ${rpcUrl}`
+      `V4 Oracle getReservesPrices timeout for ${config.spokeName}`
     ) as any[]
   ).map((p: any) => p.toString());
 
@@ -326,25 +324,19 @@ export async function refreshOracleCache(): Promise<void> {
           logger.debug(`⏭️  Oracle V3: Skipping ${config.poolKey} (chain ${config.chainId}), no RPC URLs`);
           return null;
         }
-        const candidates = providerPool.getProvidersForChain(config.chainId, rpcUrls);
-        if (candidates.length === 0) {
-          logger.warn(`⏭️  Oracle V3: Skipping ${config.poolKey} (chain ${config.chainId}), no healthy RPC`);
+        try {
+          const result = await providerPool.executeWithFallback(
+            config.chainId,
+            rpcUrls,
+            { primary: (p: providers.Provider) => fetchV3PoolPrices(config, p) },
+            { label: `Oracle V3:${config.poolKey}` },
+          );
+          logger.debug(`✅ Oracle V3: ${config.poolKey} - ${Object.keys(result.assets).length} assets`);
+          return result;
+        } catch {
+          logger.warn(`❌ Oracle V3: ${config.poolKey} failed on all RPC candidates`);
           return null;
         }
-        for (const candidate of candidates) {
-          try {
-            const result = await fetchV3PoolPrices(config, candidate.provider, candidate.rpcUrl);
-            providerPool.reportProviderSuccess(config.chainId, candidate.rpcUrl);
-            logger.debug(`✅ Oracle V3: ${config.poolKey} - ${Object.keys(result.assets).length} assets via ${candidate.rpcUrl}`);
-            return result;
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            providerPool.reportProviderFailure(config.chainId, candidate.rpcUrl, message);
-            logger.warn(`❌ Oracle V3: ${config.poolKey} failed via ${candidate.rpcUrl}: ${message}`);
-          }
-        }
-        logger.warn(`❌ Oracle V3: ${config.poolKey} failed on all RPC candidates`);
-        return null;
       }
 
       async function fetchV4WithRetry(config: V4SpokeConfig): Promise<V4OracleSpokeResult | null> {
@@ -353,25 +345,19 @@ export async function refreshOracleCache(): Promise<void> {
           logger.debug(`⏭️  Oracle V4: Skipping ${config.spokeName} (chain ${config.chainId}), no RPC URLs`);
           return null;
         }
-        const candidates = providerPool.getProvidersForChain(config.chainId, rpcUrls);
-        if (candidates.length === 0) {
-          logger.warn(`⏭️  Oracle V4: Skipping ${config.spokeName} (chain ${config.chainId}), no healthy RPC`);
+        try {
+          const result = await providerPool.executeWithFallback(
+            config.chainId,
+            rpcUrls,
+            { primary: (p: providers.Provider) => fetchV4SpokePrices(config, p) },
+            { label: `Oracle V4:${config.spokeName}` },
+          );
+          logger.debug(`✅ Oracle V4: ${config.spokeName} - ${Object.keys(result.reserves).length} reserves`);
+          return result;
+        } catch {
+          logger.warn(`❌ Oracle V4: ${config.spokeName} failed on all RPC candidates`);
           return null;
         }
-        for (const candidate of candidates) {
-          try {
-            const result = await fetchV4SpokePrices(config, candidate.provider, candidate.rpcUrl);
-            providerPool.reportProviderSuccess(config.chainId, candidate.rpcUrl);
-            logger.debug(`✅ Oracle V4: ${config.spokeName} - ${Object.keys(result.reserves).length} reserves via ${candidate.rpcUrl}`);
-            return result;
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            providerPool.reportProviderFailure(config.chainId, candidate.rpcUrl, message);
-            logger.warn(`❌ Oracle V4: ${config.spokeName} failed via ${candidate.rpcUrl}: ${message}`);
-          }
-        }
-        logger.warn(`❌ Oracle V4: ${config.spokeName} failed on all RPC candidates`);
-        return null;
       }
 
       const v3Settled = await Promise.allSettled(V3_POOL_CONFIGS.map(fetchV3WithRetry));

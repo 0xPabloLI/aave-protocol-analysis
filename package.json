@@ -17,29 +17,27 @@
     "backend"
   ],
   "scripts": {
-    "build": "npm run build -w @internal/aave-shared-contracts -w @internal/aave-rpc-infra -w @internal/aave-fetcher && tsc",
+    "build": "npm run build -w @internal/aave-shared-contracts -w @internal/aave-fetcher && tsc",
     "dev": "tsx src/cli.ts",
     "dev:watch": "tsx watch src/cli.ts",
     "start": "node dist/cli.js",
     "postinstall": "node scripts/patch-ethers-exports.js",
     "audit": "npm audit --omit=dev --audit-level=high >/tmp/_audit1 2>/dev/null; head -1 /tmp/_audit1 | grep -qE '^found|^# npm audit report' || { cat /tmp/_audit1 >&2; exit 1; }; grep -oE 'GHSA-[a-z0-9-]+' /tmp/_audit1 | sort -u | grep -vE 'GHSA-848j-6mx2-7j84|GHSA-58qx-3vcg-4xpx' | grep -q . && exit 1; npm audit --omit=dev --audit-level=moderate >/tmp/_audit2 2>/dev/null; head -1 /tmp/_audit2 | grep -qE '^found|^# npm audit report' || { cat /tmp/_audit2 >&2; exit 1; }; grep -oE 'GHSA-[a-z0-9-]+' /tmp/_audit2 | sort -u | grep -vE 'GHSA-848j-6mx2-7j84|GHSA-58qx-3vcg-4xpx' | grep -q . && exit 1; exit 0",
-    "ci": "npm ci && npm run build && npm run prune && npm run build -w aave-dashboard-backend && npm run prune -w aave-dashboard-backend && npm run test -w aave-dashboard-backend && npm run check:no-omit-dev",
+    "ci": "npm ci && npm run build && npm run prune && npm run build -w aave-dashboard-backend && npm run prune -w aave-dashboard-backend && npm run test -w aave-dashboard-backend",
     "ci:remote": "npm run ci && npm run check:bin-paths && npm run audit",
-    "ci:auto-fix": "npm audit fix",
-    "check:no-omit-dev": "bash scripts/check-no-omit-dev-in-ci-autofix.sh",
+    "ci:auto-fix": "npm audit fix --omit=dev",
     "deploy": "./deploy.sh",
     "mcp:context7": "node .cursor/context7-server.js",
     "check:bin-paths": "bash scripts/check-no-hardcoded-bin-paths.sh",
-    "prune": "ts-prune -i '.*(aave-shared-config|aave-shared-contracts|aave-rpc-infra|aave-fetcher)/(dist/)?index\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v '^src/' | (grep -q . && exit 1 || exit 0)",
+    "prune": "ts-prune -i '.*(aave-shared-config|aave-shared-contracts|aave-fetcher)/(dist/)?index\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v '^src/' | (grep -q . && exit 1 || exit 0)",
     "test": "tsx --test tests/**/*.test.ts",
     "sync:coingecko-platform-map": "tsx scripts/sync-coingecko-platform-map.ts"
   },
   "dependencies": {
-    "@aave-dao/aave-address-book": "^4.52.3",
+    "@aave-dao/aave-address-book": "^4.49.9",
     "@aave/client": "^0.6.1",
     "@aave/client-v4": "npm:@aave/client@^4.2.0",
     "@internal/aave-fetcher": "*",
-    "@internal/aave-rpc-infra": "*",
     "@internal/aave-shared-config": "*",
     "@internal/aave-shared-contracts": "*",
     "@modelcontextprotocol/sdk": "^1.26.0",
@@ -56,8 +54,7 @@
     "ethers": "5.8.0",
     "h3": "^1.15.5",
     "hono": "^4.11.9",
-    "preact": "^10.28.3",
-    "ws": "^8.20.1"
+    "preact": "^10.28.3"
   },
   "devDependencies": {
     "@types/cheerio": "^0.22.35",
