@@ -255,6 +255,8 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         Plus: 'PLUS_HUB',
       };
 
+      let v4NotInOnchainCount = 0;
+
       // Merge on-chain data by reserveId
       for (const reserve of mergeResult.mergedData) {
         let onchainData = onchainMap.get(reserve.reserveId);
@@ -276,12 +278,19 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         // deficit: SDK value > on-chain RPC > default '0'
         const sdkDeficit = (reserve as any).deficit as string | undefined;
         const onchainDeficit = onchainData?.deficit;
-        const { deficit, isFallback } = resolveReserveDeficit(sdkDeficit, onchainDeficit);
+        // V4 reserve not in Hub asset registry = no deficit mechanism = not a fallback.
+        // Only true fallback is when V3 reserve has no SDK and no onchain deficit source.
+        const isV4Reserve = (reserve as any).hubId !== undefined;
+        const v4NotInOnchainMap = isV4Reserve && !onchainData && sdkDeficit === undefined;
+        if (v4NotInOnchainMap) v4NotInOnchainCount++;
+        const { deficit, isFallback } = v4NotInOnchainMap
+          ? { deficit: '0', isFallback: false }
+          : resolveReserveDeficit(sdkDeficit, onchainDeficit);
         (reserve as any).deficit = deficit;
         if (isFallback) {
           deficitFallbackReserveIds.push(reserve.reserveId);
           fallbackCount++;
-          logger.debug(`deficit fallback: ${reserve.reserveId} (sdk=${sdkDeficit ?? '∅'}, onchain=${onchainDeficit ?? '∅'})`);
+          logger.debug(`deficit fallback: ${reserve.reserveId} (sdk=${sdkDeficit ?? 'b'}, onchain=${onchainDeficit ?? 'b'})`);
         }
 
         // baseBorrowRate: SDK value > on-chain RPC > fallback calculation
@@ -358,6 +367,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         `(V3:${mergeResult.newStaleV3Data.length}/${v3FreshLabel}, V4:${mergeResult.newStaleV4Data.length}/${v4FreshLabel}) ` +
         `in ${elapsed}ms ` +
         `(on-chain: ${mergedCount} merged, ${fallbackCount} fallback, ` +
+        `V4-no-hub: ${v4NotInOnchainCount}, ` +
         `oracle: ${oracleOverrideCount} overridden, ` +
         `cache: ${cacheStatus.freshPools}/${cacheStatus.poolCount} fresh)`
       );
