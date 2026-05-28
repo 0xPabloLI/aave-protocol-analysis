@@ -98,13 +98,15 @@ export function processDeficitBatchResults(
     const r = results[i];
     const underlying = underlyings[i];
     if (!r.success) {
-      throw new Error(`Multicall3 getSpokeDeficitRay failed for ${underlying}`);
+      logger.debug(`Multicall3 getSpokeDeficitRay failed for ${underlying}, skipping`);
+      continue;
     }
     let deficitRay: bigint;
     try {
       deficitRay = V4_HUB_INTERFACE.decodeFunctionResult('getSpokeDeficitRay', r.returnData)[0];
     } catch (e) {
-      throw new Error(`Decode getSpokeDeficitRay failed for ${underlying}: ${e instanceof Error ? e.message : String(e)}`);
+      logger.debug(`Decode getSpokeDeficitRay failed for ${underlying}: ${e instanceof Error ? e.message : String(e)}, skipping`);
+      continue;
     }
     const deficitRayStr = String(deficitRay);
     try {

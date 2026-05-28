@@ -259,6 +259,8 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         (reserve as any).deficit = deficit;
         if (isFallback) {
           deficitFallbackReserveIds.push(reserve.reserveId);
+          fallbackCount++;
+          logger.debug(`deficit fallback: ${reserve.reserveId} (sdk=${sdkDeficit ?? '∅'}, onchain=${onchainDeficit ?? '∅'})`);
         }
 
         // baseBorrowRate: SDK value > on-chain RPC > fallback calculation

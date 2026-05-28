@@ -566,16 +566,18 @@ test('processDeficitBatchResults: zero deficit is stored (no filtering)', () => 
   assert.strictEqual(spokeData.get('0xTokenA')?.deficit, '0');
 });
 
-test('processDeficitBatchResults: failed call throws', () => {
+test('processDeficitBatchResults: failed call is skipped (partial batch preserved)', () => {
   const results = [{ success: false, returnData: '0x' }];
   const underlyings = ['0xTokenA'];
-  assert.throws(() => processDeficitBatchResults(results, underlyings), /Multicall3 getSpokeDeficitRay failed for 0xTokenA/);
+  const spokeData = processDeficitBatchResults(results, underlyings);
+  assert.strictEqual(spokeData.size, 0, 'failed call should be skipped, not throw');
 });
 
-test('processDeficitBatchResults: decode failure throws', () => {
+test('processDeficitBatchResults: decode failure is skipped (partial batch preserved)', () => {
   const results = [{ success: true, returnData: '0xbaddata' }];
   const underlyings = ['0xTokenA'];
-  assert.throws(() => processDeficitBatchResults(results, underlyings), /Decode getSpokeDeficitRay failed for 0xTokenA/);
+  const spokeData = processDeficitBatchResults(results, underlyings);
+  assert.strictEqual(spokeData.size, 0, 'decode failure should be skipped, not throw');
 });
 
 test('processDeficitSerialResult: non-zero deficit', () => {
@@ -595,7 +597,7 @@ test('processDeficitSerialResult: small deficit below RAY preserves raw', () => 
   assert.strictEqual(result.deficit, '0');
 });
 
-test('processDeficitBatchResults: mixed results — first ok second fail throws', () => {
+test('processDeficitBatchResults: mixed results - first ok second fail keeps partial data', () => {
   const deficit1 = BigInt(100) * RAY;
   const returnData1 = V4_HUB_INTERFACE.encodeFunctionResult('getSpokeDeficitRay', [deficit1]);
   const results = [
@@ -603,5 +605,7 @@ test('processDeficitBatchResults: mixed results — first ok second fail throws'
     { success: false, returnData: '0x' },
   ];
   const underlyings = ['0xTokenA', '0xTokenB'];
-  assert.throws(() => processDeficitBatchResults(results, underlyings), /Multicall3 getSpokeDeficitRay failed for 0xTokenB/);
+  const spokeData = processDeficitBatchResults(results, underlyings);
+  assert.strictEqual(spokeData.size, 1);
+  assert.strictEqual(spokeData.get('0xTokenA')!.deficit, '100');
 });
