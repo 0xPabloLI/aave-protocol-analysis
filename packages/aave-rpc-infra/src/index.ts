@@ -37,7 +37,6 @@ export type ErrorClass = 'retry_next_rpc' | 'try_fallback';
 export type ErrorClassifier = (error: unknown) => ErrorClass;
 
 export type ExecuteWithFallbackOptions = {
-  perAttemptTimeoutMs?: number;
   label?: string;
 };
 
@@ -178,7 +177,7 @@ export class ProviderPool {
       primary: (provider: providers.Provider) => Promise<T>;
       fallback?: (provider: providers.Provider) => Promise<T>;
     },
-    _options?: ExecuteWithFallbackOptions,
+    options?: ExecuteWithFallbackOptions,
   ): Promise<T> {
     const candidates = this.getProvidersForChain(chainId, rpcUrls);
     const errors: Array<{ rpcUrl: string; message: string }> = [];
@@ -191,7 +190,6 @@ export class ProviderPool {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.reportProviderFailure(chainId, rpcUrl, message);
-        errors.push({ rpcUrl, message });
 
         const errorClass = this.errorClassifier(error);
         if (errorClass === 'try_fallback' && execs.fallback) {
@@ -202,14 +200,17 @@ export class ProviderPool {
           } catch (fallbackError) {
             const fbMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
             this.reportProviderFailure(chainId, rpcUrl, fbMsg);
-            errors.push({ rpcUrl, message: `fallback: ${fbMsg}` });
+            errors.push({ rpcUrl, message: `${message} | fallback: ${fbMsg}` });
           }
+        } else {
+          errors.push({ rpcUrl, message });
         }
       }
     }
 
+    const label = options?.label ? ` (${options.label})` : '';
     const details = errors.map(e => `  ${e.rpcUrl}: ${e.message}`).join('\n');
-    throw new Error(`executeWithFallback: all ${rpcUrls.length} RPCs failed for chain ${chainId}\n${details}`);
+    throw new Error(`executeWithFallback${label}: all ${rpcUrls.length} RPCs failed for chain ${chainId}\n${details}`);
   }
 
   /** Remove provider + health entries unused for longer than providerTtlMs */

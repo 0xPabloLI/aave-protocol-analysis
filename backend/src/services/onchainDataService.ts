@@ -333,7 +333,7 @@ async function buildHubAssetMappingMulticallInner(
   provider: providers.Provider,
   hubAddress: string,
   hubName: string,
-  rpcUrl: string
+  context: string
 ): Promise<Map<string, number>> {
   const mapping = new Map<string, number>();
 
@@ -341,7 +341,7 @@ async function buildHubAssetMappingMulticallInner(
   const results = await executeMulticall3(
     provider,
     [{ target: hubAddress, allowFailure: false, callData: getAssetCountCalldata }],
-    { label: `V4 getAssetCount for ${hubName} via ${rpcUrl}` }
+    { label: `V4 getAssetCount for ${hubName} [${context}]` }
   );
 
   if (!results[0].success) {
@@ -365,7 +365,7 @@ async function buildHubAssetMappingMulticallInner(
 
   if (getAssetCalls.length === 0) return mapping;
 
-  const assetResults = await executeMulticall3(provider, getAssetCalls, { label: `V4 getAsset batch for ${hubName} via ${rpcUrl}` });
+  const assetResults = await executeMulticall3(provider, getAssetCalls, { label: `V4 getAsset batch for ${hubName} [${context}]` });
 
   for (let assetId = 0; assetId < assetResults.length; assetId++) {
     const r = assetResults[assetId];
@@ -392,7 +392,7 @@ async function buildHubAssetMappingSerial(
   provider: providers.Provider,
   hubAddress: string,
   hubName: string,
-  rpcUrl: string
+  context: string
 ): Promise<Map<string, number>> {
   const mapping = new Map<string, number>();
   const hubContract = new Contract(hubAddress, V4_HUB_FULL_ABI, provider);
@@ -401,7 +401,7 @@ async function buildHubAssetMappingSerial(
     const assetCountBN = await withTimeout(
       hubContract.getAssetCount(),
       ONCHAIN_PER_RPC_TIMEOUT_MS,
-      `V4 serial getAssetCount timeout for ${hubName} via ${rpcUrl}`
+      `V4 serial getAssetCount timeout for ${hubName} [${context}]`
     ) as any;
     const assetCount = Number(assetCountBN);
 
