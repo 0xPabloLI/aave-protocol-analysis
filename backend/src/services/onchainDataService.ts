@@ -289,7 +289,10 @@ async function fetchAndCacheV4Spoke(
       underlyingToAssetId = await providerPool.executeWithFallback(
         config.chainId, config.defaultRpcUrls,
         {
-          primary: (p: providers.Provider) => buildHubAssetMappingMulticallInner(p, config.hubAddress, config.hubName, 'safety-net'),
+          primary: (p: providers.Provider) => buildHubAssetMappingMulticallInner(p, config.hubAddress, config.hubName, 'safety-net').catch((e) => {
+            logger.warn(`V4 hub mapping Multicall3 primary failed for ${config.hubName}: ${e instanceof Error ? e.message : String(e)}`);
+            throw e;
+          }),
           fallback: (p: providers.Provider) => buildHubAssetMappingSerial(p, config.hubAddress, config.hubName, 'safety-net'),
         },
       );
@@ -313,7 +316,10 @@ async function fetchAndCacheV4Spoke(
       config.defaultRpcUrls,
       {
         primary: (p: providers.Provider) =>
-          fetchSpokeDeficitMulticall3(p, config.hubAddress, config.spokeAddress, config.spokeName, underlyingToAssetId!),
+          fetchSpokeDeficitMulticall3(p, config.hubAddress, config.spokeAddress, config.spokeName, underlyingToAssetId!).catch((e) => {
+            logger.warn(`V4 deficit Multicall3 primary failed for ${config.spokeName}: ${e instanceof Error ? e.message : String(e)}`);
+            throw e;
+          }),
         fallback: (p: providers.Provider) =>
           fetchSpokeDeficitSerial(p, config.hubAddress, config.spokeAddress, config.spokeName, underlyingToAssetId!),
       },
