@@ -189,22 +189,55 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
   refreshInProgress = (async () => {
     try {
       const startTime = Date.now();
-      logger.info(`🔄 Starting markets refresh (v4Fatal=${v4FatalConfig.v4Fatal})...`);
+      logger.info(`Starting markets refresh (v4Fatal=${v4FatalConfig.v4Fatal})...`);
 
-      // Extract cached constraints from previous snapshot for LLM Layer 2 cache
       const cachedConstraints = snapshot ? extractConstraintMap(snapshot.payload.data) : undefined;
 
-      // Fetch markets from Aave API (V3+V4 concurrent with per-side timeouts)
-      const payload = await withTimeout(
-        fetchMarketsData({ v4Fatal: v4FatalConfig.v4Fatal, cachedConstraints }),
-        MARKETS_FETCH_TIMEOUT_MS,
-        'Markets fetch timeout'
-      );
+      let payload: MarketsPayload;
+      let v3Succeeded: boolean;
+      let v4Succeeded: boolean;
+      let fetchResult: ReturnType<typeof getFetchResultOrDefault>;
 
-      // Read structured side-channel envelope from _metadata (backward compat: treat absent as SDK success)
-      const fetchResult = getFetchResultOrDefault(payload._metadata);
-      const v3Succeeded = fetchResult.v3.success;
-      const v4Succeeded = fetchResult.v4.success;
+      try {
+        payload = await withTimeout(
+          fetchMarketsData({ v4Fatal: v4FatalConfig.v4Fatal, cachedConstraints }),
+          MARKETS_FETCH_TIMEOUT_MS,
+          'Markets fetch timeout'
+        );
+        fetchResult = getFetchResultOrDefault(payload._metadata);
+        v3Succeeded = fetchResult.v3.success;
+        v4Succeeded = fetchResult.v4.success;
+      } catch (fetchError) {
+        logger.warn(`Markets fetch failed (${fetchError instanceof Error ? fetchError.message : String(fetchError)}), attempting stale fallback`);
+        const now = Date.now();
+        const hardTtl = BACKEND_CACHE_TTL_MS.marketsHardTtlMs;
+        const staleV3Usable = v3FetchedAt !== null && (now - v3FetchedAt) <= hardTtl && staleV3Data.length > 0;
+        const staleV4Usable = v4FetchedAt !== null && (now - v4FetchedAt) <= hardTtl && staleV4Data.length > 0;
+
+        if (!staleV3Usable && !staleV4Usable) {
+          throw fetchError;
+        }
+
+        const fallbackData = [...(staleV3Usable ? staleV3Data : []), ...(staleV4Usable ? staleV4Data : [])];
+        if (fallbackData.length === 0) {
+          throw fetchError;
+        }
+
+        logger.info(`Markets stale fallback: V3=${staleV3Usable ? staleV3Data.length : 0}, V4=${staleV4Usable ? staleV4Data.length : 0} reserves`);
+        payload = {
+          data: fallbackData,
+          _metadata: {
+            timestamp: new Date(now - (now - (snapshot?.fetchedAt ?? now))).toISOString(),
+            fetchResult: {
+              v3: { success: false, source: 'sdk' },
+              v4: { success: false, source: 'sdk' },
+            },
+          },
+        } as MarketsPayload;
+        fetchResult = { v3: { success: false, source: 'sdk' }, v4: { success: false, source: 'sdk' } };
+        v3Succeeded = false;
+        v4Succeeded = false;
+      }
 
       const now = Date.now();
       const hardTtl = BACKEND_CACHE_TTL_MS.marketsHardTtlMs;
@@ -431,9 +464,9 @@ export function getMarketsData(): {
   }
 
   return {
-    payload: isTooStale ? null : snapshot.payload,
+    payload: snapshot.payload,
     staleTimeMs: BACKEND_CACHE_TTL_MS.marketsSoftTtlMs,
-      hardTtlMs: BACKEND_CACHE_TTL_MS.marketsHardTtlMs,
+    hardTtlMs: BACKEND_CACHE_TTL_MS.marketsHardTtlMs,
     ageMs,
     isTooStale,
     deficitFallbackReserveIds: snapshot.deficitFallbackReserveIds,

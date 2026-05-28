@@ -34,14 +34,23 @@ export function startUpdateScheduler(): void {
   logger.info('   • GSC daily fetch: every day at 06:00 UTC');
   logger.info('   • Archive-clean pipeline: every hour at :40');
 
-  // Markets refresh every minute at second 0
+  // Markets refresh every minute at second 0, with short retry on failure
   schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
     try {
       await refreshMarketsSnapshot();
     } catch (error) {
-      logger.warn(
-        `Markets refresh scheduler failed: ${error instanceof Error ? error.message : String(error)}`
-      );
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.warn(`Markets refresh scheduler failed: ${msg}, retrying in 30s`);
+      setTimeout(async () => {
+        try {
+          await refreshMarketsSnapshot();
+          logger.info('Markets refresh retry succeeded');
+        } catch (retryError) {
+          logger.warn(
+            `Markets refresh retry also failed: ${retryError instanceof Error ? retryError.message : String(retryError)}`
+          );
+        }
+      }, 30_000);
     }
   });
 

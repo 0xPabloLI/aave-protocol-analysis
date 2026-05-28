@@ -10,7 +10,7 @@ import { seoRouter } from './routes/seo.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
-import { warmMarketsCache } from './services/marketsService.js';
+import { warmMarketsCache, getMarketsData } from './services/marketsService.js';
 import { refreshOnchainCache } from './services/onchainDataService.js';
 import { refreshOracleCache } from './services/oracleService.js';
 import { logger } from './logger.js';
@@ -83,15 +83,29 @@ app.use('/api/meta', metaRouter);
 app.use('/api/seo', seoRouter);
 // Note: /api/rate-inputs endpoint removed - rate-inputs are now merged into /api/markets
 
-const healthHandler = (req: express.Request, res: express.Response) => {
-  res.json({ 
-    status: 'ok', 
+const healthHandler = (_req: express.Request, res: express.Response) => {
+  const markets = getMarketsData();
+  const marketsReady = markets.payload !== null;
+  const marketsStale = markets.isTooStale;
+
+  if (!marketsReady || marketsStale) {
+    res.status(503).json({
+      status: 'degraded',
+      timestamp: new Date().toISOString(),
+      markets: { ready: marketsReady, stale: marketsStale, ageMs: markets.ageMs },
+      ...(process.env.RAILWAY_GIT_COMMIT_SHA && { commitSha: process.env.RAILWAY_GIT_COMMIT_SHA }),
+    });
+    return;
+  }
+
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
     ...(process.env.RAILWAY_GIT_COMMIT_SHA && { commitSha: process.env.RAILWAY_GIT_COMMIT_SHA }),
     environment: {
       nodeEnv: process.env.NODE_ENV || 'development',
       port: PORT,
-    }
+    },
   });
 };
 

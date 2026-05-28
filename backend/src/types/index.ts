@@ -33,6 +33,8 @@ export interface MarketsResponse {
     schemaFingerprint?: string; // Hash of API response field names; changes when shape changes
     deficitFallbackReserveIds: string[]; // ReserveIds where deficit fell back to '0' (no onchain data)
     v4FallbackReserveIds?: string[]; // ReserveIds whose V4 data came from RPC fallback
+    stale?: boolean; // true when snapshot exceeds hardTtl (data still served but marked stale)
+    staleAgeMs?: number | null; // age in ms when stale=true
   };
   reserves: MarketWithSpread[];
 }

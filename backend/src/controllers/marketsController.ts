@@ -25,19 +25,7 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
   try {
     const { payload, staleTimeMs, hardTtlMs, ageMs, isTooStale, deficitFallbackReserveIds, v4FallbackReserveIds } = getMarketsData();
 
-    // If no snapshot yet (cold start before warmup completes)
     if (!payload) {
-      if (isTooStale) {
-        logger.warn('Markets snapshot is too stale; returning 503');
-        res.set('Retry-After', '60');
-        res.status(503).json({
-          errorCode: 'MARKETS_SNAPSHOT_STALE',
-          error: 'Service unavailable',
-          message: `Markets snapshot is too old to serve safely (ageMs=${ageMs ?? 'unknown'}, hardTtlMs=${hardTtlMs}).`,
-        });
-        return;
-      }
-
       logger.warn('Markets snapshot not yet available');
       res.set('Retry-After', '10');
       res.status(503).json({
@@ -48,7 +36,6 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Filter invalid entries (deficit already merged at write time)
     const filtered = payload.data.filter((item) => {
       return (
         item.marketName &&
@@ -70,9 +57,14 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
         schemaFingerprint: computeSchemaFingerprint(),
         deficitFallbackReserveIds,
         ...(v4FallbackReserveIds.length ? { v4FallbackReserveIds } : {}),
+        ...(isTooStale && { stale: true, staleAgeMs: ageMs }),
       },
       reserves,
     };
+
+    if (isTooStale) {
+      res.set('Warning', '110 - "Markets snapshot is stale"');
+    }
 
     res.json(response);
   } catch (error) {
