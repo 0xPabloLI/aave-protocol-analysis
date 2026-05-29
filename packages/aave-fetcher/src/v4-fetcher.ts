@@ -27,6 +27,10 @@ type V4FormattedReserveData = RuntimeReserveData;
 // V4 uses its own client instance (points to the same api.aave.com/graphql)
 const v4Client = AaveClient.create();
 
+export function bigintReplacer(_key: string, value: unknown): unknown {
+  return typeof value === 'bigint' ? value.toString() : value;
+}
+
 // ts-prune-ignore-next
 export interface V4FetchResult {
   mapped: V4FormattedReserveData[];
