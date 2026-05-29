@@ -77,7 +77,8 @@ const MODE_TYPE_MAP: Record<string, CampaignForecastType> = {
 
 const normalizeByDistributionMethod = (value: string | undefined): CampaignForecastType | null => {
   if (!value) return null;
-  return METHOD_TYPE_MAP[value.trim().toUpperCase()] ?? null;
+  const upper = value.trim().toUpperCase();
+  return METHOD_TYPE_MAP[upper] ?? null;
 };
 
 const normalizeByDistributionType = (value: string | undefined): CampaignForecastType | null => {
@@ -91,7 +92,8 @@ const normalizeByDistributionType = (value: string | undefined): CampaignForecas
 
 const normalizeByMode = (value: string | undefined): CampaignForecastType | null => {
   if (!value) return null;
-  return MODE_TYPE_MAP[value.trim().toUpperCase()] ?? null;
+  const upper = value.trim().toUpperCase();
+  return MODE_TYPE_MAP[upper] ?? null;
 };
 
 export const normalizeCampaignType = (input: NormalizeCampaignTypeInput | unknown): CampaignForecastType | null => {

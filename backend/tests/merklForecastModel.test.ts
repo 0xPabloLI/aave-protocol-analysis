@@ -19,10 +19,13 @@ test('normalizeCampaignType: distributionMethod takes priority', () => {
     normalizeCampaignType({ distributionMethod: 'DUTCH_AUCTION' }),
     'DUTCH_AUCTION'
   );
-  assert.equal(normalizeCampaignType({ distributionMethod: 'AIRDROP' }), null);
+  assert.equal(
+    normalizeCampaignType({ distributionMethod: 'AIRDROP' }),
+    null
+  );
 });
 
-test('normalizeCampaignType: distributionType fallback', () => {
+test('normalizeCampaignType: distributionType fallback when method unrecognized', () => {
   assert.equal(
     normalizeCampaignType({ distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' }),
     'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
@@ -49,7 +52,7 @@ test('normalizeCampaignType: distributionType fallback', () => {
   );
 });
 
-test('normalizeCampaignType: new AAVE/ERC4626 types', () => {
+test('normalizeCampaignType: new AAVE/ERC4626 types via distributionType', () => {
   assert.equal(
     normalizeCampaignType({ distributionType: 'AAVE_NET_APR' }),
     'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
@@ -64,7 +67,11 @@ test('normalizeCampaignType: new AAVE/ERC4626 types', () => {
   );
 });
 
-test('normalizeCampaignType: mode fallback', () => {
+test('normalizeCampaignType: mode fallback when type/method unrecognized', () => {
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'AAVE_NET_APR', mode: 'MAX_APR' }),
+    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
   assert.equal(
     normalizeCampaignType({ mode: 'MAX_APR' }),
     'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
@@ -75,7 +82,7 @@ test('normalizeCampaignType: mode fallback', () => {
   );
 });
 
-test('normalizeCampaignType: priority method > type > mode', () => {
+test('normalizeCampaignType: priority order method > type > mode', () => {
   assert.equal(
     normalizeCampaignType({ distributionMethod: 'FIX_APR', distributionType: 'DUTCH_AUCTION', mode: 'MAX_APR' }),
     'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'

@@ -537,7 +537,7 @@ const persistMerklArtifacts = async (payload: MerklArtifactsPayload): Promise<vo
   );
 };
 
-interface NormalizeForecastCampaignTypeLiteInput {
+export interface NormalizeForecastCampaignTypeLiteInput {
   distributionType?: string;
   distributionMethod?: string;
   mode?: string;
@@ -569,7 +569,7 @@ const FORECAST_LITE_MODE_MAP: Record<string, ForecastCampaignTypeLite> = {
   FIX_APR: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
 };
 
-const normalizeForecastCampaignTypeLite = (
+export const normalizeForecastCampaignTypeLite = (
   input: NormalizeForecastCampaignTypeLiteInput | unknown
 ): ForecastCampaignTypeLite | null => {
   if (!input || typeof input !== 'object') return null;
@@ -627,7 +627,7 @@ const buildCampaignSnapshotLiteForForecastFile = (campaign: any): CampaignSnapsh
   return snapshot;
 };
 
-const buildForecastCampaignMetaLiteMap = (
+export const buildForecastCampaignMetaLiteMap = (
   opportunities: MerklOpportunity[]
 ): Record<string, ForecastCampaignMetaLite> => {
   const result: Record<string, ForecastCampaignMetaLite> = {};

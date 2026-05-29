@@ -446,7 +446,10 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
 
       const rawDistributionType = getAtPath(value, ['rawDistributionType']);
       const rawMode = getAtPath(value, ['rawMode']);
-      const campaignTypeHint = normalizeCampaignType({ distributionType: rawDistributionType, mode: rawMode });
+      const campaignTypeHint = normalizeCampaignType({
+        distributionType: typeof rawDistributionType === 'string' ? rawDistributionType : undefined,
+        mode: typeof rawMode === 'string' ? rawMode : undefined,
+      });
       if (!campaignTypeHint) continue;
 
       const campaignSnapshotRaw = getAtPath(value, ['campaignSnapshot']);
@@ -469,7 +472,7 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
   }
 };
 
-const buildCampaignOpportunityMetaMapFromOpportunities = (
+export const buildCampaignOpportunityMetaMapFromOpportunities = (
   allOpps: unknown[]
 ): Map<string, CampaignOpportunityMeta> => {
   const map = new Map<string, CampaignOpportunityMeta>();
@@ -495,21 +498,25 @@ const buildCampaignOpportunityMetaMapFromOpportunities = (
       const campaignSnapshot = campaignSnapshotById.get(campaignId) ?? null;
       const useTokenRateInMetrics = campaignUsesTokenRateInMetrics(breakdown);
 
-      const breakdownDistributionTypeRaw =
-        getAtPath(breakdown, ['distributionType']) ?? getAtPath(breakdown, ['distributionMethod']);
-      const oppDistributionTypeRaw = getAtPath(opp, ['distributionType']);
-      const effectiveDistributionType =
-        (typeof breakdownDistributionTypeRaw === 'string' && breakdownDistributionTypeRaw) ||
+      const breakdownDistributionType =
+        (typeof getAtPath(breakdown, ['distributionType']) === 'string' && getAtPath(breakdown, ['distributionType'])) ||
         (typeof oppDistributionTypeRaw === 'string' && oppDistributionTypeRaw) ||
         undefined;
-      let modeValue: string | undefined;
-      for (const c of oppCampaigns) {
-        if (getAtPath(c, ['id']) === campaignId) {
-          const m = getAtPath(c, ['params', 'distributionMethodParameters', 'distributionSettings', 'mode']);
-          if (typeof m === 'string') { modeValue = m; break; }
-        }
-      }
-      const hintType = normalizeCampaignType({ distributionType: effectiveDistributionType, mode: modeValue });
+      const breakdownDistributionMethod =
+        (typeof getAtPath(breakdown, ['distributionMethod']) === 'string' && getAtPath(breakdown, ['distributionMethod'])) ||
+        undefined;
+      const matchingCampaign = oppCampaigns.find(
+        (c: any) => String(getAtPath(c, ['id']) || '') === campaignId
+      );
+      const mode =
+        getAtPath(matchingCampaign, ['params', 'distributionMethodParameters', 'distributionSettings', 'mode']) ||
+        undefined;
+
+      const hintType = normalizeCampaignType({
+        distributionType: breakdownDistributionType,
+        distributionMethod: breakdownDistributionMethod,
+        mode,
+      });
       if (!hintType) return;
 
       const previous = map.get(campaignId);
