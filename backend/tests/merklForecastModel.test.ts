@@ -6,18 +6,96 @@ import {
   normalizeCampaignType,
 } from '../src/services/merklForecastModel.js';
 
-test('normalizeCampaignType maps only supported Merkl types', () => {
+test('normalizeCampaignType: distributionMethod takes priority', () => {
   assert.equal(
-    normalizeCampaignType('MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'),
+    normalizeCampaignType({ distributionMethod: 'MAX_APR' }),
     'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   );
-  assert.equal(normalizeCampaignType('MAX_APR'), null);
-  assert.equal(normalizeCampaignType('DUTCH_AUCTION'), 'DUTCH_AUCTION');
   assert.equal(
-    normalizeCampaignType('FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'),
+    normalizeCampaignType({ distributionMethod: 'FIX_APR' }),
     'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   );
-  assert.equal(normalizeCampaignType('FIX_APR'), null);
+  assert.equal(
+    normalizeCampaignType({ distributionMethod: 'DUTCH_AUCTION' }),
+    'DUTCH_AUCTION'
+  );
+  assert.equal(normalizeCampaignType({ distributionMethod: 'AIRDROP' }), null);
+});
+
+test('normalizeCampaignType: distributionType fallback', () => {
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' }),
+    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT' }),
+    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' }),
+    'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE' }),
+    'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' }),
+    'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'DUTCH_AUCTION' }),
+    'DUTCH_AUCTION'
+  );
+});
+
+test('normalizeCampaignType: new AAVE/ERC4626 types', () => {
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'AAVE_NET_APR' }),
+    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'AAVE_V4_NET_APR' }),
+    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'ERC4626_APR' }),
+    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+});
+
+test('normalizeCampaignType: mode fallback', () => {
+  assert.equal(
+    normalizeCampaignType({ mode: 'MAX_APR' }),
+    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+  assert.equal(
+    normalizeCampaignType({ mode: 'FIX_APR' }),
+    'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+});
+
+test('normalizeCampaignType: priority method > type > mode', () => {
+  assert.equal(
+    normalizeCampaignType({ distributionMethod: 'FIX_APR', distributionType: 'DUTCH_AUCTION', mode: 'MAX_APR' }),
+    'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionMethod: 'AIRDROP', distributionType: 'DUTCH_AUCTION', mode: 'MAX_APR' }),
+    'DUTCH_AUCTION'
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionMethod: 'AIRDROP', distributionType: 'AAVE_NET_APR', mode: 'FIX_APR' }),
+    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  );
+});
+
+test('normalizeCampaignType: null/invalid inputs', () => {
+  assert.equal(normalizeCampaignType({}), null);
+  assert.equal(normalizeCampaignType(null), null);
+  assert.equal(normalizeCampaignType(undefined), null);
+  assert.equal(normalizeCampaignType('string'), null);
+  assert.equal(normalizeCampaignType({ distributionType: 'UNKNOWN_TYPE' }), null);
 });
 
 test('buildForecastState supports DUTCH_AUCTION without apr cap', () => {

@@ -444,8 +444,9 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
       const tvl = toNumber(getAtPath(value, ['tvl']));
       if (tvl === null || tvl < 0) continue;
 
-      const rawHint = getAtPath(value, ['campaignTypeHint']);
-      const campaignTypeHint = normalizeCampaignType(rawHint);
+      const rawDistributionType = getAtPath(value, ['rawDistributionType']);
+      const rawMode = getAtPath(value, ['rawMode']);
+      const campaignTypeHint = normalizeCampaignType({ distributionType: rawDistributionType, mode: rawMode });
       if (!campaignTypeHint) continue;
 
       const campaignSnapshotRaw = getAtPath(value, ['campaignSnapshot']);
@@ -496,11 +497,19 @@ const buildCampaignOpportunityMetaMapFromOpportunities = (
 
       const breakdownDistributionTypeRaw =
         getAtPath(breakdown, ['distributionType']) ?? getAtPath(breakdown, ['distributionMethod']);
-      const rawType =
+      const oppDistributionTypeRaw = getAtPath(opp, ['distributionType']);
+      const effectiveDistributionType =
         (typeof breakdownDistributionTypeRaw === 'string' && breakdownDistributionTypeRaw) ||
         (typeof oppDistributionTypeRaw === 'string' && oppDistributionTypeRaw) ||
-        null;
-      const hintType = normalizeCampaignType(rawType);
+        undefined;
+      let modeValue: string | undefined;
+      for (const c of oppCampaigns) {
+        if (getAtPath(c, ['id']) === campaignId) {
+          const m = getAtPath(c, ['params', 'distributionMethodParameters', 'distributionSettings', 'mode']);
+          if (typeof m === 'string') { modeValue = m; break; }
+        }
+      }
+      const hintType = normalizeCampaignType({ distributionType: effectiveDistributionType, mode: modeValue });
       if (!hintType) return;
 
       const previous = map.get(campaignId);

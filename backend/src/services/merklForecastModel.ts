@@ -46,27 +46,64 @@ const safeNumber = (value: unknown, fallback = 0): number => {
   return fallback;
 };
 
-export const normalizeCampaignType = (value: unknown): CampaignForecastType | null => {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().toUpperCase();
-  if (!normalized) return null;
+export interface NormalizeCampaignTypeInput {
+  distributionType?: string;
+  distributionMethod?: string;
+  mode?: string;
+}
 
-  if (normalized.includes('MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
-    return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
-  }
-  if (normalized.includes('DUTCH_AUCTION')) {
-    return 'DUTCH_AUCTION';
-  }
-  if (normalized.includes('FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
-    return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
-  }
-  if (normalized.includes('AAVE_NET_APR')) {
-    return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
-  }
-  if (normalized.includes('AAVE_V4_NET_APR')) {
-    return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+const METHOD_TYPE_MAP: Record<string, CampaignForecastType> = {
+  MAX_APR: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+  FIX_APR: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+  DUTCH_AUCTION: 'DUTCH_AUCTION',
+};
+
+const DISTRIBUTION_TYPE_PATTERNS: Array<{ pattern: string; result: CampaignForecastType }> = [
+  { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'DUTCH_AUCTION', result: 'DUTCH_AUCTION' },
+  { pattern: 'AAVE_NET_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'AAVE_V4_NET_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'ERC4626_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+];
+
+const MODE_TYPE_MAP: Record<string, CampaignForecastType> = {
+  MAX_APR: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+  FIX_APR: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+};
+
+const normalizeByDistributionMethod = (value: string | undefined): CampaignForecastType | null => {
+  if (!value) return null;
+  return METHOD_TYPE_MAP[value.trim().toUpperCase()] ?? null;
+};
+
+const normalizeByDistributionType = (value: string | undefined): CampaignForecastType | null => {
+  if (!value) return null;
+  const upper = value.trim().toUpperCase();
+  for (const { pattern, result } of DISTRIBUTION_TYPE_PATTERNS) {
+    if (upper.includes(pattern)) return result;
   }
   return null;
+};
+
+const normalizeByMode = (value: string | undefined): CampaignForecastType | null => {
+  if (!value) return null;
+  return MODE_TYPE_MAP[value.trim().toUpperCase()] ?? null;
+};
+
+export const normalizeCampaignType = (input: NormalizeCampaignTypeInput | unknown): CampaignForecastType | null => {
+  if (!input || typeof input !== 'object') return null;
+  const { distributionType, distributionMethod, mode } = input as NormalizeCampaignTypeInput;
+
+  return (
+    normalizeByDistributionMethod(distributionMethod) ??
+    normalizeByDistributionType(distributionType) ??
+    normalizeByMode(mode) ??
+    null
+  );
 };
 
 export const buildForecastState = (input: BuildForecastStateInput): MerklForecastState => {
