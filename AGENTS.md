@@ -178,6 +178,7 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 - **中间态产物在使命完成后必须立即清理**：迁移安全路径中的临时中间态（如兼容函数、桥接列、过渡视图），一旦最终步骤执行完成且验证通过，必须立即删除，不要留到"下次清理"。
 - **设计选项 ≠ 必经步骤**：文档中提出的可选方案需先验证是否有实际消费者，无消费者则直接跳过，不要机械写入任务清单并执行。
 - **跨 session 边界**：commit 前必须检查 `git diff`，确认所有变更都属于当前 session。其他 session 的遗留改动（未暂存/未提交）不得静默打包进 commit，必须先跟用户确认归属和处置方式。
+- **报线上问题时必须给完整具体 URL**：不能只说"API 返回 404"，必须给出完整 curl 命令和响应。本项目的 API 基路径是 `/api/markets`（不是 `/markets`），health check 是 `/health`。
 
 ## Agent skills
 

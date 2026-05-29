@@ -1082,8 +1082,8 @@ export async function runMarketsFetcher(): Promise<void> {
     
     // 第二步：将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
     logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
-  const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
-    
+    const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData, undefined);
+
     logger.info(`🎯 Final dataset contains ${enrichedData.length} token combinations`);
     
     // 保存格式化 JSON 数据（完整 debug 全量）
@@ -1223,7 +1223,7 @@ export async function fetchMarketsData(options?: {
 
   // Enrich with incentive data
   logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
-  const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
+  const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData, options?.cachedConstraints);
   const runtimeData = enrichedData;
 
   logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves`);

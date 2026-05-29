@@ -91,20 +91,25 @@ Layer 1 对 `AAVE_NET_*` 的覆盖率：100%（17/17）。
 
 ## Known Defects
 
-### Defect 1: Layer 2 死代码
+### Defect 1: Layer 2 死代码 ✅ 已修复
 
-**位置**：
-- `packages/aave-fetcher/src/index.ts` L1194-1196: `fetchMarketsData` 签名只接受 `{v4Fatal?}`
-- `packages/aave-fetcher/src/index.ts` L540: `cachedConstraint` 硬编码 `undefined`
-- `backend/src/services/marketsService.ts` L203: 传了 `cachedConstraints` 但被 TS 静默忽略（弱类型 `options?`）
+**原位置**：
+- `packages/aave-fetcher/src/index.ts`: `fetchMarketsData` 签名只接受 `{v4Fatal?}`
+- `packages/aave-fetcher/src/index.ts`: `cachedConstraint` 硬编码 `undefined`
+- `backend/src/services/marketsService.ts`: 传了 `cachedConstraints` 但被 TS 静默忽略（弱类型 `options?`）
 
-**影响**：每个机会每次刷新都从 Layer 1 开始，无法复用上一快照的结果。当 Layer 1 因 Merkl 数据变化暂时返回 null 时，constraint 丢失而非降级到缓存。
+**原影响**：每个机会每次刷新都从 Layer 1 开始，无法复用上一快照的结果。当 Layer 1 因 Merkl 数据变化暂时返回 null 时，constraint 丢失而非降级到缓存。
 
-**修复方向**：`fetchMarketsData` 签名新增 `cachedConstraints?` 参数，调用处从上一快照提取并传入。
+**修复内容**：
+1. `fetchMarketsData` 签名新增 `cachedConstraints?` 参数
+2. `fetchMarketsData` 内部调用 `enrichDatasetWithIncentiveData(..., options?.cachedConstraints)` 传入第 5 参数
+3. CLI 入口 `runMarketsFetcher` 调用时传 `undefined`
 
-### Defect 2: Layer 3 OpenRouter 链路不可达
+**审查发现**：commit `c7a6305` 修改了签名但遗漏了内部调用穿透，Layer 2 仍为死代码。后续在代码审查中捕获并修复。
 
-**位置**：
+### Defect 2: Layer 3 OpenRouter 链路不可达 ✅ 已修复
+
+**原位置**：
 - `packages/aave-fetcher/src/index.ts` L505-507: `llmConfig` 来自 `LLM_API_KEY`/`LLM_BASE_URL`
 - `packages/aave-fetcher/src/index.ts` L538: `callLlmWithFallback(prompt, llmConfig)` — 只传 `primaryConfig`，未传 `openrouterConfig`
 
@@ -121,6 +126,8 @@ Layer 1 对 `AAVE_NET_*` 的覆盖率：100%（17/17）。
 1. 从 `OPENROUTER_API_KEY` 构建 `openrouterConfig`
 2. `callLlmWithFallback(prompt, primaryConfig, openrouterConfig)` 传入第三个参数
 3. 或者：统一为一套环境变量，不再区分 `LLM_*` / `OPENROUTER_*`
+
+**修复内容**：已在 `c7a6305` 中实现方向 1+2。注意：Layer 3 仅在 `OPENROUTER_API_KEY` 有值时真正可达（`LLM_FALLBACK_MODELS=[]`，primary 链路为空），线上已部署此 key。
 
 ## Open Questions
 
