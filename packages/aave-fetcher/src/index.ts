@@ -19,7 +19,7 @@ import {
   findMatchingMerklOpportunities,
   formatMerklBreakdown,
   detectNetPositionConstraint,
-  NetPositionConstraint
+  type NetPositionConstraint,
 } from './merkl-api.js';
 import { buildLlmPrompt, callLlmWithFallback } from './merklLlmClient.js';
 import type { LlmClientConfig } from './merklLlmClient.js';
@@ -35,7 +35,7 @@ import {
   checkAndReportSessionStatus,
   closeBrowserInstances
 } from './cloudflare-browser.js';
-import { fetchV4ReservesData } from './v4-fetcher.js';
+import { fetchV4ReservesData, bigintReplacer } from './v4-fetcher.js';
 import type { V4FetchResult } from './v4-fetcher.js';
 import type { RuntimeReserveData, MarketsPayload } from '@internal/aave-shared-contracts';
 export type { RuntimeReserveData, MarketsPayload } from '@internal/aave-shared-contracts';
@@ -48,7 +48,6 @@ export type {
   BrevisCampaignItem,
 } from '@internal/aave-shared-contracts';
 export type { MeritAprEntry } from '@internal/aave-shared-contracts';
-export type { NetPositionConstraint } from './merkl-api.js';
 
 export function getDataDir(): string {
   return process.env.FETCHER_DATA_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
@@ -302,10 +301,18 @@ async function buildMarketsBaseDataset(v3Markets: any[], options?: {
   let v4Dataset: RuntimeReserveData[] = [];
   let v4Raw: V4FetchResult['raw'] = { reserves: [] };
   const v4Fatal = options?.v4Fatal ?? false;
+  // V4 fetch isolation: independent timeout prevents slow V4 API from
+  // consuming the outer 60s Markets fetch timeout and blocking V3 data.
+  const V4_FETCH_TIMEOUT_MS = 25_000;
   try {
     // Option 1: V4 now has retry logic (3 attempts with backoff), matching V3 reliability.
     // Option 2: When v4Fatal=true, V4 failure throws (equal importance to V3).
-    const v4Result = await fetchV4ReservesData({ throwOnFinalFailure: v4Fatal });
+    const v4Result = await Promise.race([
+      fetchV4ReservesData({ throwOnFinalFailure: v4Fatal }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('V4 fetch timeout (non-fatal)')), V4_FETCH_TIMEOUT_MS)
+      ),
+    ]);
     v4Dataset = v4Result.mapped;
     v4Raw = v4Result.raw;
     if (v4Dataset.length > 0) {
@@ -485,7 +492,7 @@ async function enrichDatasetWithIncentiveData(
   meritData: MeritDataIndex,
   merklData: MerklDataIndex,
   brevisData: BrevisDataIndex,
-  cachedConstraints?: Map<string, NetPositionConstraint>
+  cachedConstraints?: Map<string, NetPositionConstraint>,
 ): Promise<RuntimeReserveData[]> {
   const reserveIdSet = new Set<string>();
   const symbolLookup = new Map<string, string>();
@@ -531,21 +538,12 @@ async function enrichDatasetWithIncentiveData(
       
       // 收集所有 matchedOpportunities 中的 breakdowns
       for (const opp of matchedOpportunities) {
-        const offsetSymbols: string[] = [];
-        for (const ota of (opp.offsetTokenAddresses ?? [])) {
-          for (const [key, addr] of symbolLookup) {
-            if (addr.toLowerCase() === ota.address.toLowerCase()) {
-              offsetSymbols.push(key.split(':')[1]);
-              break;
-            }
-          }
-        }
-        const uniqueTokenSymbols = [...new Set([item.tokenSymbol, ...offsetSymbols])];
         const llmFn = (llmConfig || openrouterConfig) ? () => {
-          const prompt = buildLlmPrompt({ type: opp.opportunityType ?? 'unknown', action: opp.name ?? opp.opportunityType ?? 'unknown', description: opp.description ?? '', tokenSymbols: uniqueTokenSymbols });
+          const prompt = buildLlmPrompt({ type: opp.opportunityType ?? 'unknown', action: opp.name ?? opp.opportunityType ?? 'unknown', description: opp.description ?? '', tokenSymbols: [item.tokenSymbol] });
           return callLlmWithFallback(prompt, llmConfig, openrouterConfig);
         } : undefined;
-        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, opp.opportunityLink ? cachedConstraints?.get(opp.opportunityLink) : undefined, llmFn);
+        const cachedConstraint = opp.opportunityLink ? cachedConstraints?.get(opp.opportunityLink) : undefined;
+        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, cachedConstraint, llmFn);
         if (opp.opportunityLink) {
           if (opp.supply.length > 0) {
             const supplyWithLinks = opp.supply.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
@@ -1084,7 +1082,7 @@ export async function runMarketsFetcher(): Promise<void> {
     
     // 第二步：将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
     logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
-    const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
+  const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
     
     logger.info(`🎯 Final dataset contains ${enrichedData.length} token combinations`);
     
@@ -1225,7 +1223,7 @@ export async function fetchMarketsData(options?: {
 
   // Enrich with incentive data
   logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
-  const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData, options?.cachedConstraints);
+  const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData);
   const runtimeData = enrichedData;
 
   logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves`);
@@ -1292,7 +1290,7 @@ async function writeDebugSnapshot(
         },
         reserves: v4Raw.reserves,
       },
-      (_key: string, value: unknown) => typeof value === 'bigint' ? value.toString() : value,
+      bigintReplacer as any,
       2,
     );
     await writeFile(join(DEBUG_DATA_DIR, 'v4-raw-sdk-response.json'), rawJson, 'utf-8');
@@ -1302,3 +1300,5 @@ async function writeDebugSnapshot(
     `💾 Debug snapshots written (enriched: ${enrichedData.length}, V3: ${v3Count}, V4: ${v4Count})`,
   );
 }
+
+export type { NetPositionConstraint } from './merkl-api.js';

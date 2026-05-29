@@ -362,6 +362,8 @@ interface ForecastCampaignMetaLite {
   campaignTypeHint: ForecastCampaignTypeLite;
   campaignSnapshot: CampaignSnapshotLiteForForecastFile | null;
   useTokenRateInMetrics: boolean;
+  rawDistributionType?: string;
+  rawMode?: string;
 }
 
 interface ProcessMerklDataOptions {
@@ -535,25 +537,63 @@ const persistMerklArtifacts = async (payload: MerklArtifactsPayload): Promise<vo
   );
 };
 
-const normalizeForecastCampaignTypeLite = (value: unknown): ForecastCampaignTypeLite | null => {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().toUpperCase();
-  if (!normalized) return null;
-  if (normalized.includes('MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
-    return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+interface NormalizeForecastCampaignTypeLiteInput {
+  distributionType?: string;
+  distributionMethod?: string;
+  mode?: string;
+}
+
+const FORECAST_LITE_METHOD_MAP: Record<string, ForecastCampaignTypeLite> = {
+  MAX_APR: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+  FIX_APR: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+  DUTCH_AUCTION: 'DUTCH_AUCTION',
+};
+
+const FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS: Array<{
+  pattern: string;
+  result: ForecastCampaignTypeLite;
+}> = [
+  { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'DUTCH_AUCTION', result: 'DUTCH_AUCTION' },
+  { pattern: 'AAVE_NET_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'AAVE_V4_NET_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'ERC4626_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+];
+
+const FORECAST_LITE_MODE_MAP: Record<string, ForecastCampaignTypeLite> = {
+  MAX_APR: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+  FIX_APR: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+};
+
+const normalizeForecastCampaignTypeLite = (
+  input: NormalizeForecastCampaignTypeLiteInput | unknown
+): ForecastCampaignTypeLite | null => {
+  if (!input || typeof input !== 'object') return null;
+  const { distributionType, distributionMethod, mode } = input as NormalizeForecastCampaignTypeLiteInput;
+
+  if (distributionMethod) {
+    const upper = distributionMethod.trim().toUpperCase();
+    const hit = FORECAST_LITE_METHOD_MAP[upper];
+    if (hit) return hit;
   }
-  if (normalized.includes('DUTCH_AUCTION')) {
-    return 'DUTCH_AUCTION';
+
+  if (distributionType) {
+    const upper = distributionType.trim().toUpperCase();
+    for (const { pattern, result } of FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS) {
+      if (upper.includes(pattern)) return result;
+    }
   }
-  if (normalized.includes('FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE')) {
-    return 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+
+  if (mode) {
+    const upper = mode.trim().toUpperCase();
+    const hit = FORECAST_LITE_MODE_MAP[upper];
+    if (hit) return hit;
   }
-  if (normalized.includes('AAVE_NET_APR')) {
-    return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
-  }
-  if (normalized.includes('AAVE_V4_NET_APR')) {
-    return 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
-  }
+
   return null;
 };
 
@@ -611,13 +651,25 @@ const buildForecastCampaignMetaLiteMap = (
       const campaignId = String(breakdown?.campaignId || '').trim();
       if (!campaignId) continue;
 
-      const rawType =
+      const breakdownDistributionType =
         (typeof breakdown?.distributionType === 'string' && breakdown.distributionType) ||
-        (typeof breakdown?.distributionMethod === 'string' && breakdown.distributionMethod) ||
         (typeof opp?.distributionType === 'string' && opp.distributionType) ||
-        null;
+        undefined;
+      const breakdownDistributionMethod =
+        (typeof breakdown?.distributionMethod === 'string' && breakdown.distributionMethod) ||
+        undefined;
+      const campaignObj = opp.campaigns?.find(
+        (c: any) => String(c?.id || '') === campaignId
+      );
+      const mode =
+        campaignObj?.params?.distributionMethodParameters?.distributionSettings?.mode ||
+        undefined;
 
-      const campaignTypeHint = normalizeForecastCampaignTypeLite(rawType);
+      const campaignTypeHint = normalizeForecastCampaignTypeLite({
+        distributionType: breakdownDistributionType,
+        distributionMethod: breakdownDistributionMethod,
+        mode,
+      });
       if (!campaignTypeHint) continue;
 
       const existing = result[campaignId];
@@ -631,6 +683,8 @@ const buildForecastCampaignMetaLiteMap = (
           campaignTypeHint,
           campaignSnapshot,
           useTokenRateInMetrics,
+          rawDistributionType: breakdownDistributionType,
+          rawMode: typeof mode === 'string' ? mode : undefined,
         };
         continue;
       }
@@ -641,6 +695,8 @@ const buildForecastCampaignMetaLiteMap = (
         campaignTypeHint: existing.campaignTypeHint,
         campaignSnapshot: existing.campaignSnapshot ?? campaignSnapshot,
         useTokenRateInMetrics: existing.useTokenRateInMetrics || useTokenRateInMetrics,
+        rawDistributionType: existing.rawDistributionType ?? breakdownDistributionType,
+        rawMode: existing.rawMode ?? (typeof mode === 'string' ? mode : undefined),
       };
     }
   }

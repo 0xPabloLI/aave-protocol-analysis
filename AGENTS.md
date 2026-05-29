@@ -70,6 +70,7 @@ to the DB service, replacing PostgreSQL with a Node.js container.
 3. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
 4. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`.
 5. **Branch discipline**: all development commits go directly on `railway` branch. Do NOT create feature branches or worktrees unless explicitly asked by the user. If a stray branch exists, merge it into `railway` and delete it promptly.
+6. **Cross-session boundary**: before committing, inspect `git diff` and `git diff --staged` for changes not made in the current session. If unrelated unstaged/unstaged changes exist (from another session or prior work), **STOP** and confirm with the user whether to include, exclude, or stash them. Never silently bundle foreign changes into your commit.
 
 ## Architecture Rules
 - ES modules only: local TS imports must use `.js` extension in source imports.
@@ -176,6 +177,7 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 ## Lessons Learned
 - **中间态产物在使命完成后必须立即清理**：迁移安全路径中的临时中间态（如兼容函数、桥接列、过渡视图），一旦最终步骤执行完成且验证通过，必须立即删除，不要留到"下次清理"。
 - **设计选项 ≠ 必经步骤**：文档中提出的可选方案需先验证是否有实际消费者，无消费者则直接跳过，不要机械写入任务清单并执行。
+- **跨 session 边界**：commit 前必须检查 `git diff`，确认所有变更都属于当前 session。其他 session 的遗留改动（未暂存/未提交）不得静默打包进 commit，必须先跟用户确认归属和处置方式。
 
 ## Agent skills
 
