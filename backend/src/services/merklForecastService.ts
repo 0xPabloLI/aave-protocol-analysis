@@ -445,9 +445,11 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
       if (tvl === null || tvl < 0) continue;
 
       const rawDistributionType = getAtPath(value, ['rawDistributionType']);
+      const rawDistributionMethod = getAtPath(value, ['rawDistributionMethod']);
       const rawMode = getAtPath(value, ['rawMode']);
       const campaignTypeHint = normalizeCampaignType({
         distributionType: typeof rawDistributionType === 'string' ? rawDistributionType : undefined,
+        distributionMethod: typeof rawDistributionMethod === 'string' ? rawDistributionMethod : undefined,
         mode: typeof rawMode === 'string' ? rawMode : undefined,
       });
       if (!campaignTypeHint) continue;

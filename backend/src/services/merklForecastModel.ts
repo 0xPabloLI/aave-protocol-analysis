@@ -85,7 +85,7 @@ const normalizeByDistributionType = (value: string | undefined): CampaignForecas
   if (!value) return null;
   const upper = value.trim().toUpperCase();
   for (const { pattern, result } of DISTRIBUTION_TYPE_PATTERNS) {
-    if (upper.includes(pattern)) return result;
+    if (upper === pattern) return result;
   }
   return null;
 };

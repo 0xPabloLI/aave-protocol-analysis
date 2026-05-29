@@ -363,6 +363,7 @@ interface ForecastCampaignMetaLite {
   campaignSnapshot: CampaignSnapshotLiteForForecastFile | null;
   useTokenRateInMetrics: boolean;
   rawDistributionType?: string;
+  rawDistributionMethod?: string;
   rawMode?: string;
 }
 
@@ -584,7 +585,7 @@ export const normalizeForecastCampaignTypeLite = (
   if (distributionType) {
     const upper = distributionType.trim().toUpperCase();
     for (const { pattern, result } of FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS) {
-      if (upper.includes(pattern)) return result;
+      if (upper === pattern) return result;
     }
   }
 
@@ -684,6 +685,7 @@ export const buildForecastCampaignMetaLiteMap = (
           campaignSnapshot,
           useTokenRateInMetrics,
           rawDistributionType: breakdownDistributionType,
+          rawDistributionMethod: breakdownDistributionMethod,
           rawMode: typeof mode === 'string' ? mode : undefined,
         };
         continue;
@@ -696,6 +698,7 @@ export const buildForecastCampaignMetaLiteMap = (
         campaignSnapshot: existing.campaignSnapshot ?? campaignSnapshot,
         useTokenRateInMetrics: existing.useTokenRateInMetrics || useTokenRateInMetrics,
         rawDistributionType: existing.rawDistributionType ?? breakdownDistributionType,
+        rawDistributionMethod: existing.rawDistributionMethod ?? breakdownDistributionMethod,
         rawMode: existing.rawMode ?? (typeof mode === 'string' ? mode : undefined),
       };
     }

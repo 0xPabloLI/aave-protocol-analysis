@@ -111,4 +111,6 @@ Applied to:
 - **Positive**: All 11 known campaign type combinations now map correctly; no data loss
 - **Positive**: Test coverage: 34 new tests across 4 test files
 - **Neutral**: Function signatures changed from `(string)` to `(object)` — breaking API change for any external consumer (none exist)
-- **Neutral**: `ForecastCampaignMetaLite` interface gained `rawDistributionType?` and `rawMode?` fields for debugging transparency
+- **Neutral**: `ForecastCampaignMetaLite` interface gained `rawDistributionType?`, `rawDistributionMethod?`, and `rawMode?` fields for debugging transparency and L1 priority restoration from lite files
+- **Trade-off (DRY)**: `merklForecastModel.ts` and `merkl-api.ts` each define their own 3 mapping tables + 3 normalize functions with identical logic. This duplication is intentional: the former handles backend runtime normalization, the latter handles lite file preprocessing in the fetcher package. Moving the shared tables to `@internal/aave-shared-contracts` would couple runtime behavior to the types-only package, violating the workspace boundary. The cost is that new mapping entries must be added to both files — accepted as a 2-location sync burden.
+- **Precision**: Level 2 matching uses exact equality (`===`) rather than substring matching (`includes`) to prevent future false positives if Merkl introduces a distributionType that contains a known pattern as a substring but has different semantics
