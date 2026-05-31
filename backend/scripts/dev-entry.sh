@@ -6,6 +6,27 @@ cd "$(dirname "$0")/.."
 
 bash scripts/dev-clean.sh
 
+# Preflight: ensure local Postgres is running (Docker: aave-pg)
+if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^aave-pg$'; then
+  if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^aave-pg$'; then
+    echo "[dev-entry] starting existing aave-pg container..." >&2
+    docker start aave-pg
+  else
+    echo "[dev-entry] creating & starting aave-pg container..." >&2
+    docker run -d --name aave-pg -p 5432:5432 \
+      -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=railway \
+      postgres:16
+  fi
+  echo "[dev-entry] waiting for Postgres to accept connections..." >&2
+  for _i in $(seq 1 15); do
+    if docker exec aave-pg pg_isready -U postgres -d railway >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  echo "[dev-entry] Postgres ready" >&2
+fi
+
 # Preflight: ensure workspace deps fully installed
 _needs_install=0
 
