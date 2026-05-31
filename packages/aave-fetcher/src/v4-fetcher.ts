@@ -133,6 +133,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     const borrowed = r.summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined;
     const supplyCap = r.settings?.supplyCap?.amount?.onChainValue?.toString?.() ?? undefined;
     const borrowCap = r.settings?.borrowCap?.amount?.onChainValue?.toString?.() ?? undefined;
+    const collateralRisk = percentValueToPercent(r.settings?.collateralRisk);
 
     // V4 SDK embeds summary.rewards[] (MerklSupplyReward / MerklBorrowReward) but they
     // are internal Aave points (payout token "aglaMerklUSD") that don't exist in the
@@ -181,6 +182,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(spoke?.id ? { spokeId: String(spoke.id) } : {}),
       ...(spoke?.name ? { spokeName: spoke.name } : {}),
       ...(spoke?.address ? { spokeAddress: spoke.address } : {}),
+      ...(collateralRisk !== undefined ? { collateralRisk } : {}),
     });
   }
 

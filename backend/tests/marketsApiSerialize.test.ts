@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { serializeReserveForApi, roundTo6 } from '../src/services/marketsApiSerialize.js';
 import type { RuntimeReserveData } from '../src/services/marketsService.js';
+import { EXPECTED_RUNTIME_FIELDS } from '@internal/aave-shared-contracts';
 
 test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => {
   const reserve: RuntimeReserveData = {
@@ -509,4 +510,95 @@ test('serializeReserveForApi omits decimals when absent', () => {
 
   const api = serializeReserveForApi(reserve);
   assert.equal('decimals' in api, false);
+});
+
+// --- 序列化覆盖测试：确保 serializeReserveForApi 输出包含所有 EXPECTED_RUNTIME_FIELDS ---
+
+function makeFullReserve(): RuntimeReserveData {
+  return {
+    reserveId: 'test-coverage',
+    marketName: 'AaveV4Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Test Token',
+    tokenSymbol: 'TST',
+    tokenAddress: '0x0000000000000000000000000000000000000001',
+    tokenPrice: 1.5,
+    utilizationPct: 75,
+    aTokenAddress: '0x0000000000000000000000000000000000000002',
+    vTokenAddress: '0x0000000000000000000000000000000000000003',
+    supplyApy: 0.05,
+    supplyDisabled: true,
+    isFrozen: true,
+    isPaused: true,
+    isActive: false,
+    borrowApy: 0.04,
+    borrowDisabled: true,
+    supplyIncentives: [0.01],
+    borrowIncentives: [0.02],
+    decimals: 6,
+    supplyCap: '1000000',
+    borrowCap: '800000',
+    deficit: '0',
+    supplied: '500000',
+    borrowed: '300000',
+    liquidity: '200000',
+    protocolFee: 10,
+    slopeBelowOptimal: 4,
+    slopeAboveOptimal: 80,
+    optimalUtilization: 80,
+    baseBorrowRate: 0.5,
+    aaveProReserveId: '12345',
+    meritSupplys: [{ apr: 0.01, link: 'https://test', startDate: '2025-01-01', endDate: '2025-12-31' }],
+    meritBorrows: [{ apr: 0.02, link: 'https://test', startDate: '2025-01-01', endDate: '2025-12-31' }],
+    merklSupplys: [{ link: 'https://test', breakdowns: [{ campaignApr: 0.03, campaignId: 'cmp-1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }],
+    merklBorrows: [{ link: 'https://test', breakdowns: [{ campaignApr: 0.04, campaignId: 'cmp-2', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }],
+    merklHolds: [{ link: 'https://test', breakdowns: [{ campaignApr: 0.05, campaignId: 'cmp-3', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }],
+    brevisSupplys: [{ link: 'https://test', breakdowns: [{ campaignApr: 0.06, campaignId: 'cmp-4', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }],
+    brevisBorrows: [{ link: 'https://test', breakdowns: [{ campaignApr: 0.07, campaignId: 'cmp-5', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }],
+    hubId: '1',
+    hubName: 'Core',
+    hubAddress: '0x0000000000000000000000000000000000000004',
+    spokeId: '1',
+    spokeName: 'Main',
+    spokeAddress: '0x0000000000000000000000000000000000000005',
+    collateralRisk: 5,
+  };
+}
+
+test('serializeReserveForApi output covers all EXPECTED_RUNTIME_FIELDS', () => {
+  const reserve = makeFullReserve();
+  const api = serializeReserveForApi(reserve);
+  const outputKeys = Object.keys(api);
+
+  const missing: string[] = [];
+  for (const field of EXPECTED_RUNTIME_FIELDS) {
+    if (!outputKeys.includes(field)) {
+      missing.push(field);
+    }
+  }
+
+  assert.equal(missing.length, 0, `serializeReserveForApi is missing fields: ${missing.join(', ')}`);
+});
+
+test('serializeReserveForApi outputs collateralRisk with roundTo6 for V4 reserve', () => {
+  const reserve = makeFullReserve();
+  reserve.collateralRisk = 5.1234567;
+  const api = serializeReserveForApi(reserve);
+  assert.equal(api.collateralRisk, 5.123457);
+});
+
+test('serializeReserveForApi omits collateralRisk for V3 reserve (undefined)', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xabc',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'Test',
+    tokenSymbol: 'TST',
+    tokenAddress: '0xabc',
+  };
+
+  const api = serializeReserveForApi(reserve);
+  assert.equal('collateralRisk' in api, false);
 });

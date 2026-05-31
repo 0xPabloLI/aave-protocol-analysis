@@ -57,6 +57,7 @@ const mockFullReserve = {
   spokeId: '1',
   spokeName: 'Main',
   spokeAddress: '0x5678',
+  collateralRisk: 5,
 };
 
 test('all critical fields defined in EXPECTED_RUNTIME_FIELDS', () => {

@@ -111,6 +111,7 @@ export interface RuntimeReserveData {
   spokeId?: string;
   spokeName?: string;
   spokeAddress?: string;
+  collateralRisk?: number;
 }
 
 // ============================================================
@@ -216,6 +217,7 @@ export const EXPECTED_RUNTIME_FIELDS = [
   'spokeId',
   'spokeName',
   'spokeAddress',
+  'collateralRisk',
 ] as const;
 
 export function validateRuntimeReserveShape(

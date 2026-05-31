@@ -61,8 +61,25 @@ function scaleGroupedCampaigns<
   }));
 }
 
+const PASSTHROUGH_FIELDS = [
+  'tokenPrice', 'utilizationPct', 'aTokenAddress', 'vTokenAddress',
+  'supplyIncentives', 'borrowIncentives',
+  'liquidity', 'borrowed', 'supplied', 'supplyCap', 'borrowCap', 'deficit',
+  'hubId', 'hubName', 'hubAddress', 'spokeId', 'spokeName', 'spokeAddress',
+] as const;
+
+function pickDefined(reserve: RuntimeReserveData, fields: readonly string[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const src = reserve as unknown as Record<string, unknown>;
+  for (const f of fields) {
+    const v = src[f];
+    if (v !== undefined) out[f] = v;
+  }
+  return out;
+}
+
 export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithSpread {
-  const out: MarketWithSpread = {
+  return {
     reserveId: reserve.reserveId,
     marketName: reserve.marketName,
     chainName: reserve.chainName,
@@ -70,62 +87,30 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     tokenName: reserve.tokenName,
     tokenSymbol: reserve.tokenSymbol,
     tokenAddress: reserve.tokenAddress,
+    ...pickDefined(reserve, PASSTHROUGH_FIELDS),
     ...(reserve.aaveProReserveId ? { aaveProReserveId: reserve.aaveProReserveId } : {}),
-    ...(reserve.tokenPrice !== undefined ? { tokenPrice: reserve.tokenPrice } : {}),
-    ...(reserve.utilizationPct !== undefined ? { utilizationPct: reserve.utilizationPct } : {}),
-    ...(reserve.aTokenAddress !== undefined ? { aTokenAddress: reserve.aTokenAddress } : {}),
-    ...(reserve.vTokenAddress !== undefined ? { vTokenAddress: reserve.vTokenAddress } : {}),
-    ...(reserve.supplyApy !== undefined ? { supplyApy: roundTo6(reserve.supplyApy * 100) } : {}),
     ...(reserve.supplyDisabled ? { supplyDisabled: true } : {}),
     ...(reserve.isFrozen ? { isFrozen: true } : {}),
     ...(reserve.isPaused ? { isPaused: true } : {}),
     ...(reserve.isActive === false ? { isActive: false as const } : {}),
-    ...(reserve.borrowApy !== undefined ? { borrowApy: roundTo6(reserve.borrowApy * 100) } : {}),
     ...(reserve.borrowDisabled ? { borrowDisabled: true } : {}),
     ...(reserve.decimals !== undefined && reserve.decimals !== 18 ? { decimals: reserve.decimals } : {}),
-    ...(reserve.liquidity ? { liquidity: reserve.liquidity } : {}),
-    ...(reserve.borrowed ? { borrowed: reserve.borrowed } : {}),
-    ...(reserve.supplied ? { supplied: reserve.supplied } : {}),
-    ...(reserve.supplyCap ? { supplyCap: reserve.supplyCap } : {}),
-    ...(reserve.borrowCap ? { borrowCap: reserve.borrowCap } : {}),
+    ...(reserve.supplyApy !== undefined ? { supplyApy: roundTo6(reserve.supplyApy * 100) } : {}),
+    ...(reserve.borrowApy !== undefined ? { borrowApy: roundTo6(reserve.borrowApy * 100) } : {}),
     ...(reserve.protocolFee ? { protocolFee: roundTo6(reserve.protocolFee) } : {}),
     ...(reserve.slopeBelowOptimal !== undefined ? { slopeBelowOptimal: roundTo6(reserve.slopeBelowOptimal) } : {}),
     ...(reserve.slopeAboveOptimal !== undefined ? { slopeAboveOptimal: roundTo6(reserve.slopeAboveOptimal) } : {}),
     ...(reserve.optimalUtilization !== undefined ? { optimalUtilization: roundTo6(reserve.optimalUtilization) } : {}),
-    ...(reserve.baseBorrowRate !== undefined
-      ? { baseBorrowRate: roundTo6(reserve.baseBorrowRate) }
-      : {}),
-    ...(reserve.deficit !== undefined ? { deficit: reserve.deficit } : {}),
-    ...(reserve.meritSupplys?.length
-      ? { meritSupplys: reserve.meritSupplys.map((e) => scaleMeritEntry(e)) }
-      : {}),
-    ...(reserve.meritBorrows?.length
-      ? { meritBorrows: reserve.meritBorrows.map((e) => scaleMeritEntry(e)) }
-      : {}),
-    ...(reserve.merklSupplys?.length
-      ? { merklSupplys: scaleGroupedCampaigns(reserve.merklSupplys, scaleMerklBreakdown) }
-      : {}),
-    ...(reserve.merklBorrows?.length
-      ? { merklBorrows: scaleGroupedCampaigns(reserve.merklBorrows, scaleMerklBreakdown) }
-      : {}),
-    ...(reserve.merklHolds?.length
-      ? { merklHolds: scaleGroupedCampaigns(reserve.merklHolds, scaleMerklBreakdown) }
-      : {}),
-    ...(reserve.brevisSupplys?.length
-      ? { brevisSupplys: scaleGroupedCampaigns(reserve.brevisSupplys, scaleBrevisBreakdown) }
-      : {}),
-    ...(reserve.brevisBorrows?.length
-      ? { brevisBorrows: scaleGroupedCampaigns(reserve.brevisBorrows, scaleBrevisBreakdown) }
-      : {}),
-    // V4 Hub & Spoke addresses (only for V4 markets)
-    ...(reserve.hubId ? { hubId: reserve.hubId } : {}),
-    ...(reserve.hubName ? { hubName: reserve.hubName } : {}),
-    ...(reserve.hubAddress ? { hubAddress: reserve.hubAddress } : {}),
-    ...(reserve.spokeId ? { spokeId: reserve.spokeId } : {}),
-    ...(reserve.spokeName ? { spokeName: reserve.spokeName } : {}),
-    ...(reserve.spokeAddress ? { spokeAddress: reserve.spokeAddress } : {}),
+    ...(reserve.baseBorrowRate !== undefined ? { baseBorrowRate: roundTo6(reserve.baseBorrowRate) } : {}),
+    ...(reserve.collateralRisk !== undefined ? { collateralRisk: roundTo6(reserve.collateralRisk) } : {}),
+    ...(reserve.meritSupplys?.length ? { meritSupplys: reserve.meritSupplys.map((e) => scaleMeritEntry(e)) } : {}),
+    ...(reserve.meritBorrows?.length ? { meritBorrows: reserve.meritBorrows.map((e) => scaleMeritEntry(e)) } : {}),
+    ...(reserve.merklSupplys?.length ? { merklSupplys: scaleGroupedCampaigns(reserve.merklSupplys, scaleMerklBreakdown) } : {}),
+    ...(reserve.merklBorrows?.length ? { merklBorrows: scaleGroupedCampaigns(reserve.merklBorrows, scaleMerklBreakdown) } : {}),
+    ...(reserve.merklHolds?.length ? { merklHolds: scaleGroupedCampaigns(reserve.merklHolds, scaleMerklBreakdown) } : {}),
+    ...(reserve.brevisSupplys?.length ? { brevisSupplys: scaleGroupedCampaigns(reserve.brevisSupplys, scaleBrevisBreakdown) } : {}),
+    ...(reserve.brevisBorrows?.length ? { brevisBorrows: scaleGroupedCampaigns(reserve.brevisBorrows, scaleBrevisBreakdown) } : {}),
   };
-  return out;
 }
 
 export function serializeMarketsReservesForApi(reserves: RuntimeReserveData[]): MarketWithSpread[] {
@@ -236,6 +221,7 @@ export function computeSchemaFingerprint(): string {
     spokeId: '__fingerprint__',
     spokeName: '__fingerprint__',
     spokeAddress: '0x0000000000000000000000000000000000000001',
+    collateralRisk: 5,
   };
 
   const serialized = serializeReserveForApi(canonical);

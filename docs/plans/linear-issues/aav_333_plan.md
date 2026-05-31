@@ -17,9 +17,9 @@
 
 #### 4.1.1 API schema 扩展
 - 文件：`backend/src/services/marketsApiSerialize.ts`（或对应API序列化文件）
-- 新增字段 `collateralRisk: number`（单位BPS）到每个 V4 reserve 的数据结构
-- V4 fetcher（`src/v4-fetcher.ts`）从链上 `reserve.settings.collateralRisk` 读取该字段
-- V3 reserve 默认 `collateralRisk=0`
+- 新增字段 `collateralRisk?: number`（百分比数字，经 percentValueToPercent 转换）到每个 V4 reserve 的数据结构
+- V4 fetcher（`src/v4-fetcher.ts`）从链上 `reserve.settings.collateralRisk`（PercentNumber 类型）读取该字段
+- V3 reserve 不设置该字段（undefined，API 输出中不出现）
 
 #### 4.1.2 数据流
 - 确保后端API `/api/markets` 返回的reserve数据包含 `collateralRisk` 字段
@@ -77,7 +77,8 @@
 - aaveapy-doc 中的利率公式文档作为计算参考
 
 ## 6. 验收标准
-- 后端API `/api/markets` 返回数据包含正确的 `collateralRisk` 字段
+- 后端API `/api/markets` V4 reserve 数据包含 `collateralRisk` 字段（百分比数字，roundTo6）
+- 后端API `/api/markets` V3 reserve 数据不包含 `collateralRisk` 字段
 - 连接钱包后，用户 portfolio 中资产正确标记 `isCollateral`
 - computeRiskPremium 函数正确计算 RP，符合文档公式
 - Simulation 页面借款利率正确显示带 RP 调整的 Effective Borrow APY
@@ -93,6 +94,25 @@
   - 依赖连接钱包功能，集成难度较高
   - 计算公式较复杂，需要确保准确性和性能
   - UI交互新增，需保证良好用户体验
+
+## 8. Issue 拆分（2026-05-31）
+
+后端部分已完成，前端部分待移至前端 repo。
+
+### 后端（已完成，本项目）
+- **AAV-475**: PRD — 后端新增 collateralRisk 字段 + 序列化层重构 + 防护测试
+- **AAV-476**: 序列化层防护 — pickDefined 辅助函数 + 覆盖测试 ✅
+- **AAV-477**: 类型定义 + 字段注册表新增 collateralRisk ✅
+- **AAV-478**: 序列化层重构 — 拆分透传区/变换区/覆写区 ✅
+- **AAV-479**: V4 fetcher 读取 collateralRisk + V3 默认 undefined ✅
+- **AAV-480**: 序列化层加 collateralRisk (roundTo6) + fingerprint 更新 ✅
+- **AAV-481**: 字段增删指南文档更新 ✅
+
+### 前端（待移至前端 repo）
+- Portfolio RP 计算逻辑 (`computeRiskPremium`)
+- Simulation 集成 (Effective Borrow APY / Supply APY with RP)
+- UI 展示 (SimulationSubRow Risk Premium 行 + PortfolioPanel 汇总区)
+- Batch 模式下 collateral 状态切换交互
 
 ---
 
