@@ -120,5 +120,10 @@ SESSION-BOARD.md
 # MCP config (contains sensitive tokens)
 .trae/mcp.json
 
+# Agent skills (symlinks to global ~/.agents/skills)
+.claude/skills
+.trae/skills
+.cursor/skills
+
 # Git worktrees
 .worktrees/
