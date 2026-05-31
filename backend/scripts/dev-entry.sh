@@ -6,6 +6,26 @@ cd "$(dirname "$0")/.."
 
 bash scripts/dev-clean.sh
 
+# Preflight: ensure Docker runtime is available
+if ! docker info >/dev/null 2>&1; then
+  if command -v colima >/dev/null 2>&1; then
+    echo "[dev-entry] Docker not running — starting Colima..." >&2
+    colima start
+    echo "[dev-entry] waiting for Docker daemon..." >&2
+    for _i in $(seq 1 30); do
+      docker info >/dev/null 2>&1 && break
+      sleep 1
+    done
+    if ! docker info >/dev/null 2>&1; then
+      echo "[dev-entry] ERROR: Colima started but Docker still unreachable" >&2
+      exit 1
+    fi
+  else
+    echo "[dev-entry] ERROR: Docker not running and Colima not found. Start Docker or install Colima." >&2
+    exit 1
+  fi
+fi
+
 # Preflight: ensure local Postgres is running (Docker: aave-pg)
 if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^aave-pg$'; then
   if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^aave-pg$'; then
