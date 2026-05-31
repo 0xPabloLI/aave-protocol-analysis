@@ -30,8 +30,8 @@ test('backend package exposes dev cleanup scripts', () => {
   assert.match(packageJson, /"dev:clean":\s*"bash scripts\/dev-clean\.sh"/);
   assert.match(packageJson, /"dev":\s*"bash scripts\/dev-entry\.sh"/);
   assert.match(packageJson, /"dev:watch":\s*"bash scripts\/dev-entry\.sh --watch"/);
-  assert.match(packageJson, /"dev:reset":\s*"npm run dev:clean && npm run dev"/);
-  assert.match(packageJson, /"dev:watch:reset":\s*"npm run dev:clean && npm run dev:watch"/);
+  assert.match(packageJson, /"dev:reset":\s*"npm run dev"/);
+  assert.match(packageJson, /"dev:watch:reset":\s*"npm run dev:watch"/);
 });
 
 test('dev entry script cleans residual backend processes before launching tsx', () => {
