@@ -4,11 +4,12 @@ FROM node:20-slim AS builder
 WORKDIR /app
 
 # Install all workspace dependencies (including devDependencies for TypeScript compilation)
+# HUSKY=0 prevents husky from trying to install git hooks in Docker (no .git)
 COPY package*.json ./
 COPY packages/ ./packages/
 COPY backend/package*.json ./backend/
 COPY scripts/ ./scripts/
-RUN npm ci
+RUN HUSKY=0 npm ci
 
 # Copy root source and build
 COPY src/ ./src/
@@ -58,7 +59,7 @@ COPY package*.json ./
 COPY packages/ ./packages/
 COPY backend/package*.json ./backend/
 COPY scripts/ ./scripts/
-RUN npm ci --omit=dev -w aave-dashboard-backend
+RUN HUSKY=0 npm ci --omit=dev -w aave-dashboard-backend
 
 # Copy compiled output from builder
 COPY --from=builder /app/dist/ ./dist/
