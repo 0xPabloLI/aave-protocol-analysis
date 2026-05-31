@@ -153,7 +153,9 @@ Merkl 预测相关（可选，有默认值）：
 curl http://localhost:3001/health
 ```
 
-应该返回（示例）：
+**冷启动期间**：服务器先监听端口再后台预热缓存，/health 返回 503（`{"status":"degraded"}`），预热完成后返回 200（`{"status":"ok"}`）。这避免了 Railway 等平台在预热期间探活时遇到 connection refused。
+
+预热完成后返回（示例）：
 
 ```json
 {
@@ -168,6 +170,16 @@ curl http://localhost:3001/health
   }
 }
 ```
+
+### Railway healthcheck 防超时
+
+`railway.json` 中 `healthcheckTimeout` 设为 360s（覆盖约 4 分钟冷启动）。关键设计：
+
+| 组件 | 角色 |
+|------|------|
+| `app.listen()` 在预热之前 | 确保 healtcheck 拿到 HTTP 响应而非 connection refused |
+| `startUpdateScheduler()` 独立启动 | 即使预热失败，cron 也会自愈重试，避免僵尸服务 |
+| `/health` 返回 503 → 200 | 预热期间返回 degraded，完成后返回 ok |
 
 ## API 端点
 
@@ -202,6 +214,17 @@ curl http://localhost:3001/health
 **若 Staging 能成功而 Production 失败**：多半是两边 **Root Directory** 不一致。Staging 若「指向 backend」仍能成功，通常是 Staging 的 Root Directory 实际为**仓库根**（空或 `.`），只是部署出来的*应用*是 backend；而失败的环境把 Root Directory 设成了 `backend`，导致构建上下文只有 `backend/`、根目录 `railway.json` 又指定了 DOCKERFILE，于是用根目录的 Dockerfile 配只有 backend 的上下文，报错。请在 Railway 里对比 **Staging** 与 **Production** 该服务的 **Settings → Build → Root Directory**，将失败环境改为与 Staging 一致（仓库根）。
 
 ## 故障排查
+
+### Railway Deploy 显示 "Failed" 但服务实际正常
+
+**症状**：`railway status` 显示 deploy failed，但 `curl https://staging-api.aaveapy.com/health` 返回 200。
+
+**原因**：冷启动约 4 分钟（onchain RPC + oracle + markets + coingecko + forecast），但 Railway healthcheck 重试窗口内服务器还没开始监听（`app.listen()` 在预热之后），导致 connection refused。
+
+**修复**（已实施）：
+1. `app.listen()` 移到预热之前 → healthcheck 立即拿到 HTTP 响应
+2. `healthcheckTimeout` 从 120s → 360s
+3. `startUpdateScheduler()` 独立于预热启动 → 预热失败也能自愈
 
 ### 服务无法启动
 
