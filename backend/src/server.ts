@@ -121,11 +121,6 @@ app.get('/api/health', healthHandler);
 // unnoticed for days).
 // Moved under /api/seo/ to reuse SEO admin auth middleware.
 
-// 启动时预热所有缓存，避免首个请求冷启动
-// 注意：cron 不会在启动时立即执行，所以需要显式 warmup
-// 所有 API 数据现在使用 cron-write/API-read-only 模式
-logger.info('🔄 Starting cache warmup (all data will be fetched before server accepts requests)...');
-
 // Auto-run pending DB migrations before any cron cycles start
 try {
   if (isPersistenceEnabled()) {
@@ -140,6 +135,49 @@ try {
   logger.error('❌ Auto-migration failed — refusing to start with incomplete schema:', error);
   process.exit(1);
 }
+
+// Start HTTP server immediately — healthcheck returns 503 until caches are warm.
+// This avoids Railway deploy failures caused by connection-refused during cold start.
+const server = app.listen(PORT, () => {
+  logger.info(`🚀 Server ready on http://localhost:${PORT}`);
+});
+
+server.on('error', (error: NodeJS.ErrnoException) => {
+  const explanation = explainServerListenError(error, PORT);
+  if (explanation) {
+    logger.error(explanation);
+  } else {
+    logger.error('❌ Failed to start HTTP server:', error);
+  }
+  process.exit(1);
+});
+
+// Graceful shutdown — stop accepting new requests, drain in-flight ones,
+// then close the DB pool so any open connections to Railway PG are released
+// cleanly during deploy/restart.
+let shuttingDown = false;
+const shutdown = (signal: string) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info(`📴 Received ${signal}, shutting down gracefully…`);
+  server.close((err) => {
+    if (err) logger.warn('Error closing HTTP server:', err);
+    closePool()
+      .catch((e) => logger.warn('Error closing DB pool:', e))
+      .finally(() => process.exit(0));
+  });
+  // Hard timeout: force-exit if shutdown stalls (>10s).
+  setTimeout(() => {
+    logger.warn('⏱️  Graceful shutdown timed out, forcing exit');
+    process.exit(1);
+  }, 10_000).unref();
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Warm caches in background — server is already listening.
+// /health returns 503 until warmup completes, then 200.
+logger.info('🔄 Starting cache warmup (server already listening, health returns 503 until warm)...');
 
 // Phase 1: independent caches (can run in parallel)
 Promise.allSettled([
@@ -169,51 +207,13 @@ Promise.allSettled([
     }
 
     logger.info('✅ All caches warmed');
-    
+
     // 启动定时更新任务
     startUpdateScheduler();
-    
-    // 启动服务器
-    const server = app.listen(PORT, () => {
-      logger.info(`🚀 Server ready on http://localhost:${PORT}`);
-    });
-
-    server.on('error', (error: NodeJS.ErrnoException) => {
-      const explanation = explainServerListenError(error, PORT);
-      if (explanation) {
-        logger.error(explanation);
-      } else {
-        logger.error('❌ Failed to start HTTP server:', error);
-      }
-      process.exit(1);
-    });
-
-    // Graceful shutdown — stop accepting new requests, drain in-flight ones,
-    // then close the DB pool so any open connections to Railway PG are released
-    // cleanly during deploy/restart.
-    let shuttingDown = false;
-    const shutdown = (signal: string) => {
-      if (shuttingDown) return;
-      shuttingDown = true;
-      logger.info(`📴 Received ${signal}, shutting down gracefully…`);
-      server.close((err) => {
-        if (err) logger.warn('Error closing HTTP server:', err);
-        closePool()
-          .catch((e) => logger.warn('Error closing DB pool:', e))
-          .finally(() => process.exit(0));
-      });
-      // Hard timeout: force-exit if shutdown stalls (>10s).
-      setTimeout(() => {
-        logger.warn('⏱️  Graceful shutdown timed out, forcing exit');
-        process.exit(1);
-      }, 10_000).unref();
-    };
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
   })
   .catch((error) => {
     logger.error('❌ Startup warmup failed:', error);
-    process.exit(1);
+    // Don't exit — server stays up, /health will keep returning 503
   });
 
 // ts-prune-ignore-next
