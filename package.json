@@ -33,7 +33,7 @@
     "prune": "ts-prune -i '\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v '^src/' | (grep -q . && exit 1 || exit 0)",
     "test": "tsx --test tests/**/*.test.ts",
     "sync:coingecko-platform-map": "tsx scripts/sync-coingecko-platform-map.ts",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "dependencies": {
     "@aave-dao/aave-address-book": "^4.49.9",
