@@ -82,6 +82,22 @@ to the DB service, replacing PostgreSQL with a Node.js container.
 - **Serialization stays in backend**: `marketsApiSerialize.ts` produces `MarketWithSpread` in backend only.
 - When adding reserve fields, update `RuntimeReserveData` in `@internal/aave-shared-contracts`, then backend types/serialization.
 
+### Data Validity Rule (Critical)
+**When proposing ANY code change involving blockchain numerical values, you MUST cross-check against actual data files before making the recommendation.**
+
+1. **`raw` vs `value` are NOT interchangeable**:
+   - `amount.raw` = on-chain base units (includes decimals, e.g. `"7000000000000000000000000"` for 7M tokens with 18dp)
+   - `amount.value` = human-readable units (decimal-applied, e.g. `"7000000"`)
+   - Checking `raw === "1"` means "1 wei" (10^-18), NOT "1 token"
+   - Checking `value === 1` means "1 whole token"
+
+2. **Always verify assumptions against `data/debug/` files** before suggesting:
+   - Unit conversions between raw/value/usd
+   - Arithmetic operations (subtraction, comparison, clamping)
+   - Condition checks on token amounts (e.g. "is supplyCap disabled?")
+
+3. **If you're unsure about decimal semantics, read the actual debug data first.**
+
 ## Automated Checks (No Manual Checklist Needed)
 
 ### Reserve Field Addition
@@ -179,6 +195,7 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 - **设计选项 ≠ 必经步骤**：文档中提出的可选方案需先验证是否有实际消费者，无消费者则直接跳过，不要机械写入任务清单并执行。
 - **跨 session 边界**：commit 前必须检查 `git diff`，确认所有变更都属于当前 session。其他 session 的遗留改动（未暂存/未提交）不得静默打包进 commit，必须先跟用户确认归属和处置方式。
 - **报线上问题时必须给完整具体 URL**：不能只说"API 返回 404"，必须给出完整 curl 命令和响应。本项目的 API 基路径是 `/api/markets`（不是 `/markets`），health check 是 `/health`。
+- **Schema Design Principle: No Redundant Columns**：当设计含 JSONB 的表时，每个 outer column 都要问："这个值在 JSONB 里已经有了吗？如果有，DB 需要独立查询/过滤/排序/更新它吗？" 如果第二个问题答案是"否"，就放 JSONB 里。只有需要 DB 查询/更新的字段才放 outer column。（教训：campaign_history 表曾加过 is_expired/expired_at/first_seen_at 三个冗余 outer column，最终只保留了 last_seen_at）
 
 ## Agent skills
 
