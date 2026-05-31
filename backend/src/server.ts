@@ -175,6 +175,10 @@ const shutdown = (signal: string) => {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
+// Start cron scheduler immediately — independent of warmup.
+// If warmup fails, cron retries on its own schedule, so the server can self-heal.
+startUpdateScheduler();
+
 // Warm caches in background — server is already listening.
 // /health returns 503 until warmup completes, then 200.
 logger.info('🔄 Starting cache warmup (server already listening, health returns 503 until warm)...');
@@ -207,9 +211,6 @@ Promise.allSettled([
     }
 
     logger.info('✅ All caches warmed');
-
-    // 启动定时更新任务
-    startUpdateScheduler();
   })
   .catch((error) => {
     logger.error('❌ Startup warmup failed:', error);
