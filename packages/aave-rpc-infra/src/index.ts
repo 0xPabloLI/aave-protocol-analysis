@@ -244,7 +244,6 @@ export const MULTICALL3_ABI = [
     ],
     name: 'aggregate3',
     outputs: [
-      { internalType: 'uint256', name: 'blockNumber', type: 'uint256' },
       {
         components: [
           { internalType: 'bool', name: 'success', type: 'bool' },
@@ -322,7 +321,7 @@ export async function executeMulticall3(
     options.label ?? 'Multicall3.aggregate3 timeout',
   );
   const decoded = iface.decodeFunctionResult('aggregate3', rawResult);
-  return (decoded[1] as any[]).map((result: any) => ({
+  return (decoded[0] as any[]).map((result: any) => ({
     success: result.success,
     returnData: result.returnData,
   }));

@@ -32,7 +32,7 @@ test('executeMulticall3 encodes aggregate3 and decodes returned results', async 
   const provider = {
     call: async (call: { to?: string; data?: string }) => {
       observedCall = call;
-      return iface.encodeFunctionResult('aggregate3', [123n, [{ success: true, returnData }]]);
+      return iface.encodeFunctionResult('aggregate3', [[{ success: true, returnData }]]);
     },
   };
 

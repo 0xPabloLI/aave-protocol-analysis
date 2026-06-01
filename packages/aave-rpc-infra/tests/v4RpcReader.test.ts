@@ -36,7 +36,7 @@ function buildFakeProvider(
             results.push({ success: false, returnData: '0x' });
           }
         }
-        return multicallIface.encodeFunctionResult('aggregate3', [0n, results]);
+        return multicallIface.encodeFunctionResult('aggregate3', [results]);
       }
     }
 
