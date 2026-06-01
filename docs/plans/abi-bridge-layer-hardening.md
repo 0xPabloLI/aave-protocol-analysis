@@ -54,7 +54,7 @@
 4. ✅ 作为后端开发者，CI 验证 V4_HUB_FULL_ABI 包含 upstream + shared-local 方法
 5. ✅ 作为后端开发者，文档使用 upstream/local 二层命名（非 L1/L2/L3）
 6. ✅ 作为后端开发者，决策记录包含"上游缺失方法 → local 层"原则
-7. ❌ 作为后端开发者，ABI 归属表中 `V4_HUB_FULL_ABI` 层标注从 "Upstream" 修正为 "Shared"
+7. ✅ 作为后端开发者，ABI 归属表中 `V4_HUB_FULL_ABI` 层标注从 "Upstream" 修正为 "Shared"
 8. ✅ 作为后端开发者，HARDCODE 文档 §6 补上 `MULTICALL3_ADDRESS` 索引（地址已迁到 `@internal/aave-rpc-infra`，地址已修正为 canonical `0xcA11bde05977b3631167028862bE2a173976CA11`）
 
 ## Implementation: 遗留项

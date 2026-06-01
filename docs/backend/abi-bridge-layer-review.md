@@ -21,7 +21,7 @@
 | `ISpokeV4_ABI` | Upstream | upstream | `@aave-dao/aave-address-book/abis/ISpokeV4` | 完整 Spoke 接口 |
 | `IAaveOracle_ABI` | Upstream | upstream | `@aave-dao/aave-address-book/abis/IAaveOracle` | V3 oracle |
 | `IPool_ABI` | Upstream | upstream | `@aave-dao/aave-address-book/abis/IPool` | V3 pool |
-| `V4_HUB_FULL_ABI` | Upstream | shared | `@internal/aave-rpc-infra` | `IHubV4_ABI + HUB_EXTENSIONS_ABI` composite |
+| `V4_HUB_FULL_ABI` | Shared | shared | `@internal/aave-rpc-infra` | `IHubV4_ABI + HUB_EXTENSIONS_ABI` composite |
 | `V4_ORACLE_PRICES_ABI` | Local | local | `backend/src/abis/v4-oracle-prices.ts` | 仅 `getReservesPrices`（上游 `IAaveOracleV4_ABI` 只有 `getReserveSource`，不适用） |
 
 ### 1.2 为什么不保留 re-export 单入口？
