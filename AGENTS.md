@@ -66,7 +66,7 @@ to the DB service, replacing PostgreSQL with a Node.js container.
 
 ## Session Workflow
 1. **Bootstrap when needed**: For substantial implementation, debugging, or design sessions, load `using-superpowers` via skill tool. Load `brainstorming` only for feature design, behavior changes, or solution exploration — skip for lightweight inspection, explanation, and routine work.
-2. **Hook policy**: do not bypass local hooks (`pre-commit`/`pre-push`), which enforce `ci:remote` and lockfile consistency.
+2. **Hook policy**: Husky enforces Prettier on `git commit` + `ci:remote` on `git push`. Do not bypass with `--no-verify`.
 3. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
 4. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`.
 5. **Branch discipline**: all development commits go directly on `railway` branch. Do NOT create feature branches or worktrees unless explicitly asked by the user. If a stray branch exists, merge it into `railway` and delete it promptly.
@@ -129,20 +129,15 @@ When touching one area, check its pair:
 | `backend` | API server, serialization (`marketsApiSerialize.ts`) | `fetchMarketsData` definition (imports it) |
 
 ## Validation Gate
-- For code changes, run at minimum:
-  - `npm run build`
-  - `npm run build -w aave-dashboard-backend`
-  - `npm run test -w aave-dashboard-backend`
-- For release-level confidence, prefer `npm run ci:remote`.
-- **Dist import check** (must be empty):
+- Quality is enforced by Husky hooks: `pre-commit` → Prettier, `pre-push` → `npm run ci:remote` (build + test + bin-paths + workspace-coverage + audit).
+- **Dist import check** (debug-only, also covered by `ci:remote`):
   ```bash
   rg "dist/index\.js|\.\.\/\.\.\/\.\.\/dist" backend/src tests
   ```
-- **Bin path check** (must pass):
+- **Bin path check** (debug-only, also covered by `ci:remote`):
   ```bash
   npm run check:bin-paths
   ```
-  (ensures workspace sub-project scripts use `npx`, not hardcoded `node_modules/.bin/` paths)
 
 ## High-Risk Areas (Coordinate Carefully)
 - Fetch orchestration: `packages/aave-fetcher/src/index.ts`
