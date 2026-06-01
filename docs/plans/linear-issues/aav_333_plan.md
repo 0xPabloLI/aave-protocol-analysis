@@ -108,7 +108,7 @@
 - **AAV-480**: 序列化层加 collateralRisk (roundTo6) + fingerprint 更新 ✅
 - **AAV-481**: 字段增删指南文档更新 ✅
 
-### 前端（待移至前端 repo）
+### 前端（待移至前端 repo，见 Linear AAV-482）
 - Portfolio RP 计算逻辑 (`computeRiskPremium`)
 - Simulation 集成 (Effective Borrow APY / Supply APY with RP)
 - UI 展示 (SimulationSubRow Risk Premium 行 + PortfolioPanel 汇总区)
