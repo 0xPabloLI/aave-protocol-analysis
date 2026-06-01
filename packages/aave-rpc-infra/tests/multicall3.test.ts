@@ -58,10 +58,33 @@ const AGG3_HUMAN_ABI = [
 const CHAINS_TO_VERIFY: Record<number, string> = {
   1: 'https://ethereum-rpc.publicnode.com',
   10: 'https://optimism-rpc.publicnode.com',
+  56: 'https://bsc.publicnode.com',
+  100: 'https://gnosis-rpc.publicnode.com',
   137: 'https://polygon-bor-rpc.publicnode.com',
-  42161: 'https://arbitrum-one-rpc.publicnode.com',
+  146: 'https://rpc.soniclabs.com',
+  196: 'https://rpc.xlayer.tech',
+  324: 'https://mainnet.era.zksync.io',
+  1868: 'https://soneium.drpc.org',
+  42220: 'https://celo.drpc.org',
+  5000: 'https://rpc.mantle.xyz',
+  4326: 'https://mainnet.megaeth.com/rpc',
   8453: 'https://base-rpc.publicnode.com',
+  9745: 'https://rpc.plasma.to',
+  1088: 'https://andromeda.metis.io/?owner=1088',
+  57073: 'https://ink.drpc.org',
+  59144: 'https://linea-rpc.publicnode.com',
+  42161: 'https://arbitrum-one-rpc.publicnode.com',
   43114: 'https://avalanche-c-chain-rpc.publicnode.com',
+  534352: 'https://rpc.scroll.io',
+  1666600000: 'https://api.harmony.one',
+  81457: 'https://rpc.blast.io',
+  // 11297108109 (Palm) skipped — no public RPC, requires Infura key
+  204: 'https://opbnb-mainnet-rpc.bnbchain.org',
+  // 810180 (zkLinkNova) skipped — Multicall3 not deployed on this chain
+  169: 'https://pacific-rpc.manta.network/http',
+  80094: 'https://rpc.berachain.com',
+  // 2741 (Abstract) skipped — no public RPC, requires Alchemy key
+  14: 'https://flare-api.flare.network/ext/C/rpc',
 };
 
 for (const [chainId, rpcUrl] of Object.entries(CHAINS_TO_VERIFY)) {
