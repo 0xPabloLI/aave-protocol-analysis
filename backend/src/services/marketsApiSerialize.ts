@@ -61,19 +61,17 @@ function scaleGroupedCampaigns<
   }));
 }
 
-const PASSTHROUGH_FIELDS = [
+const PASSTHROUGH_FIELDS: readonly (keyof RuntimeReserveData)[] = [
   'tokenPrice', 'utilizationPct', 'aTokenAddress', 'vTokenAddress',
-  'supplyIncentives', 'borrowIncentives',
   'liquidity', 'borrowed', 'supplied', 'supplyCap', 'borrowCap', 'deficit',
   'hubId', 'hubName', 'hubAddress', 'spokeId', 'spokeName', 'spokeAddress',
 ] as const;
 
-function pickDefined(reserve: RuntimeReserveData, fields: readonly string[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  const src = reserve as unknown as Record<string, unknown>;
+function pickDefined(reserve: RuntimeReserveData, fields: readonly (keyof RuntimeReserveData)[]): Partial<MarketWithSpread> {
+  const out: Partial<MarketWithSpread> = {};
   for (const f of fields) {
-    const v = src[f];
-    if (v !== undefined) out[f] = v;
+    const v = reserve[f];
+    if (v !== undefined) (out as Record<string, unknown>)[f] = v;
   }
   return out;
 }
