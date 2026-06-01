@@ -603,3 +603,28 @@ test('serializeReserveForApi omits collateralRisk for V3 reserve (undefined)', (
   const api = serializeReserveForApi(reserve);
   assert.equal('collateralRisk' in api, false);
 });
+
+test('supplyIncentives and borrowIncentives are NOT serialized to API output', () => {
+  const reserve = makeFullReserve();
+  reserve.supplyIncentives = [0.01, 0.02];
+  reserve.borrowIncentives = [0.03];
+  const api = serializeReserveForApi(reserve);
+  assert.equal('supplyIncentives' in api, false);
+  assert.equal('borrowIncentives' in api, false);
+});
+
+test('V3 reserve does not set collateralRisk (undefined by default)', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'AaveV3Ethereum:1:0xv3',
+    marketName: 'AaveV3Ethereum',
+    chainName: 'Ethereum',
+    chainId: 1,
+    tokenName: 'V3Token',
+    tokenSymbol: 'V3',
+    tokenAddress: '0xv3',
+  };
+
+  assert.equal(reserve.collateralRisk, undefined);
+  const api = serializeReserveForApi(reserve);
+  assert.equal('collateralRisk' in api, false);
+});
