@@ -260,7 +260,7 @@ export const MULTICALL3_ABI = [
   },
 ] as const;
 
-export const MULTICALL3_ADDRESS = '0xcA11BDe05977b7215DA6A5100C9CD0849c8f7bE5';
+export const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
 
 export { ISpokeV4_ABI };
 

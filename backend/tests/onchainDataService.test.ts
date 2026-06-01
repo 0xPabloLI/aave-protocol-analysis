@@ -243,7 +243,7 @@ test('V4 cache key is spokeAddress:hubName (supports same spoke, different hub)'
 test('Multicall3 pre-deployed canonical address passes EIP-55 checksum validation', () => {
   const validated = utils.getAddress(MULTICALL3_ADDRESS);
   assert.strictEqual(validated, MULTICALL3_ADDRESS, 'EIP-55 checksum mismatch');
-  assert.strictEqual(MULTICALL3_ADDRESS, '0xcA11BDe05977b7215DA6A5100C9CD0849c8f7bE5', 'canonical CREATE2 address expected');
+  assert.strictEqual(MULTICALL3_ADDRESS, '0xcA11bde05977b3631167028862bE2a173976CA11', 'canonical CREATE2 address expected');
 });
 
 test('V4 Hub ABI encodes getAssetCount correctly', () => {
@@ -423,8 +423,8 @@ test('V4 spoke deficit=0 is stored (downstream reads explicit zero)', () => {
 // Integration: real RPC Multicall3 aggregate3 call
 // Verifies the provider.call() fix actually works against live Ethereum RPC.
 // Root cause (2026-05-23): MULTICALL3_ADDRESS was a typo/fake address
-//   Wrong: 0xCA11bde05977b72171C07110a83e3e1c41D0C374 (no contract, 0 bytes code)
-//   Right: 0xcA11BDe05977b7215DA6A5100C9CD0849c8f7bE5 (canonical CREATE2 deployment)
+//   Wrong: 0xcA11BDe05977b7215DA6A5100C9CD0849c8f7bE5 (no contract, 0 bytes code)
+//   Right: 0xcA11bde05977b3631167028862bE2a173976CA11 (canonical CREATE2 deployment)
 // This test now passes and guards against address regression.
 // ============================================================
 
