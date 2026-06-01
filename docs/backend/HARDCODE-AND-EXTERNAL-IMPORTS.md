@@ -112,4 +112,4 @@ node -e "const a = require('@bgd-labs/aave-address-book'); Object.keys(a).filter
 | `POOL` | 核心借贷池合约 |
 | `ORACLE` | 价格预言机 |
 | `AAVE_PROTOCOL_DATA_PROVIDER` | 协议数据读取（备用） |
-| `MULTICALL3_ADDRESS` | Multicall3 聚合合约（CREATE2 确定性地址 `0xcA11bde05977b72171C07110a83e3e1c41D0C374`）；来源：`@internal/aave-rpc-infra` |
+| `MULTICALL3_ADDRESS` | Multicall3 聚合合约（CREATE2 确定性地址 `0xcA11bde05977b3631167028862bE2a173976CA11`，来源 [mds1/multicall](https://github.com/mds1/multicall)）；来源：`@internal/aave-rpc-infra` |
