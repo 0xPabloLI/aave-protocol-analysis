@@ -182,6 +182,14 @@ test('BLUECHIP_SPOKE has 2 hub entries (CORE_HUB + PRIME_HUB)', () => {
   assert.ok(hubKeys.includes('PRIME_HUB'));
 });
 
+test('ETHENA_ECOSYSTEM_SPOKE has 2 hub entries (CORE_HUB + PLUS_HUB)', () => {
+  const entries = V4_SPOKE_ENTRIES.filter((e) => e.spokeKey === 'ETHENA_ECOSYSTEM_SPOKE');
+  assert.strictEqual(entries.length, 2, 'ETHENA_ECOSYSTEM_SPOKE should have 2 hub entries');
+  const hubKeys = entries.map((e) => e.hubKey);
+  assert.ok(hubKeys.includes('CORE_HUB'));
+  assert.ok(hubKeys.includes('PLUS_HUB'));
+});
+
 test('all V4 spoke entries with oracle have valid hubKey and hubAddress', () => {
   for (const e of V4_ORACLE_ENTRIES) {
     assert.ok(e.hubKey && e.hubKey.length > 0, `Missing hubKey for ${e.spokeKey}`);
@@ -251,7 +259,51 @@ test('known V3 pool count (oracle-filtered)', () => {
 });
 
 test('known V4 spoke count (oracle-filtered)', () => {
-  // 11 = 10 unique spokes + 1 extra (BLUECHIP_SPOKE appears for both CORE_HUB and PRIME_HUB)
+  // 12 = 10 unique spokes + 2 extra (BLUECHIP_SPOKE has CORE_HUB+PRIME_HUB,
+  // ETHENA_ECOSYSTEM_SPOKE has CORE_HUB+PLUS_HUB)
   // If address-book bumps and this changes, update the count.
-  assert.strictEqual(V4_ORACLE_ENTRIES.length, 11, 'V4 oracle entry count is 11 (10 unique spokes, BLUECHIP has 2 hubs)');
+  assert.strictEqual(V4_ORACLE_ENTRIES.length, 12, 'V4 oracle entry count is 12 (10 unique spokes, BLUECHIP+ETHENA_ECOSYSTEM have 2 hubs each)');
+});
+
+// ============================================================
+// Semantic validation: V4_SPOKE_TO_HUB topology matches SDK spoke.connectedHubs
+// Prevents silent mismatch when hub assignments change in the protocol.
+// Uses embedded snapshot from data/debug/v4-raw-sdk-response.json.
+// ============================================================
+
+const SDK_SPOKE_HUB_TOPOLOGY: Record<string, string[]> = {
+  '0x94e7a5dcbe816e498b89ab752661904e2f56c485': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0x973a023a77420ba610f06b3858ad991df6d85a08': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9', '0x943827dca022d0f354a8a8c332da1e5eb9f9f931'],
+  '0xe1900480ac69f0b296841cd01cc37546d92f35cd': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0xbf10bdfe177de0336afd7fccf80a904e15386219': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0x3131fe68c4722e726fe6b2819ed68e514395b9a4': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0x58131e79531cab1d52301228d1f7b842f26b9649': ['0x06002e9c4412cb7814a791ea3666d905871e536a'],
+  '0xba1b3d55d249692b669a164024a838309b7508af': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9', '0x06002e9c4412cb7814a791ea3666d905871e536a'],
+  '0xd8b93635b8c6d0ff98cbe90b5988e3f2d1cd9da1': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0x65407b940966954b23dfa3caa5c0702bb42984dc': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0x7ec68b5695e803e98a21a9a05d744f28b0a7753d': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+};
+
+test('V4_SPOKE_TO_HUB matches SDK spoke.connectedHubs topology', () => {
+  for (const [spokeAddr, sdkHubs] of Object.entries(SDK_SPOKE_HUB_TOPOLOGY)) {
+    const registryEntries = V4_SPOKE_ENTRIES.filter((e) => e.spokeAddress === spokeAddr);
+    assert.ok(registryEntries.length > 0, `No registry entry for spokeAddress ${spokeAddr}`);
+    const registryHubs = registryEntries.map((e) => e.hubAddress).sort();
+    const expectedHubs = [...sdkHubs].sort();
+    assert.deepStrictEqual(
+      registryHubs,
+      expectedHubs,
+      `Spoke ${spokeAddr.slice(0, 10)}... hub mismatch: registry=[${registryHubs.map(h => h.slice(0, 10)).join(',')}] sdk=[${expectedHubs.map(h => h.slice(0, 10)).join(',')}]`,
+    );
+  }
+});
+
+test('every registry V4 spoke is in SDK topology snapshot', () => {
+  const sdkSpokeAddrs = new Set(Object.keys(SDK_SPOKE_HUB_TOPOLOGY));
+  for (const e of V4_SPOKE_ENTRIES) {
+    assert.ok(
+      sdkSpokeAddrs.has(e.spokeAddress),
+      `Registry spoke ${e.spokeKey} (${e.spokeAddress}) not in SDK topology snapshot — update SDK_SPOKE_HUB_TOPOLOGY if this is a new spoke`,
+    );
+  }
 });

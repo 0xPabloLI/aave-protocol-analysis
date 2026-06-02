@@ -214,6 +214,12 @@ test('V4_SPOKE_ENTRIES covers all known Ethereum mainnet spokes', () => {
     .map(e => e.hubKey);
   assert.ok(bluechipHubs.includes('CORE_HUB'));
   assert.ok(bluechipHubs.includes('PRIME_HUB'));
+
+  const ethenaEcoHubs = V4_SPOKE_ENTRIES
+    .filter(e => e.spokeKey === 'ETHENA_ECOSYSTEM_SPOKE')
+    .map(e => e.hubKey);
+  assert.ok(ethenaEcoHubs.includes('CORE_HUB'), 'ETHENA_ECOSYSTEM_SPOKE should connect to CORE_HUB');
+  assert.ok(ethenaEcoHubs.includes('PLUS_HUB'), 'ETHENA_ECOSYSTEM_SPOKE should connect to PLUS_HUB');
 });
 
 test('V4 multi-hub: BLUECHIP_SPOKE queries both CORE_HUB and PRIME_HUB', () => {
