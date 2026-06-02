@@ -219,7 +219,7 @@ test('serializeReserveForApi preserves plannedDaily for MAX_REWARD Merkl breakdo
 
 test('serializeReserveForApi passes through aaveProReserveId for V4 reserves', () => {
   const reserve: RuntimeReserveData = {
-    reserveId: '1:0x973a023a77420ba610f06b3858ad991df6d85a01:0x973a023a77420ba610f06b3858ad991df6d85a02:CORE_HUB',
+    reserveId: '1:0x973a023a77420ba610f06b3858ad991df6d85a01:0x973a023a77420ba610f06b3858ad991df6d85a02:0xcca852bc40e560adc3b1cc58ca5b55638ce826c9',
     marketName: 'AaveV4Ethereum',
     chainName: 'Ethereum',
     chainId: 1,
@@ -252,7 +252,7 @@ test('serializeReserveForApi omits aaveProReserveId when absent', () => {
 
 test('serializeReserveForApi omits aaveProReserveId when empty string', () => {
   const reserve: RuntimeReserveData = {
-    reserveId: '1:0xdefdefdefdefdefdefdefdefdefdefdefdefdef1:0xdefdefdefdefdefdefdefdefdefdefdefdefdef2:PLUS_HUB',
+    reserveId: '1:0xdefdefdefdefdefdefdefdefdefdefdefdefdef1:0xdefdefdefdefdefdefdefdefdefdefdefdefdef2:0x06002e9c4412cb7814a791ea3666d905871e536a',
     marketName: 'AaveV4Ethereum',
     chainName: 'Ethereum',
     chainId: 1,
@@ -349,7 +349,7 @@ test('isFrozen/isPaused is independent of supplyDisabled', () => {
 
 test('serializeReserveForApi outputs isActive:false for inactive V4 reserve', () => {
   const reserve: RuntimeReserveData = {
-    reserveId: '1:0x1111111111111111111111111111111111111111:0xinactive0000000000000000000000000000000000:PLUS_HUB',
+    reserveId: '1:0x1111111111111111111111111111111111111111:0xinactive0000000000000000000000000000000000:0x06002e9c4412cb7814a791ea3666d905871e536a',
     marketName: 'AaveV4Ethereum',
     chainName: 'Ethereum',
     chainId: 1,
@@ -367,7 +367,7 @@ test('serializeReserveForApi outputs isActive:false for inactive V4 reserve', ()
 
 test('serializeReserveForApi does NOT output isActive when true or absent', () => {
   const reserve: RuntimeReserveData = {
-    reserveId: '1:0x2222222222222222222222222222222222222222:0xactive000000000000000000000000000000000000:CORE_HUB',
+    reserveId: '1:0x2222222222222222222222222222222222222222:0xactive000000000000000000000000000000000000:0xcca852bc40e560adc3b1cc58ca5b55638ce826c9',
     marketName: 'AaveV4Ethereum',
     chainName: 'Ethereum',
     chainId: 1,
@@ -569,7 +569,7 @@ test('serializeReserveForApi output covers all EXPECTED_RUNTIME_FIELDS', () => {
   const api = serializeReserveForApi(reserve);
   const outputKeys = Object.keys(api);
 
-  const SERIALIZED_EXCLUDE = new Set(['supplyIncentives', 'borrowIncentives']);
+  const SERIALIZED_EXCLUDE = new Set(['supplyIncentives', 'borrowIncentives', 'hubAddress', 'spokeAddress']);
 
   const missing: string[] = [];
   for (const field of EXPECTED_RUNTIME_FIELDS) {

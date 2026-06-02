@@ -33,7 +33,7 @@ _Avoid_: asset（V4 中 Asset 是 Hub 层概念，Reserve 是 Spoke 层概念）
 ### 标识
 
 **reserveId**:
-项目定义的全局复合键（string），唯一标识一个 **Reserve**。V3 格式 `{chainId}:{poolAddress}:{tokenAddress}`（3段），V4 格式 `{chainId}:{spokeAddress}:{tokenAddress}:{hubName}`（4段，hubName 确保同一 Spoke 同一 token 不同 Hub 时唯一）。与合约原生的 reserveId（per-Spoke uint256 自增局部 ID）不同；合约原生 ID 在本项目中不使用。
+项目定义的全局复合键（string），唯一标识一个 **Reserve**。V3 格式 `{chainId}:{poolAddress}:{tokenAddress}`（3段），V4 格式 `{chainId}:{spokeAddress}:{tokenAddress}:{hubAddress}`（4段，hubAddress 确保同一 Spoke 同一 token 不同 Hub 时唯一，且与 onchainKey 天然一致无需映射）。与合约原生的 reserveId（per-Spoke uint256 自增局部 ID）不同；合约原生 ID 在本项目中不使用。
 _Avoid_: assetId（V4 合约层概念，per-Hub 局部 ID）
 
 **assetId** (V4):
@@ -41,7 +41,7 @@ _Avoid_: assetId（V4 合约层概念，per-Hub 局部 ID）
 _Avoid_: reserveId
 
 **hubId** / **spokeId**:
-Hub/Spoke 的合约地址，全局唯一。本项目中以 `hubName`/`spokeName`（人类可读短名）为主，`hubAddress`/`spokeAddress`（合约地址）为辅。两者一一对应。
+Hub/Spoke 的 SDK 内部 ID。本项目中 `hubName`/`spokeName`（人类可读短名，如 "Core"/"Main"）供前端显示，`hubAddress`/`spokeAddress`（合约地址）编码在 reserveId 中供唯一标识和链上交互。
 _Avoid_: 无
 
 ### 利率

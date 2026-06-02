@@ -10,7 +10,7 @@
  * - V3: one config per address-book entry (per pool/market), cache key = `${chainId}:${poolAddress}`
  * - V4: one config per Spoke, cache key = spokeAddress — per-spoke deficit = per-reserve deficit
  * - Merge key (V3): `${chainId}:${poolAddress}:${tokenAddress}`
- * - Merge key (V4): `${chainId}:${spokeAddress}:${tokenAddress}:${hubName}`
+ * - Merge key (V4): `${chainId}:${spokeAddress}:${tokenAddress}:${hubAddress}`
  * - Runs independently from markets fetch (async, non-blocking)
  * - Per-pool caching with 30-min TTL
  * - If RPC fails, cached data within TTL is used
@@ -148,7 +148,6 @@ interface V4SpokeConfig {
   chainId: number;
   spokeAddress: string;
   hubAddress: string;
-  hubName: string;
   defaultRpcUrls: string[];
 }
 
@@ -157,7 +156,6 @@ const V4_SPOKE_CONFIGS: V4SpokeConfig[] = V4_SPOKE_ENTRIES.map((e) => ({
   chainId: e.chainId,
   spokeAddress: e.spokeAddress,
   hubAddress: e.hubAddress,
-  hubName: e.hubKey,
   defaultRpcUrls: getAaveRpcUrlsByChainId(e.chainId),
 }));
 
@@ -281,7 +279,7 @@ async function fetchAndCacheV4Spoke(
   config: V4SpokeConfig,
   hubAssetMapping: Map<string, Map<string, number>>
 ): Promise<boolean> {
-  const cacheKey = `${config.spokeAddress}:${config.hubName}`;
+  const cacheKey = `${config.spokeAddress}:${config.hubAddress}`;
 
   let underlyingToAssetId = hubAssetMapping.get(config.hubAddress);
   if (!underlyingToAssetId) {
@@ -289,15 +287,15 @@ async function fetchAndCacheV4Spoke(
       underlyingToAssetId = await providerPool.executeWithFallback(
         config.chainId, config.defaultRpcUrls,
         {
-          primary: (p: providers.Provider) => buildHubAssetMappingMulticallInner(p, config.hubAddress, config.hubName, 'safety-net').catch((e) => {
-            logger.warn(`V4 hub mapping Multicall3 primary failed for ${config.hubName}: ${e instanceof Error ? e.message : String(e)}`);
+          primary: (p: providers.Provider) => buildHubAssetMappingMulticallInner(p, config.hubAddress, config.hubAddress, 'safety-net').catch((e) => {
+            logger.warn(`V4 hub mapping Multicall3 primary failed for ${config.hubAddress}: ${e instanceof Error ? e.message : String(e)}`);
             throw e;
           }),
-          fallback: (p: providers.Provider) => buildHubAssetMappingSerial(p, config.hubAddress, config.hubName, 'safety-net'),
+          fallback: (p: providers.Provider) => buildHubAssetMappingSerial(p, config.hubAddress, config.hubAddress, 'safety-net'),
         },
       );
     } catch {
-      logger.warn(`All RPC endpoints failed for V4 hub mapping ${config.hubName}, using cached spoke data`);
+      logger.warn(`All RPC endpoints failed for V4 hub mapping ${config.hubAddress}, using cached spoke data`);
       return false;
     }
     if (underlyingToAssetId!.size > 0) {
@@ -495,15 +493,15 @@ export async function refreshOnchainCache(): Promise<void> {
               config.chainId,
               config.defaultRpcUrls,
               {
-                primary: (p: providers.Provider) => buildHubAssetMappingMulticallInner(p, config.hubAddress, config.hubName, 'pre-build'),
-                fallback: (p: providers.Provider) => buildHubAssetMappingSerial(p, config.hubAddress, config.hubName, 'pre-build'),
+                primary: (p: providers.Provider) => buildHubAssetMappingMulticallInner(p, config.hubAddress, config.hubAddress, 'pre-build'),
+                fallback: (p: providers.Provider) => buildHubAssetMappingSerial(p, config.hubAddress, config.hubAddress, 'pre-build'),
               },
             );
             if (mapping.size > 0) {
               hubAssetMapping.set(config.hubAddress, mapping);
             }
           } catch {
-            logger.warn(`All RPCs failed for hub mapping ${config.hubName}`);
+            logger.warn(`All RPCs failed for hub mapping ${config.hubAddress}`);
           }
         }
         cachedHubMapping = hubAssetMapping;
@@ -522,7 +520,7 @@ export async function refreshOnchainCache(): Promise<void> {
         const ok = await fetchAndCacheV4Spoke(config, hubAssetMapping);
         if (ok) {
           v4Success++;
-          const entry = v4SpokeCache.get(`${config.spokeAddress}:${config.hubName}`);
+          const entry = v4SpokeCache.get(`${config.spokeAddress}:${config.hubAddress}`);
           if (entry) v4TotalAssets += entry.data.size;
         } else {
           v4Fail++;
@@ -559,16 +557,16 @@ export function getOnchainDataFromCache(): Map<string, OnchainReserveData> {
     }
   }
 
-  // V4: key = `{chainId}:{spokeAddress}:{tokenAddr}:{hubName}`
+  // V4: key = `{chainId}:{spokeAddress}:{tokenAddr}:{hubAddress}`
   // Per-spoke deficit (getSpokeDeficitRay), semantically aligned with V3 reserve.deficit
   // Key format matches V4 reserveId — direct lookup, no fallback needed
   for (const v4Config of V4_SPOKE_CONFIGS) {
-    const entry = v4SpokeCache.get(`${v4Config.spokeAddress}:${v4Config.hubName}`);
+    const entry = v4SpokeCache.get(`${v4Config.spokeAddress}:${v4Config.hubAddress}`);
     if (!entry) continue;
     const age = now - entry.updatedAt;
     if (age >= ttl) continue;
     for (const [tokenAddr, data] of entry.data) {
-      const key = `${v4Config.chainId}:${v4Config.spokeAddress}:${tokenAddr}:${v4Config.hubName}`;
+      const key = `${v4Config.chainId}:${v4Config.spokeAddress}:${tokenAddr}:${v4Config.hubAddress}`;
       result.set(key, data);
     }
   }

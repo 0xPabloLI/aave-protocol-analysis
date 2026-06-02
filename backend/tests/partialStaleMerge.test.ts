@@ -63,7 +63,7 @@ function makeV3(overrides?: Partial<RuntimeReserveData>): RuntimeReserveData {
 /** Minimal V4 reserve (has hubId). */
 function makeV4(overrides?: Partial<RuntimeReserveData>): RuntimeReserveData {
   return {
-    reserveId: `42161:0xspoke:0xv4usdt:CORE_HUB`,
+    reserveId: `42161:0xspoke:0xv4usdt:0xcca852bc40e560adc3b1cc58ca5b55638ce826c9`,
     chainName: 'Arbitrum',
     chainId: 42161,
     tokenSymbol: 'USDT',

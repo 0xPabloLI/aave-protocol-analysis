@@ -64,7 +64,7 @@ function scaleGroupedCampaigns<
 const PASSTHROUGH_FIELDS: readonly (keyof RuntimeReserveData)[] = [
   'tokenPrice', 'utilizationPct', 'aTokenAddress', 'vTokenAddress',
   'liquidity', 'borrowed', 'supplied', 'supplyCap', 'borrowCap', 'deficit',
-  'hubId', 'hubName', 'hubAddress', 'spokeId', 'spokeName', 'spokeAddress',
+  'hubId', 'hubName', 'spokeId', 'spokeName',
 ] as const;
 
 function pickDefined(reserve: RuntimeReserveData, fields: readonly (keyof RuntimeReserveData)[]): Partial<MarketWithSpread> {

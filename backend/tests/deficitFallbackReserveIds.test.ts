@@ -26,11 +26,11 @@ test('MarketsResponse.snapshot includes v4FallbackReserveIds', () => {
       staleTimeMs: 0,
       schemaFingerprint: 'test',
       deficitFallbackReserveIds: [],
-      v4FallbackReserveIds: ['1:0xspoke:0xtoken:CORE_HUB'],
+      v4FallbackReserveIds: ['1:0xspoke:0xtoken:0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
     },
     reserves: [],
   };
-  assert.deepEqual(response.snapshot.v4FallbackReserveIds, ['1:0xspoke:0xtoken:CORE_HUB']);
+  assert.deepEqual(response.snapshot.v4FallbackReserveIds, ['1:0xspoke:0xtoken:0xcca852bc40e560adc3b1cc58ca5b55638ce826c9']);
 });
 
 test('MarketsResponse.snapshot deficitFallbackReserveIds can contain reserveIds', () => {
@@ -40,11 +40,11 @@ test('MarketsResponse.snapshot deficitFallbackReserveIds can contain reserveIds'
       version: 'snapshot-v3',
       staleTimeMs: 0,
       schemaFingerprint: 'test',
-      deficitFallbackReserveIds: ['1:0xspoke:0xtoken:CORE_HUB'],
+      deficitFallbackReserveIds: ['1:0xspoke:0xtoken:0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
     },
     reserves: [],
   };
-  assert.deepEqual(response.snapshot.deficitFallbackReserveIds, ['1:0xspoke:0xtoken:CORE_HUB']);
+  assert.deepEqual(response.snapshot.deficitFallbackReserveIds, ['1:0xspoke:0xtoken:0xcca852bc40e560adc3b1cc58ca5b55638ce826c9']);
 });
 
 test('resolveReserveDeficit: SDK deficit takes precedence, not fallback', () => {

@@ -7,7 +7,7 @@
 | 仓库 | 路径 | 数量 |
 |------|------|------|
 | aaveapy (lovable) | `docs/plans/linear-issues/` | 78 |
-| aave-protocol-analysis (railway) | `docs/plans/linear-issues/` | 7 |
+| aave-protocol-analysis (railway) | `docs/plans/linear-issues/` | 8 |
 
 注：涉及前后端的 Issue（target=both）会同时存放在两个仓库中。
 
@@ -22,6 +22,14 @@
 | AAV-124 | 增加 sort by supply%，sort by borrow% | 已实现：supplyCapPct/borrowCapPct 排序模式 |
 | AAV-143 | 在 market filter 里面加 search markets | 已实现：FilterBar 已有 searchQuery 搜索功能 |
 | AAV-110 | Refactor: split shared contracts into shared package | ✅ 已完成：packages/aave-shared-contracts + aave-fetcher + npm workspaces |
+
+## 合并的 Issue
+
+以下 Issue 经评估后合并为统一方案：
+
+| 合并后 Issue | 原始 Issue | 方案文件 | 说明 |
+|-------------|-----------|---------|------|
+| AAV-134+358 | AAV-134 (V4 地址传递优化) + AAV-358 (V4 reserveId 格式统一) | `aav_134_358_merged_plan.md` | V4 标识符体系整体优化：reserveId 第四段统一用 hubAddress，消除 SDK_HUB_TO_HUBKEY fallback |
 
 ## Issue 分类统计
 

@@ -89,13 +89,16 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     const decimals: number | undefined = r.asset?.underlying?.info?.decimals ?? undefined;
 
     const hubName: string = r.asset?.hub?.name ?? 'Unknown';
+    const hubAddress: string = r.asset?.hub?.address ?? '';
     const spokeAddress: string = r.spoke?.address ?? '';
     if (!spokeAddress) continue;
     const spokeAddressLower = spokeAddress.toLowerCase();
-    // V4 reserveId 格式: {chainId}:{spokeAddress}:{tokenAddress}:{hubName}
+    const hubAddressLower = hubAddress.toLowerCase();
+    // V4 reserveId 格式: {chainId}:{spokeAddress}:{tokenAddress}:{hubAddress}
     // address-based，和 V3 (${chainId}:${poolAddress}:${tokenAddr}) 风格一致
-    // hubName 确保唯一性：同一 spoke 内同一 token 可来自不同 hub
-    const reserveId = `${chainIdNum}:${spokeAddressLower}:${tokenAddressLower}:${hubName}`;
+    // hubAddress 确保唯一性：同一 spoke 内同一 token 可来自不同 hub
+    // hubAddress 与 onchainKey 天然一致（两端都是链上地址），无需映射表
+    const reserveId = `${chainIdNum}:${spokeAddressLower}:${tokenAddressLower}:${hubAddressLower}`;
     const marketName = `AaveV4${spokeName.replace(/\s+/g, '')}`;
 
     // Token price from exchange rate

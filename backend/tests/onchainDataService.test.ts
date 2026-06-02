@@ -110,28 +110,29 @@ test('V4 deficitRay large value (1000e27) converts correctly', () => {
 // V4 onchain cache key format (address-based, matches reserveId)
 // ============================================================
 
-test('V4 onchain key format: {chainId}:{spokeAddress}:{tokenAddr}:{hubName}', () => {
+test('V4 onchain key format: {chainId}:{spokeAddress}:{tokenAddr}:{hubAddress}', () => {
   const chainId = 1;
   const spokeAddress = '0x1234567890123456789012345678901234567890';
   const tokenAddr = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
-  const hubName = 'CORE_HUB';
-  const key = `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}`;
-  assert.strictEqual(key, '1:0x1234567890123456789012345678901234567890:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2:CORE_HUB');
+  const hubAddress = '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9';
+  const key = `${chainId}:${spokeAddress}:${tokenAddr}:${hubAddress}`;
+  assert.strictEqual(key, '1:0x1234567890123456789012345678901234567890:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2:0xcca852bc40e560adc3b1cc58ca5b55638ce826c9');
 });
 
 test('V4 onchain key matches V4 reserveId (no fallback needed)', () => {
-  const reserveId = '1:0xabcdefabcdefabcdefabcdefabcdefabcdefabcd:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48:PLUS_HUB';
+  const reserveId = '1:0xabcdefabcdefabcdefabcdefabcdefabcdefabcd:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48:0x06002e9c4412cb7814a791ea3666d905871e536a';
   const parts = reserveId.split(':');
   assert.strictEqual(parts.length, 4);
   assert.strictEqual(parts[0], '1');
   assert.ok(parts[1].startsWith('0x'));
   assert.ok(parts[2].startsWith('0x'));
-  assert.ok(['CORE_HUB', 'PLUS_HUB', 'PRIME_HUB'].includes(parts[3]));
+  assert.ok(parts[3].startsWith('0x'), 'fourth segment is hubAddress (starts with 0x)');
+  assert.strictEqual(parts[3].length, 42, 'hubAddress is 42 chars');
 });
 
 test('V4 reserveId starts with chainId (consistent with V3 pattern)', () => {
   const v3ReserveId = '1:0x87870bca3f3e6a89e12e23a2e01484e8a4a2e7c1:0xbe9895145f349a6695d5da8e9c6b50a9';
-  const v4ReserveId = '1:0xabcdefabcdefabcdefabcdefabcdefabcdefabcd:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48:CORE_HUB';
+  const v4ReserveId = '1:0xabcdefabcdefabcdefabcdefabcdefabcdefabcd:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48:0xcca852bc40e560adc3b1cc58ca5b55638ce826c9';
   assert.ok(v3ReserveId.split(':')[0] === v4ReserveId.split(':')[0]);
   assert.ok(v3ReserveId.startsWith('1:'));
   assert.ok(v4ReserveId.startsWith('1:'));
@@ -140,18 +141,18 @@ test('V4 reserveId starts with chainId (consistent with V3 pattern)', () => {
 test('V4 reserveId spokeAddress is lowercase', () => {
   const spokeAddress = '0xAbCdEf1234AbCdEf1234AbCdEf1234AbCdEf1234';
   const spokeAddressLower = spokeAddress.toLowerCase();
-  const reserveId = `1:${spokeAddressLower}:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48:CORE_HUB`;
+  const reserveId = `1:${spokeAddressLower}:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48:0xcca852bc40e560adc3b1cc58ca5b55638ce826c9`;
   const parts = reserveId.split(':');
   assert.strictEqual(parts[1], spokeAddressLower);
 });
 
-test('V4 onchain key and reserveId are identical — direct Map.get works', () => {
+test('V4 onchain key and reserveId are identical → direct Map.get works', () => {
   const chainId = 1;
   const spokeAddress = '0x1234567890123456789012345678901234567890';
   const tokenAddr = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
-  const hubName = 'PLUS_HUB';
-  const onchainKey = `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}`;
-  const reserveId = `${chainId}:${spokeAddress}:${tokenAddr}:${hubName}`;
+  const hubAddress = '0x06002e9c4412cb7814a791ea3666d905871e536a';
+  const onchainKey = `${chainId}:${spokeAddress}:${tokenAddr}:${hubAddress}`;
+  const reserveId = `${chainId}:${spokeAddress}:${tokenAddr}:${hubAddress}`;
   assert.strictEqual(onchainKey, reserveId);
   const map = new Map<string, string>();
   map.set(onchainKey, 'deficit_value');
