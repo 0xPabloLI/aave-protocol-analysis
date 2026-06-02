@@ -652,8 +652,6 @@ export interface BrevisGroupEntry {
 }
 
 export interface PerCampaignIncentiveDetails {
-  legacySupply?: number[];
-  legacyBorrow?: number[];
   meritSupplys?: MeritCampaignEntry[];
   meritBorrows?: MeritCampaignEntry[];
   merklSupplys?: MerklGroupEntry[];
@@ -665,9 +663,6 @@ export interface PerCampaignIncentiveDetails {
 
 export function buildIncentiveDetails(reserve: RuntimeReserveData): PerCampaignIncentiveDetails {
   const out: PerCampaignIncentiveDetails = {};
-
-  if (reserve.supplyIncentives?.length) out.legacySupply = reserve.supplyIncentives;
-  if (reserve.borrowIncentives?.length) out.legacyBorrow = reserve.borrowIncentives;
 
   const meritSupplys: MeritCampaignEntry[] = [];
   for (const m of reserve.meritSupplys ?? []) {
@@ -754,58 +749,6 @@ function isEntryExpired(endDate: string | undefined, now: Date): boolean {
   const ts = Date.parse(endDate);
   if (!Number.isFinite(ts)) return false;
   return now.getTime() > ts;
-}
-
-/**
- * Sum per-campaign APR from incentive details for a given side.
- * merklHolds 不参与聚合 — hold 是 Merkl HOLD action，与 supply/borrow 是不同的 action，
- * 前端不会把 hold APR 加到 supply/borrow 总 APR 中。
- */
-// ts-prune-ignore-next
-export function sumIncentiveAprFromDetails(
-  details: PerCampaignIncentiveDetails | null | undefined,
-  side: 'supply' | 'borrow',
-  now?: Date
-): number | null {
-  if (!details) return null;
-  const refNow = now ?? new Date();
-  let total = 0;
-  let any = false;
-
-  if (side === 'supply' && details.legacySupply?.length) {
-    for (const v of details.legacySupply) {
-      if (Number.isFinite(v)) { total += v * 100; any = true; }
-    }
-  }
-  if (side === 'borrow' && details.legacyBorrow?.length) {
-    for (const v of details.legacyBorrow) {
-      if (Number.isFinite(v)) { total += v * 100; any = true; }
-    }
-  }
-
-  const meritEntries = side === 'supply' ? details.meritSupplys : details.meritBorrows;
-  for (const m of meritEntries ?? []) {
-    if (isEntryExpired(m.endDate, refNow)) continue;
-    if (typeof m.apr === 'number' && Number.isFinite(m.apr)) { total += m.apr * 100; any = true; }
-  }
-
-  const merklGroups = side === 'supply' ? details.merklSupplys : details.merklBorrows;
-  for (const group of merklGroups ?? []) {
-    for (const bd of group.breakdowns ?? []) {
-      if (isEntryExpired(bd.endDate, refNow)) continue;
-      if (typeof bd.apr === 'number' && Number.isFinite(bd.apr)) { total += bd.apr * 100; any = true; }
-    }
-  }
-
-  const brevisGroups = side === 'supply' ? details.brevisSupplys : details.brevisBorrows;
-  for (const group of brevisGroups ?? []) {
-    for (const bd of group.breakdowns ?? []) {
-      if (isEntryExpired(bd.endDate, refNow)) continue;
-      if (typeof bd.apr === 'number' && Number.isFinite(bd.apr)) { total += bd.apr * 100; any = true; }
-    }
-  }
-
-  return any ? Number(total.toFixed(6)) : null;
 }
 
 

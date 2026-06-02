@@ -2,7 +2,7 @@
 
 ## 状态
 
-Proposed
+Accepted
 
 ## 上下文
 
@@ -48,3 +48,4 @@ V4 reserveId 新格式：`{chainId}:{spokeAddress}:{tokenAddress}:{hubAddress}`
 - DB 历史快照中 V4 reserveId 失效，需迁移脚本（DB 是 archive 非 source of truth，可接受）
 - onchainDataService 的 v4SpokeCache key 从 `${spokeAddress}:${hubKey}` 改为 `${spokeAddress}:${hubAddress}`
 - **V4_SPOKE_TO_HUB 仍保留**：addressBookRegistry 中的 `V4_SPOKE_TO_HUB` 静态映射继续用于初始化 V4SpokeConfig（从 spokeAddress 查找其所属 hubAddress），因为 address-book 不提供 spoke→hub 拓扑的自动发现。用 SDK `spoke.connectedHubs` 动态化是 AAV-498 的范围，不在本 ADR 中处理。该映射仅在启动时读取一次，不影响 reserveId 格式本身
+- **hubKey 仅限启动时中间查找**：`V4SpokeEntry` 中的 `hubKey` 仅在 `addressBookRegistry.buildAll()` 启动阶段用于从 `HUBS` 字典查找 `hubAddress`，查找后即丢弃。下游服务（onchainDataService、oracleService）的运行时关键路径上无 hubKey，reserveId/onchainKey/v4SpokeCache key 均为纯地址格式

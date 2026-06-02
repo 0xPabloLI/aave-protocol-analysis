@@ -108,10 +108,7 @@ interface RuntimeReserveData {
   borrowDisabled?: boolean; // 借贷是否被禁用（仅当 true 时出现），原因：borrowingState=DISABLED 或 borrowCap=1
   borrowCapUsd?: number; // 【单位: USD】借贷上限金额，与 supplyCapUsd 对称
 
-  // 协议激励（来自 Aave 协议，单位: 百分比）
-  supplyIncentives?: number[]; // 【单位: 百分比数组】Protocol supply incentives
-  borrowIncentives?: number[]; // 【单位: 百分比数组】Protocol borrow incentives
-
+  // 协议激励（已完全迁移到结构化字段，单位: 百分比）
   // Merit APR 激励（可选字段，仅在存在数据时出现）
   meritSupplys?: Array<{
     apr: number; // APR 百分比值（如 5.2 表示 5.2%）
@@ -315,7 +312,7 @@ flowchart LR
 - `reserves[].tokenPrice`
 - `reserves[].reserveSizeUsd`
 - `reserves[].utilizationPct`
-- 以及原有激励字段（`supplyIncentives` / `borrowIncentives` / `merit*` / `merkl*` / `brevis*`）
+- 以及原有激励字段（`merit*` / `merkl*` / `brevis*`）
 
 不再依赖：
 
@@ -805,7 +802,6 @@ Brevis 对外 contract 已收口到下面这组字段：
    - `supplyApy`: 如果为 `undefined` 则在 JSON 中不出现
    - `borrowApy`: 数值格式的百分比（如 `3.97` 表示 3.97%），即使借贷被禁用也会返回真实值
    - `borrowDisabled`: 布尔值，仅当借贷被禁用时出现且为 `true`（节约带宽）
-   - `supplyIncentives` / `borrowIncentives`: 数值数组，每个元素为百分比数值（如 `[0.5, 1.2]` 表示 0.5% 和 1.2%），如果为空数组则在 JSON 中不出现
    - `meritSupplys` / `meritBorrows`: 对象数组，每个对象包含：
      - `apr`: 数值格式的百分比（如 `5.2` 表示 5.2%）
      - `selfApr`: 可选的 Self APR 百分比值（如果有对应的 self- 前缀的 key）
@@ -825,12 +821,10 @@ Brevis 对外 contract 已收口到下面这组字段：
    - 所有激励相关字段都是可选的，包括：
      - `supplyApy` / `borrowApy`
      - `borrowDisabled`（仅当 `true` 时出现）
-     - `supplyIncentives` / `borrowIncentives`
      - `meritSupplys` / `meritBorrows`
      - `merklSupplys` / `merklBorrows` / `merklHolds`
    - `brevisSupplys` / `brevisBorrows`
    - 以下字段如果为空（空数组或 undefined），会在 JSON 中被省略：
-     - `supplyIncentives` / `borrowIncentives`（空数组时）
      - `meritSupplys` / `meritBorrows`（空数组时）
      - `merklSupplys` / `merklBorrows` / `merklHolds`（空数组时）
      - `brevisSupplys` / `brevisBorrows`（空数组时）
@@ -904,8 +898,6 @@ Brevis 对外 contract 已收口到下面这组字段：
    | `utilizationPct`                          | 百分比 (0-100) | 资金利用率，如 `45.5` 表示 45.5% |
    | `supplyApy`                               | 百分比         | 供应 APY，如 `2.07` 表示 2.07%   |
    | `borrowApy`                               | 百分比         | 借贷 APY，如 `3.97` 表示 3.97%   |
-   | `supplyIncentives`                        | 百分比数组     | 协议供应激励 APR                 |
-   | `borrowIncentives`                        | 百分比数组     | 协议借贷激励 APR                 |
    | `meritSupplys[].apr`                      | 百分比         | Merit 供应 APR                   |
    | `merklSupplys[].breakdowns[].campaignApr` | 百分比         | Merkl campaign APR               |
 
@@ -1032,7 +1024,7 @@ curl http://localhost:3001/api/meta/side-data
   - 重构 Merit 数据结构：统一为 `meritSupplys` 和 `meritBorrows` 数组，每个条目包含完整的活动信息（apr, selfApr, link, startDate, endDate, startBlock, endBlock）
   - 统一命名：所有激励字段使用复数形式（meritSupplys, meritBorrows, merklSupplys, merklBorrows, merklHolds）
   - 数据类型优化：APY/APR 值统一为 `number` 类型（百分比数值），不再使用字符串
-  - 协议激励改为数值数组：`supplyIncentives` 和 `borrowIncentives` 现在为 `number[]`
+  - 协议激励改为结构化字段：`supplyIncentives` 和 `borrowIncentives` 已移除，改为 `meritSupplys`/`meritBorrows`/`merklSupplys`/`merklBorrows`/`brevisSupplys`/`brevisBorrows`
   - 移除 Merkl APR 总和字段：`merklSupplyApr`、`merklBorrowApr`、`merklHoldApr` 已移除，数据已包含在对应的 opportunities 中
   - Merkl 数据结构增强：添加 `name` 和 `message` 字段到 opportunity 对象
   - Brevis 数据结构重构：从单个 `brevisSupplyApr`/`brevisBorrowApr` 字段改为 `brevisSupplys`/`brevisBorrows` 数组，支持多个活动
@@ -1054,7 +1046,8 @@ curl http://localhost:3001/api/meta/side-data
   - **2026-03-26（breaking）**：Brevis 对外 contract 收口为 canonical 字段：`campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`、`campaignId`；不再暴露 `apr`、`startDate`、`endDate`、`name` 及其他 deprecated 别名
   - **2026-03-26**：补充 Brevis 数据源对比结论：`/sdk/v1/aaveCampaigns` 在当前环境实测为空，Aave 仍以 gRPC 路径为主
   - **2026-05-13**：`/api/markets` 的 `decimals` 字段不再输出值为 18 的 token（占绝大多数），仅非 18 位 token（如 USDC=6、WBTC=8）保留此字段。前端自动默认 18，无需额外处理。
-  - **2026-05-20**：`incentive_details`（DB 列 + API 序列化）从聚合级改为 **per-campaign 级**，内含 `legacySupply`/`legacyBorrow` + `meritSupplys`/`meritBorrows`（带 `key`/`endDate`/`link`） + `merklSupplys`/`merklBorrows`/`merklHolds`（带 `groupId`/`breakdowns`） + `brevisSupplys`/`brevisBorrows`（带 `groupId`/`breakdowns`）。聚合 APR 值（`supplyIncentivesApr`/`borrowIncentivesApr`）不再作为 DB 列存储，改为内存中通过 `sumIncentiveAprFromDetails()` 从 per-campaign 数据 SUM 推导。`_isExpired` 标志仅在 API 序列化时按 `now() > endDate` 动态计算，**不写入 DB**。
+  - **2026-05-20**：`incentive_details`（DB 列 + API 序列化）从聚合级改为 **per-campaign 级**，内含 `meritSupplys`/`meritBorrows`（带 `key`/`endDate`/`link`） + `merklSupplys`/`merklBorrows`/`merklHolds`（带 `groupId`/`breakdowns`） + `brevisSupplys`/`brevisBorrows`（带 `groupId`/`breakdowns`）。`_isExpired` 标志仅在 API 序列化时按 `now() > endDate` 动态计算，**不写入 DB**。
+  - **2026-06-01**：清理 V3 遗留字段 `supplyIncentives`/`borrowIncentives`（API 响应 + RuntimeReserveData + fetcher + DB `legacySupply`/`legacyBorrow`）。移除 `sumIncentiveAprFromDetails` 死代码。激励全部由结构化字段 `meritSupplys`/`merklSupplys`/`brevisSupplys` 承载。
 
 ## 注意事项
 

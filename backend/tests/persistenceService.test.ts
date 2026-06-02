@@ -87,13 +87,11 @@ test('buildSnapshotRow: supply_incentives_apr position is null (column removed)'
 
 test('buildSnapshotRow: incentive_details is per-campaign structure (JSON parseable)', () => {
   const r = baseReserve({
-    supplyIncentives: [0.01],
     meritSupplys: [{ apr: 0.02, link: 'https://m.com/r1', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritSupplys'],
   });
   const details = buildIncentiveDetails(r);
   const json = JSON.stringify(details);
   const parsed = JSON.parse(json);
-  assert.ok(parsed.legacySupply);
   assert.ok(parsed.meritSupplys);
   assert.equal(parsed.meritSupplys[0].key, 'https://m.com/r1::2025-12-31');
   assert.equal(parsed.meritSupplys[0].apr, 0.02);

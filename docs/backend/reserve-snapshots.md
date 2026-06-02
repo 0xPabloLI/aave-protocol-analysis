@@ -42,19 +42,7 @@ market_snapshots (
 
 ### 2.2 关键：预聚合 incentive APR 已存在
 
-后端 `persistenceService.ts` 的 `buildSnapshotRow()` 在每次快照时已经调用：
-- `aggregateSupplyIncentivesApr(reserve)` → 存入 `supply_incentives_apr`
-- `aggregateBorrowIncentivesApr(reserve)` → 存入 `borrow_incentives_apr`
-
-计算逻辑（`persistenceService.ts` L604-L638）：
-```
-legacy supplyIncentives[] × 100
-+ merit.apr × 100
-+ merkl breakdown.campaignApr × 100
-+ brevis breakdown.campaignApr × 100
-```
-
-**前端无需自行聚合 incentive APR，直接读标量列即可。**
+后端 `persistenceService.ts` 的 `buildSnapshotRow()` 在每次快照时已经将激励数据写入 `incentive_details` JSONB 列，包含 per-campaign 级别的 merit/merkl/brevis 细分数据。
 
 ### 2.3 命名约定
 - 列名 snake_case（Postgres），API 层 camelCase（对齐 `ReserveWithSpread`）
@@ -97,8 +85,6 @@ interface ReserveSnapshotItem {
   tokenSymbol: string;
   supplyApy?: number;            // 协议基础 supply APY
   borrowApy?: number;            // 协议基础 borrow APY
-  supplyIncentivesApr?: number;  // 预聚合：所有 supply incentive APR 之和
-  borrowIncentivesApr?: number;  // 预聚合：所有 borrow incentive APR 之和
   tokenPrice?: number;
   utilizationPct?: number;
   supplied?: string;             // bigint string
@@ -110,7 +96,6 @@ interface ReserveSnapshotItem {
 
 **注意**：
 - API 只返回图表需要的标量字段，**不返回 `incentive_details` JSONB**（减少传输量，前端趋势图用不到完整 breakdown）
-- `supplyIncentivesApr` / `borrowIncentivesApr` 是后端预聚合值，前端可以直接 `supplyApy + supplyIncentivesApr` 算 total supply APY
 - 时间范围上限 90 天（防大范围查询拖垮 DB）
 
 ### 3.1 实现位置
@@ -125,8 +110,7 @@ interface ReserveSnapshotItem {
 
 ```sql
 SELECT snapshot_ts, reserve_id, market_name, chain_name, chain_id, token_symbol,
-       supply_apy, borrow_apy, supply_incentives_apr, borrow_incentives_apr,
-       token_price, utilization_pct, supplied, borrowed, liquidity, deficit
+       supply_apy, borrow_apy, token_price, utilization_pct, supplied, borrowed, liquidity, deficit
 FROM market_snapshots
 WHERE reserve_id = $1
   AND snapshot_ts >= $2
@@ -137,7 +121,6 @@ LIMIT $4;
 
 ## 4. 验收标准
 - API 正确返回 `market_snapshots` 数据，字段对齐 `ReserveSnapshotItem`
-- `supplyIncentivesApr` / `borrowIncentivesApr` 为预聚合值，前端无需自行计算
 - 不返回 `incentive_details` JSONB
 - 时间范围上限 90 天限制生效
 - 单元测试 + 集成测试通过

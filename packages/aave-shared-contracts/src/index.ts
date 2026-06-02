@@ -83,8 +83,6 @@ export interface RuntimeReserveData {
   isActive?: false;
   borrowApy?: number;
   borrowDisabled?: boolean;
-  supplyIncentives?: number[];
-  borrowIncentives?: number[];
   decimals?: number;
   supplyCap?: string;
   borrowCap?: string;
@@ -189,8 +187,6 @@ export const EXPECTED_RUNTIME_FIELDS = [
   'isActive',
   'borrowApy',
   'borrowDisabled',
-  'supplyIncentives',
-  'borrowIncentives',
   'decimals',
   'supplyCap',
   'borrowCap',

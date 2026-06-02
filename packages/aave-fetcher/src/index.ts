@@ -403,27 +403,6 @@ function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
         const slopeAboveOptimal = percentValueToPercent(reserve.borrowInfo?.variableRateSlope2);
         const optimalUtilization = percentValueToPercent(reserve.borrowInfo?.optimalUsageRate);
         
-        const protocolSupplyIncentives: number[] = [];
-        const protocolBorrowIncentives: number[] = [];
-
-        if (reserve.incentives && Array.isArray(reserve.incentives)) {
-          reserve.incentives.forEach((incentive: any) => {
-            if (incentive.__typename === 'AaveSupplyIncentive') {
-              const aprValue = incentive.extraSupplyApr?.value || incentive.supplyApr?.value;
-              const aprNum = toFiniteNumber(aprValue);
-              if (aprNum !== null) {
-                protocolSupplyIncentives.push(aprNum);
-              }
-            } else if (incentive.__typename === 'AaveBorrowIncentive') {
-              const aprValue = incentive.extraBorrowApr?.value || incentive.borrowApr?.value;
-              const aprNum = toFiniteNumber(aprValue);
-              if (aprNum !== null) {
-                protocolBorrowIncentives.push(aprNum);
-              }
-            }
-          });
-        }
-        
         // 创建完整的结构化数据，包含所有激励字段
         // 空值初始化为 undefined，以便在 JSON 序列化时省略
         baseDataset.push({
@@ -446,9 +425,6 @@ function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
           borrowApy,
           // 仅当 borrowing 被禁用时才添加此标志（节约带宽）
           ...(isBorrowDisabled ? { borrowDisabled: true } : {}),
-          // Protocol incentives - 从 reserve.incentives 提取
-          supplyIncentives: protocolSupplyIncentives.length > 0 ? protocolSupplyIncentives : undefined as any,
-          borrowIncentives: protocolBorrowIncentives.length > 0 ? protocolBorrowIncentives : undefined as any,
           // Rate-input fields for manual APR calculation (raw strings for precision)
           ...(decimals !== undefined && decimals !== 18 ? { decimals } : {}),
           ...(liquidity ? { liquidity } : {}),
@@ -691,8 +667,6 @@ function generateCSV(data: RuntimeReserveData[]): string {
     'Token Address',
     'Supply APY (%)',
     'Borrow APY (%)',
-    'Supply Incentives (%)',
-    'Borrow Incentives (%)',
     'Merit Supplys',
     'Merit Borrows',
     'Merkl Supplys',
@@ -714,12 +688,6 @@ function generateCSV(data: RuntimeReserveData[]): string {
       `"${row.tokenAddress}"`,
       row.supplyApy !== undefined ? ratioToPercentString(row.supplyApy) : '',
       row.borrowApy !== undefined ? ratioToPercentString(row.borrowApy) : '',
-      (row.supplyIncentives && row.supplyIncentives.length > 0)
-        ? `"${row.supplyIncentives.map(ratioToPercentString).join(';')}"`
-        : '',
-      (row.borrowIncentives && row.borrowIncentives.length > 0)
-        ? `"${row.borrowIncentives.map(ratioToPercentString).join(';')}"`
-        : '',
       // 格式化 meritSupplys：平铺所有数据，格式为 "APR1:selfApr1:link1:startDate1:endDate1:startBlock1:endBlock1:name1:message1;APR2:..."
       // message 格式为 "action1|description1;action2|description2"（多条用分号分隔，action和description用竖线分隔）
       (row.meritSupplys && row.meritSupplys.length > 0) 

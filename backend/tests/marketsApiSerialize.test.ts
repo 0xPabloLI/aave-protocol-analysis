@@ -16,8 +16,6 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
     tokenAddress: '0xabc',
     supplyApy: 0.052,
     borrowApy: 0.04,
-    supplyIncentives: [0.01, 0.002],
-    borrowIncentives: [0.005],
     meritSupplys: [
       {
         apr: 0.03,
@@ -532,8 +530,6 @@ function makeFullReserve(): RuntimeReserveData {
     isActive: false,
     borrowApy: 0.04,
     borrowDisabled: true,
-    supplyIncentives: [0.01],
-    borrowIncentives: [0.02],
     decimals: 6,
     supplyCap: '1000000',
     borrowCap: '800000',
@@ -569,7 +565,7 @@ test('serializeReserveForApi output covers all EXPECTED_RUNTIME_FIELDS', () => {
   const api = serializeReserveForApi(reserve);
   const outputKeys = Object.keys(api);
 
-  const SERIALIZED_EXCLUDE = new Set(['supplyIncentives', 'borrowIncentives', 'hubAddress', 'spokeAddress']);
+  const SERIALIZED_EXCLUDE = new Set(['hubAddress', 'spokeAddress']);
 
   const missing: string[] = [];
   for (const field of EXPECTED_RUNTIME_FIELDS) {
@@ -602,15 +598,6 @@ test('serializeReserveForApi omits collateralRisk for V3 reserve (undefined)', (
 
   const api = serializeReserveForApi(reserve);
   assert.equal('collateralRisk' in api, false);
-});
-
-test('supplyIncentives and borrowIncentives are NOT serialized to API output', () => {
-  const reserve = makeFullReserve();
-  reserve.supplyIncentives = [0.01, 0.02];
-  reserve.borrowIncentives = [0.03];
-  const api = serializeReserveForApi(reserve);
-  assert.equal('supplyIncentives' in api, false);
-  assert.equal('borrowIncentives' in api, false);
 });
 
 test('V3 reserve does not set collateralRisk (undefined by default)', () => {

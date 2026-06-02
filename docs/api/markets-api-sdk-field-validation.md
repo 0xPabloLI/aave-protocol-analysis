@@ -89,8 +89,6 @@ base-rate 校验报告见 `data/debug/base-rate-fallback-validation-report.json`
 | **optimalUsageRate** | SDK | `reserve.borrowInfo?.optimalUsageRate?.raw` | ✓ |
 | **baseVariableBorrowRate** | 链上 | `UiPoolDataProvider.getReservesHumanized()`；缺失时 fallback 计算 | 非 SDK，设计如此 |
 | **deficit** | 链上 | 同上；缺失时 backend 写 `"0"` | 非 SDK，设计如此 |
-| **supplyIncentives** | SDK | `reserve.incentives`（AaveSupplyIncentive → extraSupplyApr/supplyApr × 100） | ✓ |
-| **borrowIncentives** | SDK | `reserve.incentives`（AaveBorrowIncentive → extraBorrowApr/borrowApr × 100） | ✓ |
 | **meritSupplys / meritBorrows** | 外部 | Merit API，enrich 阶段写入 | 非 SDK |
 | **merklSupplys / merklBorrows / merklHolds** | 外部 | Merkl API，enrich 阶段写入 | 非 SDK |
 | **brevisSupplys / brevisBorrows** | 外部 | Brevis API，enrich 阶段写入 | 非 SDK |

@@ -20,10 +20,8 @@ function baseReserve(overrides: Partial<RuntimeReserveData> = {}): RuntimeReserv
   };
 }
 
-test('buildIncentiveDetails: output contains 9 field keys when all sides populated', () => {
+test('buildIncentiveDetails: output contains 7 field keys when all sides populated', () => {
   const r = baseReserve({
-    supplyIncentives: [0.01],
-    borrowIncentives: [0.02],
     meritSupplys: [{ apr: 0.01, link: 'x', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritSupplys'],
     meritBorrows: [{ apr: 0.02, link: 'y', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritBorrows'],
     merklSupplys: [{ link: 'l', breakdowns: [{ campaignApr: 0.01, campaignId: 's1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }] as unknown as RuntimeReserveData['merklSupplys'],
@@ -34,9 +32,7 @@ test('buildIncentiveDetails: output contains 9 field keys when all sides populat
   });
   const details = buildIncentiveDetails(r);
   const keys = Object.keys(details);
-  assert.equal(keys.length, 9);
-  assert.ok(keys.includes('legacySupply'));
-  assert.ok(keys.includes('legacyBorrow'));
+  assert.equal(keys.length, 7);
   assert.ok(keys.includes('meritSupplys'));
   assert.ok(keys.includes('meritBorrows'));
   assert.ok(keys.includes('merklSupplys'));
@@ -155,16 +151,6 @@ test('buildIncentiveDetails: BrevisGroupEntry structure correct', () => {
   assert.equal(bd.endDate, '2025-06-01');
 });
 
-test('buildIncentiveDetails: legacy fields preserved', () => {
-  const r = baseReserve({
-    supplyIncentives: [0.01, 0.02],
-    borrowIncentives: [0.03],
-  });
-  const details = buildIncentiveDetails(r);
-  assert.deepEqual(details.legacySupply, [0.01, 0.02]);
-  assert.deepEqual(details.legacyBorrow, [0.03]);
-});
-
 test('buildIncentiveDetails: merit entry with missing key fields is skipped', () => {
   const r = baseReserve({
     meritSupplys: [
@@ -186,8 +172,6 @@ test('buildIncentiveDetails: empty reserve produces minimal output', () => {
 
 test('buildIncentiveDetails performance < 1ms per reserve', () => {
   const r = baseReserve({
-    supplyIncentives: Array.from({ length: 10 }, (_, i) => 0.001 * (i + 1)),
-    borrowIncentives: Array.from({ length: 10 }, (_, i) => 0.001 * (i + 1)),
     meritSupplys: Array.from({ length: 20 }, (_, i) => ({
       apr: 0.01, link: `https://m.com/s/${i}`, startDate: '2025-01-01', endDate: '2025-12-31',
     })) as RuntimeReserveData['meritSupplys'],
