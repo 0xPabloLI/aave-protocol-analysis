@@ -28,6 +28,7 @@ function buildHubNameToHubAddressMap(): Map<string, string> {
 
 const ETH_ADDRESS_RE = /^0x[0-9a-f]{40}$/;
 
+/** Validates lowercase Ethereum address format (0x + 40 hex). Caller must toLowerCase() first. */
 function validateHubAddress(addr: string): boolean {
   return ETH_ADDRESS_RE.test(addr);
 }

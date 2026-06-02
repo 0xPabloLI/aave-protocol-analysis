@@ -336,6 +336,7 @@ const MAX_HUB_ASSET_COUNT = 200;
 async function buildHubAssetMappingMulticallInner(
   provider: providers.Provider,
   hubAddress: string,
+  /** Log label (typically hubAddress) */
   hubLabel: string,
   context: string
 ): Promise<Map<string, number>> {
@@ -395,6 +396,7 @@ async function buildHubAssetMappingMulticallInner(
 async function buildHubAssetMappingSerial(
   provider: providers.Provider,
   hubAddress: string,
+  /** Log label (typically hubAddress) */
   hubLabel: string,
   context: string
 ): Promise<Map<string, number>> {

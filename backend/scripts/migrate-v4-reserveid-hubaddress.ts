@@ -39,6 +39,7 @@ function buildHubNameToHubAddressMap(): Map<string, string> {
 
 const ETH_ADDRESS_RE = /^0x[0-9a-f]{40}$/;
 
+/** Validates lowercase Ethereum address format (0x + 40 hex). Caller must toLowerCase() first. */
 function validateHubAddress(addr: string): boolean {
   return ETH_ADDRESS_RE.test(addr);
 }
@@ -86,7 +87,7 @@ async function main(): Promise<void> {
   const pool = new Pool({ connectionString: dbUrl });
 
   try {
-    const tables = ['market_snapshot', 'market_config_snapshot'];
+    const tables = ['market_snapshot', 'market_config_snapshot'] as const;
     for (const table of tables) {
       const countResult = await pool.query(
         `SELECT COUNT(*) as cnt FROM ${table} WHERE reserve_id LIKE '%:%:%:Core' OR reserve_id LIKE '%:%:%:Prime' OR reserve_id LIKE '%:%:%:Plus'`
