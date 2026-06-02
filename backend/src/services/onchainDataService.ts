@@ -336,7 +336,7 @@ const MAX_HUB_ASSET_COUNT = 200;
 async function buildHubAssetMappingMulticallInner(
   provider: providers.Provider,
   hubAddress: string,
-  hubName: string,
+  hubLabel: string,
   context: string
 ): Promise<Map<string, number>> {
   const mapping = new Map<string, number>();
@@ -345,11 +345,11 @@ async function buildHubAssetMappingMulticallInner(
   const results = await executeMulticall3(
     provider,
     [{ target: hubAddress, allowFailure: false, callData: getAssetCountCalldata }],
-    { label: `V4 getAssetCount for ${hubName} [${context}]` }
+    { label: `V4 getAssetCount for ${hubLabel} [${context}]` }
   );
 
   if (!results[0].success) {
-    logger.debug(`V4 Multicall3 getAssetCount failed for ${hubName}`);
+    logger.debug(`V4 Multicall3 getAssetCount failed for ${hubLabel}`);
     return mapping;
   }
 
@@ -357,7 +357,7 @@ async function buildHubAssetMappingMulticallInner(
   const assetCount = Number(assetCountBN);
 
   if (assetCount > MAX_HUB_ASSET_COUNT) {
-    logger.warn(`V4 Hub ${hubName} reports ${assetCount} assets (>${MAX_HUB_ASSET_COUNT}), capping to prevent excessive RPC load`);
+    logger.warn(`V4 Hub ${hubLabel} reports ${assetCount} assets (>${MAX_HUB_ASSET_COUNT}), capping to prevent excessive RPC load`);
     return mapping;
   }
 
@@ -369,7 +369,7 @@ async function buildHubAssetMappingMulticallInner(
 
   if (getAssetCalls.length === 0) return mapping;
 
-  const assetResults = await executeMulticall3(provider, getAssetCalls, { label: `V4 getAsset batch for ${hubName} [${context}]` });
+  const assetResults = await executeMulticall3(provider, getAssetCalls, { label: `V4 getAsset batch for ${hubLabel} [${context}]` });
 
   for (let assetId = 0; assetId < assetResults.length; assetId++) {
     const r = assetResults[assetId];
@@ -379,14 +379,14 @@ async function buildHubAssetMappingMulticallInner(
       const underlying = normalizeAddress(String(asset.underlying || ''));
       if (underlying) mapping.set(underlying, assetId);
     } catch (e) {
-      logger.debug(`V4 Multicall3 decode getAsset(${assetId}) failed for ${hubName}: ${e}`);
+      logger.debug(`V4 Multicall3 decode getAsset(${assetId}) failed for ${hubLabel}: ${e}`);
     }
   }
 
   if (mapping.size === 0 && assetCount > 0) {
-    logger.warn(`V4 Multicall3 Hub mapping for ${hubName}: 0/${assetCount} assets decoded successfully — possible ABI mismatch`);
+    logger.warn(`V4 Multicall3 Hub mapping for ${hubLabel}: 0/${assetCount} assets decoded successfully — possible ABI mismatch`);
   } else {
-    logger.debug(`V4 Multicall3 Hub mapping for ${hubName}: ${mapping.size} assets (1 + ${assetCount} calls → 2 Multicall3 batches)`);
+    logger.debug(`V4 Multicall3 Hub mapping for ${hubLabel}: ${mapping.size} assets (1 + ${assetCount} calls → 2 Multicall3 batches)`);
   }
 
   return mapping;
@@ -395,7 +395,7 @@ async function buildHubAssetMappingMulticallInner(
 async function buildHubAssetMappingSerial(
   provider: providers.Provider,
   hubAddress: string,
-  hubName: string,
+  hubLabel: string,
   context: string
 ): Promise<Map<string, number>> {
   const mapping = new Map<string, number>();
@@ -405,12 +405,12 @@ async function buildHubAssetMappingSerial(
     const assetCountBN = await withTimeout(
       hubContract.getAssetCount(),
       ONCHAIN_PER_RPC_TIMEOUT_MS,
-      `V4 serial getAssetCount timeout for ${hubName} [${context}]`
+      `V4 serial getAssetCount timeout for ${hubLabel} [${context}]`
     ) as any;
     const assetCount = Number(assetCountBN);
 
     if (assetCount > MAX_HUB_ASSET_COUNT) {
-      logger.warn(`V4 Hub ${hubName} reports ${assetCount} assets (>${MAX_HUB_ASSET_COUNT}), capping to prevent excessive RPC load`);
+      logger.warn(`V4 Hub ${hubLabel} reports ${assetCount} assets (>${MAX_HUB_ASSET_COUNT}), capping to prevent excessive RPC load`);
       return mapping;
     }
 
@@ -419,24 +419,24 @@ async function buildHubAssetMappingSerial(
         const asset = await withTimeout(
           hubContract.getAsset(assetId),
           ONCHAIN_PER_RPC_TIMEOUT_MS,
-          `V4 serial getAsset(${assetId}) timeout for ${hubName}`
+          `V4 serial getAsset(${assetId}) timeout for ${hubLabel}`
         ) as any;
         const underlying = normalizeAddress(String(asset.underlying || ''));
         if (underlying) mapping.set(underlying, assetId);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        logger.debug(`V4 serial getAsset(${assetId}) failed for ${hubName}: ${msg}`);
+        logger.debug(`V4 serial getAsset(${assetId}) failed for ${hubLabel}: ${msg}`);
       }
     }
 
     if (mapping.size === 0 && assetCount > 0) {
-      logger.warn(`V4 serial Hub mapping for ${hubName}: 0/${assetCount} assets decoded — possible ABI mismatch`);
+      logger.warn(`V4 serial Hub mapping for ${hubLabel}: 0/${assetCount} assets decoded — possible ABI mismatch`);
     } else {
-      logger.debug(`V4 serial Hub mapping for ${hubName}: ${mapping.size} assets via ${1 + assetCount} serial calls`);
+      logger.debug(`V4 serial Hub mapping for ${hubLabel}: ${mapping.size} assets via ${1 + assetCount} serial calls`);
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    logger.debug(`V4 serial getAssetCount failed for ${hubName}: ${msg}`);
+    logger.debug(`V4 serial getAssetCount failed for ${hubLabel}: ${msg}`);
   }
 
   return mapping;

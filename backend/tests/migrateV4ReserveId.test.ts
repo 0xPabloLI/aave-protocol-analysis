@@ -26,13 +26,19 @@ function buildHubNameToHubAddressMap(): Map<string, string> {
   return map;
 }
 
+const ETH_ADDRESS_RE = /^0x[0-9a-f]{40}$/;
+
+function validateHubAddress(addr: string): boolean {
+  return ETH_ADDRESS_RE.test(addr);
+}
+
 function migrateReserveId(reserveId: string, hubNameMap: Map<string, string>): string | null {
   const parts = reserveId.split(':');
   if (parts.length !== 4) return null;
   const fourth = parts[3];
   if (fourth.startsWith('0x') && fourth.length === 42) return null;
   const hubAddress = hubNameMap.get(fourth);
-  if (!hubAddress) return null;
+  if (!hubAddress || !validateHubAddress(hubAddress)) return null;
   return `${parts[0]}:${parts[1]}:${parts[2]}:${hubAddress}`;
 }
 
@@ -90,4 +96,26 @@ test('hubNameMap contains all three known hubs', () => {
   assert.ok(hubNameMap.has('Prime'));
   assert.ok(hubNameMap.has('Plus'));
   assert.strictEqual(hubNameMap.size, 3);
+});
+
+test('validateHubAddress: accepts valid lowercase 0x + 40 hex', () => {
+  assert.ok(validateHubAddress('0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'));
+  assert.ok(validateHubAddress('0x' + 'a'.repeat(40)));
+});
+
+test('validateHubAddress: rejects invalid formats', () => {
+  assert.ok(!validateHubAddress(''));
+  assert.ok(!validateHubAddress('0x'));
+  assert.ok(!validateHubAddress('0x' + 'g'.repeat(40)));
+  assert.ok(!validateHubAddress('0X' + 'a'.repeat(40)));
+  assert.ok(!validateHubAddress('0x' + 'A'.repeat(40)));
+  assert.ok(!validateHubAddress('0x' + 'a'.repeat(39)));
+  assert.ok(!validateHubAddress('0x' + 'a'.repeat(41)));
+});
+
+test('migrateReserveId: rejects hubName mapping to invalid hubAddress', () => {
+  const poisonedMap = new Map<string, string>([['Core', 'NOT_AN_ADDRESS']]);
+  const old = '1:0xspoke:0xtoken:Core';
+  const result = migrateReserveId(old, poisonedMap);
+  assert.strictEqual(result, null);
 });

@@ -37,13 +37,19 @@ function buildHubNameToHubAddressMap(): Map<string, string> {
   return map;
 }
 
+const ETH_ADDRESS_RE = /^0x[0-9a-f]{40}$/;
+
+function validateHubAddress(addr: string): boolean {
+  return ETH_ADDRESS_RE.test(addr);
+}
+
 function migrateReserveId(reserveId: string, hubNameMap: Map<string, string>): string | null {
   const parts = reserveId.split(':');
   if (parts.length !== 4) return null;
   const fourth = parts[3];
   if (fourth.startsWith('0x') && fourth.length === 42) return null;
   const hubAddress = hubNameMap.get(fourth);
-  if (!hubAddress) return null;
+  if (!hubAddress || !validateHubAddress(hubAddress)) return null;
   return `${parts[0]}:${parts[1]}:${parts[2]}:${hubAddress}`;
 }
 
@@ -101,7 +107,12 @@ async function main(): Promise<void> {
         continue;
       }
 
+      const allowedHubNames = new Set(Object.keys(SDK_HUBNAME_TO_HUBKEY));
       for (const [hubName, hubAddress] of hubNameMap) {
+        if (!allowedHubNames.has(hubName) || !validateHubAddress(hubAddress)) {
+          console.warn(`  Skipping unsafe mapping: ${hubName} → ${hubAddress}`);
+          continue;
+        }
         const result = await pool.query(
           `UPDATE ${table} SET reserve_id = REPLACE(reserve_id, '${hubName}', '${hubAddress}') WHERE reserve_id LIKE '%:%:%:${hubName}'`
         );
