@@ -54,10 +54,7 @@ Do NOT use `railway up` for the database — it will push the app's Dockerfile b
 to the DB service, replacing PostgreSQL with a Node.js container.
 
 ### ⚠️ Consequences of deploying app code to Postgres-mDWG
-1. **Service outage**: DB replaced by Node.js container → healthcheck fails at `/health` → 0/1 replicas → app loses DB connection
-2. **Data is NOT lost** — persists on the volume (`postgres-volume-4Ftf`), but inaccessible until correct template is restored
-3. **Recovery** requires `railway redeploy --service Postgres-mDWG --from-source -y` to pull the original template image
-4. **Root cause**: `railway up` + `railway redeploy` both pick up the project-level `railway.json` (DOCKERFILE builder), which corrupts the DB service manifest
+Service outage (DB replaced by Node.js container), recoverable via `railway redeploy --service Postgres-mDWG --from-source -y`. Data persists on the volume.
 
 ### Post-deploy verification
 - App healthcheck needs ~3min to warm up (oracle prices + market data fetch)
@@ -107,11 +104,6 @@ Adding new reserve fields to the single `RuntimeReserveData` type requires:
 2. **Runtime Test**: `tests/field-coverage.test.ts` validates all expected fields are present
 3. **Field Registry**: `packages/aave-shared-contracts/src/index.ts` maintains `EXPECTED_RUNTIME_FIELDS` as source of truth
 
-**Run tests to verify:**
-```bash
-npm run build && npm run test -w aave-dashboard-backend
-```
-
 ## Required Coupled Changes
 When touching one area, check its pair:
 - `packages/aave-shared-contracts/src/index.ts` (types) ↔ `backend/src/types/index.ts` (backend types)
@@ -149,32 +141,11 @@ When touching one area, check its pair:
 ## Documentation Placement Rule
 
 ### `aaveapy-doc/` (symlink → `../aaveapy-doc`) — 跨前后端 + 协议知识
-`aaveapy-doc/` is a **symlink** to the sibling `../aaveapy-doc` repo (not a git submodule). The `.gitmodules` entry is a stale remnant and should be ignored. Changes are committed and pushed directly in the symlinked repo. The main repo does not track `aaveapy-doc/` content or ref — only the symlink itself.
-This directory is the canonical source for knowledge that spans frontend AND backend, or concerns Aave protocol fundamentals. It must be kept current.
-
-**Protocol knowledge (合约/费率/状态语义):**
-- `aaveapy-doc/frozen-paused-semantics.md` — isFrozen/isPaused/borrowable 合约层语义
-- `aaveapy-doc/aave-supply-borrow-rate-formula.md` — 利率计算公式
-- `aaveapy-doc/AaveOracle-Price-Fetch.md` — 价格预言机取数机制
-
-**跨前后端 API/SDK/字段映射:**
-- `aaveapy-doc/field-glossary.md` — API 字段 → 前端展示概念映射表
-- `aaveapy-doc/v3-v4-sdk-field-mapping.md` — V3 vs V4 SDK 字段来源/处理差异
-- `aaveapy-doc/v3-v4-incentive-matching.md` — Merit/Merkl/Brevis 激励匹配机制
-
-**前端异常状态适配方案:**
-- `aaveapy-doc/AaveAPY 精确协议标记与前端异常状态适配方案（精简版）.md`
-- `aaveapy-doc/AaveAPY 精确协议标记与前端异常状态适配方案（精确实现版）.md`
-- `aaveapy-doc/AaveAPY 精确协议标记与前端异常状态适配方案（修订版）.md`
+Canonical source for knowledge spanning frontend AND backend, or Aave protocol fundamentals. Not a git submodule; changes committed directly in the symlinked repo.
 
 ### `docs/` — 本项目工程文档
-- `docs/api/api-documentation.md` — API 接口文档
-- `docs/api/brevis-supplement.md` — Brevis 补充说明
-- `docs/backend/data-freshness-mechanism.md` — 数据新鲜度机制
-- `docs/development-best-practices.md` — 开发最佳实践
-- `docs/merkl-merit-cache-architecture.md` — 缓存架构
-- `docs/deploy/cloudflare-complete-guide.md` — 部署指南
-- `docs/plans/README.md` — Plan 目录规范（活跃在 `plans/`，完成后移入 `plans/executed/`）
+- API docs, backend architecture, deployment guides, development best practices.
+- `docs/plans/` — 活跃在 `plans/`，完成后移入 `plans/executed/`。
 
 ### Agent 查询优先级
 当被问到跨前后端或协议相关问题时，Agent 必须**优先搜索 `aaveapy-doc/` 子模块**寻找答案，`docs/` 仅作为本项目工程实现细节的补充。
@@ -186,11 +157,8 @@ This directory is the canonical source for knowledge that spans frontend AND bac
 - Use exact-origin CORS settings; treat freshness TTL changes as explicit, documented decisions.
 
 ## Lessons Learned
-- **中间态产物在使命完成后必须立即清理**：迁移安全路径中的临时中间态（如兼容函数、桥接列、过渡视图），一旦最终步骤执行完成且验证通过，必须立即删除，不要留到"下次清理"。
+- **中间态产物在使命完成后必须立即清理**：迁移安全路径中的临时中间态，一旦最终步骤执行完成且验证通过，必须立即删除，不要留到"下次清理"。
 - **设计选项 ≠ 必经步骤**：文档中提出的可选方案需先验证是否有实际消费者，无消费者则直接跳过，不要机械写入任务清单并执行。
-- **跨 session 边界**：commit 前必须检查 `git diff`，确认所有变更都属于当前 session。其他 session 的遗留改动（未暂存/未提交）不得静默打包进 commit，必须先跟用户确认归属和处置方式。
-- **报线上问题时必须给完整具体 URL**：不能只说"API 返回 404"，必须给出完整 curl 命令和响应。本项目的 API 基路径是 `/api/markets`（不是 `/markets`），health check 是 `/health`。
-- **Schema Design Principle: No Redundant Columns**：当设计含 JSONB 的表时，每个 outer column 都要问："这个值在 JSONB 里已经有了吗？如果有，DB 需要独立查询/过滤/排序/更新它吗？" 如果第二个问题答案是"否"，就放 JSONB 里。只有需要 DB 查询/更新的字段才放 outer column。（教训：campaign_history 表曾加过 is_expired/expired_at/first_seen_at 三个冗余 outer column，最终只保留了 last_seen_at）
 
 ## Agent skills
 
