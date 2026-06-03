@@ -7,6 +7,7 @@ import { rateLimitMiddleware } from './middleware/rateLimit.js';
 import marketsRouter from './routes/markets.js';
 import metaRouter from './routes/meta.js';
 import { seoRouter } from './routes/seo.js';
+import { swaggerRouter } from './routes/swagger.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
@@ -82,6 +83,7 @@ app.get('/.well-known/security.txt', (_req, res) => {
 app.use('/api/markets', marketsRouter);
 app.use('/api/meta', metaRouter);
 app.use('/api/seo', seoRouter);
+app.use('/api/docs', swaggerRouter);
 // Note: /api/rate-inputs endpoint removed - rate-inputs are now merged into /api/markets
 
 const healthHandler = (_req: express.Request, res: express.Response) => {
@@ -188,6 +190,14 @@ setInterval(() => {
     `📊 Memory: heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} rss=${fmt(mem.rss)} external=${fmt(mem.external)} | ` +
     `merkl metricsCache=${merklStats.metricsCacheSize} zeroBaseline=${merklStats.zeroBaselineCacheSize} inFlight=${merklStats.inFlightSize} oppCacheAge=${merklStats.campaignOpportunityCacheAge ?? 'none'}ms`
   );
+
+  const RSS_RESTART_THRESHOLD_MB = Number.parseInt(process.env.RSS_RESTART_THRESHOLD_MB ?? '', 10) || 0;
+  if (RSS_RESTART_THRESHOLD_MB > 0 && mem.rss > RSS_RESTART_THRESHOLD_MB * 1024 * 1024) {
+    logger.warn(
+      `🧹 RSS ${fmt(mem.rss)} exceeds threshold ${RSS_RESTART_THRESHOLD_MB}MB — initiating graceful restart`
+    );
+    process.kill(process.pid, 'SIGTERM');
+  }
 }, 60_000).unref();
 
 // Warm caches in background — server is already listening.
