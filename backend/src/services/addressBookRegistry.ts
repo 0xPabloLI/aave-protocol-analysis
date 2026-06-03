@@ -153,6 +153,12 @@ export function getCurrentTopologySignature(): string | null {
   return currentTopologySignature;
 }
 
+/**
+ * Rebuild V3_ENTRIES and V4_SPOKE_ENTRIES from the given topology.
+ * Thread-safety: caller must ensure no concurrent reads of V3_ENTRIES /
+ * V4_SPOKE_ENTRIES during this call. In the current cron-write / API-read-only
+ * architecture, the cron handler is the sole writer, so this is safe.
+ */
 export function initAddressBookRegistry(topology: SpokeHubTopology): void {
   const result = buildAll(topology);
   V3_ENTRIES = result.v3;

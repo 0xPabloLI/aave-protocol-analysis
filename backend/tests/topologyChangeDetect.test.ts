@@ -39,16 +39,20 @@ test('initAddressBookRegistry updates currentTopologySignature', () => {
 });
 
 test('topology change triggers rebuild: V4_SPOKE_ENTRIES changes with different topology', () => {
-  initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
-  const entryCountDefault = V4_SPOKE_ENTRIES.length;
+  try {
+    initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
+    const entryCountDefault = V4_SPOKE_ENTRIES.length;
 
-  const singleEntry: SpokeHubTopology = [
-    { chainId: 1, spokeAddress: '0x94e7a5dcbe816e498b89ab752661904e2f56c485', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  ];
-  initAddressBookRegistry(singleEntry);
-  const entryCountSingle = V4_SPOKE_ENTRIES.length;
+    const singleEntry: SpokeHubTopology = [
+      { chainId: 1, spokeAddress: '0x94e7a5dcbe816e498b89ab752661904e2f56c485', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+    ];
+    initAddressBookRegistry(singleEntry);
+    const entryCountSingle = V4_SPOKE_ENTRIES.length;
 
-  assert.ok(entryCountDefault > entryCountSingle, `DEFAULT_SPOKE_HUB_TOPOLOGY (${entryCountDefault}) should produce more entries than single-entry topology (${entryCountSingle})`);
+    assert.ok(entryCountDefault > entryCountSingle, `DEFAULT_SPOKE_HUB_TOPOLOGY (${entryCountDefault}) should produce more entries than single-entry topology (${entryCountSingle})`);
+  } finally {
+    initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
+  }
 });
 
 test('topology no change skips rebuild: same signature', () => {
@@ -73,16 +77,18 @@ test('DEFAULT_SPOKE_HUB_TOPOLOGY is non-empty', () => {
 });
 
 test('V3 entries are stable across topology changes', () => {
-  initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
-  const v3CountDefault = V3_ENTRIES.length;
+  try {
+    initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
+    const v3CountDefault = V3_ENTRIES.length;
 
-  const singleEntry: SpokeHubTopology = [
-    { chainId: 1, spokeAddress: '0x94e7a5dcbe816e498b89ab752661904e2f56c485', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  ];
-  initAddressBookRegistry(singleEntry);
-  const v3CountSingle = V3_ENTRIES.length;
+    const singleEntry: SpokeHubTopology = [
+      { chainId: 1, spokeAddress: '0x94e7a5dcbe816e498b89ab752661904e2f56c485', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+    ];
+    initAddressBookRegistry(singleEntry);
+    const v3CountSingle = V3_ENTRIES.length;
 
-  assert.strictEqual(v3CountDefault, v3CountSingle, 'V3 entries should not change with topology');
-
-  initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
+    assert.strictEqual(v3CountDefault, v3CountSingle, 'V3 entries should not change with topology');
+  } finally {
+    initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
+  }
 });

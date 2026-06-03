@@ -238,10 +238,12 @@ type _NoExtraFields = Exclude<ExpectedField, RuntimeKeys>;
 const __allFieldsCovered: _AllFieldsCovered = null as never;
 const __noExtraFields: _NoExtraFields = null as never;
 
+/** One spoke→hub connection extracted from SDK `spoke.connectedHubs`. */
 export interface SpokeHubTopologyEntry {
   chainId: number;
   spokeAddress: string;
   hubAddress: string;
 }
 
+/** Full spoke-hub topology snapshot, used to drive addressBookRegistry and RPC fallback. */
 export type SpokeHubTopology = SpokeHubTopologyEntry[];
