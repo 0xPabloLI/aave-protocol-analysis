@@ -57,8 +57,8 @@
 
 `addressBookRegistry` 在运行时从 `@aave-dao/aave-address-book` 遍历 `AaveV4*.SPOKES` 提取 spoke+oracle 对。规则：
 - 有 `_SPOKE_ORACLE` / `_ESPOKE_ORACLE` 的 spoke → 进入 `V4_SPOKE_ENTRIES`
-- 无 oracle 的 spoke（如 `TREASURY_SPOKE`）→ 自动跳过（`V4_SKIP_SPOKES` 硬编码排除）
-- Spoke→Hub 映射 (`V4_SPOKE_TO_HUB`) 维护在 registry 内，multi-hub spokes（如 `BLUECHIP_SPOKE`）生成多个 entry
+- 无 oracle 的 spoke（如 `TREASURY_SPOKE`）→ 自动跳过（`V4_SKIP_SPOKES` 在 `@internal/aave-shared-config` 统一定义）
+- Spoke→Hub 映射从 SDK `spoke.connectedHubs` 动态提取（`extractSpokeHubTopology()`），存入 `baseDataset.spokeHubTopology`；`DEFAULT_SPOKE_HUB_TOPOLOGY` 快照在 `@internal/aave-shared-config` 作为 fallback；multi-hub spokes（如 `BLUECHIP_SPOKE`）生成多个 entry
 
 ## 6. Aave V3 合约地址参考
 
