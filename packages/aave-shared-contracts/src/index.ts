@@ -162,6 +162,7 @@ export interface MarketsPayload {
   };
   data: RuntimeReserveData[];
   campaignAccess?: MerklCampaignAccess[];
+  spokeHubTopology?: SpokeHubTopology;
 }
 
 // ============================================================
@@ -236,3 +237,11 @@ type _NoExtraFields = Exclude<ExpectedField, RuntimeKeys>;
 
 const __allFieldsCovered: _AllFieldsCovered = null as never;
 const __noExtraFields: _NoExtraFields = null as never;
+
+export interface SpokeHubTopologyEntry {
+  chainId: number;
+  spokeAddress: string;
+  hubAddress: string;
+}
+
+export type SpokeHubTopology = SpokeHubTopologyEntry[];

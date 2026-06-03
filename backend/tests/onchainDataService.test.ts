@@ -209,25 +209,31 @@ test('V4_SPOKE_ENTRIES covers all known Ethereum mainnet spokes', () => {
     assert.ok(spokeKeysFromRegistry.has(spoke), `Missing entry for ${spoke}`);
   }
 
+  const CORE_HUB = '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9';
+  const PRIME_HUB = '0x943827dca022d0f354a8a8c332da1e5eb9f9f931';
+  const PLUS_HUB = '0x06002e9c4412cb7814a791ea3666d905871e536a';
+
   const bluechipHubs = V4_SPOKE_ENTRIES
     .filter(e => e.spokeKey === 'BLUECHIP_SPOKE')
-    .map(e => e.hubKey);
-  assert.ok(bluechipHubs.includes('CORE_HUB'));
-  assert.ok(bluechipHubs.includes('PRIME_HUB'));
+    .map(e => e.hubAddress);
+  assert.ok(bluechipHubs.includes(CORE_HUB));
+  assert.ok(bluechipHubs.includes(PRIME_HUB));
 
   const ethenaEcoHubs = V4_SPOKE_ENTRIES
     .filter(e => e.spokeKey === 'ETHENA_ECOSYSTEM_SPOKE')
-    .map(e => e.hubKey);
-  assert.ok(ethenaEcoHubs.includes('CORE_HUB'), 'ETHENA_ECOSYSTEM_SPOKE should connect to CORE_HUB');
-  assert.ok(ethenaEcoHubs.includes('PLUS_HUB'), 'ETHENA_ECOSYSTEM_SPOKE should connect to PLUS_HUB');
+    .map(e => e.hubAddress);
+  assert.ok(ethenaEcoHubs.includes(CORE_HUB), 'ETHENA_ECOSYSTEM_SPOKE should connect to CORE_HUB');
+  assert.ok(ethenaEcoHubs.includes(PLUS_HUB), 'ETHENA_ECOSYSTEM_SPOKE should connect to PLUS_HUB');
 });
 
 test('V4 multi-hub: BLUECHIP_SPOKE queries both CORE_HUB and PRIME_HUB', () => {
+  const CORE_HUB = '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9';
+  const PRIME_HUB = '0x943827dca022d0f354a8a8c332da1e5eb9f9f931';
   const bluechipEntries = V4_SPOKE_ENTRIES.filter(e => e.spokeKey === 'BLUECHIP_SPOKE');
-  const hubKeys = bluechipEntries.map(e => e.hubKey);
-  assert.strictEqual(hubKeys.length, 2);
-  assert.ok(hubKeys.includes('CORE_HUB'));
-  assert.ok(hubKeys.includes('PRIME_HUB'));
+  const hubAddrs = bluechipEntries.map(e => e.hubAddress);
+  assert.strictEqual(hubAddrs.length, 2);
+  assert.ok(hubAddrs.includes(CORE_HUB));
+  assert.ok(hubAddrs.includes(PRIME_HUB));
 });
 
 test('V4 cache key is spokeAddress:hubName (supports same spoke, different hub)', () => {
@@ -441,7 +447,8 @@ test('Integration: Multicall3 aggregate3 via provider.call() succeeds against li
   const provider = new providers.StaticJsonRpcProvider(rpcUrl, 1);
 
   // Get a CORE_HUB address from V4 spoke entries
-  const coreHubEntry = V4_SPOKE_ENTRIES.find(e => e.hubKey === 'CORE_HUB');
+  const CORE_HUB_ADDR = '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9';
+  const coreHubEntry = V4_SPOKE_ENTRIES.find(e => e.hubAddress === CORE_HUB_ADDR);
   assert.ok(coreHubEntry, 'No CORE_HUB entry found in V4 spoke entries');
   const hubAddress = coreHubEntry!.hubAddress;
   assert.ok(hubAddress.startsWith('0x'), `Invalid hub address: ${hubAddress}`);

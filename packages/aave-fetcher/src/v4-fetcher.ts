@@ -18,9 +18,10 @@
 
 import { AaveClient, chainId as v4ChainId } from '@aave/client-v4';
 import { chains, reserves } from '@aave/client-v4/actions';
-import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
+import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { logger } from './logger.js';
 import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
+import { extractSpokeHubTopology } from './v4-topology.js';
 
 type V4FormattedReserveData = RuntimeReserveData;
 
@@ -36,6 +37,7 @@ export interface V4FetchResult {
   mapped: V4FormattedReserveData[];
   /** Raw SDK response (reserves only — hubAssets is no longer fetched). */
   raw: { reserves: any[] };
+  spokeHubTopology: SpokeHubTopology;
 }
 
 /**
@@ -190,9 +192,12 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
   }
 
   logger.info(`🎯 [V4] Mapped ${dataset.length} V4 reserves to unified format`);
+  const spokeHubTopology = extractSpokeHubTopology(v4Reserves as any[]);
+  logger.info(`🔗 [V4] Extracted ${spokeHubTopology.length} spoke-hub topology entries`);
   return {
     mapped: dataset,
     raw: { reserves: v4Reserves as any[] },
+    spokeHubTopology,
   };
 }
 
@@ -262,5 +267,5 @@ export async function fetchV4ReservesData(
   }
 
   logger.error(`❌ [V4] Returning empty dataset after ${maxRetries} failed attempts`);
-  return { mapped: [], raw: { reserves: [] } };
+  return { mapped: [], raw: { reserves: [] }, spokeHubTopology: [] };
 }

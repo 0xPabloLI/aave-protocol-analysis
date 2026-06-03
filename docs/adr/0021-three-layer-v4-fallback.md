@@ -5,7 +5,7 @@ References: AAV-388, PRD c6ab55629364
 
 ## Status
 
-Proposed
+Implemented
 
 ## Context
 

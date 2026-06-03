@@ -282,6 +282,8 @@ export const AAVE_CHAIN_KEY_ALIASES = Object.freeze({
   binance: 'bnb',
 });
 
+export const V4_SKIP_SPOKES = Object.freeze(['TREASURY_SPOKE']);
+
 export const AAVE_CHAIN_ID_TO_RPC_KEY = Object.freeze({
   1: 'ethereum',
   10: 'optimism',

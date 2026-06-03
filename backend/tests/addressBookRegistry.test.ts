@@ -1,24 +1,18 @@
-/**
- * Snapshot test for addressBookRegistry — validates registry output against
- * embedded snapshot fixtures (formerly from generated/oracle-pool-configs.ts).
- *
- * V4 spokeName format changes from human-readable (e.g. 'Bluechip') to raw
- * spokeKey (e.g. 'BLUECHIP_SPOKE') — so spokeName is NOT compared directly.
- * Instead, spokeAddress is used as the matching key.
- *
- * After the refactor, this test serves as a regression guard:
- * - If address-book is bumped and fields disappear, this test fails.
- * - If a new spoke appears without a V4_SPOKE_TO_HUB entry, the completeness
- *   checks catch it.
- */
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { V3_ENTRIES, V4_SPOKE_ENTRIES, type V3PoolEntry, type V4SpokeEntry } from '../src/services/addressBookRegistry.js';
+import {
+  buildAll,
+  V3_ENTRIES,
+  V4_SPOKE_ENTRIES,
+  initAddressBookRegistry,
+  type V3PoolEntry,
+  type V4SpokeEntry,
+} from '../src/services/addressBookRegistry.js';
+import type { SpokeHubTopology } from '@internal/aave-shared-contracts';
+import * as AaveAddressBook from '@aave-dao/aave-address-book';
 
 // ============================================================
-// Snapshot fixtures (formerly from generated/oracle-pool-configs.ts)
-// Embedded after file deletion. Update if address-book bumps.
+// Snapshot fixtures
 // ============================================================
 
 interface SnapshotV3PoolConfig {
@@ -75,11 +69,96 @@ const SYNCED_V4_SPOKE_CONFIGS: SnapshotV4SpokeConfig[] = [
 ];
 
 // ============================================================
+// SDK topology snapshot
+// ============================================================
+
+const SDK_SPOKE_HUB_TOPOLOGY: Record<string, string[]> = {
+  '0x94e7a5dcbe816e498b89ab752661904e2f56c485': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0x973a023a77420ba610f06b3858ad991df6d85a08': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9', '0x943827dca022d0f354a8a8c332da1e5eb9f9f931'],
+  '0xe1900480ac69f0b296841cd01cc37546d92f35cd': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0xbf10bdfe177de0336afd7fccf80a904e15386219': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0x3131fe68c4722e726fe6b2819ed68e514395b9a4': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0x58131e79531cab1d52301228d1f7b842f26b9649': ['0x06002e9c4412cb7814a791ea3666d905871e536a'],
+  '0xba1b3d55d249692b669a164024a838309b7508af': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9', '0x06002e9c4412cb7814a791ea3666d905871e536a'],
+  '0xd8b93635b8c6d0ff98cbe90b5988e3f2d1cd9da1': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0x65407b940966954b23dfa3caa5c0702bb42984dc': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+  '0x7ec68b5695e803e98a21a9a05d744f28b0a7753d': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
+};
+
+function sdkTopologyToSpokeHubTopology(): SpokeHubTopology {
+  const entries: SpokeHubTopology = [];
+  for (const [spokeAddr, hubAddrs] of Object.entries(SDK_SPOKE_HUB_TOPOLOGY)) {
+    for (const hubAddr of hubAddrs) {
+      entries.push({ chainId: 1, spokeAddress: spokeAddr, hubAddress: hubAddr });
+    }
+  }
+  return entries;
+}
+
+// ============================================================
 // Helpers
 // ============================================================
 
 const V3_ORACLE_ENTRIES = V3_ENTRIES.filter((e) => !!e.oracleAddress);
 const V4_ORACLE_ENTRIES = V4_SPOKE_ENTRIES.filter((e) => !!e.oracleAddress);
+
+// ============================================================
+// Pure function tests: buildAll(topology)
+// ============================================================
+
+test('buildAll with empty topology returns empty v4Spokes', () => {
+  const result = buildAll([]);
+  assert.strictEqual(result.v4Spokes.length, 0);
+});
+
+test('buildAll with topology containing one spoke-hub pair and matching address-book spoke returns one V4SpokeEntry', () => {
+  const topology: SpokeHubTopology = [
+    { chainId: 1, spokeAddress: '0x94e7a5dcbe816e498b89ab752661904e2f56c485', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  ];
+  const result = buildAll(topology);
+  const mainEntries = result.v4Spokes.filter((e) => e.spokeKey === 'MAIN_SPOKE');
+  assert.strictEqual(mainEntries.length, 1);
+  assert.strictEqual(mainEntries[0].hubAddress, '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9');
+});
+
+test('buildAll silently skips spoke not found in address-book', () => {
+  const topology: SpokeHubTopology = [
+    { chainId: 1, spokeAddress: '0xdead000000000000000000000000000000000000', hubAddress: '0xbeef000000000000000000000000000000000000' },
+  ];
+  const result = buildAll(topology);
+  assert.strictEqual(result.v4Spokes.length, 0);
+});
+
+test('buildAll with one spoke connected to multiple hubs produces multiple V4SpokeEntries', () => {
+  const topology: SpokeHubTopology = [
+    { chainId: 1, spokeAddress: '0x973a023a77420ba610f06b3858ad991df6d85a08', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+    { chainId: 1, spokeAddress: '0x973a023a77420ba610f06b3858ad991df6d85a08', hubAddress: '0x943827dca022d0f354a8a8c332da1e5eb9f9f931' },
+  ];
+  const result = buildAll(topology);
+  const bluechipEntries = result.v4Spokes.filter((e) => e.spokeKey === 'BLUECHIP_SPOKE');
+  assert.strictEqual(bluechipEntries.length, 2);
+  const hubAddrs = new Set(bluechipEntries.map((e) => e.hubAddress));
+  assert.ok(hubAddrs.has('0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'));
+  assert.ok(hubAddrs.has('0x943827dca022d0f354a8a8c332da1e5eb9f9f931'));
+});
+
+test('buildAll V3 entries are unaffected by topology', () => {
+  const resultEmpty = buildAll([]);
+  const resultFull = buildAll(sdkTopologyToSpokeHubTopology());
+  assert.strictEqual(resultEmpty.v3.length, resultFull.v3.length);
+  assert.deepStrictEqual(resultEmpty.v3, resultFull.v3);
+});
+
+test('V4SpokeEntry no longer has hubKey field', () => {
+  const topology: SpokeHubTopology = [
+    { chainId: 1, spokeAddress: '0x94e7a5dcbe816e498b89ab752661904e2f56c485', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  ];
+  const result = buildAll(topology);
+  if (result.v4Spokes.length > 0) {
+    const entry = result.v4Spokes[0];
+    assert.ok(!('hubKey' in entry), 'V4SpokeEntry should not have hubKey field');
+  }
+});
 
 // ============================================================
 // V3: Oracle configs must match SYNCED_V3_POOL_CONFIGS exactly
@@ -123,8 +202,6 @@ test('Fantom (chainId=250) is NOT in V3 entries', () => {
 });
 
 test('V3 entries only contain chains in AAVE_CHAIN_ID_TO_RPC_KEY', () => {
-  // Importing from aave-shared-config isn't needed — the registry enforces this.
-  // We just verify no chainId=0 or NaN entries.
   for (const e of V3_ENTRIES) {
     assert.ok(Number.isFinite(e.chainId) && e.chainId > 0, `Invalid chainId: ${e.chainId} for ${e.poolKey}`);
     assert.ok(e.poolAddress.startsWith('0x'), `Invalid poolAddress for ${e.poolKey}`);
@@ -136,14 +213,10 @@ test('V3 entries only contain chains in AAVE_CHAIN_ID_TO_RPC_KEY', () => {
 // ============================================================
 
 test('V4 oracle entry count >= SYNCED_V4_SPOKE_CONFIGS (multi-hub duplicates allowed)', () => {
-  // Registry has 11 oracle entries (BLUECHIP_SPOKE appears twice: CORE_HUB + PRIME_HUB),
-  // while old generated config had 10 (one per unique spoke). Both are correct for their
-  // respective consumers — oracle uses per-spoke deduplication, onchain uses per-hub.
   assert.ok(
     V4_ORACLE_ENTRIES.length >= SYNCED_V4_SPOKE_CONFIGS.length,
     `Expected >= ${SYNCED_V4_SPOKE_CONFIGS.length} V4 oracle entries, got ${V4_ORACLE_ENTRIES.length}`,
   );
-  // Unique spokes (by spokeAddress) should match
   const uniqueSpokeAddresses = new Set(V4_ORACLE_ENTRIES.map((e) => e.spokeAddress));
   assert.strictEqual(uniqueSpokeAddresses.size, SYNCED_V4_SPOKE_CONFIGS.length);
 });
@@ -162,7 +235,6 @@ test('V4 oracle entries have correct chainId and oracleAddress (matched by spoke
   for (const synced of SYNCED_V4_SPOKE_CONFIGS) {
     const matches = V4_ORACLE_ENTRIES.filter((e) => e.spokeAddress === synced.spokeAddress);
     assert.ok(matches.length > 0, `No registry entry for spokeAddress: ${synced.spokeAddress}`);
-    // There may be multiple entries for same spoke (multi-hub), oracleAddress should be same
     for (const entry of matches) {
       assert.strictEqual(entry.chainId, synced.chainId, `chainId mismatch for ${synced.spokeName}`);
       assert.strictEqual(entry.oracleAddress, synced.oracleAddress, `oracleAddress mismatch for ${synced.spokeName}`);
@@ -174,31 +246,30 @@ test('V4 oracle entries have correct chainId and oracleAddress (matched by spoke
 // V4: Multi-hub support
 // ============================================================
 
-test('BLUECHIP_SPOKE has 2 hub entries (CORE_HUB + PRIME_HUB)', () => {
+test('BLUECHIP_SPOKE has 2 hub entries (from topology)', () => {
   const bluechipEntries = V4_SPOKE_ENTRIES.filter((e) => e.spokeKey === 'BLUECHIP_SPOKE');
   assert.strictEqual(bluechipEntries.length, 2, 'BLUECHIP_SPOKE should have 2 hub entries');
-  const hubKeys = bluechipEntries.map((e) => e.hubKey);
-  assert.ok(hubKeys.includes('CORE_HUB'));
-  assert.ok(hubKeys.includes('PRIME_HUB'));
+  const hubAddrs = new Set(bluechipEntries.map((e) => e.hubAddress));
+  assert.ok(hubAddrs.has('0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'));
+  assert.ok(hubAddrs.has('0x943827dca022d0f354a8a8c332da1e5eb9f9f931'));
 });
 
-test('ETHENA_ECOSYSTEM_SPOKE has 2 hub entries (CORE_HUB + PLUS_HUB)', () => {
+test('ETHENA_ECOSYSTEM_SPOKE has 2 hub entries (from topology)', () => {
   const entries = V4_SPOKE_ENTRIES.filter((e) => e.spokeKey === 'ETHENA_ECOSYSTEM_SPOKE');
   assert.strictEqual(entries.length, 2, 'ETHENA_ECOSYSTEM_SPOKE should have 2 hub entries');
-  const hubKeys = entries.map((e) => e.hubKey);
-  assert.ok(hubKeys.includes('CORE_HUB'));
-  assert.ok(hubKeys.includes('PLUS_HUB'));
+  const hubAddrs = new Set(entries.map((e) => e.hubAddress));
+  assert.ok(hubAddrs.has('0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'));
+  assert.ok(hubAddrs.has('0x06002e9c4412cb7814a791ea3666d905871e536a'));
 });
 
-test('all V4 spoke entries with oracle have valid hubKey and hubAddress', () => {
+test('all V4 spoke entries with oracle have valid hubAddress', () => {
   for (const e of V4_ORACLE_ENTRIES) {
-    assert.ok(e.hubKey && e.hubKey.length > 0, `Missing hubKey for ${e.spokeKey}`);
-    assert.ok(e.hubAddress.startsWith('0x'), `Invalid hubAddress for ${e.spokeKey}/${e.hubKey}`);
+    assert.ok(e.hubAddress.startsWith('0x'), `Invalid hubAddress for ${e.spokeKey}`);
   }
 });
 
 // ============================================================
-// V4: SpokeKey (new spokeName) format
+// V4: SpokeKey format
 // ============================================================
 
 test('V4 spokeKey format uses raw keys (e.g. MAIN_SPOKE, not Main)', () => {
@@ -218,13 +289,9 @@ test('TREASURY_SPOKE is NOT in V4 entries', () => {
 });
 
 test('V4 entries only contain chains in AAVE_CHAIN_ID_TO_RPC_KEY (whitelist enforced)', () => {
-  // After adding isSupportedChain(chainId) to the V4 path, all V4 entries
-  // must have chainIds present in the whitelist. Current V4 deployments
-  // are all on chainId=1 (Ethereum).
   for (const e of V4_SPOKE_ENTRIES) {
     assert.ok(Number.isFinite(e.chainId) && e.chainId > 0, `Invalid chainId: ${e.chainId} for ${e.spokeKey}`);
-    // chainId=1 is the only Ethereum mainnet chain, confirmed in whitelist
-    assert.strictEqual(e.chainId, 1, `V4 spoke ${e.spokeKey}/${e.hubKey} has chainId=${e.chainId}, expected 1 (Ethereum only)`);
+    assert.strictEqual(e.chainId, 1, `V4 spoke ${e.spokeKey} has chainId=${e.chainId}, expected 1 (Ethereum only)`);
   }
 });
 
@@ -235,7 +302,6 @@ test('V4 entries only contain chains in AAVE_CHAIN_ID_TO_RPC_KEY (whitelist enfo
 test('V3 entries with UI_POOL_DATA_PROVIDER and POOL_ADDRESSES_PROVIDER are sufficient for onchain', () => {
   const v3Onchain = V3_ENTRIES.filter((e) => e.uiPoolDataProviderAddress && e.poolAddressesProvider);
   assert.ok(v3Onchain.length > 0, 'Should have at least one V3 onchain entry');
-  // Should be a subset of V3_ENTRIES
   assert.ok(v3Onchain.length <= V3_ENTRIES.length);
   for (const e of v3Onchain) {
     assert.ok(e.uiPoolDataProviderAddress!.startsWith('0x'), `Invalid uiPoolDataProviderAddress for ${e.poolKey}`);
@@ -245,7 +311,7 @@ test('V3 entries with UI_POOL_DATA_PROVIDER and POOL_ADDRESSES_PROVIDER are suff
 
 test('V4 spoke entries all have hubAddress (needed by onchainDataService)', () => {
   for (const e of V4_SPOKE_ENTRIES) {
-    assert.ok(e.hubAddress.startsWith('0x'), `Invalid hubAddress for ${e.spokeKey}/${e.hubKey}`);
+    assert.ok(e.hubAddress.startsWith('0x'), `Invalid hubAddress for ${e.spokeKey}`);
   }
 });
 
@@ -254,39 +320,21 @@ test('V4 spoke entries all have hubAddress (needed by onchainDataService)', () =
 // ============================================================
 
 test('known V3 pool count (oracle-filtered)', () => {
-  // If address-book bumps and this changes, update the count.
   assert.strictEqual(V3_ORACLE_ENTRIES.length, 23, 'V3 oracle entry count is 23');
 });
 
 test('known V4 spoke count (oracle-filtered)', () => {
-  // 12 = 10 unique spokes + 2 extra (BLUECHIP_SPOKE has CORE_HUB+PRIME_HUB,
-  // ETHENA_ECOSYSTEM_SPOKE has CORE_HUB+PLUS_HUB)
-  // If address-book bumps and this changes, update the count.
   assert.strictEqual(V4_ORACLE_ENTRIES.length, 12, 'V4 oracle entry count is 12 (10 unique spokes, BLUECHIP+ETHENA_ECOSYSTEM have 2 hubs each)');
 });
 
 // ============================================================
-// Semantic validation: V4_SPOKE_TO_HUB topology matches SDK spoke.connectedHubs
-// Prevents silent mismatch when hub assignments change in the protocol.
-// Uses embedded snapshot from data/debug/v4-raw-sdk-response.json.
+// Topology-driven: buildAll(topology) matches SDK snapshot
 // ============================================================
 
-const SDK_SPOKE_HUB_TOPOLOGY: Record<string, string[]> = {
-  '0x94e7a5dcbe816e498b89ab752661904e2f56c485': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
-  '0x973a023a77420ba610f06b3858ad991df6d85a08': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9', '0x943827dca022d0f354a8a8c332da1e5eb9f9f931'],
-  '0xe1900480ac69f0b296841cd01cc37546d92f35cd': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
-  '0xbf10bdfe177de0336afd7fccf80a904e15386219': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
-  '0x3131fe68c4722e726fe6b2819ed68e514395b9a4': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
-  '0x58131e79531cab1d52301228d1f7b842f26b9649': ['0x06002e9c4412cb7814a791ea3666d905871e536a'],
-  '0xba1b3d55d249692b669a164024a838309b7508af': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9', '0x06002e9c4412cb7814a791ea3666d905871e536a'],
-  '0xd8b93635b8c6d0ff98cbe90b5988e3f2d1cd9da1': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
-  '0x65407b940966954b23dfa3caa5c0702bb42984dc': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
-  '0x7ec68b5695e803e98a21a9a05d744f28b0a7753d': ['0xcca852bc40e560adc3b1cc58ca5b55638ce826c9'],
-};
-
-test('V4_SPOKE_TO_HUB matches SDK spoke.connectedHubs topology', () => {
+test('buildAll(sdkTopology) hub addresses match SDK spoke.connectedHubs topology', () => {
+  const result = buildAll(sdkTopologyToSpokeHubTopology());
   for (const [spokeAddr, sdkHubs] of Object.entries(SDK_SPOKE_HUB_TOPOLOGY)) {
-    const registryEntries = V4_SPOKE_ENTRIES.filter((e) => e.spokeAddress === spokeAddr);
+    const registryEntries = result.v4Spokes.filter((e) => e.spokeAddress === spokeAddr);
     assert.ok(registryEntries.length > 0, `No registry entry for spokeAddress ${spokeAddr}`);
     const registryHubs = registryEntries.map((e) => e.hubAddress).sort();
     const expectedHubs = [...sdkHubs].sort();

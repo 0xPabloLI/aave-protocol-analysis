@@ -37,8 +37,8 @@ import {
 } from './cloudflare-browser.js';
 import { fetchV4ReservesData, bigintReplacer } from './v4-fetcher.js';
 import type { V4FetchResult } from './v4-fetcher.js';
-import type { RuntimeReserveData, MarketsPayload } from '@internal/aave-shared-contracts';
-export type { RuntimeReserveData, MarketsPayload } from '@internal/aave-shared-contracts';
+import type { RuntimeReserveData, MarketsPayload, SpokeHubTopology } from '@internal/aave-shared-contracts';
+export type { RuntimeReserveData, MarketsPayload, SpokeHubTopology } from '@internal/aave-shared-contracts';
 export type {
   MerklCampaignBreakdown,
   MerklOpportunityGroup,
@@ -296,10 +296,12 @@ async function buildMarketsBaseDataset(v3Markets: any[], options?: {
   v4Count: number;
   v4Dataset: RuntimeReserveData[];
   v4Raw: V4FetchResult['raw'];
+  spokeHubTopology: SpokeHubTopology;
 }> {
   const v3Dataset = buildV3BaseDataset(v3Markets);
   let v4Dataset: RuntimeReserveData[] = [];
   let v4Raw: V4FetchResult['raw'] = { reserves: [] };
+  let spokeHubTopology: SpokeHubTopology = [];
   const v4Fatal = options?.v4Fatal ?? false;
   // V4 fetch isolation: independent timeout prevents slow V4 API from
   // consuming the outer 60s Markets fetch timeout and blocking V3 data.
@@ -315,6 +317,7 @@ async function buildMarketsBaseDataset(v3Markets: any[], options?: {
     ]);
     v4Dataset = v4Result.mapped;
     v4Raw = v4Result.raw;
+    spokeHubTopology = v4Result.spokeHubTopology;
     if (v4Dataset.length > 0) {
       logger.info(`✅ Fetched ${v4Dataset.length} V4 reserves`);
     } else if (v4Fatal) {
@@ -334,7 +337,7 @@ async function buildMarketsBaseDataset(v3Markets: any[], options?: {
   }
   const baseDataset = [...v3Dataset, ...v4Dataset];
   logger.info(`📊 Unified dataset: ${baseDataset.length} reserves (V3: ${v3Dataset.length}, V4: ${v4Dataset.length})`);
-  return { baseDataset, v3Count: v3Dataset.length, v4Count: v4Dataset.length, v4Dataset, v4Raw };
+  return { baseDataset, v3Count: v3Dataset.length, v4Count: v4Dataset.length, v4Dataset, v4Raw, spokeHubTopology };
 }
 
 // 从 Aave V3 市场数据创建基础数据集
@@ -1178,7 +1181,7 @@ export async function fetchMarketsData(options?: {
   
   // 格式化数据（V3 + V4 unified）
   logger.info('\n📊 Formatting market data...');
-  const { baseDataset, v3Count, v4Count, v4Raw } = await buildMarketsBaseDataset(marketData.markets, {
+  const { baseDataset, v3Count, v4Count, v4Raw, spokeHubTopology } = await buildMarketsBaseDataset(marketData.markets, {
     v4Fatal: options?.v4Fatal,
   });
   const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
@@ -1205,6 +1208,7 @@ export async function fetchMarketsData(options?: {
     },
     data: runtimeData,
     ...(merklResult.campaignAccess?.length ? { campaignAccess: merklResult.campaignAccess } : {}),
+    ...(spokeHubTopology.length ? { spokeHubTopology } : {}),
   };
 
   // Write debug files (non-blocking, never fail the cron)

@@ -5,38 +5,31 @@
  * Design decisions (do not regress):
  * - V3 whitelist source = AAVE_CHAIN_ID_TO_RPC_KEY. New chains only need
  *   a RPC entry in aave-shared-config to appear here — no double-write.
- *   Why: @aave-dao/aave-address-book exports have no TESTNET/IS_MAINNET
- *   field, so schema-based filtering is impossible. The only authoritative
- *   discriminator between "supported chain" and "testnet" is whether we
- *   have RPC URLs configured for that chainId.
  * - V4 also filters by AAVE_CHAIN_ID_TO_RPC_KEY (same whitelist as V3).
- *   When V4 expands to a new chain, add the chain's RPC config to
- *   aave-shared-config to enable it here.
  * - spokeKey IS spokeName (raw key, no _SPOKE suffix stripping).
- *   Consistent with onchainDataService's existing behavior.
- * - V4 spoke→hub is many-to-many (Record<string, string[]>).
- *   BLUECHIP_SPOKE → [CORE_HUB, PRIME_HUB]. Each (spoke, hub) combo
+ * - V4 spoke→hub is topology-driven: buildAll(topology) is a pure function
+ *   that joins address-book SPOKES with SpokeHubTopology. Many-to-many
+ *   (e.g. BLUECHIP_SPOKE → CORE_HUB + PRIME_HUB). Each (spoke, hub) combo
  *   produces a separate V4SpokeEntry.
  * - This is the ONLY authoritative narrowing layer for address-book.
  *   Consumers MUST NOT re-filter these entries.
- * - Per-entry traversal failures are caught and skipped. Module import
- *   failures propagate (same as pre-refactor behavior — consumers also
- *   imported @aave-dao/aave-address-book directly).
+ * - Per-entry traversal failures are caught and skipped.
  */
 
 import * as AaveAddressBook from '@aave-dao/aave-address-book';
-import { AAVE_CHAIN_ID_TO_RPC_KEY } from '@internal/aave-shared-config';
+import { AAVE_CHAIN_ID_TO_RPC_KEY, V4_SKIP_SPOKES } from '@internal/aave-shared-config';
+import type { SpokeHubTopology } from '@internal/aave-shared-contracts';
 
 // ============================================================
 // V3 Types
 // ============================================================
 
 export interface V3PoolEntry {
-  poolKey: string;                        // e.g. AaveV3Ethereum
+  poolKey: string;
   chainId: number;
-  poolAddress: string;                    // lowercased
-  oracleAddress?: string;                 // missing → not in oracle list
-  uiPoolDataProviderAddress?: string;     // missing → not in onchain list
+  poolAddress: string;
+  oracleAddress?: string;
+  uiPoolDataProviderAddress?: string;
   poolAddressesProvider?: string;
 }
 
@@ -52,40 +45,31 @@ const isSupportedChain = (chainId: number): boolean =>
 // ============================================================
 
 export interface V4SpokeEntry {
-  spokeKey: string;                       // raw key e.g. MAIN_SPOKE — also serves as spokeName
+  spokeKey: string;
   chainId: number;
-  spokeAddress: string;                   // lowercased
-  hubKey: string;                         // e.g. CORE_HUB
-  hubAddress: string;                     // lowercased
-  oracleAddress?: string;                 // from SPOKES[`${spokeKey}_ORACLE`]
+  spokeAddress: string;
+  hubAddress: string;
+  oracleAddress?: string;
 }
-
-// ============================================================
-// V4: Spoke-to-Hub mapping (many-to-many)
-// ============================================================
-
-const V4_SPOKE_TO_HUB: Record<string, string[]> = {
-  MAIN_SPOKE: ['CORE_HUB'],
-  BLUECHIP_SPOKE: ['CORE_HUB', 'PRIME_HUB'],
-  LIDO_ESPOKE: ['CORE_HUB'],
-  ETHERFI_ESPOKE: ['CORE_HUB'],
-  KELP_ESPOKE: ['CORE_HUB'],
-  ETHENA_CORRELATED_SPOKE: ['PLUS_HUB'],
-  ETHENA_ECOSYSTEM_SPOKE: ['CORE_HUB', 'PLUS_HUB'],
-  FOREX_SPOKE: ['CORE_HUB'],
-  GOLD_SPOKE: ['CORE_HUB'],
-  LOMBARD_BTC_SPOKE: ['CORE_HUB'],
-};
-
-const V4_SKIP_SPOKES = new Set(['TREASURY_SPOKE']);
 
 // ============================================================
 // Build: single-pass traversal of AaveAddressBook
 // ============================================================
 
-function buildAll(): { v3: V3PoolEntry[]; v4Spokes: V4SpokeEntry[] } {
+export function buildAll(topology: SpokeHubTopology): { v3: V3PoolEntry[]; v4Spokes: V4SpokeEntry[] } {
   const v3: V3PoolEntry[] = [];
   const v4Spokes: V4SpokeEntry[] = [];
+
+  const topologyBySpoke = new Map<string, string[]>();
+  for (const entry of topology) {
+    const key = `${entry.chainId}:${entry.spokeAddress.toLowerCase()}`;
+    const existing = topologyBySpoke.get(key);
+    if (existing) {
+      existing.push(entry.hubAddress.toLowerCase());
+    } else {
+      topologyBySpoke.set(key, [entry.hubAddress.toLowerCase()]);
+    }
+  }
 
   for (const [key, value] of Object.entries(AaveAddressBook)) {
     try {
@@ -95,7 +79,6 @@ function buildAll(): { v3: V3PoolEntry[]; v4Spokes: V4SpokeEntry[] } {
       if (!Number.isFinite(chainId) || chainId <= 0) continue;
 
       if (key.startsWith('AaveV3')) {
-        // --- V3: whitelist via AAVE_CHAIN_ID_TO_RPC_KEY ---
         if (!isSupportedChain(chainId)) continue;
 
         const poolAddress = typeof v.POOL === 'string' ? v.POOL.toLowerCase().trim() : '';
@@ -110,35 +93,32 @@ function buildAll(): { v3: V3PoolEntry[]; v4Spokes: V4SpokeEntry[] } {
           poolAddressesProvider: typeof v.POOL_ADDRESSES_PROVIDER === 'string' ? v.POOL_ADDRESSES_PROVIDER : undefined,
         });
       } else if (key.startsWith('AaveV4')) {
-        // --- V4: whitelist via AAVE_CHAIN_ID_TO_RPC_KEY ---
         if (!isSupportedChain(chainId)) continue;
 
-        // --- V4: iterate spokes, expand per-hub ---
-        const hubs = v.HUBS as Record<string, string> | undefined;
         const spokes = v.SPOKES as Record<string, string> | undefined;
-        if (!hubs || !spokes) continue;
+        if (!spokes) continue;
 
         for (const [spokeKey, spokeAddr] of Object.entries(spokes)) {
           if (!spokeKey.endsWith('_SPOKE') && !spokeKey.endsWith('_ESPOKE')) continue;
-          if (V4_SKIP_SPOKES.has(spokeKey)) continue;
+          if (V4_SKIP_SPOKES.includes(spokeKey)) continue;
           if (typeof spokeAddr !== 'string') continue;
 
-          const hubKeys = V4_SPOKE_TO_HUB[spokeKey];
-          if (!hubKeys || hubKeys.length === 0) continue;
+          const spokeAddressLower = spokeAddr.toLowerCase().trim();
+          const topoKey = `${chainId}:${spokeAddressLower}`;
+          const hubAddresses = topologyBySpoke.get(topoKey);
+          if (!hubAddresses || hubAddresses.length === 0) continue;
 
-          for (const hubKey of hubKeys) {
-            const hubAddr = hubs[hubKey];
-            if (typeof hubAddr !== 'string') continue;
+          const oracleAddress = typeof spokes[`${spokeKey}_ORACLE`] === 'string'
+            ? spokes[`${spokeKey}_ORACLE`].toLowerCase()
+            : undefined;
 
+          for (const hubAddress of hubAddresses) {
             v4Spokes.push({
               spokeKey,
               chainId,
-              spokeAddress: spokeAddr.toLowerCase().trim(),
-              hubKey,
-              hubAddress: hubAddr.toLowerCase(),
-              oracleAddress: typeof spokes[`${spokeKey}_ORACLE`] === 'string'
-                ? spokes[`${spokeKey}_ORACLE`].toLowerCase()
-                : undefined,
+              spokeAddress: spokeAddressLower,
+              hubAddress,
+              oracleAddress,
             });
           }
         }
@@ -151,6 +131,43 @@ function buildAll(): { v3: V3PoolEntry[]; v4Spokes: V4SpokeEntry[] } {
   return { v3, v4Spokes };
 }
 
-const _all = buildAll();
-export const V3_ENTRIES: readonly V3PoolEntry[] = _all.v3;
-export const V4_SPOKE_ENTRIES: readonly V4SpokeEntry[] = _all.v4Spokes;
+// ============================================================
+// Lazy init exports (downstream compatibility)
+// ============================================================
+
+export let V3_ENTRIES: readonly V3PoolEntry[] = [];
+export let V4_SPOKE_ENTRIES: readonly V4SpokeEntry[] = [];
+
+let currentTopologySignature: string | null = null;
+
+export function topologySignature(topology: SpokeHubTopology): string {
+  return JSON.stringify(topology);
+}
+
+export function getCurrentTopologySignature(): string | null {
+  return currentTopologySignature;
+}
+
+export function initAddressBookRegistry(topology: SpokeHubTopology): void {
+  const result = buildAll(topology);
+  V3_ENTRIES = result.v3;
+  V4_SPOKE_ENTRIES = result.v4Spokes;
+  currentTopologySignature = topologySignature(topology);
+}
+
+export const DEFAULT_TOPOLOGY: SpokeHubTopology = [
+  { chainId: 1, spokeAddress: '0x94e7a5dcbe816e498b89ab752661904e2f56c485', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x973a023a77420ba610f06b3858ad991df6d85a08', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x973a023a77420ba610f06b3858ad991df6d85a08', hubAddress: '0x943827dca022d0f354a8a8c332da1e5eb9f9f931' },
+  { chainId: 1, spokeAddress: '0xe1900480ac69f0b296841cd01cc37546d92f35cd', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0xbf10bdfe177de0336afd7fccf80a904e15386219', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x3131fe68c4722e726fe6b2819ed68e514395b9a4', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x58131e79531cab1d52301228d1f7b842f26b9649', hubAddress: '0x06002e9c4412cb7814a791ea3666d905871e536a' },
+  { chainId: 1, spokeAddress: '0xba1b3d55d249692b669a164024a838309b7508af', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0xba1b3d55d249692b669a164024a838309b7508af', hubAddress: '0x06002e9c4412cb7814a791ea3666d905871e536a' },
+  { chainId: 1, spokeAddress: '0xd8b93635b8c6d0ff98cbe90b5988e3f2d1cd9da1', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x65407b940966954b23dfa3caa5c0702bb42984dc', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x7ec68b5695e803e98a21a9a05d744f28b0a7753d', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+];
+
+initAddressBookRegistry(DEFAULT_TOPOLOGY);

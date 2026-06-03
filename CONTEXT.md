@@ -41,8 +41,20 @@ _Avoid_: assetId（V4 合约层概念，per-Hub 局部 ID）
 _Avoid_: reserveId
 
 **hubId** / **spokeId**:
-Hub/Spoke 的 SDK 内部 ID。本项目中 `hubName`/`spokeName`（人类可读短名，如 "Core"/"Main"）供前端显示，`hubAddress`/`spokeAddress`（合约地址）编码在 reserveId 中供唯一标识和链上交互。
+Hub/Spoke 的 SDK 内部 ID。仅供 SDK 内部使用，不在本项目运行时关键路径上。
 _Avoid_: 无
+
+**spokeKey**:
+Spoke 的功能性复合标识，格式 `chainId:spokeAddress`（如 `1:0x94e7a5dcbe81...`）。用于 DB 查找、configMap key 等需要唯一性的场景。取代旧 address-book raw key（如 `MAIN_SPOKE`）。
+_Avoid_: spokeName（展示用，非唯一）
+
+**spokeName**:
+Spoke 的人类可读短名（如 `"Main"`、`"Bluechip"`），来源 SDK `spoke.name`。用于日志、API 展示等非唯一性场景。取代旧 address-book raw key 兼做标识+展示的双重角色。
+_Avoid_: spokeKey（标识用，非展示）
+
+**hubName**:
+Hub 的人类可读短名（如 `"Core"`、`"Prime"`），来源 SDK `hub.name`。用于前端显示。
+_Avoid_: hubKey
 
 ### 利率
 

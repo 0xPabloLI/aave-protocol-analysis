@@ -15,11 +15,16 @@
 
 import { fetchMarketsData } from '@internal/aave-fetcher';
 import type { NetPositionConstraint } from '@internal/aave-fetcher';
-import type { MarketsFetchResult, MarketsPayload, RuntimeReserveData } from '@internal/aave-shared-contracts';
+import type { MarketsFetchResult, MarketsPayload, RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { v4FatalConfig } from '../config.js';
 import { withTimeout } from '@internal/aave-rpc-infra';
 import { logger } from '../logger.js';
+import {
+  initAddressBookRegistry,
+  topologySignature,
+  getCurrentTopologySignature,
+} from './addressBookRegistry.js';
 import {
   getOnchainDataFromCache,
   getOnchainCacheStatus,
@@ -370,6 +375,16 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       };
 
       snapshot = newSnapshot;
+
+      const newTopology: SpokeHubTopology | undefined = payload.spokeHubTopology;
+      if (newTopology && newTopology.length > 0) {
+        const newSig = topologySignature(newTopology);
+        const currentSig = getCurrentTopologySignature();
+        if (newSig !== currentSig) {
+          initAddressBookRegistry(newTopology);
+          logger.info(`🔄 SpokeHub topology changed (rebuild V4_SPOKE_ENTRIES): ${newTopology.length} entries`);
+        }
+      }
 
       if (payload.campaignAccess?.length) {
         setCampaignAccessSnapshot(payload.campaignAccess);

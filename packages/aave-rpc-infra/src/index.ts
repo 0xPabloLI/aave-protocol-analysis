@@ -2,8 +2,8 @@ import { providers, utils } from 'ethers';
 import * as AaveAddressBook from '@aave-dao/aave-address-book';
 import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
-import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
-import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
+import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, V4_SKIP_SPOKES } from '@internal/aave-shared-config';
+import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
 
 export type ProviderCandidate = {
   rpcUrl: string;
@@ -335,26 +335,38 @@ export interface V4SpokeEntry {
   hubAddress: string;
 }
 
-const V4_SPOKE_TO_HUB: Record<string, string[]> = {
-  MAIN_SPOKE: ['CORE_HUB'],
-  BLUECHIP_SPOKE: ['CORE_HUB', 'PRIME_HUB'],
-  LIDO_ESPOKE: ['CORE_HUB'],
-  ETHERFI_ESPOKE: ['CORE_HUB'],
-  KELP_ESPOKE: ['CORE_HUB'],
-  ETHENA_CORRELATED_SPOKE: ['PLUS_HUB'],
-  ETHENA_ECOSYSTEM_SPOKE: ['PLUS_HUB'],
-  FOREX_SPOKE: ['PLUS_HUB'],
-  GOLD_SPOKE: ['PLUS_HUB'],
-  LOMBARD_BTC_SPOKE: ['PRIME_HUB'],
-};
-
-const V4_SKIP_SPOKES = new Set(['TREASURY_SPOKE']);
+const DEFAULT_TOPOLOGY: SpokeHubTopology = [
+  { chainId: 1, spokeAddress: '0x94e7A5dCbE816e498b89aB752661904E2F56c485', hubAddress: '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x973a023A77420ba610f06b3858aD991Df6d85A08', hubAddress: '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x973a023A77420ba610f06b3858aD991Df6d85A08', hubAddress: '0x943827DCA022D0F354a8a8c332dA1e5Eb9f9F931' },
+  { chainId: 1, spokeAddress: '0xe1900480ac69f0B296841Cd01cC37546d92F35Cd', hubAddress: '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0xbF10BDfE177dE0336aFD7fcCF80A904E15386219', hubAddress: '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x3131FE68C4722e726fe6B2819ED68e514395B9a4', hubAddress: '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x58131E79531caB1d52301228d1f7b842F26B9649', hubAddress: '0x06002e9c4412CB7814a791eA3666D905871E536A' },
+  { chainId: 1, spokeAddress: '0xba1B3D55D249692b669A164024A838309B7508AF', hubAddress: '0x06002e9c4412CB7814a791eA3666D905871E536A' },
+  { chainId: 1, spokeAddress: '0xD8B93635b8C6d0fF98CbE90b5988E3F2d1Cd9da1', hubAddress: '0x06002e9c4412CB7814a791eA3666D905871E536A' },
+  { chainId: 1, spokeAddress: '0x65407b940966954b23dfA3caA5C0702bB42984DC', hubAddress: '0x06002e9c4412CB7814a791eA3666D905871E536A' },
+  { chainId: 1, spokeAddress: '0x7EC68b5695e803e98a21a9A05d744F28b0a7753D', hubAddress: '0x943827DCA022D0F354a8a8c332dA1e5Eb9f9F931' },
+];
 
 function isSupportedChain(chainId: number): boolean {
   return Object.prototype.hasOwnProperty.call(AAVE_CHAIN_ID_TO_RPC_KEY, chainId);
 }
 
-export function getDefaultV4SpokeEntries(): V4SpokeEntry[] {
+export function getV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
+  const topologyBySpoke = new Map<string, string[]>();
+  for (const entry of topology) {
+    const key = `${entry.chainId}:${normalizeAddress(entry.spokeAddress)}`;
+    const existing = topologyBySpoke.get(key);
+    if (existing) {
+      if (!existing.includes(normalizeAddress(entry.hubAddress))) {
+        existing.push(normalizeAddress(entry.hubAddress));
+      }
+    } else {
+      topologyBySpoke.set(key, [normalizeAddress(entry.hubAddress)]);
+    }
+  }
+
   const entries: V4SpokeEntry[] = [];
   for (const [moduleName, moduleValue] of Object.entries(AaveAddressBook)) {
     if (!moduleName.startsWith('AaveV4') || !moduleValue || typeof moduleValue !== 'object') continue;
@@ -366,24 +378,37 @@ export function getDefaultV4SpokeEntries(): V4SpokeEntry[] {
     const spokes = value.SPOKES as Record<string, string> | undefined;
     if (!hubs || !spokes) continue;
 
+    const hubAddressToName = new Map<string, string>();
+    for (const [hubName, hubAddr] of Object.entries(hubs)) {
+      if (typeof hubAddr === 'string') {
+        hubAddressToName.set(normalizeAddress(hubAddr), hubName);
+      }
+    }
+
     for (const [spokeName, spokeAddress] of Object.entries(spokes)) {
       if (!spokeName.endsWith('_SPOKE') && !spokeName.endsWith('_ESPOKE')) continue;
-      if (V4_SKIP_SPOKES.has(spokeName) || typeof spokeAddress !== 'string') continue;
-      const hubNames = V4_SPOKE_TO_HUB[spokeName] ?? [];
-      for (const hubName of hubNames) {
-        const hubAddress = hubs[hubName];
-        if (typeof hubAddress !== 'string') continue;
+      if (V4_SKIP_SPOKES.includes(spokeName) || typeof spokeAddress !== 'string') continue;
+      const spokeKey = `${chainId}:${normalizeAddress(spokeAddress)}`;
+      const hubAddresses = topologyBySpoke.get(spokeKey);
+      if (!hubAddresses) continue;
+      for (const hubAddr of hubAddresses) {
+        const hubName = hubAddressToName.get(hubAddr);
+        if (!hubName) continue;
         entries.push({
           spokeName,
           chainId,
           spokeAddress: normalizeAddress(spokeAddress),
           hubName,
-          hubAddress: normalizeAddress(hubAddress),
+          hubAddress: hubAddr,
         });
       }
     }
   }
   return entries;
+}
+
+export function getDefaultV4SpokeEntries(): V4SpokeEntry[] {
+  return getV4SpokeEntries(DEFAULT_TOPOLOGY);
 }
 
 type ProviderPoolLike = Pick<ProviderPool, 'getProvidersForChain' | 'reportProviderFailure' | 'reportProviderSuccess' | 'errorClassifier' | 'executeWithFallback'>;
