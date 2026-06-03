@@ -23,6 +23,7 @@ import { runMigrations } from './services/autoMigrate.js';
 
 const app = express();
 app.set('etag', 'weak');
+app.set('trust proxy', 1);
 // 端口配置：优先读取环境变量，默认 3001
 // 环境变量读取优先级（使用 dotenv 后）：
 // 1. 系统环境变量 PORT（最高优先级，会覆盖 .env 文件）
@@ -117,6 +118,17 @@ const healthHandler = (_req: express.Request, res: express.Response) => {
 // - /api/health for API namespace consistency
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
+
+// Catch-all 404 handler — logs unmapped requests for bot/crawler monitoring.
+// Must be registered AFTER all valid routes so Express only reaches it on miss.
+const MAX_UA_LEN = 120;
+app.use((req, res) => {
+  const { method, path } = req;
+  const ip = req.ip ?? req.socket.remoteAddress ?? '-';
+  const ua = (req.headers['user-agent'] ?? '-').slice(0, MAX_UA_LEN);
+  logger.info(`404: ${method} ${path} from ${ip} ua="${ua}"`);
+  res.status(404).json({ error: 'Not found', message: `No route for ${method} ${path}`, path, method });
+});
 
 // Persistence diagnostics — exposes whether DB writes are happening on schedule.
 // Useful for catching silent persistence failures (the cron writer never throws
