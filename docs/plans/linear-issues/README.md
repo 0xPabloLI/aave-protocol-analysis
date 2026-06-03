@@ -7,7 +7,7 @@
 | 仓库 | 路径 | 数量 |
 |------|------|------|
 | aaveapy (lovable) | `docs/plans/linear-issues/` | 78 |
-| aave-protocol-analysis (railway) | `docs/plans/linear-issues/` | 8 |
+| aave-protocol-analysis (railway) | `docs/plans/linear-issues/` | 10 |
 
 注：涉及前后端的 Issue（target=both）会同时存放在两个仓库中。
 
