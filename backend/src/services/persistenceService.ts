@@ -66,6 +66,16 @@ export function resetPersistenceHashes(): void {
   oraclePriceHashes.clear();
 }
 
+function shrinkHashMaps(currentReserves: RuntimeReserveData[]): void {
+  const currentIds = new Set(currentReserves.map((r) => r.reserveId));
+  for (const key of marketRowHashes.keys()) {
+    if (!currentIds.has(key)) marketRowHashes.delete(key);
+  }
+  for (const key of marketConfigHashes.keys()) {
+    if (!currentIds.has(key)) marketConfigHashes.delete(key);
+  }
+}
+
 /**
  * Warm marketConfigHashes from the latest rows in DB.
  * After a process restart, the in-memory map is empty, causing the first
@@ -190,6 +200,9 @@ export async function persistSnapshotIfNeeded(
     totalMarketsRowsWritten += marketsRowsWritten;
     totalMarketConfigsRowsWritten += marketConfigsRowsWritten;
     totalOracleRowsWritten += oracleRowsWritten;
+    if (payload && payload.data.length > 0) {
+      shrinkHashMaps(payload.data);
+    }
     logger.info(
       `💾 Persisted snapshots: markets=${marketsRowsWritten} configs=${marketConfigsRowsWritten} oracle=${oracleRowsWritten} ts=${snapshotTs}`
     );

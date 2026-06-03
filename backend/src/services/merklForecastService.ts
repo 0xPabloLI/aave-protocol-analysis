@@ -44,7 +44,6 @@ const METRICS_CACHE_EMPTY_TTL_MS = BACKEND_CACHE_TTL_MS.merklMetricsEmpty;
 const METRICS_CACHE_HARD_TTL_MS = MERKL_TTL.metricsHardTtlMs;
 
 interface MetricsCacheEntry {
-  raw: unknown;
   data: ForecastMetricsLite;
   expiresAt: number;
   updatedAt: number;
@@ -573,7 +572,7 @@ const getCachedOrFetchMetrics = async (
   const now = Date.now();
   const cached = metricsCache.get(campaignId);
   if (cached && cached.expiresAt > now) {
-    return { raw: cached.raw, data: cached.data };
+    return { raw: null, data: cached.data };
   }
 
   const previous = cached;
@@ -593,7 +592,7 @@ const getCachedOrFetchMetrics = async (
           (Date.now() - previous!.updatedAt) / 1000
         )}s, max=${Math.round(METRICS_CACHE_HARD_TTL_MS / 1000)}s)`
       );
-      return { raw: previous!.raw, data: previous!.data };
+      return { raw: null, data: previous!.data };
     }
 
     logger.warn(
@@ -602,7 +601,6 @@ const getCachedOrFetchMetrics = async (
   }
 
   metricsCache.set(campaignId, {
-    raw: rawMetrics,
     data: metrics,
     expiresAt: now + ttlMs,
     updatedAt: now,
@@ -727,11 +725,13 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
       const [campaign, metricsResult] = await Promise.all([campaignPromise, metricsPromise]);
       const metrics = metricsResult.data;
 
-      await persistMerklDebugSnapshot({
-        campaignId,
-        ...(campaignFromNetwork ? { campaign } : {}),
-        metrics: metricsResult.raw,
-      });
+      if (metricsResult.raw !== null) {
+        await persistMerklDebugSnapshot({
+          campaignId,
+          ...(campaignFromNetwork ? { campaign } : {}),
+          metrics: metricsResult.raw,
+        });
+      }
 
       const campaignType = campaignOpportunityMeta.campaignTypeHint;
 

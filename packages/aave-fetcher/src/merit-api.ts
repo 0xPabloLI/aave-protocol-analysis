@@ -540,6 +540,12 @@ const fetchMeritRoundEstimates = async (
     });
   });
 
+  for (const [key, entry] of cache) {
+    if (nowMs - entry.lastCheckedAtMs > 2 * MERIT_ROUND_POST_END_REFRESH_MS) {
+      cache.delete(key);
+    }
+  }
+
   const result = new Map<string, MeritRoundEstimateBase>();
   _meritState.roundEstimateLastFetchMeta = {
     requestTemplateUrl,
@@ -1732,33 +1738,57 @@ export function getMeritDataFromMarket(
  * 获取或创建浏览器实例（单例模式）
  * PRODUCTION-GRADE: 检查连接状态，自动恢复断开的连接
  */
+let _browserLastUsedAt: number | null = null;
+let _browserClosing = false;
+const BROWSER_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+
 async function getBrowser(): Promise<Browser> {
-  // 如果浏览器存在，检查连接状态
+  if (_browserClosing) {
+    throw new Error('Browser is closing, retry later');
+  }
   if (_meritState.browserInstance) {
     try {
-      // 尝试获取页面列表来验证连接
       await _meritState.browserInstance.pages();
+      _browserLastUsedAt = Date.now();
       return _meritState.browserInstance;
     } catch (error) {
-      // 浏览器已断开，清除实例
       logger.warn('⚠️ Browser instance disconnected, will create new one');
       _meritState.browserInstance = null;
+      _browserLastUsedAt = null;
     }
   }
 
-  // 创建新浏览器实例
   try {
     _meritState.browserInstance = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
+    _browserLastUsedAt = Date.now();
+    _browserClosing = false;
     logger.info('✅ Browser instance created');
     return _meritState.browserInstance;
   } catch (error) {
     _meritState.browserInstance = null;
+    _browserLastUsedAt = null;
     throw error;
   }
 }
+
+setInterval(() => {
+  if (
+    !_browserClosing &&
+    _meritState.browserInstance &&
+    _browserLastUsedAt !== null &&
+    Date.now() - _browserLastUsedAt > BROWSER_IDLE_TIMEOUT_MS
+  ) {
+    logger.info('🧹 Browser idle for 5min, closing to reclaim memory');
+    _browserClosing = true;
+    const browser = _meritState.browserInstance;
+    _meritState.browserInstance = null;
+    _browserLastUsedAt = null;
+    browser.close().then(() => { _browserClosing = false; }).catch(() => { _browserClosing = false; });
+  }
+}, 60_000).unref();
 
 // ============================================================================
 // Semaphore for Page Concurrency Control

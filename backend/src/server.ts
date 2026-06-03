@@ -182,6 +182,8 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // If warmup fails, cron retries on its own schedule, so the server can self-heal.
 startUpdateScheduler();
 
+const RSS_RESTART_THRESHOLD_MB = Number.parseInt(process.env.RSS_RESTART_THRESHOLD_MB ?? '', 10) || 0;
+
 setInterval(() => {
   const mem = process.memoryUsage();
   const fmt = (bytes: number) => `${Math.round(bytes / 1024 / 1024)}MB`;
@@ -191,7 +193,6 @@ setInterval(() => {
     `merkl metricsCache=${merklStats.metricsCacheSize} zeroBaseline=${merklStats.zeroBaselineCacheSize} inFlight=${merklStats.inFlightSize} oppCacheAge=${merklStats.campaignOpportunityCacheAge ?? 'none'}ms`
   );
 
-  const RSS_RESTART_THRESHOLD_MB = Number.parseInt(process.env.RSS_RESTART_THRESHOLD_MB ?? '', 10) || 0;
   if (RSS_RESTART_THRESHOLD_MB > 0 && mem.rss > RSS_RESTART_THRESHOLD_MB * 1024 * 1024) {
     logger.warn(
       `🧹 RSS ${fmt(mem.rss)} exceeds threshold ${RSS_RESTART_THRESHOLD_MB}MB — initiating graceful restart`
