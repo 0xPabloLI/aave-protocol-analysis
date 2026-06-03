@@ -1,4 +1,4 @@
-import type { SpokeHubTopology, SpokeHubTopologyEntry } from '@internal/aave-shared-contracts';
+import type { SpokeHubTopology } from '@internal/aave-shared-contracts';
 
 export interface V4SdkReserveForTopology {
   spoke: {

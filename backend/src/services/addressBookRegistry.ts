@@ -17,7 +17,7 @@
  */
 
 import * as AaveAddressBook from '@aave-dao/aave-address-book';
-import { AAVE_CHAIN_ID_TO_RPC_KEY, V4_SKIP_SPOKES } from '@internal/aave-shared-config';
+import { AAVE_CHAIN_ID_TO_RPC_KEY, V4_SKIP_SPOKES, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { SpokeHubTopology } from '@internal/aave-shared-contracts';
 
 // ============================================================
@@ -141,7 +141,12 @@ export let V4_SPOKE_ENTRIES: readonly V4SpokeEntry[] = [];
 let currentTopologySignature: string | null = null;
 
 export function topologySignature(topology: SpokeHubTopology): string {
-  return JSON.stringify(topology);
+  const sorted = [...topology].sort((a, b) => {
+    const keyA = `${a.chainId}:${a.spokeAddress}:${a.hubAddress}`;
+    const keyB = `${b.chainId}:${b.spokeAddress}:${b.hubAddress}`;
+    return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
+  });
+  return JSON.stringify(sorted);
 }
 
 export function getCurrentTopologySignature(): string | null {
@@ -155,19 +160,4 @@ export function initAddressBookRegistry(topology: SpokeHubTopology): void {
   currentTopologySignature = topologySignature(topology);
 }
 
-export const DEFAULT_TOPOLOGY: SpokeHubTopology = [
-  { chainId: 1, spokeAddress: '0x94e7a5dcbe816e498b89ab752661904e2f56c485', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x973a023a77420ba610f06b3858ad991df6d85a08', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x973a023a77420ba610f06b3858ad991df6d85a08', hubAddress: '0x943827dca022d0f354a8a8c332da1e5eb9f9f931' },
-  { chainId: 1, spokeAddress: '0xe1900480ac69f0b296841cd01cc37546d92f35cd', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0xbf10bdfe177de0336afd7fccf80a904e15386219', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x3131fe68c4722e726fe6b2819ed68e514395b9a4', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x58131e79531cab1d52301228d1f7b842f26b9649', hubAddress: '0x06002e9c4412cb7814a791ea3666d905871e536a' },
-  { chainId: 1, spokeAddress: '0xba1b3d55d249692b669a164024a838309b7508af', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0xba1b3d55d249692b669a164024a838309b7508af', hubAddress: '0x06002e9c4412cb7814a791ea3666d905871e536a' },
-  { chainId: 1, spokeAddress: '0xd8b93635b8c6d0ff98cbe90b5988e3f2d1cd9da1', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x65407b940966954b23dfa3caa5c0702bb42984dc', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x7ec68b5695e803e98a21a9a05d744f28b0a7753d', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-];
-
-initAddressBookRegistry(DEFAULT_TOPOLOGY);
+initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);

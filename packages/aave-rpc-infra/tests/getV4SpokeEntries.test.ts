@@ -42,7 +42,7 @@ test('getV4SpokeEntries produces multiple entries for spoke connected to multipl
   assert.ok(hubNames.includes('PRIME_HUB'), 'should include PRIME_HUB');
 });
 
-test('getDefaultV4SpokeEntries returns same result as getV4SpokeEntries with DEFAULT_TOPOLOGY', () => {
+test('getDefaultV4SpokeEntries returns same result as getV4SpokeEntries with DEFAULT_SPOKE_HUB_TOPOLOGY', () => {
   const defaultResult = getDefaultV4SpokeEntries();
   assert.ok(Array.isArray(defaultResult), 'should return an array');
   assert.ok(defaultResult.length > 0, 'should have entries from default topology');

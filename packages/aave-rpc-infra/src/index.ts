@@ -2,7 +2,7 @@ import { providers, utils } from 'ethers';
 import * as AaveAddressBook from '@aave-dao/aave-address-book';
 import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
-import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, V4_SKIP_SPOKES } from '@internal/aave-shared-config';
+import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, V4_SKIP_SPOKES, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
 
 export type ProviderCandidate = {
@@ -335,20 +335,6 @@ export interface V4SpokeEntry {
   hubAddress: string;
 }
 
-const DEFAULT_TOPOLOGY: SpokeHubTopology = [
-  { chainId: 1, spokeAddress: '0x94e7A5dCbE816e498b89aB752661904E2F56c485', hubAddress: '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x973a023A77420ba610f06b3858aD991Df6d85A08', hubAddress: '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x973a023A77420ba610f06b3858aD991Df6d85A08', hubAddress: '0x943827DCA022D0F354a8a8c332dA1e5Eb9f9F931' },
-  { chainId: 1, spokeAddress: '0xe1900480ac69f0B296841Cd01cC37546d92F35Cd', hubAddress: '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0xbF10BDfE177dE0336aFD7fcCF80A904E15386219', hubAddress: '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x3131FE68C4722e726fe6B2819ED68e514395B9a4', hubAddress: '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x58131E79531caB1d52301228d1f7b842F26B9649', hubAddress: '0x06002e9c4412CB7814a791eA3666D905871E536A' },
-  { chainId: 1, spokeAddress: '0xba1B3D55D249692b669A164024A838309B7508AF', hubAddress: '0x06002e9c4412CB7814a791eA3666D905871E536A' },
-  { chainId: 1, spokeAddress: '0xD8B93635b8C6d0fF98CbE90b5988E3F2d1Cd9da1', hubAddress: '0x06002e9c4412CB7814a791eA3666D905871E536A' },
-  { chainId: 1, spokeAddress: '0x65407b940966954b23dfA3caA5C0702bB42984DC', hubAddress: '0x06002e9c4412CB7814a791eA3666D905871E536A' },
-  { chainId: 1, spokeAddress: '0x7EC68b5695e803e98a21a9A05d744F28b0a7753D', hubAddress: '0x943827DCA022D0F354a8a8c332dA1e5Eb9f9F931' },
-];
-
 function isSupportedChain(chainId: number): boolean {
   return Object.prototype.hasOwnProperty.call(AAVE_CHAIN_ID_TO_RPC_KEY, chainId);
 }
@@ -408,7 +394,7 @@ export function getV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
 }
 
 export function getDefaultV4SpokeEntries(): V4SpokeEntry[] {
-  return getV4SpokeEntries(DEFAULT_TOPOLOGY);
+  return getV4SpokeEntries(DEFAULT_SPOKE_HUB_TOPOLOGY);
 }
 
 type ProviderPoolLike = Pick<ProviderPool, 'getProvidersForChain' | 'reportProviderFailure' | 'reportProviderSuccess' | 'errorClassifier' | 'executeWithFallback'>;

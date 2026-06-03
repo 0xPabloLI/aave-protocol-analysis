@@ -4,10 +4,10 @@ import {
   initAddressBookRegistry,
   topologySignature,
   getCurrentTopologySignature,
-  DEFAULT_TOPOLOGY,
   V3_ENTRIES,
   V4_SPOKE_ENTRIES,
 } from '../src/services/addressBookRegistry.js';
+import { DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { SpokeHubTopology } from '@internal/aave-shared-contracts';
 
 test('topologySignature returns deterministic JSON string', () => {
@@ -39,7 +39,7 @@ test('initAddressBookRegistry updates currentTopologySignature', () => {
 });
 
 test('topology change triggers rebuild: V4_SPOKE_ENTRIES changes with different topology', () => {
-  initAddressBookRegistry(DEFAULT_TOPOLOGY);
+  initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
   const entryCountDefault = V4_SPOKE_ENTRIES.length;
 
   const singleEntry: SpokeHubTopology = [
@@ -48,32 +48,32 @@ test('topology change triggers rebuild: V4_SPOKE_ENTRIES changes with different 
   initAddressBookRegistry(singleEntry);
   const entryCountSingle = V4_SPOKE_ENTRIES.length;
 
-  assert.ok(entryCountDefault > entryCountSingle, `DEFAULT_TOPOLOGY (${entryCountDefault}) should produce more entries than single-entry topology (${entryCountSingle})`);
+  assert.ok(entryCountDefault > entryCountSingle, `DEFAULT_SPOKE_HUB_TOPOLOGY (${entryCountDefault}) should produce more entries than single-entry topology (${entryCountSingle})`);
 });
 
 test('topology no change skips rebuild: same signature', () => {
-  initAddressBookRegistry(DEFAULT_TOPOLOGY);
+  initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
   const sig1 = getCurrentTopologySignature();
 
-  initAddressBookRegistry(DEFAULT_TOPOLOGY);
+  initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
   const sig2 = getCurrentTopologySignature();
 
   assert.strictEqual(sig1, sig2);
 });
 
-test('module load initializes with DEFAULT_TOPOLOGY signature', () => {
-  initAddressBookRegistry(DEFAULT_TOPOLOGY);
+test('module load initializes with DEFAULT_SPOKE_HUB_TOPOLOGY signature', () => {
+  initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
   const sig = getCurrentTopologySignature();
-  assert.ok(sig !== null, 'signature should not be null after DEFAULT_TOPOLOGY init');
-  assert.strictEqual(sig, topologySignature(DEFAULT_TOPOLOGY));
+  assert.ok(sig !== null, 'signature should not be null after DEFAULT_SPOKE_HUB_TOPOLOGY init');
+  assert.strictEqual(sig, topologySignature(DEFAULT_SPOKE_HUB_TOPOLOGY));
 });
 
-test('DEFAULT_TOPOLOGY is non-empty', () => {
-  assert.ok(DEFAULT_TOPOLOGY.length > 0);
+test('DEFAULT_SPOKE_HUB_TOPOLOGY is non-empty', () => {
+  assert.ok(DEFAULT_SPOKE_HUB_TOPOLOGY.length > 0);
 });
 
 test('V3 entries are stable across topology changes', () => {
-  initAddressBookRegistry(DEFAULT_TOPOLOGY);
+  initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
   const v3CountDefault = V3_ENTRIES.length;
 
   const singleEntry: SpokeHubTopology = [
@@ -84,5 +84,5 @@ test('V3 entries are stable across topology changes', () => {
 
   assert.strictEqual(v3CountDefault, v3CountSingle, 'V3 entries should not change with topology');
 
-  initAddressBookRegistry(DEFAULT_TOPOLOGY);
+  initAddressBookRegistry(DEFAULT_SPOKE_HUB_TOPOLOGY);
 });

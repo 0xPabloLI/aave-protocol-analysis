@@ -41,6 +41,8 @@ export interface CampaignGroup<TBreakdown extends BaseCampaignBreakdown = BaseCa
 
 export const V4_SKIP_SPOKES: readonly string[];
 
+export const DEFAULT_SPOKE_HUB_TOPOLOGY: { chainId: number; spokeAddress: string; hubAddress: string; }[];
+
 export declare const AAVE_RPC_URLS_BY_CHAIN_KEY: Readonly<Record<string, readonly string[]>>;
 export declare const AAVE_CHAIN_KEY_ALIASES: Readonly<Record<string, string>>;
 export declare const AAVE_CHAIN_ID_TO_RPC_KEY: Readonly<Record<number, string>>;
