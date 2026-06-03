@@ -46,6 +46,12 @@ function sleep(ms: number): Promise<void> {
  * 创建一个 Promise，当 Worker 被禁用时 resolve
  * 用于中断等待，完全事件驱动，无需定期检查
  */
+// KNOWN BOUNDARY: When Promise.race resolves via the other branch (e.g. sleep completes
+// before worker is disabled), the resolver stays in the Set until either:
+//   a) triggerWorkerDisabledResolvers() is called (clears entire Set), or
+//   b) A subsequent call re-enters and workerDisabledUntil is set, triggering cleanup.
+// This is safe because concurrent requests are bounded by workerRequestSemaphore (concurrency=1),
+// so the Set size is at most 1 at any time between trigger calls.
 function createWorkerDisabledPromise(): Promise<void> {
   return new Promise<void>((resolve) => {
     if (Date.now() < workerDisabledUntil) {

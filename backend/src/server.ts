@@ -186,7 +186,7 @@ setInterval(() => {
   const merklStats = getMerklForecastCacheStats();
   logger.info(
     `📊 Memory: heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} rss=${fmt(mem.rss)} external=${fmt(mem.external)} | ` +
-    `merkl metricsCache=${merklStats.metricsCacheSize} zeroBaseline=${merklStats.zeroBaselineCacheSize} inFlight=${merklStats.inFlightSize}`
+    `merkl metricsCache=${merklStats.metricsCacheSize} zeroBaseline=${merklStats.zeroBaselineCacheSize} inFlight=${merklStats.inFlightSize} oppCacheAge=${merklStats.campaignOpportunityCacheAge ?? 'none'}ms`
   );
 }, 60_000).unref();
 
