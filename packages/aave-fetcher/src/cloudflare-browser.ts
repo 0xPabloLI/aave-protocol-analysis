@@ -47,40 +47,25 @@ function sleep(ms: number): Promise<void> {
  * 用于中断等待，完全事件驱动，无需定期检查
  */
 function createWorkerDisabledPromise(): Promise<void> {
-  let resolverIndex = -1;
-  
-  const promise = new Promise<void>((resolve) => {
-    // 如果已经被禁用，立即 resolve
+  return new Promise<void>((resolve) => {
     if (Date.now() < workerDisabledUntil) {
       resolve();
       return;
     }
-    // 否则保存 resolver 到数组，等待 workerDisabledUntil 被设置时调用所有 resolver
-    resolverIndex = workerDisabledResolvers.length;
-    workerDisabledResolvers.push(resolve);
+    const resolver = () => {
+      resolve();
+      workerDisabledResolvers.delete(resolver);
+    };
+    workerDisabledResolvers.add(resolver);
   });
-  
-  // 当 promise 完成时（无论成功还是失败），从数组中移除 resolver
-  // 这样可以防止 resolver 泄漏（如果 Promise.race 因为其他原因完成）
-  promise.finally(() => {
-    if (resolverIndex !== -1 && resolverIndex < workerDisabledResolvers.length) {
-      // 检查索引是否仍然有效，并且对应的 resolver 是否仍然存在
-      // 如果 triggerWorkerDisabledResolvers 已经清空了数组，这里不需要做任何事
-      const resolver = workerDisabledResolvers[resolverIndex];
-      if (resolver !== undefined) {
-        workerDisabledResolvers.splice(resolverIndex, 1);
-      }
-    }
-  });
-  
-  return promise;
 }
 
 /**
  * 触发所有等待中的 Promise，立即中断等待
  */
 function triggerWorkerDisabledResolvers(): void {
-  const resolvers = workerDisabledResolvers.splice(0); // 清空数组并获取所有 resolver
+  const resolvers = Array.from(workerDisabledResolvers);
+  workerDisabledResolvers.clear();
   resolvers.forEach(resolve => resolve());
 }
 
@@ -96,7 +81,7 @@ let dynamicQueue: Promise<void> = Promise.resolve();
 let lastDynamicStartedAt = 0;
 let workerDisabledUntil = 0;
 // Promise resolvers 数组：当 workerDisabledUntil 被设置时，resolve 所有等待中的 Promise
-const workerDisabledResolvers: Array<() => void> = [];
+const workerDisabledResolvers = new Set<() => void>();
 const MAX_ERROR_SNIPPET = 240;
 
 // 全局请求计数器（用于监控）

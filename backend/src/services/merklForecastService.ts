@@ -71,6 +71,30 @@ const metricsCache = new Map<string, MetricsCacheEntry>();
 let campaignOpportunityCache: CampaignOpportunityCacheEntry | null = null;
 const zeroBaselineFirstSeenAt = new Map<string, number>();
 
+const MAX_METRICS_CACHE_ENTRIES = 500;
+const MAX_ZERO_BASELINE_CACHE_ENTRIES = 500;
+
+function pruneMetricsCache(now: number): void {
+  for (const [key, entry] of metricsCache.entries()) {
+    if (entry.expiresAt <= now) {
+      metricsCache.delete(key);
+    }
+  }
+  while (metricsCache.size > MAX_METRICS_CACHE_ENTRIES) {
+    const oldestKey = metricsCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    metricsCache.delete(oldestKey);
+  }
+}
+
+function pruneZeroBaselineCache(): void {
+  while (zeroBaselineFirstSeenAt.size > MAX_ZERO_BASELINE_CACHE_ENTRIES) {
+    const oldestKey = zeroBaselineFirstSeenAt.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    zeroBaselineFirstSeenAt.delete(oldestKey);
+  }
+}
+
 interface CampaignSnapshotLite {
   id: string;
   amount?: unknown;
@@ -583,6 +607,7 @@ const getCachedOrFetchMetrics = async (
     expiresAt: now + ttlMs,
     updatedAt: now,
   });
+  pruneMetricsCache(now);
   return { raw: rawMetrics, data: metrics };
 };
 
@@ -731,6 +756,7 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         const firstSeen = zeroBaselineFirstSeenAt.get(campaignId) ?? now;
         if (!zeroBaselineFirstSeenAt.has(campaignId)) {
           zeroBaselineFirstSeenAt.set(campaignId, now);
+          pruneZeroBaselineCache();
         }
         const ageMs = now - firstSeen;
         if (ageMs > BACKEND_CACHE_TTL_MS.merklForecastZeroBaselineMaxAgeMs) {
@@ -774,3 +800,19 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
   inFlight.set(campaignId, request);
   return request;
 };
+
+export function getMerklForecastCacheStats(): {
+  metricsCacheSize: number;
+  zeroBaselineCacheSize: number;
+  inFlightSize: number;
+  campaignOpportunityCacheAge: number | null;
+} {
+  return {
+    metricsCacheSize: metricsCache.size,
+    zeroBaselineCacheSize: zeroBaselineFirstSeenAt.size,
+    inFlightSize: inFlight.size,
+    campaignOpportunityCacheAge: campaignOpportunityCache
+      ? Date.now() - campaignOpportunityCache.updatedAt
+      : null,
+  };
+}

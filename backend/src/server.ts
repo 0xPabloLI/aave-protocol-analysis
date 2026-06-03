@@ -10,6 +10,7 @@ import { seoRouter } from './routes/seo.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
+import { getMerklForecastCacheStats } from './services/merklForecastService.js';
 import { warmMarketsCache, getMarketsData } from './services/marketsService.js';
 import { refreshOnchainCache } from './services/onchainDataService.js';
 import { refreshOracleCache } from './services/oracleService.js';
@@ -178,6 +179,16 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // Start cron scheduler immediately — independent of warmup.
 // If warmup fails, cron retries on its own schedule, so the server can self-heal.
 startUpdateScheduler();
+
+setInterval(() => {
+  const mem = process.memoryUsage();
+  const fmt = (bytes: number) => `${Math.round(bytes / 1024 / 1024)}MB`;
+  const merklStats = getMerklForecastCacheStats();
+  logger.info(
+    `📊 Memory: heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} rss=${fmt(mem.rss)} external=${fmt(mem.external)} | ` +
+    `merkl metricsCache=${merklStats.metricsCacheSize} zeroBaseline=${merklStats.zeroBaselineCacheSize} inFlight=${merklStats.inFlightSize}`
+  );
+}, 60_000).unref();
 
 // Warm caches in background — server is already listening.
 // /health returns 503 until warmup completes, then 200.
