@@ -5,7 +5,8 @@
   "main": "dist/server.js",
   "type": "module",
   "scripts": {
-    "build": "npm run gen:schema-fp && tsc",
+    "build": "npm run gen:schema-fp && npm run gen:openapi && tsc",
+    "gen:openapi": "npx --no-install tsx scripts/generate-openapi.ts",
     "start": "node dist/server.js",
     "dev": "bash scripts/dev-entry.sh",
     "dev:clean": "bash scripts/dev-clean.sh",
@@ -13,6 +14,7 @@
     "dev:watch": "bash scripts/dev-entry.sh --watch",
     "dev:watch:reset": "npm run dev:watch",
     "test": "npx --no-install tsx --test tests/*.test.ts",
+    "test:typecheck": "tsc --noEmit -p tsconfig.tests.json",
     "gen:schema-fp": "npx --no-install tsx scripts/generate-schema-fp.ts",
     "test:api-fields": "RUN_API_FIELDS_TESTS=true npx --no-install tsx --test tests/apiFieldsVerification.test.ts",
     "prune": "ts-prune -i '\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v 'SEMRUSH_TO_GSC' | grep '^src/' | (grep -q . && exit 1 || exit 0)"
@@ -42,6 +44,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^20.0.0",
     "@types/node-cron": "^3.0.11",
+    "@types/supertest": "^7.2.0",
     "supertest": "^7.2.2",
     "ts-prune": "^0.10.3",
     "tsx": "^4.0.0",
