@@ -19,8 +19,8 @@ import {
   findMatchingMerklOpportunities,
   formatMerklBreakdown,
   detectNetPositionConstraint,
-  type NetPositionConstraint,
 } from './merkl-api.js';
+import type { NetPositionConstraint } from '@internal/aave-shared-contracts';
 import { buildLlmPrompt, callLlmWithFallback } from './merklLlmClient.js';
 import type { LlmClientConfig } from './merklLlmClient.js';
 import {
@@ -1273,4 +1273,4 @@ async function writeDebugSnapshot(
   );
 }
 
-export type { NetPositionConstraint } from './merkl-api.js';
+export type { NetPositionConstraint } from '@internal/aave-shared-contracts';

@@ -86,7 +86,7 @@
 如果两个 session 的 `touch-files` 落在**同一区域**，即使不是完全相同的文件，也建议视为冲突（因为经常有隐式依赖）。
 
 **特别注意**：
-- `src/index.ts` 修改后需 `npm run build` 才能被 `backend/` 使用（backend imports from `dist/index.js`）——涉及 `src/` 和 `backend/services/marketsService.ts` 的 session 请特别协调。
+- `src/index.ts` 修改后需 `npm run build` 才能被 root CLI 使用——但 `backend/` 通过 `@internal/*` workspace 包名导入（不依赖 root dist），涉及 `packages/` 和 `backend/services/marketsService.ts` 的 session 无需协调 root build。
 - `pruneReserveForRuntime()` 在 `src/index.ts` 中，新增 reserve 字段必须同时更新此函数和 `backend/src/types/index.ts`。
 - `backend/src/cacheTtl.ts` 与 `backend/src/services/updateScheduler.ts` 紧密耦合，修改 TTL 时两个文件通常需要一起改。
 

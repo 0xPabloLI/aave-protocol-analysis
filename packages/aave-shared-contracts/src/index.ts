@@ -166,6 +166,16 @@ export interface MarketsPayload {
 }
 
 // ============================================================
+// Net position constraint (shared across fetcher + backend)
+// ============================================================
+
+/** Describes a net-position constraint detected for a Merkl opportunity. */
+export interface NetPositionConstraint {
+  sourceSide: 'supply' | 'borrow';
+  offsetReserveIds: string[];
+}
+
+// ============================================================
 // Runtime validation
 // ============================================================
 

@@ -12,7 +12,7 @@ import {
   normalizeMerklCampaignTotalBudget,
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
-import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, RuntimeReserveData } from '@internal/aave-shared-contracts';
+import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, RuntimeReserveData, NetPositionConstraint } from '@internal/aave-shared-contracts';
 export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess } from '@internal/aave-shared-contracts';
 import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
@@ -188,11 +188,7 @@ const toIsoFromUnixLike = (value: unknown): string => {
   return new Date(ms).toISOString();
 };
 
-// Merkl 数据结构：每个 opportunity 存储一次
-export interface NetPositionConstraint {
-  sourceSide: 'supply' | 'borrow';
-  offsetReserveIds: string[];
-}
+// Merkl 数据结构：NetPositionConstraint 已迁移到 @internal/aave-shared-contracts
 
 export interface OffsetTokenInfo {
   address: string;

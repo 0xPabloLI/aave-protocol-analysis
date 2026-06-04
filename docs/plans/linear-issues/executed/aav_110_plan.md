@@ -16,11 +16,11 @@
 ## 4. 实现方案
 
 ### 4.1 新建共享 package
-- 在根目录或 monorepo 结构下创建 `packages/aave-shared-contracts`（或类似命名）
+- 在根目录或 monorepo 结构下创建 `packages/aave-shared-contracts`（或类似命名） ✅ 已完成
 - 迁移以下内容到共享 package：
-  - 类型定义：`MarketsPayload`、`RuntimeReserveData`、相关 TypeScript 类型（如 reserves、incentives 等）
-  - 序列化约定和函数（如 `marketsApiSerialize.ts` 中的序列化逻辑）
-  - 相关工具函数（如格式化、验证契约的辅助函数）
+  - 类型定义：`MarketsPayload`、`RuntimeReserveData`、相关 TypeScript 类型（如 reserves、incentives 等） ✅ 已完成
+  - 序列化约定和函数（如 `marketsApiSerialize.ts` 中的序列化逻辑） ❌ **Superseded** — architecture rule: serialization stays in backend; `MarketWithSpread` is API-presentation concern, not shared contract
+  - 相关工具函数（如格式化、验证契约的辅助函数） ✅ 已完成（`EXPECTED_RUNTIME_FIELDS`, `validateRuntimeReserveShape`）
 
 ### 4.2 修改 root build
 - root build 仅负责业务逻辑和数据聚合，不再导出共享契约

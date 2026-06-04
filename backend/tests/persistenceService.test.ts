@@ -136,7 +136,7 @@ test('buildConfigRow: row length matches MARKET_CONFIG_COLUMNS count', () => {
 });
 
 test('buildConfigRow: hash is deterministic across calls with identical content', () => {
-  const r = baseReserve({ supplyCap: 1000n, borrowCap: 500n });
+  const r = baseReserve({ supplyCap: '1000', borrowCap: '500' });
   const a = buildConfigRow(r, '2026-05-21T00:00:00.000Z');
   const b = buildConfigRow(r, '2026-05-22T00:00:00.000Z');
   assert.equal(a.hash, b.hash);
@@ -144,8 +144,8 @@ test('buildConfigRow: hash is deterministic across calls with identical content'
 });
 
 test('buildConfigRow: changing a config field changes the hash', () => {
-  const r1 = baseReserve({ supplyCap: 1000n });
-  const r2 = baseReserve({ supplyCap: 2000n });
+  const r1 = baseReserve({ supplyCap: '1000' });
+  const r2 = baseReserve({ supplyCap: '2000' });
   const a = buildConfigRow(r1, '2026-05-21T00:00:00.000Z');
   const b = buildConfigRow(r2, '2026-05-21T00:00:00.000Z');
   assert.notEqual(a.hash, b.hash);

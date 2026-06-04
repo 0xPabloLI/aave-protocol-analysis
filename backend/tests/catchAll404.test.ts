@@ -16,7 +16,7 @@ function create404App() {
     const path = sanitizeForLog(rawPath);
     const ip = req.ip ?? req.socket.remoteAddress ?? '-';
     const ua = sanitizeForLog((req.headers['user-agent'] ?? '-')).slice(0, MAX_UA_LEN);
-    logger.info({ method, path, ip, ua }, '404');
+    logger.info('404', { method, path, ip, ua });
     res.status(404).json({ error: 'Not found', message: `No route for ${method} ${rawPath}`, path: rawPath, method });
   });
   return app;

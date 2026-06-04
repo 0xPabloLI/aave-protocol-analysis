@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 
 it('MARKETS_API_VERSION should be snapshot-v3 (breaking: deficit hard error + field renames)', async () => {
   const mod = await import('../src/controllers/marketsController.js');
-  // @ts-expect-error - MARKETS_API_VERSION will be exported
   const version = mod.MARKETS_API_VERSION;
   assert.equal(version, 'snapshot-v3',
     `Expected snapshot-v3 but got ${version}. API version bumped for deficit hard error + field renames.`);

@@ -1,12 +1,13 @@
 # AGENTS.md (Slim)
 
 ## Project Snapshot
-- Monorepo (npm workspaces) with three packages + backend:
-  - `packages/aave-shared-contracts` — shared type definitions (`RuntimeReserveData`, `MarketsPayload`), field registry, validation
+- Monorepo (npm workspaces) with four packages + backend:
+  - `packages/aave-shared-contracts` — shared type definitions (`RuntimeReserveData`, `MarketsPayload`, `NetPositionConstraint`), field registry, validation
   - `packages/aave-fetcher` — data aggregation (`fetchMarketsData`): Aave SDK + Merit + Merkl + Brevis
   - `packages/aave-shared-config` — static config constants
+  - `packages/aave-rpc-infra` — RPC infrastructure (ProviderPool, Multicall3, V4 reserve fetch)
   - `backend/` — API server, in-memory snapshots (cron-write / API-read-only), DB is pure archive (0 SELECT)
-- Dependency direction: shared-contracts ← aave-fetcher ← root/backend (one-way)
+- Dependency direction: shared-config ← shared-contracts ← aave-fetcher ← root/backend; shared-contracts ← aave-rpc-infra ← backend (one-way)
 - Root `src/` = CLI entry (`cli.ts`) + package re-export (`index.ts`); backend imports from `@internal/*` packages, NOT from root dist.
 
 ## Core Commands

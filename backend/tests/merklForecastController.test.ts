@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { toForecastResponseItem } from '../src/controllers/merklForecastController.js';
+import type { MerklForecastState } from '../src/services/merklForecastModel.js';
 
 test('toForecastResponseItem returns null for DUTCH_AUCTION', () => {
   const item = toForecastResponseItem({
@@ -12,11 +13,13 @@ test('toForecastResponseItem returns null for DUTCH_AUCTION', () => {
     requiredDaily: 100,
     aprCap: null,
     remainingBudget: 600,
+    remainingDays: 6,
+    asOf: Date.now(),
     distributedSoFar: 400,
     latestTvl: 5000,
     startTimestamp: 1,
     endTimestamp: 2,
-  });
+  } satisfies MerklForecastState);
 
   assert.equal(item, null);
 });
@@ -30,16 +33,18 @@ test('toForecastResponseItem omits requiredDaily for FIX_REWARD campaigns', () =
     requiredDaily: 140,
     aprCap: 0.05,
     remainingBudget: 700,
+    remainingDays: 7,
+    asOf: Date.now(),
     distributedSoFar: 300,
     latestTvl: 5000,
     startTimestamp: 1,
     endTimestamp: 2,
-  });
+  } satisfies MerklForecastState);
 
-  assert.equal(item.campaignId, 'fix-id');
-  assert.equal('requiredDaily' in item, false);
-  assert.equal(item.distributedSoFar, 300);
-  assert.equal(item.endTimestamp, 2);
+  assert.equal(item!.campaignId, 'fix-id');
+  assert.equal('requiredDaily' in item!, false);
+  assert.equal(item!.distributedSoFar, 300);
+  assert.equal(item!.endTimestamp, 2);
 });
 
 test('toForecastResponseItem preserves requiredDaily for MAX_REWARD campaigns', () => {
@@ -51,14 +56,16 @@ test('toForecastResponseItem preserves requiredDaily for MAX_REWARD campaigns', 
     requiredDaily: 140,
     aprCap: 0.05,
     remainingBudget: 700,
+    remainingDays: 7,
+    asOf: Date.now(),
     distributedSoFar: 300,
     latestTvl: 5000,
     startTimestamp: 1,
     endTimestamp: 2,
-  });
+  } satisfies MerklForecastState);
 
-  assert.equal(item.campaignId, 'max-id');
-  assert.equal(item.requiredDaily, 140);
-  assert.equal(item.distributedSoFar, 300);
-  assert.equal(item.endTimestamp, 2);
+  assert.equal(item!.campaignId, 'max-id');
+  assert.equal(item!.requiredDaily, 140);
+  assert.equal(item!.distributedSoFar, 300);
+  assert.equal(item!.endTimestamp, 2);
 });

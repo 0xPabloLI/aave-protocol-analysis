@@ -14,51 +14,15 @@ test('hardTtl is 5 minutes (kept at original value)', () => {
 });
 
 test('Fix 2: stale snapshot still returns payload (not null) — mergeWithPartialStale preserves data', () => {
-  const staleReserve: RuntimeReserveData = {
+  const staleReserve = {
     reserveId: '1:0xpool:0xusdc',
+    marketName: 'AaveV3Ethereum',
     chainName: 'Ethereum',
     chainId: 1,
     tokenSymbol: 'USDC',
     tokenName: 'USD Coin',
-    decimals: 6,
-    price: 1n,
-    priceDecimals: 8,
-    supplyAPY: 0.02,
-    variableBorrowAPY: 0.05,
-    stableBorrowAPY: null,
-    liquidity: 1000000n,
-    totalDebt: 500000n,
-    totalStableDebt: 0n,
-    totalVariableDebt: 500000n,
-    utilization: 0.5,
-    availableBorrow: 500000n,
-    ltv: 0.85,
-    liquidationThreshold: 0.9,
-    liquidationBonus: 0.05,
-    reserveFactor: 0.1,
-    aTokenAddress: '0xaToken',
-    variableDebtTokenAddress: '0xvarDebt',
-    stableDebtTokenAddress: null,
-    isFrozen: false,
-    isPaused: false,
-    borrowable: true,
-    isIsolated: false,
-    debtCeiling: null,
-    debtCeilingDecimals: null,
-    eMode: null,
-    isSiloed: false,
-    isFlashLoanEnabled: true,
-    supplyCap: null,
-    borrowCap: null,
-    isFlashLoanDisabled: false,
-    eModeCategory: null,
-    underlyingTokenAddress: '0xusdc',
-    isDeprecated: false,
-    supplyIncentiveApr: 0,
-    variableBorrowIncentiveApr: 0,
-    stableBorrowIncentiveApr: 0,
-    isEntitled: false,
-  };
+    tokenAddress: '0xusdc',
+  } as RuntimeReserveData;
 
   const now = Date.now();
   const hardTtl = BACKEND_CACHE_TTL_MS.marketsHardTtlMs;
@@ -85,51 +49,15 @@ test('Fix 2: stale snapshot still returns payload (not null) — mergeWithPartia
 });
 
 test('Fix 2: stale snapshot beyond hardTtl returns empty (no phantom data)', () => {
-  const staleReserve: RuntimeReserveData = {
+  const staleReserve = {
     reserveId: '1:0xpool:0xdai',
+    marketName: 'AaveV3Ethereum',
     chainName: 'Ethereum',
     chainId: 1,
     tokenSymbol: 'DAI',
     tokenName: 'Dai Stablecoin',
-    decimals: 18,
-    price: 1n,
-    priceDecimals: 8,
-    supplyAPY: 0.03,
-    variableBorrowAPY: 0.06,
-    stableBorrowAPY: null,
-    liquidity: 2000000n,
-    totalDebt: 1000000n,
-    totalStableDebt: 0n,
-    totalVariableDebt: 1000000n,
-    utilization: 0.5,
-    availableBorrow: 1000000n,
-    ltv: 0.8,
-    liquidationThreshold: 0.85,
-    liquidationBonus: 0.05,
-    reserveFactor: 0.1,
-    aTokenAddress: '0xaToken2',
-    variableDebtTokenAddress: '0xvarDebt2',
-    stableDebtTokenAddress: null,
-    isFrozen: false,
-    isPaused: false,
-    borrowable: true,
-    isIsolated: false,
-    debtCeiling: null,
-    debtCeilingDecimals: null,
-    eMode: null,
-    isSiloed: false,
-    isFlashLoanEnabled: true,
-    supplyCap: null,
-    borrowCap: null,
-    isFlashLoanDisabled: false,
-    eModeCategory: null,
-    underlyingTokenAddress: '0xdai',
-    isDeprecated: false,
-    supplyIncentiveApr: 0,
-    variableBorrowIncentiveApr: 0,
-    stableBorrowIncentiveApr: 0,
-    isEntitled: false,
-  };
+    tokenAddress: '0xdai',
+  } as RuntimeReserveData;
 
   const now = Date.now();
   const hardTtl = BACKEND_CACHE_TTL_MS.marketsHardTtlMs;
@@ -158,6 +86,9 @@ test('Fix 2: stale snapshot beyond hardTtl returns empty (no phantom data)', () 
 test('Fix 3: fetchResultOrDefault handles explicit failure envelope from stale fallback', () => {
   const result = getFetchResultOrDefault({
     timestamp: new Date().toISOString(),
+    version: '1.0.0',
+    dataCount: 0,
+    profile: 'test',
     fetchResult: {
       v3: { success: false, source: 'sdk' },
       v4: { success: false, source: 'sdk' },

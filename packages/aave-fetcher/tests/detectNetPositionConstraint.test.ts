@@ -1,7 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectNetPositionConstraint } from '../src/merkl-api.js';
-import type { MerklOpportunityData, NetPositionConstraint } from '../src/merkl-api.js';
+import type { MerklOpportunityData } from '../src/merkl-api.js';
+import type { NetPositionConstraint } from '@internal/aave-shared-contracts';
 import type { LlmAnalysisResult } from '../src/merklLlmClient.js';
 
 const makeReserveIdSet = (reserveIds: string[]): Set<string> => new Set(reserveIds);

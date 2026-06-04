@@ -14,8 +14,7 @@
  */
 
 import { fetchMarketsData } from '@internal/aave-fetcher';
-import type { NetPositionConstraint } from '@internal/aave-fetcher';
-import type { MarketsFetchResult, MarketsPayload, RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
+import type { NetPositionConstraint, MarketsFetchResult, MarketsPayload, RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { v4FatalConfig } from '../config.js';
 import { withTimeout } from '@internal/aave-rpc-infra';
