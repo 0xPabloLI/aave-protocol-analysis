@@ -491,17 +491,21 @@ async function enrichDatasetWithIncentiveData(
   const openrouterConfig: LlmClientConfig | undefined = openrouterApiKey ? { apiKey: openrouterApiKey, baseUrl: 'https://openrouter.ai/api/v1' } : undefined;
 
   return Promise.all(baseDataset.map(async item => {
+    const reserveProtocolVersion: 'v3' | 'v4' = item.marketName.startsWith('AaveV4') ? 'v4' : 'v3';
     const meritItemData = getMeritDataFromMarket(item.marketName, item.chainName, item.tokenSymbol, meritData);
     
-    // 如果有 Merit 数据，直接更新对应字段
     if (meritItemData) {
-      // 只有当数组不为空时才赋值，否则保持 undefined
-      item.meritSupplys = meritItemData.meritSupplys.length > 0 ? meritItemData.meritSupplys : undefined;
-      item.meritBorrows = meritItemData.meritBorrows.length > 0 ? meritItemData.meritBorrows : undefined;
+      if (meritItemData.meritSupplys.length > 0 || meritItemData.meritBorrows.length > 0) {
+        item.meritSupplys = meritItemData.meritSupplys.length > 0 ? meritItemData.meritSupplys : undefined;
+        item.meritBorrows = meritItemData.meritBorrows.length > 0 ? meritItemData.meritBorrows : undefined;
+        if (reserveProtocolVersion === 'v4') {
+          logger.warn('V4 reserve matched Merit incentive (expected V3-only)', {
+            chainId: item.chainId, tokenSymbol: item.tokenSymbol, marketName: item.marketName, source: 'merit',
+          });
+        }
+      }
     }
     
-    // 获取对应的 Merkl 数据并更新
-    const reserveProtocolVersion: 'v3' | 'v4' = item.marketName.startsWith('AaveV4') ? 'v4' : 'v3';
     const matchedOpportunities = findMatchingMerklOpportunities(item, merklData, reserveProtocolVersion);
     
     if (matchedOpportunities.length > 0) {
@@ -619,12 +623,14 @@ async function enrichDatasetWithIncentiveData(
     }
     
     if (brevisInfo) {
-      // 只有当数组不为空时才赋值
-      if (brevisInfo.brevisSupplys.length > 0) {
-        item.brevisSupplys = brevisInfo.brevisSupplys;
-      }
-      if (brevisInfo.brevisBorrows.length > 0) {
-        item.brevisBorrows = brevisInfo.brevisBorrows;
+      if (brevisInfo.brevisSupplys.length > 0 || brevisInfo.brevisBorrows.length > 0) {
+        item.brevisSupplys = brevisInfo.brevisSupplys.length > 0 ? brevisInfo.brevisSupplys : undefined;
+        item.brevisBorrows = brevisInfo.brevisBorrows.length > 0 ? brevisInfo.brevisBorrows : undefined;
+        if (reserveProtocolVersion === 'v4') {
+          logger.warn('V4 reserve matched Brevis incentive (expected V3-only)', {
+            chainId: item.chainId, tokenSymbol: item.tokenSymbol, marketName: item.marketName, source: 'brevis',
+          });
+        }
       }
     }
     

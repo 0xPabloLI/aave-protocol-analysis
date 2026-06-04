@@ -1490,27 +1490,37 @@ export function findMatchingMerklOpportunities(
 ): MerklOpportunityData[] {
   const matchedOpportunities: MerklOpportunityData[] = [];
   const seenOpportunities = new Set<MerklOpportunityData>();
+  let filteredByVersion = 0;
   
-  // 构建要检查的 token 地址列表（按优先级：underlying → aToken → vToken）
   const tokenAddressesToCheck: string[] = [
     item.tokenAddress.toLowerCase(),
     item.aTokenAddress?.toLowerCase(),
     item.vTokenAddress?.toLowerCase()
   ].filter((addr): addr is string => addr !== null && addr !== undefined);
   
-  // 检查每个地址是否在索引中
   for (const tokenAddr of tokenAddressesToCheck) {
     const indexKey = `${item.chainId}-${tokenAddr}`;
     
     const matchingOpportunities = merklData[indexKey];
     if (matchingOpportunities?.length > 0) {
       for (const opp of matchingOpportunities) {
-        if (!seenOpportunities.has(opp) && opp.protocolVersion === protocolVersion) {
+        if (!seenOpportunities.has(opp)) {
           seenOpportunities.add(opp);
-          matchedOpportunities.push(opp);
+          if (opp.protocolVersion === protocolVersion) {
+            matchedOpportunities.push(opp);
+          } else {
+            filteredByVersion++;
+          }
         }
       }
     }
+  }
+  
+  if (filteredByVersion > 0) {
+    logger.info('Merkl opportunities filtered by protocolVersion', {
+      chainId: item.chainId, tokenAddress: item.tokenAddress, marketName: item.marketName,
+      reserveVersion: protocolVersion, filteredCount: filteredByVersion,
+    });
   }
   
   return matchedOpportunities;
