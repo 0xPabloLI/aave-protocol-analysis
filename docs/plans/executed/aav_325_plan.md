@@ -47,28 +47,8 @@ swagger.ts → serve at GET /api/docs + /api/docs/openapi.json
 - 访问 `/api/docs/openapi.json` 返回有效 JSON spec
 - Railway 部署后 static 目录可正常访问
 
-## 5. 前端同步（自动）
-后端 spec 是唯一真源，前端通过 CI 自动同步：
-
-```
-serializeReserveForApi() → generate-openapi.ts → backend/static/openapi.json
-                                                          │
-                                              GET /api/docs/openapi.json
-                                                          │
-                                   前端 CI (schedule + push) → fetch-openapi.ts
-                                                          │
-                                                   public/openapi.json
-                                                          │
-                                              git commit + push (自动)
-```
-
-- 前端 `scripts/fetch-openapi.ts` 从后端拉取 canonical spec
-- CI 每日 UTC 6:00 自动检测漂移，检测到则直接 commit + push
-- 前端 `scripts/generate-openapi.ts` (Zod) 保留作参考，不再用于 CI
-
-## 6. 维护说明
-- 后端：`openapi.json` 由 `backend/scripts/generate-openapi.ts` 自动生成
+## 5. 维护说明
+- `openapi.json` 由 `backend/scripts/generate-openapi.ts` 自动生成
 - 新增 reserve 字段时，同步更新脚本中的 `RESERVE_PROPERTIES` 映射
 - 运行 `npm run gen:openapi -w aave-dashboard-backend` 可单独重新生成
 - 构建流程 `npm run build -w aave-dashboard-backend` 会自动执行生成步骤
-- 前端 CI 自动同步，无需手动干预
