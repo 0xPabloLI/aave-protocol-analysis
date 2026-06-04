@@ -23,6 +23,9 @@ import { runMigrations } from './services/autoMigrate.js';
 
 const app = express();
 app.set('etag', 'weak');
+// Trust Railway's single proxy layer so req.ip reflects the real client IP
+// (not the load-balancer's IP). This also makes rate limiter per-IP instead of
+// per-proxy (previously all users shared one bucket via the LB IP).
 app.set('trust proxy', 1);
 // 端口配置：优先读取环境变量，默认 3001
 // 环境变量读取优先级（使用 dotenv 后）：
@@ -122,12 +125,14 @@ app.get('/api/health', healthHandler);
 // Catch-all 404 handler — logs unmapped requests for bot/crawler monitoring.
 // Must be registered AFTER all valid routes so Express only reaches it on miss.
 const MAX_UA_LEN = 120;
+const sanitizeForLog = (s: string) => s.replace(/[\r\n]/g, '_');
 app.use((req, res) => {
-  const { method, path } = req;
+  const { method, path: rawPath } = req;
+  const path = sanitizeForLog(rawPath);
   const ip = req.ip ?? req.socket.remoteAddress ?? '-';
-  const ua = (req.headers['user-agent'] ?? '-').slice(0, MAX_UA_LEN);
-  logger.info(`404: ${method} ${path} from ${ip} ua="${ua}"`);
-  res.status(404).json({ error: 'Not found', message: `No route for ${method} ${path}`, path, method });
+  const ua = sanitizeForLog((req.headers['user-agent'] ?? '-')).slice(0, MAX_UA_LEN);
+  (logger.info as (meta: object, msg: string) => void)({ method, path, ip, ua }, '404');
+  res.status(404).json({ error: 'Not found', message: `No route for ${method} ${rawPath}`, path: rawPath, method });
 });
 
 // Persistence diagnostics — exposes whether DB writes are happening on schedule.

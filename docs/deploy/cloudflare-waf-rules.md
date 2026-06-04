@@ -17,7 +17,7 @@ Apply these in the Cloudflare dashboard → **Security → WAF → Custom rules*
 |--------|--------|--------|
 | URI Path in `{/robots.txt, /sitemap.xml, /sitemap.xml.gz}` | Block | No such files exist; crawlers generate 404s |
 | URI Path in `{/admin, /wp-admin, /wp-login.php, /wp-json, /.env, /.git, /config.json, /api/v1, /graphql}` | Block | Security scanners probing common endpoints |
-| URI Path in `{/xmlrpc.php, /phpmyadmin, /pma, /server-status, /actuator, /.well-known/security.txt}` but method ≠ GET | Block | Non-GET probes to well-known paths |
+| URI Path in `{/xmlrpc.php, /phpmyadmin, /pma, /server-status, /actuator, /.well-known/security.txt}` but method ≠ GET | Block | Non-GET probes to well-known paths; server serves `/.well-known/security.txt` via GET, so only non-GET should be blocked |
 
 ### 2. Challenge suspicious user-agents (optional)
 
