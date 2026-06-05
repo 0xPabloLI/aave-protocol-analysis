@@ -58,6 +58,13 @@ export const merklFetchConfig = {
 // 当前配置针对 Free tier（30 次/分钟）：
 // - 请求间隔：2.5 秒（略大于 2 秒，留有余量）
 // - 串行请求：避免并发导致短时间内消耗过多配额
+export const oracleDiffConfig = {
+  threshold: readNumberEnv('ORACLE_DIFF_THRESHOLD', {
+    defaultValue: 0.01,
+    min: 0,
+  }),
+};
+
 export const coingeckoFetchConfig = {
   maxRetries: readNumberEnv('COINGECKO_FETCH_MAX_RETRIES', {
     defaultValue: 3,

@@ -16,7 +16,7 @@
 import { fetchMarketsData } from '@internal/aave-fetcher';
 import type { NetPositionConstraint, MarketsFetchResult, MarketsPayload, RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
-import { v4FatalConfig } from '../config.js';
+import { v4FatalConfig, oracleDiffConfig } from '../config.js';
 import { withTimeout } from '@internal/aave-rpc-infra';
 import { logger } from '../logger.js';
 import {
@@ -356,7 +356,18 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         }
 
         const diff = Math.abs(oraclePrice - sdkPrice) / sdkPrice;
-        if (diff > 0.01) {
+        if (diff > oracleDiffConfig.threshold) {
+          logger.warn(
+            'oracle price anomaly',
+            {
+              tokenSymbol: reserve.tokenSymbol,
+              chainName: reserve.chainName,
+              chainId: reserve.chainId,
+              oraclePrice,
+              sdkPrice,
+              diffPct: +(diff * 100).toFixed(2),
+            }
+          );
           reserve.tokenPrice = oraclePrice;
           oracleOverrideCount++;
         }
