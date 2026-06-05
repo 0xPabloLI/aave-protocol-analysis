@@ -49,6 +49,16 @@ export const merklFetchConfig = {
   }),
 };
 
+// Oracle 价格异常阈值：当 oracle 价格与 SDK 价格差异超过此比例时，
+// 覆盖为 oracle 价格并输出 logger.warn('oracle price anomaly', ...)
+// 默认 1%（0.01），可通过 ORACLE_DIFF_THRESHOLD 环境变量覆盖
+export const oracleDiffConfig = {
+  threshold: readNumberEnv('ORACLE_DIFF_THRESHOLD', {
+    defaultValue: 0.01,
+    min: 0,
+  }),
+};
+
 // CoinGecko API 请求的重试/退避配置
 // Rate Limit 参考：https://docs.coingecko.com/docs/common-errors-rate-limit
 // - Public API (Demo/Free): 约 30 次/分钟（可能因流量波动）
@@ -58,12 +68,6 @@ export const merklFetchConfig = {
 // 当前配置针对 Free tier（30 次/分钟）：
 // - 请求间隔：2.5 秒（略大于 2 秒，留有余量）
 // - 串行请求：避免并发导致短时间内消耗过多配额
-export const oracleDiffConfig = {
-  threshold: readNumberEnv('ORACLE_DIFF_THRESHOLD', {
-    defaultValue: 0.01,
-    min: 0,
-  }),
-};
 
 export const coingeckoFetchConfig = {
   maxRetries: readNumberEnv('COINGECKO_FETCH_MAX_RETRIES', {

@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+// 纯数学逻辑测试，不覆盖 marketsService 中的 logger.warn 调用路径
+// （调用路径嵌入 refreshMarketsSnapshot 内部，需要完整 mock RPC/SDK 环境，
+//  当前通过 build + 346 pass 间接验证）
+
 test('oracle diff: diff > threshold triggers anomaly', () => {
   const sdkPrice = 100;
   const oraclePrice = 102;
