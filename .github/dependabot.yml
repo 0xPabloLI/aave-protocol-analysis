@@ -41,6 +41,8 @@ updates:
         applies-to: security-updates
         patterns:
           - "*"
+        exclude-patterns:
+          - "ethers"
 
   # ── Security-only: backend ────────────────────────────────
   - package-ecosystem: npm
@@ -62,6 +64,8 @@ updates:
         applies-to: security-updates
         patterns:
           - "*"
+        exclude-patterns:
+          - "ethers"
 
   # ── Security-only: workers ────────────────────────────────
   - package-ecosystem: npm
