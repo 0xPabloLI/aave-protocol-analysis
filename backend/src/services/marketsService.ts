@@ -46,6 +46,25 @@ export function getFetchResultOrDefault(metadata: MarketsPayload['_metadata']): 
   };
 }
 
+export function correctFetchResult(
+  fetchResult: MarketsFetchResult,
+  v3Fresh: boolean,
+  v4Fresh: boolean,
+  v3Present: boolean,
+  v4Present: boolean,
+): MarketsFetchResult {
+  return {
+    v3: {
+      success: v3Present,
+      source: v3Fresh ? fetchResult.v3.source : (v3Present ? 'stale' : 'none'),
+    },
+    v4: {
+      success: v4Present,
+      source: v4Fresh ? fetchResult.v4.source : (v4Present ? 'stale' : 'none'),
+    },
+  };
+}
+
 export interface ResolveReserveDeficitResult {
   deficit: string;
   isFallback: boolean;
@@ -118,6 +137,8 @@ export interface PartialStaleMergeResult {
   newV4FetchedAt: number | null;
   v3Fresh: boolean;
   v4Fresh: boolean;
+  v3Present: boolean;
+  v4Present: boolean;
 }
 
 export function mergeWithPartialStale(input: PartialStaleMergeInput): PartialStaleMergeResult {
@@ -161,6 +182,10 @@ export function mergeWithPartialStale(input: PartialStaleMergeInput): PartialSta
     // else: V4 stale expired, keep V4 = [] in merged data
   }
 
+  // Determine per-side presence in merged dataset
+  const v3Present = v3Succeeded || (!v3Succeeded && v3FetchedAt !== null && (now - v3FetchedAt) <= hardTtlMs && staleV3Data.length > 0);
+  const v4Present = v4Succeeded || (!v4Succeeded && v4FetchedAt !== null && (now - v4FetchedAt) <= hardTtlMs && staleV4Data.length > 0);
+
   return {
     mergedData,
     newStaleV3Data,
@@ -169,6 +194,8 @@ export function mergeWithPartialStale(input: PartialStaleMergeInput): PartialSta
     newV4FetchedAt,
     v3Fresh: v3Succeeded,
     v4Fresh: v4Succeeded,
+    v3Present,
+    v4Present,
   };
 }
 
@@ -212,33 +239,22 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         v3Succeeded = fetchResult.v3.success;
         v4Succeeded = fetchResult.v4.success;
       } catch (fetchError) {
-        logger.warn(`Markets fetch failed (${fetchError instanceof Error ? fetchError.message : String(fetchError)}), attempting stale fallback`);
-        const now = Date.now();
-        const hardTtl = BACKEND_CACHE_TTL_MS.marketsHardTtlMs;
-        const staleV3Usable = v3FetchedAt !== null && (now - v3FetchedAt) <= hardTtl && staleV3Data.length > 0;
-        const staleV4Usable = v4FetchedAt !== null && (now - v4FetchedAt) <= hardTtl && staleV4Data.length > 0;
+        logger.warn(`Markets fetch failed (${fetchError instanceof Error ? fetchError.message : String(fetchError)}), delegating to stale merge`);
 
-        if (!staleV3Usable && !staleV4Usable) {
-          throw fetchError;
-        }
-
-        const fallbackData = [...(staleV3Usable ? staleV3Data : []), ...(staleV4Usable ? staleV4Data : [])];
-        if (fallbackData.length === 0) {
-          throw fetchError;
-        }
-
-        logger.info(`Markets stale fallback: V3=${staleV3Usable ? staleV3Data.length : 0}, V4=${staleV4Usable ? staleV4Data.length : 0} reserves`);
         payload = {
-          data: fallbackData,
+          data: [],
           _metadata: {
-            timestamp: new Date(now - (now - (snapshot?.fetchedAt ?? now))).toISOString(),
+            timestamp: new Date().toISOString(),
+            version: '2.0-runtime-minimal',
+            dataCount: 0,
+            profile: 'runtime-minimal',
             fetchResult: {
-              v3: { success: false, source: 'sdk' },
-              v4: { success: false, source: 'sdk' },
+              v3: { success: false, source: 'none' },
+              v4: { success: false, source: 'none' },
             },
           },
         } as MarketsPayload;
-        fetchResult = { v3: { success: false, source: 'sdk' }, v4: { success: false, source: 'sdk' } };
+        fetchResult = { v3: { success: false, source: 'none' }, v4: { success: false, source: 'none' } };
         v3Succeeded = false;
         v4Succeeded = false;
       }
@@ -275,6 +291,16 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       // Update payload.data with the merged dataset (may include stale data)
       (payload as any).data = mergeResult.mergedData;
 
+      // Correct fetchResult to reflect post-merge reality
+      const correctedFetchResult = correctFetchResult(
+        fetchResult,
+        mergeResult.v3Fresh,
+        mergeResult.v4Fresh,
+        mergeResult.v3Present,
+        mergeResult.v4Present,
+      );
+      (payload as any)._metadata.fetchResult = correctedFetchResult;
+
       // Read on-chain data from cache (async, non-blocking)
       // Cache is maintained by separate cron job
       const onchainMap = getOnchainDataFromCache();
@@ -283,7 +309,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       let mergedCount = 0;
       let fallbackCount = 0;
       const deficitFallbackReserveIds: string[] = [];
-      const v4FallbackReserveIds = fetchResult.v4.source === 'rpc'
+      const v4FallbackReserveIds = correctedFetchResult.v4.source === 'rpc'
         ? mergeResult.mergedData
           .filter((reserve) => !!reserve.hubId)
           .map((reserve) => reserve.reserveId)

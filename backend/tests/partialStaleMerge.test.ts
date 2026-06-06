@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getFetchResultOrDefault, mergeWithPartialStale } from '../src/services/marketsService.js';
+import { getFetchResultOrDefault, mergeWithPartialStale, correctFetchResult } from '../src/services/marketsService.js';
 import type { PartialStaleMergeInput } from '../src/services/marketsService.js';
 import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 
@@ -358,4 +358,186 @@ test('only V4 stale available + both timeout → V4 stale used, V3 empty', () =>
 
   assert.equal(result.mergedData.length, 1);
   assert.equal(result.mergedData[0].tokenSymbol, 'WETH');
+});
+
+// ── v3Present / v4Present ─────────────────────────────────────
+
+test('both succeed → v3Present=true, v4Present=true', () => {
+  const now = Date.now();
+  const freshV3 = makeV3({ tokenSymbol: 'USDC' });
+  const freshV4 = makeV4({ tokenSymbol: 'USDT' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV3, freshV4],
+    v3Succeeded: true,
+    v4Succeeded: true,
+    now,
+  }));
+
+  assert.equal(result.v3Present, true);
+  assert.equal(result.v4Present, true);
+});
+
+test('V3 timeout + stale fallback → v3Present=true, V4 fresh → v4Present=true', () => {
+  const now = Date.now();
+  const staleV3 = makeV3({ tokenSymbol: 'DAI' });
+  const freshV4 = makeV4({ tokenSymbol: 'USDT' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV4],
+    v3Succeeded: false,
+    v4Succeeded: true,
+    staleV3Data: [staleV3],
+    v3FetchedAt: now - 60_000,
+    now,
+  }));
+
+  assert.equal(result.v3Present, true);
+  assert.equal(result.v4Present, true);
+});
+
+test('V3 timeout + stale expired → v3Present=false', () => {
+  const now = Date.now();
+  const staleV3 = makeV3({ tokenSymbol: 'DAI' });
+  const freshV4 = makeV4({ tokenSymbol: 'USDT' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV4],
+    v3Succeeded: false,
+    v4Succeeded: true,
+    staleV3Data: [staleV3],
+    v3FetchedAt: now - (FIVE_MINUTES + 1),
+    now,
+  }));
+
+  assert.equal(result.v3Present, false);
+  assert.equal(result.v4Present, true);
+});
+
+test('V3 timeout + never fetched → v3Present=false', () => {
+  const now = Date.now();
+  const freshV4 = makeV4({ tokenSymbol: 'USDT' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV4],
+    v3Succeeded: false,
+    v4Succeeded: true,
+    staleV3Data: [],
+    v3FetchedAt: null,
+    now,
+  }));
+
+  assert.equal(result.v3Present, false);
+  assert.equal(result.v4Present, true);
+});
+
+test('both timeout + both stale within TTL → v3Present=true, v4Present=true', () => {
+  const now = Date.now();
+  const staleV3 = makeV3({ tokenSymbol: 'DAI' });
+  const staleV4 = makeV4({ tokenSymbol: 'WETH' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [],
+    v3Succeeded: false,
+    v4Succeeded: false,
+    staleV3Data: [staleV3],
+    staleV4Data: [staleV4],
+    v3FetchedAt: now - 60_000,
+    v4FetchedAt: now - 120_000,
+    now,
+  }));
+
+  assert.equal(result.v3Present, true);
+  assert.equal(result.v4Present, true);
+});
+
+test('both timeout + both stale expired → v3Present=false, v4Present=false', () => {
+  const now = Date.now();
+  const staleV3 = makeV3({ tokenSymbol: 'DAI' });
+  const staleV4 = makeV4({ tokenSymbol: 'WETH' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [],
+    v3Succeeded: false,
+    v4Succeeded: false,
+    staleV3Data: [staleV3],
+    staleV4Data: [staleV4],
+    v3FetchedAt: now - (FIVE_MINUTES + 1),
+    v4FetchedAt: now - (FIVE_MINUTES + 1),
+    now,
+  }));
+
+  assert.equal(result.v3Present, false);
+  assert.equal(result.v4Present, false);
+});
+
+test('V3 succeeded with empty fresh data → v3Present=true', () => {
+  const now = Date.now();
+  const freshV4 = makeV4({ tokenSymbol: 'USDT' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV4],
+    v3Succeeded: true,
+    v4Succeeded: true,
+    now,
+  }));
+
+  assert.equal(result.v3Present, true);
+  assert.equal(result.v4Present, true);
+});
+
+// ── correctFetchResult ─────────────────────────────────────────
+
+test('correctFetchResult: fresh SDK success → preserves original source', () => {
+  const result = correctFetchResult(
+    { v3: { success: true, source: 'sdk' }, v4: { success: true, source: 'sdk' } },
+    true, true, true, true
+  );
+  assert.deepEqual(result.v3, { success: true, source: 'sdk' });
+  assert.deepEqual(result.v4, { success: true, source: 'sdk' });
+});
+
+test('correctFetchResult: fresh RPC success → preserves rpc source', () => {
+  const result = correctFetchResult(
+    { v3: { success: true, source: 'sdk' }, v4: { success: true, source: 'rpc' } },
+    true, true, true, true
+  );
+  assert.deepEqual(result.v3, { success: true, source: 'sdk' });
+  assert.deepEqual(result.v4, { success: true, source: 'rpc' });
+});
+
+test('correctFetchResult: SDK failed + stale fallback → source=stale, success=true', () => {
+  const result = correctFetchResult(
+    { v3: { success: true, source: 'sdk' }, v4: { success: false, source: 'none' } },
+    true, false, true, true
+  );
+  assert.deepEqual(result.v3, { success: true, source: 'sdk' });
+  assert.deepEqual(result.v4, { success: true, source: 'stale' });
+});
+
+test('correctFetchResult: SDK failed + no stale → source=none, success=false', () => {
+  const result = correctFetchResult(
+    { v3: { success: true, source: 'sdk' }, v4: { success: false, source: 'none' } },
+    true, false, true, false
+  );
+  assert.deepEqual(result.v3, { success: true, source: 'sdk' });
+  assert.deepEqual(result.v4, { success: false, source: 'none' });
+});
+
+test('correctFetchResult: both sides stale → both source=stale', () => {
+  const result = correctFetchResult(
+    { v3: { success: false, source: 'none' }, v4: { success: false, source: 'none' } },
+    false, false, true, true
+  );
+  assert.deepEqual(result.v3, { success: true, source: 'stale' });
+  assert.deepEqual(result.v4, { success: true, source: 'stale' });
+});
+
+test('correctFetchResult: both sides failed + no stale → both source=none', () => {
+  const result = correctFetchResult(
+    { v3: { success: false, source: 'none' }, v4: { success: false, source: 'none' } },
+    false, false, false, false
+  );
+  assert.deepEqual(result.v3, { success: false, source: 'none' });
+  assert.deepEqual(result.v4, { success: false, source: 'none' });
 });

@@ -78,9 +78,30 @@ export interface MarketsPayload {
 |---|---|---|
 | `true` | `'sdk'` | SDK 主路径成功 |
 | `true` | `'rpc'` | SDK 失败，RPC inline fallback 成功（V4 only，参见 ADR-0021） |
+| `true` | `'stale'` | SDK + RPC 均失败，backend per-side stale 兜底成功 |
 | `false` | `'none'` | 该 side 所有兜底层均失败，data 中无该 side reserve |
 
-**注**：`source === 'stale'` 只出现在 backend 层 stale merge 之后的内部决策，**不在** fetcher 写入的 `_metadata.fetchResult` 中（fetcher 不知道 backend 的 staleData）。stale 层的可见性通过 backend 自己的日志和 `v4FallbackReserveIds` 表达。
+**注**：Fetcher 只产出 `source ∈ {'sdk', 'rpc', 'none'}`。`source === 'stale'` 由 backend 层 `correctFetchResult()` 在 stale merge 后覆写。stale 层的可见性也通过 `v4FallbackReserveIds` 表达。
+
+### Backend Layer fetchResult Correction
+
+After `mergeWithPartialStale()` runs, backend corrects `fetchResult` to reflect post-merge reality. The correction formula:
+
+```
+success = v3Present / v4Present
+source  = v3Fresh ? fetchResult.v3.source : (v3Present ? 'stale' : 'none')
+```
+
+Where:
+- `v3Fresh` / `v4Fresh` — from `mergeWithPartialStale` output (side data came from fresh fetch)
+- `v3Present` / `v4Present` — from `mergeWithPartialStale` output (side has data in merged dataset, regardless of source)
+
+This ensures:
+- Fresh path preserves the original source (e.g., `'sdk'` or future `'rpc'`)
+- Stale fallback path writes `{ success: true, source: 'stale' }`
+- Total failure writes `{ success: false, source: 'none' }`
+
+The outer catch path (entire `fetchMarketsData()` throws) delegates stale selection to `mergeWithPartialStale` instead of manually constructing fallback data, ensuring consistent stale TTL enforcement across all code paths.
 
 ### 向后兼容策略
 
@@ -96,7 +117,10 @@ export interface MarketsPayload {
 - ✏️ `packages/aave-shared-contracts/src/index.ts`：删除 `_v3Succeeded`/`_v4Succeeded`，添加 `FetchSource`/`SideFetchResult`/`fetchResult`。
 - ✏️ `packages/aave-fetcher/src/index.ts`：写入 `fetchResult` 而非两个 boolean。
 - ✏️ `backend/src/services/marketsService.ts`：读 `fetchResult`，传给 `mergeWithPartialStale()`。`mergeWithPartialStale` 内部签名保留 boolean（pure function 不需关心 source 来源）。
-- ✏️ `backend/tests/partialStaleMerge.test.ts`：fixture 适配新签名。
+- ✏️ `backend/src/services/marketsService.ts`：新增 `correctFetchResult()` 纯函数，merge 后覆写 `payload._metadata.fetchResult` 反映 post-merge 实际数据来源。
+- ✏️ `backend/src/services/marketsService.ts`：`PartialStaleMergeResult` 新增 `v3Present`/`v4Present` 字段，供 `correctFetchResult` 使用。
+- ✏️ `backend/src/services/marketsService.ts`：outer catch 简化，删除手动 stale 合并，统一交给 `mergeWithPartialStale`。
+- ✏️ `backend/tests/partialStaleMerge.test.ts`：fixture 适配新签名 + `v3Present`/`v4Present` + `correctFetchResult` 测试。
 - ✏️ `packages/aave-fetcher/tests/fetchMarketsData-concurrency.test.ts`：assert `fetchResult` 结构。
 
 ## Alternatives Considered
@@ -129,4 +153,4 @@ export interface MarketsPayload {
 
 - ADR-0020: V3/V4 Concurrent Fetch + Per-Side Stale Merge（引入扁平字段的来源）
 - ADR-0021: Three-Layer V4 Fallback（消费 `source` 字段表达层降级）
-- Current code: `packages/aave-shared-contracts/src/index.ts:146-153`, `backend/src/services/marketsService.ts:198-200`
+- Current code: `packages/aave-shared-contracts/src/index.ts`, `backend/src/services/marketsService.ts` (`correctFetchResult`, `mergeWithPartialStale`)

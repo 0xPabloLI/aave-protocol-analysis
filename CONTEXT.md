@@ -203,7 +203,7 @@ _Avoid_: expiry, timeout
 _Avoid_: chainData, contractData
 
 **fetchResult** (envelope):
-`MarketsPayload._metadata.fetchResult.{v3,v4}` 的 per-side fetch 结果信封，含 `{ success: boolean, source: 'sdk' | 'rpc' | 'stale' }`。fetcher 写入，backend 读取以驱动 stale merge 决策。是 fetcher → backend 的稳定契约。取代早期扁平的 `_v3Succeeded` / `_v4Succeeded` 下划线字段。详见 ADR-0022。
+`MarketsPayload._metadata.fetchResult.{v3,v4}` 的 per-side fetch 结果信封，含 `{ success: boolean, source: 'sdk' | 'rpc' | 'stale' | 'none' }`。Fetcher 写入（`'sdk'`/`'rpc'`/`'none'`），backend 读取并在 stale merge 后通过 `correctFetchResult()` 修正（可覆写为 `'stale'`）。是 fetcher → backend 的稳定契约，修正后也是 backend → API 消费者的稳定契约。取代早期扁平的 `_v3Succeeded` / `_v4Succeeded` 下划线字段。详见 ADR-0022。
 _Avoid_: \_v3Succeeded, \_v4Succeeded（已被结构化字段取代）
 
 **fallbackSource**:
