@@ -38,6 +38,7 @@ import {
 import { fetchV4ReservesData, bigintReplacer } from './v4-fetcher.js';
 import type { V4FetchResult } from './v4-fetcher.js';
 import type { RuntimeReserveData, MarketsPayload, SpokeHubTopology } from '@internal/aave-shared-contracts';
+import { buildMarketsBaseDataset as _buildMarketsBaseDataset, buildV3BaseDataset as _buildV3BaseDataset, fetchV4ReservesWithTimeout as _fetchV4ReservesWithTimeout, fetchV3MarketsWithTimeout as _fetchV3MarketsWithTimeout, FETCH_TIMEOUT_MS } from './concurrent-fetch.js';
 export type { RuntimeReserveData, MarketsPayload, SpokeHubTopology } from '@internal/aave-shared-contracts';
 export type {
   MerklCampaignBreakdown,
@@ -279,172 +280,27 @@ async function fetchBrevisAprs(
 
 
 
-/**
- * Build the base dataset from V3 markets + V4 reserves.
- * Shared by both backend (fetchMarketsData) and root (runMarketsFetcher).
- *
- * @param v3Markets - V3 market data from fetchRawMarketData()
- * @param options.v4Fatal - If true, V4 fetch failure is fatal (throws).
- *                           Makes V3 and V4 equally important — if either fails, the entire refresh fails.
- *                           Default: false (V4 failure is non-fatal, graceful degradation).
- */
-async function buildMarketsBaseDataset(v3Markets: any[], options?: {
-  v4Fatal?: boolean;
-}): Promise<{
-  baseDataset: RuntimeReserveData[];
-  v3Count: number;
-  v4Count: number;
-  v4Dataset: RuntimeReserveData[];
-  v4Raw: V4FetchResult['raw'];
-  spokeHubTopology: SpokeHubTopology;
-}> {
-  const v3Dataset = buildV3BaseDataset(v3Markets);
-  let v4Dataset: RuntimeReserveData[] = [];
-  let v4Raw: V4FetchResult['raw'] = { reserves: [] };
-  let spokeHubTopology: SpokeHubTopology = [];
-  const v4Fatal = options?.v4Fatal ?? false;
-  // V4 fetch isolation: independent timeout prevents slow V4 API from
-  // consuming the outer 60s Markets fetch timeout and blocking V3 data.
-  const V4_FETCH_TIMEOUT_MS = 25_000;
-  try {
-    // Option 1: V4 now has retry logic (3 attempts with backoff), matching V3 reliability.
-    // Option 2: When v4Fatal=true, V4 failure throws (equal importance to V3).
-    const v4Result = await Promise.race([
-      fetchV4ReservesData({ throwOnFinalFailure: v4Fatal }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('V4 fetch timeout (non-fatal)')), V4_FETCH_TIMEOUT_MS)
-      ),
-    ]);
-    v4Dataset = v4Result.mapped;
-    v4Raw = v4Result.raw;
-    spokeHubTopology = v4Result.spokeHubTopology;
-    if (v4Dataset.length > 0) {
-      logger.info(`✅ Fetched ${v4Dataset.length} V4 reserves`);
-    } else if (v4Fatal) {
-      // Option 2: Empty V4 dataset is fatal when v4Fatal=true
-      throw new Error('V4 data fetch returned empty dataset (v4Fatal=true)');
-    } else {
-      logger.warn(`⚠️ V4 data fetch returned empty dataset after retries (non-fatal)`);
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    if (v4Fatal) {
-      // Option 2: V4 failure is fatal — throw to make the entire refresh fail
-      logger.error(`❌ V4 data fetching failed (FATAL — v4Fatal=true): ${errorMsg}`);
-      throw new Error(`V4 data fetch failed (fatal): ${errorMsg}`);
-    }
-    logger.error(`❌ V4 data fetching failed (non-fatal): ${errorMsg}`);
-  }
-  const baseDataset = [...v3Dataset, ...v4Dataset];
-  logger.info(`📊 Unified dataset: ${baseDataset.length} reserves (V3: ${v3Dataset.length}, V4: ${v4Dataset.length})`);
-  return { baseDataset, v3Count: v3Dataset.length, v4Count: v4Dataset.length, v4Dataset, v4Raw, spokeHubTopology };
+export { FETCH_TIMEOUT_MS } from './concurrent-fetch.js';
+
+export function buildMarketsBaseDataset(v3Markets: any[], v4Result: V4FetchResult): ReturnType<typeof _buildMarketsBaseDataset> {
+  return _buildMarketsBaseDataset(v3Markets, v4Result);
 }
 
-// 从 Aave V3 市场数据创建基础数据集
 function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
-  const baseDataset: RuntimeReserveData[] = [];
+  return _buildV3BaseDataset(markets);
+}
 
-  markets.forEach(market => {
-    const poolAddress = (market.address || '').toLowerCase();
-    const marketName = market.name || 'Unknown';
-    const chainName = market.chain?.name || 'Unknown';
-    const chainId = market.chain?.chainId || 0;
+export async function fetchV3MarketsWithTimeout(options?: {
+  _fetchV3Fn?: () => Promise<MarketData>;
+}): Promise<MarketData> {
+  return _fetchV3MarketsWithTimeout({ _fetchV3Fn: options?._fetchV3Fn ?? fetchRawMarketData });
+}
 
-    if (market.supplyReserves && Array.isArray(market.supplyReserves)) {
-      market.supplyReserves.forEach((reserve: any) => {
-        const tokenSymbol = reserve.underlyingToken?.symbol || 'Unknown';
-        const tokenAddress = reserve.underlyingToken?.address || '';
-        const tokenAddressLower = tokenAddress.toLowerCase();
-        const reserveId = `${chainId}:${poolAddress}:${tokenAddressLower}`;
-        const tokenPrice =
-          toFiniteNumber(reserve?.size?.usdPerToken) ??
-          toFiniteNumber(reserve?.usdExchangeRate) ??
-          undefined;
-        const utilizationRaw = toFiniteNumber(reserve?.borrowInfo?.utilizationRate?.value);
-        const utilizationPct =
-          utilizationRaw !== null && utilizationRaw >= 0 ? utilizationRaw * 100 : undefined;
-        const aTokenAddress = reserve.aToken?.address ?? null;
-        const vTokenAddress = reserve.vToken?.address ?? null;
-        
-        // 检查 supply 是否被禁用：supplyCap=1
-        const isFrozen = reserve.isFrozen === true;
-        const isPaused = reserve.isPaused === true;
-        const hasProtocolReason = isPaused || isFrozen;
-        const supplyCapValue = reserve.supplyInfo?.supplyCap?.amount?.value;
-        const supplyCapIsOne = supplyCapValue !== undefined && toFiniteNumber(supplyCapValue) === 1;
-        const isSupplyDisabled = hasProtocolReason ? false : supplyCapIsOne;
-        
-        const supplyApyValue = reserve.supplyInfo?.apy?.value;
-        const supplyApy = supplyCapIsOne || !supplyApyValue
-          ? undefined
-          : toFiniteNumber(supplyApyValue) ?? undefined;
-        
-        // 检查 borrowingState 是否为 "DISABLED"，如果是则表示该 token 不能被 borrow
-        // 注意：部分市场（如 AaveV3Ethereum）在 borrowingState=DISABLED 时 SDK 直接返回 borrowInfo: null，
-        // 而不是返回 { borrowingState: "DISABLED" }，因此 borrowInfo 为 null 也视为 borrow disabled
-        const isBorrowDisabledByState = reserve.borrowInfo?.borrowingState === "DISABLED" || reserve.borrowInfo === null;
-        
-        // 检查 borrowCap，如果为 1 也视为 disabled（因为对用户没有实际意义）
-        const borrowCapValue = reserve.borrowInfo?.borrowCap?.amount?.value;
-        const borrowCapIsOne = borrowCapValue !== undefined && toFiniteNumber(borrowCapValue) === 1;
-        const isBorrowDisabled = hasProtocolReason ? false : (isBorrowDisabledByState || borrowCapIsOne);
-        
-        const borrowApyValue = reserve.borrowInfo?.apy?.value;
-        const borrowApy = toFiniteNumber(borrowApyValue) ?? undefined;
-        
-        // Rate-input fields for manual APR calculation (from Aave SDK)
-        // All raw values are strings to preserve precision for on-chain math
-        const decimals = reserve.underlyingToken?.decimals ?? undefined;
-        const liquidity = reserve.borrowInfo?.availableLiquidity?.amount?.raw ?? undefined;
-        const borrowed = reserve.borrowInfo?.total?.amount?.raw ?? undefined; // Total borrowed
-        const supplied = reserve.size?.amount?.raw ?? undefined;
-        const supplyCap = reserve.supplyInfo?.supplyCap?.amount?.raw ?? undefined;
-        const borrowCap = reserve.borrowInfo?.borrowCap?.amount?.raw ?? undefined;
-        // Note: baseBorrowRate is NOT available from Aave API (filled by on-chain RPC or fallback)
-        const protocolFee = percentValueToPercent(reserve.borrowInfo?.reserveFactor);
-        const slopeBelowOptimal = percentValueToPercent(reserve.borrowInfo?.variableRateSlope1);
-        const slopeAboveOptimal = percentValueToPercent(reserve.borrowInfo?.variableRateSlope2);
-        const optimalUtilization = percentValueToPercent(reserve.borrowInfo?.optimalUsageRate);
-        
-        // 创建完整的结构化数据，包含所有激励字段
-        // 空值初始化为 undefined，以便在 JSON 序列化时省略
-        baseDataset.push({
-          reserveId,
-          marketName,
-          chainName,
-          chainId,
-          tokenName: reserve.underlyingToken?.name || 'Unknown',
-          tokenSymbol,
-          tokenAddress,
-          tokenPrice,
-          utilizationPct,
-          aTokenAddress,
-          vTokenAddress,
-          supplyApy,
-          // 仅当 supply 被禁用时才添加此标志（节约带宽）
-          ...(isSupplyDisabled ? { supplyDisabled: true } : {}),
-          ...(isFrozen ? { isFrozen: true } : {}),
-          ...(isPaused ? { isPaused: true } : {}),
-          borrowApy,
-          // 仅当 borrowing 被禁用时才添加此标志（节约带宽）
-          ...(isBorrowDisabled ? { borrowDisabled: true } : {}),
-          // Rate-input fields for manual APR calculation (raw strings for precision)
-          ...(decimals !== undefined && decimals !== 18 ? { decimals } : {}),
-          ...(liquidity ? { liquidity } : {}),
-          ...(borrowed ? { borrowed } : {}),
-          ...(supplied ? { supplied } : {}),
-          ...(supplyCap ? { supplyCap } : {}),
-          ...(borrowCap ? { borrowCap } : {}),
-          ...(protocolFee !== undefined ? { protocolFee } : {}),
-          ...(slopeBelowOptimal !== undefined ? { slopeBelowOptimal } : {}),
-          ...(slopeAboveOptimal !== undefined ? { slopeAboveOptimal } : {}),
-          ...(optimalUtilization !== undefined ? { optimalUtilization } : {}),
-        });
-      });
-    }
-  });
-
-  return baseDataset;
+export async function fetchV4ReservesWithTimeout(options?: {
+  _fetchV4Fn?: () => Promise<V4FetchResult>;
+}): Promise<V4FetchResult & { source: 'sdk' | 'timeout' }> {
+  const fetchFn = options?._fetchV4Fn ?? (() => fetchV4ReservesData({ throwOnFinalFailure: false }));
+  return _fetchV4ReservesWithTimeout({ _fetchV4Fn: fetchFn });
 }
 
 // 将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
@@ -975,15 +831,40 @@ export async function runMarketsFetcher(): Promise<void> {
   }
 
   try {
-    // 从所有链获取市场数据（已包含保存原始数据到文件）
-    const marketData = await fetchRawMarketData();
-    
+    // V3/V4 并发 fetch + per-side 独立超时
+    logger.info('🚀 Starting V3/V4 concurrent fetch...');
+    const [v3Settled, v4Settled] = await Promise.allSettled([
+      fetchV3MarketsWithTimeout({ _fetchV3Fn: fetchRawMarketData }),
+      fetchV4ReservesWithTimeout({ _fetchV4Fn: () => fetchV4ReservesData({ throwOnFinalFailure: false }) }),
+    ]);
+
+    const v3Success = v3Settled.status === 'fulfilled';
+    const v4Success = v4Settled.status === 'fulfilled';
+
+    if (!v3Success) {
+      const reason = v3Settled.status === 'rejected' ? v3Settled.reason : 'unknown';
+      logger.error(`❌ V3 fetch failed: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+    if (!v4Success) {
+      const reason = v4Settled.status === 'rejected' ? v4Settled.reason : 'unknown';
+      logger.error(`❌ V4 fetch failed: ${reason instanceof Error ? reason.message : String(reason)}`);
+    }
+
+    const emptyV4Result: V4FetchResult = { mapped: [], raw: { reserves: [] }, spokeHubTopology: [] };
+    const emptyMarketData: MarketData = { timestamp: new Date().toISOString(), totalNetworks: 0, chainIds: [], networkInfo: [], markets: [], errors: ['V3 fetch failed'] };
+    const marketData = v3Success ? v3Settled.value : emptyMarketData;
+    const v4Result = v4Success ? v4Settled.value : emptyV4Result;
+
+    if (!v3Success && !v4Success) {
+      throw new Error('Both V3 and V4 fetch failed');
+    }
+
     // 格式化数据并保存到新文件
     logger.info('\n📊 Formatting market data...');
     
     // 第一步：从 Aave V3 + V4 创建统一基础数据集
     logger.info('📊 Creating unified base dataset (V3 + V4)...');
-    const { baseDataset, v3Count, v4Count } = await buildMarketsBaseDataset(marketData.markets);
+    const { baseDataset, v3Count, v4Count } = buildMarketsBaseDataset(marketData.markets, v4Result);
     const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
 
     // 并发获取 Merit、Merkl 和 Brevis 数据（它们之间没有依赖关系）
@@ -1175,21 +1056,42 @@ function launchIncentiveFetches(reserveTokenPriceByChainAndAddress: Map<string, 
 // 返回内存中的 payload，不写文件
 // ts-prune-ignore-next
 export async function fetchMarketsData(options?: {
-  v4Fatal?: boolean;
   cachedConstraints?: Map<string, NetPositionConstraint>;
 }): Promise<MarketsPayload> {
   // 🧹 启动时检查并清理 Cloudflare browser sessions
   logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
   await checkAndReportSessionStatus();
 
-  // 从所有链获取市场数据
-  const marketData = await fetchRawMarketData();
-  
-  // 格式化数据（V3 + V4 unified）
+  // V3/V4 并发 fetch + per-side 独立超时
+  logger.info('\n🚀 Starting V3/V4 concurrent fetch...');
+  const [v3Settled, v4Settled] = await Promise.allSettled([
+    fetchV3MarketsWithTimeout({ _fetchV3Fn: fetchRawMarketData }),
+    fetchV4ReservesWithTimeout({ _fetchV4Fn: () => fetchV4ReservesData({ throwOnFinalFailure: false }) }),
+  ]);
+
+  const v3Success = v3Settled.status === 'fulfilled';
+  const v4Success = v4Settled.status === 'fulfilled';
+
+  if (!v3Success) {
+    const reason = v3Settled.status === 'rejected' ? v3Settled.reason : 'unknown';
+    logger.error(`❌ V3 fetch failed: ${reason instanceof Error ? reason.message : String(reason)}`);
+  }
+  if (!v4Success) {
+    const reason = v4Settled.status === 'rejected' ? v4Settled.reason : 'unknown';
+    logger.error(`❌ V4 fetch failed: ${reason instanceof Error ? reason.message : String(reason)}`);
+  }
+
+  const emptyV4Result: V4FetchResult = { mapped: [], raw: { reserves: [] }, spokeHubTopology: [] };
+  const emptyMarketData: MarketData = { timestamp: new Date().toISOString(), totalNetworks: 0, chainIds: [], networkInfo: [], markets: [], errors: ['V3 fetch failed'] };
+  const marketData = v3Success ? v3Settled.value : emptyMarketData;
+  const v4Result = v4Success ? v4Settled.value : emptyV4Result;
+
+  if (!v3Success && !v4Success) {
+    throw new Error('Both V3 and V4 fetch failed');
+  }
+
   logger.info('\n📊 Formatting market data...');
-  const { baseDataset, v3Count, v4Count, v4Raw, spokeHubTopology } = await buildMarketsBaseDataset(marketData.markets, {
-    v4Fatal: options?.v4Fatal,
-  });
+  const { baseDataset, v3Count, v4Count, v4Raw, spokeHubTopology } = buildMarketsBaseDataset(marketData.markets, v4Result);
   const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
 
   // 并发获取 Merit、Merkl 和 Brevis 数据
@@ -1211,6 +1113,10 @@ export async function fetchMarketsData(options?: {
       version: '2.0-runtime-minimal',
       dataCount: runtimeData.length,
       profile: 'runtime-minimal',
+      fetchResult: {
+        v3: { success: v3Success, source: v3Success ? 'sdk' : 'none' },
+        v4: { success: v4Success, source: v4Success ? 'sdk' : 'none' },
+      },
     },
     data: runtimeData,
     ...(merklResult.campaignAccess?.length ? { campaignAccess: merklResult.campaignAccess } : {}),

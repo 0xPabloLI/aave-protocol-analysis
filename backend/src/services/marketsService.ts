@@ -16,7 +16,7 @@
 import { fetchMarketsData } from '@internal/aave-fetcher';
 import type { NetPositionConstraint, MarketsFetchResult, MarketsPayload, RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
-import { v4FatalConfig, oracleDiffConfig } from '../config.js';
+import { oracleDiffConfig } from '../config.js';
 import { withTimeout } from '@internal/aave-rpc-infra';
 import { logger } from '../logger.js';
 import {
@@ -193,7 +193,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
   refreshInProgress = (async () => {
     try {
       const startTime = Date.now();
-      logger.info(`Starting markets refresh (v4Fatal=${v4FatalConfig.v4Fatal})...`);
+      logger.info(`Starting markets refresh...`);
 
       const cachedConstraints = snapshot ? extractConstraintMap(snapshot.payload.data) : undefined;
 
@@ -204,7 +204,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
 
       try {
         payload = await withTimeout(
-          fetchMarketsData({ v4Fatal: v4FatalConfig.v4Fatal, cachedConstraints }),
+          fetchMarketsData({ cachedConstraints }),
           MARKETS_FETCH_TIMEOUT_MS,
           'Markets fetch timeout'
         );

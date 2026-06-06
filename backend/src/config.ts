@@ -5,23 +5,6 @@ import { readNumberEnv } from '@internal/aave-shared-config';
 // V3/V4 Equality Configuration
 // ============================================================
 
-/**
- * Option 2: V4_FATAL — Make V4 fetch failure fatal (equal importance to V3).
- *
- * When true:
- *   - V4 fetch failure causes the entire markets refresh to fail
- *   - V3 and V4 are treated as equally important
- *   - If either fails, the snapshot is not updated
- *
- * When false (default):
- *   - V4 fetch failure is non-fatal (graceful degradation)
- *   - API continues serving V3 data if V4 fails
- *
- * Set via environment variable: V4_FATAL=true
- */
-export const v4FatalConfig = {
-  v4Fatal: process.env.V4_FATAL === 'true',
-};
 
 // Merkl API 重试/退避（forecast `/campaigns/{id}`、`/metrics`）
 // 出站并发：`MERKL_FETCH_MAX_CONCURRENCY`（默认 5）由 `@internal/aave-shared-config`
