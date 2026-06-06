@@ -48,11 +48,18 @@ jobs:
             });
             for (const job of jobs) {
               if (job.conclusion !== 'failure') continue;
-              const { data: log } = await github.rest.actions.downloadJobLogsForWorkflowRun({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                job_id: job.id,
-              });
+              let log;
+              try {
+                const resp = await github.rest.actions.downloadJobLogsForWorkflowRun({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  job_id: job.id,
+                });
+                log = resp.data;
+              } catch (e) {
+                core.warning(`Could not download logs for job ${job.name} (id=${job.id}): ${e.message}. Assuming no ERESOLVE.`);
+                continue;
+              }
               if (/npm error code ERESOLVE/.test(log)) {
                 core.setOutput('skip', 'true');
                 core.notice('CI failure contains ERESOLVE — peer dep conflict cannot be fixed by audit. Skipping.');
@@ -110,7 +117,9 @@ jobs:
           BUILD_ROOT=$?
           npm run build -w aave-dashboard-backend
           BUILD_BACKEND=$?
-          if [ "$BUILD_ROOT" -eq 0 ] && [ "$BUILD_BACKEND" -eq 0 ]; then
+          npm audit --omit=dev --audit-level=moderate
+          AUDIT=$?
+          if [ "$BUILD_ROOT" -eq 0 ] && [ "$BUILD_BACKEND" -eq 0 ] && [ "$AUDIT" -eq 0 ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
             echo "ok=false" >> "$GITHUB_OUTPUT"
