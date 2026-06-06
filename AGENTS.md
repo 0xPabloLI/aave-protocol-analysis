@@ -160,6 +160,9 @@ Canonical source for knowledge spanning frontend AND backend, or Aave protocol f
 ## Lessons Learned
 - **中间态产物在使命完成后必须立即清理**：迁移安全路径中的临时中间态，一旦最终步骤执行完成且验证通过，必须立即删除，不要留到"下次清理"。
 - **设计选项 ≠ 必经步骤**：文档中提出的可选方案需先验证是否有实际消费者，无消费者则直接跳过，不要机械写入任务清单并执行。
+- **"组件存在" ≠ "数据流接通"**：验证实现完成度时，不能只 grep 类名/函数名/字段名是否存在。必须按 issue acceptance criteria 逐条验证 import 链路和运行时可达性。例：`fetchV4ReservesViaRpc` 函数存在 + 有测试，但 fetcher 从未 import 它，Layer 2 fallback 是死代码。
+- **不信 Linear sub_issues 聚合状态**：`get_issue(sub_issues: true)` 返回的状态可能是缓存/快照，与单条 `get_issue(id)` 结果不一致。必须逐条单查确认。
+- **ADR 状态必须与代码实际对标**：不能因为"子 issue 全 Done"就标 ADR 为 Implemented。必须跑一遍 ADR Decision 中每个关键代码点的 import 链路 + 运行时可达性验证。存在 Partial 状态时应标注哪层已实现、哪层未接通。
 
 ## Agent skills
 
