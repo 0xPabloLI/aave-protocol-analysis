@@ -10,7 +10,11 @@ bash scripts/dev-clean.sh
 if ! docker info >/dev/null 2>&1; then
   if command -v colima >/dev/null 2>&1; then
     echo "[dev-entry] Docker not running — starting Colima..." >&2
-    colima start
+    if ! colima start 2>&1; then
+      echo "[dev-entry] colima start failed — cleaning up stale state and retrying..." >&2
+      colima delete -f 2>/dev/null || true
+      colima start
+    fi
     echo "[dev-entry] waiting for Docker daemon..." >&2
     for _i in $(seq 1 30); do
       docker info >/dev/null 2>&1 && break
