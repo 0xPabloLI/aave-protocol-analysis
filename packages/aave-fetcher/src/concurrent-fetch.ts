@@ -158,8 +158,8 @@ export async function fetchV4ReservesWithTimeout(options: {
       fetchPromise.finally(() => { if (timeoutId !== null) clearTimeout(timeoutId); }),
       timeoutPromise.finally(() => { if (timeoutId !== null) clearTimeout(timeoutId); }),
     ]);
-  } catch {
-    // SDK timed out or threw — fall through to Layer 2
+  } catch (sdkError) {
+    logger.warn(`⚠️ [V4] Layer 1 SDK fetch failed: ${sdkError instanceof Error ? sdkError.message : String(sdkError)}`);
     sdkResult = null;
   }
 
@@ -184,6 +184,9 @@ export async function fetchV4ReservesWithTimeout(options: {
         rpcTimeout.finally(() => { if (rpcTimeoutId !== null) clearTimeout(rpcTimeoutId); }),
       ]);
       if (rpcResult.reserves.length > 0) {
+        if (rpcResult.errors.length > 0) {
+          logger.warn(`⚠️ [V4] Layer 2 RPC fallback succeeded with ${rpcResult.errors.length} partial error(s): ${rpcResult.errors.join('; ')}`);
+        }
         logger.info(`✅ [V4] Layer 2 RPC fallback succeeded: ${rpcResult.reserves.length} reserves`);
         return {
           mapped: rpcResult.reserves,
@@ -194,7 +197,11 @@ export async function fetchV4ReservesWithTimeout(options: {
           source: 'rpc',
         };
       }
-      logger.warn('⚠️ [V4] Layer 2 RPC fallback returned empty reserves');
+      if (rpcResult.errors.length > 0) {
+        logger.warn(`⚠️ [V4] Layer 2 RPC fallback returned empty reserves with ${rpcResult.errors.length} error(s): ${rpcResult.errors.join('; ')}`);
+      } else {
+        logger.warn('⚠️ [V4] Layer 2 RPC fallback returned empty reserves');
+      }
     } catch (rpcError) {
       logger.warn(`⚠️ [V4] Layer 2 RPC fallback failed: ${rpcError instanceof Error ? rpcError.message : String(rpcError)}`);
     }
