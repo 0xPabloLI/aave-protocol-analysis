@@ -547,6 +547,11 @@ export function getDefaultV4SpokeEntries(): V4SpokeEntry[] {
  * This is the last-resort fallback: spokeName and hubName are set to 'unknown'
  * because address-book names are unavailable. The RPC layer only needs chainId,
  * spokeAddress, and hubAddress to function correctly.
+ *
+ * Note: V4_SKIP_SPOKES filtering is not applied here because:
+ * 1. spokeName is 'unknown' — it cannot match any skip list entry by name
+ * 2. DEFAULT_SPOKE_HUB_TOPOLOGY is curated and excludes skipped spokes
+ * If a non-curated topology is passed, the caller should pre-filter.
  */
 export function buildFallbackV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
   return topology.map(({ chainId, spokeAddress, hubAddress }) => ({

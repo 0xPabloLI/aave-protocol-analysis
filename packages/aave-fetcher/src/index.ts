@@ -36,7 +36,7 @@ import {
   closeBrowserInstances
 } from './cloudflare-browser.js';
 import { fetchV4ReservesData, bigintReplacer } from './v4-fetcher.js';
-import type { V4FetchResult } from './v4-fetcher.js';
+import type { V4FetchResult } from './v4-retry.js';
 import type { RuntimeReserveData, MarketsPayload, SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { buildMarketsBaseDataset as _buildMarketsBaseDataset, buildV3BaseDataset as _buildV3BaseDataset, fetchV4ReservesWithTimeout as _fetchV4ReservesWithTimeout, fetchV3MarketsWithTimeout as _fetchV3MarketsWithTimeout, FETCH_TIMEOUT_MS } from './concurrent-fetch.js';
 import { fetchV4ReservesViaRpc, getDefaultV4SpokeEntries } from '@internal/aave-rpc-infra';

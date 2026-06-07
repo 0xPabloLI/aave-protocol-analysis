@@ -15,6 +15,13 @@ Implemented
 > - RPC path returns `spokeHubTopology: []` to preserve backend registry from version regression (AAV-581 decision).
 > - `v4FallbackReserveIds` auto-populates in backend when `source === 'rpc'`.
 > - Known accepted degradation: `spokeName`/`marketName` inconsistency during RPC fallback (tracked AAV-580).
+>
+> **2026-06-07 (AAV-569)**: Layer 1 fast-fail + Layer 2 defensive fallback.
+> - `V4ChainsFetchError`: When V4 SDK `chains()` fails (GraphQL unreachable), skip all retries and return empty immediately (~0ms instead of 12s). Layer 2 RPC fallback starts without delay.
+> - `fetchV4WithRetry` in `v4-retry.ts`: Extracted retry logic with fast-fail, `logFn` for observability, `V4RetryResult.lastError` for stack trace preservation.
+> - `V4FetchResult` unified as canonical type in `v4-retry.ts` (was duplicated in 3 files).
+> - `buildFallbackV4SpokeEntries()`: `getDefaultV4SpokeEntries()` never returns empty — defensive fallback from `DEFAULT_SPOKE_HUB_TOPOLOGY` when address-book is corrupted/missing.
+> - Sub-issues: AAV-603 (Slice 1: fast-fail), AAV-604 (Slice 2: defensive fallback).
 
 ## Context
 

@@ -22,10 +22,16 @@ import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared
 import { logger } from './logger.js';
 import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
 import { V4ChainsFetchError } from './v4-errors.js';
-import { fetchV4WithRetry } from './v4-retry.js';
+import { fetchV4WithRetry, type V4FetchResult } from './v4-retry.js';
 import { extractSpokeHubTopology } from './v4-topology.js';
 
 type V4FormattedReserveData = RuntimeReserveData;
+
+const v4RetryLogFn: import('./v4-retry.js').LogFn = (level, msg, meta) => {
+  if (level === 'error') logger.error(msg, meta);
+  else if (level === 'warn') logger.warn(msg, meta);
+  else logger.info(msg, meta);
+};
 
 // V4 uses its own client instance (points to the same api.aave.com/graphql)
 const v4Client = AaveClient.create();
@@ -34,13 +40,8 @@ export function bigintReplacer(_key: string, value: unknown): unknown {
   return typeof value === 'bigint' ? value.toString() : value;
 }
 
-// ts-prune-ignore-next
-export interface V4FetchResult {
-  mapped: V4FormattedReserveData[];
-  /** Raw SDK response (reserves only — hubAssets is no longer fetched). */
-  raw: { reserves: any[] };
-  spokeHubTopology: SpokeHubTopology;
-}
+// Re-export canonical V4FetchResult from v4-retry.ts
+export type { V4FetchResult };
 
 /**
  * Fetch all V4 reserves and map them to the RuntimeReserveData shape.
@@ -219,10 +220,15 @@ export async function fetchV4ReservesData(
 ): Promise<V4FetchResult> {
   const result = await fetchV4WithRetry(fetchV4MarketsDataInner, {
     maxRetries: options?.maxRetries,
+    logFn: v4RetryLogFn,
   });
 
   if (result.mapped.length === 0 && options?.throwOnFinalFailure) {
-    throw new Error('[V4] All fetch attempts failed');
+    throw result.lastError ?? new Error('[V4] All fetch attempts failed');
+  }
+
+  if (result.mapped.length === 0) {
+    logger.error(`❌ [V4] Returning empty dataset after all attempts failed`);
   }
 
   return result;

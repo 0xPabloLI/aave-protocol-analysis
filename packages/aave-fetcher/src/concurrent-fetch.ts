@@ -1,12 +1,9 @@
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { logger } from './logger.js';
 import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
+import type { V4FetchResult } from './v4-retry.js';
 
-export interface V4FetchResult {
-  mapped: RuntimeReserveData[];
-  raw: { reserves: any[] };
-  spokeHubTopology: SpokeHubTopology;
-}
+export type { V4FetchResult };
 
 export const FETCH_TIMEOUT_MS = 35_000;
 

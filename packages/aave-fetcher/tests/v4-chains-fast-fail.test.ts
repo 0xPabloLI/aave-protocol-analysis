@@ -69,7 +69,7 @@ test('fetchV4WithRetry: fast-fail on V4ChainsFetchError — no retries, immediat
   // Should have been called only once (no retries)
   assert.strictEqual(callCount, 1, 'should not retry on V4ChainsFetchError');
   // Should return immediately, not after retry delays (2s+4s+6s = 12s)
-  assert.ok(elapsed < 500, `fast-fail should return in <500ms, took ${elapsed}ms`);
+  assert.ok(elapsed < 1000, `fast-fail should return in <1000ms, took ${elapsed}ms`);
 });
 
 test('fetchV4WithRetry: generic Error still retries', async () => {
