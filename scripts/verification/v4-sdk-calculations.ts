@@ -122,7 +122,7 @@ function calculateUtilization(D: number, L: number, S: number): number {
 }
 
 function main() {
-  const jsonPath = '/Users/pabloli/Downloads/v4-raw-sdk-response.json';
+  const jsonPath = process.argv[2] || './v4-raw-sdk-response.json';
 
   if (!fs.existsSync(jsonPath)) {
     console.error(`Error: ${jsonPath} not found`);

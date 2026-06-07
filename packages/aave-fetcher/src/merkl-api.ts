@@ -39,11 +39,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+import { getErrorCode } from '@internal/aave-shared-contracts';
+
 function isRetryableError(error: unknown): boolean {
   const retryableCodes = new Set(['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETRESET', 'ECONNREFUSED']);
-  // node-fetch errors surface via error.cause?.code or error.code
-  const code = (error as any)?.code || (error as any)?.cause?.code;
-  return Boolean(code && retryableCodes.has(String(code)));
+  const code = getErrorCode(error);
+  return Boolean(code && retryableCodes.has(code));
 }
 
 async function fetchWithRetry(

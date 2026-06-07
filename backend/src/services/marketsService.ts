@@ -144,11 +144,8 @@ export interface PartialStaleMergeResult {
 export function mergeWithPartialStale(input: PartialStaleMergeInput): PartialStaleMergeResult {
   const { freshData, v3Succeeded, v4Succeeded, staleV3Data, staleV4Data, v3FetchedAt, v4FetchedAt, hardTtlMs, now } = input;
 
-  // Split fresh data by protocol version.
-  // hubId is only present on V4 RuntimeReserveData, not part of the union type —
-  // using (r as any) is safe because the runtime convention is reliable (V3 reserves never have hubId).
-  const freshV3 = freshData.filter(r => !(r as any).hubId);
-  const freshV4 = freshData.filter(r => !!(r as any).hubId);
+  const freshV3 = freshData.filter(r => !r.hubId);
+  const freshV4 = freshData.filter(r => !!r.hubId);
 
   // Update stale caches for successful sides
   let newStaleV3Data = staleV3Data;
@@ -289,7 +286,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       }
 
       // Update payload.data with the merged dataset (may include stale data)
-      (payload as any).data = mergeResult.mergedData;
+      payload.data = mergeResult.mergedData;
 
       // Correct fetchResult to reflect post-merge reality
       const correctedFetchResult = correctFetchResult(
@@ -299,7 +296,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         mergeResult.v3Present,
         mergeResult.v4Present,
       );
-      (payload as any)._metadata.fetchResult = correctedFetchResult;
+      payload._metadata.fetchResult = correctedFetchResult;
 
       // Read on-chain data from cache (async, non-blocking)
       // Cache is maintained by separate cron job
@@ -322,17 +319,15 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         const onchainData = onchainMap.get(reserve.reserveId);
 
         // deficit: SDK value > on-chain RPC > default '0'
-        const sdkDeficit = (reserve as any).deficit as string | undefined;
+        const sdkDeficit = reserve.deficit;
         const onchainDeficit = onchainData?.deficit;
-        // V4 reserve not in Hub asset registry = no deficit mechanism = not a fallback.
-        // Only true fallback is when V3 reserve has no SDK and no onchain deficit source.
-        const isV4Reserve = (reserve as any).hubId !== undefined;
+        const isV4Reserve = reserve.hubId !== undefined;
         const v4NotInOnchainMap = isV4Reserve && !onchainData && sdkDeficit === undefined;
         if (v4NotInOnchainMap) v4NotInOnchainCount++;
         const { deficit, isFallback } = v4NotInOnchainMap
           ? { deficit: '0', isFallback: false }
           : resolveReserveDeficit(sdkDeficit, onchainDeficit);
-        (reserve as any).deficit = deficit;
+        reserve.deficit = deficit;
         if (isFallback) {
           deficitFallbackReserveIds.push(reserve.reserveId);
           fallbackCount++;
@@ -340,10 +335,10 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         }
 
         // baseBorrowRate: SDK value > on-chain RPC > fallback calculation
-        if ((reserve as any).baseBorrowRate !== undefined) {
+        if (reserve.baseBorrowRate !== undefined) {
           // SDK already provided baseBorrowRate — keep it
         } else if (onchainData?.baseVariableBorrowRate !== undefined) {
-          (reserve as any).baseBorrowRate = onchainData.baseVariableBorrowRate;
+          reserve.baseBorrowRate = onchainData.baseVariableBorrowRate;
           mergedCount++;
         } else {
           // No SDK value and no on-chain RPC data — use fallback calculation
@@ -355,7 +350,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
             reserve.slopeAboveOptimal
           );
           if (fallbackBaseRate !== null) {
-            (reserve as any).baseBorrowRate = fallbackBaseRate;
+            reserve.baseBorrowRate = fallbackBaseRate;
             fallbackCount++;
           }
         }

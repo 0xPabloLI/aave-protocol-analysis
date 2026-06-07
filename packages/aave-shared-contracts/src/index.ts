@@ -1,6 +1,27 @@
 import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
 
 // ============================================================
+// Utility functions (shared across packages)
+// ============================================================
+
+export function getErrorCode(error: unknown): string | undefined {
+  if (typeof error === 'object' && error !== null) {
+    if ('code' in error) {
+      const code = (error as { code: unknown }).code;
+      if (typeof code === 'string') return code;
+    }
+    if ('cause' in error) {
+      const cause = (error as { cause: unknown }).cause;
+      if (typeof cause === 'object' && cause !== null && 'code' in cause) {
+        const code = (cause as { code: unknown }).code;
+        if (typeof code === 'string') return code;
+      }
+    }
+  }
+  return undefined;
+}
+
+// ============================================================
 // Incentive types
 // ============================================================
 

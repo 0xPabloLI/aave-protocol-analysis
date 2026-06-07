@@ -65,10 +65,12 @@ const DEFAULT_FAILURE_THRESHOLD = 2;
 const DEFAULT_SUPPRESSION_MS = 5 * 60_000;
 const DEFAULT_PROVIDER_TTL_MS = 30 * 60_000; // 30 min — evict unused providers
 
+import { getErrorCode } from '@internal/aave-shared-contracts';
+
 function defaultErrorClassifier(error: unknown): ErrorClass {
   const msg = error instanceof Error ? error.message : String(error);
-  const code = (error as any)?.code;
-  if (typeof code === 'string') {
+  const code = getErrorCode(error);
+  if (code !== undefined) {
     const networkCodes = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'NETWORK_ERROR', 'SERVER_ERROR']);
     if (networkCodes.has(code)) return 'retry_next_rpc';
   }

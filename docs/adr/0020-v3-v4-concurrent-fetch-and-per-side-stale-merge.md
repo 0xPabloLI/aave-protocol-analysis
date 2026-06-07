@@ -64,7 +64,7 @@ let v4FetchedAt: number | null = null;
 | 单 side 失败 + 该 side stale 超 TTL | 该 side = []，对侧正常合并 | 不更新 |
 | 两 side 都失败 + 两个 stale 都超 TTL | merged = [] → 抛 Error | 不更新 |
 
-side 区分：当前用 `(reserve as any).hubId` 启发式（V4 有 hubId，V3 没有）。
+side 区分：`reserve.hubId` 可选字段（V4 有 hubId，V3 无）。类型安全，无需 `as any`。
 
 side-channel：fetcher 在 `MarketsPayload._metadata` 写入 `_v3Succeeded` / `_v4Succeeded`（参见 ADR-0022 将其重命名为结构化的 `fetchResult` envelope）。
 
@@ -101,7 +101,7 @@ side-channel：fetcher 在 `MarketsPayload._metadata` 写入 `_v3Succeeded` / `_
 - **Positive**：fetcher 总耗时上限收紧到 ~35s（外层 60s 仍是硬 kill，留出充足 buffer 给 RPC fallback / 增量逻辑）
 - **Positive**：`mergeWithPartialStale()` 是纯函数，10+ 个单测覆盖（`backend/tests/partialStaleMerge.test.ts`）
 - **Negative**：backend `marketsService.ts` 引入 module-level 可变状态（`staleV3Data`, `staleV4Data`, `v3FetchedAt`, `v4FetchedAt`），测试需注意状态泄漏
-- **Negative**：V3/V4 区分依赖 `hubId` 启发式，类型层 `RuntimeReserveData` 未做严格 discriminated union（与 ADR-0019 决定不暴露 `protocolVersion` 一致）
+- **Neutral**：V3/V4 区分依赖 `hubId` 可选字段（类型安全，`RuntimeReserveData.hubId?: string`），未做严格 discriminated union（与 ADR-0019 决定不暴露 `protocolVersion` 一致）
 - **Neutral**：stale 数据 TTL 当前复用 `marketsHardTtlMs`；待 RPC fallback 上线后是否调短另行评估（见 ADR-0021）
 
 ## References
