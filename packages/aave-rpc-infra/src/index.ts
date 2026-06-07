@@ -4,6 +4,7 @@ import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
 import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, V4_SKIP_SPOKES, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
+import { DynamicRpcCache } from './dynamicRpcCache.js';
 
 export type ProviderCandidate = {
   rpcUrl: string;
@@ -40,6 +41,10 @@ export type ExecuteWithFallbackOptions = {
   label?: string;
 };
 
+export type ExecuteWithAutoRpcOptions = ExecuteWithFallbackOptions;
+
+type NewChainHook = () => void;
+
 const DEFAULT_FAILURE_THRESHOLD = 2;
 const DEFAULT_SUPPRESSION_MS = 5 * 60_000;
 const DEFAULT_PROVIDER_TTL_MS = 30 * 60_000; // 30 min — evict unused providers
@@ -66,13 +71,97 @@ export class ProviderPool {
   private readonly providerTtlMs: number;
   private readonly now: () => number;
   readonly errorClassifier: ErrorClassifier;
+  private readonly dynamicRpcCache: DynamicRpcCache;
+  private newChainHook: NewChainHook | null = null;
+  private readonly warnFn: ((msg: string) => void) | null;
+  private viemChainCache: Array<{ id: number; rpcUrls: { default: { http: string[] } } }> | null = null;
 
-  constructor(options: ProviderPoolOptions & { providerTtlMs?: number } = {}) {
+  constructor(options: ProviderPoolOptions & { providerTtlMs?: number; warnFn?: (msg: string) => void } = {}) {
     this.failureThreshold = Math.max(1, options.failureThreshold ?? DEFAULT_FAILURE_THRESHOLD);
     this.suppressionMs = Math.max(1_000, options.suppressionMs ?? DEFAULT_SUPPRESSION_MS);
     this.providerTtlMs = Math.max(60_000, options.providerTtlMs ?? DEFAULT_PROVIDER_TTL_MS);
     this.now = options.now ?? Date.now;
     this.errorClassifier = options.errorClassifier ?? defaultErrorClassifier;
+    this.dynamicRpcCache = new DynamicRpcCache();
+    this.warnFn = options.warnFn ?? null;
+  }
+
+  setDynamicRpcCacheHooks(hooks: { onFetchTriggered?: NewChainHook }): void {
+    this.newChainHook = hooks.onFetchTriggered ?? null;
+  }
+
+  seedDynamicRpcCache(chainId: number, urls: string[]): void {
+    this.dynamicRpcCache.set(chainId, urls);
+  }
+
+  private async loadViemChains(): Promise<Array<{ id: number; rpcUrls: { default: { http: string[] } } }>> {
+    if (this.viemChainCache) return this.viemChainCache;
+    try {
+      const viemChains = await import('viem/chains');
+      this.viemChainCache = Object.values(viemChains) as any;
+      return this.viemChainCache!;
+    } catch {
+      return [];
+    }
+  }
+
+  private async resolveViemChainRpcs(chainId: number): Promise<string[]> {
+    const allChains = await this.loadViemChains();
+    if (allChains.length === 0) return [];
+    const viem = await import('viem');
+    const chain = viem.extractChain({ chains: allChains as any[], id: chainId });
+    if (!chain?.rpcUrls?.default?.http) return [];
+    return chain.rpcUrls.default.http.filter((u: string) => u.startsWith('https://'));
+  }
+
+  private areAllSuppressed(chainId: number, urls: string[]): boolean {
+    if (urls.length === 0) return false;
+    return urls.every((url) => {
+      const key = this.endpointKey(chainId, url);
+      return this.isSuppressed(this.endpointHealthByKey.get(key));
+    });
+  }
+
+  async executeWithAutoRpc<T>(
+    chainId: number,
+    execs: {
+      primary: (provider: providers.Provider) => Promise<T>;
+      fallback?: (provider: providers.Provider) => Promise<T>;
+    },
+    options?: ExecuteWithAutoRpcOptions,
+  ): Promise<T | null> {
+    let urls = getAaveRpcUrlsByChainId(chainId);
+
+    if (urls.length === 0) {
+      const cached = this.dynamicRpcCache.get(chainId);
+      if (cached && cached.length > 0) {
+        if (this.areAllSuppressed(chainId, cached)) {
+          this.dynamicRpcCache.invalidate(chainId);
+        } else {
+          urls = cached;
+        }
+      }
+
+      if (urls.length === 0) {
+        const viemUrls = await this.resolveViemChainRpcs(chainId);
+        if (viemUrls.length > 0) {
+          urls = viemUrls;
+          this.dynamicRpcCache.startFetch(chainId);
+          this.newChainHook?.();
+          this.warnFn?.(`⚠️ New chain ${chainId} detected without hardcoded RPC — please add to shared-config. Using viem/chains + external discovery.`);
+        }
+      }
+
+      if (urls.length === 0) {
+        const afterInvalidate = this.dynamicRpcCache.get(chainId);
+        if (afterInvalidate && afterInvalidate.length > 0) {
+          urls = afterInvalidate;
+        }
+      }
+    }
+
+    if (urls.length === 0) return null;
+    return this.executeWithFallback(chainId, urls, execs, options);
   }
 
   private endpointKey(chainId: number, rpcUrl: string): string {
@@ -397,12 +486,11 @@ export function getDefaultV4SpokeEntries(): V4SpokeEntry[] {
   return getV4SpokeEntries(DEFAULT_SPOKE_HUB_TOPOLOGY);
 }
 
-type ProviderPoolLike = Pick<ProviderPool, 'getProvidersForChain' | 'reportProviderFailure' | 'reportProviderSuccess' | 'errorClassifier' | 'executeWithFallback'>;
+type ProviderPoolLike = Pick<ProviderPool, 'getProvidersForChain' | 'reportProviderFailure' | 'reportProviderSuccess' | 'errorClassifier' | 'executeWithAutoRpc'>;
 
 export interface FetchV4ReservesViaRpcOptions {
   entries?: V4SpokeEntry[];
   providerPool?: ProviderPoolLike;
-  rpcUrlsByChainId?: (chainId: number) => string[];
   timeoutMs?: number;
 }
 
@@ -582,22 +670,24 @@ export async function fetchV4ReservesViaRpc(
   options: FetchV4ReservesViaRpcOptions,
 ): Promise<FetchV4ReservesViaRpcResult> {
   const activePool = options.providerPool ?? providerPool;
-  const rpcUrlsByChainId = options.rpcUrlsByChainId ?? getAaveRpcUrlsByChainId;
   const timeoutMs = options.timeoutMs ?? 15_000;
   const reserves: RuntimeReserveData[] = [];
   const errors: string[] = [];
 
   for (const entry of options.entries ?? getDefaultV4SpokeEntries()) {
     try {
-      const entryReserves = await activePool.executeWithFallback(
+      const entryReserves = await activePool.executeWithAutoRpc(
         entry.chainId,
-        rpcUrlsByChainId(entry.chainId),
         {
           primary: (p: providers.Provider) => fetchEntryReservesMulticall(p, entry, timeoutMs),
           fallback: (p: providers.Provider) => fetchEntryReservesSerial(p, entry, timeoutMs),
         },
         { label: `fetchV4Reserves:${entry.spokeName}` },
       );
+      if (!entryReserves) {
+        errors.push(`${entry.spokeName}/${entry.hubName}: no RPC URLs available`);
+        continue;
+      }
       reserves.push(...entryReserves);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -10,7 +10,6 @@
  */
 
 import { Contract, providers } from 'ethers';
-import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { providerPool, withTimeout } from '@internal/aave-rpc-infra';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
@@ -319,18 +318,16 @@ export async function refreshOracleCache(): Promise<void> {
       // ============================================================
 
       async function fetchV3WithRetry(config: V3PoolConfig): Promise<V3OraclePoolResult | null> {
-        const rpcUrls = getAaveRpcUrlsByChainId(config.chainId);
-        if (rpcUrls.length === 0) {
-          logger.debug(`⏭️  Oracle V3: Skipping ${config.poolKey} (chain ${config.chainId}), no RPC URLs`);
-          return null;
-        }
         try {
-          const result = await providerPool.executeWithFallback(
+          const result = await providerPool.executeWithAutoRpc(
             config.chainId,
-            rpcUrls,
             { primary: (p: providers.Provider) => fetchV3PoolPrices(config, p) },
             { label: `Oracle V3:${config.poolKey}` },
           );
+          if (!result) {
+            logger.debug(`⏭️  Oracle V3: Skipping ${config.poolKey} (chain ${config.chainId}), no RPC URLs`);
+            return null;
+          }
           logger.debug(`✅ Oracle V3: ${config.poolKey} - ${Object.keys(result.assets).length} assets`);
           return result;
         } catch {
@@ -340,18 +337,16 @@ export async function refreshOracleCache(): Promise<void> {
       }
 
       async function fetchV4WithRetry(config: V4SpokeConfig): Promise<V4OracleSpokeResult | null> {
-        const rpcUrls = getAaveRpcUrlsByChainId(config.chainId);
-        if (rpcUrls.length === 0) {
-          logger.debug(`⏭️  Oracle V4: Skipping ${config.spokeName} (chain ${config.chainId}), no RPC URLs`);
-          return null;
-        }
         try {
-          const result = await providerPool.executeWithFallback(
+          const result = await providerPool.executeWithAutoRpc(
             config.chainId,
-            rpcUrls,
             { primary: (p: providers.Provider) => fetchV4SpokePrices(config, p) },
             { label: `Oracle V4:${config.spokeName}` },
           );
+          if (!result) {
+            logger.debug(`⏭️  Oracle V4: Skipping ${config.spokeName} (chain ${config.chainId}), no RPC URLs`);
+            return null;
+          }
           logger.debug(`✅ Oracle V4: ${config.spokeName} - ${Object.keys(result.reserves).length} reserves`);
           return result;
         } catch {

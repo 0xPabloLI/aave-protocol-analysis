@@ -129,10 +129,9 @@ test('fetchV4ReservesViaRpc maps V4 Hub+Spoke data into RuntimeReserveData', asy
       reportProviderSuccess: () => undefined,
       reportProviderFailure: () => undefined,
       errorClassifier: () => 'retry_next_rpc' as const,
-      executeWithFallback: async (_chainId: number, _urls: string[], execs: { primary: (p: any) => Promise<any> }) =>
+      executeWithAutoRpc: async (_chainId: number, execs: { primary: (p: any) => Promise<any> }) =>
         execs.primary(mockProvider),
     },
-    rpcUrlsByChainId: () => ['mock-rpc'],
   });
 
   assert.equal(result.errors.length, 0);
@@ -195,10 +194,9 @@ test('fetchV4ReservesViaRpc returns partial results when one entry fails', async
       reportProviderSuccess: () => undefined,
       reportProviderFailure: () => undefined,
       errorClassifier: () => 'retry_next_rpc' as const,
-      executeWithFallback: async (_chainId: number, _urls: string[], execs: { primary: (p: any) => Promise<any> }) =>
+      executeWithAutoRpc: async (_chainId: number, execs: { primary: (p: any) => Promise<any> }) =>
         execs.primary(mockProvider2),
     },
-    rpcUrlsByChainId: () => ['mock-rpc'],
   });
 
   assert.equal(result.reserves.length, 1, 'should have reserves from the successful entry');

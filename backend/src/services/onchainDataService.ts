@@ -27,7 +27,6 @@
 
 import { Contract, providers, utils } from 'ethers';
 import { UiPoolDataProvider } from '@aave/contract-helpers';
-import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { providerPool, executeMulticall3, withTimeout } from '@internal/aave-rpc-infra';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
@@ -63,7 +62,6 @@ interface OnchainConfig {
   chainId: number;
   uiPoolDataProviderAddress: string;
   poolAddressesProvider: string;
-  defaultRpcUrls: string[];
 }
 
 function normalizeAddress(addr: string): string {
@@ -82,7 +80,6 @@ export const POOL_CONFIGS = new Map<string, OnchainConfig>(
       chainId: e.chainId,
       uiPoolDataProviderAddress: e.uiPoolDataProviderAddress!,
       poolAddressesProvider: e.poolAddressesProvider!,
-      defaultRpcUrls: getAaveRpcUrlsByChainId(e.chainId),
     }]),
 );
 
@@ -148,7 +145,6 @@ interface V4SpokeConfig {
   chainId: number;
   spokeAddress: string;
   hubAddress: string;
-  defaultRpcUrls: string[];
 }
 
 const V4_SPOKE_CONFIGS: V4SpokeConfig[] = V4_SPOKE_ENTRIES.map((e) => ({
@@ -156,7 +152,6 @@ const V4_SPOKE_CONFIGS: V4SpokeConfig[] = V4_SPOKE_ENTRIES.map((e) => ({
   chainId: e.chainId,
   spokeAddress: e.spokeAddress,
   hubAddress: e.hubAddress,
-  defaultRpcUrls: getAaveRpcUrlsByChainId(e.chainId),
 }));
 
 const poolCache = new Map<string, ChainCacheEntry>();
@@ -170,9 +165,8 @@ let cachedHubMappingAt = 0;
 
 async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
   try {
-    const chainData = await providerPool.executeWithFallback(
+    const chainData = await providerPool.executeWithAutoRpc(
       config.chainId,
-      config.defaultRpcUrls,
       {
         primary: async (provider: providers.Provider) => {
           const uiPoolDataProvider = new UiPoolDataProvider({
@@ -217,6 +211,11 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
         },
       },
     );
+
+    if (!chainData) {
+      logger.debug(`⏭️  On-chain: Skipping chain ${config.chainId}, no RPC URLs`);
+      return false;
+    }
 
     poolCache.set(poolConfigKey(config.chainId, config.poolAddress), {
       data: chainData,
@@ -284,8 +283,8 @@ async function fetchAndCacheV4Spoke(
   let underlyingToAssetId = hubAssetMapping.get(config.hubAddress);
   if (!underlyingToAssetId) {
     try {
-      underlyingToAssetId = await providerPool.executeWithFallback(
-        config.chainId, config.defaultRpcUrls,
+      underlyingToAssetId = (await providerPool.executeWithAutoRpc(
+        config.chainId,
         {
           primary: (p: providers.Provider) => buildHubAssetMappingMulticallInner(p, config.hubAddress, config.hubAddress, 'safety-net').catch((e) => {
             logger.warn(`V4 hub mapping Multicall3 primary failed for ${config.hubAddress}: ${e instanceof Error ? e.message : String(e)}`);
@@ -293,7 +292,11 @@ async function fetchAndCacheV4Spoke(
           }),
           fallback: (p: providers.Provider) => buildHubAssetMappingSerial(p, config.hubAddress, config.hubAddress, 'safety-net'),
         },
-      );
+      )) ?? undefined;
+      if (!underlyingToAssetId) {
+        logger.debug(`⏭️  V4 hub mapping: Skipping ${config.hubAddress} (chain ${config.chainId}), no RPC URLs`);
+        return false;
+      }
     } catch {
       logger.warn(`All RPC endpoints failed for V4 hub mapping ${config.hubAddress}, using cached spoke data`);
       return false;
@@ -309,9 +312,8 @@ async function fetchAndCacheV4Spoke(
   }
 
   try {
-    const spokeData = await providerPool.executeWithFallback(
+    const spokeData = await providerPool.executeWithAutoRpc(
       config.chainId,
-      config.defaultRpcUrls,
       {
         primary: (p: providers.Provider) =>
           fetchSpokeDeficitMulticall3(p, config.hubAddress, config.spokeAddress, config.spokeName, underlyingToAssetId!).catch((e) => {
@@ -322,6 +324,11 @@ async function fetchAndCacheV4Spoke(
           fetchSpokeDeficitSerial(p, config.hubAddress, config.spokeAddress, config.spokeName, underlyingToAssetId!),
       },
     );
+
+    if (!spokeData) {
+      logger.debug(`⏭️  V4 deficit: Skipping ${config.spokeName} (chain ${config.chainId}), no RPC URLs`);
+      return false;
+    }
 
     v4SpokeCache.set(cacheKey, { data: spokeData, updatedAt: Date.now() });
     return true;
@@ -491,15 +498,14 @@ export async function refreshOnchainCache(): Promise<void> {
         for (const config of V4_SPOKE_CONFIGS) {
           if (hubAssetMapping.has(config.hubAddress)) continue;
           try {
-            const mapping = await providerPool.executeWithFallback(
+            const mapping = await providerPool.executeWithAutoRpc(
               config.chainId,
-              config.defaultRpcUrls,
               {
                 primary: (p: providers.Provider) => buildHubAssetMappingMulticallInner(p, config.hubAddress, config.hubAddress, 'pre-build'),
                 fallback: (p: providers.Provider) => buildHubAssetMappingSerial(p, config.hubAddress, config.hubAddress, 'pre-build'),
               },
             );
-            if (mapping.size > 0) {
+            if (mapping && mapping.size > 0) {
               hubAssetMapping.set(config.hubAddress, mapping);
             }
           } catch {
