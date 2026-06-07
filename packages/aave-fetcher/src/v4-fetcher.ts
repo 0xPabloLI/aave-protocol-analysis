@@ -233,3 +233,24 @@ export async function fetchV4ReservesData(
 
   return result;
 }
+
+/**
+ * Extract spokeAddress → spokeName and hubAddress → hubName mappings
+ * from SDK-fetched reserves. Used to enrich RPC fallback reserves with
+ * human-readable names matching the SDK naming convention.
+ */
+export function extractSpokeNameCache(
+  reserves: RuntimeReserveData[],
+): { spokeNames: Map<string, string>; hubNames: Map<string, string> } {
+  const spokeNames = new Map<string, string>();
+  const hubNames = new Map<string, string>();
+  for (const r of reserves) {
+    if (r.spokeAddress && r.spokeName) {
+      spokeNames.set(r.spokeAddress.toLowerCase(), r.spokeName);
+    }
+    if (r.hubAddress && r.hubName) {
+      hubNames.set(r.hubAddress.toLowerCase(), r.hubName);
+    }
+  }
+  return { spokeNames, hubNames };
+}

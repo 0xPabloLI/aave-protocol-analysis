@@ -2,8 +2,20 @@ import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared
 import { logger } from './logger.js';
 import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
 import type { V4FetchResult } from './v4-retry.js';
+import { extractSpokeNameCache } from './v4-fetcher.js';
 
 export type { V4FetchResult };
+
+/**
+ * Module-level cache of spokeAddress → spokeName and hubAddress → hubName
+ * extracted from the last successful SDK fetch. Used to enrich RPC fallback
+ * reserves with human-readable names matching the SDK naming convention.
+ *
+ * Lifecycle: refreshed on every successful SDK fetch; persists across fetch
+ * cycles so that when SDK fails, the last known names are available for RPC.
+ */
+let cachedSpokeNames = new Map<string, string>();
+let cachedHubNames = new Map<string, string>();
 
 export const FETCH_TIMEOUT_MS = 35_000;
 
@@ -160,8 +172,11 @@ export async function fetchV4ReservesWithTimeout(options: {
     sdkResult = null;
   }
 
-  // SDK produced data → return immediately
+  // SDK produced data → refresh name cache, return immediately
   if (sdkResult && sdkResult.mapped.length > 0) {
+    const { spokeNames, hubNames } = extractSpokeNameCache(sdkResult.mapped);
+    cachedSpokeNames = spokeNames;
+    cachedHubNames = hubNames;
     return { ...sdkResult, source: 'sdk' };
   }
 
@@ -185,8 +200,10 @@ export async function fetchV4ReservesWithTimeout(options: {
           logger.warn(`⚠️ [V4] Layer 2 RPC fallback succeeded with ${rpcResult.errors.length} partial error(s): ${rpcResult.errors.join('; ')}`);
         }
         logger.info(`✅ [V4] Layer 2 RPC fallback succeeded: ${rpcResult.reserves.length} reserves`);
+        // Enrich RPC reserves with cached SDK spokeName/hubName for consistency
+        const enrichedReserves = applyCachedNames(rpcResult.reserves);
         return {
-          mapped: rpcResult.reserves,
+          mapped: enrichedReserves,
           raw: { reserves: [] },
           // Return empty topology: backend preserves its existing registry rather than
           // regressing to a potentially stale DEFAULT_SPOKE_HUB_TOPOLOGY (AAV-581 decision)
@@ -207,4 +224,38 @@ export async function fetchV4ReservesWithTimeout(options: {
   // All layers failed → return empty (Layer 3 stale in backend will handle this)
   logger.error('❌ [V4] All fetch layers failed (SDK + RPC), returning empty dataset');
   return { mapped: [], raw: { reserves: [] }, spokeHubTopology: [], source: 'none' };
+}
+
+/**
+ * Apply cached SDK spokeName/hubName to RPC fallback reserves.
+ *
+ * RPC fallback uses address-book keys (e.g., "MAIN_SPOKE", "CORE_HUB") while
+ * SDK returns human-readable names (e.g., "Main", "Core"). When the SDK has
+ * succeeded at least once, we have a cached mapping and can enrich RPC reserves
+ * to match the SDK naming convention — ensuring marketName/spokeName consistency
+ * across fallback transitions.
+ *
+ * If no cache entry exists (SDK never succeeded), the RPC names are kept as-is.
+ */
+function applyCachedNames(reserves: RuntimeReserveData[]): RuntimeReserveData[] {
+  if (cachedSpokeNames.size === 0 && cachedHubNames.size === 0) return reserves;
+  return reserves.map((r) => {
+    const spokeAddr = r.spokeAddress?.toLowerCase();
+    const hubAddr = r.hubAddress?.toLowerCase();
+    const cachedSpoke = spokeAddr ? cachedSpokeNames.get(spokeAddr) : undefined;
+    const cachedHub = hubAddr ? cachedHubNames.get(hubAddr) : undefined;
+    if (!cachedSpoke && !cachedHub) return r;
+    const spokeName = cachedSpoke ?? r.spokeName ?? 'Unknown';
+    const hubName = cachedHub ?? r.hubName ?? 'Unknown';
+    const marketName = `AaveV4${spokeName.replace(/\s+/g, '')}`;
+    return { ...r, spokeName, hubName, marketName };
+  });
+}
+
+/**
+ * Clear the cached spoke/hub name mapping. Exposed for testing.
+ */
+export function clearSpokeNameCache(): void {
+  cachedSpokeNames = new Map<string, string>();
+  cachedHubNames = new Map<string, string>();
 }
