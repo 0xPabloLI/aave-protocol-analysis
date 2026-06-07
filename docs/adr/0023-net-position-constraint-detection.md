@@ -6,6 +6,10 @@ Date: 2026-05-29
 
 Accepted
 
+## Related Issues
+
+- [AAV-444](https://linear.app/aaveapy/issue/AAV-444) — 大模型解析 Merkl Opportunities 时的 hardcoded rules fallback（本 ADR 的 Layer 1 硬编码规则即为此 fallback 的实现）
+
 ## Context
 
 Merkl 机会的 `netPositionConstraint` 字段标识净头寸方向（supply/borrow）和抵消 reserve IDs。该字段决定了前端如何展示净 APY（supply APR - borrow APR of offset positions）。
