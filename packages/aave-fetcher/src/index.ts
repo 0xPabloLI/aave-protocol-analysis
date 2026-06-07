@@ -39,6 +39,7 @@ import { fetchV4ReservesData, bigintReplacer } from './v4-fetcher.js';
 import type { V4FetchResult } from './v4-fetcher.js';
 import type { RuntimeReserveData, MarketsPayload, SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { buildMarketsBaseDataset as _buildMarketsBaseDataset, buildV3BaseDataset as _buildV3BaseDataset, fetchV4ReservesWithTimeout as _fetchV4ReservesWithTimeout, fetchV3MarketsWithTimeout as _fetchV3MarketsWithTimeout, FETCH_TIMEOUT_MS } from './concurrent-fetch.js';
+import { fetchV4ReservesViaRpc, getDefaultV4SpokeEntries } from '@internal/aave-rpc-infra';
 export type { RuntimeReserveData, MarketsPayload, SpokeHubTopology } from '@internal/aave-shared-contracts';
 export type {
   MerklCampaignBreakdown,
@@ -298,9 +299,12 @@ export async function fetchV3MarketsWithTimeout(options?: {
 
 export async function fetchV4ReservesWithTimeout(options?: {
   _fetchV4Fn?: () => Promise<V4FetchResult>;
-}): Promise<V4FetchResult & { source: 'sdk' | 'timeout' }> {
+  _fetchRpcFn?: () => Promise<{ reserves: RuntimeReserveData[]; errors: string[] }>;
+}): Promise<V4FetchResult & { source: 'sdk' | 'rpc' | 'none' }> {
   const fetchFn = options?._fetchV4Fn ?? (() => fetchV4ReservesData({ throwOnFinalFailure: false }));
-  return _fetchV4ReservesWithTimeout({ _fetchV4Fn: fetchFn });
+  // Production default: RPC direct-chain fallback via aave-rpc-infra (15s timeout enforced inside)
+  const rpcFn = options?._fetchRpcFn ?? (() => fetchV4ReservesViaRpc({ entries: getDefaultV4SpokeEntries(), timeoutMs: 15_000 }));
+  return _fetchV4ReservesWithTimeout({ _fetchV4Fn: fetchFn, _fetchRpcFn: rpcFn });
 }
 
 // 将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
@@ -839,21 +843,20 @@ export async function runMarketsFetcher(): Promise<void> {
     ]);
 
     const v3Success = v3Settled.status === 'fulfilled';
-    const v4Success = v4Settled.status === 'fulfilled';
+    const v4SettledValue = v4Settled.status === 'fulfilled' ? v4Settled.value : { mapped: [], raw: { reserves: [] }, spokeHubTopology: [], source: 'none' as const };
+    const v4Success = v4SettledValue.mapped.length > 0;
 
     if (!v3Success) {
       const reason = v3Settled.status === 'rejected' ? v3Settled.reason : 'unknown';
       logger.error(`❌ V3 fetch failed: ${reason instanceof Error ? reason.message : String(reason)}`);
     }
     if (!v4Success) {
-      const reason = v4Settled.status === 'rejected' ? v4Settled.reason : 'unknown';
-      logger.error(`❌ V4 fetch failed: ${reason instanceof Error ? reason.message : String(reason)}`);
+      logger.warn(`⚠️ V4 fetch produced no data (source=${v4SettledValue.source})`);
     }
 
-    const emptyV4Result: V4FetchResult = { mapped: [], raw: { reserves: [] }, spokeHubTopology: [] };
     const emptyMarketData: MarketData = { timestamp: new Date().toISOString(), totalNetworks: 0, chainIds: [], networkInfo: [], markets: [], errors: ['V3 fetch failed'] };
     const marketData = v3Success ? v3Settled.value : emptyMarketData;
-    const v4Result = v4Success ? v4Settled.value : emptyV4Result;
+    const v4Result = v4SettledValue;
 
     if (!v3Success && !v4Success) {
       throw new Error('Both V3 and V4 fetch failed');
@@ -1070,21 +1073,23 @@ export async function fetchMarketsData(options?: {
   ]);
 
   const v3Success = v3Settled.status === 'fulfilled';
-  const v4Success = v4Settled.status === 'fulfilled';
+  // fetchV4ReservesWithTimeout never rejects (Layer 2 handles all SDK failures).
+  // Success = data was produced (mapped.length > 0), regardless of which layer provided it.
+  const v4SettledValue = v4Settled.status === 'fulfilled' ? v4Settled.value : { mapped: [], raw: { reserves: [] }, spokeHubTopology: [], source: 'none' as const };
+  const v4Success = v4SettledValue.mapped.length > 0;
+  const v4Source = v4SettledValue.source;
 
   if (!v3Success) {
     const reason = v3Settled.status === 'rejected' ? v3Settled.reason : 'unknown';
     logger.error(`❌ V3 fetch failed: ${reason instanceof Error ? reason.message : String(reason)}`);
   }
   if (!v4Success) {
-    const reason = v4Settled.status === 'rejected' ? v4Settled.reason : 'unknown';
-    logger.error(`❌ V4 fetch failed: ${reason instanceof Error ? reason.message : String(reason)}`);
+    logger.warn(`⚠️ V4 fetch produced no data (source=${v4Source})`);
   }
 
-  const emptyV4Result: V4FetchResult = { mapped: [], raw: { reserves: [] }, spokeHubTopology: [] };
   const emptyMarketData: MarketData = { timestamp: new Date().toISOString(), totalNetworks: 0, chainIds: [], networkInfo: [], markets: [], errors: ['V3 fetch failed'] };
   const marketData = v3Success ? v3Settled.value : emptyMarketData;
-  const v4Result = v4Success ? v4Settled.value : emptyV4Result;
+  const v4Result = v4SettledValue;
 
   if (!v3Success && !v4Success) {
     throw new Error('Both V3 and V4 fetch failed');
@@ -1115,7 +1120,8 @@ export async function fetchMarketsData(options?: {
       profile: 'runtime-minimal',
       fetchResult: {
         v3: { success: v3Success, source: v3Success ? 'sdk' : 'none' },
-        v4: { success: v4Success, source: v4Success ? 'sdk' : 'none' },
+        // v4Source carries 'sdk' | 'rpc' | 'none' from the fetch layer (AAV-583)
+        v4: { success: v4Success, source: v4Success ? v4Source : 'none' },
       },
     },
     data: runtimeData,

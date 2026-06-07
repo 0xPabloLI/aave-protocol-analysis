@@ -142,35 +142,85 @@ describe('fetchV4ReservesWithTimeout — no v4Fatal (DI)', () => {
     assert.equal(result.source, 'sdk');
   });
 
-  it('V4 rejects → throws (caught by Promise.allSettled)', async () => {
-    const mockFetchV4 = async () => {
-      throw new Error('V4 SDK down');
-    };
-
-    await assert.rejects(
-      async () => {
-        await fetchV4ReservesWithTimeout({
-          _fetchV4Fn: mockFetchV4,
-        });
-      },
-      (err: any) => err.message.includes('V4 SDK down'),
-      'fetchV4ReservesWithTimeout should throw when _fetchV4Fn rejects'
-    );
-  });
-
-  it('V4 returns empty → fulfills with empty mapped + source=sdk', async () => {
-    const mockFetchV4 = async () => ({
-      mapped: [],
-      raw: { reserves: [] },
-      spokeHubTopology: [],
-    });
+  it('V4 rejects + RPC mock succeeds → source: rpc', async () => {
+    const mockFetchV4 = async () => { throw new Error('V4 SDK down'); };
+    const mockRpc = async () => ({ reserves: [makeV4Reserve()], errors: [] });
 
     const result = await fetchV4ReservesWithTimeout({
       _fetchV4Fn: mockFetchV4,
+      _fetchRpcFn: mockRpc,
+    });
+
+    assert.equal(result.mapped.length, 1);
+    assert.equal(result.source, 'rpc');
+  });
+
+  it('V4 returns empty + RPC mock succeeds → source: rpc', async () => {
+    const mockFetchV4 = async () => ({ mapped: [], raw: { reserves: [] }, spokeHubTopology: [] });
+    const mockRpc = async () => ({ reserves: [makeV4Reserve()], errors: [] });
+
+    const result = await fetchV4ReservesWithTimeout({
+      _fetchV4Fn: mockFetchV4,
+      _fetchRpcFn: mockRpc,
+    });
+
+    assert.equal(result.mapped.length, 1);
+    assert.equal(result.source, 'rpc');
+  });
+});
+
+describe('fetchV4ReservesWithTimeout — RPC Layer 2 fallback', () => {
+  it('SDK empty + RPC empty → source: none, never rejects', async () => {
+    const mockFetchV4 = async () => ({ mapped: [], raw: { reserves: [] }, spokeHubTopology: [] });
+    const mockRpc = async () => ({ reserves: [], errors: [] });
+
+    const result = await fetchV4ReservesWithTimeout({
+      _fetchV4Fn: mockFetchV4,
+      _fetchRpcFn: mockRpc,
     });
 
     assert.equal(result.mapped.length, 0);
+    assert.equal(result.source, 'none');
+  });
+
+  it('RPC fallback → spokeHubTopology is []', async () => {
+    const mockFetchV4 = async () => ({ mapped: [], raw: { reserves: [] }, spokeHubTopology: [] });
+    const mockRpc = async () => ({ reserves: [makeV4Reserve()], errors: [] });
+
+    const result = await fetchV4ReservesWithTimeout({
+      _fetchV4Fn: mockFetchV4,
+      _fetchRpcFn: mockRpc,
+    });
+
+    assert.deepEqual(result.spokeHubTopology, []);
+    assert.equal(result.source, 'rpc');
+  });
+
+  it('SDK success (non-empty) → RPC not called, source: sdk', async () => {
+    let rpcCalled = false;
+    const mockFetchV4 = async () => ({ mapped: [makeV4Reserve()], raw: { reserves: [] }, spokeHubTopology: [] });
+    const mockRpc = async () => { rpcCalled = true; return { reserves: [], errors: [] }; };
+
+    const result = await fetchV4ReservesWithTimeout({
+      _fetchV4Fn: mockFetchV4,
+      _fetchRpcFn: mockRpc,
+    });
+
+    assert.equal(rpcCalled, false);
     assert.equal(result.source, 'sdk');
+  });
+
+  it('SDK throws + RPC also empty → source: none, never rejects', async () => {
+    const mockFetchV4 = async () => { throw new Error('SDK down'); };
+    const mockRpc = async () => ({ reserves: [], errors: [] });
+
+    const result = await fetchV4ReservesWithTimeout({
+      _fetchV4Fn: mockFetchV4,
+      _fetchRpcFn: mockRpc,
+    });
+
+    assert.equal(result.mapped.length, 0);
+    assert.equal(result.source, 'none');
   });
 });
 
@@ -247,30 +297,42 @@ describe('Promise.allSettled — concurrent V3/V4 scenarios', () => {
     assert.equal(result.v4Count, 1);
   });
 
-  it('V3 success + V4 fail → V3 data only + fetchResult.v4.success=false', async () => {
+  it('V3 success + V4 SDK fail → V4 falls back to RPC/none, never rejected', async () => {
+    const mockRpc = async () => ({ reserves: [], errors: [] });
     const [v3Settled, v4Settled] = await Promise.allSettled([
       fetchV3MarketsWithTimeout({ _fetchV3Fn: async () => ({ markets: [makeV3Market()], timestamp: new Date().toISOString() }) }),
-      fetchV4ReservesWithTimeout({ _fetchV4Fn: async () => { throw new Error('V4 down'); } }),
+      fetchV4ReservesWithTimeout({
+        _fetchV4Fn: async () => { throw new Error('V4 down'); },
+        _fetchRpcFn: mockRpc,
+      }),
     ]);
 
     assert.equal(v3Settled.status, 'fulfilled');
-    assert.equal(v4Settled.status, 'rejected');
+    assert.equal(v4Settled.status, 'fulfilled');  // never rejects
+    const v4Data = (v4Settled as PromiseFulfilledResult<any>).value;
+    assert.equal(v4Data.source, 'none');  // RPC also empty
 
     const v3Data = (v3Settled as PromiseFulfilledResult<any>).value;
-    const result = buildMarketsBaseDataset(v3Data.markets, makeV4FetchResult([]));
+    const result = buildMarketsBaseDataset(v3Data.markets, v4Data);
 
     assert.equal(result.v3Count, 1);
     assert.equal(result.v4Count, 0);
   });
 
-  it('both fail → should throw in caller', async () => {
+  it('V3 fail + V4 SDK fail → V3 rejected, V4 fulfilled (never rejects)', async () => {
+    const mockRpc = async () => ({ reserves: [], errors: [] });
     const [v3Settled, v4Settled] = await Promise.allSettled([
       fetchV3MarketsWithTimeout({ _fetchV3Fn: async () => { throw new Error('V3 down'); } }),
-      fetchV4ReservesWithTimeout({ _fetchV4Fn: async () => { throw new Error('V4 down'); } }),
+      fetchV4ReservesWithTimeout({
+        _fetchV4Fn: async () => { throw new Error('V4 down'); },
+        _fetchRpcFn: mockRpc,
+      }),
     ]);
 
     assert.equal(v3Settled.status, 'rejected');
-    assert.equal(v4Settled.status, 'rejected');
+    assert.equal(v4Settled.status, 'fulfilled');  // V4 never rejects now
+    const v4Data = (v4Settled as PromiseFulfilledResult<any>).value;
+    assert.equal(v4Data.source, 'none');
   });
 
   it('fetchResult envelope shape', async () => {

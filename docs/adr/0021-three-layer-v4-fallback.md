@@ -7,6 +7,15 @@ References: AAV-388, PRD c6ab55629364
 
 Implemented
 
+> **2026-06-06 (AAV-582 + AAV-583)**: Layer 2 fully wired.
+> - Fixed `buildReserveData` `reserveId` to use `hubAddress` (not `hubName`) so stale merge keys are consistent across all layers.
+> - Wired `fetchV4ReservesViaRpc` into `fetchV4ReservesWithTimeout` as Layer 2: SDK empty/timeout → RPC 15s → `source: 'rpc'`.
+> - `fetchV4ReservesWithTimeout` never rejects; failure path returns `source: 'none'` triggering Layer 3 stale.
+> - `fetchMarketsData` now propagates actual `source` and uses `mapped.length > 0` for `v4Success`.
+> - RPC path returns `spokeHubTopology: []` to preserve backend registry from version regression (AAV-581 decision).
+> - `v4FallbackReserveIds` auto-populates in backend when `source === 'rpc'`.
+> - Known accepted degradation: `spokeName`/`marketName` inconsistency during RPC fallback (tracked AAV-580).
+
 ## Context
 
 V4 SDK (`@aave/client-v4`) 偶发返回空数据集（AAV-388）。当前防御只有：

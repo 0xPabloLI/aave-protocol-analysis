@@ -137,7 +137,7 @@ test('fetchV4ReservesViaRpc maps V4 Hub+Spoke data into RuntimeReserveData', asy
 
   assert.equal(result.errors.length, 0);
   assert.equal(result.reserves.length, 1);
-  assert.equal(result.reserves[0].reserveId, `1:${spokeAddress.toLowerCase()}:${underlying.toLowerCase()}:CORE_HUB`);
+  assert.equal(result.reserves[0].reserveId, `1:${spokeAddress.toLowerCase()}:${underlying.toLowerCase()}:${hubAddress.toLowerCase()}`);
   assert.equal(result.reserves[0].marketName, 'AaveV4BLUECHIP_SPOKE');
   assert.equal(result.reserves[0].hubName, 'CORE_HUB');
   assert.equal(result.reserves[0].spokeName, 'BLUECHIP_SPOKE');

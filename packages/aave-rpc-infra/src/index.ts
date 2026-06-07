@@ -465,7 +465,7 @@ function buildReserveData(
   const protocolFee = protocolFeeRaw !== undefined ? Number(protocolFeeRaw) / 100 : undefined;
 
   return {
-    reserveId: `${entry.chainId}:${normalizeAddress(entry.spokeAddress)}:${underlying}:${entry.hubName}`,
+    reserveId: `${entry.chainId}:${normalizeAddress(entry.spokeAddress)}:${underlying}:${normalizeAddress(entry.hubAddress)}`,
     marketName: `AaveV4${entry.spokeName.replace(/\s+/g, '')}`,
     chainName: `Chain ${entry.chainId}`,
     chainId: entry.chainId,

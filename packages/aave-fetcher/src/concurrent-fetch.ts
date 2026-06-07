@@ -136,27 +136,71 @@ export async function fetchV3MarketsWithTimeout(options: {
   ]);
 }
 
+export type V4RpcFallbackFn = () => Promise<{ reserves: RuntimeReserveData[]; errors: string[] }>;
+
+const RPC_FALLBACK_TIMEOUT_MS = 15_000;
+
 export async function fetchV4ReservesWithTimeout(options: {
   _fetchV4Fn: () => Promise<V4FetchResult>;
-}): Promise<V4FetchResult & { source: 'sdk' | 'timeout' }> {
-  const fetchPromise = options._fetchV4Fn();
-  let timeoutId: NodeJS.Timeout | null = null;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      reject(new Error(`V4 fetch timeout (timeout after ${FETCH_TIMEOUT_MS}ms)`));
-    }, FETCH_TIMEOUT_MS);
-  });
+  _fetchRpcFn?: V4RpcFallbackFn;
+}): Promise<V4FetchResult & { source: 'sdk' | 'rpc' | 'none' }> {
+  // --- Layer 1: SDK with 35s timeout ---
+  let sdkResult: V4FetchResult | null = null;
   try {
-    const result = await Promise.race([
+    let timeoutId: NodeJS.Timeout | null = null;
+    const fetchPromise = options._fetchV4Fn();
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`V4 fetch timeout (timeout after ${FETCH_TIMEOUT_MS}ms)`));
+      }, FETCH_TIMEOUT_MS);
+    });
+    sdkResult = await Promise.race([
       fetchPromise.finally(() => { if (timeoutId !== null) clearTimeout(timeoutId); }),
       timeoutPromise.finally(() => { if (timeoutId !== null) clearTimeout(timeoutId); }),
     ]);
-    return { ...result, source: 'sdk' };
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    if (errorMsg.includes('timeout')) {
-      throw new Error(`V4 fetch timeout (timeout after ${FETCH_TIMEOUT_MS}ms)`);
-    }
-    throw error;
+  } catch {
+    // SDK timed out or threw — fall through to Layer 2
+    sdkResult = null;
   }
+
+  // SDK produced data → return immediately
+  if (sdkResult && sdkResult.mapped.length > 0) {
+    return { ...sdkResult, source: 'sdk' };
+  }
+
+  // --- Layer 2: RPC direct-chain fallback (15s independent timeout) ---
+  const rpcFn = options._fetchRpcFn;
+  if (rpcFn) {
+    try {
+      let rpcTimeoutId: NodeJS.Timeout | null = null;
+      const rpcPromise = rpcFn();
+      const rpcTimeout = new Promise<never>((_, reject) => {
+        rpcTimeoutId = setTimeout(() => {
+          reject(new Error(`V4 RPC fallback timeout (${RPC_FALLBACK_TIMEOUT_MS}ms)`));
+        }, RPC_FALLBACK_TIMEOUT_MS);
+      });
+      const rpcResult = await Promise.race([
+        rpcPromise.finally(() => { if (rpcTimeoutId !== null) clearTimeout(rpcTimeoutId); }),
+        rpcTimeout.finally(() => { if (rpcTimeoutId !== null) clearTimeout(rpcTimeoutId); }),
+      ]);
+      if (rpcResult.reserves.length > 0) {
+        logger.info(`✅ [V4] Layer 2 RPC fallback succeeded: ${rpcResult.reserves.length} reserves`);
+        return {
+          mapped: rpcResult.reserves,
+          raw: { reserves: [] },
+          // Return empty topology: backend preserves its existing registry rather than
+          // regressing to a potentially stale DEFAULT_SPOKE_HUB_TOPOLOGY (AAV-581 decision)
+          spokeHubTopology: [],
+          source: 'rpc',
+        };
+      }
+      logger.warn('⚠️ [V4] Layer 2 RPC fallback returned empty reserves');
+    } catch (rpcError) {
+      logger.warn(`⚠️ [V4] Layer 2 RPC fallback failed: ${rpcError instanceof Error ? rpcError.message : String(rpcError)}`);
+    }
+  }
+
+  // All layers failed → return empty (Layer 3 stale in backend will handle this)
+  logger.error('❌ [V4] All fetch layers failed (SDK + RPC), returning empty dataset');
+  return { mapped: [], raw: { reserves: [] }, spokeHubTopology: [], source: 'none' };
 }
