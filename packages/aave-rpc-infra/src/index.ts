@@ -19,18 +19,34 @@ type EndpointHealth = {
   lastSuccessAt: number;
 };
 
-export type UnhealthyEndpoint = {
+export type EndpointStatus = {
   chainId: number;
   rpcUrl: string;
+  status: 'healthy' | 'suppressed';
+  consecutiveFailures: number;
   lastError: string;
-  suppressedUntil: string;
+  lastFailureAt: string;
+  lastSuccessAt: string;
+  suppressedUntil?: string;
 };
+
+export type HealthStatus = {
+  endpoints: EndpointStatus[];
+  summary: {
+    total: number;
+    healthy: number;
+    suppressed: number;
+  };
+};
+
+export type LogFn = (level: 'info' | 'warn', msg: string, meta: Record<string, unknown>) => void;
 
 export type ProviderPoolOptions = {
   failureThreshold?: number;
   suppressionMs?: number;
   now?: () => number;
   errorClassifier?: ErrorClassifier;
+  logFn?: LogFn;
 };
 
 export type ErrorClass = 'retry_next_rpc' | 'try_fallback';
@@ -73,17 +89,24 @@ export class ProviderPool {
   readonly errorClassifier: ErrorClassifier;
   private readonly dynamicRpcCache: DynamicRpcCache;
   private newChainHook: NewChainHook | null = null;
-  private readonly warnFn: ((msg: string) => void) | null;
+  private logFn: LogFn | null;
   private viemChainCache: Array<{ id: number; rpcUrls: { default: { http: string[] } } }> | null = null;
 
-  constructor(options: ProviderPoolOptions & { providerTtlMs?: number; warnFn?: (msg: string) => void } = {}) {
+  constructor(options: ProviderPoolOptions & { providerTtlMs?: number } = {}) {
     this.failureThreshold = Math.max(1, options.failureThreshold ?? DEFAULT_FAILURE_THRESHOLD);
     this.suppressionMs = Math.max(1_000, options.suppressionMs ?? DEFAULT_SUPPRESSION_MS);
     this.providerTtlMs = Math.max(60_000, options.providerTtlMs ?? DEFAULT_PROVIDER_TTL_MS);
     this.now = options.now ?? Date.now;
     this.errorClassifier = options.errorClassifier ?? defaultErrorClassifier;
     this.dynamicRpcCache = new DynamicRpcCache();
-    this.warnFn = options.warnFn ?? null;
+    this.logFn = options.logFn ?? null;
+  }
+
+  /** Post-construction configuration for logFn on the singleton instance */
+  configure(options: { logFn?: LogFn | null }): void {
+    if ('logFn' in options) {
+      this.logFn = options.logFn ?? null;
+    }
   }
 
   setDynamicRpcCacheHooks(hooks: { onFetchTriggered?: NewChainHook }): void {
@@ -148,7 +171,7 @@ export class ProviderPool {
           urls = viemUrls;
           this.dynamicRpcCache.startFetch(chainId);
           this.newChainHook?.();
-          this.warnFn?.(`⚠️ New chain ${chainId} detected without hardcoded RPC — please add to shared-config. Using viem/chains + external discovery.`);
+          this.logFn?.('warn', `new-chain-detected`, { chainId, message: `New chain ${chainId} detected without hardcoded RPC — please add to shared-config. Using viem/chains + external discovery.` });
         }
       }
 
@@ -176,20 +199,26 @@ export class ProviderPool {
     const key = this.endpointKey(chainId, rpcUrl);
     const now = this.now();
     const current = this.endpointHealthByKey.get(key);
+    const wasSuppressed = this.isSuppressed(current);
     const nextFailures = (current?.consecutiveFailures ?? 0) + 1;
     const shouldSuppress = nextFailures >= this.failureThreshold;
+    const suppressedUntil = shouldSuppress ? now + this.suppressionMs : (current?.suppressedUntil ?? 0);
     this.endpointHealthByKey.set(key, {
       consecutiveFailures: nextFailures,
-      suppressedUntil: shouldSuppress ? now + this.suppressionMs : (current?.suppressedUntil ?? 0),
+      suppressedUntil,
       lastError: errorMessage,
       lastFailureAt: now,
       lastSuccessAt: current?.lastSuccessAt ?? 0,
     });
+    if (!wasSuppressed && shouldSuppress) {
+      this.logFn?.('warn', 'rpc-endpoint-suppressed', { chainId, rpcUrl, consecutiveFailures: nextFailures, lastError: errorMessage, suppressedUntil });
+    }
   }
 
   reportProviderSuccess(chainId: number, rpcUrl: string): void {
     const key = this.endpointKey(chainId, rpcUrl);
     const current = this.endpointHealthByKey.get(key);
+    const wasSuppressed = this.isSuppressed(current);
     const now = this.now();
     this.endpointHealthByKey.set(key, {
       consecutiveFailures: 0,
@@ -198,25 +227,48 @@ export class ProviderPool {
       lastFailureAt: current?.lastFailureAt ?? 0,
       lastSuccessAt: now,
     });
+    if (wasSuppressed) {
+      this.logFn?.('info', 'rpc-endpoint-recovered', { chainId, rpcUrl });
+    }
   }
 
-  getUnhealthyEndpoints(): UnhealthyEndpoint[] {
+  getHealthStatus(): HealthStatus {
     const now = this.now();
-    const output: UnhealthyEndpoint[] = [];
+    const endpoints: EndpointStatus[] = [];
+    let healthy = 0;
+    let suppressed = 0;
+
     for (const [key, health] of this.endpointHealthByKey.entries()) {
-      if (health.suppressedUntil <= now) continue;
       const [chainIdRaw, ...rpcUrlParts] = key.split(':');
       const chainId = Number(chainIdRaw);
       const rpcUrl = rpcUrlParts.join(':');
       if (!Number.isFinite(chainId) || !rpcUrl) continue;
-      output.push({
+
+      const isSup = health.suppressedUntil > now;
+      if (isSup) {
+        suppressed++;
+      } else {
+        healthy++;
+      }
+
+      endpoints.push({
         chainId,
         rpcUrl,
+        status: isSup ? 'suppressed' : 'healthy',
+        consecutiveFailures: health.consecutiveFailures,
         lastError: health.lastError,
-        suppressedUntil: new Date(health.suppressedUntil).toISOString(),
+        lastFailureAt: new Date(health.lastFailureAt).toISOString(),
+        lastSuccessAt: new Date(health.lastSuccessAt).toISOString(),
+        ...(isSup ? { suppressedUntil: new Date(health.suppressedUntil).toISOString() } : {}),
       });
     }
-    return output.sort((a, b) => (a.chainId - b.chainId) || a.rpcUrl.localeCompare(b.rpcUrl));
+
+    endpoints.sort((a, b) => (a.chainId - b.chainId) || a.rpcUrl.localeCompare(b.rpcUrl));
+
+    return {
+      endpoints,
+      summary: { total: endpoints.length, healthy, suppressed },
+    };
   }
 
   getProvidersForChain(chainId: number, fallbackUrls: string[]): ProviderCandidate[] {

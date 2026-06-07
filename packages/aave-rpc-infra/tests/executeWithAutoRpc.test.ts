@@ -29,7 +29,7 @@ test('executeWithAutoRpc: new chain with viem/chains RPC → returns result and 
   let fetchTriggered = false;
   let warnMsg = '';
   const pool = new ProviderPool({
-    warnFn: (msg) => { warnMsg = msg; },
+    logFn: (_level, msg, _meta) => { warnMsg = msg; },
   });
   pool.setDynamicRpcCacheHooks({
     onFetchTriggered: () => { fetchTriggered = true; },
@@ -44,7 +44,7 @@ test('executeWithAutoRpc: new chain with viem/chains RPC → returns result and 
 
   assert.equal(result, 'boba-result');
   assert.equal(fetchTriggered, true);
-  assert.ok(warnMsg.includes('288'), `warn should mention chainId 288, got: ${warnMsg}`);
+  assert.ok(warnMsg.includes('new-chain-detected'), `warn should mention new-chain-detected, got: ${warnMsg}`);
 });
 
 test('executeWithAutoRpc: new chain, dynamic cache hit → uses cached URLs', async () => {

@@ -16,10 +16,16 @@ import { warmMarketsCache, getMarketsData } from './services/marketsService.js';
 import { refreshOnchainCache } from './services/onchainDataService.js';
 import { refreshOracleCache } from './services/oracleService.js';
 import { logger } from './logger.js';
+import { providerPool } from '@internal/aave-rpc-infra';
 import { explainServerListenError } from './startup.js';
 import { closePool, getPool, isPersistenceEnabled } from './services/dbPool.js';
 import { getPersistenceStatus, warmConfigHashes } from './services/persistenceService.js';
 import { runMigrations } from './services/autoMigrate.js';
+
+// Wire ProviderPool logFn to winston logger
+providerPool.configure({
+  logFn: (level, msg, meta) => logger.log(level, msg, meta),
+});
 
 const app = express();
 app.set('etag', 'weak');
@@ -95,26 +101,50 @@ const healthHandler = (_req: express.Request, res: express.Response) => {
   const marketsReady = markets.payload !== null;
   const marketsStale = markets.isTooStale;
 
+  const rpcHealth = providerPool.getHealthStatus();
+  const chainsWithAllSuppressed = findChainsWithAllSuppressed(rpcHealth);
+
   if (!marketsReady || marketsStale) {
     res.status(503).json({
       status: 'degraded',
       timestamp: new Date().toISOString(),
       markets: { ready: marketsReady, stale: marketsStale, ageMs: markets.ageMs },
+      rpc: { summary: rpcHealth.summary, ...(chainsWithAllSuppressed.length > 0 ? { chainsWithAllSuppressed } : {}) },
       ...(process.env.RAILWAY_GIT_COMMIT_SHA && { commitSha: process.env.RAILWAY_GIT_COMMIT_SHA }),
     });
     return;
   }
 
+  const status = chainsWithAllSuppressed.length > 0 ? 'suppressed' : 'ok';
+
   res.json({
-    status: 'ok',
+    status,
     timestamp: new Date().toISOString(),
     ...(process.env.RAILWAY_GIT_COMMIT_SHA && { commitSha: process.env.RAILWAY_GIT_COMMIT_SHA }),
     environment: {
       nodeEnv: process.env.NODE_ENV || 'development',
       port: PORT,
     },
+    rpc: { summary: rpcHealth.summary, ...(chainsWithAllSuppressed.length > 0 ? { chainsWithAllSuppressed } : {}) },
   });
 };
+
+function findChainsWithAllSuppressed(rpcHealth: { endpoints: Array<{ chainId: number; status: string }> }): number[] {
+  const byChain = new Map<number, { total: number; suppressed: number }>();
+  for (const ep of rpcHealth.endpoints) {
+    const entry = byChain.get(ep.chainId) ?? { total: 0, suppressed: 0 };
+    entry.total++;
+    if (ep.status === 'suppressed') entry.suppressed++;
+    byChain.set(ep.chainId, entry);
+  }
+  const result: number[] = [];
+  for (const [chainId, counts] of byChain) {
+    if (counts.suppressed > 0 && counts.suppressed === counts.total) {
+      result.push(chainId);
+    }
+  }
+  return result.sort((a, b) => a - b);
+}
 
 // Health check endpoints:
 // - /health for load balancer probes

@@ -21,8 +21,8 @@ test('executeWithFallback: primary succeeds → returns result, reports success,
     assert.equal(val, 'primary-result');
     assert.equal(fallbackCalled, false);
 
-    const healthy = pool.getUnhealthyEndpoints();
-    assert.equal(healthy.length, 0, 'no unhealthy endpoints after success');
+    const status = pool.getHealthStatus();
+    assert.equal(status.summary.suppressed, 0, 'no suppressed endpoints after success');
   });
 
   return result;
