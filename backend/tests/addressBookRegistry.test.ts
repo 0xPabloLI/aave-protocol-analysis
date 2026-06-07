@@ -283,9 +283,9 @@ test('V4 spokeKey format uses raw keys (e.g. MAIN_SPOKE, not Main)', () => {
 // V4: Exclusion rules
 // ============================================================
 
-test('TREASURY_SPOKE is NOT in V4 entries', () => {
+test('TREASURY_SPOKE is NOT in V4 entries (excluded by topology, no oracle)', () => {
   const treasuryEntries = V4_SPOKE_ENTRIES.filter((e) => e.spokeKey === 'TREASURY_SPOKE');
-  assert.strictEqual(treasuryEntries.length, 0, 'TREASURY_SPOKE should be excluded (no oracle)');
+  assert.strictEqual(treasuryEntries.length, 0, 'TREASURY_SPOKE should be excluded (no oracle, not in topology)');
 });
 
 test('V4 entries only contain chains in AAVE_CHAIN_ID_TO_RPC_KEY (whitelist enforced)', () => {

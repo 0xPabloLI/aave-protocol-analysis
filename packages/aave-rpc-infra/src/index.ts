@@ -2,7 +2,7 @@ import { providers, utils } from 'ethers';
 import * as AaveAddressBook from '@aave-dao/aave-address-book';
 import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
-import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, V4_SKIP_SPOKES, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
+import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { getErrorCode } from '@internal/aave-shared-contracts';
 import { DynamicRpcCache } from './dynamicRpcCache.js';
@@ -551,7 +551,7 @@ export function getV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
 
     for (const [spokeName, spokeAddress] of Object.entries(spokes)) {
       if (!spokeName.endsWith('_SPOKE') && !spokeName.endsWith('_ESPOKE')) continue;
-      if (V4_SKIP_SPOKES.includes(spokeName) || typeof spokeAddress !== 'string') continue;
+      if (typeof spokeAddress !== 'string') continue;
       const spokeKey = `${chainId}:${normalizeAddress(spokeAddress)}`;
       const hubAddresses = topologyBySpoke.get(spokeKey);
       if (!hubAddresses) continue;
@@ -585,10 +585,9 @@ export function getDefaultV4SpokeEntries(): V4SpokeEntry[] {
  * because address-book names are unavailable. The RPC layer only needs chainId,
  * spokeAddress, and hubAddress to function correctly.
  *
- * Note: V4_SKIP_SPOKES filtering is not applied here because:
- * 1. spokeName is 'unknown' — it cannot match any skip list entry by name
- * 2. DEFAULT_SPOKE_HUB_TOPOLOGY is curated and excludes skipped spokes
- * If a non-curated topology is passed, the caller should pre-filter.
+ * Note: Non-market spokes are excluded by DEFAULT_SPOKE_HUB_TOPOLOGY curation
+ * (no topology entry = not traversed). If a non-curated topology is passed,
+ * the caller should pre-filter.
  */
 export function buildFallbackV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
   return topology.map(({ chainId, spokeAddress, hubAddress }) => ({

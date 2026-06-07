@@ -17,7 +17,7 @@
  */
 
 import * as AaveAddressBook from '@aave-dao/aave-address-book';
-import { AAVE_CHAIN_ID_TO_RPC_KEY, V4_SKIP_SPOKES, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
+import { AAVE_CHAIN_ID_TO_RPC_KEY, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { SpokeHubTopology } from '@internal/aave-shared-contracts';
 
 // ============================================================
@@ -100,7 +100,6 @@ export function buildAll(topology: SpokeHubTopology): { v3: V3PoolEntry[]; v4Spo
 
         for (const [spokeKey, spokeAddr] of Object.entries(spokes)) {
           if (!spokeKey.endsWith('_SPOKE') && !spokeKey.endsWith('_ESPOKE')) continue;
-          if (V4_SKIP_SPOKES.includes(spokeKey)) continue;
           if (typeof spokeAddr !== 'string') continue;
 
           const spokeAddressLower = spokeAddr.toLowerCase().trim();

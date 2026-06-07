@@ -51,13 +51,13 @@
 | 地址簿未覆盖链 | 上游 SDK 无 fallback metadata | 等待上游更新 |
 | RPC 质量 | 运行时基础设施问题 | 监控告警 + 更新 shared RPC 列表 |
 | 新链支持 | 需要 RPC 端点 | 更新 `packages/aave-shared-config/index.js` |
-| V4 TREASURY_SPOKE | `ITreasurySpoke` 无 oracle，address-book 不提供 `TREASURY_SPOKE_ORACLE` | sync 脚本自动跳过并输出日志 |
+| V4 TREASURY_SPOKE | `ITreasurySpoke` 无 oracle，不在 topology | topology 匹配排除 + oracleService warn 日志 |
 
 ### V4 Spoke Oracle 同步规则
 
 `addressBookRegistry` 在运行时从 `@aave-dao/aave-address-book` 遍历 `AaveV4*.SPOKES` 提取 spoke+oracle 对。规则：
 - 有 `_SPOKE_ORACLE` / `_ESPOKE_ORACLE` 的 spoke → 进入 `V4_SPOKE_ENTRIES`
-- 无 oracle 的 spoke（如 `TREASURY_SPOKE`）→ 自动跳过（`V4_SKIP_SPOKES` 在 `@internal/aave-shared-config` 统一定义）
+- 无 oracle 的 spoke（如 `TREASURY_SPOKE`）→ topology 匹配排除（无 topology entry）+ oracleService 跳过并 warn
 - Spoke→Hub 映射从 SDK `spoke.connectedHubs` 动态提取（`extractSpokeHubTopology()`），存入 `baseDataset.spokeHubTopology`；`DEFAULT_SPOKE_HUB_TOPOLOGY` 快照在 `@internal/aave-shared-config` 作为 fallback；multi-hub spokes（如 `BLUECHIP_SPOKE`）生成多个 entry
 
 ## 6. Aave V3 合约地址参考

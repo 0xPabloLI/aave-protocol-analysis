@@ -14,7 +14,7 @@ test('V4 spoke configs have no Horizons manual override', () => {
   assert.doesNotMatch(oracleServiceSource, /0x3a0Eb5E08d2e8337C2972dA8EAcF5a7e74A187C6/i);
 });
 
-test('V4 spoke configs have no TREASURY_SPOKE address (enforced by registry)', () => {
+test('V4 spoke configs have no TREASURY_SPOKE address (excluded by topology + no oracle)', () => {
   const treasurySpoke = V4_SPOKE_ENTRIES.filter((e) => e.spokeKey === 'TREASURY_SPOKE');
   assert.strictEqual(treasurySpoke.length, 0, 'TREASURY_SPOKE should be excluded');
 });
@@ -28,8 +28,8 @@ test('all registry V4 spoke oracle entries have valid oracle addresses', () => {
   }
 });
 
-test('oracleService comment mentions TREASURY_SPOKE exclusion reason', () => {
-  assert.match(oracleServiceSource, /TREASURY_SPOKE.*no oracle/i);
+test('oracleService skips non-market spokes without oracle (warn log)', () => {
+  assert.match(oracleServiceSource, /no oracle address.*non-market spoke/i);
 });
 
 test('V3 Horizon pool is present in registry V3 entries', () => {

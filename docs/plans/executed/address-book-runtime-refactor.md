@@ -178,7 +178,7 @@ const V4_SPOKE_TO_HUB: Record<string, string[]> = {
   GOLD_SPOKE: ['PLUS_HUB'],
   LOMBARD_BTC_SPOKE: ['PRIME_HUB'],
 };
-const V4_SKIP_SPOKES = new Set(['TREASURY_SPOKE']);
+const V4_SKIP_SPOKES = new Set(['TREASURY_SPOKE']); // [AAV-619] 已移除：改为 topology 匹配 + oracleService guard
 
 function buildAll(): { v3: V3PoolEntry[]; v4Spokes: V4SpokeEntry[] } {
   const v3: V3PoolEntry[] = [];

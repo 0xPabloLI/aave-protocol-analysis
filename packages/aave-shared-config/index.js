@@ -282,8 +282,6 @@ export const AAVE_CHAIN_KEY_ALIASES = Object.freeze({
   binance: 'bnb',
 });
 
-export const V4_SKIP_SPOKES = Object.freeze(['TREASURY_SPOKE']);
-
 export const DEFAULT_SPOKE_HUB_TOPOLOGY = [
   { chainId: 1, spokeAddress: '0x94e7a5dcbe816e498b89ab752661904e2f56c485', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
   { chainId: 1, spokeAddress: '0x973a023a77420ba610f06b3858ad991df6d85a08', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },

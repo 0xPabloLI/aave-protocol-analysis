@@ -89,9 +89,9 @@ const V3_POOL_CONFIGS: V3PoolConfig[] = V3_ENTRIES
 // ============================================================
 // V4 Spoke Configs (runtime-derived from address-book via registry)
 // spokeKey is the raw address-book key (e.g. MAIN_SPOKE) — used as spokeName.
-// TREASURY_SPOKE excluded: no oracle address in address-book (handled by registry).
 // Multi-hub spokes (e.g. BLUECHIP_SPOKE) produce per-hub entries for onchain use,
 // but oracle fetches per spoke — deduplicate by spokeAddress here.
+// Non-market spokes (no oracle) are skipped with a warn log below.
 // ============================================================
 interface V4SpokeConfig {
   spokeName: string;
@@ -105,7 +105,10 @@ const V4_SPOKE_CONFIGS: V4SpokeConfig[] = (() => {
   const seen = new Set<string>();
   const result: V4SpokeConfig[] = [];
   for (const e of V4_SPOKE_ENTRIES) {
-    if (!e.oracleAddress) continue;
+    if (!e.oracleAddress) {
+      logger.warn(`Skipping V4 spoke ${e.spokeKey} (${e.spokeAddress}): no oracle address — non-market spoke (e.g. Treasury)`);
+      continue;
+    }
     // Deduplicate by spokeAddress: multi-hub spokes have same spokeAddress/oracleAddress
     if (seen.has(e.spokeAddress)) continue;
     seen.add(e.spokeAddress);
