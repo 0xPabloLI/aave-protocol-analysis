@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getV4SpokeEntries, getDefaultV4SpokeEntries, type V4SpokeEntry } from '../src/index.js';
+import { getV4SpokeEntries, getDefaultV4SpokeEntries, buildFallbackV4SpokeEntries, type V4SpokeEntry } from '../src/index.js';
 import type { SpokeHubTopology } from '@internal/aave-shared-contracts';
 
 test('getV4SpokeEntries returns empty array for empty topology', () => {
@@ -52,5 +52,61 @@ test('getDefaultV4SpokeEntries returns same result as getV4SpokeEntries with DEF
     assert.ok(typeof entry.chainId === 'number', 'entry should have chainId');
     assert.ok(entry.spokeAddress, 'entry should have spokeAddress');
     assert.ok(entry.hubAddress, 'entry should have hubAddress');
+  }
+});
+
+// --- buildFallbackV4SpokeEntries: defensive fallback for RPC topology ---
+
+test('buildFallbackV4SpokeEntries builds entries from topology with unknown names', () => {
+  const topology: SpokeHubTopology = [
+    { chainId: 1, spokeAddress: '0x94e7A5dCbE816e498b89aB752661904E2F56c485', hubAddress: '0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9' },
+    { chainId: 42161, spokeAddress: '0xAbC1230000000000000000000000000000000001', hubAddress: '0xDef4560000000000000000000000000000000002' },
+  ];
+
+  const result = buildFallbackV4SpokeEntries(topology);
+
+  assert.strictEqual(result.length, 2);
+
+  // First entry
+  assert.strictEqual(result[0].spokeName, 'unknown');
+  assert.strictEqual(result[0].hubName, 'unknown');
+  assert.strictEqual(result[0].chainId, 1);
+  assert.strictEqual(result[0].spokeAddress, '0x94e7a5dcbe816e498b89ab752661904e2f56c485');
+  assert.strictEqual(result[0].hubAddress, '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9');
+
+  // Second entry
+  assert.strictEqual(result[1].spokeName, 'unknown');
+  assert.strictEqual(result[1].hubName, 'unknown');
+  assert.strictEqual(result[1].chainId, 42161);
+});
+
+test('buildFallbackV4SpokeEntries normalizes addresses to lowercase', () => {
+  const topology: SpokeHubTopology = [
+    { chainId: 1, spokeAddress: '0xAAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaAAA', hubAddress: '0xBBbBbBbbBbBbBbbBbBBBBBBBBbbbBbBbBbbBbBBB' },
+  ];
+
+  const result = buildFallbackV4SpokeEntries(topology);
+
+  assert.strictEqual(result.length, 1);
+  assert.strictEqual(result[0].spokeAddress, '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+  assert.strictEqual(result[0].hubAddress, '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
+});
+
+test('buildFallbackV4SpokeEntries returns empty for empty topology', () => {
+  const result = buildFallbackV4SpokeEntries([]);
+  assert.deepStrictEqual(result, []);
+});
+
+test('getDefaultV4SpokeEntries never returns empty — defensive fallback guarantees entries', () => {
+  const result = getDefaultV4SpokeEntries();
+  assert.ok(result.length > 0, 'getDefaultV4SpokeEntries should never return empty');
+  // Every entry must have at least chainId, spokeAddress, hubAddress
+  for (const entry of result) {
+    assert.ok(typeof entry.chainId === 'number');
+    assert.ok(entry.spokeAddress);
+    assert.ok(entry.hubAddress);
+    // spokeName and hubName may be 'unknown' in fallback, but must exist
+    assert.ok(typeof entry.spokeName === 'string');
+    assert.ok(typeof entry.hubName === 'string');
   }
 });

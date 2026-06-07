@@ -21,6 +21,8 @@ import { chains, reserves } from '@aave/client-v4/actions';
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { logger } from './logger.js';
 import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
+import { V4ChainsFetchError } from './v4-errors.js';
+import { fetchV4WithRetry } from './v4-retry.js';
 import { extractSpokeHubTopology } from './v4-topology.js';
 
 type V4FormattedReserveData = RuntimeReserveData;
@@ -52,7 +54,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
   // 1. Discover supported chains
   const chainsResult = await chains(v4Client, { query: { filter: 'ALL' as any } });
   if (chainsResult.isErr()) {
-    throw new Error(`[V4] Failed to fetch chains: ${chainsResult.error.message}`);
+    throw new V4ChainsFetchError(`[V4] Failed to fetch chains: ${chainsResult.error.message}`);
   }
 
   const supportedChainIds = chainsResult.value
@@ -202,19 +204,11 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
 }
 
 /**
- * Retry configuration for V4 data fetching.
- * Matches V3's retry pattern (3 attempts with exponential backoff).
- */
-const V4_MAX_RETRIES = 3;
-const V4_RETRY_BASE_DELAY_MS = 2000; // 2s base, then 4s, 6s
-
-/**
  * Fetch V4 reserves data with retry logic (matches V3 reliability).
  *
- * Retry strategy:
- * - Up to 3 attempts total
- * - Exponential backoff: 2s, 4s, 6s between retries
- * - On final failure, returns empty result (non-fatal for callers that handle it)
+ * Delegates to `fetchV4WithRetry` which handles:
+ * - `V4ChainsFetchError`: fast-fail (no retries — SDK GraphQL is unreachable)
+ * - Other errors: up to 3 retries with exponential backoff
  *
  * @param maxRetries - Maximum number of attempts (default: 3, matching V3)
  * @param throwOnFinalFailure - If true, throws on final failure instead of returning empty
@@ -223,49 +217,13 @@ const V4_RETRY_BASE_DELAY_MS = 2000; // 2s base, then 4s, 6s
 export async function fetchV4ReservesData(
   options?: { maxRetries?: number; throwOnFinalFailure?: boolean }
 ): Promise<V4FetchResult> {
-  const maxRetries = options?.maxRetries ?? V4_MAX_RETRIES;
-  const throwOnFinalFailure = options?.throwOnFinalFailure ?? false;
+  const result = await fetchV4WithRetry(fetchV4MarketsDataInner, {
+    maxRetries: options?.maxRetries,
+  });
 
-  let lastError: Error | null = null;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await fetchV4MarketsDataInner();
-
-      if (result.mapped.length === 0) {
-        throw new Error('[V4] Fetch succeeded but returned empty dataset');
-      }
-
-      if (attempt > 1) {
-        logger.info(`✅ [V4] Retry attempt ${attempt}/${maxRetries} succeeded with ${result.mapped.length} reserves`);
-      }
-
-      return result;
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      const isLastAttempt = attempt === maxRetries;
-
-      if (isLastAttempt) {
-        logger.error(
-          `❌ [V4] All ${maxRetries} attempts failed. Last error: ${lastError.message}`
-        );
-        break;
-      }
-
-      const delayMs = V4_RETRY_BASE_DELAY_MS * attempt; // 2s, 4s, 6s
-      logger.warn(
-        `⚠️ [V4] Attempt ${attempt}/${maxRetries} failed, retrying in ${delayMs}ms... ` +
-        `(error: ${lastError.message})`
-      );
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
+  if (result.mapped.length === 0 && options?.throwOnFinalFailure) {
+    throw new Error('[V4] All fetch attempts failed');
   }
 
-  // All retries exhausted
-  if (throwOnFinalFailure && lastError) {
-    throw lastError;
-  }
-
-  logger.error(`❌ [V4] Returning empty dataset after ${maxRetries} failed attempts`);
-  return { mapped: [], raw: { reserves: [] }, spokeHubTopology: [] };
+  return result;
 }

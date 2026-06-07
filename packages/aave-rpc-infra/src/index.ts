@@ -535,7 +535,27 @@ export function getV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
 }
 
 export function getDefaultV4SpokeEntries(): V4SpokeEntry[] {
-  return getV4SpokeEntries(DEFAULT_SPOKE_HUB_TOPOLOGY);
+  const entries = getV4SpokeEntries(DEFAULT_SPOKE_HUB_TOPOLOGY);
+  if (entries.length > 0) return entries;
+  // Extreme fallback: address-book has no AaveV4* modules → build from hardcoded topology
+  return buildFallbackV4SpokeEntries(DEFAULT_SPOKE_HUB_TOPOLOGY);
+}
+
+/**
+ * Build V4SpokeEntry[] from a raw SpokeHubTopology when address-book data is unavailable.
+ *
+ * This is the last-resort fallback: spokeName and hubName are set to 'unknown'
+ * because address-book names are unavailable. The RPC layer only needs chainId,
+ * spokeAddress, and hubAddress to function correctly.
+ */
+export function buildFallbackV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
+  return topology.map(({ chainId, spokeAddress, hubAddress }) => ({
+    spokeName: 'unknown',
+    chainId,
+    spokeAddress: spokeAddress.toLowerCase(),
+    hubName: 'unknown',
+    hubAddress: hubAddress.toLowerCase(),
+  }));
 }
 
 type ProviderPoolLike = Pick<ProviderPool, 'getProvidersForChain' | 'reportProviderFailure' | 'reportProviderSuccess' | 'errorClassifier' | 'executeWithAutoRpc'>;
