@@ -92,7 +92,7 @@ for each RPC candidate (健康优先 → 被压制兜底):
 
 ```typescript
 const DEFAULT_ERROR_CLASSIFIER = (error: unknown): 'switch-rpc' | 'downgrade' | 'unknown' => {
-  const code = (error as any)?.code;
+  const code = getErrorCode(error);
   // Ethers network-level errors
   if (code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'ENOTFOUND' ||
       code === 'ECONNREFUSED' || code === 'EPIPE' || code === 'NETWORK_ERROR') {
@@ -101,7 +101,7 @@ const DEFAULT_ERROR_CLASSIFIER = (error: unknown): 'switch-rpc' | 'downgrade' | 
   // Ethers server errors (502, 503, 504, 429, etc.)
   if (code === 'SERVER_ERROR') return 'switch-rpc';
   // Contract-level errors
-  const msg = String((error as any)?.message || error || '');
+  const msg = error instanceof Error ? error.message : String(error);
   if (msg.includes('CALL_EXCEPTION') || msg.includes('UNPREDICTABLE_GAS_LIMIT') ||
       msg.includes('bad address checksum') || msg.includes('INVALID_ARGUMENT')) {
     return 'downgrade';
