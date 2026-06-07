@@ -9,7 +9,7 @@
  * - Debug output: data/debug/oracle-prices.json
  */
 
-import { Contract, providers } from 'ethers';
+import { Contract, providers, utils, BigNumber } from 'ethers';
 import { providerPool, withTimeout } from '@internal/aave-rpc-infra';
 import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
@@ -34,7 +34,7 @@ async function writeJsonAtomic(
   value: unknown,
   replacer?: (key: string, value: unknown) => unknown,
 ): Promise<void> {
-  const payload = JSON.stringify(value, replacer as any, 2);
+  const payload = JSON.stringify(value, replacer as (key: string, value: unknown) => unknown, 2);
   const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(tempPath, payload, 'utf-8');
@@ -190,8 +190,8 @@ async function fetchV3PoolPrices(
       oracleContract.getAssetsPrices(assets),
       ORACLE_RPC_TIMEOUT_MS,
       `V3 Oracle getAssetsPrices timeout for ${config.poolKey}`
-    ) as any[]
-  ).map((p: any) => p.toString());
+    ) as BigNumber[]
+  ).map((p) => p.toString());
 
   const priceMap: Record<string, OraclePriceEntry> = {};
   for (let i = 0; i < assets.length; i++) {
@@ -226,7 +226,7 @@ async function fetchV4SpokePrices(
     spokeContract.getReserveCount(),
     ORACLE_RPC_TIMEOUT_MS,
     `V4 Spoke getReserveCount timeout for ${config.spokeName}`
-  ) as any;
+  ) as BigNumber;
 
   const reserveCount = Number(reserveCountBN);
   if (reserveCount === 0) {
@@ -246,8 +246,8 @@ async function fetchV4SpokePrices(
       oracleContract.getReservesPrices(reserveIds),
       ORACLE_RPC_TIMEOUT_MS,
       `V4 Oracle getReservesPrices timeout for ${config.spokeName}`
-    ) as any[]
-  ).map((p: any) => p.toString());
+    ) as BigNumber[]
+  ).map((p) => p.toString());
 
   const priceMap: Record<number, OraclePriceEntry> = {};
   for (let i = 0; i < reserveIds.length; i++) {
@@ -273,12 +273,12 @@ async function fetchV4SpokePrices(
           spokeContract.getReserve(rid),
           ORACLE_RPC_TIMEOUT_MS,
           `V4 Spoke getReserve(${rid}) timeout for ${config.spokeName}`
-        ) as any
+        ) as Promise<utils.Result>
       )
     );
     reserveResults.forEach((r, i) => {
       if (r.status === 'fulfilled') {
-        reserveTokens[String(reserveIds[i])] = (r.value.underlying as string).toLowerCase();
+        reserveTokens[String(reserveIds[i])] = String(r.value.underlying ?? r.value[0]).toLowerCase();
       } else {
         logger.debug(`⚠️  Oracle V4: Failed to fetch reserve ${reserveIds[i]} details for ${config.spokeName}`);
       }

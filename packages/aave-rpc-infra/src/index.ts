@@ -4,7 +4,44 @@ import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
 import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, V4_SKIP_SPOKES, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
+import { getErrorCode } from '@internal/aave-shared-contracts';
 import { DynamicRpcCache } from './dynamicRpcCache.js';
+
+// ============================================================
+// Ethers ABI decode type-safe wrapper (scoped escape hatch)
+// ============================================================
+
+interface SpokeReserveDecoded {
+  underlying: string;
+  hub: string;
+  assetId: bigint;
+  decimals: number;
+  [key: number]: unknown;
+}
+
+interface HubAssetDecoded {
+  totalDeposits: string;
+  totalVariableDebt: string;
+  deficitRay: string;
+  aToken: string;
+  vToken: string;
+  [key: string]: unknown;
+  [key: number]: unknown;
+}
+
+interface Multicall3ResultDecoded {
+  success: boolean;
+  returnData: string;
+}
+
+function decodeTyped<T>(result: utils.Result, index?: number): T {
+  const value = index !== undefined ? result[index] : result;
+  return value as T;
+}
+
+function createInterface(abi: ReadonlyArray<Record<string, unknown>>): utils.Interface {
+  return new utils.Interface(abi as unknown as utils.Fragment[]);
+}
 
 export type ProviderCandidate = {
   rpcUrl: string;
@@ -64,8 +101,6 @@ type NewChainHook = () => void;
 const DEFAULT_FAILURE_THRESHOLD = 2;
 const DEFAULT_SUPPRESSION_MS = 5 * 60_000;
 const DEFAULT_PROVIDER_TTL_MS = 30 * 60_000; // 30 min — evict unused providers
-
-import { getErrorCode } from '@internal/aave-shared-contracts';
 
 function defaultErrorClassifier(error: unknown): ErrorClass {
   const msg = error instanceof Error ? error.message : String(error);
@@ -456,7 +491,7 @@ export async function executeMulticall3(
   calls: Multicall3Call[],
   options: Multicall3Options = {},
 ): Promise<Multicall3Result[]> {
-  const iface = new utils.Interface(MULTICALL3_ABI as any);
+  const iface = createInterface(MULTICALL3_ABI);
   const encodedData = iface.encodeFunctionData('aggregate3', [calls]);
   const rawResult = await withTimeout(
     provider.call({ to: MULTICALL3_ADDRESS, data: encodedData }, 'latest'),
@@ -464,7 +499,7 @@ export async function executeMulticall3(
     options.label ?? 'Multicall3.aggregate3 timeout',
   );
   const decoded = iface.decodeFunctionResult('aggregate3', rawResult);
-  return (decoded[0] as any[]).map((result: any) => ({
+  return decodeTyped<Multicall3ResultDecoded[]>(decoded, 0).map((result) => ({
     success: result.success,
     returnData: result.returnData,
   }));
@@ -662,8 +697,8 @@ async function fetchEntryReservesMulticall(
   entry: V4SpokeEntry,
   timeoutMs: number,
 ): Promise<RuntimeReserveData[]> {
-  const spokeIface = new utils.Interface(ISpokeV4_ABI as any);
-  const hubIface = new utils.Interface(V4_HUB_FULL_ABI as any);
+  const spokeIface = createInterface(ISpokeV4_ABI);
+  const hubIface = createInterface(V4_HUB_FULL_ABI);
 
   const reserveCountResult = await callContract(provider, spokeIface, entry.spokeAddress, 'getReserveCount', [], timeoutMs);
   const reserveCount = Number(reserveCountResult[0]);
@@ -685,7 +720,7 @@ async function fetchEntryReservesMulticall(
   for (let i = 0; i < reserveResults.length; i++) {
     const result = reserveResults[i];
     if (!result.success) continue;
-    const decoded = spokeIface.decodeFunctionResult('getReserve', result.returnData)[0] as any;
+    const decoded = decodeTyped<SpokeReserveDecoded>(spokeIface.decodeFunctionResult('getReserve', result.returnData), 0);
     const reserveHub = normalizeAddress(String(decoded.hub ?? decoded[1] ?? ''));
     if (reserveHub !== normalizeAddress(entry.hubAddress)) continue;
     const underlying = normalizeAddress(String(decoded.underlying ?? decoded[0] ?? ''));
@@ -710,7 +745,7 @@ async function fetchEntryReservesMulticall(
     const { underlying, decimals } = matchingReserves[i];
     const assetResult = assetResults[i];
     if (!assetResult.success) continue;
-    const hubAsset = hubIface.decodeFunctionResult('getAsset', assetResult.returnData)[0] as any;
+    const hubAsset = decodeTyped<HubAssetDecoded>(hubIface.decodeFunctionResult('getAsset', assetResult.returnData), 0);
     reserves.push(buildReserveData(entry, underlying, decimals, hubAsset));
   }
 
@@ -722,14 +757,14 @@ async function fetchEntryReservesSerial(
   entry: V4SpokeEntry,
   timeoutMs: number,
 ): Promise<RuntimeReserveData[]> {
-  const spokeIface = new utils.Interface(ISpokeV4_ABI as any);
-  const hubIface = new utils.Interface(V4_HUB_FULL_ABI as any);
+  const spokeIface = createInterface(ISpokeV4_ABI);
+  const hubIface = createInterface(V4_HUB_FULL_ABI);
   const reserveCountResult = await callContract(provider, spokeIface, entry.spokeAddress, 'getReserveCount', [], timeoutMs);
   const reserveCount = Number(reserveCountResult[0]);
   const reserves: RuntimeReserveData[] = [];
 
   for (let reserveIndex = 0; reserveIndex < reserveCount; reserveIndex++) {
-    const spokeReserve = (await callContract(provider, spokeIface, entry.spokeAddress, 'getReserve', [reserveIndex], timeoutMs))[0] as any;
+    const spokeReserve = decodeTyped<SpokeReserveDecoded>((await callContract(provider, spokeIface, entry.spokeAddress, 'getReserve', [reserveIndex], timeoutMs)), 0);
     const reserveHub = normalizeAddress(String(spokeReserve.hub ?? spokeReserve[1] ?? ''));
     if (reserveHub !== normalizeAddress(entry.hubAddress)) continue;
 
@@ -738,7 +773,7 @@ async function fetchEntryReservesSerial(
 
     const assetId = BigInt(String(spokeReserve.assetId ?? spokeReserve[2] ?? 0));
     const decimals = Number(spokeReserve.decimals ?? spokeReserve[3] ?? 18);
-    const hubAsset = (await callContract(provider, hubIface, entry.hubAddress, 'getAsset', [assetId], timeoutMs))[0] as any;
+    const hubAsset = decodeTyped<HubAssetDecoded>((await callContract(provider, hubIface, entry.hubAddress, 'getAsset', [assetId], timeoutMs)), 0);
     reserves.push(buildReserveData(entry, underlying, decimals, hubAsset));
   }
 
