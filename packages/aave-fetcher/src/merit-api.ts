@@ -1977,7 +1977,7 @@ export function getMeritDataFromMarket(
  */
 let _browserLastUsedAt: number | null = null;
 let _browserClosing = false;
-const BROWSER_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const BROWSER_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 
 async function getBrowser(): Promise<Browser> {
   if (_browserClosing) {
@@ -1989,9 +1989,15 @@ async function getBrowser(): Promise<Browser> {
       _browserLastUsedAt = Date.now();
       return _meritState.browserInstance;
     } catch (error) {
-      logger.warn("⚠️ Browser instance disconnected, will create new one");
+      logger.warn("⚠️ Browser instance disconnected, closing old instance before creating new one");
+      const oldBrowser = _meritState.browserInstance;
       _meritState.browserInstance = null;
       _browserLastUsedAt = null;
+      try {
+        await oldBrowser.close();
+      } catch (closeErr) {
+        logger.warn("⚠️ Failed to close disconnected browser:", closeErr);
+      }
     }
   }
 
@@ -2022,7 +2028,7 @@ setInterval(() => {
     _browserLastUsedAt !== null &&
     Date.now() - _browserLastUsedAt > BROWSER_IDLE_TIMEOUT_MS
   ) {
-    logger.info("🧹 Browser idle for 5min, closing to reclaim memory");
+    logger.info("🧹 Browser idle for 2min, closing to reclaim memory");
     _browserClosing = true;
     const browser = _meritState.browserInstance;
     _meritState.browserInstance = null;
@@ -2572,7 +2578,11 @@ async function extractMeritDynamicInfoWithBrowser(
       release();
     }
   } catch (error) {
-    // Release semaphore even on outer error
+    if (page) {
+      try {
+        await page.close();
+      } catch (_) {}
+    }
     release();
     logger.warn(
       `⚠️ extractMeritDynamicInfoWithBrowser failed for ${key}:`,

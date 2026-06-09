@@ -17,6 +17,7 @@ import { refreshOnchainCache } from './services/onchainDataService.js';
 import { refreshOracleCache } from './services/oracleService.js';
 import { logger } from './logger.js';
 import { providerPool } from '@internal/aave-rpc-infra';
+import { closeBrowser } from '@internal/aave-fetcher';
 import { explainServerListenError } from './startup.js';
 import { closePool, getPool, isPersistenceEnabled } from './services/dbPool.js';
 import { getPersistenceStatus, warmConfigHashes } from './services/persistenceService.js';
@@ -215,6 +216,7 @@ const shutdown = (signal: string) => {
     if (err) logger.warn('Error closing HTTP server:', err);
     closePool()
       .catch((e) => logger.warn('Error closing DB pool:', e))
+      .then(() => closeBrowser().catch((e) => logger.warn('Error closing browser:', e)))
       .finally(() => process.exit(0));
   });
   // Hard timeout: force-exit if shutdown stalls (>10s).

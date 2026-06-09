@@ -36,6 +36,7 @@ import {
   closeBrowserInstances
 } from './cloudflare-browser.js';
 import { fetchV4ReservesData, bigintReplacer } from './v4-fetcher.js';
+import { closeBrowser } from './merit-api.js';
 import type { V4FetchResult } from './v4-retry.js';
 import type { RuntimeReserveData, MarketsPayload, SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { buildMarketsBaseDataset as _buildMarketsBaseDataset, buildV3BaseDataset as _buildV3BaseDataset, fetchV4ReservesWithTimeout as _fetchV4ReservesWithTimeout, fetchV3MarketsWithTimeout as _fetchV3MarketsWithTimeout, FETCH_TIMEOUT_MS } from './concurrent-fetch.js';
@@ -282,6 +283,7 @@ async function fetchBrevisAprs(
 
 
 export { FETCH_TIMEOUT_MS } from './concurrent-fetch.js';
+export { closeBrowser } from './merit-api.js';
 
 export function buildMarketsBaseDataset(v3Markets: any[], v4Result: V4FetchResult): ReturnType<typeof _buildMarketsBaseDataset> {
   return _buildMarketsBaseDataset(v3Markets, v4Result);
