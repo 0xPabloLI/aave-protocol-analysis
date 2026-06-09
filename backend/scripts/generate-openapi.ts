@@ -9,7 +9,7 @@
  * 用法：npx --no-install tsx scripts/generate-openapi.ts
  */
 
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 
 // OpenAPI 3.1 类型定义（精简子集，仅覆盖本项目所需）
 interface OpenAPISpec {
@@ -393,6 +393,7 @@ const spec: OpenAPISpec = {
 // ============================================================
 
 const outPath = new URL('../static/openapi.json', import.meta.url);
+mkdirSync(new URL('../static', import.meta.url), { recursive: true });
 writeFileSync(outPath, JSON.stringify(spec, null, 2) + '\n');
 
 console.log(`✅ OpenAPI spec written to ${outPath.pathname}`);
