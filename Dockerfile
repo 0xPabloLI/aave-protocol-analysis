@@ -20,6 +20,7 @@ RUN npm run build
 COPY backend/src/ ./backend/src/
 COPY backend/scripts/ ./backend/scripts/
 COPY backend/tsconfig.json ./backend/
+RUN mkdir -p backend/static
 RUN npm run build -w aave-dashboard-backend
 
 # Stage 2: Production
@@ -67,6 +68,7 @@ COPY --from=builder /app/packages/aave-shared-contracts/dist/ ./packages/aave-sh
 COPY --from=builder /app/packages/aave-rpc-infra/dist/ ./packages/aave-rpc-infra/dist/
 COPY --from=builder /app/packages/aave-fetcher/dist/ ./packages/aave-fetcher/dist/
 COPY --from=builder /app/backend/dist/ ./backend/dist/
+COPY --from=builder /app/backend/static/ ./backend/static/
 
 # Copy migrations for auto-migration on startup
 COPY backend/migrations/ ./backend/migrations/
