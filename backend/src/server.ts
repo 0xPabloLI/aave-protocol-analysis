@@ -26,6 +26,7 @@ import { runMigrations } from './services/autoMigrate.js';
 providerPool.configure({
   logFn: (level, msg, meta) => logger.log(level, msg, meta),
 });
+providerPool.startCleanupTimer();
 
 const app = express();
 app.set('etag', 'weak');

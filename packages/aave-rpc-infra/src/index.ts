@@ -402,6 +402,13 @@ export class ProviderPool {
       }
     }
   }
+
+  /** Start a periodic cleanup timer (30min) to evict stale providers even when no requests arrive. Returns cancel function. */
+  startCleanupTimer(intervalMs = 30 * 60_000): () => void {
+    const id = setInterval(() => this.cleanupStaleProviders(), intervalMs);
+    id.unref();
+    return () => clearInterval(id);
+  }
 }
 
 export const providerPool = new ProviderPool();

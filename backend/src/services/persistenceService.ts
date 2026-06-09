@@ -76,6 +76,12 @@ function shrinkHashMaps(currentReserves: RuntimeReserveData[]): void {
   }
 }
 
+function shrinkOraclePriceHashes(currentKeys: Set<string>): void {
+  for (const key of oraclePriceHashes.keys()) {
+    if (!currentKeys.has(key)) oraclePriceHashes.delete(key);
+  }
+}
+
 /**
  * Warm marketConfigHashes from the latest rows in DB.
  * After a process restart, the in-memory map is empty, causing the first
@@ -186,7 +192,9 @@ export async function persistSnapshotIfNeeded(
 
   if (oracleSnapshot) {
     try {
-      oracleRowsWritten = await persistOraclePrices(oracleSnapshot, snapshotTs);
+      const result = await persistOraclePrices(oracleSnapshot, snapshotTs);
+      oracleRowsWritten = result.written;
+      shrinkOraclePriceHashes(result.keys);
     } catch (error) {
       success = false;
       lastErrorMessage = error instanceof Error ? error.message : String(error);
@@ -477,11 +485,11 @@ async function ensureOracleSourceConfigs(
 async function persistOraclePrices(
   snap: OraclePricesSnapshot,
   snapshotTs: string
-): Promise<number> {
+): Promise<{ written: number; keys: Set<string> }> {
   const pool = getPool();
 
   const configMap = await ensureOracleSourceConfigs(snap);
-  if (configMap.size === 0) return 0;
+  if (configMap.size === 0) return { written: 0, keys: new Set() };
 
   const rows: OracleRow[] = [];
 
@@ -515,8 +523,9 @@ async function persistOraclePrices(
     }
   }
 
-  if (rows.length === 0) return 0;
-  return writeOracleChunk(pool, rows);
+  if (rows.length === 0) return { written: 0, keys: new Set() };
+  const { written, keys } = await writeOracleChunk(pool, rows);
+  return { written, keys };
 }
 
 const ORACLE_COLUMNS = [
@@ -526,7 +535,7 @@ const ORACLE_COLUMNS = [
 async function writeOracleChunk(
   pool: ReturnType<typeof getPool>,
   rows: OracleRow[]
-): Promise<number> {
+): Promise<{ written: number; keys: Set<string> }> {
   // 1. Deduplicate within batch.
   const seen = new Set<string>();
   const unique = rows.filter((r) => {
@@ -547,7 +556,7 @@ async function writeOracleChunk(
     newHashes.push({ key, hash: newHash });
   }
 
-  if (changed.length === 0) return 0;
+  if (changed.length === 0) return { written: 0, keys: seen };
 
   const CHUNK = 1000;
   let written = 0;
@@ -570,7 +579,7 @@ async function writeOracleChunk(
       oraclePriceHashes.set(key, hash);
     }
   }
-  return written;
+  return { written, keys: seen };
 }
 
 // ---------------------------------------------------------------------------

@@ -854,11 +854,25 @@ async function getCurrentBlockNumber(
 }
 
 const MERIT_BLOCK_NUMBER_CACHE_TTL_MS = 60_000;
+const MAX_BLOCK_NUMBER_CACHE_ENTRIES = 50;
 
 const meritCurrentBlockNumberCache = new Map<
   string,
   { fetchedAtMs: number; blockNumber: number | null }
 >();
+
+function pruneBlockNumberCache(nowMs: number): void {
+  for (const [key, entry] of meritCurrentBlockNumberCache) {
+    if (nowMs - entry.fetchedAtMs > MERIT_BLOCK_NUMBER_CACHE_TTL_MS) {
+      meritCurrentBlockNumberCache.delete(key);
+    }
+  }
+  while (meritCurrentBlockNumberCache.size > MAX_BLOCK_NUMBER_CACHE_ENTRIES) {
+    const oldestKey = meritCurrentBlockNumberCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    meritCurrentBlockNumberCache.delete(oldestKey);
+  }
+}
 
 async function getCurrentBlockNumberCached(
   chainName: string
@@ -869,6 +883,7 @@ async function getCurrentBlockNumberCached(
     return cached.blockNumber;
   }
 
+  pruneBlockNumberCache(nowMs);
   const blockNumber = await getCurrentBlockNumber(chainName);
   meritCurrentBlockNumberCache.set(chainName, {
     fetchedAtMs: nowMs,
@@ -1175,6 +1190,7 @@ function isCachedTimeRangeComplete(params: {
  */
 export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
   try {
+    discoveredRedirectAliases.clear();
     logger.info("🎁 Fetching Merit APR data...");
     const response = await fetch("https://apps.aavechan.com/api/merit/aprs");
 

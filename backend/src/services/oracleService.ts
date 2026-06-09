@@ -287,6 +287,11 @@ async function fetchV4SpokePrices(
       }
     });
     V4_RESERVE_TOKEN_CACHE.set(spokeKey, { tokens: reserveTokens, updatedAt: now });
+    for (const [k, v] of V4_RESERVE_TOKEN_CACHE) {
+      if (now - v.updatedAt > 2 * V4_RESERVE_TOKEN_TTL_MS) {
+        V4_RESERVE_TOKEN_CACHE.delete(k);
+      }
+    }
   }
 
   return {
