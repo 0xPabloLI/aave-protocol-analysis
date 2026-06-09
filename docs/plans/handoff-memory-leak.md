@@ -83,8 +83,10 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 ### P0: ✅ 已修复 — 缓存完整性误判（根因）
 采用方案 B: `name`/`message` 字段用 `!== undefined` 判断"已存在"，空字符串/空数组视为合法的"已尝试但无数据"。
 - `isCachedTimeRangeComplete` 改为: `nameOk = cached.name !== undefined`, `msgOk = cached.message !== undefined`
+- `loadCachedMeritCampaignMetadata` 同步修复: `hasName = timeRange.name !== undefined`, `hasMessage = timeRange.message !== undefined`, spread 语法 `name !== undefined ? {name} : {}`
 - self-auth 检查仅在 `message.length > 0` 时才要求
-- 新增 7 个回归测试: `tests/merit-cache-completeness.test.ts`
+- 新增 9 个回归测试: `tests/merit-cache-completeness.test.ts`
+- Commit: `d9cad34`
 
 ### P1: 修复 Chromium 二进制安装
 Dockerfile production 阶段中 `npm ci --omit=dev -w` 不触发 puppeteer 的 postinstall。
