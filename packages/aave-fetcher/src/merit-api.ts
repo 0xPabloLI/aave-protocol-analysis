@@ -1035,7 +1035,7 @@ async function loadCachedMeritCampaignMetadata(): Promise<
         timeRange.endBlock.trim() !== "";
 
       // 检查名称字段：name（必须存在）
-      const hasName = timeRange.name && timeRange.name.trim() !== "";
+      const hasName = timeRange.name !== undefined;
 
       // 检查至少有一个用于判断结束的字段：endDate 或 endBlock
       const hasEndIndicator =
@@ -1047,10 +1047,7 @@ async function loadCachedMeritCampaignMetadata(): Promise<
       const keyParts = key.split("-");
       const shouldHaveMessage = keyParts.length > 2;
       const hasMessage =
-        !shouldHaveMessage || // 如果不需要 message，跳过检查
-        (timeRange.message &&
-          Array.isArray(timeRange.message) &&
-          timeRange.message.length > 0);
+        !shouldHaveMessage || timeRange.message !== undefined;
 
       // 只保留有全量数据的条目（所有必填字段都存在）
       // message 字段根据 key length 判断是否必需
@@ -1072,8 +1069,8 @@ async function loadCachedMeritCampaignMetadata(): Promise<
           endDate: timeRange.endDate!,
           ...(timeRange.startBlock ? { startBlock: timeRange.startBlock } : {}),
           ...(timeRange.endBlock ? { endBlock: timeRange.endBlock } : {}),
-          ...(timeRange.name ? { name: timeRange.name } : {}),
-          ...(timeRange.message ? { message: timeRange.message } : {}),
+          ...(timeRange.name !== undefined ? { name: timeRange.name } : {}),
+          ...(timeRange.message !== undefined ? { message: timeRange.message } : {}),
         };
       } else {
         // 记录缺失的字段，便于调试
@@ -1129,7 +1126,7 @@ function hasSelfAuthMessage(message: MeritCampaignInfo[] | undefined): boolean {
   );
 }
 
-function isCachedTimeRangeComplete(params: {
+export function isCachedTimeRangeComplete(params: {
   key: string;
   cached:
     | {
@@ -1151,7 +1148,7 @@ function isCachedTimeRangeComplete(params: {
   const linkOk = !!cached.link && cached.link.trim() !== "";
   const startDateOk = !!cached.startDate && cached.startDate.trim() !== "";
   const endDateOk = !!cached.endDate && cached.endDate.trim() !== "";
-  const nameOk = !!cached.name && cached.name.trim() !== "";
+  const nameOk = cached.name !== undefined;
   const hasEndIndicatorOk =
     endDateOk || (!!cached.endBlock && cached.endBlock.trim() !== "");
 
@@ -1164,7 +1161,7 @@ function isCachedTimeRangeComplete(params: {
   const keyParts = key.split("-");
   const shouldHaveMessage = keyParts.length > 2;
   if (shouldHaveMessage) {
-    const msgOk = Array.isArray(cached.message) && cached.message.length > 0;
+    const msgOk = cached.message !== undefined;
     if (!msgOk) missing.push("message");
   }
 
@@ -1177,7 +1174,8 @@ function isCachedTimeRangeComplete(params: {
   }
 
   // Self-auth required only when the self- key exists for this campaign
-  if (hasSelfAuth && shouldHaveMessage) {
+  // and message was fetched with actual content
+  if (hasSelfAuth && shouldHaveMessage && cached.message && cached.message.length > 0) {
     if (!hasSelfAuthMessage(cached.message)) missing.push("self-auth");
   }
 
