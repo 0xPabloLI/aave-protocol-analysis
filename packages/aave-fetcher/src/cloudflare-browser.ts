@@ -7,30 +7,29 @@ import type { MeritCampaignInfo } from './merit-api.js';
  * 带超时的 Promise 包装函数
  * 如果原始 Promise 在指定时间内没有完成，会 reject 一个 TimeoutError
  */
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
-  let timeoutId: NodeJS.Timeout | null = null;
-  
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string, signal?: AbortSignal): Promise<T> {
+  const controller = new AbortController();
+  const combinedSignal = signal
+    ? AbortSignal.any([signal, controller.signal])
+    : controller.signal;
+
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
   const timeoutPromise = new Promise<T>((_, reject) => {
-    timeoutId = setTimeout(() => {
+    const onAbort = () => {
       reject(new Error(`${errorMessage} (timeout after ${timeoutMs}ms)`));
-    }, timeoutMs);
+      combinedSignal.removeEventListener('abort', onAbort);
+    };
+    if (combinedSignal.aborted) {
+      onAbort();
+    } else {
+      combinedSignal.addEventListener('abort', onAbort, { once: true });
+    }
   });
-  
+
   return Promise.race([
-    promise.finally(() => {
-      // 清理超时定时器，防止在 promise 完成后仍然触发超时
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-    }),
-    timeoutPromise.finally(() => {
-      // 如果超时发生，也清理定时器（虽然已经触发，但为了完整性）
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId);
-        timeoutId = null;
-      }
-    }),
+    promise.finally(() => clearTimeout(timeoutId)),
+    timeoutPromise.finally(() => clearTimeout(timeoutId)),
   ]);
 }
 
@@ -165,15 +164,17 @@ export async function getWorkerSessionStats(): Promise<{
   }
 
   try {
-    // 添加超时保护（30秒），避免卡住
+    const ac = new AbortController();
     const response = await withTimeout(
       fetch(CLOUDFLARE_WORKER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'debugSessions' }),
+        signal: ac.signal,
       }),
-      30000, // 30秒超时
-      'getWorkerSessionStats'
+      30000,
+      'getWorkerSessionStats',
+      ac.signal
     );
 
     if (!response.ok) {
@@ -224,15 +225,17 @@ export async function closeBrowserInstances(): Promise<{
   logger.info('🔌 Closing existing Cloudflare browser instances to release quota...');
 
   try {
-    // 添加超时保护（60秒），避免卡住
+    const ac = new AbortController();
     const response = await withTimeout(
       fetch(CLOUDFLARE_WORKER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'closeBrowserInstances' }),
+        signal: ac.signal,
       }),
-      60000, // 60秒超时（关闭浏览器可能需要更长时间）
-      'closeBrowserInstances'
+      60000,
+      'closeBrowserInstances',
+      ac.signal
     );
 
     if (!response.ok) {
@@ -363,6 +366,8 @@ export async function extractCampaignInfoWithWorker(key: string): Promise<MeritC
   }
 
   try {
+    const ac = new AbortController();
+    const timeoutId = setTimeout(() => ac.abort(), 30_000);
     const response = await fetch(CLOUDFLARE_WORKER_URL, {
       method: 'POST',
       headers: {
@@ -372,6 +377,7 @@ export async function extractCampaignInfoWithWorker(key: string): Promise<MeritC
         action: 'extractCampaignInfo',
         key,
       }),
+      signal: ac.signal,
     });
 
     if (!response.ok) {
@@ -380,6 +386,7 @@ export async function extractCampaignInfoWithWorker(key: string): Promise<MeritC
     }
 
     const data = await response.json() as { success: boolean; result?: MeritCampaignInfo[]; error?: string };
+    clearTimeout(timeoutId);
 
     if (!data.success) {
       logger.warn(`⚠️ Cloudflare Worker failed for ${key}:`, data.error || 'Unknown error');
@@ -414,19 +421,20 @@ export async function extractMeritDynamicInfoWithWorker(key: string): Promise<Me
   }
 
   const timeoutMs = cloudflareWorkerConfig.dynamicTimeoutMs;
+  const ac = new AbortController();
   
-  // 使用超时包装，防止 Worker 卡住阻塞进程
   return withTimeout(
-    extractMeritDynamicInfoWithWorkerInternal(key),
+    extractMeritDynamicInfoWithWorkerInternal(key, ac.signal),
     timeoutMs,
-    `Cloudflare Worker request timeout for ${key}`
+    `Cloudflare Worker request timeout for ${key}`,
+    ac.signal
   );
 }
 
 /**
  * Worker 请求的内部实现（不带超时，由外部包装函数添加超时）
  */
-async function extractMeritDynamicInfoWithWorkerInternal(key: string): Promise<MeritDynamicInfo | null> {
+async function extractMeritDynamicInfoWithWorkerInternal(key: string, signal?: AbortSignal): Promise<MeritDynamicInfo | null> {
   // 这个函数只在 CLOUDFLARE_WORKER_URL 存在时被调用，但为了类型安全，再次检查
   if (!CLOUDFLARE_WORKER_URL) {
     return null;
@@ -497,6 +505,7 @@ async function extractMeritDynamicInfoWithWorkerInternal(key: string): Promise<M
             action: 'extractDynamicInfo',
             key,
           }),
+          signal,
         });
 
         if (response.status === 429) {
