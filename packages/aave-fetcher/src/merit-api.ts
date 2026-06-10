@@ -1016,45 +1016,34 @@ async function loadCachedMeritCampaignMetadata(): Promise<
         message?: MeritCampaignInfo[];
       };
 
-      // 检查所有必填字段：link, startDate, endDate（必须存在且非空）
-      const hasRequiredFields =
+      const hasLinkAndStart =
         timeRange.link &&
         timeRange.link.trim() !== "" &&
         timeRange.startDate &&
-        timeRange.startDate.trim() !== "" &&
-        timeRange.endDate &&
-        timeRange.endDate.trim() !== "";
+        timeRange.startDate.trim() !== "";
 
-      // 检查区块字段：startBlock, endBlock
-      // 注意：endBlock 可能提取不到（如果 HTML 中没有区块链接），但如果有 startBlock 通常也应该有 endBlock
-      // 如果都没有区块信息，至少要有 endDate 来判断结束时间
       const hasBlockFields =
         timeRange.startBlock &&
         timeRange.startBlock.trim() !== "" &&
         timeRange.endBlock &&
         timeRange.endBlock.trim() !== "";
 
-      // 检查名称字段：name（必须存在）
       const hasName = timeRange.name !== undefined;
 
-      // 检查至少有一个用于判断结束的字段：endDate 或 endBlock
       const hasEndIndicator =
         (timeRange.endDate && timeRange.endDate.trim() !== "") ||
         (timeRange.endBlock && timeRange.endBlock.trim() !== "");
 
-      // 根据 key length 判断 message 是否必需
-      // key 长度为 2 的条目（如 "ethereum-sgho"）不需要 message
       const keyParts = key.split("-");
       const shouldHaveMessage = keyParts.length > 2;
       const hasMessage =
         !shouldHaveMessage || timeRange.message !== undefined;
 
-      // 只保留有全量数据的条目（所有必填字段都存在）
-      // message 字段根据 key length 判断是否必需
-      if (hasRequiredFields && hasName && hasEndIndicator && hasMessage) {
-        // 如果有区块字段，也要验证完整性
+      const isValidEntry =
+        hasLinkAndStart && hasName && (hasEndIndicator || hasBlockFields || timeRange.endDate !== undefined) && hasMessage;
+
+      if (isValidEntry) {
         if (timeRange.startBlock || timeRange.endBlock) {
-          // 如果有一个区块字段，另一个也应该存在
           if (!hasBlockFields) {
             logger.warn(
               `⚠️ Cached entry "${key}" has partial block fields, will refetch`
@@ -1066,18 +1055,20 @@ async function loadCachedMeritCampaignMetadata(): Promise<
         validatedTimeRanges[key] = {
           link: timeRange.link!,
           startDate: timeRange.startDate!,
-          endDate: timeRange.endDate!,
+          endDate: timeRange.endDate ?? "",
           ...(timeRange.startBlock ? { startBlock: timeRange.startBlock } : {}),
           ...(timeRange.endBlock ? { endBlock: timeRange.endBlock } : {}),
           ...(timeRange.name !== undefined ? { name: timeRange.name } : {}),
-          ...(timeRange.message !== undefined ? { message: timeRange.message } : {}),
+          ...(timeRange.message !== undefined
+            ? { message: timeRange.message }
+            : {}),
         };
       } else {
-        // 记录缺失的字段，便于调试
         const missingFields: string[] = [];
-        if (!hasRequiredFields) missingFields.push("link/startDate/endDate");
+        if (!hasLinkAndStart) missingFields.push("link/startDate");
         if (!hasName) missingFields.push("name");
-        if (!hasEndIndicator) missingFields.push("endDate/endBlock");
+        if (!hasEndIndicator && timeRange.endDate === undefined)
+          missingFields.push("endDate/endBlock");
         if (!hasMessage && shouldHaveMessage) missingFields.push("message");
         logger.warn(
           `⚠️ Cached entry "${key}" missing fields: ${missingFields.join(", ")}, will refetch`
@@ -1147,16 +1138,18 @@ export function isCachedTimeRangeComplete(params: {
 
   const linkOk = !!cached.link && cached.link.trim() !== "";
   const startDateOk = !!cached.startDate && cached.startDate.trim() !== "";
-  const endDateOk = !!cached.endDate && cached.endDate.trim() !== "";
+  const endDateOk = cached.endDate !== undefined;
   const nameOk = cached.name !== undefined;
   const hasEndIndicatorOk =
-    endDateOk || (!!cached.endBlock && cached.endBlock.trim() !== "");
+    (cached.endDate !== undefined && cached.endDate.trim() !== "") ||
+    (!!cached.endBlock && cached.endBlock.trim() !== "");
 
   if (!linkOk) missing.push("link");
   if (!startDateOk) missing.push("startDate");
   if (!endDateOk) missing.push("endDate");
   if (!nameOk) missing.push("name");
-  if (!hasEndIndicatorOk) missing.push("endDate/endBlock");
+  if (!hasEndIndicatorOk && cached.endDate === undefined)
+    missing.push("endDate/endBlock");
 
   const keyParts = key.split("-");
   const shouldHaveMessage = keyParts.length > 2;
@@ -3216,11 +3209,11 @@ export async function fetchMeritTimeRange(
       }
     }
 
-    if (name) {
-      result.name = name;
-    }
+    result.name = name ?? "";
     if (message.length > 0) {
       result.message = message;
+    } else {
+      result.message = [];
     }
 
     // Strategy summary (helps optimize resource usage) — logged after date strategy is decided.

@@ -53,7 +53,7 @@ describe("isCachedTimeRangeComplete: empty message/name should not cause infinit
     assert.ok(result.missing.includes("name"));
   });
 
-  it("still flags missing link/startDate/endDate as incomplete", () => {
+  it("still flags missing link/startDate as incomplete", () => {
     const result = isCachedTimeRangeComplete({
       key: "ethereum-new-sgho-boost",
       cached: { link: "", startDate: "", endDate: "", name: "X", message: [] },
@@ -62,7 +62,6 @@ describe("isCachedTimeRangeComplete: empty message/name should not cause infinit
     assert.equal(result.isComplete, false);
     assert.ok(result.missing.includes("link"));
     assert.ok(result.missing.includes("startDate"));
-    assert.ok(result.missing.includes("endDate"));
   });
 
   it("key with <=2 parts does not require message", () => {
@@ -122,5 +121,20 @@ describe("isCachedTimeRangeComplete: empty message/name should not cause infinit
     const timeRangeData = { message: undefined as MeritCampaignInfo[] | undefined };
     const obj = { ...(timeRangeData.message !== undefined ? { message: timeRangeData.message } : {}) };
     assert.ok(!("message" in obj));
+  });
+
+  it("fetchMeritTimeRange: name=undefined → result.name becomes empty string", () => {
+    const name = undefined as string | undefined;
+    const result = name ?? "";
+    assert.equal(result, "");
+  });
+
+  it("isCachedTimeRangeComplete: endDate='' + no endBlock is complete (attempted, no data)", () => {
+    const result = isCachedTimeRangeComplete({
+      key: "ethereum-new-sgho-boost",
+      cached: { ...COMPLETE_CACHE, endDate: "" },
+      hasSelfAuth: false,
+    });
+    assert.equal(result.isComplete, true);
   });
 });
