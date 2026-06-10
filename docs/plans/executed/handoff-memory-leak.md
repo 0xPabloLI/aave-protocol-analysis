@@ -24,23 +24,22 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 
 ---
 
-## 2. Puppeteer 状态：容器中 Chromium 未安装，fallback 为死路
+## 2. Puppeteer/Chromium 状态：待验证
 
-**日志支撑**:
-- `Browser instance created` **从未出现**
-- `extractMeritDynamicInfoWithBrowser failed` **从未出现**
-- Worker 429 → "fallback to puppeteer" → **5 秒后** `crawl strategies: message:none`
-- Build 日志中**无 Chromium 下载信息**
+**之前 session 的结论**（需重新验证）：
+- 认为 `npm ci --omit=dev` 不触发 puppeteer 的 postinstall → Chromium 未安装
+- 依据：`Browser instance created` 从未出现、build 日志无 Chromium 下载信息
 
-**原因**: `npm ci --omit=dev -w aave-dashboard-backend` 不触发 puppeteer 的 postinstall（下载 Chromium）
+**但存在矛盾**：
+- `extractMeritDynamicInfoWithBrowser failed` 也从未出现 → Puppeteer fallback 从未被触发
+- puppeteer 是 **production 依赖**，`npm ci --omit=dev` 不跳过 prod dep 的 postinstall → **Chromium 应该会被下载**
+- Dockerfile L31-51 已安装 Chromium 的系统依赖（libnss3 等），说明设计意图是支持 Puppeteer 运行
+- `Browser instance created` 未出现 → 可能 Worker 一直成功、从未触发 Puppeteer fallback
 
-**影响链**:
-1. Worker 成功 → 不走 Puppeteer → **无影响** ✅
-2. Worker 429/timeout → fallback Puppeteer → `puppeteer.launch()` 抛错 (无 Chromium) → catch 返回 `{ campaignInfo: [] }` → **message 数据缺失**，缓存为 `message: []`
-3. P0 修复后，`message: []` 不再触发无限重试 → **不崩溃** ✅
-4. 但：如果冷启动时 Worker 恰好 429，message 将**永久缺失**（直到下次冷启动 Worker 成功）
-
-**结论**: Chromium 没装不会导致 OOM（P0 修复后），但 Puppeteer fallback 是**功能死路** — 永远返回空。P1 修复 Chromium 安装可让 fallback 真正生效。
+**待验证**：
+- [ ] Railway build 日志中搜索 `puppeteer` 或 `chrome` 关键词，确认 postinstall 是否执行
+- [ ] 在容器内执行 `ls /root/.cache/puppeteer/` 或 `node -e "require('puppeteer').launch({headless:true}).then(b=>{console.log('OK');b.close()})"` 
+- [ ] 如果 Chromium 确实已安装 → P1 不需要修复，Section 2 结论需要推翻
 
 ---
 
@@ -48,9 +47,9 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 
 ### 实际需求（修复缓存 bug 后）
 - 缓存完整时：cron 触发 → `Skip refresh` → **不调用浏览器** ✅
-- 缓存丢失时（冷启动）：静态 HTML 解析 message 为空 → fallback 到 Worker → Worker 429 → **仍需 Puppeteer**
-- 冷启动浏览器时间 ≈ 几次 × 15 秒 ≈ 1-2 分钟/次
-- Cloudflare 免费层: **10 分钟/天** → 日常够用，但 P1 (Chromium 安装) 必须修复才能 fallback 成功
+- 缓存丢失时（冷启动）：静态 HTML 解析 message 为空 → fallback 到 Worker → Worker 成功则返回
+- Worker 429 时：fallback Puppeteer → Chromium 是否可用待验证（见 Section 2）
+- Cloudflare 免费层: **10 分钟/天** → 日常够用
 
 ### 为什么现在看起来不够
 缓存完整性 bug → 无限重试 → **虚假的高需求**
@@ -95,14 +94,16 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 - 新增 9 个回归测试: `tests/merit-cache-completeness.test.ts`
 - Commit: `d9cad34`
 
-### P1: 修复 Chromium 二进制安装（功能完整 — 非 OOM 阻塞）
-Dockerfile production 阶段中 `npm ci --omit=dev -w` 不触发 puppeteer 的 postinstall。
-- **现状**: Puppeteer fallback 是死路 — `puppeteer.launch()` 无 Chromium 抛错 → catch 返回空 → message 永久缺失
-- **不阻塞 OOM**: P0 修复后不再无限重试，不会因 Puppeteer 报错导致内存增长
-- **阻塞功能完整**: 冷启动 + Worker 429 时，message 数据拿不到，直到下次 Worker 成功
-- **方案 A**: 添加 `RUN npx puppeteer browsers install chrome`（显式安装）
-- **方案 B**: 复用 builder 缓存 `COPY --from=builder /root/.cache/puppeteer/ /root/.cache/puppeteer/`
-- **方案 C**: 改用 `puppeteer-core` + 系统 Chromium (`apt-get install chromium`)
+### P1: 验证/修复 Chromium 二进制安装（待验证）
+Dockerfile L31-51 已装系统依赖，puppeteer 是 prod dep → postinstall **应该**会下载 Chromium。
+- **之前判断**：Chromium 没装（基于间接日志推断，可能错误）
+- **矛盾**：`extractMeritDynamicInfoWithBrowser failed` 也未出现 → Puppeteer 从未被触发 → 可能 Worker 一直成功
+- **需先验证**：Railway build log 或容器内检查 `/root/.cache/puppeteer/`
+- 如果 Chromium 已装 → P1 关闭，Section 2 推翻
+- 如果 Chromium 确实没装：
+  - **方案 A**: 添加 `RUN npx puppeteer browsers install chrome`（显式安装）
+  - **方案 B**: 复用 builder 缓存 `COPY --from=builder /root/.cache/puppeteer/ /root/.cache/puppeteer/`
+  - **方案 C**: 改用 `puppeteer-core` + 系统 Chromium (`apt-get install chromium`)
 
 ### P2: Chromium 启动参数优化（零成本）
 `getBrowser()` 中添加 `--disable-gpu`, `--disable-software-rasterizer`, `--js-flags="--max-old-space-size=64"` 等
@@ -117,8 +118,8 @@ Railway 部署 FAILED 的根因：`8f237d6` 引入 `gen:openapi` 时 `writeFileS
 
 ## 7. 关键文件
 
-### 需修改 (P1 功能完整性 — Puppeteer fallback 当前是死路; P2-P3 低优先级)
-- `Dockerfile` — Chromium 二进制安装 (P1: 冷启动+Worker 429 时 message 永久缺失)
+### 需修改 (P1 待验证; P2-P3 低优先级)
+- `Dockerfile` — 验证 Chromium 是否已通过 puppeteer postinstall 安装 (P1)
 - `packages/aave-fetcher/src/merit-api.ts:1982-2022` — `getBrowser()` Chromium 启动参数 (P2)
 
 ### 已修改（已部署）
