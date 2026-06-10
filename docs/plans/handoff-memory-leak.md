@@ -99,7 +99,9 @@ Dockerfile production 阶段中 `npm ci --omit=dev -w` 不触发 puppeteer 的 p
 
 ### P3: Worker `defaultMaxIdleMs` 600000→60000（低优先级）
 
-### P4: 部署到 staging（另开 session 排查 Railway 部署 FAILED）
+### P4: ~~部署到 staging~~ ✅ 已部署
+
+Railway 部署 FAILED 的根因：`8f237d6` 引入 `gen:openapi` 时 `writeFileSync` 目标目录 `backend/static/` 在 Docker 干净环境中不存在，但本地因目录残留不会报错。已修复（`1e70c34` script 层 mkdirSync + `7526874` Dockerfile 层 mkdir），添加 `buildScriptWriteSafety.test.ts` 防止回归。
 
 ---
 
