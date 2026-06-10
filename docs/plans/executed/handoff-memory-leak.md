@@ -41,10 +41,10 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 ## 3. Cloudflare Workers 免费层：绰绰有余
 
 ### 实际需求（修复缓存 bug 后）
-- 缓存修复后，cron 触发 → 缓存完整 → `Skip refresh` → **不调用浏览器**
-- 日常浏览器时间 ≈ **0 分钟/天**
-- 仅**容器重启（冷启动）**时缓存丢失，才需重新解析 → 几次 × 15 秒 ≈ 1 分钟
-- Cloudflare 免费层: **10 分钟/天** → 绰绰有余
+- 缓存完整时：cron 触发 → `Skip refresh` → **不调用浏览器** ✅
+- 缓存丢失时（冷启动）：静态 HTML 解析 message 为空 → fallback 到 Worker → Worker 429 → **仍需 Puppeteer**
+- 冷启动浏览器时间 ≈ 几次 × 15 秒 ≈ 1-2 分钟/次
+- Cloudflare 免费层: **10 分钟/天** → 日常够用，但 P1 (Chromium 安装) 必须修复才能 fallback 成功
 
 ### 为什么现在看起来不够
 缓存完整性 bug → 无限重试 → **虚假的高需求**
@@ -108,9 +108,9 @@ Railway 部署 FAILED 的根因：`8f237d6` 引入 `gen:openapi` 时 `writeFileS
 
 ## 7. 关键文件
 
-### 需修改 (P1-P3, 非阻塞 — P0 修复后浏览器解析不再被触发)
-- `packages/aave-fetcher/src/merit-api.ts:1982-2022` — `getBrowser()` Chromium 启动参数
-- `Dockerfile` — Chromium 二进制安装
+### 需修改 (P1 阻塞 — 冷启动时仍需 Puppeteer; P2-P3 低优先级)
+- `Dockerfile` — Chromium 二进制安装 (P1: 冷启动时 Worker 429 → fallback Puppeteer → 无 Chromium 报错)
+- `packages/aave-fetcher/src/merit-api.ts:1982-2022` — `getBrowser()` Chromium 启动参数 (P2)
 
 ### 已修改（已部署）
 - `packages/aave-fetcher/src/merit-api.ts` — bounded caches, browser reconnect, page leak, cache completeness fix
