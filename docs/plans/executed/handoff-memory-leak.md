@@ -24,23 +24,23 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 
 ---
 
-## 2. Puppeteer/Chromium 状态：大概率已安装
+## 2. Puppeteer/Chromium 状态：已安装，但 Puppeteer fallback 拿不到数据
 
-**Dockerfile 分析**：
-- Stage 2 (production) L63: `npm ci --omit=dev -w aave-dashboard-backend`
-- puppeteer 是 `@internal/aave-fetcher` 的 **production 依赖**（在 `dependencies` 里，不是 `devDependencies`）
-- `--omit=dev` 不跳过 prod dep 的 lifecycle scripts → puppeteer postinstall **会执行** → Chromium 二进制**会被下载**
-- L31-51: 已安装 Chromium 系统依赖（libnss3, libgbm1 等）→ Dockerfile 设计意图明确支持 Puppeteer 运行
+**证据链**：
+- Dockerfile L63: `npm ci --omit=dev -w aave-dashboard-backend` → puppeteer 是 prod dep → postinstall 下载 Chromium ✅
+- Dockerfile L31-51: Chromium 系统依赖已装 ✅
+- `MERIT_ALLOW_LOCAL_PUPPETEER=true` → Puppeteer fallback 启用 ✅
+- Worker 429 后 "fallback to puppeteer" 日志出现 → 代码进入 Puppeteer 路径 ✅
+- `extractMeritDynamicInfoWithBrowser failed` **从未出现** → Puppeteer 没有抛错 → 正常返回空
+- `Browser instance created` **从未出现** → 可能 logger.debug 在 staging 不输出
+- `message:none` → Puppeteer 执行了但 campaignInfo 为空
 
-**之前 session 的错误推断**：
-- 依据"日志无 Chromium 下载信息"和"Browser instance created 从未出现" → 断定 Chromium 未安装
-- **但**: `Browser instance created` 未出现只说明 Puppeteer **从未被触发**（Worker 一直成功），不代表 Chromium 没装
-- `extractMeritDynamicInfoWithBrowser failed` 也从未出现 → 同理
+**结论**：Chromium 已安装，Puppeteer 代码执行了，但**浏览器渲染拿不到 message 数据**。原因可能是：
+- page.goto 超时（30s）→ 返回空
+- 页面 DOM 结构变化 → 选择器匹配不到
+- Chromium headless 渲染问题
 
-**当前状态**：
-- Worker 优先策略下，Puppeteer 几乎不被触发 → 日志里看不到 Puppeteer 相关信息是正常的
-- Chromium 是否真的装了需要 Railway build log 或容器内直接验证
-- 如果确认已装 → P1 关闭
+**P0 修复后影响**：`message:[]` 被缓存 → 不再无限重试 → 不再每个 cron 都触发 Puppeteer → **资源浪费和内存增长问题解决**
 
 ---
 
@@ -95,10 +95,11 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 - 新增 9 个回归测试: `tests/merit-cache-completeness.test.ts`
 - Commit: `d9cad34`
 
-### P1: 验证 Chromium 是否已安装（大概率已装，待 Railway 日志确认）
-- `npm ci --omit=dev -w aave-dashboard-backend` 会安装 puppeteer (prod dep) → postinstall 下载 Chromium
-- 需在 Railway build log 搜索 `puppeteer` / `chrome` 或容器内 `ls /root/.cache/puppeteer/` 确认
-- 如果已装 → P1 关闭
+### P1: 已验证 — Chromium 已安装，Puppeteer 执行但拿不到数据（非阻塞）
+- `npm ci --omit=dev` 安装 puppeteer (prod dep) → postinstall 下载 Chromium ✅
+- Worker 429 → fallback Puppeteer → 代码执行 → 但返回空 campaignInfo → `message:none`
+- 原因待查：page.goto 超时 / DOM 变化 / headless 渲染问题
+- **P0 修复后**：`message:[]` 被缓存 → 不再无限重试 → 此问题影响大幅降低
 
 ### P2: Chromium 启动参数优化（零成本）
 `getBrowser()` 中添加 `--disable-gpu`, `--disable-software-rasterizer`, `--js-flags="--max-old-space-size=64"` 等
@@ -113,8 +114,7 @@ Railway 部署 FAILED 的根因：`8f237d6` 引入 `gen:openapi` 时 `writeFileS
 
 ## 7. 关键文件
 
-### 需修改 (P1 待验证; P2-P3 低优先级)
-- `Dockerfile` — 验证 Chromium 是否已通过 puppeteer postinstall 安装 (P1)
+### 需修改 (P1 非阻塞 — Puppeteer 拿不到数据是渲染问题; P2-P3 低优先级)
 - `packages/aave-fetcher/src/merit-api.ts:1982-2022` — `getBrowser()` Chromium 启动参数 (P2)
 
 ### 已修改（已部署）
