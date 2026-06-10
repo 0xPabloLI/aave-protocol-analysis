@@ -24,22 +24,23 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 
 ---
 
-## 2. Puppeteer/Chromium 状态：待验证
+## 2. Puppeteer/Chromium 状态：大概率已安装
 
-**之前 session 的结论**（需重新验证）：
-- 认为 `npm ci --omit=dev` 不触发 puppeteer 的 postinstall → Chromium 未安装
-- 依据：`Browser instance created` 从未出现、build 日志无 Chromium 下载信息
+**Dockerfile 分析**：
+- Stage 2 (production) L63: `npm ci --omit=dev -w aave-dashboard-backend`
+- puppeteer 是 `@internal/aave-fetcher` 的 **production 依赖**（在 `dependencies` 里，不是 `devDependencies`）
+- `--omit=dev` 不跳过 prod dep 的 lifecycle scripts → puppeteer postinstall **会执行** → Chromium 二进制**会被下载**
+- L31-51: 已安装 Chromium 系统依赖（libnss3, libgbm1 等）→ Dockerfile 设计意图明确支持 Puppeteer 运行
 
-**但存在矛盾**：
-- `extractMeritDynamicInfoWithBrowser failed` 也从未出现 → Puppeteer fallback 从未被触发
-- puppeteer 是 **production 依赖**，`npm ci --omit=dev` 不跳过 prod dep 的 postinstall → **Chromium 应该会被下载**
-- Dockerfile L31-51 已安装 Chromium 的系统依赖（libnss3 等），说明设计意图是支持 Puppeteer 运行
-- `Browser instance created` 未出现 → 可能 Worker 一直成功、从未触发 Puppeteer fallback
+**之前 session 的错误推断**：
+- 依据"日志无 Chromium 下载信息"和"Browser instance created 从未出现" → 断定 Chromium 未安装
+- **但**: `Browser instance created` 未出现只说明 Puppeteer **从未被触发**（Worker 一直成功），不代表 Chromium 没装
+- `extractMeritDynamicInfoWithBrowser failed` 也从未出现 → 同理
 
-**待验证**：
-- [ ] Railway build 日志中搜索 `puppeteer` 或 `chrome` 关键词，确认 postinstall 是否执行
-- [ ] 在容器内执行 `ls /root/.cache/puppeteer/` 或 `node -e "require('puppeteer').launch({headless:true}).then(b=>{console.log('OK');b.close()})"` 
-- [ ] 如果 Chromium 确实已安装 → P1 不需要修复，Section 2 结论需要推翻
+**当前状态**：
+- Worker 优先策略下，Puppeteer 几乎不被触发 → 日志里看不到 Puppeteer 相关信息是正常的
+- Chromium 是否真的装了需要 Railway build log 或容器内直接验证
+- 如果确认已装 → P1 关闭
 
 ---
 
@@ -94,16 +95,10 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 - 新增 9 个回归测试: `tests/merit-cache-completeness.test.ts`
 - Commit: `d9cad34`
 
-### P1: 验证/修复 Chromium 二进制安装（待验证）
-Dockerfile L31-51 已装系统依赖，puppeteer 是 prod dep → postinstall **应该**会下载 Chromium。
-- **之前判断**：Chromium 没装（基于间接日志推断，可能错误）
-- **矛盾**：`extractMeritDynamicInfoWithBrowser failed` 也未出现 → Puppeteer 从未被触发 → 可能 Worker 一直成功
-- **需先验证**：Railway build log 或容器内检查 `/root/.cache/puppeteer/`
-- 如果 Chromium 已装 → P1 关闭，Section 2 推翻
-- 如果 Chromium 确实没装：
-  - **方案 A**: 添加 `RUN npx puppeteer browsers install chrome`（显式安装）
-  - **方案 B**: 复用 builder 缓存 `COPY --from=builder /root/.cache/puppeteer/ /root/.cache/puppeteer/`
-  - **方案 C**: 改用 `puppeteer-core` + 系统 Chromium (`apt-get install chromium`)
+### P1: 验证 Chromium 是否已安装（大概率已装，待 Railway 日志确认）
+- `npm ci --omit=dev -w aave-dashboard-backend` 会安装 puppeteer (prod dep) → postinstall 下载 Chromium
+- 需在 Railway build log 搜索 `puppeteer` / `chrome` 或容器内 `ls /root/.cache/puppeteer/` 确认
+- 如果已装 → P1 关闭
 
 ### P2: Chromium 启动参数优化（零成本）
 `getBrowser()` 中添加 `--disable-gpu`, `--disable-software-rasterizer`, `--js-flags="--max-old-space-size=64"` 等
