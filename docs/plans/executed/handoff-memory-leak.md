@@ -24,7 +24,7 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 
 ---
 
-## 2. Puppeteer 状态：从未在容器中成功启动
+## 2. Puppeteer 状态：容器中 Chromium 未安装，fallback 为死路
 
 **日志支撑**:
 - `Browser instance created` **从未出现**
@@ -34,7 +34,13 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 
 **原因**: `npm ci --omit=dev -w aave-dashboard-backend` 不触发 puppeteer 的 postinstall（下载 Chromium）
 
-**但注意**: Chromium 没安装 → `puppeteer.launch()` 直接抛错 → **不会产生子进程 → 不会泄漏进程内存**。OOM 根因不是这个。
+**影响链**:
+1. Worker 成功 → 不走 Puppeteer → **无影响** ✅
+2. Worker 429/timeout → fallback Puppeteer → `puppeteer.launch()` 抛错 (无 Chromium) → catch 返回 `{ campaignInfo: [] }` → **message 数据缺失**，缓存为 `message: []`
+3. P0 修复后，`message: []` 不再触发无限重试 → **不崩溃** ✅
+4. 但：如果冷启动时 Worker 恰好 429，message 将**永久缺失**（直到下次冷启动 Worker 成功）
+
+**结论**: Chromium 没装不会导致 OOM（P0 修复后），但 Puppeteer fallback 是**功能死路** — 永远返回空。P1 修复 Chromium 安装可让 fallback 真正生效。
 
 ---
 
@@ -89,8 +95,11 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 - 新增 9 个回归测试: `tests/merit-cache-completeness.test.ts`
 - Commit: `d9cad34`
 
-### P1: 修复 Chromium 二进制安装
+### P1: 修复 Chromium 二进制安装（功能完整 — 非 OOM 阻塞）
 Dockerfile production 阶段中 `npm ci --omit=dev -w` 不触发 puppeteer 的 postinstall。
+- **现状**: Puppeteer fallback 是死路 — `puppeteer.launch()` 无 Chromium 抛错 → catch 返回空 → message 永久缺失
+- **不阻塞 OOM**: P0 修复后不再无限重试，不会因 Puppeteer 报错导致内存增长
+- **阻塞功能完整**: 冷启动 + Worker 429 时，message 数据拿不到，直到下次 Worker 成功
 - **方案 A**: 添加 `RUN npx puppeteer browsers install chrome`（显式安装）
 - **方案 B**: 复用 builder 缓存 `COPY --from=builder /root/.cache/puppeteer/ /root/.cache/puppeteer/`
 - **方案 C**: 改用 `puppeteer-core` + 系统 Chromium (`apt-get install chromium`)
@@ -108,8 +117,8 @@ Railway 部署 FAILED 的根因：`8f237d6` 引入 `gen:openapi` 时 `writeFileS
 
 ## 7. 关键文件
 
-### 需修改 (P1 阻塞 — 冷启动时仍需 Puppeteer; P2-P3 低优先级)
-- `Dockerfile` — Chromium 二进制安装 (P1: 冷启动时 Worker 429 → fallback Puppeteer → 无 Chromium 报错)
+### 需修改 (P1 功能完整性 — Puppeteer fallback 当前是死路; P2-P3 低优先级)
+- `Dockerfile` — Chromium 二进制安装 (P1: 冷启动+Worker 429 时 message 永久缺失)
 - `packages/aave-fetcher/src/merit-api.ts:1982-2022` — `getBrowser()` Chromium 启动参数 (P2)
 
 ### 已修改（已部署）
