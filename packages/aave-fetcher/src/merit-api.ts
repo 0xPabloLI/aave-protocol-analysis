@@ -1254,11 +1254,10 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
           endDate: timeRangeData.endDate,
           startBlock: timeRangeData.startBlock,
           endBlock: timeRangeData.endBlock,
-          ...(timeRangeData.name && { name: timeRangeData.name }),
-          ...(timeRangeData.message &&
-            timeRangeData.message.length > 0 && {
-              message: timeRangeData.message,
-            }),
+          ...(timeRangeData.name !== undefined && { name: timeRangeData.name }),
+          ...(timeRangeData.message !== undefined && {
+            message: timeRangeData.message,
+          }),
         };
       }
 

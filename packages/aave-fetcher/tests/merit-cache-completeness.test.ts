@@ -97,4 +97,30 @@ describe("isCachedTimeRangeComplete: empty message/name should not cause infinit
     const spread = { ...(name !== undefined ? { name } : {}) };
     assert.ok(!("name" in spread));
   });
+
+  it("cache write path: name='' is preserved via !== undefined spread", () => {
+    const timeRangeData = { name: "" as string | undefined };
+    const obj = { ...(timeRangeData.name !== undefined ? { name: timeRangeData.name } : {}) };
+    assert.ok("name" in obj);
+    assert.equal(obj.name, "");
+  });
+
+  it("cache write path: message=[] is preserved via !== undefined spread", () => {
+    const timeRangeData = { message: [] as MeritCampaignInfo[] | undefined };
+    const obj = { ...(timeRangeData.message !== undefined ? { message: timeRangeData.message } : {}) };
+    assert.ok("message" in obj);
+    assert.deepEqual(obj.message, []);
+  });
+
+  it("cache write path: name=undefined is omitted via !== undefined spread", () => {
+    const timeRangeData = { name: undefined as string | undefined };
+    const obj = { ...(timeRangeData.name !== undefined ? { name: timeRangeData.name } : {}) };
+    assert.ok(!("name" in obj));
+  });
+
+  it("cache write path: message=undefined is omitted via !== undefined spread", () => {
+    const timeRangeData = { message: undefined as MeritCampaignInfo[] | undefined };
+    const obj = { ...(timeRangeData.message !== undefined ? { message: timeRangeData.message } : {}) };
+    assert.ok(!("message" in obj));
+  });
 });
