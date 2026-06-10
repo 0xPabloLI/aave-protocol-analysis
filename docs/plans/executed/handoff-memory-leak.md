@@ -24,7 +24,7 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 
 ---
 
-## 2. Puppeteer/Chromium 状态：已安装，但 Puppeteer fallback 拿不到数据
+## 2. Puppeteer/Chromium 状态：已安装，但 `ethereum-new-sgho-boost` 的 message 无论如何拿不到
 
 **证据链**：
 - Dockerfile L63: `npm ci --omit=dev -w aave-dashboard-backend` → puppeteer 是 prod dep → postinstall 下载 Chromium ✅
@@ -32,15 +32,18 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 - `MERIT_ALLOW_LOCAL_PUPPETEER=true` → Puppeteer fallback 启用 ✅
 - Worker 429 后 "fallback to puppeteer" 日志出现 → 代码进入 Puppeteer 路径 ✅
 - `extractMeritDynamicInfoWithBrowser failed` **从未出现** → Puppeteer 没有抛错 → 正常返回空
-- `Browser instance created` **从未出现** → 可能 logger.debug 在 staging 不输出
-- `message:none` → Puppeteer 执行了但 campaignInfo 为空
+- `message:none` → 三级解析全部拿不到 message
 
-**结论**：Chromium 已安装，Puppeteer 代码执行了，但**浏览器渲染拿不到 message 数据**。原因可能是：
-- page.goto 超时（30s）→ 返回空
-- 页面 DOM 结构变化 → 选择器匹配不到
-- Chromium headless 渲染问题
+**三级解析全部失败的原因**：
+1. **静态 HTML 解析**：页面无 `table/tbody`（Next.js SSR 不含此 DOM），action 正则也无匹配 → 需要 JS 渲染
+2. **Cloudflare Worker**：持续 429（`launches=0`，免费层配额耗尽）
+3. **Puppeteer headless**：执行了但返回空 → headless 渲染可能不完整 / page.goto 超时 / 页面需要交互才显示
 
-**P0 修复后影响**：`message:[]` 被缓存 → 不再无限重试 → 不再每个 cron 都触发 Puppeteer → **资源浪费和内存增长问题解决**
+**前端为什么能看到？** 浏览器完整渲染 → JS 执行 → Campaign info 弹窗 DOM 挂载 → 用户交互触发显示
+
+**其他 Merit key 没有此问题**：`celo-sup` 等 key 的静态 HTML 包含完整 message → 缓存完整 → Skip refresh
+
+**P0 修复后影响**：`message:[]` 被缓存为 complete → 不再每个 cron 都重试 → **不再无限触发 Worker 429 + Puppeteer → OOM 根因消除**
 
 ---
 
@@ -95,11 +98,12 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 - 新增 9 个回归测试: `tests/merit-cache-completeness.test.ts`
 - Commit: `d9cad34`
 
-### P1: 已验证 — Chromium 已安装，Puppeteer 执行但拿不到数据（非阻塞）
-- `npm ci --omit=dev` 安装 puppeteer (prod dep) → postinstall 下载 Chromium ✅
-- Worker 429 → fallback Puppeteer → 代码执行 → 但返回空 campaignInfo → `message:none`
-- 原因待查：page.goto 超时 / DOM 变化 / headless 渲染问题
-- **P0 修复后**：`message:[]` 被缓存 → 不再无限重试 → 此问题影响大幅降低
+### P1: 已验证 — Chromium 已安装，`ethereum-new-sgho-boost` 的 message 三级解析全失败
+- 静态 HTML 无 table/tbody + action 正则无匹配 → 需要 JS 渲染
+- Cloudflare Worker 持续 429（`launches=0`）→ 免费层配额耗尽
+- Puppeteer headless 执行但返回空 → 渲染不完整 / 超时
+- 前端浏览器能看到（完整 JS 渲染 + 用户交互触发）
+- **P0 修复后**：`message:[]` 被缓存为 complete → 不再无限重试 → OOM 根因消除
 
 ### P2: Chromium 启动参数优化（零成本）
 `getBrowser()` 中添加 `--disable-gpu`, `--disable-software-rasterizer`, `--js-flags="--max-old-space-size=64"` 等
