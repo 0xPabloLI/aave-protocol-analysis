@@ -67,7 +67,7 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 
 ---
 
-## 5. 已完成的修复（3 个 commit，未部署到 staging）
+## 5. 已完成的修复
 
 | Commit | 内容 |
 |--------|------|
@@ -75,6 +75,7 @@ message 为空 → 缓存认为"不完整" → needsUpdate = true → 每个 cro
 | `088aabf` | Puppeteer 加固 (reconnect close, page leak, graceful shutdown, idle 2min) |
 | `e82bbe1` | pg pool 5→3; AbortController; campaignInfo 超时 |
 | `7526874` + `1e70c34` | Docker build 修复 |
+| `d9cad34` | 缓存完整性误判修复 (P0 root cause) |
 
 ---
 
@@ -107,13 +108,12 @@ Railway 部署 FAILED 的根因：`8f237d6` 引入 `gen:openapi` 时 `writeFileS
 
 ## 7. 关键文件
 
-### 需修改
-- `packages/aave-fetcher/src/merit-api.ts:1132-1184` — `isCachedTimeRangeComplete` 缓存完整性逻辑
+### 需修改 (P1-P3, 非阻塞 — P0 修复后浏览器解析不再被触发)
 - `packages/aave-fetcher/src/merit-api.ts:1982-2022` — `getBrowser()` Chromium 启动参数
 - `Dockerfile` — Chromium 二进制安装
 
-### 已修改（未部署）
-- `packages/aave-fetcher/src/merit-api.ts` — bounded caches, browser reconnect, page leak
+### 已修改（已部署）
+- `packages/aave-fetcher/src/merit-api.ts` — bounded caches, browser reconnect, page leak, cache completeness fix
 - `packages/aave-fetcher/src/cloudflare-browser.ts` — AbortController
 - `backend/src/server.ts` — graceful shutdown
 - `backend/src/services/persistenceService.ts` — oracle hash shrink
