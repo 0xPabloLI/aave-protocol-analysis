@@ -39,7 +39,7 @@
 
 ### Key Format 唯一来源原则
 
-Map/Set 的 key 必须通过**命名函数**构建，禁止内联字符串模板。
+Map/Set 的 key 必须通过**命名函数**构建，禁止内联字符串模板。所有 key 构建函数定义在 `packages/aave-shared-contracts/src/keys.ts`，是唯一来源。
 
 ```ts
 // ❌ 危险：两处独立内联，格式可能不一致
@@ -47,13 +47,30 @@ map.set(`${r.chainId}|${r.tokenAddress}|${r.configId}`, hash);
 for (const key of map.keys()) { /* 期望 key 是 chainId|tokenAddr|configId 格式，但无编译时保证 */ }
 
 // ✅ 安全：命名函数是唯一来源
-function oraclePriceKey(chainId: number, tokenAddr: string, configId: string): string {
-  return `${chainId}|${tokenAddr}|${configId}`;
-}
+import { oraclePriceKey } from '@internal/aave-shared-contracts';
 map.set(oraclePriceKey(r.chainId, r.tokenAddress, r.configId), hash);
 ```
 
 **原理**：TypeScript 无法检查两处内联字符串模板的格式一致性。命名函数确保格式定义只有一份代码，编译器能检查参数类型。
+
+**已提取的 key 函数**（`shared-contracts/keys.ts`）：
+
+| 函数 | 格式 | 用途 |
+|------|------|------|
+| `normalizeAddress` | `addr.toLowerCase().trim()` | 地址标准化 |
+| `spokeKey` | `chainId:spokeAddress` | V4 spoke 查找 |
+| `chainTokenKey` | `chainId:tokenAddress` | token 查找（V3 aToken/vToken） |
+| `v3PriceKey` | `chainId:tokenAddress` | V3 oracle price cache |
+| `v4PriceKey` | `chainId:spokeAddress:tokenAddress` | V4 oracle price cache |
+| `v4SpokeCacheKey` | `spokeAddress:hubAddress` | V4 spoke-hub 对 |
+| `v3OnchainKey` | `chainId:poolAddress:tokenAddress` | V3 onchain 数据 |
+| `v4OnchainKey` | `chainId:spokeAddress:tokenAddress:hubAddress` | V4 onchain 数据 |
+| `topologySortKey` | `chainId:spokeAddress:hubAddress` | 拓扑去重 |
+| `v4ReserveId` | `chainId:spokeAddress:tokenAddress:hubAddress` | V4 reserve ID |
+| `aaveProReserveId` | `chainId:spokeAddress:underlying:hubAddress:hubName` | Aave Pro reserve ID |
+| `chainSymbolKey` | `chainId:symbol` | symbol 查找 |
+
+> **注意**：`spokeKey` 和 `chainTokenKey` 输出格式相同（`chainId:address`），但语义不同：spokeAddress 是 V4 spoke 合约地址，tokenAddress 是 V3 aToken/vToken 合约地址。实践中两者不会重叠。
 
 ## 已知泄漏源与修复记录
 
@@ -71,11 +88,11 @@ map.set(oraclePriceKey(r.chainId, r.tokenAddress, r.configId), hash);
 | `zeroBaselineFirstSeenAt` 无界 | Map 只写不删 | max 500 条 | `bf88358` |
 | PG pool 过大 | 5 个 SSL 连接各占 5-10MB native memory | 减到 3 | `e82bbe1` |
 | `withTimeout` dangling socket | 超时后 fetch 未 abort | AbortController + AbortSignal | `e82bbe1` |
-| `roundEstimateCache` 无上限 | 有 48h TTL 但无 max entries | max 200 条兜底 | pending |
-| `campaignMetadataMemoryCache` 无 shrink | `{...cachedTimeRanges}` 继承所有历史 key，已下线 campaign 永不删除 | shrinkCampaignMetadataCache() + max 500 条 | pending |
-| `marketRowHashes` 无上限 | 有 shrink 但无 max entries | max 500 条兜底 | pending |
-| `marketConfigHashes` 无上限 | 有 shrink 但无 max entries | max 500 条兜底 | pending |
-| `oraclePriceHashes` 无上限 | 有 shrink 但无 max entries | max 2000 条兜底 | pending |
+| `roundEstimateCache` 无上限 | 有 48h TTL 但无 max entries | max 200 条兜底 | `8cd18d5` |
+| `campaignMetadataMemoryCache` 无 shrink | `{...cachedTimeRanges}` 继承所有历史 key，已下线 campaign 永不删除 | shrinkCampaignMetadataCache() + max 500 条 | `8cd18d5` |
+| `marketRowHashes` 无上限 | 有 shrink 但无 max entries | max 500 条兜底 | `8cd18d5` |
+| `marketConfigHashes` 无上限 | 有 shrink 但无 max entries | max 500 条兜底 | `8cd18d5` |
+| `oraclePriceHashes` 无上限 | 有 shrink 但无 max entries | max 2000 条兜底 | `8cd18d5` |
 
 ## 监控与验证
 
