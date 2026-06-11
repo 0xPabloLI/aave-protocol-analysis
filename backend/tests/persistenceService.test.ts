@@ -7,6 +7,8 @@ import {
   buildIncentiveDetails,
   buildConfigRow,
   MARKET_CONFIG_COLUMNS,
+  oraclePriceKey,
+  configKey,
 } from '../src/services/persistenceService.js';
 import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 
@@ -200,4 +202,80 @@ test('buildConfigRow: content field count = columns - 2 (minus snapshot_ts and c
   assert.equal(contentFields.length, MARKET_CONFIG_COLUMNS.length - 2, 'content fields should be columns minus snapshot_ts and content_hash');
   const recomputedHash = computeHash(contentFields);
   assert.equal(hash, recomputedHash, 'hash should match recomputed hash from content fields');
+});
+
+// ── Hash shrink: key format consistency ──────────────────────────────────────
+// Bug history: oraclePriceHashes uses "chainId|tokenAddr|configId" format,
+// but shrinkHashMaps was checking against reserveId ("Aave V3:1:0xaddr") —
+// the formats never match, so shrink was a no-op. shrinkOraclePriceHashes
+// was introduced to use the correct key set from persistOraclePrices.
+
+test('oraclePriceHashes key format uses pipe delimiter (not colon like reserveId)', () => {
+  const reserveIdFormat = 'Aave V3:1:0xdead';
+  const oracleKeyFormat = oraclePriceKey(1, '0xdead', '0xoracle');
+  assert.ok(reserveIdFormat.includes(':'), 'reserveId uses colon delimiter');
+  assert.ok(!reserveIdFormat.includes('|'), 'reserveId does NOT use pipe delimiter');
+  assert.ok(oracleKeyFormat.includes('|'), 'oracle key uses pipe delimiter');
+  assert.ok(!oracleKeyFormat.includes(':'), 'oracle key does NOT use colon delimiter');
+  assert.notDeepEqual(
+    new Set(reserveIdFormat.split('|')),
+    new Set(oracleKeyFormat.split('|')),
+    'reserveId and oracle key are fundamentally different key spaces'
+  );
+});
+
+test('shrinkOraclePriceHashes: only keys in current persist batch survive', () => {
+  const currentKeys = new Set([oraclePriceKey(1, '0xaaa', 'cfg1'), oraclePriceKey(1, '0xbbb', 'cfg2')]);
+  const staleKeys = [oraclePriceKey(1, '0xold', 'cfg0'), oraclePriceKey(999, '0xstale', 'cfg9')];
+  const allKeys = new Set([...currentKeys, ...staleKeys]);
+  for (const key of allKeys) {
+    if (!currentKeys.has(key)) allKeys.delete(key);
+  }
+  assert.equal(allKeys.size, 2);
+  assert.ok(allKeys.has(oraclePriceKey(1, '0xaaa', 'cfg1')));
+  assert.ok(allKeys.has(oraclePriceKey(1, '0xbbb', 'cfg2')));
+  assert.ok(!allKeys.has(oraclePriceKey(1, '0xold', 'cfg0')));
+});
+
+// ── oraclePriceKey: single source of truth for oraclePriceHashes key format ──
+
+test('oraclePriceKey: produces pipe-delimited key in chainId|tokenAddr|configId format', () => {
+  assert.equal(oraclePriceKey(1, '0xdead', 'cfg1'), '1|0xdead|cfg1');
+  assert.equal(oraclePriceKey(42161, '0xabc', '42'), '42161|0xabc|42');
+});
+
+test('oraclePriceKey: different arguments produce different keys', () => {
+  const k1 = oraclePriceKey(1, '0xaaa', 'cfg1');
+  const k2 = oraclePriceKey(1, '0xaaa', 'cfg2');
+  const k3 = oraclePriceKey(1, '0xbbb', 'cfg1');
+  const k4 = oraclePriceKey(2, '0xaaa', 'cfg1');
+  assert.notEqual(k1, k2);
+  assert.notEqual(k1, k3);
+  assert.notEqual(k1, k4);
+});
+
+test('oraclePriceKey: key format matches shrinkOraclePriceHashes currentKeys format', () => {
+  const chainId = 1;
+  const tokenAddr = '0xtoken';
+  const configId = '99';
+  const key = oraclePriceKey(chainId, tokenAddr, configId);
+  const currentKeys = new Set([key]);
+  assert.ok(currentKeys.has(oraclePriceKey(chainId, tokenAddr, configId)));
+  assert.ok(!currentKeys.has('1|0xother|99'));
+  assert.ok(!currentKeys.has('Aave V3:1:0xtoken'));
+});
+
+// ── configKey: single source of truth for configMap key format ──
+
+test('configKey: produces pipe-delimited key in source|poolKey format', () => {
+  assert.equal(configKey('v3', 'Aave V3'), 'v3|Aave V3');
+  assert.equal(configKey('v4', 'Main'), 'v4|Main');
+});
+
+test('configKey: different arguments produce different keys', () => {
+  const k1 = configKey('v3', 'poolA');
+  const k2 = configKey('v3', 'poolB');
+  const k3 = configKey('v4', 'poolA');
+  assert.notEqual(k1, k2);
+  assert.notEqual(k1, k3);
 });

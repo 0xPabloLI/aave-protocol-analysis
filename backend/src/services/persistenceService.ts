@@ -82,6 +82,14 @@ function shrinkOraclePriceHashes(currentKeys: Set<string>): void {
   }
 }
 
+export function oraclePriceKey(chainId: number, tokenAddr: string, configId: string | number): string {
+  return `${chainId}|${tokenAddr}|${configId}`;
+}
+
+export function configKey(source: string, poolKey: string): string {
+  return `${source}|${poolKey}`;
+}
+
 /**
  * Warm marketConfigHashes from the latest rows in DB.
  * After a process restart, the in-memory map is empty, causing the first
@@ -476,7 +484,7 @@ async function ensureOracleSourceConfigs(
 
   const result = await pool.query(upsertSql, values);
   for (const row of result.rows) {
-    configMap.set(`${row.source}|${row.pool_key}`, row.id);
+    configMap.set(configKey(row.source, row.pool_key), row.id);
   }
 
   return configMap;
@@ -494,7 +502,7 @@ async function persistOraclePrices(
   const rows: OracleRow[] = [];
 
   for (const v3 of snap.v3) {
-    const configId = configMap.get(`v3|${v3.poolKey}`);
+    const configId = configMap.get(configKey('v3', v3.poolKey));
     if (configId === undefined) continue;
     for (const [tokenAddr, entry] of Object.entries(v3.assets)) {
       rows.push({
@@ -508,7 +516,7 @@ async function persistOraclePrices(
   }
 
   for (const v4 of snap.v4) {
-    const configId = configMap.get(`v4|${v4.spokeName}`);
+    const configId = configMap.get(configKey('v4', v4.spokeName));
     if (configId === undefined) continue;
     for (const [reserveIdStr, entry] of Object.entries(v4.reserves)) {
       const tokenAddr = v4.reserveTokens[reserveIdStr];
@@ -539,7 +547,7 @@ async function writeOracleChunk(
   // 1. Deduplicate within batch.
   const seen = new Set<string>();
   const unique = rows.filter((r) => {
-    const key = `${r.chainId}|${r.tokenAddress}|${r.configId}`;
+    const key = oraclePriceKey(r.chainId, r.tokenAddress, r.configId);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -549,7 +557,7 @@ async function writeOracleChunk(
   const changed: OracleRow[] = [];
   const newHashes: { key: string; hash: string }[] = [];
   for (const r of unique) {
-    const key = `${r.chainId}|${r.tokenAddress}|${r.configId}`;
+    const key = oraclePriceKey(r.chainId, r.tokenAddress, r.configId);
     const newHash = computeHash([r.priceUsd]);
     if (oraclePriceHashes.get(key) === newHash) continue;
     changed.push(r);
