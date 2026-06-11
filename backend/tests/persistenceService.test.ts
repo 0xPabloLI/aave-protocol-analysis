@@ -9,6 +9,12 @@ import {
   MARKET_CONFIG_COLUMNS,
   oraclePriceKey,
   configKey,
+  shrinkHashMaps,
+  shrinkOraclePriceHashes,
+  getHashMapSizes,
+  _setMarketRowHash,
+  _setMarketConfigHash,
+  _setOraclePriceHash,
 } from '../src/services/persistenceService.js';
 import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
 
@@ -278,4 +284,91 @@ test('configKey: different arguments produce different keys', () => {
   const k3 = configKey('v4', 'poolA');
   assert.notEqual(k1, k2);
   assert.notEqual(k1, k3);
+});
+
+// ── shrinkHashMaps: stale eviction + max entries + FIFO ──
+
+test('shrinkHashMaps: removes stale keys not in current reserves', () => {
+  resetPersistenceHashes();
+  _setMarketRowHash('stale-1', 'hash1');
+  _setMarketRowHash('current-1', 'hash2');
+  _setMarketConfigHash('stale-1', 'hash1');
+  _setMarketConfigHash('current-1', 'hash2');
+
+  const reserves = [baseReserve({ reserveId: 'current-1' })];
+  shrinkHashMaps(reserves);
+
+  const sizes = getHashMapSizes();
+  assert.equal(sizes.marketRow, 1);
+  assert.equal(sizes.marketConfig, 1);
+  resetPersistenceHashes();
+});
+
+test('shrinkHashMaps: evicts oldest entries when exceeding max (FIFO)', () => {
+  resetPersistenceHashes();
+  const MAX = 500;
+  for (let i = 0; i < MAX + 10; i++) {
+    _setMarketRowHash(`rid-${i}`, `hash-${i}`);
+    _setMarketConfigHash(`rid-${i}`, `hash-${i}`);
+  }
+
+  shrinkHashMaps(Array.from({ length: MAX + 10 }, (_, i) => baseReserve({ reserveId: `rid-${i}` })));
+
+  const sizes = getHashMapSizes();
+  assert.equal(sizes.marketRow, MAX);
+  assert.equal(sizes.marketConfig, MAX);
+  resetPersistenceHashes();
+});
+
+test('shrinkHashMaps: empty reserves clears all entries', () => {
+  resetPersistenceHashes();
+  _setMarketRowHash('a', 'h');
+  _setMarketConfigHash('a', 'h');
+
+  shrinkHashMaps([]);
+  const sizes = getHashMapSizes();
+  assert.equal(sizes.marketRow, 0);
+  assert.equal(sizes.marketConfig, 0);
+  resetPersistenceHashes();
+});
+
+// ── shrinkOraclePriceHashes: stale eviction + max entries + FIFO ──
+
+test('shrinkOraclePriceHashes: removes keys not in currentKeys set', () => {
+  resetPersistenceHashes();
+  _setOraclePriceHash('1|0xkeep|99', 'hash1');
+  _setOraclePriceHash('1|0xstale|99', 'hash2');
+
+  shrinkOraclePriceHashes(new Set(['1|0xkeep|99']));
+
+  const sizes = getHashMapSizes();
+  assert.equal(sizes.oraclePrice, 1);
+  resetPersistenceHashes();
+});
+
+test('shrinkOraclePriceHashes: evicts oldest when exceeding max (FIFO)', () => {
+  resetPersistenceHashes();
+  const MAX = 2000;
+  const allKeys = new Set<string>();
+  for (let i = 0; i < MAX + 10; i++) {
+    const k = `${i}|0xtoken|1`;
+    _setOraclePriceHash(k, `hash-${i}`);
+    allKeys.add(k);
+  }
+
+  shrinkOraclePriceHashes(allKeys);
+  const sizes = getHashMapSizes();
+  assert.equal(sizes.oraclePrice, MAX);
+  resetPersistenceHashes();
+});
+
+test('shrinkOraclePriceHashes: empty currentKeys clears all entries', () => {
+  resetPersistenceHashes();
+  _setOraclePriceHash('1|0xa|1', 'h');
+  _setOraclePriceHash('2|0xb|1', 'h');
+
+  shrinkOraclePriceHashes(new Set());
+  const sizes = getHashMapSizes();
+  assert.equal(sizes.oraclePrice, 0);
+  resetPersistenceHashes();
 });

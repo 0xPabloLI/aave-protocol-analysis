@@ -70,7 +70,28 @@ export function resetPersistenceHashes(): void {
   oraclePriceHashes.clear();
 }
 
-function shrinkHashMaps(currentReserves: RuntimeReserveData[]): void {
+/** Exposed for tests: get current hash map sizes. */
+// ts-prune-ignore-next
+export function getHashMapSizes(): { marketRow: number; marketConfig: number; oraclePrice: number } {
+  return { marketRow: marketRowHashes.size, marketConfig: marketConfigHashes.size, oraclePrice: oraclePriceHashes.size };
+}
+
+/** Exposed for tests: directly populate hash maps for eviction testing. */
+// ts-prune-ignore-next
+export function _setMarketRowHash(key: string, hash: string): void {
+  marketRowHashes.set(key, hash);
+}
+// ts-prune-ignore-next
+export function _setMarketConfigHash(key: string, hash: string): void {
+  marketConfigHashes.set(key, hash);
+}
+// ts-prune-ignore-next
+export function _setOraclePriceHash(key: string, hash: string): void {
+  oraclePriceHashes.set(key, hash);
+}
+
+// ts-prune-ignore-next
+export function shrinkHashMaps(currentReserves: RuntimeReserveData[]): void {
   const currentIds = new Set(currentReserves.map((r) => r.reserveId));
   for (const key of marketRowHashes.keys()) {
     if (!currentIds.has(key)) marketRowHashes.delete(key);
@@ -90,7 +111,8 @@ function shrinkHashMaps(currentReserves: RuntimeReserveData[]): void {
   }
 }
 
-function shrinkOraclePriceHashes(currentKeys: Set<string>): void {
+// ts-prune-ignore-next
+export function shrinkOraclePriceHashes(currentKeys: Set<string>): void {
   for (const key of oraclePriceHashes.keys()) {
     if (!currentKeys.has(key)) oraclePriceHashes.delete(key);
   }
