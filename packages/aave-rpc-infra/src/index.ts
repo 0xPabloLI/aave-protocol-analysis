@@ -4,7 +4,7 @@ import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
 import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
-import { getErrorCode } from '@internal/aave-shared-contracts';
+import { getErrorCode, normalizeAddress, spokeKey, topologySortKey, v4ReserveId, aaveProReserveId } from '@internal/aave-shared-contracts';
 import { DynamicRpcCache } from './dynamicRpcCache.js';
 
 // ============================================================
@@ -527,7 +527,7 @@ function isSupportedChain(chainId: number): boolean {
 export function getV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
   const topologyBySpoke = new Map<string, string[]>();
   for (const entry of topology) {
-    const key = `${entry.chainId}:${normalizeAddress(entry.spokeAddress)}`;
+    const key = spokeKey(entry.chainId, entry.spokeAddress);
     const existing = topologyBySpoke.get(key);
     if (existing) {
       if (!existing.includes(normalizeAddress(entry.hubAddress))) {
@@ -559,8 +559,8 @@ export function getV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
     for (const [spokeName, spokeAddress] of Object.entries(spokes)) {
       if (!spokeName.endsWith('_SPOKE') && !spokeName.endsWith('_ESPOKE')) continue;
       if (typeof spokeAddress !== 'string') continue;
-      const spokeKey = `${chainId}:${normalizeAddress(spokeAddress)}`;
-      const hubAddresses = topologyBySpoke.get(spokeKey);
+      const spokeCacheKey = spokeKey(chainId, spokeAddress);
+      const hubAddresses = topologyBySpoke.get(spokeCacheKey);
       if (!hubAddresses) continue;
       for (const hubAddr of hubAddresses) {
         const hubName = hubAddressToName.get(hubAddr);
@@ -619,10 +619,6 @@ export interface FetchV4ReservesViaRpcResult {
   errors: string[];
 }
 
-function normalizeAddress(address: string): string {
-  return address.toLowerCase().trim();
-}
-
 function bigintToString(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
   try {
@@ -673,7 +669,7 @@ function buildReserveData(
   const protocolFee = protocolFeeRaw !== undefined ? Number(protocolFeeRaw) / 100 : undefined;
 
   return {
-    reserveId: `${entry.chainId}:${normalizeAddress(entry.spokeAddress)}:${underlying}:${normalizeAddress(entry.hubAddress)}`,
+    reserveId: v4ReserveId(entry.chainId, entry.spokeAddress, underlying, entry.hubAddress),
     marketName: `AaveV4${entry.spokeName.replace(/\s+/g, '')}`,
     chainName: `Chain ${entry.chainId}`,
     chainId: entry.chainId,
@@ -694,7 +690,7 @@ function buildReserveData(
     spokeId: normalizeAddress(entry.spokeAddress),
     spokeName: entry.spokeName,
     spokeAddress: normalizeAddress(entry.spokeAddress),
-    aaveProReserveId: `${entry.chainId}:${normalizeAddress(entry.spokeAddress)}:${underlying}:${normalizeAddress(entry.hubAddress)}:${entry.hubName}`,
+    aaveProReserveId: aaveProReserveId(entry.chainId, entry.spokeAddress, underlying, entry.hubAddress, entry.hubName),
   };
 }
 

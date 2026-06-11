@@ -19,6 +19,7 @@
 import * as AaveAddressBook from '@aave-dao/aave-address-book';
 import { AAVE_CHAIN_ID_TO_RPC_KEY, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { SpokeHubTopology } from '@internal/aave-shared-contracts';
+import { spokeKey, topologySortKey } from '@internal/aave-shared-contracts';
 
 // ============================================================
 // V3 Types
@@ -62,7 +63,7 @@ export function buildAll(topology: SpokeHubTopology): { v3: V3PoolEntry[]; v4Spo
 
   const topologyBySpoke = new Map<string, string[]>();
   for (const entry of topology) {
-    const key = `${entry.chainId}:${entry.spokeAddress.toLowerCase()}`;
+    const key = spokeKey(entry.chainId, entry.spokeAddress);
     const existing = topologyBySpoke.get(key);
     if (existing) {
       existing.push(entry.hubAddress.toLowerCase());
@@ -98,22 +99,22 @@ export function buildAll(topology: SpokeHubTopology): { v3: V3PoolEntry[]; v4Spo
         const spokes = v.SPOKES as Record<string, string> | undefined;
         if (!spokes) continue;
 
-        for (const [spokeKey, spokeAddr] of Object.entries(spokes)) {
-          if (!spokeKey.endsWith('_SPOKE') && !spokeKey.endsWith('_ESPOKE')) continue;
+        for (const [spokeName, spokeAddr] of Object.entries(spokes)) {
+          if (!spokeName.endsWith('_SPOKE') && !spokeName.endsWith('_ESPOKE')) continue;
           if (typeof spokeAddr !== 'string') continue;
 
           const spokeAddressLower = spokeAddr.toLowerCase().trim();
-          const topoKey = `${chainId}:${spokeAddressLower}`;
-          const hubAddresses = topologyBySpoke.get(topoKey);
+          const topoCacheKey = spokeKey(chainId, spokeAddr);
+          const hubAddresses = topologyBySpoke.get(topoCacheKey);
           if (!hubAddresses || hubAddresses.length === 0) continue;
 
-          const oracleAddress = typeof spokes[`${spokeKey}_ORACLE`] === 'string'
-            ? spokes[`${spokeKey}_ORACLE`].toLowerCase()
+          const oracleAddress = typeof spokes[`${spokeName}_ORACLE`] === 'string'
+            ? spokes[`${spokeName}_ORACLE`].toLowerCase()
             : undefined;
 
           for (const hubAddress of hubAddresses) {
             v4Spokes.push({
-              spokeKey,
+              spokeKey: spokeName,
               chainId,
               spokeAddress: spokeAddressLower,
               hubAddress,
@@ -141,8 +142,8 @@ let currentTopologySignature: string | null = null;
 
 export function topologySignature(topology: SpokeHubTopology): string {
   const sorted = [...topology].sort((a, b) => {
-    const keyA = `${a.chainId}:${a.spokeAddress}:${a.hubAddress}`;
-    const keyB = `${b.chainId}:${b.spokeAddress}:${b.hubAddress}`;
+    const keyA = topologySortKey(a.chainId, a.spokeAddress, a.hubAddress);
+    const keyB = topologySortKey(b.chainId, b.spokeAddress, b.hubAddress);
     return keyA < keyB ? -1 : keyA > keyB ? 1 : 0;
   });
   return JSON.stringify(sorted);

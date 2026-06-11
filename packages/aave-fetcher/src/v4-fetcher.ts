@@ -19,6 +19,7 @@
 import { AaveClient, chainId as v4ChainId } from '@aave/client-v4';
 import { chains, reserves } from '@aave/client-v4/actions';
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
+import { v4ReserveId } from '@internal/aave-shared-contracts';
 import { logger } from './logger.js';
 import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
 import { V4ChainsFetchError } from './v4-errors.js';
@@ -103,7 +104,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     // address-based，和 V3 (${chainId}:${poolAddress}:${tokenAddr}) 风格一致
     // hubAddress 确保唯一性：同一 spoke 内同一 token 可来自不同 hub
     // hubAddress 与 onchainKey 天然一致（两端都是链上地址），无需映射表
-    const reserveId = `${chainIdNum}:${spokeAddressLower}:${tokenAddressLower}:${hubAddressLower}`;
+    const reserveId = v4ReserveId(chainIdNum, spokeAddress, tokenAddressLower, hubAddress);
     const marketName = `AaveV4${spokeName.replace(/\s+/g, '')}`;
 
     // Token price from exchange rate

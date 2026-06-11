@@ -1,5 +1,20 @@
 import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
 
+export {
+  normalizeAddress,
+  spokeKey,
+  v4SpokeCacheKey,
+  v3PriceKey,
+  v4PriceKey,
+  v3OnchainKey,
+  v4OnchainKey,
+  chainTokenKey,
+  chainSymbolKey,
+  topologySortKey,
+  v4ReserveId,
+  aaveProReserveId,
+} from './keys.js';
+
 // ============================================================
 // Utility functions (shared across packages)
 // ============================================================

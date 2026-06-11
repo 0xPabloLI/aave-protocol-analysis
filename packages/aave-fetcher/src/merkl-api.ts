@@ -13,6 +13,7 @@ import {
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
 import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, RuntimeReserveData, NetPositionConstraint } from '@internal/aave-shared-contracts';
+import { chainTokenKey, chainSymbolKey, getErrorCode, spokeKey } from '@internal/aave-shared-contracts';
 export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess } from '@internal/aave-shared-contracts';
 import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
@@ -39,7 +40,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-import { getErrorCode } from '@internal/aave-shared-contracts';
 
 function isRetryableError(error: unknown): boolean {
   const retryableCodes = new Set(['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETRESET', 'ECONNREFUSED']);
@@ -276,18 +276,18 @@ export function buildProtocolVersionLookup(
     const chainId = r.chainId;
 
     if (r.aTokenAddress) {
-      unambiguous.set(`${chainId}:${r.aTokenAddress.toLowerCase()}`, version);
+      unambiguous.set(chainTokenKey(chainId, r.aTokenAddress), version);
     }
     if (r.vTokenAddress) {
-      unambiguous.set(`${chainId}:${r.vTokenAddress.toLowerCase()}`, version);
+      unambiguous.set(chainTokenKey(chainId, r.vTokenAddress), version);
     }
     if (r.spokeAddress) {
-      unambiguous.set(`${chainId}:${r.spokeAddress.toLowerCase()}`, version);
+      unambiguous.set(spokeKey(chainId, r.spokeAddress), version);
     }
 
     // V4 underlying token → separate lookup (shared with V3, so unambiguous lookup can't use it)
     if (isV4 && r.tokenAddress) {
-      v4Underlying.set(`${chainId}:${r.tokenAddress.toLowerCase()}`, true);
+      v4Underlying.set(chainTokenKey(chainId, r.tokenAddress), true);
     }
   }
 
@@ -319,7 +319,7 @@ export function deriveProtocolVersion(
     return 'v3';
   }
 
-  const key = `${chainId}:${explorerAddress.toLowerCase()}`;
+  const key = chainTokenKey(chainId, explorerAddress);
 
   // Step 2: unambiguous address lookup
   const version = unambiguousLookup.get(key);
@@ -749,7 +749,7 @@ const buildForecastFieldsFromOpportunity = async (
   if (!meta.useTokenRateInMetrics && normalizedPrice === undefined) {
     const reserveTokenAddress =
       typeof snapshot.rewardToken?.address === 'string' ? snapshot.rewardToken.address.toLowerCase() : '';
-    const reservePriceKey = `${meta.chainId}:${reserveTokenAddress}`;
+    const reservePriceKey = chainTokenKey(meta.chainId, reserveTokenAddress);
     const reserveTokenPrice =
       reserveTokenAddress && options?.reserveTokenPriceByChainAndAddress
         ? options.reserveTokenPriceByChainAndAddress.get(reservePriceKey)
@@ -1156,7 +1156,7 @@ export async function processMerklData(
     for (const r of mergedOptions.baseDataset) {
       const addMapping = (addr: string | undefined | null) => {
         if (!addr) return;
-        const key = `${r.chainId}:${addr.toLowerCase()}`;
+        const key = chainTokenKey(r.chainId, addr);
         if (!tokenAddrToReserveId.has(key)) {
           tokenAddrToReserveId.set(key, r.reserveId);
         }
@@ -1262,7 +1262,7 @@ export async function processMerklData(
     }
 
     // 反查 opp 对应的 reserveId
-    const oppReserveId = tokenAddrToReserveId.get(`${opp.chainId}:${explorerAddress}`);
+    const oppReserveId = tokenAddrToReserveId.get(chainTokenKey(opp.chainId, explorerAddress));
     const reserveIdSet = mergedOptions.reserveIdSet ?? new Set<string>();
 
     const offsetTokenAddresses = oppReserveId
@@ -1410,7 +1410,7 @@ export async function detectNetPositionConstraint(
         const offsetReserveIds: string[] = [];
         const seen = new Set<string>();
         for (const symbol of offsetTokenSymbols) {
-          const tokenAddr = symbolLookup.get(`${opp.chainId}:${symbol}`);
+          const tokenAddr = symbolLookup.get(chainSymbolKey(opp.chainId, symbol));
           if (!tokenAddr) return null;
           const resolvedIds = resolveOffsetReserveIds(oppReserveId, tokenAddr.toLowerCase(), reserveIdSet);
           if (resolvedIds.length === 0) return null;

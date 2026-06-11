@@ -1,4 +1,5 @@
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
+import { v3OnchainKey } from '@internal/aave-shared-contracts';
 import { logger } from './logger.js';
 import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
 import type { V4FetchResult } from './v4-retry.js';
@@ -21,7 +22,7 @@ export function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
         const tokenSymbol = reserve.underlyingToken?.symbol || 'Unknown';
         const tokenAddress = reserve.underlyingToken?.address || '';
         const tokenAddressLower = tokenAddress.toLowerCase();
-        const reserveId = `${chainId}:${poolAddress}:${tokenAddressLower}`;
+        const reserveId = v3OnchainKey(chainId, poolAddress, tokenAddressLower);
         const tokenPrice =
           toFiniteNumber(reserve?.size?.usdPerToken) ??
           toFiniteNumber(reserve?.usdExchangeRate) ??

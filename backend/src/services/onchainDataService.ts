@@ -32,6 +32,7 @@ import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
 import { V4_HUB_FULL_ABI } from '@internal/aave-rpc-infra';
+import { normalizeAddress, v4SpokeCacheKey, v3OnchainKey, v4OnchainKey } from '@internal/aave-shared-contracts';
 
 const ONCHAIN_PER_RPC_TIMEOUT_MS = 15_000;
 const HUB_MAPPING_TTL_MS = 10 * 60_000;
@@ -62,10 +63,6 @@ interface OnchainConfig {
   chainId: number;
   uiPoolDataProviderAddress: string;
   poolAddressesProvider: string;
-}
-
-function normalizeAddress(addr: string): string {
-  return addr.toLowerCase().trim();
 }
 
 function poolConfigKey(chainId: number, poolAddress: string): string {
@@ -278,7 +275,7 @@ async function fetchAndCacheV4Spoke(
   config: V4SpokeConfig,
   hubAssetMapping: Map<string, Map<string, number>>
 ): Promise<boolean> {
-  const cacheKey = `${config.spokeAddress}:${config.hubAddress}`;
+  const cacheKey = v4SpokeCacheKey(config.spokeAddress, config.hubAddress);
 
   let underlyingToAssetId = hubAssetMapping.get(config.hubAddress);
   if (!underlyingToAssetId) {
@@ -528,7 +525,7 @@ export async function refreshOnchainCache(): Promise<void> {
         const ok = await fetchAndCacheV4Spoke(config, hubAssetMapping);
         if (ok) {
           v4Success++;
-          const entry = v4SpokeCache.get(`${config.spokeAddress}:${config.hubAddress}`);
+          const entry = v4SpokeCache.get(v4SpokeCacheKey(config.spokeAddress, config.hubAddress));
           if (entry) v4TotalAssets += entry.data.size;
         } else {
           v4Fail++;
@@ -560,7 +557,7 @@ export function getOnchainDataFromCache(): Map<string, OnchainReserveData> {
     const config = POOL_CONFIGS.get(poolKey);
     if (!config) continue;
     for (const [tokenAddr, data] of entry.data) {
-      const reserveId = `${config.chainId}:${config.poolAddress}:${tokenAddr}`;
+      const reserveId = v3OnchainKey(config.chainId, config.poolAddress, tokenAddr);
       result.set(reserveId, data);
     }
   }
@@ -569,12 +566,12 @@ export function getOnchainDataFromCache(): Map<string, OnchainReserveData> {
   // Per-spoke deficit (getSpokeDeficitRay), semantically aligned with V3 reserve.deficit
   // Key format matches V4 reserveId — direct lookup, no fallback needed
   for (const v4Config of V4_SPOKE_CONFIGS) {
-    const entry = v4SpokeCache.get(`${v4Config.spokeAddress}:${v4Config.hubAddress}`);
+    const entry = v4SpokeCache.get(v4SpokeCacheKey(v4Config.spokeAddress, v4Config.hubAddress));
     if (!entry) continue;
     const age = now - entry.updatedAt;
     if (age >= ttl) continue;
     for (const [tokenAddr, data] of entry.data) {
-      const key = `${v4Config.chainId}:${v4Config.spokeAddress}:${tokenAddr}:${v4Config.hubAddress}`;
+      const key = v4OnchainKey(v4Config.chainId, v4Config.spokeAddress, tokenAddr, v4Config.hubAddress);
       result.set(key, data);
     }
   }

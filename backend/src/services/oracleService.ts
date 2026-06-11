@@ -21,6 +21,7 @@ import { IPool_ABI } from '@aave-dao/aave-address-book/abis/IPool';
 import { IAaveOracle_ABI } from '@aave-dao/aave-address-book/abis/IAaveOracle';
 import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
 import { V4_ORACLE_PRICES_ABI } from '../abis/index.js';
+import { spokeKey, v3PriceKey, v4PriceKey } from '@internal/aave-shared-contracts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -261,8 +262,8 @@ async function fetchV4SpokePrices(
   }
 
   // Reserve token mapping: use cached version if fresh, else fetch on-chain
-  const spokeKey = `${config.chainId}:${config.spokeAddress.toLowerCase()}`;
-  const cachedMapping = V4_RESERVE_TOKEN_CACHE.get(spokeKey);
+  const spokeCacheKey = spokeKey(config.chainId, config.spokeAddress);
+  const cachedMapping = V4_RESERVE_TOKEN_CACHE.get(spokeCacheKey);
   const now = Date.now();
   let reserveTokens: Record<string, string>;
 
@@ -286,7 +287,7 @@ async function fetchV4SpokePrices(
         logger.debug(`⚠️  Oracle V4: Failed to fetch reserve ${reserveIds[i]} details for ${config.spokeName}`);
       }
     });
-    V4_RESERVE_TOKEN_CACHE.set(spokeKey, { tokens: reserveTokens, updatedAt: now });
+    V4_RESERVE_TOKEN_CACHE.set(spokeCacheKey, { tokens: reserveTokens, updatedAt: now });
     for (const [k, v] of V4_RESERVE_TOKEN_CACHE) {
       if (now - v.updatedAt > 2 * V4_RESERVE_TOKEN_TTL_MS) {
         V4_RESERVE_TOKEN_CACHE.delete(k);
@@ -386,14 +387,14 @@ export async function refreshOracleCache(): Promise<void> {
       const newLean = new Map<string, number>();
       for (const pool of v3Results) {
         for (const [addr, entry] of Object.entries(pool.assets)) {
-          newLean.set(`${pool.chainId}:${addr}`, entry.priceUsd);
+          newLean.set(v3PriceKey(pool.chainId, addr), entry.priceUsd);
         }
       }
       for (const spoke of v4Results) {
         for (const [ridStr, tokenAddr] of Object.entries(spoke.reserveTokens)) {
           const entry = spoke.reserves[Number(ridStr)];
           if (entry) {
-            newLean.set(`${spoke.chainId}:${spoke.spokeAddress.toLowerCase()}:${tokenAddr}`, entry.priceUsd);
+            newLean.set(v4PriceKey(spoke.chainId, spoke.spokeAddress, tokenAddr), entry.priceUsd);
           }
         }
       }
@@ -435,13 +436,13 @@ function isLeanCacheFresh(): boolean {
 /** Get V3 token price by (chainId, tokenAddress), O(1). Returns undefined if stale or not found. */
 export function getV3OraclePrice(chainId: number, tokenAddress: string): number | undefined {
   if (!isLeanCacheFresh()) return undefined;
-  return leanPriceCache.get(`${chainId}:${tokenAddress.toLowerCase()}`);
+  return leanPriceCache.get(v3PriceKey(chainId, tokenAddress));
 }
 
 /** Get V4 token price by (chainId, spokeAddress, tokenAddress), O(1). Returns undefined if stale or not found. */
 export function getV4OraclePrice(chainId: number, spokeAddress: string, tokenAddress: string): number | undefined {
   if (!isLeanCacheFresh()) return undefined;
-  return leanPriceCache.get(`${chainId}:${spokeAddress.toLowerCase()}:${tokenAddress.toLowerCase()}`);
+  return leanPriceCache.get(v4PriceKey(chainId, spokeAddress, tokenAddress));
 }
 
 /**

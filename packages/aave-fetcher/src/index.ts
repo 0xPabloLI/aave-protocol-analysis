@@ -39,6 +39,7 @@ import { fetchV4ReservesData, bigintReplacer } from './v4-fetcher.js';
 import { closeBrowser } from './merit-api.js';
 import type { V4FetchResult } from './v4-retry.js';
 import type { RuntimeReserveData, MarketsPayload, SpokeHubTopology } from '@internal/aave-shared-contracts';
+import { chainTokenKey, chainSymbolKey } from '@internal/aave-shared-contracts';
 import { buildMarketsBaseDataset as _buildMarketsBaseDataset, buildV3BaseDataset as _buildV3BaseDataset, fetchV4ReservesWithTimeout as _fetchV4ReservesWithTimeout, fetchV3MarketsWithTimeout as _fetchV3MarketsWithTimeout, FETCH_TIMEOUT_MS } from './concurrent-fetch.js';
 import { fetchV4ReservesViaRpc, getDefaultV4SpokeEntries } from '@internal/aave-rpc-infra';
 export type { RuntimeReserveData, MarketsPayload, SpokeHubTopology } from '@internal/aave-shared-contracts';
@@ -190,7 +191,7 @@ async function fetchBrevisAprs(
       if (price === null) return;
       const address = reserve.tokenAddress?.toLowerCase();
       if (!address) return;
-      tokenPriceByChainAndAddress.set(`${reserve.chainId}:${address}`, price);
+      tokenPriceByChainAndAddress.set(chainTokenKey(reserve.chainId, address), price);
     });
 
     const brevisPriceSourceStats = {
@@ -208,7 +209,7 @@ async function fetchBrevisAprs(
       if (!Number.isFinite(chainId) || !rewardTokenAddress) continue;
 
       const enrichCampaignUsd = async (campaign: BrevisCampaignItem): Promise<BrevisCampaignItem> => {
-        const reservePriceKey = `${chainId}:${rewardTokenAddress}`;
+        const reservePriceKey = chainTokenKey(chainId, rewardTokenAddress);
         const reserveTokenPrice = tokenPriceByChainAndAddress.get(reservePriceKey);
 
         const breakdowns = await Promise.all(
@@ -323,7 +324,7 @@ function buildReserveTokenPriceMap(baseDataset: RuntimeReserveData[]): Map<strin
     if (price === null || price <= 0) return;
     const address = reserve.tokenAddress?.toLowerCase();
     if (!address) return;
-    map.set(`${reserve.chainId}:${address}`, price);
+    map.set(chainTokenKey(reserve.chainId, address), price);
   });
   return map;
 }
@@ -339,7 +340,7 @@ async function enrichDatasetWithIncentiveData(
   const symbolLookup = new Map<string, string>();
   for (const r of baseDataset) {
     reserveIdSet.add(r.reserveId);
-    const symKey = `${r.chainId}:${r.tokenSymbol}`;
+    const symKey = chainSymbolKey(r.chainId, r.tokenSymbol);
     if (!symbolLookup.has(symKey)) {
       symbolLookup.set(symKey, r.tokenAddress.toLowerCase());
     }
