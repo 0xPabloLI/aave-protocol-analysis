@@ -40,6 +40,10 @@ let warnedDisabled = false;
 // column so that on process restart we can warm the in-memory map from DB
 // (see warmConfigHashes), avoiding a full rewrite of unchanged rows.
 
+const MAX_MARKET_ROW_HASHES = 500;
+const MAX_MARKET_CONFIG_HASHES = 500;
+const MAX_ORACLE_PRICE_HASHES = 2000;
+
 const marketRowHashes = new Map<string, string>(); // key: reserveId → sha256 (snapshot table)
 const marketConfigHashes = new Map<string, string>(); // key: reserveId → sha256 (config table)
 const oraclePriceHashes = new Map<string, string>(); // key: chainId|tokenAddr|configId → sha256
@@ -71,14 +75,29 @@ function shrinkHashMaps(currentReserves: RuntimeReserveData[]): void {
   for (const key of marketRowHashes.keys()) {
     if (!currentIds.has(key)) marketRowHashes.delete(key);
   }
+  while (marketRowHashes.size > MAX_MARKET_ROW_HASHES) {
+    const oldestKey = marketRowHashes.keys().next().value;
+    if (!oldestKey) break;
+    marketRowHashes.delete(oldestKey);
+  }
   for (const key of marketConfigHashes.keys()) {
     if (!currentIds.has(key)) marketConfigHashes.delete(key);
+  }
+  while (marketConfigHashes.size > MAX_MARKET_CONFIG_HASHES) {
+    const oldestKey = marketConfigHashes.keys().next().value;
+    if (!oldestKey) break;
+    marketConfigHashes.delete(oldestKey);
   }
 }
 
 function shrinkOraclePriceHashes(currentKeys: Set<string>): void {
   for (const key of oraclePriceHashes.keys()) {
     if (!currentKeys.has(key)) oraclePriceHashes.delete(key);
+  }
+  while (oraclePriceHashes.size > MAX_ORACLE_PRICE_HASHES) {
+    const oldestKey = oraclePriceHashes.keys().next().value;
+    if (!oldestKey) break;
+    oraclePriceHashes.delete(oldestKey);
   }
 }
 

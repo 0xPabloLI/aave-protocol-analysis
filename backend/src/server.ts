@@ -244,8 +244,8 @@ setInterval(() => {
   );
 
   if (RSS_RESTART_THRESHOLD_MB > 0 && mem.rss > RSS_RESTART_THRESHOLD_MB * 1024 * 1024) {
-    logger.warn(
-      `🧹 RSS ${fmt(mem.rss)} exceeds threshold ${RSS_RESTART_THRESHOLD_MB}MB — initiating graceful restart`
+    logger.error(
+      `🧹 RSS ${fmt(mem.rss)} exceeds threshold ${RSS_RESTART_THRESHOLD_MB}MB — initiating graceful restart (heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} external=${fmt(mem.external)})`
     );
     process.kill(process.pid, 'SIGTERM');
   }

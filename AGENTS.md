@@ -80,6 +80,9 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
 - **Serialization stays in backend**: `marketsApiSerialize.ts` produces `MarketWithSpread` in backend only.
 - When adding reserve fields, update `RuntimeReserveData` in `@internal/aave-shared-contracts`, then backend types/serialization.
 
+### Memory Safety Rule
+Adding/modifying in-memory caches, Maps, Sets, long-lived closures, or external resource handles — consult `docs/memory-leak-checklist.md`.
+
 ### Data Validity Rule (Critical)
 **When proposing ANY code change involving blockchain numerical values, you MUST cross-check against actual data files before making the recommendation.**
 

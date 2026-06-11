@@ -27,6 +27,7 @@ const RUNTIME_DATA_DIR = join(DATA_DIR, "runtime");
 const DEBUG_DATA_DIR = join(DATA_DIR, "debug");
 const MERKL_BASE_URL = "https://api.merkl.xyz/v4";
 const MERIT_ROUND_ESTIMATE_MAX_PAGES = 12;
+const MERIT_ROUND_ESTIMATE_MAX_ENTRIES = 200;
 const MERIT_ROUND_POST_END_REFRESH_MS = 24 * 60 * 60 * 1000;
 const MERIT_ROUND_SCAN_GLOBAL_COOLDOWN_MS = 10 * 60 * 1000;
 const MERIT_CAMPAIGN_METADATA_CACHE_PATH = join(
@@ -599,6 +600,11 @@ const fetchMeritRoundEstimates = async (
     if (nowMs - entry.lastCheckedAtMs > 2 * MERIT_ROUND_POST_END_REFRESH_MS) {
       cache.delete(key);
     }
+  }
+  while (cache.size > MERIT_ROUND_ESTIMATE_MAX_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    if (!oldestKey) break;
+    cache.delete(oldestKey);
   }
 
   const result = new Map<string, MeritRoundEstimateBase>();
@@ -1669,6 +1675,32 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
   }
 }
 
+const MERIT_CAMPAIGN_METADATA_MAX_ENTRIES = 500;
+
+/**
+ * Shrink campaignMetadataMemoryCache by removing stale keys and enforcing max entries.
+ * Mutates `cache` in place. Eviction strategy: FIFO (by insertion order).
+ */
+export function shrinkCampaignMetadataCache(
+  cache: Record<string, MeritCampaignMetadataEntry>,
+  activeAprKeys: string[]
+): { removed: number } {
+  const activeKeys = new Set(activeAprKeys.map((k) => k.replace(/^self-/, "")));
+  const staleKeys = Object.keys(cache).filter((k) => !activeKeys.has(k));
+  for (const key of staleKeys) {
+    delete cache[key];
+  }
+  let overflowRemoved = 0;
+  const cacheKeys = Object.keys(cache);
+  if (cacheKeys.length > MERIT_CAMPAIGN_METADATA_MAX_ENTRIES) {
+    overflowRemoved = cacheKeys.length - MERIT_CAMPAIGN_METADATA_MAX_ENTRIES;
+    for (let i = 0; i < overflowRemoved; i++) {
+      delete cache[cacheKeys[i]];
+    }
+  }
+  return { removed: staleKeys.length + overflowRemoved };
+}
+
 /**
  * 批量获取所有 Merit key 的时间范围和链接信息
  * 这个函数会为每个唯一的 key 获取时间范围信息
@@ -1881,6 +1913,13 @@ export async function fetchAllMeritTimeRanges(
         timeRanges[alias] = canonicalData;
       }
     }
+  }
+
+  const { removed } = shrinkCampaignMetadataCache(timeRanges, uniqueKeys);
+  if (removed > 0) {
+    logger.info(
+      `🧹 Shrunk campaignMetadataMemoryCache: removed ${removed} stale key(s) not in current APR response`
+    );
   }
 
   logger.info(
