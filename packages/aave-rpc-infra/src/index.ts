@@ -101,6 +101,7 @@ type NewChainHook = () => void;
 const DEFAULT_FAILURE_THRESHOLD = 2;
 const DEFAULT_SUPPRESSION_MS = 5 * 60_000;
 const DEFAULT_PROVIDER_TTL_MS = 30 * 60_000; // 30 min — evict unused providers
+const MAX_PROVIDER_ENTRIES = 150;
 
 function defaultErrorClassifier(error: unknown): ErrorClass {
   const msg = error instanceof Error ? error.message : String(error);
@@ -400,6 +401,13 @@ export class ProviderPool {
         this.endpointHealthByKey.delete(key);
         this.providerLastUsedAt.delete(key);
       }
+    }
+    while (this.providerByKey.size > MAX_PROVIDER_ENTRIES) {
+      const oldestKey = this.providerLastUsedAt.entries().next().value;
+      if (!oldestKey) break;
+      this.providerByKey.delete(oldestKey[0]);
+      this.endpointHealthByKey.delete(oldestKey[0]);
+      this.providerLastUsedAt.delete(oldestKey[0]);
     }
   }
 

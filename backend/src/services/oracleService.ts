@@ -169,6 +169,8 @@ let leanPriceCache: Map<string, number> = new Map();
 let leanPriceUpdatedAt = 0;
 /** V4 reserveToken mapping cache: spokeKey → { tokens, updatedAt } (1h TTL) */
 const V4_RESERVE_TOKEN_TTL_MS = 3_600_000; // 1 hour
+const MAX_V4_RESERVE_TOKEN_ENTRIES = 100;
+const MAX_LEAN_PRICE_ENTRIES = 500;
 const V4_RESERVE_TOKEN_CACHE = new Map<string, { tokens: Record<string, string>; updatedAt: number }>();
 let refreshInProgress: Promise<void> | null = null;
 
@@ -293,6 +295,11 @@ async function fetchV4SpokePrices(
         V4_RESERVE_TOKEN_CACHE.delete(k);
       }
     }
+    while (V4_RESERVE_TOKEN_CACHE.size > MAX_V4_RESERVE_TOKEN_ENTRIES) {
+      const oldestKey = V4_RESERVE_TOKEN_CACHE.keys().next().value;
+      if (!oldestKey) break;
+      V4_RESERVE_TOKEN_CACHE.delete(oldestKey);
+    }
   }
 
   return {
@@ -400,6 +407,11 @@ export async function refreshOracleCache(): Promise<void> {
       }
       leanPriceCache = newLean;
       leanPriceUpdatedAt = now;
+      while (leanPriceCache.size > MAX_LEAN_PRICE_ENTRIES) {
+        const oldestKey = leanPriceCache.keys().next().value;
+        if (!oldestKey) break;
+        leanPriceCache.delete(oldestKey);
+      }
 
       // Write debug file
       try {

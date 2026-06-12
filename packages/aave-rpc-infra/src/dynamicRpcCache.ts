@@ -28,6 +28,8 @@ function dedupe(urls: string[]): string[] {
   return [...new Set(urls)];
 }
 
+const MAX_CACHE_ENTRIES = 50;
+
 export class DynamicRpcCache {
   private cache = new Map<number, string[]>();
   private readonly fetchChainIdNetwork: (chainId: number) => Promise<string[]>;
@@ -44,10 +46,19 @@ export class DynamicRpcCache {
 
   set(chainId: number, urls: string[]): void {
     this.cache.set(chainId, urls);
+    this.evictOverflow();
   }
 
   invalidate(chainId: number): void {
     this.cache.delete(chainId);
+  }
+
+  private evictOverflow(): void {
+    while (this.cache.size > MAX_CACHE_ENTRIES) {
+      const oldestKey = this.cache.keys().next().value;
+      if (!oldestKey) break;
+      this.cache.delete(oldestKey);
+    }
   }
 
   startFetch(chainId: number): void {
@@ -62,6 +73,7 @@ export class DynamicRpcCache {
         const merged = dedupe(filterHttps(urls));
         if (merged.length > 0) {
           this.cache.set(chainId, merged);
+          this.evictOverflow();
         }
       })
       .catch(() => {});

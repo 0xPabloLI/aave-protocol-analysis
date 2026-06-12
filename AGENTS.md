@@ -82,6 +82,7 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
 
 ### Memory Safety Rule
 Adding/modifying in-memory caches, Maps, Sets, long-lived closures, or external resource handles — consult `docs/memory-leak-checklist.md`.
+- **Cache audit must use the exhaustive inventory** in that doc (38 entries). When asked to "review all caches" or "check memory safety", you MUST cross-reference the inventory table, not scan ad-hoc. New caches must be added to the table with full 3-layer defense assessment (Domain/TTL/Max/Shrink).
 
 ### Data Validity Rule (Critical)
 **When proposing ANY code change involving blockchain numerical values, you MUST cross-check against actual data files before making the recommendation.**

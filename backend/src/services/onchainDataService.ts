@@ -151,6 +151,9 @@ const V4_SPOKE_CONFIGS: V4SpokeConfig[] = V4_SPOKE_ENTRIES.map((e) => ({
   hubAddress: e.hubAddress,
 }));
 
+const MAX_POOL_CACHE_ENTRIES = 50;
+const MAX_V4_SPOKE_CACHE_ENTRIES = 80;
+
 const poolCache = new Map<string, ChainCacheEntry>();
 
 const v4SpokeCache = new Map<string, ChainCacheEntry>();
@@ -218,6 +221,11 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
       data: chainData,
       updatedAt: Date.now(),
     });
+    while (poolCache.size > MAX_POOL_CACHE_ENTRIES) {
+      const oldestKey = poolCache.keys().next().value;
+      if (!oldestKey) break;
+      poolCache.delete(oldestKey);
+    }
 
     return true;
   } catch {
@@ -305,6 +313,11 @@ async function fetchAndCacheV4Spoke(
 
   if (underlyingToAssetId!.size === 0) {
     v4SpokeCache.set(cacheKey, { data: new Map(), updatedAt: Date.now() });
+    while (v4SpokeCache.size > MAX_V4_SPOKE_CACHE_ENTRIES) {
+      const oldestKey = v4SpokeCache.keys().next().value;
+      if (!oldestKey) break;
+      v4SpokeCache.delete(oldestKey);
+    }
     return true;
   }
 
@@ -328,6 +341,11 @@ async function fetchAndCacheV4Spoke(
     }
 
     v4SpokeCache.set(cacheKey, { data: spokeData, updatedAt: Date.now() });
+    while (v4SpokeCache.size > MAX_V4_SPOKE_CACHE_ENTRIES) {
+      const oldestKey = v4SpokeCache.keys().next().value;
+      if (!oldestKey) break;
+      v4SpokeCache.delete(oldestKey);
+    }
     return true;
   } catch {
     logger.warn(`All RPC endpoints failed for V4 ${config.spokeName}, using cached data if available`);

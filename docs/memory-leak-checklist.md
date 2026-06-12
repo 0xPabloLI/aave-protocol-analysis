@@ -28,12 +28,12 @@
 | 3 | merklForecastService | `inFlight` | Map | ✅ | ➖(Promise完成即删) | ➖(并发有限) | ➖(Promise自删) | 🟢 | 短生命周期，fetch完即delete，并发受下游限流控制 |
 | 4 | merklForecastService | `campaignOpportunityCache` | 单条 | ✅ | ✅(hardTTL) | ➖(单条) | ✅(替换) | 🟢 | |
 | 5 | onchainDataService | `POOL_CONFIGS` | Map | ✅ | ➖(静态初始化) | ➖(V3配置数量) | ➖(运行时不变) | 🟢 | 从V3_ENTRIES静态构建，数量=pool数(~20)，运行时不变 |
-| 6 | onchainDataService | `poolCache` | Map | ✅ | ✅(30min) | ⚠️(无max) | ➖(cron覆盖,过期不主动删) | 🟡 | key=poolAddress，数量=V3 pool数(~20)固定，domain上有界；过期条目虽不主动删但下一轮cron覆盖 |
-| 7 | onchainDataService | `v4SpokeCache` | Map | ✅ | ✅(30min) | ⚠️(无max) | ➖(同上) | 🟡 | key=spokeAddress，数量=V4 spoke数(~40)固定，同上 |
+| 6 | onchainDataService | `poolCache` | Map | ✅ | ✅(30min) | ✅(50) | ✅(cron覆盖+FIFO overflow) | 🟢 | |
+| 7 | onchainDataService | `v4SpokeCache` | Map | ✅ | ✅(30min) | ✅(80) | ✅(cron覆盖+FIFO overflow) | 🟢 | |
 | 8 | onchainDataService | `cachedHubMapping` | Map | ✅ | ✅(10min,整体置null) | ✅(MAX_HUB_ASSET_COUNT=200/hub) | ✅(TTL过期整体重建) | 🟢 | |
 | 9 | oracleService | `cachedSnapshot` | 单条 | ✅ | ✅(cron每分钟) | ➖(单条) | ✅(替换) | 🟢 | |
-| 10 | oracleService | `leanPriceCache` | Map | ✅ | ✅(cron整量替换) | ⚠️(无max) | ➖(每轮全量替换) | 🟡 | key=tokenAddress，数量=所有链的token总数(~200-300)固定，每轮cron全量替换(非append)，domain上有界 |
-| 11 | oracleService | `V4_RESERVE_TOKEN_CACHE` | Map | ✅ | ✅(1h+2h惰性删) | ⚠️(无max) | ✅(2×TTL惰性删) | 🟡 | key=spokeAddress，数量=V4 spoke数(~40)，domain上有界 |
+| 10 | oracleService | `leanPriceCache` | Map | ✅ | ✅(cron整量替换) | ✅(500) | ✅(整量替换+FIFO overflow) | 🟢 | |
+| 11 | oracleService | `V4_RESERVE_TOKEN_CACHE` | Map | ✅ | ✅(1h+2h惰性删) | ✅(100) | ✅(2×TTL惰性删+FIFO overflow) | 🟢 | |
 | 12 | persistenceService | `marketRowHashes` | Map | ✅ | ➖(key跟reserve走) | ✅(500) | ✅(shrinkHashMaps+FIFO) | 🟢 | |
 | 13 | persistenceService | `marketConfigHashes` | Map | ✅ | ➖(key跟reserve走) | ✅(500) | ✅(shrinkHashMaps+FIFO) | 🟢 | |
 | 14 | persistenceService | `oraclePriceHashes` | Map | ✅ | ➖(key跟reserve走) | ✅(2000) | ✅(shrinkOraclePriceHashes+FIFO) | 🟢 | |
@@ -66,11 +66,11 @@
 
 | # | 文件 | 变量 | 类型 | Domain | TTL | Max | Shrink | 结论 | 不需要理由 |
 |---|------|------|------|--------|-----|-----|--------|------|-----------|
-| 34 | index (ProviderPool) | `providerByKey` | Map | ✅ | ✅(providerTtlMs) | ⚠️(无max) | ✅(pruneStaleProviders) | 🟡 | key=endpointUrl，数量=配置中RPC endpoint数(~60-80固定)，domain上有界；有30min cleanupTimer |
-| 35 | index (ProviderPool) | `endpointHealthByKey` | Map | ✅ | ✅(随provider) | ⚠️(无max) | ✅(随pruneStaleProviders) | 🟡 | 同上，与providerByKey一一对应 |
-| 36 | index (ProviderPool) | `providerLastUsedAt` | Map | ✅ | ✅(providerTtlMs) | ⚠️(无max) | ✅(随pruneStaleProviders) | 🟡 | 同上 |
+| 34 | index (ProviderPool) | `providerByKey` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(pruneStaleProviders+FIFO overflow) | 🟢 | max=150 ≥ DynamicRpcCache.max(50) × 每chain平均URL数(~3) |
+| 35 | index (ProviderPool) | `endpointHealthByKey` | Map | ✅ | ✅(随provider) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上，与providerByKey一一对应 |
+| 36 | index (ProviderPool) | `providerLastUsedAt` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上 |
 | 37 | index (ProviderPool) | `viemChainCache` | 单条 | ✅ | ➖(lazy init后永久) | ➖(单条) | ➖(不变) | 🟢 | |
-| 38 | dynamicRpcCache | `cache` | Map | ✅ | ⚠️(无TTL) | ⚠️(无max) | ⚠️(set/invalidate手动) | 🟡 | key=chainId，数量=已见链数(~20)固定，domain上有界；由fetcher代码手动set/invalidate |
+| 38 | dynamicRpcCache | `cache` | Map | ✅ | ➖(见下) | ✅(50) | ✅(FIFO overflow) | 🟡 | key=chainId(~20)，domain严格有界；TTL不需要：cache存的是URL列表，URL不会"过期"，失效靠ProviderPool检测到所有suppressed时主动invalidate；无自动淘汰是因为URL列表是静态元数据，不像价格/数据会变旧 |
 
 ### packages/aave-shared-contracts/src/ + aave-shared-config/src/
 
@@ -78,18 +78,16 @@
 
 ---
 
-### 🔴 需补强的 Cache（从 🟡 升级到 🟢）
+### 🟢 已补强的 Cache（从 🟡 升级到 🟢，commit `pending`）
 
-| # | 变量 | 缺什么 | 建议补法 | 优先级 |
-|---|------|--------|---------|--------|
-| 6 | `poolCache` | 无 max entries | 加 max 50（V3 pool 数 ~20） | P3 |
-| 7 | `v4SpokeCache` | 无 max entries | 加 max 80（V4 spoke 数 ~40） | P3 |
-| 10 | `leanPriceCache` | 无 max entries | 加 max 500（token 总数 ~300） | P3 |
-| 11 | `V4_RESERVE_TOKEN_CACHE` | 无 max entries | 加 max 100（V4 spoke 数 ~40） | P3 |
-| 34-36 | `providerByKey` 等 3 个 | 无 max entries | 加 max 100（endpoint 数 ~60-80） | P3 |
-| 38 | `DynamicRpcCache.cache` | 无 TTL、无 max | 加 max 30（chainId 数 ~20） | P3 |
-
-> **P3 理由**：这些 cache 的 key 数量由配置/拓扑决定，domain 上严格有界，即使不加 max entries 也不会无限增长。加 max 是防御性编程，防未来配置错误导致 key 爆炸。
+| # | 变量 | 补了什么 | 补法 |
+|---|------|---------|------|
+| 6 | `poolCache` | max entries | max 50 (V3 pool 数 ~20) |
+| 7 | `v4SpokeCache` | max entries | max 80 (V4 spoke 数 ~40) |
+| 10 | `leanPriceCache` | max entries | max 500 (token 总数 ~300) |
+| 11 | `V4_RESERVE_TOKEN_CACHE` | max entries | max 100 (V4 spoke 数 ~40) |
+| 34-36 | `providerByKey` 等 3 个 | max entries | max 150 (≥ DynamicRpcCache.max × 每chain平均URL数) |
+| 38 | `DynamicRpcCache.cache` | max entries | max 50 (chainId 数 ~20，留 2.5× 余量) |
 
 ### 🟡 可接受不补的 Cache（🟡 保持）
 
