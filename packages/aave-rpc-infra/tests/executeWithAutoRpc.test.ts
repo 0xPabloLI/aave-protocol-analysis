@@ -83,3 +83,111 @@ test('executeWithAutoRpc: all dynamic URLs suppressed → invalidates cache and 
 
   assert.equal(result, 'viem-fallback-result');
 });
+
+test('executeWithAutoRpc: hardcoded chain all suppressed → appends viem/chains URLs to the pool', async () => {
+  let now = 1_000;
+  let usedViemUrl = false;
+  const pool = new ProviderPool({
+    failureThreshold: 1,
+    suppressionMs: 60_000,
+    now: () => now,
+    errorClassifier: () => 'retry_next_rpc' as const,
+  });
+
+  const hardcodedUrls = await import('@internal/aave-shared-config').then(m => m.getAaveRpcUrlsByChainId(1));
+  const hardcodedSet = new Set(hardcodedUrls);
+  for (const url of hardcodedUrls) {
+    pool.reportProviderFailure(1, url, 'fail');
+  }
+
+  now += 1;
+
+  const result = await pool.executeWithAutoRpc(
+    1,
+    {
+      primary: async (_p) => {
+        const url = (_p as any).connection?.url ?? '';
+        if (hardcodedSet.has(url)) {
+          throw new Error('hardcoded-rpc-fail');
+        }
+        usedViemUrl = true;
+        return 'viem-fallback-ok';
+      },
+    },
+  );
+
+  assert.equal(result, 'viem-fallback-ok');
+  assert.equal(usedViemUrl, true);
+});
+
+test('executeWithAutoRpc: hardcoded + viem all suppressed, dynamic cache available → uses dynamic URLs', async () => {
+  let now = 1_000;
+  const pool = new ProviderPool({
+    failureThreshold: 1,
+    suppressionMs: 60_000,
+    now: () => now,
+    errorClassifier: () => 'retry_next_rpc' as const,
+  });
+
+  const hardcodedUrls = await import('@internal/aave-shared-config').then(m => m.getAaveRpcUrlsByChainId(1));
+  for (const url of hardcodedUrls) {
+    pool.reportProviderFailure(1, url, 'fail');
+  }
+
+  const viemModule = await import('viem/chains');
+  const viem = await import('viem');
+  const chain = viem.extractChain({ chains: Object.values(viemModule) as any[], id: 1 });
+  const viemUrls = chain?.rpcUrls?.default?.http?.filter((u: string) => u.startsWith('https://')) ?? [];
+  for (const url of viemUrls) {
+    pool.reportProviderFailure(1, url, 'fail');
+  }
+
+  pool.seedDynamicRpcCache(1, ['https://dynamic-rpc.example']);
+
+  now += 1;
+
+  const result = await pool.executeWithAutoRpc(
+    1,
+    {
+      primary: async (_p) => {
+        const url = (_p as any).connection?.url ?? '';
+        if (url === 'https://dynamic-rpc.example') return 'dynamic-fallback-ok';
+        throw new Error('other-rpc-fail');
+      },
+    },
+  );
+
+  assert.equal(result, 'dynamic-fallback-ok');
+});
+
+test('executeWithAutoRpc: non-hardcoded chain still triggers new-chain detection', async () => {
+  let fetchTriggered = false;
+  let warnMsg = '';
+  const pool = new ProviderPool({
+    logFn: (_level, msg, _meta) => { warnMsg = msg; },
+  });
+  pool.setDynamicRpcCacheHooks({
+    onFetchTriggered: () => { fetchTriggered = true; },
+  });
+
+  await pool.executeWithAutoRpc(
+    288,
+    {
+      primary: async (_p) => 'new-chain-ok',
+    },
+  );
+
+  assert.equal(fetchTriggered, true);
+  assert.ok(warnMsg.includes('new-chain-detected'));
+});
+
+test('executeWithAutoRpc: all layers exhausted for unknown chain → returns null', async () => {
+  const pool = new ProviderPool();
+  const result = await pool.executeWithAutoRpc(
+    999999,
+    {
+      primary: async (_p) => 'should-not-reach',
+    },
+  );
+  assert.equal(result, null);
+});

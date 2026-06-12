@@ -183,6 +183,16 @@ export class ProviderPool {
     });
   }
 
+  private needsMore(chainId: number, urls: string[]): boolean {
+    return urls.length === 0 || this.areAllSuppressed(chainId, urls);
+  }
+
+  private mergeUrls(existing: string[], incoming: string[]): string[] {
+    const seen = new Set(existing);
+    const deduped = incoming.filter((u) => !seen.has(u));
+    return [...existing, ...deduped];
+  }
+
   async executeWithAutoRpc<T>(
     chainId: number,
     execs: {
@@ -192,31 +202,31 @@ export class ProviderPool {
     options?: ExecuteWithAutoRpcOptions,
   ): Promise<T | null> {
     let urls = getAaveRpcUrlsByChainId(chainId);
+    const hadHardcodedUrls = urls.length > 0;
 
-    if (urls.length === 0) {
-      const cached = this.dynamicRpcCache.get(chainId);
-      if (cached && cached.length > 0) {
-        if (this.areAllSuppressed(chainId, cached)) {
-          this.dynamicRpcCache.invalidate(chainId);
-        } else {
-          urls = cached;
-        }
-      }
-
-      if (urls.length === 0) {
-        const viemUrls = await this.resolveViemChainRpcs(chainId);
-        if (viemUrls.length > 0) {
-          urls = viemUrls;
+    if (this.needsMore(chainId, urls)) {
+      const viemUrls = await this.resolveViemChainRpcs(chainId);
+      if (viemUrls.length > 0) {
+        urls = this.mergeUrls(urls, viemUrls);
+        if (!hadHardcodedUrls) {
           this.dynamicRpcCache.startFetch(chainId);
           this.newChainHook?.();
           this.logFn?.('warn', `new-chain-detected`, { chainId, message: `New chain ${chainId} detected without hardcoded RPC — please add to shared-config. Using viem/chains + external discovery.` });
         }
       }
+    }
 
-      if (urls.length === 0) {
-        const afterInvalidate = this.dynamicRpcCache.get(chainId);
-        if (afterInvalidate && afterInvalidate.length > 0) {
-          urls = afterInvalidate;
+    if (this.needsMore(chainId, urls)) {
+      const cached = this.dynamicRpcCache.get(chainId);
+      if (cached && cached.length > 0) {
+        if (this.areAllSuppressed(chainId, cached)) {
+          this.dynamicRpcCache.invalidate(chainId);
+          const afterInvalidate = this.dynamicRpcCache.get(chainId);
+          if (afterInvalidate && afterInvalidate.length > 0) {
+            urls = this.mergeUrls(urls, afterInvalidate);
+          }
+        } else {
+          urls = this.mergeUrls(urls, cached);
         }
       }
     }

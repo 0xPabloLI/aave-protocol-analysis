@@ -15,14 +15,30 @@ Implemented
 
 ## 决策
 
-ProviderPool 新增 `executeWithAutoRpc(chainId, execs, options): Promise<T | null>`，实现 4 层 RPC 解析：
+ProviderPool 新增 `executeWithAutoRpc(chainId, execs, options): Promise<T | null>`，实现统一逐层补充 RPC 解析：
 
-| 层 | 来源 | 适用场景 | 时效性 |
+| 层 | 来源 | 性质 | 时效性 |
 |---|---|---|---|
-| 1 | shared-config 硬编码 | 现有链 | 需人工更新部署 |
-| 2 | chainid.network + chainlist.org | 新链（层 1 为空时） | 社区实时维护 |
-| 3 | viem/chains extractChain | 新链（层 2 未命中时） | 随 viem 发版更新 |
-| 4 | 空 | 无 RPC 可用 | — |
+| 1 | shared-config 硬编码 | 静态（编译时可知） | 需人工更新部署 |
+| 2 | viem/chains extractChain | 静态（编译时可知） | 随 viem 发版更新 |
+| 3 | chainid.network + chainlist.org | 动态（运行时发现） | 社区实时维护 |
+
+所有链（无论是否在 shared-config 中）走同一路径：逐层补充 URL，每层只在 `needsMore`（URL 列表为空或全部 suppressed）时才进入下一层。追加的 URL 与已有 URL 合并去重（`mergeUrls`）。
+
+### 逐层补充逻辑
+
+```
+1. urls = getAaveRpcUrlsByChainId(chainId)
+2. if needsMore(chainId, urls): urls = merge(urls, resolveViemChainRpcs(chainId))
+3. if needsMore(chainId, urls): urls = merge(urls, dynamicRpcCache.get(chainId))
+4. if urls.length === 0: return null
+5. executeWithFallback(chainId, urls, execs, options)
+```
+
+- `needsMore(chainId, urls)` = `urls.length === 0 || areAllSuppressed(chainId, urls)`
+- 硬编码链正常时：层 1 足过层 2/3，零额外开销
+- 硬编码链全 suppress 时：层 2 追加 viem/chains URL（作为同级的静态补充）
+- 新链首次调用：层 1 为空 → 层 2 viem/chains 同步返回 → 触发后台 `startFetch` + `newChainHook` 告警
 
 ### 缓存策略
 
@@ -40,10 +56,12 @@ oracleService、onchainDataService、fetchV4ReservesViaRpc 从 `getAaveRpcUrlsBy
 
 ## 理由
 
-1. **现有链零开销**：层 1 命中时不发任何网络请求，行为与之前完全一致
-2. **新链即时可用**：viem/chains 静态兜底保证首次调用即有 RPC，无需等部署
-3. **渐进增强**：外部源 RPC 异步写入缓存，后续调用质量逐步提升
-4. **自愈能力**：所有 RPC suppressed 时自动 invalidate + re-fetch，发现新节点
+1. **现有链零开销**：硬编码健康时 `needsMore` 为 false，不调 viem/dynamic，行为与之前完全一致
+2. **硬编码链有 fallback**：所有硬编码 RPC 被 suppress 时，viem/chains 作为同级静态补充追加，不再直接抛异常
+3. **新链即时可用**：viem/chains 静态兜底保证首次调用即有 RPC，无需等部署
+4. **渐进增强**：外部源 RPC 异步写入缓存，后续调用质量逐步提升
+5. **自愈能力**：所有 RPC suppressed 时自动 invalidate + re-fetch，发现新节点
+6. **路径统一**：所有链走同一逻辑，无硬编码/非硬编码分叉
 
 ## 替代方案
 
@@ -64,7 +82,8 @@ oracleService、onchainDataService、fetchV4ReservesViaRpc 从 `getAaveRpcUrlsBy
 
 ## 后果
 
+- **硬编码链 fallback**：硬编码 RPC 全 suppress 时追加 viem/chains URL，再不行追加 DynamicRpcCache URL
 - **新链检测告警**：首次发现无硬编码 RPC 的链时 logger.warn，提示 owner 更新 shared-config
 - **viem 依赖升级**：aave-rpc-infra 直接依赖 viem，升级需关注 breaking change
 - **调用方简化**：不再需要手动获取 RPC URL 列表 + 空值检查，executeWithAutoRpc 一行搞定
-- **后续优化**：Prometheus counter（AAV-586）、主动通知（AAV-587）
+- **后续优化**：Prometheus counter（AAV-586）、主动通知（AAV-587）、ProviderPool↔DynamicRpcCache 清理同步（AAV-823）
