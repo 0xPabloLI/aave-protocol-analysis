@@ -109,8 +109,8 @@ describe('v4PriceKey', () => {
 });
 
 describe('v3OnchainKey', () => {
-  test('produces chainId:poolAddress:tokenAddress format', () => {
-    assert.equal(v3OnchainKey(1, '0xPool', '0xToken'), '1:0xPool:0xToken');
+  test('produces chainId:normalizedPool:normalizedToken format', () => {
+    assert.equal(v3OnchainKey(1, '0xPool', '0xToken'), '1:0xpool:0xtoken');
   });
 
   test('different parameters produce different keys', () => {
@@ -118,16 +118,22 @@ describe('v3OnchainKey', () => {
     assert.notEqual(v3OnchainKey(1, '0xA', '0xB'), v3OnchainKey(1, '0xC', '0xB'));
     assert.notEqual(v3OnchainKey(1, '0xA', '0xB'), v3OnchainKey(1, '0xA', '0xD'));
   });
+
+  test('poolAddress and tokenAddress are normalized', () => {
+    const k1 = v3OnchainKey(1, '0xPOOL', '0xTOKEN');
+    const k2 = v3OnchainKey(1, '0xpool', '0xtoken');
+    assert.equal(k1, k2);
+  });
 });
 
 describe('v4OnchainKey', () => {
-  test('produces chainId:normalizedSpoke:tokenAddr:normalizedHub format', () => {
-    assert.equal(v4OnchainKey(1, '0xSpoke', '0xToken', '0xHub'), '1:0xspoke:0xToken:0xhub');
+  test('produces chainId:normalizedSpoke:normalizedToken:normalizedHub format', () => {
+    assert.equal(v4OnchainKey(1, '0xSpoke', '0xToken', '0xHub'), '1:0xspoke:0xtoken:0xhub');
   });
 
-  test('spokeAddress and hubAddress are normalized', () => {
-    const k1 = v4OnchainKey(1, '0xSPOKE', '0xToken', '0xHUB');
-    const k2 = v4OnchainKey(1, '0xspoke', '0xToken', '0xhub');
+  test('all address parameters are normalized', () => {
+    const k1 = v4OnchainKey(1, '0xSPOKE', '0xTOKEN', '0xHUB');
+    const k2 = v4OnchainKey(1, '0xspoke', '0xtoken', '0xhub');
     assert.equal(k1, k2);
   });
 
@@ -209,17 +215,17 @@ describe('v4ReserveId', () => {
 });
 
 describe('aaveProReserveId', () => {
-  test('produces chainId:normalizedSpoke:underlying:normalizedHub:hubName format', () => {
+  test('produces chainId:normalizedSpoke:normalizedUnderlying:normalizedHub:hubName format', () => {
     assert.equal(
       aaveProReserveId(1, '0xSpoke', '0xUnderlying', '0xHub', 'Main'),
-      '1:0xspoke:0xUnderlying:0xhub:Main',
+      '1:0xspoke:0xunderlying:0xhub:Main',
     );
   });
 
-  test('underlying and hubName are not normalized', () => {
-    const result = aaveProReserveId(1, '0xSpoke', '0xUnderlying', '0xHub', 'MainHub');
-    assert.ok(result.includes('0xUnderlying'));
-    assert.ok(result.includes('MainHub'));
+  test('spokeAddress, underlying, and hubAddress are normalized', () => {
+    const k1 = aaveProReserveId(1, '0xSPOKE', '0xUNDERLYING', '0xHUB', 'Main');
+    const k2 = aaveProReserveId(1, '0xspoke', '0xunderlying', '0xhub', 'Main');
+    assert.equal(k1, k2);
   });
 
   test('different hubNames produce different keys', () => {

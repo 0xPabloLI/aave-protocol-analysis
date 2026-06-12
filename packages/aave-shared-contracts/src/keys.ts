@@ -19,7 +19,7 @@ export function v4PriceKey(chainId: number, spokeAddress: string, tokenAddress: 
 }
 
 export function v3OnchainKey(chainId: number, poolAddress: string, tokenAddress: string): string {
-  return `${chainId}:${poolAddress}:${tokenAddress}`;
+  return `${chainId}:${normalizeAddress(poolAddress)}:${normalizeAddress(tokenAddress)}`;
 }
 
 export function v4OnchainKey(
@@ -28,7 +28,7 @@ export function v4OnchainKey(
   tokenAddress: string,
   hubAddress: string,
 ): string {
-  return `${chainId}:${normalizeAddress(spokeAddress)}:${tokenAddress}:${normalizeAddress(hubAddress)}`;
+  return `${chainId}:${normalizeAddress(spokeAddress)}:${normalizeAddress(tokenAddress)}:${normalizeAddress(hubAddress)}`;
 }
 
 export function chainTokenKey(chainId: number, tokenAddress: string): string {
@@ -63,5 +63,5 @@ export function aaveProReserveId(
   hubAddress: string,
   hubName: string,
 ): string {
-  return `${chainId}:${normalizeAddress(spokeAddress)}:${underlying}:${normalizeAddress(hubAddress)}:${hubName}`;
+  return `${chainId}:${normalizeAddress(spokeAddress)}:${normalizeAddress(underlying)}:${normalizeAddress(hubAddress)}:${hubName}`;
 }
