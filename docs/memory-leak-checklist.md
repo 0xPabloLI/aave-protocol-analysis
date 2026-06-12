@@ -5,18 +5,111 @@
 ## Cache 设计三原则
 
 1. **Domain 层**：cache 只存业务需要的精简数据，不存 raw API 响应或 debug 用的完整对象。Debug 需求应独立处理（写文件后释放，不存入 cache）。
-2. **TTL 层**：所有 cache 必须有 TTL 过期淘汰，处理"再也没人访问的 key"场景（如已下线的 campaign、不再使用的 chain）。
+2. **TTL 层**：所有 cache 必须有 TTL 过期淘汰，处理"再也没人访问的 key"场景（如已下线的 campaign、不再使用的 chain）。例外：key 生命周期跟随业务实体时，用 shrink-by-active-set 代替 TTL。
 3. **Size 层**：所有 cache 必须有 max entries 上限兜底，处理未知泄漏或 TTL 不够激进的场景。上限值应基于 domain 知识设定（如 chain 数量 ~20、campaign 数量 ~500）。
+
+## 全量 Cache 三段守护清单
+
+> **用法**：每次新增/修改 cache 时，先在表中找到对应条目（或新增一行），逐项确认三段守护是否完整。缺失的必须补上，不需要的必须在"不需要理由"列写明原因。
+
+### 图例
+
+- ✅ = 已有且充分
+- ⚠️ = 缺失，需要补
+- ➖ = 不适用（附理由）
+- **结论**：🟢 三段完整 | 🟡 可接受（缺项有理由） | 🔴 需补强
+
+### backend/src/
+
+| # | 文件 | 变量 | 类型 | Domain | TTL | Max | Shrink | 结论 | 不需要理由 |
+|---|------|------|------|--------|-----|-----|--------|------|-----------|
+| 1 | merklForecastService | `metricsCache` | Map | ✅(已删raw) | ✅(10min~6h) | ✅(500) | ✅(pruneMetricsCache) | 🟢 | |
+| 2 | merklForecastService | `zeroBaselineFirstSeenAt` | Map | ✅ | ➖(语义是"首次出现时间") | ✅(500) | ✅(FIFO overflow) | 🟢 | |
+| 3 | merklForecastService | `inFlight` | Map | ✅ | ➖(Promise完成即删) | ➖(并发有限) | ➖(Promise自删) | 🟢 | 短生命周期，fetch完即delete，并发受下游限流控制 |
+| 4 | merklForecastService | `campaignOpportunityCache` | 单条 | ✅ | ✅(hardTTL) | ➖(单条) | ✅(替换) | 🟢 | |
+| 5 | onchainDataService | `POOL_CONFIGS` | Map | ✅ | ➖(静态初始化) | ➖(V3配置数量) | ➖(运行时不变) | 🟢 | 从V3_ENTRIES静态构建，数量=pool数(~20)，运行时不变 |
+| 6 | onchainDataService | `poolCache` | Map | ✅ | ✅(30min) | ⚠️(无max) | ➖(cron覆盖,过期不主动删) | 🟡 | key=poolAddress，数量=V3 pool数(~20)固定，domain上有界；过期条目虽不主动删但下一轮cron覆盖 |
+| 7 | onchainDataService | `v4SpokeCache` | Map | ✅ | ✅(30min) | ⚠️(无max) | ➖(同上) | 🟡 | key=spokeAddress，数量=V4 spoke数(~40)固定，同上 |
+| 8 | onchainDataService | `cachedHubMapping` | Map | ✅ | ✅(10min,整体置null) | ✅(MAX_HUB_ASSET_COUNT=200/hub) | ✅(TTL过期整体重建) | 🟢 | |
+| 9 | oracleService | `cachedSnapshot` | 单条 | ✅ | ✅(cron每分钟) | ➖(单条) | ✅(替换) | 🟢 | |
+| 10 | oracleService | `leanPriceCache` | Map | ✅ | ✅(cron整量替换) | ⚠️(无max) | ➖(每轮全量替换) | 🟡 | key=tokenAddress，数量=所有链的token总数(~200-300)固定，每轮cron全量替换(非append)，domain上有界 |
+| 11 | oracleService | `V4_RESERVE_TOKEN_CACHE` | Map | ✅ | ✅(1h+2h惰性删) | ⚠️(无max) | ✅(2×TTL惰性删) | 🟡 | key=spokeAddress，数量=V4 spoke数(~40)，domain上有界 |
+| 12 | persistenceService | `marketRowHashes` | Map | ✅ | ➖(key跟reserve走) | ✅(500) | ✅(shrinkHashMaps+FIFO) | 🟢 | |
+| 13 | persistenceService | `marketConfigHashes` | Map | ✅ | ➖(key跟reserve走) | ✅(500) | ✅(shrinkHashMaps+FIFO) | 🟢 | |
+| 14 | persistenceService | `oraclePriceHashes` | Map | ✅ | ➖(key跟reserve走) | ✅(2000) | ✅(shrinkOraclePriceHashes+FIFO) | 🟢 | |
+| 15 | marketsService | `snapshot` | 单条 | ✅ | ✅(cron每分钟) | ➖(单条) | ✅(替换) | 🟢 | |
+| 16 | marketsService | `staleV3Data` / `staleV4Data` | 数组 | ✅ | ✅(hardTtlMs) | ➖(数组=一轮reserve数) | ✅(整量替换) | 🟢 | |
+| 17 | addressBookRegistry | `V3_ENTRIES` / `V4_SPOKE_ENTRIES` | readonly数组 | ✅ | ➖(静态) | ➖(拓扑决定) | ➖(运行时不变) | 🟢 | 静态配置，数量=链上pool/spoke数，运行时不变 |
+| 18 | merklCampaignAccessService | `snapshot` | 单条 | ✅ | ✅(cron替换) | ➖(单条) | ✅(替换) | 🟢 | |
+| 19 | merklForecastController | `snapshotCache` | 单条 | ✅ | ✅(hardTTL) | ➖(单条) | ✅(替换) | 🟢 | |
+| 20 | coingeckoController | `cachedResponse` / `cachedFdvResponse` | 单条 | ✅ | ✅(hardTtlMs) | ➖(单条) | ✅(替换) | 🟢 | |
+| 21 | seoController | `batchRateMap` | Map | ✅ | ✅(60s窗口清理) | ⚠️(无max) | ✅(setInterval删过期) | 🟡 | key=IP，窗口内理论无限，但60s清理保证短期不累积；单实例QPS低，实际IP并发<100 |
+| 22 | rateLimit | `store` | Map | ✅ | ✅(windowMs) | ⚠️(无max) | ✅(setInterval删过期) | 🟡 | 同上，IP限流场景，窗口清理足够 |
+| 23 | marketsApiSerialize | `_cachedFingerprint` | 单条 | ✅ | ➖(schema不变则永久有效) | ➖(单条) | ➖(计算后不变) | 🟢 | 纯计算结果的fingerprint，schema不变则永远有效 |
+
+### packages/aave-fetcher/src/
+
+| # | 文件 | 变量 | 类型 | Domain | TTL | Max | Shrink | 结论 | 不需要理由 |
+|---|------|------|------|--------|-----|-----|--------|------|-----------|
+| 24 | merit-api | `roundEstimateCache` | Map | ✅ | ✅(48h) | ✅(200) | ✅(TTL+FIFO) | 🟢 | |
+| 25 | merit-api | `campaignMetadataMemoryCache` | Record | ✅ | ➖(key跟campaign走) | ✅(500) | ✅(shrinkCampaignMetadataCache+FIFO) | 🟢 | |
+| 26 | merit-api | `meritCurrentBlockNumberCache` | Map | ✅ | ✅(60s) | ✅(50) | ✅(TTL+FIFO) | 🟢 | |
+| 27 | merit-api | `discoveredRedirectAliases` | Map | ✅ | ⚠️(无TTL) | ⚠️(无max) | ✅(fetchMeritData清空) | 🟡 | fetchMeritData开头clear()，每轮cron(~5min)清空；redirect数量有限(几十) |
+| 28 | token-price-resolver | `tokenPriceResolveCache` | Map | ✅ | ✅(24h/5min) | ✅(2000) | ✅(TTL+FIFO) | 🟢 | |
+| 29 | token-price-resolver | `tokenPriceResolveInFlight` | Map | ✅ | ➖(Promise完成即删) | ➖(并发有限) | ➖(Promise自删) | 🟢 | 短生命周期，同#3 |
+| 30 | token-price-resolver | `coingeckoPlatformCache` | 单条+Map | ✅ | ✅(24h) | ➖(Map=chainId数) | ✅(整量替换) | 🟢 | 内含Map按chainId，数量=链数(~20) |
+| 31 | merklLlmClient | `openrouterFreeModelsCache` | 单条 | ✅ | ➖(fetch后永久缓存) | ➖(单条) | ➖(有resetOpenRouterCache hook) | 🟢 | 模型列表，数量有限且稳定 |
+| 32 | merkl-api | `lastSuccessfulSnapshot` | 单条 | ✅ | ➖(cron替换) | ➖(单条) | ✅(替换) | 🟢 | |
+| 33 | cloudflare-browser | `workerDisabledResolvers` | Set | ✅ | ➖(Promise自删) | ➖(并发有限) | ✅(resolve后自删除) | 🟢 | 已从Array改为Set，resolve后自删除 |
+
+### packages/aave-rpc-infra/src/
+
+| # | 文件 | 变量 | 类型 | Domain | TTL | Max | Shrink | 结论 | 不需要理由 |
+|---|------|------|------|--------|-----|-----|--------|------|-----------|
+| 34 | index (ProviderPool) | `providerByKey` | Map | ✅ | ✅(providerTtlMs) | ⚠️(无max) | ✅(pruneStaleProviders) | 🟡 | key=endpointUrl，数量=配置中RPC endpoint数(~60-80固定)，domain上有界；有30min cleanupTimer |
+| 35 | index (ProviderPool) | `endpointHealthByKey` | Map | ✅ | ✅(随provider) | ⚠️(无max) | ✅(随pruneStaleProviders) | 🟡 | 同上，与providerByKey一一对应 |
+| 36 | index (ProviderPool) | `providerLastUsedAt` | Map | ✅ | ✅(providerTtlMs) | ⚠️(无max) | ✅(随pruneStaleProviders) | 🟡 | 同上 |
+| 37 | index (ProviderPool) | `viemChainCache` | 单条 | ✅ | ➖(lazy init后永久) | ➖(单条) | ➖(不变) | 🟢 | |
+| 38 | dynamicRpcCache | `cache` | Map | ✅ | ⚠️(无TTL) | ⚠️(无max) | ⚠️(set/invalidate手动) | 🟡 | key=chainId，数量=已见链数(~20)固定，domain上有界；由fetcher代码手动set/invalidate |
+
+### packages/aave-shared-contracts/src/ + aave-shared-config/src/
+
+无持久化内存缓存。
+
+---
+
+### 🔴 需补强的 Cache（从 🟡 升级到 🟢）
+
+| # | 变量 | 缺什么 | 建议补法 | 优先级 |
+|---|------|--------|---------|--------|
+| 6 | `poolCache` | 无 max entries | 加 max 50（V3 pool 数 ~20） | P3 |
+| 7 | `v4SpokeCache` | 无 max entries | 加 max 80（V4 spoke 数 ~40） | P3 |
+| 10 | `leanPriceCache` | 无 max entries | 加 max 500（token 总数 ~300） | P3 |
+| 11 | `V4_RESERVE_TOKEN_CACHE` | 无 max entries | 加 max 100（V4 spoke 数 ~40） | P3 |
+| 34-36 | `providerByKey` 等 3 个 | 无 max entries | 加 max 100（endpoint 数 ~60-80） | P3 |
+| 38 | `DynamicRpcCache.cache` | 无 TTL、无 max | 加 max 30（chainId 数 ~20） | P3 |
+
+> **P3 理由**：这些 cache 的 key 数量由配置/拓扑决定，domain 上严格有界，即使不加 max entries 也不会无限增长。加 max 是防御性编程，防未来配置错误导致 key 爆炸。
+
+### 🟡 可接受不补的 Cache（🟡 保持）
+
+| # | 变量 | 缺项不补的理由 |
+|---|------|--------------|
+| 21 | `batchRateMap` | key=IP，窗口清理足够；单实例QPS低，实际并发IP<100；加max可能误杀合法请求 |
+| 22 | `rateLimit store` | 同上，rate limit 场景加 max entries 可能导致合法请求被拒 |
+
+---
 
 ## 逐项检查清单
 
 ### 新增/修改 Cache 时
 
 - [ ] 是否只存业务需要的最小数据？（不存 raw、不存 debug 数据）
-- [ ] 是否有 TTL 过期淘汰？（过期 key 必须能被删除，即使无人再访问）
+- [ ] 是否有 TTL 过期淘汰？或 key 跟随业务实体时是否有 shrink-by-active-set？
 - [ ] 是否有 max entries 上限？（兜底防线）
 - [ ] Eviction 逻辑是否在 cache 自身职责内？（不应嵌在业务代码里）
 - [ ] 新条目是否覆盖同 key 旧条目？（Map.set 天然如此，确认没有 append-only 模式）
+- [ ] 是否已在上面的全量清单中登记？（未登记的 cache 必须补登）
 
 ### 新增/修改闭包/Promise 时
 
@@ -89,7 +182,7 @@ map.set(oraclePriceKey(r.chainId, r.tokenAddress, r.configId), hash);
 | PG pool 过大 | 5 个 SSL 连接各占 5-10MB native memory | 减到 3 | `e82bbe1` |
 | `withTimeout` dangling socket | 超时后 fetch 未 abort | AbortController + AbortSignal | `e82bbe1` |
 | `roundEstimateCache` 无上限 | 有 48h TTL 但无 max entries | max 200 条兜底 | `8cd18d5` |
-| `campaignMetadataMemoryCache` 无 shrink | `{...cachedTimeRanges}` 继承所有历史 key，已下线 campaign 永不删除 | shrinkCampaignMetadataCache() + max 500 条 | `8cd18d5` |
+| `campaignMetadataMemoryCache` 无 shrink | `{...cachedTimeRanges}` 继承所有历史 key | shrinkCampaignMetadataCache() + max 500 条 | `8cd18d5` |
 | `marketRowHashes` 无上限 | 有 shrink 但无 max entries | max 500 条兜底 | `8cd18d5` |
 | `marketConfigHashes` 无上限 | 有 shrink 但无 max entries | max 500 条兜底 | `8cd18d5` |
 | `oraclePriceHashes` 无上限 | 有 shrink 但无 max entries | max 2000 条兜底 | `8cd18d5` |
