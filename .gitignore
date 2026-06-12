@@ -101,6 +101,7 @@ scripts/*
 !scripts/check-no-hardcoded-bin-paths.sh
 !scripts/check-workspace-coverage.sh
 !scripts/check-no-omit-dev-in-ci-autofix.sh
+!scripts/check-no-globstar-in-test.sh
 !scripts/verification/
 
 data/

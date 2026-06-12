@@ -77,6 +77,7 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
 - **Workspace boundary**: `packages/aave-shared-contracts` (types only) ← `packages/aave-fetcher` (runtime) ← root/backend.
 - **No root dist imports**: backend MUST NOT import from `../../../dist/index.js`. Use `@internal/aave-shared-contracts` for types, `@internal/aave-fetcher` for runtime.
 - **No hardcoded bin paths in sub-project scripts**: workspace sub-projects (`backend/scripts/`, `packages/*/scripts/`) MUST NOT hardcode `./node_modules/.bin/<tool>` paths. npm workspaces hoist all deps to root `node_modules/`. Use `npx --no-install <tool>` instead — it resolves the hoisted binary correctly.
+- **No `**/` glob in test scripts**: `tests/**/*.test.ts` won't expand in CI's `sh -c` (bash without globstar). Use `tests/*.test.ts` instead. Enforced by `npm run check:no-globstar` in `ci:remote`.
 - **Serialization stays in backend**: `marketsApiSerialize.ts` produces `MarketWithSpread` in backend only.
 - When adding reserve fields, update `RuntimeReserveData` in `@internal/aave-shared-contracts`, then backend types/serialization.
 
@@ -126,7 +127,7 @@ When touching one area, check its pair:
 | `backend` | API server, serialization (`marketsApiSerialize.ts`) | `fetchMarketsData` definition (imports it) |
 
 ## Validation Gate
-- Quality is enforced by Husky hooks: `pre-commit` → Prettier, `pre-push` → `npm run ci:remote` (build + test + bin-paths + workspace-coverage + audit).
+- Quality is enforced by Husky hooks: `pre-commit` → Prettier, `pre-push` → `npm run ci:remote` (build + test + bin-paths + workspace-coverage + no-globstar + audit).
 - **Dist import check** (debug-only, also covered by `ci:remote`):
   ```bash
   rg "dist/index\.js|\.\.\/\.\.\/\.\.\/dist" backend/src tests
@@ -134,6 +135,10 @@ When touching one area, check its pair:
 - **Bin path check** (debug-only, also covered by `ci:remote`):
   ```bash
   npm run check:bin-paths
+  ```
+- **Globstar check** (debug-only, also covered by `ci:remote`):
+  ```bash
+  npm run check:no-globstar
   ```
 
 ## High-Risk Areas (Coordinate Carefully)
