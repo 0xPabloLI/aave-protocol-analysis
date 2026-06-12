@@ -5,8 +5,12 @@
 ## Cache 设计三原则
 
 1. **Domain 层**：cache 只存业务需要的精简数据，不存 raw API 响应或 debug 用的完整对象。Debug 需求应独立处理（写文件后释放，不存入 cache）。
-2. **TTL 层**：所有 cache 必须有 TTL 过期淘汰，处理"再也没人访问的 key"场景（如已下线的 campaign、不再使用的 chain）。例外：key 生命周期跟随业务实体时，用 shrink-by-active-set 代替 TTL。
-3. **Size 层**：所有 cache 必须有 max entries 上限兜底，处理未知泄漏或 TTL 不够激进的场景。上限值应基于 domain 知识设定（如 chain 数量 ~20、campaign 数量 ~500）。
+2. **TTL / Shrink 层**：处理"key 再也不该存在了"的场景。两种方式：
+   - **TTL 过期淘汰**：key 活了太久就删（如价格 10min 过期、provider 30min 未用就回收）。适合"数据会变旧"的 cache。
+   - **Shrink-by-active-set**：不在当前业务实体集合中的 key 删除（如 reserve 下线了、campaign 结束了、RPC 全挂了）。适合"key 生命周期跟随业务实体"的 cache。
+3. **Size 层**（max entries + FIFO overflow）：所有 cache 必须有 max entries 上限，超限时按 FIFO（插入序）删最老的条目。这是最后一道兜底，防未知泄漏或 TTL/shrink 不够激进的场景。上限值应基于 domain 知识设定（如 chain 数量 ~20、campaign 数量 ~500）。
+
+> **注意**：FIFO overflow 是 Size 层的执行方式，不是独立的 shrink 策略。Shrink 是业务驱动的删除（key 不该存在了），FIFO overflow 是数量驱动的删除（太多了）。
 
 ## 全量 Cache 三段守护清单
 
@@ -70,7 +74,7 @@
 | 35 | index (ProviderPool) | `endpointHealthByKey` | Map | ✅ | ✅(随provider) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上，与providerByKey一一对应 |
 | 36 | index (ProviderPool) | `providerLastUsedAt` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上 |
 | 37 | index (ProviderPool) | `viemChainCache` | 单条 | ✅ | ➖(lazy init后永久) | ➖(单条) | ➖(不变) | 🟢 | |
-| 38 | dynamicRpcCache | `cache` | Map | ✅ | ➖(见下) | ✅(50) | ✅(FIFO overflow) | 🟡 | key=chainId(~20)，domain严格有界；TTL不需要：cache存的是URL列表，URL不会"过期"，失效靠ProviderPool检测到所有suppressed时主动invalidate；无自动淘汰是因为URL列表是静态元数据，不像价格/数据会变旧 |
+| 38 | dynamicRpcCache | `cache` | Map | ✅ | ✅(shrink: invalidate由ProviderPool health检测驱动) | ✅(50) | ✅(FIFO overflow) | 🟢 | key=chainId(~20)，domain严格有界；TTL不需要：URL列表是静态元数据不会变旧，失效靠ProviderPool检测到所有suppressed时主动invalidate(shrink层)；FIFO overflow是Size层兜底 |
 
 ### packages/aave-shared-contracts/src/ + aave-shared-config/src/
 
@@ -87,7 +91,7 @@
 | 10 | `leanPriceCache` | max entries | max 500 (token 总数 ~300) |
 | 11 | `V4_RESERVE_TOKEN_CACHE` | max entries | max 100 (V4 spoke 数 ~40) |
 | 34-36 | `providerByKey` 等 3 个 | max entries | max 150 (≥ DynamicRpcCache.max × 每chain平均URL数) |
-| 38 | `DynamicRpcCache.cache` | max entries | max 50 (chainId 数 ~20，留 2.5× 余量) |
+| 38 | `DynamicRpcCache.cache` | max entries + shrink | max 50 (chainId 数 ~20，留 2.5× 余量)；shrink=invalidate(由ProviderPool health驱动) |
 
 ### 🟡 可接受不补的 Cache（🟡 保持）
 
