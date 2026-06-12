@@ -171,6 +171,8 @@ map.set(oraclePriceKey(r.chainId, r.tokenAddress, r.configId), hash);
 | `aaveProReserveId` | `chainId:spokeAddress:underlying:hubAddress:hubName` | Aave Pro reserve ID |
 | `chainSymbolKey` | `chainId:symbol` | symbol 查找 |
 
+> **地址 normalize 约定**：所有 key 函数中的地址类型参数（spokeAddress, hubAddress, poolAddress, tokenAddress, underlying）均通过 `normalizeAddress()` 标准化。非地址参数（symbol, hubName）不 normalize。
+
 > **注意**：`spokeKey` 和 `chainTokenKey` 输出格式相同（`chainId:address`），但语义不同：spokeAddress 是 V4 spoke 合约地址，tokenAddress 是 V3 aToken/vToken 合约地址。实践中两者不会重叠。
 
 ## 已知泄漏源与修复记录
