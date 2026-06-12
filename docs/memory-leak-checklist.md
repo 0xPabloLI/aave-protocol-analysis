@@ -70,7 +70,7 @@
 
 | # | 文件 | 变量 | 类型 | Domain | TTL | Max | Shrink | 结论 | 不需要理由 |
 |---|------|------|------|--------|-----|-----|--------|------|-----------|
-| 34 | index (ProviderPool) | `providerByKey` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(pruneStaleProviders+FIFO overflow) | 🟢 | max=150 ≥ DynamicRpcCache.max(50) × 每chain平均URL数(~3) |
+| 34 | index (ProviderPool) | `providerByKey` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(pruneStaleProviders+FIFO overflow) | 🟢 | max=150 ≥ DynamicRpcCache.max(50) × 每chain平均URL数(~3)；FIFO overflow 保留内联（需联动删 endpointHealthByKey + providerLastUsedAt） |
 | 35 | index (ProviderPool) | `endpointHealthByKey` | Map | ✅ | ✅(随provider) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上，与providerByKey一一对应 |
 | 36 | index (ProviderPool) | `providerLastUsedAt` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上 |
 | 37 | index (ProviderPool) | `viemChainCache` | 单条 | ✅ | ➖(lazy init后永久) | ➖(单条) | ➖(不变) | 🟢 | |
@@ -135,6 +135,12 @@
 ### Key Format 唯一来源原则
 
 Map/Set 的 key 必须通过**命名函数**构建，禁止内联字符串模板。所有 key 构建函数定义在 `packages/aave-shared-contracts/src/keys.ts`，是唯一来源。
+
+### FIFO Overflow 工具函数 (`fifoEvict`)
+
+所有单 Map 的 FIFO overflow 逻辑统一调用 `fifoEvict(map, maxEntries)`（定义在 `@internal/aave-shared-contracts`）。该函数按 Map 插入序删除最旧条目，直到 `map.size <= maxEntries`。
+
+**例外**：ProviderPool 的 `cleanupStaleProviders` 中 FIFO overflow 涉及 3 个 Map 联动删除（providerByKey + endpointHealthByKey + providerLastUsedAt），保留内联 while-loop 实现。
 
 ```ts
 // ❌ 危险：两处独立内联，格式可能不一致

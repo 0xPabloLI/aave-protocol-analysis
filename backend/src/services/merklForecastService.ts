@@ -8,6 +8,7 @@ import {
   createMerklConcurrencyLimitedFetch,
   normalizeMerklCampaignTotalBudget,
 } from '@internal/aave-shared-config';
+import { fifoEvict } from '@internal/aave-shared-contracts';
 import {
   buildForecastState,
   normalizeCampaignType,
@@ -79,19 +80,11 @@ function pruneMetricsCache(now: number): void {
       metricsCache.delete(key);
     }
   }
-  while (metricsCache.size > MAX_METRICS_CACHE_ENTRIES) {
-    const oldestKey = metricsCache.keys().next().value as string | undefined;
-    if (!oldestKey) break;
-    metricsCache.delete(oldestKey);
-  }
+  fifoEvict(metricsCache, MAX_METRICS_CACHE_ENTRIES);
 }
 
 function pruneZeroBaselineCache(): void {
-  while (zeroBaselineFirstSeenAt.size > MAX_ZERO_BASELINE_CACHE_ENTRIES) {
-    const oldestKey = zeroBaselineFirstSeenAt.keys().next().value as string | undefined;
-    if (!oldestKey) break;
-    zeroBaselineFirstSeenAt.delete(oldestKey);
-  }
+  fifoEvict(zeroBaselineFirstSeenAt, MAX_ZERO_BASELINE_CACHE_ENTRIES);
 }
 
 interface CampaignSnapshotLite {

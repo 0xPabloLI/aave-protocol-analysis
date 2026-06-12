@@ -21,7 +21,7 @@ import { IPool_ABI } from '@aave-dao/aave-address-book/abis/IPool';
 import { IAaveOracle_ABI } from '@aave-dao/aave-address-book/abis/IAaveOracle';
 import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
 import { V4_ORACLE_PRICES_ABI } from '../abis/index.js';
-import { spokeKey, v3PriceKey, v4PriceKey } from '@internal/aave-shared-contracts';
+import { spokeKey, v3PriceKey, v4PriceKey, fifoEvict } from '@internal/aave-shared-contracts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -295,11 +295,7 @@ async function fetchV4SpokePrices(
         V4_RESERVE_TOKEN_CACHE.delete(k);
       }
     }
-    while (V4_RESERVE_TOKEN_CACHE.size > MAX_V4_RESERVE_TOKEN_ENTRIES) {
-      const oldestKey = V4_RESERVE_TOKEN_CACHE.keys().next().value;
-      if (!oldestKey) break;
-      V4_RESERVE_TOKEN_CACHE.delete(oldestKey);
-    }
+    fifoEvict(V4_RESERVE_TOKEN_CACHE, MAX_V4_RESERVE_TOKEN_ENTRIES);
   }
 
   return {
@@ -407,11 +403,7 @@ export async function refreshOracleCache(): Promise<void> {
       }
       leanPriceCache = newLean;
       leanPriceUpdatedAt = now;
-      while (leanPriceCache.size > MAX_LEAN_PRICE_ENTRIES) {
-        const oldestKey = leanPriceCache.keys().next().value;
-        if (!oldestKey) break;
-        leanPriceCache.delete(oldestKey);
-      }
+      fifoEvict(leanPriceCache, MAX_LEAN_PRICE_ENTRIES);
 
       // Write debug file
       try {

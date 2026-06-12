@@ -21,6 +21,7 @@ import crypto from 'node:crypto';
 import { getPool, isPersistenceEnabled } from './dbPool.js';
 import { logger } from '../logger.js';
 import type { MarketsPayload, RuntimeReserveData } from '@internal/aave-shared-contracts';
+import { fifoEvict } from '@internal/aave-shared-contracts';
 import type { OraclePricesSnapshot } from './oracleService.js';
 
 const PERSIST_INTERVAL_MS = Number.parseInt(process.env.PERSIST_INTERVAL_MS ?? '', 10) || 60 * 1000;
@@ -96,19 +97,11 @@ export function shrinkHashMaps(currentReserves: RuntimeReserveData[]): void {
   for (const key of marketRowHashes.keys()) {
     if (!currentIds.has(key)) marketRowHashes.delete(key);
   }
-  while (marketRowHashes.size > MAX_MARKET_ROW_HASHES) {
-    const oldestKey = marketRowHashes.keys().next().value;
-    if (!oldestKey) break;
-    marketRowHashes.delete(oldestKey);
-  }
+  fifoEvict(marketRowHashes, MAX_MARKET_ROW_HASHES);
   for (const key of marketConfigHashes.keys()) {
     if (!currentIds.has(key)) marketConfigHashes.delete(key);
   }
-  while (marketConfigHashes.size > MAX_MARKET_CONFIG_HASHES) {
-    const oldestKey = marketConfigHashes.keys().next().value;
-    if (!oldestKey) break;
-    marketConfigHashes.delete(oldestKey);
-  }
+  fifoEvict(marketConfigHashes, MAX_MARKET_CONFIG_HASHES);
 }
 
 // ts-prune-ignore-next
@@ -116,11 +109,7 @@ export function shrinkOraclePriceHashes(currentKeys: Set<string>): void {
   for (const key of oraclePriceHashes.keys()) {
     if (!currentKeys.has(key)) oraclePriceHashes.delete(key);
   }
-  while (oraclePriceHashes.size > MAX_ORACLE_PRICE_HASHES) {
-    const oldestKey = oraclePriceHashes.keys().next().value;
-    if (!oldestKey) break;
-    oraclePriceHashes.delete(oldestKey);
-  }
+  fifoEvict(oraclePriceHashes, MAX_ORACLE_PRICE_HASHES);
 }
 
 export function oraclePriceKey(chainId: number, tokenAddr: string, configId: string | number): string {

@@ -1,3 +1,5 @@
+import { fifoEvict } from '@internal/aave-shared-contracts';
+
 export interface DynamicRpcCacheOptions {
   fetchChainIdNetwork?: (chainId: number) => Promise<string[]>;
   fetchChainListOrg?: (chainId: number) => Promise<string[]>;
@@ -54,11 +56,7 @@ export class DynamicRpcCache {
   }
 
   private evictOverflow(): void {
-    while (this.cache.size > MAX_CACHE_ENTRIES) {
-      const oldestKey = this.cache.keys().next().value;
-      if (!oldestKey) break;
-      this.cache.delete(oldestKey);
-    }
+    fifoEvict(this.cache, MAX_CACHE_ENTRIES);
   }
 
   startFetch(chainId: number): void {
@@ -71,7 +69,7 @@ export class DynamicRpcCache {
         if (cidResult.status === 'fulfilled') urls.push(...cidResult.value);
         if (clResult.status === 'fulfilled') urls.push(...clResult.value);
         const merged = dedupe(filterHttps(urls));
-        if (merged.length > 0) {
+        if (merged.length > 0 && !this.cache.has(chainId)) {
           this.cache.set(chainId, merged);
           this.evictOverflow();
         }

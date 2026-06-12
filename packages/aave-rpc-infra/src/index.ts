@@ -413,11 +413,11 @@ export class ProviderPool {
       }
     }
     while (this.providerByKey.size > MAX_PROVIDER_ENTRIES) {
-      const oldestKey = this.providerLastUsedAt.entries().next().value;
+      const oldestKey = this.providerByKey.keys().next().value;
       if (!oldestKey) break;
-      this.providerByKey.delete(oldestKey[0]);
-      this.endpointHealthByKey.delete(oldestKey[0]);
-      this.providerLastUsedAt.delete(oldestKey[0]);
+      this.providerByKey.delete(oldestKey);
+      this.endpointHealthByKey.delete(oldestKey);
+      this.providerLastUsedAt.delete(oldestKey);
     }
   }
 

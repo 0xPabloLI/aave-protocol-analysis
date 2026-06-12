@@ -32,7 +32,7 @@ import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
 import { V4_HUB_FULL_ABI } from '@internal/aave-rpc-infra';
-import { normalizeAddress, v4SpokeCacheKey, v3OnchainKey, v4OnchainKey } from '@internal/aave-shared-contracts';
+import { normalizeAddress, v4SpokeCacheKey, v3OnchainKey, v4OnchainKey, fifoEvict } from '@internal/aave-shared-contracts';
 
 const ONCHAIN_PER_RPC_TIMEOUT_MS = 15_000;
 const HUB_MAPPING_TTL_MS = 10 * 60_000;
@@ -221,11 +221,7 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
       data: chainData,
       updatedAt: Date.now(),
     });
-    while (poolCache.size > MAX_POOL_CACHE_ENTRIES) {
-      const oldestKey = poolCache.keys().next().value;
-      if (!oldestKey) break;
-      poolCache.delete(oldestKey);
-    }
+    fifoEvict(poolCache, MAX_POOL_CACHE_ENTRIES);
 
     return true;
   } catch {
@@ -313,11 +309,7 @@ async function fetchAndCacheV4Spoke(
 
   if (underlyingToAssetId!.size === 0) {
     v4SpokeCache.set(cacheKey, { data: new Map(), updatedAt: Date.now() });
-    while (v4SpokeCache.size > MAX_V4_SPOKE_CACHE_ENTRIES) {
-      const oldestKey = v4SpokeCache.keys().next().value;
-      if (!oldestKey) break;
-      v4SpokeCache.delete(oldestKey);
-    }
+    fifoEvict(v4SpokeCache, MAX_V4_SPOKE_CACHE_ENTRIES);
     return true;
   }
 
@@ -341,11 +333,7 @@ async function fetchAndCacheV4Spoke(
     }
 
     v4SpokeCache.set(cacheKey, { data: spokeData, updatedAt: Date.now() });
-    while (v4SpokeCache.size > MAX_V4_SPOKE_CACHE_ENTRIES) {
-      const oldestKey = v4SpokeCache.keys().next().value;
-      if (!oldestKey) break;
-      v4SpokeCache.delete(oldestKey);
-    }
+    fifoEvict(v4SpokeCache, MAX_V4_SPOKE_CACHE_ENTRIES);
     return true;
   } catch {
     logger.warn(`All RPC endpoints failed for V4 ${config.spokeName}, using cached data if available`);

@@ -15,6 +15,14 @@ export {
   aaveProReserveId,
 } from './keys.js';
 
+export function fifoEvict<K>(map: Map<K, unknown>, maxEntries: number): void {
+  while (map.size > maxEntries) {
+    const { value: oldestKey, done } = map.keys().next();
+    if (done) break;
+    map.delete(oldestKey);
+  }
+}
+
 // ============================================================
 // Utility functions (shared across packages)
 // ============================================================

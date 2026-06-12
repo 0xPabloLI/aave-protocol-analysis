@@ -13,6 +13,7 @@ import {
   type MeritDynamicInfo,
 } from "./cloudflare-browser.js";
 import { meritKeyAliases } from "./config.js";
+import { fifoEvict } from "@internal/aave-shared-contracts";
 import {
   createMerklConcurrencyLimitedFetch,
   getAaveRpcUrlsByChainName,
@@ -601,11 +602,7 @@ const fetchMeritRoundEstimates = async (
       cache.delete(key);
     }
   }
-  while (cache.size > MERIT_ROUND_ESTIMATE_MAX_ENTRIES) {
-    const oldestKey = cache.keys().next().value;
-    if (!oldestKey) break;
-    cache.delete(oldestKey);
-  }
+  fifoEvict(cache, MERIT_ROUND_ESTIMATE_MAX_ENTRIES);
 
   const result = new Map<string, MeritRoundEstimateBase>();
   _meritState.roundEstimateLastFetchMeta = {
@@ -873,11 +870,7 @@ function pruneBlockNumberCache(nowMs: number): void {
       meritCurrentBlockNumberCache.delete(key);
     }
   }
-  while (meritCurrentBlockNumberCache.size > MAX_BLOCK_NUMBER_CACHE_ENTRIES) {
-    const oldestKey = meritCurrentBlockNumberCache.keys().next().value as string | undefined;
-    if (!oldestKey) break;
-    meritCurrentBlockNumberCache.delete(oldestKey);
-  }
+  fifoEvict(meritCurrentBlockNumberCache, MAX_BLOCK_NUMBER_CACHE_ENTRIES);
 }
 
 async function getCurrentBlockNumberCached(

@@ -1,5 +1,6 @@
 import { COINGECKO_PLATFORM_BY_CHAIN_ID_SYNCED } from './generated/coingecko-platform-by-chain-id.js';
 import { toFiniteNumber } from './utils/number.js';
+import { fifoEvict } from '@internal/aave-shared-contracts';
 
 type AssetPlatform = { id?: string; chain_identifier?: number | null };
 
@@ -69,11 +70,7 @@ function pruneTokenPriceCache(now: number): void {
       tokenPriceResolveCache.delete(key);
     }
   }
-  while (tokenPriceResolveCache.size > MAX_TOKEN_PRICE_CACHE_ENTRIES) {
-    const oldestKey = tokenPriceResolveCache.keys().next().value as string | undefined;
-    if (!oldestKey) break;
-    tokenPriceResolveCache.delete(oldestKey);
-  }
+  fifoEvict(tokenPriceResolveCache, MAX_TOKEN_PRICE_CACHE_ENTRIES);
 }
 
 async function getCoingeckoAssetPlatformMap(forceRefresh = false): Promise<Map<number, string>> {
