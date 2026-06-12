@@ -31,7 +31,7 @@
     "check:bin-paths": "bash scripts/check-no-hardcoded-bin-paths.sh",
     "check:workspace-coverage": "bash scripts/check-workspace-coverage.sh",
     "prune": "ts-prune -i '\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v '^src/' | (grep -q . && exit 1 || exit 0)",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --test tests/*.test.ts",
     "sync:coingecko-platform-map": "tsx scripts/sync-coingecko-platform-map.ts",
     "prepare": "husky || true"
   },
@@ -55,7 +55,7 @@
     "axios": "^1.13.5",
     "ethers": "5.8.0",
     "h3": "^1.15.5",
-    "hono": "^4.11.9",
+    "hono": "^4.12.25",
     "preact": "^10.28.3"
   },
   "devDependencies": {
