@@ -348,6 +348,7 @@ interface CampaignSnapshotLiteForForecastFile {
     distributionMethodParameters?: {
       distributionSettings?: {
         apr?: unknown;
+        targetAPR?: unknown;
       };
     };
   };
@@ -538,13 +539,19 @@ const persistMerklArtifacts = async (payload: MerklArtifactsPayload): Promise<vo
 export interface NormalizeForecastCampaignTypeLiteInput {
   distributionType?: string;
   distributionMethod?: string;
-  mode?: string;
 }
 
 const FORECAST_LITE_METHOD_MAP: Record<string, ForecastCampaignTypeLite> = {
   MAX_APR: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
   FIX_APR: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
   DUTCH_AUCTION: 'DUTCH_AUCTION',
+  AAVE_NET_APR: 'TARGET_TOTAL_APR',
+  AAVE_V4_NET_APR: 'TARGET_TOTAL_APR',
+  ERC4626_APR: 'TARGET_TOTAL_APR',
+  ERC4626_SPREAD_CAPPED: 'TARGET_TOTAL_APR',
+  ERC4626_TARGET_APR_WITH_MERKL: 'TARGET_TOTAL_APR',
+  SOFR_SPREAD_RATCHET: 'TARGET_TOTAL_APR',
+  DEEL_DISTRIBUTION: 'TARGET_TOTAL_APR',
 };
 
 const FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS: Array<{
@@ -557,21 +564,20 @@ const FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS: Array<{
   { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
   { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
   { pattern: 'DUTCH_AUCTION', result: 'DUTCH_AUCTION' },
-  { pattern: 'AAVE_NET_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'AAVE_V4_NET_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'ERC4626_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'AAVE_NET_APR', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'AAVE_V4_NET_APR', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'ERC4626_APR', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'ERC4626_SPREAD_CAPPED', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'ERC4626_TARGET_APR_WITH_MERKL', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'SOFR_SPREAD_RATCHET', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'DEEL_DISTRIBUTION', result: 'TARGET_TOTAL_APR' },
 ];
-
-const FORECAST_LITE_MODE_MAP: Record<string, ForecastCampaignTypeLite> = {
-  MAX_APR: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
-  FIX_APR: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
-};
 
 export const normalizeForecastCampaignTypeLite = (
   input: NormalizeForecastCampaignTypeLiteInput | unknown
 ): ForecastCampaignTypeLite | null => {
   if (!input || typeof input !== 'object') return null;
-  const { distributionType, distributionMethod, mode } = input as NormalizeForecastCampaignTypeLiteInput;
+  const { distributionType, distributionMethod } = input as NormalizeForecastCampaignTypeLiteInput;
 
   if (distributionMethod) {
     const upper = distributionMethod.trim().toUpperCase();
@@ -584,12 +590,6 @@ export const normalizeForecastCampaignTypeLite = (
     for (const { pattern, result } of FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS) {
       if (upper === pattern) return result;
     }
-  }
-
-  if (mode) {
-    const upper = mode.trim().toUpperCase();
-    const hit = FORECAST_LITE_MODE_MAP[upper];
-    if (hit) return hit;
   }
 
   return null;
@@ -617,8 +617,9 @@ const buildCampaignSnapshotLiteForForecastFile = (campaign: any): CampaignSnapsh
       params.decimalsRewardToken = campaign.params.decimalsRewardToken;
     }
     const apr = campaign.params?.distributionMethodParameters?.distributionSettings?.apr;
-    if (apr !== undefined) {
-      params.distributionMethodParameters = { distributionSettings: { apr } };
+    const targetAPR = campaign.params?.distributionMethodParameters?.distributionSettings?.targetAPR;
+    if (apr !== undefined || targetAPR !== undefined) {
+      params.distributionMethodParameters = { distributionSettings: { ...(apr !== undefined ? { apr } : {}), ...(targetAPR !== undefined ? { targetAPR } : {}) } };
     }
     if (Object.keys(params).length > 0) snapshot.params = params;
   }
@@ -827,7 +828,7 @@ const buildForecastFieldsFromOpportunity = async (
     plannedDaily,
   };
 
-  // APR cap (only for MAX/FIX reward types)
+  // APR cap (for MAX/FIX reward types + TARGET_TOTAL_APR)
   if (
     meta.campaignTypeHint === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
     meta.campaignTypeHint === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
@@ -836,6 +837,12 @@ const buildForecastFieldsFromOpportunity = async (
     const aprValue = toFiniteNumberForForecast(rawApr);
     if (aprValue !== null && aprValue > 0) {
       fields.aprCap = aprValue;
+    }
+  } else if (meta.campaignTypeHint === 'TARGET_TOTAL_APR') {
+    const rawTargetAPR = snapshot.params?.distributionMethodParameters?.distributionSettings?.targetAPR;
+    const targetAPRValue = toFiniteNumberForForecast(rawTargetAPR);
+    if (targetAPRValue !== null && targetAPRValue > 0) {
+      fields.aprCap = targetAPRValue;
     }
   }
 

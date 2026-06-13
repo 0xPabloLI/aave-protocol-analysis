@@ -132,7 +132,7 @@ test('ERC4626_APR maps correctly and rawDistributionType is preserved', () => {
   assert.equal(result['camp-erc4626']?.rawDistributionType, 'ERC4626_APR');
   assert.equal(
     result['camp-erc4626']?.campaignTypeHint,
-    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+    'TARGET_TOTAL_APR',
   );
 });
 

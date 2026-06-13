@@ -6,6 +6,8 @@ import {
   normalizeCampaignType,
 } from '../src/services/merklForecastModel.js';
 
+const TTA = 'TARGET_TOTAL_APR' as const;
+
 test('normalizeCampaignType: distributionMethod takes priority', () => {
   assert.equal(
     normalizeCampaignType({ distributionMethod: 'MAX_APR' }),
@@ -52,48 +54,74 @@ test('normalizeCampaignType: distributionType fallback when method unrecognized'
   );
 });
 
-test('normalizeCampaignType: new AAVE/ERC4626 types via distributionType', () => {
-  assert.equal(
-    normalizeCampaignType({ distributionType: 'AAVE_NET_APR' }),
-    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  );
-  assert.equal(
-    normalizeCampaignType({ distributionType: 'AAVE_V4_NET_APR' }),
-    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  );
-  assert.equal(
-    normalizeCampaignType({ distributionType: 'ERC4626_APR' }),
-    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  );
+test('normalizeCampaignType: 7 Target Total APR distributionMethod values map to TARGET_TOTAL_APR via L1', () => {
+  const methods = [
+    'AAVE_NET_APR',
+    'AAVE_V4_NET_APR',
+    'ERC4626_APR',
+    'ERC4626_SPREAD_CAPPED',
+    'ERC4626_TARGET_APR_WITH_MERKL',
+    'SOFR_SPREAD_RATCHET',
+    'DEEL_DISTRIBUTION',
+  ];
+  for (const method of methods) {
+    assert.equal(
+      normalizeCampaignType({ distributionMethod: method }),
+      TTA,
+      `distributionMethod=${method} should map to TARGET_TOTAL_APR`,
+    );
+  }
 });
 
-test('normalizeCampaignType: mode fallback when type/method unrecognized', () => {
-  assert.equal(
-    normalizeCampaignType({ distributionType: 'AAVE_NET_APR', mode: 'MAX_APR' }),
-    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  );
+test('normalizeCampaignType: 7 Target Total APR distributionType values map to TARGET_TOTAL_APR via L2', () => {
+  const types = [
+    'AAVE_NET_APR',
+    'AAVE_V4_NET_APR',
+    'ERC4626_APR',
+    'ERC4626_SPREAD_CAPPED',
+    'ERC4626_TARGET_APR_WITH_MERKL',
+    'SOFR_SPREAD_RATCHET',
+    'DEEL_DISTRIBUTION',
+  ];
+  for (const t of types) {
+    assert.equal(
+      normalizeCampaignType({ distributionType: t }),
+      TTA,
+      `distributionType=${t} should map to TARGET_TOTAL_APR`,
+    );
+  }
+});
+
+test('normalizeCampaignType: L3 mode mapping removed — mode is no longer a type signal', () => {
   assert.equal(
     normalizeCampaignType({ mode: 'MAX_APR' }),
-    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+    null,
+    'mode=MAX_APR should no longer resolve via L3',
   );
   assert.equal(
     normalizeCampaignType({ mode: 'FIX_APR' }),
-    'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+    null,
+    'mode=FIX_APR should no longer resolve via L3',
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'AAVE_NET_APR', mode: 'MAX_APR' }),
+    TTA,
+    'L2 should still resolve; mode is ignored',
   );
 });
 
-test('normalizeCampaignType: priority order method > type > mode', () => {
+test('normalizeCampaignType: priority order method > type', () => {
   assert.equal(
-    normalizeCampaignType({ distributionMethod: 'FIX_APR', distributionType: 'DUTCH_AUCTION', mode: 'MAX_APR' }),
+    normalizeCampaignType({ distributionMethod: 'FIX_APR', distributionType: 'DUTCH_AUCTION' }),
     'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   );
   assert.equal(
-    normalizeCampaignType({ distributionMethod: 'AIRDROP', distributionType: 'DUTCH_AUCTION', mode: 'MAX_APR' }),
+    normalizeCampaignType({ distributionMethod: 'AIRDROP', distributionType: 'DUTCH_AUCTION' }),
     'DUTCH_AUCTION'
   );
   assert.equal(
-    normalizeCampaignType({ distributionMethod: 'AIRDROP', distributionType: 'AAVE_NET_APR', mode: 'FIX_APR' }),
-    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+    normalizeCampaignType({ distributionMethod: 'AAVE_NET_APR', distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' }),
+    TTA
   );
 });
 
@@ -123,7 +151,6 @@ test('buildForecastState supports DUTCH_AUCTION without apr cap', () => {
   assert.equal(state.remainingBudget, 600);
   assert.equal(state.remainingDays, 5);
   assert.equal(state.plannedDaily, 100);
-  // Internal model still computes requiredDaily; controller omits it from API for DUTCH.
   assert.equal(state.requiredDaily, state.plannedDaily);
 });
 
@@ -145,7 +172,7 @@ test('buildForecastState requires apr cap for MAX_REWARD_VALUE_PER_LIQUIDITY_VAL
   );
 });
 
-test('buildForecastState requires apr cap input for FIX campaigns and stores it in aprCap field', () => {
+test('buildForecastState requires apr cap for FIX campaigns and stores it in aprCap field', () => {
   assert.throws(
     () =>
       buildForecastState({
@@ -176,4 +203,40 @@ test('buildForecastState requires apr cap input for FIX campaigns and stores it 
   assert.equal(state.aprCap, 0.005);
   assert.equal(state.plannedDaily, 100);
   assert.equal(state.requiredDaily, 140);
+});
+
+test('buildForecastState requires apr cap for TARGET_TOTAL_APR campaigns', () => {
+  assert.throws(
+    () =>
+      buildForecastState({
+        campaignId: 'tta-1',
+        campaignType: 'TARGET_TOTAL_APR',
+        totalBudget: 1000,
+        aprCap: null,
+        startTimestamp: 1_000,
+        endTimestamp: 1_000 + 10 * 86400,
+        nowTimestamp: 1_000 + 5 * 86400,
+        distributedSoFar: 300,
+        latestTvl: 1_000_000,
+      }),
+    /Missing APR cap/
+  );
+});
+
+test('buildForecastState computes TARGET_TOTAL_APR forecast correctly', () => {
+  const state = buildForecastState({
+    campaignId: 'tta-2',
+    campaignType: 'TARGET_TOTAL_APR',
+    totalBudget: 5000,
+    aprCap: 0.047,
+    startTimestamp: 1_000,
+    endTimestamp: 1_000 + 10 * 86400,
+    nowTimestamp: 1_000 + 5 * 86400,
+    distributedSoFar: 2000,
+    latestTvl: 1_000_000,
+  });
+  assert.equal(state.aprCap, 0.047);
+  assert.equal(state.remainingBudget, 3000);
+  assert.equal(state.plannedDaily, 500);
+  assert.equal(state.requiredDaily, 600);
 });

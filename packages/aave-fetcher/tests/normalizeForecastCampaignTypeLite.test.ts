@@ -8,13 +8,13 @@ import {
 const MAX = 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' as const;
 const FIX = 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' as const;
 const DUTCH = 'DUTCH_AUCTION' as const;
+const TTA = 'TARGET_TOTAL_APR' as const;
 
 test('distributionMethod takes highest priority', () => {
   assert.equal(
     normalizeForecastCampaignTypeLite({
       distributionMethod: 'MAX_APR',
       distributionType: 'DUTCH_AUCTION',
-      mode: 'FIX_APR',
     }),
     MAX,
   );
@@ -61,51 +61,77 @@ test('distributionType fallback when no distributionMethod', () => {
   );
 });
 
-test('AAVE_NET_APR / AAVE_V4_NET_APR / ERC4626_APR map to MAX via distributionType', () => {
-  assert.equal(
-    normalizeForecastCampaignTypeLite({ distributionType: 'AAVE_NET_APR' }),
-    MAX,
-  );
-  assert.equal(
-    normalizeForecastCampaignTypeLite({ distributionType: 'AAVE_V4_NET_APR' }),
-    MAX,
-  );
-  assert.equal(
-    normalizeForecastCampaignTypeLite({ distributionType: 'ERC4626_APR' }),
-    MAX,
-  );
+test('7 Target Total APR distributionMethod values map to TARGET_TOTAL_APR via L1', () => {
+  const methods = [
+    'AAVE_NET_APR',
+    'AAVE_V4_NET_APR',
+    'ERC4626_APR',
+    'ERC4626_SPREAD_CAPPED',
+    'ERC4626_TARGET_APR_WITH_MERKL',
+    'SOFR_SPREAD_RATCHET',
+    'DEEL_DISTRIBUTION',
+  ];
+  for (const method of methods) {
+    assert.equal(
+      normalizeForecastCampaignTypeLite({ distributionMethod: method }),
+      TTA,
+      `distributionMethod=${method} should map to TARGET_TOTAL_APR`,
+    );
+  }
 });
 
-test('mode fallback when no distributionMethod or distributionType match', () => {
+test('7 Target Total APR distributionType values map to TARGET_TOTAL_APR via L2', () => {
+  const types = [
+    'AAVE_NET_APR',
+    'AAVE_V4_NET_APR',
+    'ERC4626_APR',
+    'ERC4626_SPREAD_CAPPED',
+    'ERC4626_TARGET_APR_WITH_MERKL',
+    'SOFR_SPREAD_RATCHET',
+    'DEEL_DISTRIBUTION',
+  ];
+  for (const t of types) {
+    assert.equal(
+      normalizeForecastCampaignTypeLite({ distributionType: t }),
+      TTA,
+      `distributionType=${t} should map to TARGET_TOTAL_APR`,
+    );
+  }
+});
+
+test('L3 mode mapping has been removed — mode is no longer a type signal', () => {
   assert.equal(
     normalizeForecastCampaignTypeLite({ mode: 'MAX_APR' }),
-    MAX,
+    null,
+    'mode=MAX_APR should no longer resolve via L3',
   );
   assert.equal(
     normalizeForecastCampaignTypeLite({ mode: 'FIX_APR' }),
-    FIX,
+    null,
+    'mode=FIX_APR should no longer resolve via L3',
   );
   assert.equal(
     normalizeForecastCampaignTypeLite({ distributionType: 'UNKNOWN_TYPE', mode: 'MAX_APR' }),
-    MAX,
+    null,
+    'mode should not serve as fallback',
   );
 });
 
-test('priority: distributionMethod > distributionType > mode', () => {
+test('priority: distributionMethod > distributionType', () => {
   assert.equal(
     normalizeForecastCampaignTypeLite({
       distributionMethod: 'FIX_APR',
       distributionType: 'DUTCH_AUCTION',
-      mode: 'MAX_APR',
     }),
     FIX,
   );
   assert.equal(
     normalizeForecastCampaignTypeLite({
-      distributionType: 'DUTCH_AUCTION',
-      mode: 'MAX_APR',
+      distributionMethod: 'AAVE_NET_APR',
+      distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
     }),
-    DUTCH,
+    TTA,
+    'L1 distributionMethod=AAVE_NET_APR overrides L2 distributionType=MAX',
   );
 });
 
@@ -119,8 +145,8 @@ test('case-insensitive and whitespace-tolerant', () => {
     DUTCH,
   );
   assert.equal(
-    normalizeForecastCampaignTypeLite({ mode: ' fix_apr ' }),
-    FIX,
+    normalizeForecastCampaignTypeLite({ distributionMethod: ' aave_net_apr ' }),
+    TTA,
   );
 });
 
@@ -132,7 +158,6 @@ test('null/invalid inputs return null', () => {
   assert.equal(normalizeForecastCampaignTypeLite({}), null);
   assert.equal(normalizeForecastCampaignTypeLite({ distributionType: 'UNKNOWN' }), null);
   assert.equal(normalizeForecastCampaignTypeLite({ distributionMethod: 'UNKNOWN' }), null);
-  assert.equal(normalizeForecastCampaignTypeLite({ mode: 'UNKNOWN' }), null);
 });
 
 test('empty string fields are treated as absent', () => {
@@ -141,7 +166,7 @@ test('empty string fields are treated as absent', () => {
     DUTCH,
   );
   assert.equal(
-    normalizeForecastCampaignTypeLite({ distributionType: '', mode: 'MAX_APR' }),
-    MAX,
+    normalizeForecastCampaignTypeLite({ distributionType: '', distributionMethod: 'AAVE_NET_APR' }),
+    TTA,
   );
 });

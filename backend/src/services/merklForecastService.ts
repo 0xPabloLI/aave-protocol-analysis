@@ -101,6 +101,7 @@ interface CampaignSnapshotLite {
     distributionMethodParameters?: {
       distributionSettings?: {
         apr?: unknown;
+        targetAPR?: unknown;
       };
     };
   };
@@ -190,7 +191,20 @@ const getAtPath = (obj: unknown, path: string[]): unknown => {
   return current;
 };
 
-const extractMaxApr = (campaign: unknown): number | null => {
+const extractAprCap = (campaign: unknown, campaignType: CampaignForecastType): number | null => {
+  if (campaignType === 'TARGET_TOTAL_APR') {
+    const targetAPRCandidates: Array<string[]> = [
+      ['params', 'distributionMethodParameters', 'distributionSettings', 'targetAPR'],
+      ['distributionMethodParameters', 'distributionSettings', 'targetAPR'],
+      ['distributionSettings', 'targetAPR'],
+    ];
+    for (const path of targetAPRCandidates) {
+      const value = toNumber(getAtPath(campaign, path));
+      if (value !== null && value > 0) return value;
+    }
+    return null;
+  }
+
   const directCandidates: Array<string[]> = [
     ['params', 'distributionMethodParameters', 'distributionSettings', 'apr'],
     ['distributionMethodParameters', 'distributionSettings', 'apr'],
@@ -215,6 +229,7 @@ const buildCampaignSnapshotLite = (campaign: unknown): CampaignSnapshotLite | nu
   const rewardTokenPrice = getAtPath(campaign, ['rewardToken', 'price']);
   const rewardTokenDecimals = getAtPath(campaign, ['rewardToken', 'decimals']);
   const apr = getAtPath(campaign, ['params', 'distributionMethodParameters', 'distributionSettings', 'apr']);
+  const targetAPR = getAtPath(campaign, ['params', 'distributionMethodParameters', 'distributionSettings', 'targetAPR']);
   const decimalsRewardToken = getAtPath(campaign, ['params', 'decimalsRewardToken']);
 
   const snapshot: CampaignSnapshotLite = { id };
@@ -228,11 +243,11 @@ const buildCampaignSnapshotLite = (campaign: unknown): CampaignSnapshotLite | nu
       ...(rewardTokenDecimals !== undefined ? { decimals: rewardTokenDecimals } : {}),
     };
   }
-  if (apr !== undefined || decimalsRewardToken !== undefined) {
+  if (apr !== undefined || targetAPR !== undefined || decimalsRewardToken !== undefined) {
     snapshot.params = {
       ...(decimalsRewardToken !== undefined ? { decimalsRewardToken } : {}),
-      ...(apr !== undefined
-        ? { distributionMethodParameters: { distributionSettings: { apr } } }
+      ...(apr !== undefined || targetAPR !== undefined
+        ? { distributionMethodParameters: { distributionSettings: { ...(apr !== undefined ? { apr } : {}), ...(targetAPR !== undefined ? { targetAPR } : {}) } } }
         : {}),
     };
   }
@@ -462,11 +477,9 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
 
       const rawDistributionType = getAtPath(value, ['rawDistributionType']);
       const rawDistributionMethod = getAtPath(value, ['rawDistributionMethod']);
-      const rawMode = getAtPath(value, ['rawMode']);
       const campaignTypeHint = normalizeCampaignType({
         distributionType: typeof rawDistributionType === 'string' ? rawDistributionType : undefined,
         distributionMethod: typeof rawDistributionMethod === 'string' ? rawDistributionMethod : undefined,
-        mode: typeof rawMode === 'string' ? rawMode : undefined,
       });
       if (!campaignTypeHint) continue;
 
@@ -526,14 +539,9 @@ export const buildCampaignOpportunityMetaMapFromOpportunities = (
       const matchingCampaign = oppCampaigns.find(
         (c: any) => String(getAtPath(c, ['id']) || '') === campaignId
       );
-      const mode =
-        getAtPath(matchingCampaign, ['params', 'distributionMethodParameters', 'distributionSettings', 'mode']) ||
-        undefined;
-
       const hintType = normalizeCampaignType({
         distributionType: breakdownDistributionType,
         distributionMethod: breakdownDistributionMethod,
-        mode,
       });
       if (!hintType) return;
 
@@ -764,11 +772,11 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
       const distributedSoFar = isZeroBaseline
         ? 0
         : Math.min(estimateDistributedSoFar(dailyRewardsRecords, startTs, endTs, nowTs), totalBudget);
-      const aprCap =
+      const needsAprCap =
         campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
-        campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-          ? extractMaxApr(campaign)
-          : null;
+        campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
+        campaignType === 'TARGET_TOTAL_APR';
+      const aprCap = needsAprCap ? extractAprCap(campaign, campaignType) : null;
       const latestTvl = campaignOpportunityMeta?.tvl ?? extractLatestTvl(metrics);
 
       return buildForecastState({

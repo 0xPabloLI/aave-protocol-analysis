@@ -1,10 +1,11 @@
 # ADR-0024: Merkl Campaign Type Multi-Level Mapping
 
 Date: 2026-05-29
+Updated: 2026-06-13
 
 ## Status
 
-Accepted
+Updated — L3 (mode) mapping removed; TARGET_TOTAL_APR type introduced
 
 ## Context
 
@@ -15,23 +16,29 @@ The Merkl API provides three fields per opportunity that carry type semantics:
 - `distributionMethod` — e.g. `MAX_APR`, `FIX_APR`, `DUTCH_AUCTION`, `AIRDROP`, `AAVE_NET_APR`
 - `mode` — e.g. `MAX_APR`
 
-These fields have different discriminative power. `distributionMethod` is the strongest signal (maps directly to our 3 canonical types), followed by `distributionType`, then `mode` as a last resort.
+### 2026-06-13 Update: L3 Removed + TARGET_TOTAL_APR Introduced
+
+**Problem**: 3 Merkl campaigns (AAVE_NET_APR / AAVE_V4_NET_APR) continuously reported "Missing APR cap" since 2026-06-01. Root cause: `extractMaxApr` only reads `distributionSettings.apr`, but Target Total APR types store their APR cap in `distributionSettings.targetAPR`. The `apr` field does not exist for these types.
+
+**Conceptual error in L3**: The `mode` field (e.g. `MAX_APR`, `FIX_APR`) is a **budget-bound fallback strategy**, not a type classification signal. Original L3 mapping `mode=MAX_APR → MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` conflated two different semantics: "fallback strategy is dilutive" ≠ "campaign is a MAX_REWARD type". Target Total APR campaigns have `mode=MAX_APR` (dilutive fallback) but are NOT MAX_REWARD_VALUE campaigns — they use `targetAPR` instead of `apr` for their APR cap.
+
+**Solution**: Introduce `TARGET_TOTAL_APR` as a 4th `CampaignForecastType`. All 7 Target Total APR subtypes map to this type via L1 (`distributionMethod`). L3 (mode) is deleted as a type signal. `mode` is still extracted and passed through as `budgetBoundMode` for frontend budget-bound display logic.
 
 ### Design Goals
 
-- Correctly map all current and future Merkl distribution types to our 3 canonical `CampaignForecastType` values
-- Eliminate the need for code changes when Merkl adds new `distributionType` values
+- Correctly map all current Merkl distribution types to our 4 canonical `CampaignForecastType` values
+- Eliminate the need for code changes when Merkl adds new `distributionType` values within existing families
 - Preserve backwards compatibility with existing campaigns
+- Correctly differentiate APR cap sources: `distributionSettings.apr` (MAX/FIX) vs `distributionSettings.targetAPR` (TARGET_TOTAL_APR)
 
 ## Decision
 
-Use a **3-level priority mapping**: `distributionMethod → distributionType → mode`.
+Use a **2-level priority mapping**: `distributionMethod → distributionType`. Mode is no longer used as a type signal.
 
 ```
 1. distributionMethod maps directly → return canonical type
 2. distributionType matches known type → return canonical type
-3. mode maps to canonical type → return canonical type
-4. No match → return null (unrecognized campaign is skipped)
+3. No match → return null (unrecognized campaign is skipped)
 ```
 
 ### Mapping tables
@@ -43,20 +50,33 @@ Use a **3-level priority mapping**: `distributionMethod → distributionType →
 | MAX_APR | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
 | FIX_APR | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
 | DUTCH_AUCTION | DUTCH_AUCTION |
+| AAVE_NET_APR | TARGET_TOTAL_APR |
+| AAVE_V4_NET_APR | TARGET_TOTAL_APR |
+| ERC4626_APR | TARGET_TOTAL_APR |
+| ERC4626_SPREAD_CAPPED | TARGET_TOTAL_APR |
+| ERC4626_TARGET_APR_WITH_MERKL | TARGET_TOTAL_APR |
+| SOFR_SPREAD_RATCHET | TARGET_TOTAL_APR |
+| DEEL_DISTRIBUTION | TARGET_TOTAL_APR |
 
 **Level 2: distributionType → CampaignForecastType** (only when Level 1 has no match)
 
 | distributionType | → Result |
 |---|---|
 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
+| MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
 | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
+| FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
+| FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
 | DUTCH_AUCTION | DUTCH_AUCTION |
+| AAVE_NET_APR | TARGET_TOTAL_APR |
+| AAVE_V4_NET_APR | TARGET_TOTAL_APR |
+| ERC4626_APR | TARGET_TOTAL_APR |
+| ERC4626_SPREAD_CAPPED | TARGET_TOTAL_APR |
+| ERC4626_TARGET_APR_WITH_MERKL | TARGET_TOTAL_APR |
+| SOFR_SPREAD_RATCHET | TARGET_TOTAL_APR |
+| DEEL_DISTRIBUTION | TARGET_TOTAL_APR |
 
-**Level 3: mode → CampaignForecastType** (only when Levels 1–2 have no match)
-
-| mode | → Result |
-|---|---|
-| MAX_APR | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
+**Level 3: REMOVED** — `mode` is no longer used as a type classification signal. It is passed through as `budgetBoundMode` for frontend display logic.
 
 ### Full mapping matrix (verified against live data)
 
@@ -69,27 +89,53 @@ Use a **3-level priority mapping**: `distributionMethod → distributionType →
 | FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT | FIX_APR | - | L1 | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
 | DUTCH_AUCTION | DUTCH_AUCTION | - | L1 | DUTCH_AUCTION |
 | DUTCH_AUCTION | AIRDROP | - | L2 (distributionType) | DUTCH_AUCTION |
-| DUTCH_AUCTION | DEEL_DISTRIBUTION | - | L2 | DUTCH_AUCTION |
-| AAVE_NET_APR | AAVE_NET_APR | MAX_APR | L3 (mode) | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
-| AAVE_V4_NET_APR | AAVE_V4_NET_APR | MAX_APR | L3 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
-| ERC4626_APR | ERC4626_APR | MAX_APR | L3 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
+| AAVE_NET_APR | AAVE_NET_APR | MAX_APR | L1 | TARGET_TOTAL_APR |
+| AAVE_V4_NET_APR | AAVE_V4_NET_APR | MAX_APR | L1 | TARGET_TOTAL_APR |
+| ERC4626_APR | ERC4626_APR | MAX_APR | L1 | TARGET_TOTAL_APR |
+| ERC4626_SPREAD_CAPPED | ERC4626_SPREAD_CAPPED | FIX_APR | L1 | TARGET_TOTAL_APR |
+| ERC4626_TARGET_APR_WITH_MERKL | ERC4626_TARGET_APR_WITH_MERKL | - | L1 | TARGET_TOTAL_APR |
+| SOFR_SPREAD_RATCHET | SOFR_SPREAD_RATCHET | - | L1 | TARGET_TOTAL_APR |
+| DEEL_DISTRIBUTION | DEEL_DISTRIBUTION | - | L1* | TARGET_TOTAL_APR |
+
+*L1 via distributionMethod=DEEL_DISTRIBUTION (previously L2 via distributionType=DUTCH_AUCTION with method=DEEL_DISTRIBUTION). Now correctly classified as TARGET_TOTAL_APR since DEEL_DISTRIBUTION is a Target Total APR subtype.
+
+### Target Total APR APR cap semantics
+
+| CampaignForecastType | APR cap source | Unit | Frontend interpretation |
+|---|---|---|---|
+| MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | `distributionSettings.apr` | decimal (0.047 = 4.7%) | Merkl 实付 APR 上限 |
+| FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE | `distributionSettings.apr` | decimal | Merkl 实付 APR 上限 |
+| TARGET_TOTAL_APR | `distributionSettings.targetAPR` | decimal | 总 APR 目标；前端自行减去 nativeAPR 得到 Merkl 实付部分 |
+| DUTCH_AUCTION | N/A | N/A | 无 APR cap |
+
+### Budget-bound mode (`budgetBoundMode`)
+
+`mode` is extracted from `distributionSettings.mode` and passed through as `budgetBoundMode` on `MerklCampaignBreakdown`. It is only present for TARGET_TOTAL_APR campaigns:
+
+| budgetBoundMode | Meaning |
+|---|---|
+| MAX_APR | Budget exhausted → dilutive (APR drops below target, campaign continues) |
+| FIX_APR | Budget exhausted → early-end (campaign terminates prematurely) |
 
 ### Implementation
 
-Both normalize functions changed from `(distributionType: string)` to `(input: NormalizeCampaignTypeInput)` where:
+Both normalize functions use `(input: NormalizeCampaignTypeInput)` where:
 
 ```typescript
 interface NormalizeCampaignTypeInput {
   distributionType?: string | null;
   distributionMethod?: string | null;
-  mode?: string | null;
 }
 ```
+
+Note: `mode` was removed from the interface. It is still extracted separately for `budgetBoundMode` passthrough.
 
 Applied to:
 - `normalizeCampaignType` in `merklForecastModel.ts`
 - `normalizeForecastCampaignTypeLite` in `merkl-api.ts`
-- Both call sites in `merklForecastService.ts`
+- Call sites in `merklForecastService.ts`
+
+APR cap extraction changed from `extractMaxApr(campaign)` to `extractAprCap(campaign, campaignType)`: TARGET_TOTAL_APR reads `distributionSettings.targetAPR`, other types read `distributionSettings.apr`.
 
 ## Alternatives Considered
 
@@ -101,16 +147,22 @@ Applied to:
 - Map any unrecognized distributionType to `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE`
 - Rejected: overly aggressive; `AIRDROP` and `DEEL_DISTRIBUTION` methods should not silently become MAX campaigns
 
-### C. Two-level mapping (distributionMethod + distributionType only, no mode)
-- Would fail for `AAVE_NET_APR` / `AAVE_V4_NET_APR` / `ERC4626_APR` where neither distributionMethod nor distributionType is a known key
-- Rejected: incomplete coverage
+### C. ~~Two-level mapping (distributionMethod + distributionType only, no mode)~~
+- Originally rejected because "AAVE_NET_APR where neither distributionMethod nor distributionType is a known key"
+- **2026-06-13: This alternative is now the chosen approach** — AAVE_NET_APR etc. are added to both L1 and L2 maps targeting `TARGET_TOTAL_APR`, so the 2-level mapping is complete
+
+### D. Keep L3 mode as type signal but add targetAPR fallback
+- Would fix the APR cap error but maintain the conceptual error of mapping mode=MAX_APR → MAX type
+- Rejected: perpetuates semantic confusion between "budget-bound fallback strategy" and "campaign type classification"
 
 ## Consequences
 
-- **Positive**: Future Merkl distributionType additions no longer require code changes (as long as `distributionMethod` or `mode` maps correctly)
-- **Positive**: All 11 known campaign type combinations now map correctly; no data loss
-- **Positive**: Test coverage: 34 new tests across 4 test files
-- **Neutral**: Function signatures changed from `(string)` to `(object)` — breaking API change for any external consumer (none exist)
-- **Neutral**: `ForecastCampaignMetaLite` interface gained `rawDistributionType?`, `rawDistributionMethod?`, and `rawMode?` fields for debugging transparency and L1 priority restoration from lite files
-- **Trade-off (DRY)**: `merklForecastModel.ts` and `merkl-api.ts` each define their own 3 mapping tables + 3 normalize functions with identical logic. This duplication is intentional: the former handles backend runtime normalization, the latter handles lite file preprocessing in the fetcher package. Moving the shared tables to `@internal/aave-shared-contracts` would couple runtime behavior to the types-only package, violating the workspace boundary. The cost is that new mapping entries must be added to both files — accepted as a 2-location sync burden.
-- **Precision**: Level 2 matching uses exact equality (`===`) rather than substring matching (`includes`) to prevent future false positives if Merkl introduces a distributionType that contains a known pattern as a substring but has different semantics
+- **Positive**: Future Merkl distributionType additions within Target Total APR family no longer require code changes (as long as `distributionMethod` maps correctly)
+- **Positive**: All 18+ known campaign type combinations now map correctly; no data loss
+- **Positive**: "Missing APR cap" errors for AAVE_NET_APR / AAVE_V4_NET_APR campaigns are resolved
+- **Positive**: `budgetBoundMode` field enables frontend to display budget-bound behavior correctly
+- **Neutral**: Function signatures changed — `mode` removed from `NormalizeCampaignTypeInput`; `extractMaxApr` renamed to `extractAprCap` with added `campaignType` parameter
+- **Neutral**: `ForecastCampaignMetaLite` interface retains `rawMode?` for `budgetBoundMode` passthrough
+- **Trade-off (DRY)**: `merklForecastModel.ts` and `merkl-api.ts` each define their own mapping tables + normalize functions with identical logic. This duplication is intentional: the former handles backend runtime normalization, the latter handles lite file preprocessing in the fetcher package. The cost is that new mapping entries must be added to both files — accepted as a 2-location sync burden.
+- **Precision**: Level 2 matching uses exact equality (`===`) rather than substring matching (`includes`) to prevent future false positives
+- **Semantic clarity**: Removing L3 eliminates the conflation between "budget-bound fallback strategy" (mode) and "campaign type classification" (CampaignForecastType)

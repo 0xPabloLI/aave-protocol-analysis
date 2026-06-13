@@ -71,7 +71,8 @@ export interface MeritAprEntry {
 export type ForecastCampaignTypeLite =
   | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   | 'DUTCH_AUCTION'
-  | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+  | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  | 'TARGET_TOTAL_APR';
 
 export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   campaignId: string;
@@ -82,6 +83,8 @@ export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   aprCap?: number | null;
   latestTvl?: number;
   plannedDaily?: number;
+  budgetBoundMode?: string;
+  spreadCap?: number | null;
 }
 
 export interface MerklOpportunityGroup extends CampaignGroup<MerklCampaignBreakdown> {}

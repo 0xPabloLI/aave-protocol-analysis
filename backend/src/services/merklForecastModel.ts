@@ -4,7 +4,8 @@ const MIN_REMAINING_DAYS = 0.0001;
 export type CampaignForecastType =
   | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   | 'DUTCH_AUCTION'
-  | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE';
+  | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+  | 'TARGET_TOTAL_APR';
 
 export interface BuildForecastStateInput {
   campaignId: string;
@@ -49,13 +50,19 @@ const safeNumber = (value: unknown, fallback = 0): number => {
 export interface NormalizeCampaignTypeInput {
   distributionType?: string;
   distributionMethod?: string;
-  mode?: string;
 }
 
 const METHOD_TYPE_MAP: Record<string, CampaignForecastType> = {
   MAX_APR: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
   FIX_APR: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
   DUTCH_AUCTION: 'DUTCH_AUCTION',
+  AAVE_NET_APR: 'TARGET_TOTAL_APR',
+  AAVE_V4_NET_APR: 'TARGET_TOTAL_APR',
+  ERC4626_APR: 'TARGET_TOTAL_APR',
+  ERC4626_SPREAD_CAPPED: 'TARGET_TOTAL_APR',
+  ERC4626_TARGET_APR_WITH_MERKL: 'TARGET_TOTAL_APR',
+  SOFR_SPREAD_RATCHET: 'TARGET_TOTAL_APR',
+  DEEL_DISTRIBUTION: 'TARGET_TOTAL_APR',
 };
 
 const DISTRIBUTION_TYPE_PATTERNS: Array<{ pattern: string; result: CampaignForecastType }> = [
@@ -65,15 +72,14 @@ const DISTRIBUTION_TYPE_PATTERNS: Array<{ pattern: string; result: CampaignForec
   { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
   { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
   { pattern: 'DUTCH_AUCTION', result: 'DUTCH_AUCTION' },
-  { pattern: 'AAVE_NET_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'AAVE_V4_NET_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'ERC4626_APR', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'AAVE_NET_APR', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'AAVE_V4_NET_APR', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'ERC4626_APR', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'ERC4626_SPREAD_CAPPED', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'ERC4626_TARGET_APR_WITH_MERKL', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'SOFR_SPREAD_RATCHET', result: 'TARGET_TOTAL_APR' },
+  { pattern: 'DEEL_DISTRIBUTION', result: 'TARGET_TOTAL_APR' },
 ];
-
-const MODE_TYPE_MAP: Record<string, CampaignForecastType> = {
-  MAX_APR: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
-  FIX_APR: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
-};
 
 const normalizeByDistributionMethod = (value: string | undefined): CampaignForecastType | null => {
   if (!value) return null;
@@ -90,20 +96,13 @@ const normalizeByDistributionType = (value: string | undefined): CampaignForecas
   return null;
 };
 
-const normalizeByMode = (value: string | undefined): CampaignForecastType | null => {
-  if (!value) return null;
-  const upper = value.trim().toUpperCase();
-  return MODE_TYPE_MAP[upper] ?? null;
-};
-
 export const normalizeCampaignType = (input: NormalizeCampaignTypeInput | unknown): CampaignForecastType | null => {
   if (!input || typeof input !== 'object') return null;
-  const { distributionType, distributionMethod, mode } = input as NormalizeCampaignTypeInput;
+  const { distributionType, distributionMethod } = input as NormalizeCampaignTypeInput;
 
   return (
     normalizeByDistributionMethod(distributionMethod) ??
     normalizeByDistributionType(distributionType) ??
-    normalizeByMode(mode) ??
     null
   );
 };
@@ -116,24 +115,18 @@ export const buildForecastState = (input: BuildForecastStateInput): MerklForecas
   const distributedSoFar = Math.min(Math.max(safeNumber(input.distributedSoFar), 0), totalBudget);
   const latestTvl = Math.max(safeNumber(input.latestTvl), 0);
 
-  const rawAprCap =
+  const needsAprCap =
     input.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
-    input.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-      ? safeNumber(input.aprCap, NaN)
-      : null;
-  if (
-    input.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
-    input.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  ) {
+    input.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
+    input.campaignType === 'TARGET_TOTAL_APR';
+
+  const rawAprCap = needsAprCap ? safeNumber(input.aprCap, NaN) : null;
+  if (needsAprCap) {
     if (rawAprCap === null || !Number.isFinite(rawAprCap) || rawAprCap <= 0) {
       throw new Error(`Missing APR cap for campaign ${input.campaignId}`);
     }
   }
-  const aprCap =
-    input.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
-    input.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-      ? rawAprCap
-      : null;
+  const aprCap = needsAprCap ? rawAprCap : null;
 
   const remainingBudget = Math.max(totalBudget - distributedSoFar, 0);
   const remainingDays = Math.max((endTs - nowTs) / SECONDS_PER_DAY, MIN_REMAINING_DAYS);

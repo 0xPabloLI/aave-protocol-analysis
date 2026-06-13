@@ -94,7 +94,7 @@ test('buildCampaignOpportunityMetaMapFromOpportunities: falls back to opportunit
   assert.equal(map.get('c1')!.campaignTypeHint, 'DUTCH_AUCTION');
 });
 
-test('buildCampaignOpportunityMetaMapFromOpportunities: extracts mode from campaign params', () => {
+test('buildCampaignOpportunityMetaMapFromOpportunities: AAVE_NET_APR distributionType maps to TARGET_TOTAL_APR', () => {
   const opps = [{
     tvl: 1000,
     distributionType: 'AAVE_NET_APR',
@@ -103,7 +103,7 @@ test('buildCampaignOpportunityMetaMapFromOpportunities: extracts mode from campa
   }];
   const map = buildCampaignOpportunityMetaMapFromOpportunities(opps as any);
   assert.ok(map.has('c1'));
-  assert.equal(map.get('c1')!.campaignTypeHint, 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
+  assert.equal(map.get('c1')!.campaignTypeHint, 'TARGET_TOTAL_APR');
 });
 
 test('buildCampaignOpportunityMetaMapFromOpportunities: distributionMethod on breakdown takes priority over distributionType', () => {
@@ -117,7 +117,7 @@ test('buildCampaignOpportunityMetaMapFromOpportunities: distributionMethod on br
   assert.equal(map.get('c1')!.campaignTypeHint, 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
 });
 
-test('buildCampaignOpportunityMetaMapFromOpportunities: AAVE_V4_NET_APR with mode=MAX_APR maps to MAX', () => {
+test('buildCampaignOpportunityMetaMapFromOpportunities: AAVE_V4_NET_APR maps to TARGET_TOTAL_APR', () => {
   const opps = [{
     tvl: 1000,
     distributionType: 'AAVE_V4_NET_APR',
@@ -126,10 +126,10 @@ test('buildCampaignOpportunityMetaMapFromOpportunities: AAVE_V4_NET_APR with mod
   }];
   const map = buildCampaignOpportunityMetaMapFromOpportunities(opps as any);
   assert.ok(map.has('c1'));
-  assert.equal(map.get('c1')!.campaignTypeHint, 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
+  assert.equal(map.get('c1')!.campaignTypeHint, 'TARGET_TOTAL_APR');
 });
 
-test('buildCampaignOpportunityMetaMapFromOpportunities: unknown type with no method/mode is skipped', () => {
+test('buildCampaignOpportunityMetaMapFromOpportunities: unknown type with no method is skipped (mode no longer determines type)', () => {
   const opps = [{
     tvl: 1000,
     rewardsRecord: { breakdowns: [{ campaignId: 'c1', distributionType: 'TOTALLY_UNKNOWN' }] },
@@ -149,20 +149,19 @@ test('buildCampaignOpportunityMetaMapFromOpportunities: zero tvl opportunity is 
   assert.ok(map.has('c1'));
 });
 
-test('buildCampaignOpportunityMetaMapFromOpportunities: mode path extraction via deep nested params', () => {
-  const modePath = { distributionMethodParameters: { distributionSettings: { mode: 'MAX_APR' } } };
+test('buildCampaignOpportunityMetaMapFromOpportunities: AAVE_NET_APR distributionType resolves to TARGET_TOTAL_APR via L2', () => {
   const opps = [{
     tvl: 1000,
     distributionType: 'AAVE_NET_APR',
     rewardsRecord: { breakdowns: [{ campaignId: 'c1', distributionType: 'AAVE_NET_APR' }] },
-    campaigns: [{ id: 'c1', params: modePath }],
+    campaigns: [{ id: 'c1', params: { distributionMethodParameters: { distributionSettings: { mode: 'MAX_APR' } } } }],
   }];
   const map = buildCampaignOpportunityMetaMapFromOpportunities(opps as any);
   assert.ok(map.has('c1'));
-  assert.equal(map.get('c1')!.campaignTypeHint, 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
+  assert.equal(map.get('c1')!.campaignTypeHint, 'TARGET_TOTAL_APR');
 });
 
-test('buildCampaignOpportunityMetaMapFromOpportunities: mode determines type when distributionType has no explicit mapping', () => {
+test('buildCampaignOpportunityMetaMapFromOpportunities: mode no longer determines type — unknown type with mode is skipped', () => {
   const modePath = { distributionMethodParameters: { distributionSettings: { mode: 'FIX_APR' } } };
   const opps = [{
     tvl: 1000,
@@ -171,6 +170,5 @@ test('buildCampaignOpportunityMetaMapFromOpportunities: mode determines type whe
     campaigns: [{ id: 'c1', params: modePath }],
   }];
   const map = buildCampaignOpportunityMetaMapFromOpportunities(opps as any);
-  assert.ok(map.has('c1'));
-  assert.equal(map.get('c1')!.campaignTypeHint, 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
+  assert.ok(!map.has('c1'), 'mode should no longer be used as a type signal');
 });
