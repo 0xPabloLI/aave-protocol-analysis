@@ -42,10 +42,11 @@ export function getBrevisForecastItems(markets: RuntimeReserveData[]): ForecastR
   for (const [campaignId, entry] of entries) {
     if (entry.distributedSoFar === undefined) continue;
     const endTimestamp = endTimestamps.get(campaignId);
+    if (endTimestamp === undefined) continue;
     items.push({
       campaignId,
       distributedSoFar: entry.distributedSoFar,
-      ...(endTimestamp !== undefined && { endTimestamp }),
+      endTimestamp,
     });
   }
 

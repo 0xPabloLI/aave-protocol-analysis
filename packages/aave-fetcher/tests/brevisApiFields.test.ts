@@ -34,6 +34,7 @@ test('pruneBrevisCampaignForRuntime removes transient budget parse fields', () =
         campaignApr: 0.01,
         campaignStartedAt: '2020-01-01T00:00:00.000Z',
         campaignEndedAt: '2030-01-01T00:00:00.000Z',
+        campaignId: '123',
         budgetNormalizedAmount: 1_000_000,
         budgetTokenSymbol: 'USDC',
         totalBudget: 999,

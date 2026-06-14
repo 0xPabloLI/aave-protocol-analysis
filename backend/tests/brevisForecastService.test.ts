@@ -59,12 +59,19 @@ test('undefined values are excluded from items', () => {
   ]);
   setBrevisForecastEntries(entries);
 
-  const items = getBrevisForecastItems([]);
+  const markets = [
+    makeMarket(
+      [{ link: '', breakdowns: [{ campaignApr: 0.01, campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31T00:00:00Z', campaignId: '1754995104' }] }],
+      [],
+    ),
+  ];
+
+  const items = getBrevisForecastItems(markets);
   assert.equal(items.length, 1);
   assert.equal(items[0].campaignId, '1754995104');
 });
 
-test('missing campaignEndedAt produces item without endTimestamp', () => {
+test('missing campaignEndedAt skips the item (endTimestamp is required)', () => {
   const entries = new Map<string, number | undefined>([
     ['no-end', 50],
   ]);
@@ -78,10 +85,7 @@ test('missing campaignEndedAt produces item without endTimestamp', () => {
   ];
 
   const items = getBrevisForecastItems(markets);
-  assert.equal(items.length, 1);
-  assert.equal(items[0].campaignId, 'no-end');
-  assert.equal(items[0].distributedSoFar, 50);
-  assert.equal('endTimestamp' in items[0], false);
+  assert.equal(items.length, 0);
 });
 
 test('empty map produces empty items', () => {
@@ -96,7 +100,14 @@ test('field name is distributedSoFar (not distributedSoFarUsd)', () => {
   ]);
   setBrevisForecastEntries(entries);
 
-  const items = getBrevisForecastItems([]);
+  const markets = [
+    makeMarket(
+      [{ link: '', breakdowns: [{ campaignApr: 0.01, campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31T00:00:00Z', campaignId: 'c1' }] }],
+      [],
+    ),
+  ];
+
+  const items = getBrevisForecastItems(markets);
   assert.equal(items.length, 1);
   assert.ok('distributedSoFar' in items[0]);
   assert.equal(('distributedSoFarUsd' in items[0]) as boolean, false);

@@ -90,12 +90,12 @@ export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
 export interface MerklOpportunityGroup extends CampaignGroup<MerklCampaignBreakdown> {}
 
 export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
+  campaignId: string;
+  campaignType?: ForecastCampaignTypeLite;
+  aprCap?: number;
   totalBudget?: number;
   latestTvl?: number;
   perUserRewardCapUsd?: number;
-  campaignId?: string;
-  budgetNormalizedAmount?: number;
-  budgetTokenSymbol?: string;
 }
 
 export interface BrevisCampaignItem extends CampaignGroup<BrevisCampaignBreakdown> {}
@@ -180,8 +180,7 @@ export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown>;
 export type ApiBrevisBreakdown = Pick<
   BrevisCampaignBreakdown,
   'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
-  | 'totalBudget' | 'latestTvl' | 'perUserRewardCapUsd'
-  | 'budgetNormalizedAmount' | 'budgetTokenSymbol'
+  | 'campaignType' | 'aprCap' | 'totalBudget' | 'latestTvl' | 'perUserRewardCapUsd'
 >;
 
 export type ApiBrevisCampaignItem = CampaignGroup<ApiBrevisBreakdown>;

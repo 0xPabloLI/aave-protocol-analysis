@@ -1,6 +1,7 @@
 import fetch from 'node-fetch';
 import { logger } from './logger.js';
 import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
+import type { ForecastCampaignTypeLite } from '@internal/aave-shared-contracts';
 
 /**
  * Brevis Incentra API 客户端
@@ -19,14 +20,13 @@ import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared
  * 按单个 pool 调试用的旧 client 形状与解析逻辑已迁出代码，见 `docs/api/brevis-supplement.md`。
  */
 export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
-  /** Annual yield ratio (gRPC `protocol.apr`). GET /api/markets multiplies by 100 for display. */
+  campaignId: string;
+  campaignType?: ForecastCampaignTypeLite;
+  aprCap?: number;
   totalBudget?: number;
   latestTvl?: number;
-  perUserRewardCapUsd?: number; // Per-user reward cap（美元），从描述文字解析
-  campaignId?: string; // Brevis campaign ID，supply/borrow 同 ID 则共享同一 perUserRewardCapUsd
-  /** gRPC totalAmt 按 decimals 归一化后的数量；enrich 后删除 */
+  perUserRewardCapUsd?: number;
   budgetNormalizedAmount?: number;
-  /** 奖励代币 symbol；enrich 后删除 */
   budgetTokenSymbol?: string;
 }
 
@@ -665,13 +665,15 @@ export class BrevisApiClient {
                   campaignApr: apr,
                   campaignStartedAt: new Date((config?.start || 0) * 1000).toISOString(),
                   campaignEndedAt: new Date((config?.end || 0) * 1000).toISOString(),
+                  campaignId: String(campaign.id),
+                  campaignType: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' as ForecastCampaignTypeLite,
+                  aprCap: apr,
                   ...(typeof protocol?.tvl === 'number' && Number.isFinite(protocol.tvl)
                     ? { latestTvl: protocol.tvl }
                     : {}),
                   ...(type === 3001 && metaMaskDesc?.perUserRewardCapUsd != null
                     ? { perUserRewardCapUsd: metaMaskDesc.perUserRewardCapUsd }
                     : {}),
-                  ...(campaign.id ? { campaignId: String(campaign.id) } : {}),
                   ...(normalizedTotalRewardNumber !== undefined && Number.isFinite(normalizedTotalRewardNumber)
                     ? { budgetNormalizedAmount: normalizedTotalRewardNumber }
                     : {}),

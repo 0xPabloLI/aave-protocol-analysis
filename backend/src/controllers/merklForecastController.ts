@@ -31,7 +31,7 @@ export const toForecastResponseItem = (
   return item;
 };
 
-export type ForecastResponseItem = { campaignId: string; requiredDaily?: number; distributedSoFar: number; endTimestamp?: number };
+export type ForecastResponseItem = { campaignId: string; requiredDaily?: number; distributedSoFar: number; endTimestamp: number };
 
 export interface ForecastSnapshot {
   items: ForecastResponseItem[];
