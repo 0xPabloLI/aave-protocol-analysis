@@ -666,6 +666,9 @@ export class BrevisApiClient {
                   campaignStartedAt: new Date((config?.start || 0) * 1000).toISOString(),
                   campaignEndedAt: new Date((config?.end || 0) * 1000).toISOString(),
                   campaignId: String(campaign.id),
+                  // Brevis has no Dutch auction or MAX reward mechanism — all campaigns are fixed APR + fixed budget.
+                  // gRPC campaign.type is an action type (2001=borrow, 2002=supply, 3001=both), NOT a distribution type.
+                  // If Brevis introduces non-FIX mechanisms in the future, this default needs updating.
                   campaignType: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' as ForecastCampaignTypeLite,
                   aprCap: apr,
                   ...(typeof protocol?.tvl === 'number' && Number.isFinite(protocol.tvl)
