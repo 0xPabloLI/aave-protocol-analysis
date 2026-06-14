@@ -569,6 +569,7 @@ export class BrevisApiClient {
     index: Record<string, BrevisDataItem>;
     rawProtocolsList: any;
     rawProtocolDetails: Array<{ protocol: any; response: any }>;
+    submitContracts: Map<string, { submitAddr: string; submitChainId: number; tokenAddr: string; decimals: number; chainId: number }>;
   }> {
     try {
       logger.info('📡 从 gRPC 获取所有 protocols 列表...');
@@ -592,6 +593,7 @@ export class BrevisApiClient {
       const metaMaskDesc = await metaMaskDescPromise;
       const campaignsIndex: Record<string, BrevisDataItem> = {};
       const rawProtocolDetails: Array<{ protocol: any; response: any }> = [];
+      const submitContracts = new Map<string, { submitAddr: string; submitChainId: number; tokenAddr: string; decimals: number; chainId: number }>();
 
       for (const protocol of aaveProtocols) {
         try {
@@ -680,6 +682,16 @@ export class BrevisApiClient {
 
             const indexKey = `${protocol.chainId}-${tokenAddressLower}`;
 
+            if (campaign.id && typeof campaign.submitAddr === 'string' && typeof campaign.submitChainId === 'number') {
+              submitContracts.set(String(campaign.id), {
+                submitAddr: campaign.submitAddr,
+                submitChainId: campaign.submitChainId,
+                tokenAddr: tokenAddressLower,
+                decimals: typeof token?.decimals === 'number' ? token.decimals : 0,
+                chainId: protocol.chainId,
+              });
+            }
+
             if (!campaignsIndex[indexKey]) {
               campaignsIndex[indexKey] = { brevisSupplys: [], brevisBorrows: [], protocolVersion: 'v3' };
             }
@@ -714,6 +726,7 @@ export class BrevisApiClient {
         index: campaignsIndex,
         rawProtocolsList: rawProtocolsList,
         rawProtocolDetails: rawProtocolDetails,
+        submitContracts,
       };
     } catch (error: any) {
       logger.error(`❌ 获取 Aave campaign 数据失败: ${error.message}`);

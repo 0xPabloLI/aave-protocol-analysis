@@ -9,6 +9,8 @@ import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
 import { brevisApi, pruneBrevisCampaignForRuntime } from './brevis-api.js';
+import { fetchBrevisDistributedSoFar } from './brevis-distributed-so-far.js';
+import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
 import { resolveUsdPriceWithPriority } from './token-price-resolver.js';
 import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
 import {
@@ -247,6 +249,35 @@ async function fetchBrevisAprs(
 
       campaigns.brevisSupplys = await Promise.all(campaigns.brevisSupplys.map((c) => enrichCampaignUsd(c)));
       campaigns.brevisBorrows = await Promise.all(campaigns.brevisBorrows.map((c) => enrichCampaignUsd(c)));
+    }
+
+    if (brevisResult.submitContracts.size > 0) {
+      try {
+        const chainCampaigns = Array.from(brevisResult.submitContracts.entries())
+          .map(([campaignId, info]) => ({ campaignId, ...info }));
+        const distributedSoFar = await fetchBrevisDistributedSoFar(
+          chainCampaigns,
+          tokenPriceByChainAndAddress,
+          { rpcUrlsByChainId: Object.fromEntries(
+            [...new Set(chainCampaigns.map(c => c.submitChainId))].map(id => [id, getAaveRpcUrlsByChainId(id)])
+          )},
+        );
+
+        for (const [indexKey, campaigns] of Object.entries(brevisIndex)) {
+          const enrichDistributedSoFar = (campaign: BrevisCampaignItem): BrevisCampaignItem => ({
+            ...campaign,
+            breakdowns: (campaign.breakdowns ?? []).map((bd) => {
+              if (!bd.campaignId) return bd;
+              const val = distributedSoFar.get(bd.campaignId);
+              return val !== undefined ? { ...bd, distributedSoFarUsd: val } : bd;
+            }),
+          });
+          campaigns.brevisSupplys = campaigns.brevisSupplys.map(enrichDistributedSoFar);
+          campaigns.brevisBorrows = campaigns.brevisBorrows.map(enrichDistributedSoFar);
+        }
+      } catch (error: any) {
+        logger.warn(`⚠️ Brevis distributedSoFar chain read failed: ${error.message}`);
+      }
     }
     
     // 输出原始 Brevis 数据（包括原始 API 响应），方便查看和调试

@@ -93,6 +93,7 @@ export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
   totalBudget?: number;
   latestTvl?: number;
   perUserRewardCapUsd?: number;
+  distributedSoFarUsd?: number;
   campaignId?: string;
   budgetNormalizedAmount?: number;
   budgetTokenSymbol?: string;
@@ -180,7 +181,7 @@ export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown>;
 export type ApiBrevisBreakdown = Pick<
   BrevisCampaignBreakdown,
   'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
-  | 'totalBudget' | 'latestTvl' | 'perUserRewardCapUsd'
+  | 'totalBudget' | 'latestTvl' | 'perUserRewardCapUsd' | 'distributedSoFarUsd'
   | 'budgetNormalizedAmount' | 'budgetTokenSymbol'
 >;
 
