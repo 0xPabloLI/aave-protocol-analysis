@@ -173,6 +173,7 @@ Canonical source for knowledge spanning frontend AND backend, or Aave protocol f
 - **不信 Linear sub_issues 聚合状态**：`get_issue(sub_issues: true)` 返回的状态可能是缓存/快照，与单条 `get_issue(id)` 结果不一致。必须逐条单查确认。
 - **ADR 状态必须与代码实际对标**：不能因为"子 issue 全 Done"就标 ADR 为 Implemented。必须跑一遍 ADR Decision 中每个关键代码点的 import 链路 + 运行时可达性验证。存在 Partial 状态时应标注哪层已实现、哪层未接通。
 - **本地 CI ≠ Docker 构建环境**：`ci:remote` 不跑 Docker build，本地残留目录会掩盖 ENOENT。build script 中 `writeFileSync` 的目标目录必须在 script 自身（`mkdirSync`）和 Dockerfile（`RUN mkdir -p`）至少一方保证存在。`buildScriptWriteSafety.test.ts` 做静态检查防回归。
+- **涉及外部依赖的测试必须用真实数据**：调用链上合约、第三方 API（Merkl/Brevis/CoinGecko）的测试不能用 mock，必须用真实 URL/合约地址验证。单元测试可覆盖内部逻辑，但集成测试必须对真实外部端点执行，确保数据格式、字段存在性、数值范围与实际一致。改了 API contract 后必须在 dev/staging 验证实际返回。
 
 ## Agent skills
 
