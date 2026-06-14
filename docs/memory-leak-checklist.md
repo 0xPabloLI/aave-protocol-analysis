@@ -46,35 +46,36 @@
 | 17 | addressBookRegistry | `V3_ENTRIES` / `V4_SPOKE_ENTRIES` | readonly数组 | ✅ | ➖(静态) | ➖(拓扑决定) | ➖(运行时不变) | 🟢 | 静态配置，数量=链上pool/spoke数，运行时不变 |
 | 18 | merklCampaignAccessService | `snapshot` | 单条 | ✅ | ✅(cron替换) | ➖(单条) | ✅(替换) | 🟢 | |
 | 19 | merklForecastController | `snapshotCache` | 单条 | ✅ | ✅(hardTTL) | ➖(单条) | ✅(替换) | 🟢 | |
-| 20 | coingeckoController | `cachedResponse` / `cachedFdvResponse` | 单条 | ✅ | ✅(hardTtlMs) | ➖(单条) | ✅(替换) | 🟢 | |
-| 21 | seoController | `batchRateMap` | Map | ✅ | ✅(60s窗口清理) | ⚠️(无max) | ✅(setInterval删过期) | 🟡 | key=IP，窗口内理论无限，但60s清理保证短期不累积；单实例QPS低，实际IP并发<100 |
-| 22 | rateLimit | `store` | Map | ✅ | ✅(windowMs) | ⚠️(无max) | ✅(setInterval删过期) | 🟡 | 同上，IP限流场景，窗口清理足够 |
-| 23 | marketsApiSerialize | `_cachedFingerprint` | 单条 | ✅ | ➖(schema不变则永久有效) | ➖(单条) | ➖(计算后不变) | 🟢 | 纯计算结果的fingerprint，schema不变则永远有效 |
+| 20 | brevisForecastService | `snapshot` | 单条 | ✅ | ✅(cron替换) | ➖(单条) | ✅(替换) | 🟢 | 跟 markets 1m cron 写入，同 campaignAccess 模式 |
+| 21 | coingeckoController | `cachedResponse` / `cachedFdvResponse` | 单条 | ✅ | ✅(hardTtlMs) | ➖(单条) | ✅(替换) | 🟢 | |
+| 22 | seoController | `batchRateMap` | Map | ✅ | ✅(60s窗口清理) | ⚠️(无max) | ✅(setInterval删过期) | 🟡 | key=IP，窗口内理论无限，但60s清理保证短期不累积；单实例QPS低，实际IP并发<100 |
+| 23 | rateLimit | `store` | Map | ✅ | ✅(windowMs) | ⚠️(无max) | ✅(setInterval删过期) | 🟡 | 同上，IP限流场景，窗口清理足够 |
+| 24 | marketsApiSerialize | `_cachedFingerprint` | 单条 | ✅ | ➖(schema不变则永久有效) | ➖(单条) | ➖(计算后不变) | 🟢 | 纯计算结果的fingerprint，schema不变则永远有效 |
 
 ### packages/aave-fetcher/src/
 
 | # | 文件 | 变量 | 类型 | Domain | TTL | Max | Shrink | 结论 | 不需要理由 |
 |---|------|------|------|--------|-----|-----|--------|------|-----------|
-| 24 | merit-api | `roundEstimateCache` | Map | ✅ | ✅(48h) | ✅(200) | ✅(TTL+FIFO) | 🟢 | |
-| 25 | merit-api | `campaignMetadataMemoryCache` | Record | ✅ | ➖(key跟campaign走) | ✅(500) | ✅(shrinkCampaignMetadataCache+FIFO) | 🟢 | |
-| 26 | merit-api | `meritCurrentBlockNumberCache` | Map | ✅ | ✅(60s) | ✅(50) | ✅(TTL+FIFO) | 🟢 | |
-| 27 | merit-api | `discoveredRedirectAliases` | Map | ✅ | ⚠️(无TTL) | ⚠️(无max) | ✅(fetchMeritData清空) | 🟡 | fetchMeritData开头clear()，每轮cron(~5min)清空；redirect数量有限(几十) |
-| 28 | token-price-resolver | `tokenPriceResolveCache` | Map | ✅ | ✅(24h/5min) | ✅(2000) | ✅(TTL+FIFO) | 🟢 | |
-| 29 | token-price-resolver | `tokenPriceResolveInFlight` | Map | ✅ | ➖(Promise完成即删) | ➖(并发有限) | ➖(Promise自删) | 🟢 | 短生命周期，同#3 |
-| 30 | token-price-resolver | `coingeckoPlatformCache` | 单条+Map | ✅ | ✅(24h) | ➖(Map=chainId数) | ✅(整量替换) | 🟢 | 内含Map按chainId，数量=链数(~20) |
-| 31 | merklLlmClient | `openrouterFreeModelsCache` | 单条 | ✅ | ➖(fetch后永久缓存) | ➖(单条) | ➖(有resetOpenRouterCache hook) | 🟢 | 模型列表，数量有限且稳定 |
-| 32 | merkl-api | `lastSuccessfulSnapshot` | 单条 | ✅ | ➖(cron替换) | ➖(单条) | ✅(替换) | 🟢 | |
-| 33 | cloudflare-browser | `workerDisabledResolvers` | Set | ✅ | ➖(Promise自删) | ➖(并发有限) | ✅(resolve后自删除) | 🟢 | 已从Array改为Set，resolve后自删除 |
+| 25 | merit-api | `roundEstimateCache` | Map | ✅ | ✅(48h) | ✅(200) | ✅(TTL+FIFO) | 🟢 | |
+| 26 | merit-api | `campaignMetadataMemoryCache` | Record | ✅ | ➖(key跟campaign走) | ✅(500) | ✅(shrinkCampaignMetadataCache+FIFO) | 🟢 | |
+| 27 | merit-api | `meritCurrentBlockNumberCache` | Map | ✅ | ✅(60s) | ✅(50) | ✅(TTL+FIFO) | 🟢 | |
+| 28 | merit-api | `discoveredRedirectAliases` | Map | ✅ | ⚠️(无TTL) | ⚠️(无max) | ✅(fetchMeritData清空) | 🟡 | fetchMeritData开头clear()，每轮cron(~5min)清空；redirect数量有限(几十) |
+| 29 | token-price-resolver | `tokenPriceResolveCache` | Map | ✅ | ✅(24h/5min) | ✅(2000) | ✅(TTL+FIFO) | 🟢 | |
+| 30 | token-price-resolver | `tokenPriceResolveInFlight` | Map | ✅ | ➖(Promise完成即删) | ➖(并发有限) | ➖(Promise自删) | 🟢 | 短生命周期，同#3 |
+| 31 | token-price-resolver | `coingeckoPlatformCache` | 单条+Map | ✅ | ✅(24h) | ➖(Map=chainId数) | ✅(整量替换) | 🟢 | 内含Map按chainId，数量=链数(~20) |
+| 32 | merklLlmClient | `openrouterFreeModelsCache` | 单条 | ✅ | ➖(fetch后永久缓存) | ➖(单条) | ➖(有resetOpenRouterCache hook) | 🟢 | 模型列表，数量有限且稳定 |
+| 33 | merkl-api | `lastSuccessfulSnapshot` | 单条 | ✅ | ➖(cron替换) | ➖(单条) | ✅(替换) | 🟢 | |
+| 34 | cloudflare-browser | `workerDisabledResolvers` | Set | ✅ | ➖(Promise自删) | ➖(并发有限) | ✅(resolve后自删除) | 🟢 | 已从Array改为Set，resolve后自删除 |
 
 ### packages/aave-rpc-infra/src/
 
 | # | 文件 | 变量 | 类型 | Domain | TTL | Max | Shrink | 结论 | 不需要理由 |
 |---|------|------|------|--------|-----|-----|--------|------|-----------|
-| 34 | index (ProviderPool) | `providerByKey` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(pruneStaleProviders+FIFO overflow) | 🟢 | max=150 ≥ DynamicRpcCache.max(50) × 每chain平均URL数(~3)；FIFO overflow 保留内联（需联动删 endpointHealthByKey + providerLastUsedAt） |
-| 35 | index (ProviderPool) | `endpointHealthByKey` | Map | ✅ | ✅(随provider) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上，与providerByKey一一对应 |
-| 36 | index (ProviderPool) | `providerLastUsedAt` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上 |
-| 37 | index (ProviderPool) | `viemChainCache` | 单条 | ✅ | ➖(lazy init后永久) | ➖(单条) | ➖(不变) | 🟢 | |
-| 38 | dynamicRpcCache | `cache` | Map | ✅ | ✅(shrink: invalidate由ProviderPool health检测驱动) | ✅(50) | ✅(FIFO overflow) | 🟢 | key=chainId(~20)，domain严格有界；TTL不需要：URL列表是静态元数据不会变旧，失效靠ProviderPool检测到所有suppressed时主动invalidate(shrink层)；FIFO overflow是Size层兜底 |
+| 35 | index (ProviderPool) | `providerByKey` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(pruneStaleProviders+FIFO overflow) | 🟢 | max=150 ≥ DynamicRpcCache.max(50) × 每chain平均URL数(~3)；FIFO overflow 保留内联（需联动删 endpointHealthByKey + providerLastUsedAt） |
+| 36 | index (ProviderPool) | `endpointHealthByKey` | Map | ✅ | ✅(随provider) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上，与providerByKey一一对应 |
+| 37 | index (ProviderPool) | `providerLastUsedAt` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上 |
+| 38 | index (ProviderPool) | `viemChainCache` | 单条 | ✅ | ➖(lazy init后永久) | ➖(单条) | ➖(不变) | 🟢 | |
+| 39 | dynamicRpcCache | `cache` | Map | ✅ | ✅(shrink: invalidate由ProviderPool health检测驱动) | ✅(50) | ✅(FIFO overflow) | 🟢 | key=chainId(~20)，domain严格有界；TTL不需要：URL列表是静态元数据不会变旧，失效靠ProviderPool检测到所有suppressed时主动invalidate(shrink层)；FIFO overflow是Size层兜底 |
 
 ### packages/aave-shared-contracts/src/ + aave-shared-config/src/
 
@@ -90,8 +91,8 @@
 | 7 | `v4SpokeCache` | max entries | max 80 (V4 spoke 数 ~40) |
 | 10 | `leanPriceCache` | max entries | max 500 (token 总数 ~300) |
 | 11 | `V4_RESERVE_TOKEN_CACHE` | max entries | max 100 (V4 spoke 数 ~40) |
-| 34-36 | `providerByKey` 等 3 个 | max entries | max 150 (≥ DynamicRpcCache.max × 每chain平均URL数) |
-| 38 | `DynamicRpcCache.cache` | max entries + shrink | max 50 (chainId 数 ~20，留 2.5× 余量)；shrink=invalidate(由ProviderPool health驱动) |
+| 35-37 | `providerByKey` 等 3 个 | max entries | max 150 (≥ DynamicRpcCache.max × 每chain平均URL数) |
+| 39 | `DynamicRpcCache.cache` | max entries + shrink | max 50 (chainId 数 ~20，留 2.5× 余量)；shrink=invalidate(由ProviderPool health驱动) |
 
 ### 🟡 可接受不补的 Cache（🟡 保持）
 

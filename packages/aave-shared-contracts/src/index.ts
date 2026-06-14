@@ -93,7 +93,6 @@ export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
   totalBudget?: number;
   latestTvl?: number;
   perUserRewardCapUsd?: number;
-  distributedSoFarUsd?: number;
   campaignId?: string;
   budgetNormalizedAmount?: number;
   budgetTokenSymbol?: string;
@@ -181,7 +180,7 @@ export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown>;
 export type ApiBrevisBreakdown = Pick<
   BrevisCampaignBreakdown,
   'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
-  | 'totalBudget' | 'latestTvl' | 'perUserRewardCapUsd' | 'distributedSoFarUsd'
+  | 'totalBudget' | 'latestTvl' | 'perUserRewardCapUsd'
   | 'budgetNormalizedAmount' | 'budgetTokenSymbol'
 >;
 
@@ -211,6 +210,8 @@ export interface MarketsPayload {
   data: RuntimeReserveData[];
   campaignAccess?: MerklCampaignAccess[];
   spokeHubTopology?: SpokeHubTopology;
+  /** Brevis distributedSoFarUsd per campaignId, populated by fetcher, consumed by backend side-data. */
+  brevisDistributedSoFar?: Map<string, number | undefined>;
 }
 
 // ============================================================

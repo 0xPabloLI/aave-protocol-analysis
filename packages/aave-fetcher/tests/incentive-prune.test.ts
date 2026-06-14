@@ -139,28 +139,5 @@ describe('arch-2: incentive-prune', () => {
       assert.equal(r.name, 'test');
       assert.equal(r.message, 'desc');
     });
-
-    it('keeps distributedSoFarUsd when present', () => {
-      const g: BrevisCampaignItem = {
-        link: 'https://brevis',
-        breakdowns: [{
-          campaignApr: 0.03,
-          campaignStartedAt: '2025-01-01',
-          campaignEndedAt: '2025-12-31',
-          distributedSoFarUsd: 9512.2,
-        }],
-      };
-      const r = pruneBrevisItem(g);
-      assert.equal(r.breakdowns[0].distributedSoFarUsd, 9512.2);
-    });
-
-    it('omits distributedSoFarUsd when undefined', () => {
-      const g: BrevisCampaignItem = {
-        link: 'https://brevis',
-        breakdowns: [{ campaignApr: 0.03, campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
-      };
-      const r = pruneBrevisItem(g);
-      assert.equal('distributedSoFarUsd' in r.breakdowns[0], false);
-    });
   });
 });

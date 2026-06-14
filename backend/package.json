@@ -17,7 +17,7 @@
     "test:typecheck": "tsc --noEmit -p tsconfig.tests.json",
     "gen:schema-fp": "npx --no-install tsx scripts/generate-schema-fp.ts",
     "test:api-fields": "RUN_API_FIELDS_TESTS=true npx --no-install tsx --test tests/apiFieldsVerification.test.ts",
-    "prune": "ts-prune -i '\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v 'SEMRUSH_TO_GSC' | grep '^src/' | (grep -q . && exit 1 || exit 0)"
+    "prune": "ts-prune -i '\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v 'SEMRUSH_TO_GSC' | grep -v 'ForTests' | grep '^src/' | (grep -q . && exit 1 || exit 0)"
   },
   "dependencies": {
     "@aave-dao/aave-address-book": "^4.52.3",

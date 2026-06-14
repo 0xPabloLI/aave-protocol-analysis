@@ -204,7 +204,6 @@ export function computeSchemaFingerprint(): string {
       breakdowns: [{
         campaignApr: 0.01, campaignId: '__fingerprint__',
         campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
-        distributedSoFarUsd: 1000,
       }],
     }],
     brevisBorrows: [{
@@ -212,7 +211,6 @@ export function computeSchemaFingerprint(): string {
       breakdowns: [{
         campaignApr: 0.01, campaignId: '__fingerprint__',
         campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
-        distributedSoFarUsd: 1000,
       }],
     }],
     hubId: '__fingerprint__',

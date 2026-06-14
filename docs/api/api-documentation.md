@@ -592,11 +592,13 @@ Merkl 返回里历史上存在两套命名：
 
 **端点**: `GET /api/meta/side-data`
 
-**描述**: 聚合返回低频侧数据，用于前端一次性获取 categories、FDV 快照和 Merkl forecast 状态。内部组合了：
+**描述**: 聚合返回低频侧数据，用于前端一次性获取 categories、FDV 快照、Merkl forecast 状态和 Brevis forecast 状态。内部组合了：
 
 - `categories` 子块（6h TTL）
 - `fdv` 子块（5m TTL）
-- `forecast` 子块（10m TTL）
+- `forecast` 子块（Merkl，10m TTL）
+- `brevisForecast` 子块（Brevis，1m TTL，跟着 markets cron）
+- `campaignAccess` 子块（跟着 forecast）
 
 不会触发市场数据刷新，仅依赖各自缓存与 TTL。
 
@@ -636,10 +638,26 @@ Merkl 返回里历史上存在两套命名：
     "errors": [],
     "staleTimeMs": 600000
   },
+  "brevisForecast": {
+    "items": [
+      {
+        "campaignId": "1754995104",
+        "distributedSoFarUsd": 9512.5
+      }
+    ],
+    "staleTimeMs": 60000
+  },
+  "campaignAccess": {
+    "campaigns": {
+      "0x...": { "chainId": 10, "whitelist": ["0x..."], "blacklist": [] }
+    },
+    "updatedAt": "2026-03-09T12:00:00.000Z"
+  },
   "errors": {
     "categories": "optional error message when categories snapshot fails",
     "fdv": "optional error message when fdv snapshot fails",
-    "forecast": "optional error message when forecast snapshot fails"
+    "forecast": "optional error message when forecast snapshot fails",
+    "brevisForecast": "optional error message when brevis forecast snapshot fails"
   }
 }
 ```
@@ -652,13 +670,15 @@ Merkl 返回里历史上存在两套命名：
 | `partial`     | 是否部分成功     | 任一子块失败时为 `true`                                 |
 | `categories`  | 分类子块         | `fetchedAt` + `staleTimeMs`（softTTL）                  |
 | `fdv`         | FDV 子块         | `fetchedAt` + `staleTimeMs`（softTTL）                  |
-| `forecast`    | forecast 子块    | `items` + `errors` + `staleTimeMs`（snapshot 发布节奏） |
-| `errors`      | 子块整体错误对象 | key 只会是 `categories` / `fdv` / `forecast`            |
+| `forecast`        | forecast 子块           | `items` + `errors` + `staleTimeMs`（snapshot 发布节奏） |
+| `brevisForecast`  | Brevis forecast 子块    | `items` + `staleTimeMs`（跟着 markets 1m cron）         |
+| `campaignAccess`  | campaign 白名单子块     | `campaigns` + `updatedAt`                                |
+| `errors`          | 子块整体错误对象        | key 为 `categories` / `fdv` / `forecast` / `brevisForecast` |
 
 **状态码**:
 
 - `200`: 至少有一块数据成功（`partial` 可能为 `true`）。
-- `500`: categories、fdv、forecast 均失败（无可用侧数据）。
+- `500`: categories、fdv、forecast、brevisForecast、campaignAccess 均失败（无可用侧数据）。
 
 ---
 
@@ -762,6 +782,21 @@ Brevis 对外 contract 已收口到下面这组字段：
 - 对外已不再暴露旧基础字段：`apr`、`startDate`、`endDate`、`name`。
 - 对外 Brevis 条目不携带原始预算解析输入（例如 `totalRewardAmount`、`totalRewardTokenSymbol`），也不暴露 gRPC enrich 用的 `budgetNormalizedAmount` / `budgetTokenSymbol`（仅在拉取～`fetchBrevisAprs` 算 `totalBudget` 之间存在，随后由 `pruneBrevisCampaignForRuntime` 去掉）。`totalBudget` 由 fetcher 用 `reserve.tokenPrice` 等价格源解析后写入。调试快照 `data/debug/brevis-raw-data.json` 仍含 `rawProtocolsList` / `rawProtocolDetails` 便于对照上游。仅含奖励代币 `addr` 的活动会进入索引并与 reserve 按 `chainId-token` 合并。
 - 前端按同 reserve + 同 `campaignId` 识别 supply/borrow 是否为同一个 campaign；若 canonical 字段不一致，则视为脏数据并跳过 shared-cap simulation。
+
+### 4. Brevis forecast side-data contract
+
+`GET /api/meta/side-data` 中的 `brevisForecast` 子块：
+
+| 字段               | 说明                                                         |
+| ------------------ | ------------------------------------------------------------ |
+| `items[].campaignId`        | Brevis campaign ID，与 `/api/markets` breakdown 的 `campaignId` 对应 |
+| `items[].distributedSoFarUsd` | 链上实际累计分发量（USD），由 `fetchBrevisDistributedSoFar` 从链上合约读取 |
+| `staleTimeMs`      | `60000`（1 分钟，跟着 markets cron 刷新）                    |
+
+与 Merkl forecast 的区别：
+- Merkl forecast 有独立 10 分钟 cron（外部 Merkl metrics API 有 rate limit）
+- Brevis 链上调用跟着 markets 1 分钟 cron（成本极低，当前只有 1 个 Aave campaign）
+- 前端用 `computeBudgetRemainingDays()` 统一计算两种 forecast 的预算剩余天数
 
 #### Brevis 数据源对比（gRPC vs REST `/sdk/v1/aaveCampaigns`）
 
@@ -1048,6 +1083,7 @@ curl http://localhost:3001/api/meta/side-data
   - **2026-05-13**：`/api/markets` 的 `decimals` 字段不再输出值为 18 的 token（占绝大多数），仅非 18 位 token（如 USDC=6、WBTC=8）保留此字段。前端自动默认 18，无需额外处理。
   - **2026-05-20**：`incentive_details`（DB 列 + API 序列化）从聚合级改为 **per-campaign 级**，内含 `meritSupplys`/`meritBorrows`（带 `key`/`endDate`/`link`） + `merklSupplys`/`merklBorrows`/`merklHolds`（带 `groupId`/`breakdowns`） + `brevisSupplys`/`brevisBorrows`（带 `groupId`/`breakdowns`）。`_isExpired` 标志仅在 API 序列化时按 `now() > endDate` 动态计算，**不写入 DB**。
   - **2026-06-01**：清理 V3 遗留字段 `supplyIncentives`/`borrowIncentives`（API 响应 + RuntimeReserveData + fetcher + DB `legacySupply`/`legacyBorrow`）。移除 `sumIncentiveAprFromDetails` 死代码。激励全部由结构化字段 `meritSupplys`/`merklSupplys`/`brevisSupplys` 承载。
+  - **2026-06-14**：Brevis `distributedSoFarUsd` 从 `/api/markets` breakdown 移至 `/api/meta/side-data` 的 `brevisForecast` 子块（与 Merkl forecast 架构统一）。`brevisForecast.items[].campaignId` + `distributedSoFarUsd` 为链上实际累计分发量（USD），`staleTimeMs=60000`（1 分钟，跟着 markets cron）。
 
 ## 注意事项
 

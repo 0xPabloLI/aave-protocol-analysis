@@ -178,13 +178,14 @@ async function getAllAaveV3Networks(): Promise<NetworkInfo[]> {
 // Brevis APR 提取：基于 Aave 市场链/代币列表匹配 campaign 数据
 async function fetchBrevisAprs(
   baseDataset: RuntimeReserveData[]
-): Promise<BrevisDataIndex> {
+): Promise<BrevisProcessedData> {
   try {
     logger.info('🌐 Fetching Brevis Incentra Aave campaign data...');
     
     // 获取所有 Aave campaign 数据（包含原始响应数据）
     const brevisResult = await brevisApi.getAaveCampaignsData();
     const brevisIndex: BrevisDataIndex = brevisResult.index;
+    let brevisDistributedSoFar = new Map<string, number | undefined>();
 
     // 用于 reward token 价格解析：优先后端快照 tokenPrice，缺失时再走 CoinGecko fallback。
     const tokenPriceByChainAndAddress = new Map<string, number>();
@@ -255,26 +256,13 @@ async function fetchBrevisAprs(
       try {
         const chainCampaigns = Array.from(brevisResult.submitContracts.entries())
           .map(([campaignId, info]) => ({ campaignId, ...info }));
-        const distributedSoFar = await fetchBrevisDistributedSoFar(
+        brevisDistributedSoFar = await fetchBrevisDistributedSoFar(
           chainCampaigns,
           tokenPriceByChainAndAddress,
           { rpcUrlsByChainId: Object.fromEntries(
             [...new Set(chainCampaigns.map(c => c.submitChainId))].map(id => [id, getAaveRpcUrlsByChainId(id)])
           )},
         );
-
-        for (const [indexKey, campaigns] of Object.entries(brevisIndex)) {
-          const enrichDistributedSoFar = (campaign: BrevisCampaignItem): BrevisCampaignItem => ({
-            ...campaign,
-            breakdowns: (campaign.breakdowns ?? []).map((bd) => {
-              if (!bd.campaignId) return bd;
-              const val = distributedSoFar.get(bd.campaignId);
-              return val !== undefined ? { ...bd, distributedSoFarUsd: val } : bd;
-            }),
-          });
-          campaigns.brevisSupplys = campaigns.brevisSupplys.map(enrichDistributedSoFar);
-          campaigns.brevisBorrows = campaigns.brevisBorrows.map(enrichDistributedSoFar);
-        }
       } catch (error: any) {
         logger.warn(`⚠️ Brevis distributedSoFar chain read failed: ${error.message}`);
       }
@@ -305,10 +293,10 @@ async function fetchBrevisAprs(
       `   Price source usage (Brevis totalBudget): snapshot=${brevisPriceSourceStats.snapshot}, reserve=${brevisPriceSourceStats.reserve}, coingecko=${brevisPriceSourceStats.coingecko}, missing=${brevisPriceSourceStats.missing}`
     );
     
-    return brevisIndex;
+    return { index: brevisIndex, brevisDistributedSoFar };
   } catch (error) {
     logger.error('❌ Error fetching Brevis APR data:', error);
-    return {};
+    return { index: {}, brevisDistributedSoFar: new Map() };
   }
 }
 
@@ -347,6 +335,7 @@ type MeritDataIndex = Record<string, MeritDataItem>;
 type MerklDataIndex = Record<string, MerklOpportunityData[]>;
 type BrevisDataIndex = Record<string, BrevisDataItem>;
 type MerklProcessedData = { index: MerklDataIndex; campaignAccess?: import('@internal/aave-shared-contracts').MerklCampaignAccess[] };
+type BrevisProcessedData = { index: BrevisDataIndex; brevisDistributedSoFar: Map<string, number | undefined> };
 
 function buildReserveTokenPriceMap(baseDataset: RuntimeReserveData[]): Map<string, number> {
   const map = new Map<string, number>();
@@ -384,7 +373,7 @@ async function enrichDatasetWithIncentiveData(
   const openrouterApiKey = process.env.OPENROUTER_API_KEY;
   const openrouterConfig: LlmClientConfig | undefined = openrouterApiKey ? { apiKey: openrouterApiKey, baseUrl: 'https://openrouter.ai/api/v1' } : undefined;
 
-  return Promise.all(baseDataset.map(async item => {
+  const enrichedItems = await Promise.all(baseDataset.map(async item => {
     const reserveProtocolVersion: 'v3' | 'v4' = item.marketName.startsWith('AaveV4') ? 'v4' : 'v3';
     const meritItemData = getMeritDataFromMarket(item.marketName, item.chainName, item.tokenSymbol, meritData);
     
@@ -539,6 +528,8 @@ async function enrichDatasetWithIncentiveData(
     if (item.brevisBorrows) item.brevisBorrows = item.brevisBorrows.map(pruneBrevisItem);
     return item;
   }));
+
+  return enrichedItems;
 }
 
 
@@ -917,7 +908,7 @@ export async function runMarketsFetcher(): Promise<void> {
       const { merit, merkl, brevis } = await awaitIncentiveResults(meritPromise, merklPromise, brevisPromise);
       return { merit, merkl, brevis };
     };
-    
+
     // 创建超时 Promise（带取消功能）
     let timeoutId: NodeJS.Timeout | null = null;
     let mainTaskCompleted = false;
@@ -947,12 +938,12 @@ export async function runMarketsFetcher(): Promise<void> {
         const [meritCheck, merklCheck, brevisCheck] = await Promise.all([
           checkCompleted(meritPromise, {} as MeritDataIndex),
           checkCompleted(merklPromise, { index: {} as MerklDataIndex } as MerklProcessedData),
-          checkCompleted(brevisPromise, {} as BrevisDataIndex),
+          checkCompleted(brevisPromise, { index: {} as BrevisDataIndex, brevisDistributedSoFar: new Map<string, number | undefined>() } as BrevisProcessedData),
         ]);
         
         const meritData: MeritDataIndex = meritCheck.completed ? meritCheck.value : {};
         const merklData: MerklDataIndex = merklCheck.completed ? merklCheck.value.index : {};
-        const brevisData: BrevisDataIndex = brevisCheck.completed ? brevisCheck.value : {};
+        const brevisData: BrevisDataIndex = brevisCheck.completed ? brevisCheck.value.index : {};
         
         logger.warn(`   • Merit: ${meritCheck.completed ? 'completed' : 'timeout/empty'}`);
         logger.warn(`   • Merkl: ${merklCheck.completed ? 'completed' : 'timeout/empty'}`);
@@ -1049,12 +1040,13 @@ interface IncentiveResults {
   merkl: MerklDataIndex;
   brevis: BrevisDataIndex;
   merklResult: MerklProcessedData;
+  brevisResult: BrevisProcessedData;
 }
 
 async function awaitIncentiveResults(
   meritPromise: Promise<MeritDataIndex>,
   merklPromise: Promise<MerklProcessedData>,
-  brevisPromise: Promise<BrevisDataIndex>,
+  brevisPromise: Promise<BrevisProcessedData>,
 ): Promise<IncentiveResults> {
   const results = await Promise.allSettled([meritPromise, merklPromise, brevisPromise]);
   const merit: MeritDataIndex = results[0].status === 'fulfilled' ? results[0].value : {};
@@ -1063,8 +1055,12 @@ async function awaitIncentiveResults(
       ? (results[1].value as MerklProcessedData)
       : { index: {} as MerklDataIndex };
   const merkl: MerklDataIndex = merklResult.index;
-  const brevis: BrevisDataIndex = results[2].status === 'fulfilled' ? results[2].value : {};
-  return { merit, merkl, brevis, merklResult };
+  const brevisResult: BrevisProcessedData =
+    results[2].status === 'fulfilled'
+      ? results[2].value
+      : { index: {} as BrevisDataIndex, brevisDistributedSoFar: new Map<string, number | undefined>() };
+  const brevis: BrevisDataIndex = brevisResult.index;
+  return { merit, merkl, brevis, merklResult, brevisResult };
 }
 
 function launchIncentiveFetches(reserveTokenPriceByChainAndAddress: Map<string, number>, baseDataset: RuntimeReserveData[]) {
@@ -1084,7 +1080,7 @@ function launchIncentiveFetches(reserveTokenPriceByChainAndAddress: Map<string, 
   });
   const brevisPromise = fetchBrevisAprs(baseDataset).catch((error) => {
     logger.error(`❌ Brevis data fetching failed: ${error instanceof Error ? error.message : String(error)}`);
-    return {} as BrevisDataIndex;
+    return { index: {} as BrevisDataIndex, brevisDistributedSoFar: new Map<string, number | undefined>() } as BrevisProcessedData;
   });
   return { meritPromise, merklPromise, brevisPromise };
 }
@@ -1137,12 +1133,11 @@ export async function fetchMarketsData(options?: {
   logger.info('🚀 Starting incentive data fetching concurrently...');
   
   const { meritPromise, merklPromise, brevisPromise } = launchIncentiveFetches(reserveTokenPriceByChainAndAddress, baseDataset);
-  const { merit: meritData, merkl: merklData, brevis: brevisData, merklResult } = await awaitIncentiveResults(meritPromise, merklPromise, brevisPromise);
+  const { merit: meritData, merkl: merklData, brevis: brevisData, merklResult, brevisResult } = await awaitIncentiveResults(meritPromise, merklPromise, brevisPromise);
 
   // Enrich with incentive data
   logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
-  const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData, options?.cachedConstraints);
-  const runtimeData = enrichedData;
+  const runtimeData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData, options?.cachedConstraints);
 
   logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves`);
 
@@ -1161,10 +1156,11 @@ export async function fetchMarketsData(options?: {
     data: runtimeData,
     ...(merklResult.campaignAccess?.length ? { campaignAccess: merklResult.campaignAccess } : {}),
     ...(spokeHubTopology.length ? { spokeHubTopology } : {}),
+    ...(brevisResult.brevisDistributedSoFar.size > 0 ? { brevisDistributedSoFar: brevisResult.brevisDistributedSoFar } : {}),
   };
 
   // Write debug files (non-blocking, never fail the cron)
-  writeDebugSnapshot(payload, enrichedData, v3Count, v4Count, v4Raw).catch((err) => {
+  writeDebugSnapshot(payload, runtimeData, v3Count, v4Count, v4Raw).catch((err) => {
     logger.warn(`⚠️ Debug file write failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
   });
 

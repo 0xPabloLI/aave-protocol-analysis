@@ -32,6 +32,7 @@ import {
 } from './onchainDataService.js';
 import { getV3OraclePrice, getV4OraclePrice } from './oracleService.js';
 import { setCampaignAccessSnapshot } from './merklCampaignAccessService.js';
+import { setBrevisForecastEntries } from './brevisForecastService.js';
 
 // Timeout for markets fetch (Aave API can be slow)
 const MARKETS_FETCH_TIMEOUT_MS = 60_000; // 60 seconds
@@ -419,6 +420,10 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
 
       if (payload.campaignAccess?.length) {
         setCampaignAccessSnapshot(payload.campaignAccess);
+      }
+
+      if (payload.brevisDistributedSoFar) {
+        setBrevisForecastEntries(payload.brevisDistributedSoFar);
       }
 
       const v3FreshLabel = mergeResult.v3Fresh ? 'fresh' : 'stale';
