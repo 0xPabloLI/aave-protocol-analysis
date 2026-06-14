@@ -143,7 +143,7 @@ When touching one area, check its pair:
 
 ## High-Risk Areas (Coordinate Carefully)
 - Fetch orchestration: `packages/aave-fetcher/src/index.ts`
-- Incentive adapters: `packages/aave-fetcher/src/merit-api.ts`, `merkl-api.ts`, `brevis-api.ts`
+- Incentive adapters: `packages/aave-fetcher/src/merit-api.ts`, `merkl-api.ts`, `brevis-api.ts`, `brevis-distributed-so-far.ts`
 - Token pricing + chain mapping: `packages/aave-fetcher/src/token-price-resolver.ts`, `generated/coingecko-platform-by-chain-id.ts`
 - Backend freshness/caching: `backend/src/services/marketsService.ts`, `onchainDataService.ts`, `merklForecastService.ts`, `cacheTtl.ts`
 - Shared contracts: `packages/aave-shared-contracts/src/index.ts` (source of truth for `RuntimeReserveData` and `EXPECTED_RUNTIME_FIELDS`)
@@ -174,6 +174,7 @@ Canonical source for knowledge spanning frontend AND backend, or Aave protocol f
 - **ADR 状态必须与代码实际对标**：不能因为"子 issue 全 Done"就标 ADR 为 Implemented。必须跑一遍 ADR Decision 中每个关键代码点的 import 链路 + 运行时可达性验证。存在 Partial 状态时应标注哪层已实现、哪层未接通。
 - **本地 CI ≠ Docker 构建环境**：`ci:remote` 不跑 Docker build，本地残留目录会掩盖 ENOENT。build script 中 `writeFileSync` 的目标目录必须在 script 自身（`mkdirSync`）和 Dockerfile（`RUN mkdir -p`）至少一方保证存在。`buildScriptWriteSafety.test.ts` 做静态检查防回归。
 - **涉及外部依赖的测试必须用真实数据**：调用链上合约、第三方 API（Merkl/Brevis/CoinGecko）的测试不能用 mock，必须用真实 URL/合约地址验证。单元测试可覆盖内部逻辑，但集成测试必须对真实外部端点执行，确保数据格式、字段存在性、数值范围与实际一致。改了 API contract 后必须在 dev/staging 验证实际返回。
+- **Map key 必须用 shared 工具函数生成**：跨模块通过 Map 传递数据时，key 的生成方式必须统一。禁止在消费方重新实现 key 构造函数（即使逻辑"看起来一样"），必须 import 生产方的同一个函数。例：`brevis-distributed-so-far.ts` 本地 `chainTokenKey` 用 `-` 分隔，而 shared-contracts 用 `:` 分隔，导致 tokenPrice 查找永远 miss，distributedSoFar 全部 undefined，forecast 无 Brevis items。
 
 ## Agent skills
 
