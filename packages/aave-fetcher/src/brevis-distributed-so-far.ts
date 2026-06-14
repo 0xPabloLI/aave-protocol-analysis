@@ -3,6 +3,7 @@ import {
   executeMulticall3,
   type Multicall3Call,
 } from '@internal/aave-rpc-infra';
+import { chainTokenKey } from '@internal/aave-shared-contracts';
 
 const TOKEN_CUMULATIVE_REWARDS_SELECTOR = '0xd4f3c7cc';
 
@@ -65,10 +66,6 @@ function decodeUint256(returnData: string): bigint | null {
   }
 }
 
-function chainTokenKey(chainId: number, address: string): string {
-  return `${chainId}-${address.toLowerCase()}`;
-}
-
 export async function fetchBrevisDistributedSoFar(
   campaigns: BrevisChainCallCampaign[],
   tokenPrices: Map<string, number>,
@@ -93,8 +90,6 @@ export async function fetchBrevisDistributedSoFar(
       uncached.push(c);
     }
   }
-
-  if (uncached.length === 0) return result;
 
   const byChain = new Map<number, BrevisChainCallCampaign[]>();
   for (const c of uncached) {
