@@ -3,7 +3,6 @@ import { logger } from '../logger.js';
 import { getCoingeckoCategoriesSnapshot, getCoingeckoFdvSnapshot } from './coingeckoController.js';
 import { getForecastSnapshot, type ForecastSnapshot } from './merklForecastController.js';
 import { getCampaignAccessSnapshot } from '../services/merklCampaignAccessService.js';
-import { getBrevisForecastSnapshot, type BrevisForecastSnapshot } from '../services/brevisForecastService.js';
 
 type SideDataPayload = {
   generatedAt: string;
@@ -11,7 +10,6 @@ type SideDataPayload = {
   categories?: { uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[]; fetchedAt: string; staleTimeMs: number };
   fdv?: { items: Array<{ symbol: string | null; fdvUsd: number | null }>; fetchedAt: string; staleTimeMs: number };
   forecast?: ForecastSnapshot;
-  brevisForecast?: BrevisForecastSnapshot;
   campaignAccess?: {
     campaigns: Record<string, { chainId: number; whitelist: string[]; blacklist: string[] }>;
     updatedAt: string;
@@ -54,14 +52,8 @@ export const getSideDataMeta = async (_req: Request, res: Response) => {
     payload.campaignAccess = campaignAccessSnapshot;
   }
 
-  try {
-    payload.brevisForecast = getBrevisForecastSnapshot();
-  } catch {
-    errors.brevisForecast = 'Brevis forecast snapshot not ready';
-  }
-
-  const successCount = [payload.categories, payload.fdv, payload.forecast, payload.campaignAccess, payload.brevisForecast].filter(Boolean).length;
-  payload.partial = successCount < 5;
+  const successCount = [payload.categories, payload.fdv, payload.forecast, payload.campaignAccess].filter(Boolean).length;
+  payload.partial = successCount < 4;
   if (Object.keys(errors).length > 0) payload.errors = errors;
 
   if (successCount === 0) {

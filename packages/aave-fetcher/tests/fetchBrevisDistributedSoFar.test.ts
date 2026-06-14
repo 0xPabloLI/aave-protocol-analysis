@@ -1,6 +1,6 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchBrevisDistributedSoFar } from '../src/brevis-distributed-so-far.js';
+import { fetchBrevisDistributedSoFar, __resetBrevisChainCallCacheForTests } from '../src/brevis-distributed-so-far.js';
 
 const OPTIMISM_RPC = 'https://optimism-rpc.publicnode.com';
 
@@ -12,6 +12,9 @@ const REAL_DECIMALS = 6;
 const REAL_CAMPAIGN_ID = '1754995104';
 
 describe('fetchBrevisDistributedSoFar', () => {
+  beforeEach(() => {
+    __resetBrevisChainCallCacheForTests();
+  });
   it('returns distributedSoFarUsd for real Brevis campaign on Optimism', async () => {
     const campaigns = [
       {

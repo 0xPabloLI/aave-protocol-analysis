@@ -6,6 +6,36 @@ import {
 
 const TOKEN_CUMULATIVE_REWARDS_SELECTOR = '0xd4f3c7cc';
 
+const BREVIS_CHAIN_CALL_CACHE_TTL_MS = 60 * 60 * 1000;
+const BREVIS_CHAIN_CALL_CACHE_MAX = 100;
+
+interface CacheEntry {
+  value: number | undefined;
+  fetchedAt: number;
+}
+
+const chainCallCache = new Map<string, CacheEntry>();
+
+function cacheKey(campaign: BrevisChainCallCampaign): string {
+  return `${campaign.submitChainId}-${campaign.submitAddr.toLowerCase()}-${campaign.tokenAddr.toLowerCase()}`;
+}
+
+function pruneCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of chainCallCache) {
+    if (now - entry.fetchedAt > BREVIS_CHAIN_CALL_CACHE_TTL_MS * 2) {
+      chainCallCache.delete(key);
+    }
+  }
+  if (chainCallCache.size > BREVIS_CHAIN_CALL_CACHE_MAX) {
+    const keys = Array.from(chainCallCache.keys());
+    const excess = chainCallCache.size - BREVIS_CHAIN_CALL_CACHE_MAX;
+    for (let i = 0; i < excess; i++) {
+      chainCallCache.delete(keys[i]);
+    }
+  }
+}
+
 export interface BrevisChainCallCampaign {
   campaignId: string;
   submitAddr: string;
@@ -44,10 +74,30 @@ export async function fetchBrevisDistributedSoFar(
   tokenPrices: Map<string, number>,
   options: FetchBrevisDistributedSoFarOptions,
 ): Promise<Map<string, number | undefined>> {
+  pruneCache();
+
   const result = new Map<string, number | undefined>();
+  const now = Date.now();
+  const uncached: BrevisChainCallCampaign[] = [];
+
+  for (const c of campaigns) {
+    if (!c.submitAddr || !c.submitChainId) {
+      result.set(c.campaignId, undefined);
+      continue;
+    }
+    const key = cacheKey(c);
+    const cached = chainCallCache.get(key);
+    if (cached && (now - cached.fetchedAt) <= BREVIS_CHAIN_CALL_CACHE_TTL_MS) {
+      result.set(c.campaignId, cached.value);
+    } else {
+      uncached.push(c);
+    }
+  }
+
+  if (uncached.length === 0) return result;
 
   const byChain = new Map<number, BrevisChainCallCampaign[]>();
-  for (const c of campaigns) {
+  for (const c of uncached) {
     if (!c.submitAddr || !c.submitChainId) {
       result.set(c.campaignId, undefined);
       continue;
@@ -92,7 +142,10 @@ export async function fetchBrevisDistributedSoFar(
       } else if (lastError !== undefined) {
         console.warn(`Brevis multicall3 failed for chain=${chainId}:`, lastError);
       }
-      for (const c of group) result.set(c.campaignId, undefined);
+      for (const c of group) {
+        result.set(c.campaignId, undefined);
+        chainCallCache.set(cacheKey(c), { value: undefined, fetchedAt: now });
+      }
       continue;
     }
 
@@ -102,12 +155,14 @@ export async function fetchBrevisDistributedSoFar(
 
       if (!mcResult?.success) {
         result.set(c.campaignId, undefined);
+        chainCallCache.set(cacheKey(c), { value: undefined, fetchedAt: now });
         continue;
       }
 
       const rawValue = decodeUint256(mcResult.returnData);
       if (rawValue === null) {
         result.set(c.campaignId, undefined);
+        chainCallCache.set(cacheKey(c), { value: undefined, fetchedAt: now });
         continue;
       }
 
@@ -115,6 +170,7 @@ export async function fetchBrevisDistributedSoFar(
       const tokenPrice = tokenPrices.get(priceKey);
       if (tokenPrice === undefined) {
         result.set(c.campaignId, undefined);
+        chainCallCache.set(cacheKey(c), { value: undefined, fetchedAt: now });
         continue;
       }
 
@@ -126,18 +182,24 @@ export async function fetchBrevisDistributedSoFar(
 
       if (!Number.isFinite(usd)) {
         result.set(c.campaignId, undefined);
+        chainCallCache.set(cacheKey(c), { value: undefined, fetchedAt: now });
         continue;
       }
 
       result.set(c.campaignId, usd);
+      chainCallCache.set(cacheKey(c), { value: usd, fetchedAt: now });
     }
   }
 
-  for (const c of campaigns) {
+  for (const c of uncached) {
     if (!result.has(c.campaignId)) {
       result.set(c.campaignId, undefined);
     }
   }
 
   return result;
+}
+
+export function __resetBrevisChainCallCacheForTests(): void {
+  chainCallCache.clear();
 }

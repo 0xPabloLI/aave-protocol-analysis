@@ -46,7 +46,7 @@
 | 17 | addressBookRegistry | `V3_ENTRIES` / `V4_SPOKE_ENTRIES` | readonly数组 | ✅ | ➖(静态) | ➖(拓扑决定) | ➖(运行时不变) | 🟢 | 静态配置，数量=链上pool/spoke数，运行时不变 |
 | 18 | merklCampaignAccessService | `snapshot` | 单条 | ✅ | ✅(cron替换) | ➖(单条) | ✅(替换) | 🟢 | |
 | 19 | merklForecastController | `snapshotCache` | 单条 | ✅ | ✅(hardTTL) | ➖(单条) | ✅(替换) | 🟢 | |
-| 20 | brevisForecastService | `snapshot` | 单条 | ✅ | ✅(cron替换) | ➖(单条) | ✅(替换) | 🟢 | 跟 markets 1m cron 写入，同 campaignAccess 模式 |
+| 20 | brevisForecastService | `entries` | Map | ✅ | ✅(cron替换) | ➖(=campaign数) | ✅(替换) | 🟢 | 跟 markets 1m cron 写入，无独立 snapshot；getBrevisForecastItems() 实时从 markets snapshot 读 endTimestamp |
 | 21 | coingeckoController | `cachedResponse` / `cachedFdvResponse` | 单条 | ✅ | ✅(hardTtlMs) | ➖(单条) | ✅(替换) | 🟢 | |
 | 22 | seoController | `batchRateMap` | Map | ✅ | ✅(60s窗口清理) | ⚠️(无max) | ✅(setInterval删过期) | 🟡 | key=IP，窗口内理论无限，但60s清理保证短期不累积；单实例QPS低，实际IP并发<100 |
 | 23 | rateLimit | `store` | Map | ✅ | ✅(windowMs) | ⚠️(无max) | ✅(setInterval删过期) | 🟡 | 同上，IP限流场景，窗口清理足够 |
@@ -66,6 +66,7 @@
 | 32 | merklLlmClient | `openrouterFreeModelsCache` | 单条 | ✅ | ➖(fetch后永久缓存) | ➖(单条) | ➖(有resetOpenRouterCache hook) | 🟢 | 模型列表，数量有限且稳定 |
 | 33 | merkl-api | `lastSuccessfulSnapshot` | 单条 | ✅ | ➖(cron替换) | ➖(单条) | ✅(替换) | 🟢 | |
 | 34 | cloudflare-browser | `workerDisabledResolvers` | Set | ✅ | ➖(Promise自删) | ➖(并发有限) | ✅(resolve后自删除) | 🟢 | 已从Array改为Set，resolve后自删除 |
+| 35 | brevis-distributed-so-far | `chainCallCache` | Map | ✅ | ✅(1h TTL+2h惰性删) | ✅(100) | ✅(pruneCache+FIFO) | 🟢 | tokenCumulativeRewards约4h变一次，1h TTL足够 |
 
 ### packages/aave-rpc-infra/src/
 

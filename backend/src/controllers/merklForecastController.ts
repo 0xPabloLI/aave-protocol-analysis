@@ -1,5 +1,6 @@
 import { FORECAST_SOFT_TTL_MS, getMerklForecastState } from '../services/merklForecastService.js';
 import { getMarketsSnapshot, type RuntimeReserveData } from '../services/marketsService.js';
+import { getBrevisForecastItems } from '../services/brevisForecastService.js';
 import { logger } from '../logger.js';
 import { MERKL_TTL } from '../cacheTtl.js';
 import {
@@ -30,7 +31,7 @@ export const toForecastResponseItem = (
   return item;
 };
 
-export type ForecastResponseItem = { campaignId: string; requiredDaily?: number; distributedSoFar: number; endTimestamp: number };
+export type ForecastResponseItem = { campaignId: string; requiredDaily?: number; distributedSoFar: number; endTimestamp?: number };
 
 export interface ForecastSnapshot {
   items: ForecastResponseItem[];
@@ -109,9 +110,12 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
     }
   });
 
-  const snapshot: ForecastSnapshot = { items, errors, staleTimeMs: FORECAST_SOFT_TTL_MS };
+  const brevisItems = getBrevisForecastItems(marketsSnapshot.payload.data);
+  const allItems = [...items, ...brevisItems];
 
-  if (items.length === 0 && canUsePrevious() && previous!.snapshot.items.length > 0) {
+  const snapshot: ForecastSnapshot = { items: allItems, errors, staleTimeMs: FORECAST_SOFT_TTL_MS };
+
+  if (allItems.length === 0 && canUsePrevious() && previous!.snapshot.items.length > 0) {
     logger.warn('Forecast refresh produced empty items; keeping previous forecast snapshot fallback');
     snapshotCache = {
       snapshot: previous!.snapshot,
@@ -120,7 +124,7 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
     return previous!.snapshot;
   }
 
-  if (items.length === 0) {
+  if (allItems.length === 0) {
     throw new Error('Forecast snapshot not ready: refresh produced no items');
   }
 
