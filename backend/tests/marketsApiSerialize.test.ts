@@ -74,6 +74,67 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
   assert.equal(api.brevisSupplys?.[0]?.breakdowns?.[0]?.perUserRewardCapUsd, 5000);
 });
 
+test('serializeReserveForApi scales Brevis aprCap to percent', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'brevis-cap',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    brevisSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.024,
+            aprCap: 0.024,
+            campaignId: '1754995104',
+            campaignStartedAt: '2025-08-13T13:00:00.000Z',
+            campaignEndedAt: '2026-08-08T00:00:00.000Z',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const bd = api.brevisSupplys?.[0]?.breakdowns?.[0];
+  assert.equal(bd?.campaignApr, 2.4);
+  assert.equal(bd?.aprCap, 2.4);
+});
+
+test('serializeReserveForApi omits Brevis aprCap when absent', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'brevis-nocap',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    brevisBorrows: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignId: '123',
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const bd = api.brevisBorrows?.[0]?.breakdowns?.[0];
+  assert.equal(bd?.campaignApr, 1);
+  assert.equal('aprCap' in (bd ?? {}), false);
+});
+
 test('serializeReserveForApi preserves null aprCap on Merkl breakdown', () => {
   const reserve: RuntimeReserveData = {
     reserveId: 'x',

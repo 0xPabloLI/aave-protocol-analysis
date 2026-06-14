@@ -46,8 +46,13 @@ function scaleMerklBreakdown<
   return next;
 }
 
-function scaleBrevisBreakdown<T extends { campaignApr: number }>(b: T): T {
-  return { ...b, campaignApr: roundTo6(b.campaignApr * 100) };
+function scaleBrevisBreakdown<T extends { campaignApr: number; aprCap?: number }>(b: T): T {
+  const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
+  if (Object.prototype.hasOwnProperty.call(b, 'aprCap')) {
+    const cap = b.aprCap;
+    (next as { aprCap?: number }).aprCap = cap === undefined ? cap : roundTo6(cap * 100);
+  }
+  return next;
 }
 
 function scaleGroupedCampaigns<
