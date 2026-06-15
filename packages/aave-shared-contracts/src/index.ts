@@ -77,8 +77,6 @@ export type ForecastCampaignTypeLite =
   | 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
   | 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT';
 
-export type CampaignAprUnavailableReason = 'NO_REWARD_TOKEN_PRICE' | 'NO_TARGET_TOKEN_PRICE';
-
 export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   campaignId: string;
   whitelistOnly?: boolean;
@@ -89,7 +87,6 @@ export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   latestTvl?: number;
   plannedDaily?: number;
   budgetBoundMode?: string;
-  campaignAprUnavailableReason?: CampaignAprUnavailableReason;
 }
 
 export interface MerklOpportunityGroup extends CampaignGroup<MerklCampaignBreakdown> {}

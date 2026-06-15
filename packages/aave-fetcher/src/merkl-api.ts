@@ -872,7 +872,6 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
 
 export interface ResolvedCampaignApr {
   apr: number;
-  unavailableReason?: 'NO_REWARD_TOKEN_PRICE' | 'NO_TARGET_TOKEN_PRICE';
 }
 
 const AMOUNT_VARIANT_TYPES: Set<ForecastCampaignTypeLite> = new Set([
@@ -908,13 +907,13 @@ export const resolveCampaignApr = (
     if (dsApr <= 0) return { apr: 0 };
 
     if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE') {
-      if (!rewardTokenPrice) return { apr: 0, unavailableReason: 'NO_REWARD_TOKEN_PRICE' };
+      if (!rewardTokenPrice) return { apr: 0 };
       return { apr: dsApr * rewardTokenPrice };
     }
 
     if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' || campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
-      if (!rewardTokenPrice) return { apr: 0, unavailableReason: 'NO_REWARD_TOKEN_PRICE' };
-      if (!targetTokenPrice) return { apr: 0, unavailableReason: 'NO_TARGET_TOKEN_PRICE' };
+      if (!rewardTokenPrice) return { apr: 0 };
+      if (!targetTokenPrice) return { apr: 0 };
       return { apr: dsApr * (rewardTokenPrice / targetTokenPrice) };
     }
   }
@@ -1083,14 +1082,17 @@ export type MerklRewardsBreakdownForIntensity = {
 
 /**
  * 是否应为该 breakdown 输出 `pointsPerThousandUsd`（由 `value`÷TVL 推导）。
- * 仅当 Merkl 在 breakdown 上把奖励标为 **`token.type === 'PRETGE'`**（pre-TGE 类积分）时启用。
+ * 启用条件：Merkl 在 breakdown 上把奖励标为 `token.type === 'PRETGE'`（pre-TGE 积分）
+ * 或 `token.type === 'POINT'`（纯积分）。PRETGE 覆盖 Ink/Tydro 等场景，
+ * POINT 覆盖 AMOUNT 变体（FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE 等）的 points token。
  * 这只决定是否输出 points/intensity 字段，不决定 forecast 规则；forecast 仍按实际
  * `distributionType` / 规范化后的 `campaignType` 处理，不对 Tydro points 预设单独机制。
  */
 export function merklBreakdownUsesPointsIntensityFields(
   breakdown: MerklRewardsBreakdownForIntensity
 ): boolean {
-  return String(breakdown.token?.type || '').trim().toUpperCase() === 'PRETGE';
+  const tokenType = String(breakdown.token?.type || '').trim().toUpperCase();
+  return tokenType === 'PRETGE' || tokenType === 'POINT';
 }
 
 export async function processMerklData(
@@ -1188,7 +1190,6 @@ export async function processMerklData(
   logger.info(`Processing ${liveOpportunities.length} live Merkl opportunities`);
   
   const campaignDetailsCache = new Map<string, MerklCampaignDetails | null>();
-  const campaignAprUnavailableMap = new Map<string, 'NO_REWARD_TOKEN_PRICE' | 'NO_TARGET_TOKEN_PRICE'>();
   const campaignAccessMap = new Map<string, MerklCampaignAccess>();
 
   type PriceLookupKey = `${number}:${string}:${string}`;
@@ -1293,9 +1294,6 @@ export async function processMerklData(
           apr: resolved.apr,
           whitelistOnly: isCampaignWhitelistOnly(campaign),
         });
-        if (resolved.unavailableReason) {
-          campaignAprUnavailableMap.set(id, resolved.unavailableReason);
-        }
         const params = campaign.params ?? {};
         const wl = Array.isArray(params.whitelist) ? (params.whitelist as string[]).filter(Boolean) : [];
         const bl = Array.isArray(params.blacklist) ? (params.blacklist as string[]).filter(Boolean) : [];
@@ -1415,9 +1413,6 @@ export async function processMerklData(
         campaignEndedAt: campaignDetails.endedAt,
         campaignId,
         whitelistOnly: campaignDetails.whitelistOnly,
-        ...(campaignAprUnavailableMap.has(campaignId)
-          ? { campaignAprUnavailableReason: campaignAprUnavailableMap.get(campaignId) }
-          : {}),
         ...(pointsFields ?? {})
       });
     }

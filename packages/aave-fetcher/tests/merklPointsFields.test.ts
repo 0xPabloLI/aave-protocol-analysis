@@ -40,8 +40,10 @@ test('merklPointsFieldsFromBreakdownValue scales by TVL when value is present', 
   assert.ok(Math.abs(out!.pointsPerThousandUsd - 0.477069) < 1e-4);
 });
 
-test('merklBreakdownUsesPointsIntensityFields is true only for PRETGE', () => {
+test('merklBreakdownUsesPointsIntensityFields is true for PRETGE and POINT', () => {
   assert.equal(merklBreakdownUsesPointsIntensityFields({ token: { type: 'PRETGE' } }), true);
+  assert.equal(merklBreakdownUsesPointsIntensityFields({ token: { type: 'POINT' } }), true);
+  assert.equal(merklBreakdownUsesPointsIntensityFields({ token: { type: 'point' } }), true);
   assert.equal(
     merklBreakdownUsesPointsIntensityFields({
       token: { type: 'TOKEN', symbol: 'OP', name: 'Optimism' },

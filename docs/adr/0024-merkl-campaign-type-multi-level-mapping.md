@@ -171,7 +171,7 @@ APR cap extraction changed from `extractMaxApr(campaign)` to `extractAprCap(camp
 - **Trade-off (DRY)**: `merklForecastModel.ts` and `merkl-api.ts` each define their own mapping tables + normalize functions with identical logic. This duplication is intentional: the former handles backend runtime normalization, the latter handles lite file preprocessing in the fetcher package. The cost is that new mapping entries must be added to both files — accepted as a 2-location sync burden.
 - **Precision**: Level 2 matching uses exact equality (`===`) rather than substring matching (`includes`) to prevent future false positives
 - **Semantic clarity**: Removing L3 eliminates the conflation between "budget-bound fallback strategy" (mode) and "campaign type classification" (CampaignForecastType)
-- **Known precision gap (AAV-827) — RESOLVED 2026-06-15**: AMOUNT 变体现在映射到独立枚举值（`FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE`、`FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT`、`MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT`），不再折叠到 VALUE。`resolveCampaignApr` 使用 `AMOUNT_VARIANT_TYPES` Set 判断变体，并通过 token price 计算真正的 USD APR。若 price 缺失，返回 `campaignAprUnavailableReason` 标记。长期统一 normalize 函数见 AAV-862。
+- **Known precision gap (AAV-827) — RESOLVED 2026-06-15**: AMOUNT 变体现在映射到独立枚举值（`FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE`、`FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT`、`MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT`），不再折叠到 VALUE。`resolveCampaignApr` 使用 `AMOUNT_VARIANT_TYPES` Set 判断变体，并通过 token price 计算真正的 USD APR。若 price 缺失则 `campaignApr = 0`，后端 log 记录即可。AMOUNT 变体的 `POINT` 类型 token 现在也输出 `pointsPerThousandUsd`（`merklBreakdownUsesPointsIntensityFields` 扩展为 `PRETGE || POINT`）。长期统一 normalize 函数见 AAV-862。
 
 ### AMOUNT Variant Verified Semantics (2026-06-14)
 
