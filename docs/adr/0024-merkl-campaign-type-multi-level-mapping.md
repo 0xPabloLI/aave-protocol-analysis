@@ -1,11 +1,11 @@
 # ADR-0024: Merkl Campaign Type Multi-Level Mapping
 
 Date: 2026-05-29
-Updated: 2026-06-13
+Updated: 2026-06-15
 
 ## Status
 
-Updated — L3 (mode) mapping removed; TARGET_TOTAL_APR type introduced
+Updated — budgetBoundMode passthrough complete; Pick list refactored; spreadCap removed (YAGNI)
 
 ## Context
 
@@ -60,13 +60,13 @@ Use a **2-level priority mapping**: `distributionMethod → distributionType`. M
 
 **Level 2: distributionType → CampaignForecastType** (only when Level 1 has no match)
 
-| distributionType | → Result |
-|---|---|
-| MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
-| MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
-| FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
-| FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
-| FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE |
+| distributionType | → Result | Note |
+|---|---|---|
+| MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | |
+| MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | ⚠️ AMOUNT 语义丢失 → AAV-827 |
+| FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE | |
+| FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE | ⚠️ AMOUNT 语义丢失 → AAV-827 |
+| FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE | ⚠️ AMOUNT 语义丢失 → AAV-827 |
 | DUTCH_AUCTION | DUTCH_AUCTION |
 | AAVE_NET_APR | TARGET_TOTAL_APR |
 | AAVE_V4_NET_APR | TARGET_TOTAL_APR |
@@ -161,8 +161,25 @@ APR cap extraction changed from `extractMaxApr(campaign)` to `extractAprCap(camp
 - **Positive**: All 18+ known campaign type combinations now map correctly; no data loss
 - **Positive**: "Missing APR cap" errors for AAVE_NET_APR / AAVE_V4_NET_APR campaigns are resolved
 - **Positive**: `budgetBoundMode` field enables frontend to display budget-bound behavior correctly
+- **Positive** (2026-06-15): `budgetBoundMode` fully passthrough from fetcher → API output; field rules dynamically select FIX/MAX rules based on budgetBoundMode for TARGET_TOTAL_APR
+- **Positive** (2026-06-15): `ApiMerklBreakdown` Pick list removed — field visibility now controlled solely by `BREAKDOWN_FIELD_RULES`, reducing sync burden from 3 locations to 2
+- **Positive** (2026-06-15): `spreadCap` removed from `MerklCampaignBreakdown` (YAGNI — vault data unavailable, no consumer). Vault mode documented as future reservation
 - **Neutral**: Function signatures changed — `mode` removed from `NormalizeCampaignTypeInput`; `extractMaxApr` renamed to `extractAprCap` with added `campaignType` parameter
 - **Neutral**: `ForecastCampaignMetaLite` interface retains `rawMode?` for `budgetBoundMode` passthrough
+- **Neutral** (2026-06-15): `getBreakdownFieldRule` / `getForecastFieldRule` now accept optional `budgetBoundMode` parameter for dynamic rule selection
 - **Trade-off (DRY)**: `merklForecastModel.ts` and `merkl-api.ts` each define their own mapping tables + normalize functions with identical logic. This duplication is intentional: the former handles backend runtime normalization, the latter handles lite file preprocessing in the fetcher package. The cost is that new mapping entries must be added to both files — accepted as a 2-location sync burden.
 - **Precision**: Level 2 matching uses exact equality (`===`) rather than substring matching (`includes`) to prevent future false positives
 - **Semantic clarity**: Removing L3 eliminates the conflation between "budget-bound fallback strategy" (mode) and "campaign type classification" (CampaignForecastType)
+- **Known precision gap (AAV-827)**: AMOUNT 变体（`FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE`、`FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT`、`MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT`）被映射为对应的 VALUE 变体，丢失 "token 数量计价 vs dollar 计价" 语义。forecast 计算公式完全一致（`requiredDaily = remainingBudget / remainingDays`，`distributionSettings.apr` 格式均为 decimal），区别仅在：① campaign APR = 0（Merkl 无法算 USD APR）需 fallback；② totalBudget / distributedSoFar / dailyRewards 单位为 token 而非 USD。修复方案：新增枚举值精确映射 + campaign APR fallback（详见 AAV-827）。长期重构见 AAV-862。
+
+### AMOUNT Variant Verified Semantics (2026-06-14)
+
+`distributionSettings.apr` 在所有变体中格式一致（decimal），数学验证：
+
+| 变体 | distributionSettings.apr | 公式 | 结果单位 |
+|---|---|---|---|
+| VALUE | 0.035 (3.5%) | `daily_usd = TVL_usd × apr / 365` | USD |
+| AMOUNT_PER_VALUE | 18.25 (1825%) | `daily_tokens = TVL_usd × apr / 365` | token |
+| AMOUNT_PER_AMOUNT | 3650 (365000%) | `daily_tokens = targetTokenTVL_tokens × apr / 365` | token |
+
+AMOUNT_PER_AMOUNT 的 TVL 单位是 target token 数量而非 USD，无法仅从 opportunity TVL（USD）计算 daily rewards。`distributedSoFar` 需从 metrics API `dailyRewardsRecords.totalInToken` 累加。

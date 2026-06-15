@@ -21,7 +21,7 @@ export const toForecastResponseItem = (
   const type = state.campaignType as CampaignForecastType;
   if (!shouldIncludeForecastItem(type)) return null;
 
-  const rule = getForecastFieldRule(type);
+  const rule = getForecastFieldRule(type, state.budgetBoundMode);
   const item: { campaignId: string; requiredDaily?: number; distributedSoFar: number; endTimestamp: number } = {
     campaignId: state.campaignId,
     ...(rule.includeRequiredDaily && { requiredDaily: state.requiredDaily }),

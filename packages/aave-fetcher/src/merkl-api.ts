@@ -559,10 +559,10 @@ const FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS: Array<{
   result: ForecastCampaignTypeLite;
 }> = [
   { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT' },
   { pattern: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE' },
+  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', result: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' },
   { pattern: 'DUTCH_AUCTION', result: 'DUTCH_AUCTION' },
   { pattern: 'AAVE_NET_APR', result: 'TARGET_TOTAL_APR' },
   { pattern: 'AAVE_V4_NET_APR', result: 'TARGET_TOTAL_APR' },
@@ -870,6 +870,60 @@ export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
   }
 }
 
+export interface ResolvedCampaignApr {
+  apr: number;
+  unavailableReason?: 'NO_REWARD_TOKEN_PRICE' | 'NO_TARGET_TOKEN_PRICE';
+}
+
+const AMOUNT_VARIANT_TYPES: Set<ForecastCampaignTypeLite> = new Set([
+  'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE',
+  'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT',
+  'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT',
+]);
+
+function isAmountVariant(type?: ForecastCampaignTypeLite | null): boolean {
+  return type ? AMOUNT_VARIANT_TYPES.has(type) : false;
+}
+
+function extractDistributionSettingsApr(campaign: any): number {
+  const dsApr =
+    campaign?.params?.distributionMethodParameters?.distributionSettings?.apr
+    ?? campaign?.distributionMethodParameters?.distributionSettings?.apr
+    ?? campaign?.distributionSettings?.apr;
+  return Number(dsApr || 0);
+}
+
+export const resolveCampaignApr = (
+  campaign: any,
+  distributionType?: string,
+  rewardTokenPrice?: number,
+  targetTokenPrice?: number,
+): ResolvedCampaignApr => {
+  if (!campaign) return { apr: 0 };
+  const topApr = Number(campaign.apr || 0);
+  const campaignType = normalizeForecastCampaignTypeLite({ distributionType });
+
+  if (isAmountVariant(campaignType)) {
+    const dsApr = extractDistributionSettingsApr(campaign);
+    if (dsApr <= 0) return { apr: 0, unavailableReason: 'NO_REWARD_TOKEN_PRICE' };
+
+    if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE') {
+      if (!rewardTokenPrice) return { apr: 0, unavailableReason: 'NO_REWARD_TOKEN_PRICE' };
+      return { apr: dsApr * rewardTokenPrice };
+    }
+
+    if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' || campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
+      if (!rewardTokenPrice) return { apr: 0, unavailableReason: 'NO_REWARD_TOKEN_PRICE' };
+      if (!targetTokenPrice) return { apr: 0, unavailableReason: 'NO_TARGET_TOKEN_PRICE' };
+      return { apr: dsApr * (rewardTokenPrice / targetTokenPrice) };
+    }
+  }
+
+  if (topApr > 0) return { apr: topApr / 100 };
+
+  return { apr: 0 };
+};
+
 /**
  * 获取 Merkl campaign 详情
  * In https://api.merkl.xyz/v4/opportunities?mainProtocolId=aave api, onChainCampaignId = Campaign ID in webpage, campaignId = Database ID in web page. 
@@ -896,12 +950,11 @@ export async function fetchMerklCampaignDetails(campaignId: string): Promise<Mer
       new Date(campaign.endTimestamp * 1000).toISOString() : 
       '';
     
-    const aprPercent = Number(campaign.apr || 0);
     return {
       startedAt,
       endedAt,
       id: campaignId,
-      apr: aprPercent / 100,
+      apr: resolveCampaignApr(campaign, campaign.distributionType).apr,
       whitelistOnly: isCampaignWhitelistOnly(campaign),
     };
   } catch (error) {
@@ -1112,7 +1165,7 @@ export async function processMerklData(
         startedAt: toIsoFromUnixLike(campaign.startTimestamp),
         endedAt: toIsoFromUnixLike(campaign.endTimestamp),
         id,
-        apr: Number(campaign.apr || 0) / 100,
+        apr: resolveCampaignApr(campaign, opp.distributionType).apr,
         whitelistOnly: isCampaignWhitelistOnly(campaign),
       });
       const params = campaign.params ?? {};
@@ -1250,6 +1303,9 @@ export async function processMerklData(
       if (meta) {
         const fields = await buildForecastFieldsFromOpportunity(meta, mergedOptions);
         if (fields) Object.assign(bd, fields);
+        if (meta.rawMode && meta.campaignTypeHint === 'TARGET_TOTAL_APR') {
+          bd.budgetBoundMode = meta.rawMode;
+        }
       }
     }
 

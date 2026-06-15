@@ -55,6 +55,7 @@ interface CampaignOpportunityMeta {
   campaignTypeHint: CampaignForecastType;
   campaignSnapshot: CampaignSnapshotLite | null;
   useTokenRateInMetrics: boolean;
+  rawMode?: string;
 }
 
 interface CampaignOpportunityCacheEntry {
@@ -477,6 +478,7 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
 
       const rawDistributionType = getAtPath(value, ['rawDistributionType']);
       const rawDistributionMethod = getAtPath(value, ['rawDistributionMethod']);
+      const rawMode = getAtPath(value, ['rawMode']);
       const campaignTypeHint = normalizeCampaignType({
         distributionType: typeof rawDistributionType === 'string' ? rawDistributionType : undefined,
         distributionMethod: typeof rawDistributionMethod === 'string' ? rawDistributionMethod : undefined,
@@ -494,6 +496,7 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
         campaignTypeHint,
         campaignSnapshot,
         useTokenRateInMetrics: Boolean(getAtPath(value, ['useTokenRateInMetrics'])),
+        ...(typeof rawMode === 'string' ? { rawMode } : {}),
       });
     }
 
@@ -782,6 +785,7 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
       return buildForecastState({
         campaignId,
         campaignType,
+        budgetBoundMode: campaignOpportunityMeta?.rawMode,
         totalBudget,
         aprCap,
         startTimestamp: startTs,

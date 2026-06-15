@@ -29,6 +29,7 @@ function scaleMerklBreakdown<
     campaignType?: CampaignForecastType;
     plannedDaily?: number;
     totalBudget?: number;
+    budgetBoundMode?: string;
   },
 >(b: T): T {
   const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
@@ -38,7 +39,7 @@ function scaleMerklBreakdown<
       cap === null || cap === undefined ? cap : roundTo6(cap * 100);
   }
   if (b.campaignType) {
-    const rule = getBreakdownFieldRule(b.campaignType);
+    const rule = getBreakdownFieldRule(b.campaignType, b.budgetBoundMode);
     for (const field of rule.omit) {
       delete (next as Record<string, unknown>)[field];
     }

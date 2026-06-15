@@ -10,6 +10,7 @@ export type CampaignForecastType =
 export interface BuildForecastStateInput {
   campaignId: string;
   campaignType: CampaignForecastType;
+  budgetBoundMode?: string;
   totalBudget: number;
   aprCap: number | null;
   startTimestamp: number;
@@ -22,6 +23,7 @@ export interface BuildForecastStateInput {
 export interface MerklForecastState {
   campaignId: string;
   campaignType: CampaignForecastType;
+  budgetBoundMode?: string;
   totalBudget: number;
   // Fixed baseline daily budget over the full campaign window.
   plannedDaily: number;
@@ -140,6 +142,7 @@ export const buildForecastState = (input: BuildForecastStateInput): MerklForecas
   return {
     campaignId: input.campaignId,
     campaignType: input.campaignType,
+    budgetBoundMode: input.budgetBoundMode,
     totalBudget,
     plannedDaily,
     requiredDaily,

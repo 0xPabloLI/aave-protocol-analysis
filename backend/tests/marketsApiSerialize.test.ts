@@ -276,6 +276,192 @@ test('serializeReserveForApi preserves plannedDaily for MAX_REWARD Merkl breakdo
   assert.equal(breakdown?.plannedDaily, 100);
 });
 
+test('serializeReserveForApi includes budgetBoundMode for TARGET_TOTAL_APR Merkl breakdowns', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'tta',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignType: 'TARGET_TOTAL_APR',
+            aprCap: 0.047,
+            totalBudget: 1000,
+            latestTvl: 5000,
+            plannedDaily: 100,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'tta-id',
+            budgetBoundMode: 'MAX_APR',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignType, 'TARGET_TOTAL_APR');
+  assert.equal(breakdown?.budgetBoundMode, 'MAX_APR');
+});
+
+test('serializeReserveForApi omits budgetBoundMode when undefined for non-TARGET_TOTAL_APR breakdowns', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'max-no-mode',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+            aprCap: 0.02,
+            totalBudget: 1000,
+            latestTvl: 5000,
+            plannedDaily: 100,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'max-id',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignType, 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
+  assert.equal('budgetBoundMode' in (breakdown ?? {}), false);
+});
+
+test('serializeReserveForApi omits plannedDaily for TARGET_TOTAL_APR with FIX_APR budgetBoundMode', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'tta-fix',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignType: 'TARGET_TOTAL_APR',
+            aprCap: 0.047,
+            totalBudget: 1000,
+            latestTvl: 5000,
+            plannedDaily: 100,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'tta-fix-id',
+            budgetBoundMode: 'FIX_APR',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignType, 'TARGET_TOTAL_APR');
+  assert.equal(breakdown?.budgetBoundMode, 'FIX_APR');
+  assert.equal('plannedDaily' in (breakdown ?? {}), false);
+});
+
+test('serializeReserveForApi preserves plannedDaily for TARGET_TOTAL_APR with MAX_APR budgetBoundMode', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'tta-max',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignType: 'TARGET_TOTAL_APR',
+            aprCap: 0.047,
+            totalBudget: 1000,
+            latestTvl: 5000,
+            plannedDaily: 100,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'tta-max-id',
+            budgetBoundMode: 'MAX_APR',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignType, 'TARGET_TOTAL_APR');
+  assert.equal(breakdown?.budgetBoundMode, 'MAX_APR');
+  assert.equal(breakdown?.plannedDaily, 100);
+});
+
+test('serializeReserveForApi preserves plannedDaily for TARGET_TOTAL_APR without budgetBoundMode (fallback to MAX rules)', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'tta-no-mode',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignType: 'TARGET_TOTAL_APR',
+            aprCap: 0.047,
+            totalBudget: 1000,
+            latestTvl: 5000,
+            plannedDaily: 100,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'tta-no-mode-id',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignType, 'TARGET_TOTAL_APR');
+  assert.equal('budgetBoundMode' in (breakdown ?? {}), false);
+  assert.equal(breakdown?.plannedDaily, 100);
+});
+
 test('serializeReserveForApi passes through aaveProReserveId for V4 reserves', () => {
   const reserve: RuntimeReserveData = {
     reserveId: '1:0x973a023a77420ba610f06b3858ad991df6d85a01:0x973a023a77420ba610f06b3858ad991df6d85a02:0xcca852bc40e560adc3b1cc58ca5b55638ce826c9',

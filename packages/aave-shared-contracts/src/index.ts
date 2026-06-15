@@ -72,7 +72,12 @@ export type ForecastCampaignTypeLite =
   | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   | 'DUTCH_AUCTION'
   | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  | 'TARGET_TOTAL_APR';
+  | 'TARGET_TOTAL_APR'
+  | 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE'
+  | 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
+  | 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT';
+
+export type CampaignAprUnavailableReason = 'NO_REWARD_TOKEN_PRICE' | 'NO_TARGET_TOKEN_PRICE';
 
 export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   campaignId: string;
@@ -84,7 +89,7 @@ export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   latestTvl?: number;
   plannedDaily?: number;
   budgetBoundMode?: string;
-  spreadCap?: number | null;
+  campaignAprUnavailableReason?: CampaignAprUnavailableReason;
 }
 
 export interface MerklOpportunityGroup extends CampaignGroup<MerklCampaignBreakdown> {}
@@ -168,12 +173,7 @@ export type ApiMeritAprEntry = Pick<
   'apr' | 'selfApr' | 'link' | 'name' | 'message' | 'startDate' | 'endDate' | 'lastRoundRewardUsd'
 >;
 
-export type ApiMerklBreakdown = Pick<
-  MerklCampaignBreakdown,
-  | 'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
-  | 'whitelistOnly' | 'pointsPerThousandUsd' | 'campaignType'
-  | 'totalBudget' | 'aprCap' | 'latestTvl' | 'plannedDaily'
->;
+export type ApiMerklBreakdown = MerklCampaignBreakdown;
 
 export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown>;
 

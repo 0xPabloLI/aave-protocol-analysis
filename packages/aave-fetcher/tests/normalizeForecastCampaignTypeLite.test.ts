@@ -9,6 +9,9 @@ const MAX = 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' as const;
 const FIX = 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' as const;
 const DUTCH = 'DUTCH_AUCTION' as const;
 const TTA = 'TARGET_TOTAL_APR' as const;
+const AMOUNT_PER_VALUE = 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE' as const;
+const AMOUNT_PER_AMOUNT = 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' as const;
+const MAX_AMOUNT = 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT' as const;
 
 test('distributionMethod takes highest priority', () => {
   assert.equal(
@@ -49,15 +52,15 @@ test('distributionType fallback when no distributionMethod', () => {
   );
   assert.equal(
     normalizeForecastCampaignTypeLite({ distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT' }),
-    MAX,
+    MAX_AMOUNT,
   );
   assert.equal(
     normalizeForecastCampaignTypeLite({ distributionType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE' }),
-    FIX,
+    AMOUNT_PER_VALUE,
   );
   assert.equal(
     normalizeForecastCampaignTypeLite({ distributionType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' }),
-    FIX,
+    AMOUNT_PER_AMOUNT,
   );
 });
 
