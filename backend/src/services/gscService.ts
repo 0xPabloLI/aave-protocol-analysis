@@ -1,4 +1,5 @@
-import { google } from 'googleapis';
+import { webmasters_v3 } from 'googleapis/build/src/apis/webmasters/v3.js';
+import { JWT } from 'google-auth-library/build/src/auth/jwtclient.js';
 import dayjs from 'dayjs';
 import type { Pool } from 'pg';
 import { logger } from '../logger.js';
@@ -16,16 +17,16 @@ interface GscRow {
   position: number;
 }
 
-let cachedClient: ReturnType<typeof google.webmasters> | null = null;
+let cachedClient: webmasters_v3.Webmasters | null = null;
 
 function getGscClient() {
   if (cachedClient) return cachedClient;
-  const auth = new google.auth.JWT({
+  const auth = new JWT({
     email: process.env.GSC_SA_EMAIL,
     key: process.env.GSC_SA_PRIVATE_KEY?.replace(/\\n/g, '\n'),
     scopes: ['https://www.googleapis.com/auth/webmasters.readonly'],
   });
-  cachedClient = google.webmasters({ version: 'v3', auth });
+  cachedClient = new webmasters_v3.Webmasters({ auth });
   return cachedClient;
 }
 
@@ -142,7 +143,7 @@ export async function fetchAndPersistGscDaily(pool: Pool, targetDateOverride?: s
   return { targetDate, rowsUpserted };
 }
 
-function setGscClientForTest(client: ReturnType<typeof google.webmasters>) {
+function setGscClientForTest(client: webmasters_v3.Webmasters | null) {
   cachedClient = client;
 }
 
