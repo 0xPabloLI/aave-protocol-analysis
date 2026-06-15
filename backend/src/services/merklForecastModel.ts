@@ -5,7 +5,10 @@ export type CampaignForecastType =
   | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   | 'DUTCH_AUCTION'
   | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  | 'TARGET_TOTAL_APR';
+  | 'TARGET_TOTAL_APR'
+  | 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE'
+  | 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
+  | 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT';
 
 export interface BuildForecastStateInput {
   campaignId: string;
@@ -69,10 +72,10 @@ const METHOD_TYPE_MAP: Record<string, CampaignForecastType> = {
 
 const DISTRIBUTION_TYPE_PATTERNS: Array<{ pattern: string; result: CampaignForecastType }> = [
   { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT' },
   { pattern: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE' },
+  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', result: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' },
   { pattern: 'DUTCH_AUCTION', result: 'DUTCH_AUCTION' },
   { pattern: 'AAVE_NET_APR', result: 'TARGET_TOTAL_APR' },
   { pattern: 'AAVE_V4_NET_APR', result: 'TARGET_TOTAL_APR' },
@@ -120,7 +123,10 @@ export const buildForecastState = (input: BuildForecastStateInput): MerklForecas
   const needsAprCap =
     input.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
     input.campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
-    input.campaignType === 'TARGET_TOTAL_APR';
+    input.campaignType === 'TARGET_TOTAL_APR' ||
+    input.campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE' ||
+    input.campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' ||
+    input.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT';
 
   const rawAprCap = needsAprCap ? safeNumber(input.aprCap, NaN) : null;
   if (needsAprCap) {

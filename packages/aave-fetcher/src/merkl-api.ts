@@ -905,7 +905,7 @@ export const resolveCampaignApr = (
 
   if (isAmountVariant(campaignType)) {
     const dsApr = extractDistributionSettingsApr(campaign);
-    if (dsApr <= 0) return { apr: 0, unavailableReason: 'NO_REWARD_TOKEN_PRICE' };
+    if (dsApr <= 0) return { apr: 0 };
 
     if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE') {
       if (!rewardTokenPrice) return { apr: 0, unavailableReason: 'NO_REWARD_TOKEN_PRICE' };
@@ -942,7 +942,6 @@ export async function fetchMerklCampaignDetails(campaignId: string): Promise<Mer
     
     const campaign = await response.json() as any;
     
-    // 将 timestamp 转换为日期字符串
     const startedAt = campaign.startTimestamp ? 
       new Date(campaign.startTimestamp * 1000).toISOString() : 
       '';
@@ -950,11 +949,46 @@ export async function fetchMerklCampaignDetails(campaignId: string): Promise<Mer
       new Date(campaign.endTimestamp * 1000).toISOString() : 
       '';
     
+    const campaignType = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
+    let rewardTokenPrice: number | undefined;
+    let targetTokenPrice: number | undefined;
+    if (isAmountVariant(campaignType)) {
+      const chainId = campaign.chainId ?? 0;
+      const rewardAddr = typeof campaign?.rewardToken?.address === 'string'
+        ? campaign.rewardToken.address : undefined;
+      const rewardSym = typeof campaign?.rewardToken?.symbol === 'string'
+        ? campaign.rewardToken.symbol : undefined;
+      const rewardSnap = campaign?.rewardToken?.price;
+      const resolved = await resolveUsdPriceWithPriority({
+        chainId,
+        tokenAddress: rewardAddr,
+        tokenSymbol: rewardSym,
+        snapshotPrice: rewardSnap,
+      });
+      rewardTokenPrice = resolved.price;
+      if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
+        || campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
+        const targetAddr = typeof campaign?.targetToken?.address === 'string'
+          ? campaign.targetToken.address : undefined;
+        const targetSym = typeof campaign?.targetToken?.symbol === 'string'
+          ? campaign.targetToken.symbol : undefined;
+        if (targetAddr || targetSym) {
+          const targetResolved = await resolveUsdPriceWithPriority({
+            chainId,
+            tokenAddress: targetAddr,
+            tokenSymbol: targetSym,
+          });
+          targetTokenPrice = targetResolved.price;
+        }
+      }
+    }
+    
+    const resolved = resolveCampaignApr(campaign, campaign.distributionType, rewardTokenPrice, targetTokenPrice);
     return {
       startedAt,
       endedAt,
       id: campaignId,
-      apr: resolveCampaignApr(campaign, campaign.distributionType).apr,
+      apr: resolved.apr,
       whitelistOnly: isCampaignWhitelistOnly(campaign),
     };
   } catch (error) {
@@ -1154,33 +1188,77 @@ export async function processMerklData(
   logger.info(`Processing ${liveOpportunities.length} live Merkl opportunities`);
   
   const campaignDetailsCache = new Map<string, MerklCampaignDetails | null>();
+  const campaignAprUnavailableMap = new Map<string, 'NO_REWARD_TOKEN_PRICE' | 'NO_TARGET_TOKEN_PRICE'>();
   const campaignAccessMap = new Map<string, MerklCampaignAccess>();
+  const oppCampaignPromises: Promise<void>[] = [];
   for (const opp of liveOpportunities) {
     if (!Array.isArray(opp.campaigns)) continue;
-    opp.campaigns.forEach((campaign) => {
+    for (const campaign of opp.campaigns) {
       const id = String(campaign.id || '').trim();
-      if (!id) return;
-      if (campaignDetailsCache.has(id)) return;
-      campaignDetailsCache.set(id, {
-        startedAt: toIsoFromUnixLike(campaign.startTimestamp),
-        endedAt: toIsoFromUnixLike(campaign.endTimestamp),
-        id,
-        apr: resolveCampaignApr(campaign, opp.distributionType).apr,
-        whitelistOnly: isCampaignWhitelistOnly(campaign),
-      });
-      const params = campaign.params ?? {};
-      const wl = Array.isArray(params.whitelist) ? (params.whitelist as string[]).filter(Boolean) : [];
-      const bl = Array.isArray(params.blacklist) ? (params.blacklist as string[]).filter(Boolean) : [];
-      if (wl.length > 0 || bl.length > 0) {
-        campaignAccessMap.set(id, {
-          campaignId: id,
-          chainId: opp.chainId ?? 0,
-          whitelist: wl,
-          blacklist: bl,
+      if (!id) continue;
+      if (campaignDetailsCache.has(id)) continue;
+      oppCampaignPromises.push((async () => {
+        const campaignType = normalizeForecastCampaignTypeLite({ distributionType: opp.distributionType });
+        let rewardTokenPrice: number | undefined;
+        let targetTokenPrice: number | undefined;
+        if (isAmountVariant(campaignType)) {
+          const chainId = opp.chainId ?? 0;
+          const rewardBreakdown = opp.rewardsRecord?.breakdowns?.[0];
+          const rewardAddr = typeof rewardBreakdown?.token?.address === 'string'
+            ? rewardBreakdown.token.address : undefined;
+          const rewardSym = typeof rewardBreakdown?.token?.symbol === 'string'
+            ? rewardBreakdown.token.symbol : undefined;
+          const rewardSnap = rewardBreakdown?.token?.price;
+          const resolved = await resolveUsdPriceWithPriority({
+            chainId,
+            tokenAddress: rewardAddr,
+            tokenSymbol: rewardSym,
+            snapshotPrice: rewardSnap,
+          });
+          rewardTokenPrice = resolved.price;
+          if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
+            || campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
+            const targetToken = Array.isArray(opp.tokens) && opp.tokens.length > 0
+              ? opp.tokens[0] : undefined;
+            const targetAddr = targetToken?.address;
+            const targetSym = targetToken?.symbol;
+            if (targetAddr || targetSym) {
+              const targetResolved = await resolveUsdPriceWithPriority({
+                chainId,
+                tokenAddress: targetAddr,
+                tokenSymbol: targetSym,
+                snapshotPrice: targetToken?.price,
+              });
+              targetTokenPrice = targetResolved.price;
+            }
+          }
+        }
+        const resolved = resolveCampaignApr(campaign, opp.distributionType, rewardTokenPrice, targetTokenPrice);
+        campaignDetailsCache.set(id, {
+          startedAt: toIsoFromUnixLike(campaign.startTimestamp),
+          endedAt: toIsoFromUnixLike(campaign.endTimestamp),
+          id,
+          apr: resolved.apr,
+          whitelistOnly: isCampaignWhitelistOnly(campaign),
         });
-      }
-    });
+        if (resolved.unavailableReason) {
+          campaignAprUnavailableMap.set(id, resolved.unavailableReason);
+        }
+        const params = campaign.params ?? {};
+        const wl = Array.isArray(params.whitelist) ? (params.whitelist as string[]).filter(Boolean) : [];
+        const bl = Array.isArray(params.blacklist) ? (params.blacklist as string[]).filter(Boolean) : [];
+        if (wl.length > 0 || bl.length > 0) {
+          campaignAccessMap.set(id, {
+            campaignId: id,
+            chainId: opp.chainId ?? 0,
+            whitelist: wl,
+            blacklist: bl,
+          });
+        }
+      })());
+    }
   }
+  await Promise.all(oppCampaignPromises);
 
   // 补拉少量未在 opportunities.campaigns 出现的 campaign（兼容上游数据缺口）
   const missingCampaignIds = new Set<string>();
@@ -1285,6 +1363,9 @@ export async function processMerklData(
         campaignEndedAt: campaignDetails.endedAt,
         campaignId,
         whitelistOnly: campaignDetails.whitelistOnly,
+        ...(campaignAprUnavailableMap.has(campaignId)
+          ? { campaignAprUnavailableReason: campaignAprUnavailableMap.get(campaignId) }
+          : {}),
         ...(pointsFields ?? {})
       });
     }

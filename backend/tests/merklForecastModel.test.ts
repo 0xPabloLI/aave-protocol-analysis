@@ -34,7 +34,7 @@ test('normalizeCampaignType: distributionType fallback when method unrecognized'
   );
   assert.equal(
     normalizeCampaignType({ distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT' }),
-    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+    'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT'
   );
   assert.equal(
     normalizeCampaignType({ distributionType: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' }),
@@ -42,11 +42,11 @@ test('normalizeCampaignType: distributionType fallback when method unrecognized'
   );
   assert.equal(
     normalizeCampaignType({ distributionType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE' }),
-    'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+    'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE'
   );
   assert.equal(
     normalizeCampaignType({ distributionType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' }),
-    'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+    'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
   );
   assert.equal(
     normalizeCampaignType({ distributionType: 'DUTCH_AUCTION' }),

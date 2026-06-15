@@ -11,7 +11,10 @@ export type CampaignForecastType =
   | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   | 'DUTCH_AUCTION'
   | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  | 'TARGET_TOTAL_APR';
+  | 'TARGET_TOTAL_APR'
+  | 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE'
+  | 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
+  | 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT';
 
 /** Forecast API 字段模式 */
 export type ForecastFieldMode = 'none' | 'fix' | 'max';
@@ -47,6 +50,15 @@ export const BREAKDOWN_FIELD_RULES: Record<CampaignForecastType, BreakdownFieldR
   TARGET_TOTAL_APR: {
     omit: [],
   },
+  FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE: {
+    omit: ['plannedDaily'],
+  },
+  FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT: {
+    omit: ['plannedDaily'],
+  },
+  MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT: {
+    omit: [],
+  },
 };
 
 /** Campaign type 到 forecast 字段规则的映射 */
@@ -70,6 +82,24 @@ export const FORECAST_FIELD_RULES: Record<CampaignForecastType, ForecastFieldRul
     includeEndTimestamp: true,
   },
   TARGET_TOTAL_APR: {
+    mode: 'max',
+    includeRequiredDaily: true,
+    includeDistributedSoFar: true,
+    includeEndTimestamp: true,
+  },
+  FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE: {
+    mode: 'fix',
+    includeRequiredDaily: false,
+    includeDistributedSoFar: true,
+    includeEndTimestamp: true,
+  },
+  FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT: {
+    mode: 'fix',
+    includeRequiredDaily: false,
+    includeDistributedSoFar: true,
+    includeEndTimestamp: true,
+  },
+  MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT: {
     mode: 'max',
     includeRequiredDaily: true,
     includeDistributedSoFar: true,
