@@ -81,5 +81,5 @@ Merkl API → dsApr (points/USD/year 或 points/token/year)
 
 - AAV-827: 主 issue
 - PRD: AAV-876
-- Backend commit `9ef5779`: feat(merkl): resolve AMOUNT variant USD APR with unavailable reason
-- Backend commit (pending): remove campaignAprUnavailableReason + extend points intensity to POINT type
+- Backend commit `9ef5779`: feat(merkl): resolve AMOUNT variant USD APR
+- Backend commit `266dd7b`: remove campaignAprUnavailableReason + extend points intensity to POINT type

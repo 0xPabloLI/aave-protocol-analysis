@@ -1215,13 +1215,20 @@ export async function processMerklData(
   }
 
   const tokensToResolve = new Set<PriceLookupKey>();
+  const snapshotPrices = new Map<PriceLookupKey, number | undefined>();
   for (const entry of amountVariantEntries) {
     const chainId = entry.opp.chainId ?? 0;
     const rewardBreakdown = entry.opp.rewardsRecord?.breakdowns?.[0];
     const rewardAddr = typeof rewardBreakdown?.token?.address === 'string' ? rewardBreakdown.token.address : '';
     const rewardSym = typeof rewardBreakdown?.token?.symbol === 'string' ? rewardBreakdown.token.symbol : '';
     if (rewardAddr || rewardSym) {
-      tokensToResolve.add(`${chainId}:${rewardAddr}:${rewardSym}` as PriceLookupKey);
+      const key = `${chainId}:${rewardAddr}:${rewardSym}` as PriceLookupKey;
+      tokensToResolve.add(key);
+      const snapPrice = typeof rewardBreakdown?.token?.price === 'number' && Number.isFinite(rewardBreakdown.token.price) && rewardBreakdown.token.price > 0
+        ? rewardBreakdown.token.price : undefined;
+      if (snapPrice !== undefined && !snapshotPrices.has(key)) {
+        snapshotPrices.set(key, snapPrice);
+      }
     }
     if (entry.campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
       || entry.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
@@ -1229,7 +1236,13 @@ export async function processMerklData(
       const targetAddr = typeof targetToken?.address === 'string' ? targetToken.address : '';
       const targetSym = typeof targetToken?.symbol === 'string' ? targetToken.symbol : '';
       if (targetAddr || targetSym) {
-        tokensToResolve.add(`${chainId}:${targetAddr}:${targetSym}` as PriceLookupKey);
+        const key = `${chainId}:${targetAddr}:${targetSym}` as PriceLookupKey;
+        tokensToResolve.add(key);
+        const snapPrice = typeof targetToken?.price === 'number' && Number.isFinite(targetToken.price) && targetToken.price > 0
+          ? targetToken.price : undefined;
+        if (snapPrice !== undefined && !snapshotPrices.has(key)) {
+          snapshotPrices.set(key, snapPrice);
+        }
       }
     }
   }
@@ -1237,10 +1250,12 @@ export async function processMerklData(
   for (const key of tokensToResolve) {
     const [chainIdStr, addr, sym] = key.split(':');
     const chainId = Number(chainIdStr);
+    const snapshotPrice = snapshotPrices.get(key);
     const resolved = await resolveUsdPriceWithPriority({
       chainId,
       tokenAddress: addr || undefined,
       tokenSymbol: sym || undefined,
+      snapshotPrice,
     });
     preResolvedPrices.set(key, resolved.price);
   }
