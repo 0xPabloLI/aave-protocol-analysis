@@ -18,7 +18,7 @@
  *   take down the cron-write/API-read-only main flow.
  */
 import crypto from 'node:crypto';
-import { getPool, isPersistenceEnabled } from './dbPool.js';
+import { getPool, isPersistenceEnabled, markPoolUnhealthy } from './dbPool.js';
 import { logger } from '../logger.js';
 import type { MarketsPayload, RuntimeReserveData } from '@internal/aave-shared-contracts';
 import { fifoEvict } from '@internal/aave-shared-contracts';
@@ -224,6 +224,7 @@ export async function persistSnapshotIfNeeded(
     } catch (error) {
       success = false;
       lastErrorMessage = error instanceof Error ? error.message : String(error);
+      markPoolUnhealthy();
       logger.warn('⚠️ Failed to persist market snapshot:', error);
     }
   }
@@ -236,6 +237,7 @@ export async function persistSnapshotIfNeeded(
     } catch (error) {
       success = false;
       lastErrorMessage = error instanceof Error ? error.message : String(error);
+      markPoolUnhealthy();
       logger.warn('⚠️ Failed to persist oracle prices:', error);
     }
   }

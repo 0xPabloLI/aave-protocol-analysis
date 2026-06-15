@@ -20,6 +20,32 @@ let pool: PoolType | null = null;
 let poolClosed = false;
 
 /**
+ * DB-unreachable backoff: after a pool error, reject query attempts for 60s
+ * to prevent TCP socket + SSL buffer accumulation in RSS (each failed connect
+ * attempt allocates ~5-10MB native memory that lingers until OS reclaims it).
+ *
+ * Without this, a crashed Postgres causes the cron scheduler to retry every
+ * minute, each retry burning a 5s connectionTimeoutMillis socket — resulting
+ * in 300-600MB RSS growth per hour.
+ */
+const POOL_BACKOFF_MS = 60_000;
+let lastPoolErrorTime = 0;
+
+export function isPoolHealthy(): boolean {
+  if (poolClosed) return false;
+  if (Date.now() - lastPoolErrorTime < POOL_BACKOFF_MS) return false;
+  return true;
+}
+
+export function markPoolUnhealthy(): void {
+  lastPoolErrorTime = Date.now();
+}
+
+export function resetPoolHealth(): void {
+  lastPoolErrorTime = 0;
+}
+
+/**
  * Returns true when the env is configured for persistence.
  * Cheap check used to short-circuit the persist path.
  */
@@ -71,6 +97,7 @@ export function getPool(): PoolType {
   });
 
   pool.on('error', (err) => {
+    lastPoolErrorTime = Date.now();
     logger.error('Unexpected database pool error:', err);
   });
 

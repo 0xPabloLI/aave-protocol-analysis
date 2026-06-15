@@ -4,7 +4,7 @@ import { warmCampaignForecastStatesCache } from '../controllers/merklForecastCon
 import { getMarketsSnapshot, refreshMarketsSnapshot } from './marketsService.js';
 import { refreshOnchainCache } from './onchainDataService.js';
 import { getCachedOraclePricesSnapshot, refreshOracleCache } from './oracleService.js';
-import { isPersistenceEnabled, getPool } from './dbPool.js';
+import { isPersistenceEnabled, isPoolHealthy, getPool } from './dbPool.js';
 import {
   persistSnapshotIfNeeded,
 } from './persistenceService.js';
@@ -63,7 +63,7 @@ export function startUpdateScheduler(): void {
     try {
       const marketsSnapshot = getMarketsSnapshot();
       const oracleSnapshot = getCachedOraclePricesSnapshot();
-      if (isPersistenceEnabled()) {
+      if (isPersistenceEnabled() && isPoolHealthy()) {
         await persistSnapshotIfNeeded(marketsSnapshot?.payload ?? null, oracleSnapshot);
       }
     } catch (error) {
