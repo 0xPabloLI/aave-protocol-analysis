@@ -7,6 +7,7 @@
 1. **`resolveCampaignApr` 正确计算 AMOUNT 变体 USD APR**：`dsApr × rewardTokenPrice`（FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE）或 `dsApr × (rewardTokenPrice / targetTokenPrice)`（FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT / MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT）
 2. **`merklBreakdownUsesPointsIntensityFields` 扩展为 `PRETGE || POINT`**：AMOUNT 变体的 points token（`token.type === 'POINT'`）现在也输出 `pointsPerThousandUsd`
 3. **去掉 `campaignAprUnavailableReason`**：price 缺失时 `campaignApr = 0`，后端 log 记录即可，前端不需要区分 unavailable 原因
+4. **`merklPointsFieldsFromBreakdownValue` 对 AMOUNT_PER_AMOUNT 乘以 targetTokenPrice**：TVL 是 target token 数量（非 USD），`pointsPerThousandUsd = (value / TVL) × 1000 × targetTokenPrice`；AMOUNT_PER_VALUE 不变（TVL 已是 USD）。无 targetTokenPrice 时保守输出 0。
 
 ### API 响应变化
 
@@ -14,7 +15,7 @@
 // MerklCampaignBreakdown 现在的结构（campaignAprUnavailableReason 已移除）
 interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   campaignApr: number;  // USD APR (decimal, e.g. 0.035 = 3.5%); 0 = 无收益或无法计算
-  pointsPerThousandUsd?: number;  // 现在 AMOUNT 变体(POINT类型)也有此字段
+  pointsPerThousandUsd?: number;  // AMOUNT 变体(POINT类型)也有此字段；AMOUNT_PER_AMOUNT 已乘 targetTokenPrice
   campaignType?: ForecastCampaignTypeLite;  // +3 AMOUNT 变体枚举值
   // ...
 }
@@ -28,6 +29,16 @@ interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
 | `FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT` | FIX_AMT_PER_AMT | 每 token 流动性固定 token 数量 |
 | `MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT` | MAX_AMT_PER_AMT | 每 token 流动性最大 token 数量 |
 
+### `pointsPerThousandUsd` 计算逻辑
+
+| distributionType | TVL 含义 | 公式 | priceMultiplier |
+|---|---|---|---|
+| FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE | USD | `(value / TVL) × 1000` | 1 |
+| FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT | target token 数量 | `(value / TVL) × 1000 × targetTokenPrice` | targetTokenPrice |
+| MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT | target token 数量 | `(value / TVL) × 1000 × targetTokenPrice` | targetTokenPrice |
+
+无 targetTokenPrice 的 AMOUNT_PER_AMOUNT → `pointsPerThousandUsd = 0`（保守：无法算出正确 USD 强度）。
+
 ### 数据流（前端视角）
 
 AMOUNT 变体 campaign 的数据流：
@@ -40,6 +51,9 @@ Merkl API → dsApr (points/USD/year 或 points/token/year)
            如果 price 缺失 → campaignApr = 0
                     ↓
            merklBreakdownUsesPointsIntensityFields(POINT=true) → pointsPerThousandUsd
+                    ↓
+           AMOUNT_PER_AMOUNT: pointsPerThousandUsd 已乘 targetTokenPrice（USD 基准）
+           AMOUNT_PER_VALUE: pointsPerThousandUsd 直接计算（TVL 已是 USD）
 ```
 
 **关键**：`campaignApr = 0` + `pointsPerThousandUsd > 0` = price 缺失的 AMOUNT 变体。
@@ -81,5 +95,7 @@ Merkl API → dsApr (points/USD/year 或 points/token/year)
 
 - AAV-827: 主 issue
 - PRD: AAV-876
+- PRD: AAV-896 (pointsPerThousandUsd targetTokenPrice 修正)
 - Backend commit `9ef5779`: feat(merkl): resolve AMOUNT variant USD APR
 - Backend commit `266dd7b`: remove campaignAprUnavailableReason + extend points intensity to POINT type
+- Backend commit `f85aec3`: fix snapshotPrice in batch price resolve

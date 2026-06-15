@@ -64,3 +64,53 @@ test('merklPointsFieldsFromBreakdownValue uses zero rate when TVL is zero or mis
   assert.ok(outZero);
   assert.equal(outZero!.pointsPerThousandUsd, 0);
 });
+
+test('merklPointsFieldsFromBreakdownValue multiplies by targetTokenPrice for AMOUNT_PER_AMOUNT', () => {
+  const tvl = 5_184_674;
+  const value = 947_282;
+  const targetTokenPrice = 0.036;
+  const out = merklPointsFieldsFromBreakdownValue(
+    oppWithTvl(tvl),
+    { value },
+    { distributionType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', targetTokenPrice }
+  );
+  assert.ok(out);
+  const expected = (value / tvl) * 1000 * targetTokenPrice;
+  assert.ok(Math.abs(out!.pointsPerThousandUsd - expected) < 1e-6);
+});
+
+test('merklPointsFieldsFromBreakdownValue returns 0 for AMOUNT_PER_AMOUNT without targetTokenPrice', () => {
+  const out = merklPointsFieldsFromBreakdownValue(
+    oppWithTvl(1_000_000),
+    { value: 500 },
+    { distributionType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' }
+  );
+  assert.ok(out);
+  assert.equal(out!.pointsPerThousandUsd, 0);
+});
+
+test('merklPointsFieldsFromBreakdownValue does not multiply for AMOUNT_PER_VALUE', () => {
+  const tvl = 23_711_444.51;
+  const value = 11_312;
+  const out = merklPointsFieldsFromBreakdownValue(
+    oppWithTvl(tvl),
+    { value },
+    { distributionType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', targetTokenPrice: 0.036 }
+  );
+  assert.ok(out);
+  assert.ok(Math.abs(out!.pointsPerThousandUsd - 0.477069) < 1e-4);
+});
+
+test('merklPointsFieldsFromBreakdownValue multiplies by targetTokenPrice for MAX_PER_AMOUNT', () => {
+  const tvl = 100_000;
+  const value = 500;
+  const targetTokenPrice = 2.5;
+  const out = merklPointsFieldsFromBreakdownValue(
+    oppWithTvl(tvl),
+    { value },
+    { distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT', targetTokenPrice }
+  );
+  assert.ok(out);
+  const expected = (value / tvl) * 1000 * targetTokenPrice;
+  assert.ok(Math.abs(out!.pointsPerThousandUsd - expected) < 1e-6);
+});

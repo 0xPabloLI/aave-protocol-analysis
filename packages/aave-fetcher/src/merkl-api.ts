@@ -1059,10 +1059,13 @@ export function parseMarketNameFromOpportunityName(opportunityName: string | und
  */
 /**
  * 当 Merkl breakdown 提供 `value` 且可解析为有限数时，推导每千刀 TVL 强度。
+ * AMOUNT_PER_AMOUNT 变体的 TVL 是 target token 数量而非 USD，
+ * 需要乘以 targetTokenPrice 转换为 USD 基准。
  */
 export function merklPointsFieldsFromBreakdownValue(
   opp: MerklOpportunity,
-  rewardsBreakdown: { value?: number }
+  rewardsBreakdown: { value?: number },
+  options?: { distributionType?: string; targetTokenPrice?: number }
 ): { pointsPerThousandUsd: number } | undefined {
   if (rewardsBreakdown.value === undefined) {
     return undefined;
@@ -1072,7 +1075,10 @@ export function merklPointsFieldsFromBreakdownValue(
     return undefined;
   }
   const tvl = Number(opp.tvl) || 0;
-  const pointsPerThousandUsd = tvl > 0 ? (rewardUnits / tvl) * 1000 : 0;
+  const isPerAmount = options?.distributionType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
+    || options?.distributionType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT';
+  const priceMultiplier = isPerAmount ? (options?.targetTokenPrice ?? 0) : 1;
+  const pointsPerThousandUsd = tvl > 0 ? (rewardUnits / tvl) * 1000 * priceMultiplier : 0;
   return { pointsPerThousandUsd };
 }
 
@@ -1418,8 +1424,12 @@ export async function processMerklData(
       }
 
       const useIntensity = merklBreakdownUsesPointsIntensityFields(rewardBreakdown);
+      const amountVariantPrices = amountVariantPriceMap.get(campaignId);
       const pointsFields = useIntensity
-        ? merklPointsFieldsFromBreakdownValue(opp, rewardBreakdown)
+        ? merklPointsFieldsFromBreakdownValue(opp, rewardBreakdown, {
+            distributionType: opp.distributionType,
+            targetTokenPrice: amountVariantPrices?.targetTokenPrice,
+          })
         : undefined;
 
       breakdowns.push({
