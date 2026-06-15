@@ -9,6 +9,7 @@ import {
   getBreakdownFieldRule,
   type CampaignForecastType,
 } from '../lib/merklApiContract.js';
+import { computeTargetTotalAprIncentiveApr } from '../lib/aprApyConversion.js';
 
 export function roundTo6(n: number): number {
   return Number(n.toFixed(6));
@@ -31,8 +32,17 @@ function scaleMerklBreakdown<
     totalBudget?: number;
     budgetBoundMode?: string;
   },
->(b: T): T {
-  const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
+>(b: T, nativeApy?: number, side?: 'supply' | 'borrow'): T {
+  const isTargetTotal = b.campaignType === 'TARGET_TOTAL_APR';
+  let campaignAprScaled: number;
+  if (isTargetTotal && nativeApy !== undefined && side !== undefined && b.aprCap != null) {
+    const aprCapPercent = roundTo6(b.aprCap * 100);
+    const incentiveAprPercent = computeTargetTotalAprIncentiveApr(aprCapPercent, roundTo6(nativeApy * 100), side);
+    campaignAprScaled = incentiveAprPercent;
+  } else {
+    campaignAprScaled = roundTo6(b.campaignApr * 100);
+  }
+  const next = { ...b, campaignApr: campaignAprScaled } as T;
   if (Object.prototype.hasOwnProperty.call(b, 'aprCap')) {
     const cap = b.aprCap;
     (next as { aprCap?: number | null }).aprCap =
@@ -64,6 +74,17 @@ function scaleGroupedCampaigns<
   return groups.map((group) => ({
     ...group,
     breakdowns: group.breakdowns.map((bd) => scaleBreakdown(bd)),
+  }));
+}
+
+function scaleGroupedCampaignsWithContext<
+  TBreakdown extends { campaignApr: number },
+  TGroup extends { breakdowns: TBreakdown[] },
+>(groups: TGroup[] | undefined, nativeApy: number, side: 'supply' | 'borrow'): TGroup[] | undefined {
+  if (!groups?.length) return undefined;
+  return groups.map((group) => ({
+    ...group,
+    breakdowns: group.breakdowns.map((bd) => scaleMerklBreakdown(bd, nativeApy, side)),
   }));
 }
 
@@ -109,9 +130,13 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.collateralRisk !== undefined ? { collateralRisk: roundTo6(reserve.collateralRisk) } : {}),
     ...(reserve.meritSupplys?.length ? { meritSupplys: reserve.meritSupplys.map((e) => scaleMeritEntry(e)) } : {}),
     ...(reserve.meritBorrows?.length ? { meritBorrows: reserve.meritBorrows.map((e) => scaleMeritEntry(e)) } : {}),
-    ...(reserve.merklSupplys?.length ? { merklSupplys: scaleGroupedCampaigns(reserve.merklSupplys, scaleMerklBreakdown) } : {}),
-    ...(reserve.merklBorrows?.length ? { merklBorrows: scaleGroupedCampaigns(reserve.merklBorrows, scaleMerklBreakdown) } : {}),
-    ...(reserve.merklHolds?.length ? { merklHolds: scaleGroupedCampaigns(reserve.merklHolds, scaleMerklBreakdown) } : {}),
+    ...(reserve.merklSupplys?.length && reserve.supplyApy !== undefined
+      ? { merklSupplys: scaleGroupedCampaignsWithContext(reserve.merklSupplys, reserve.supplyApy, 'supply') }
+      : reserve.merklSupplys?.length ? { merklSupplys: scaleGroupedCampaigns(reserve.merklSupplys, (bd) => scaleMerklBreakdown(bd)) } : {}),
+    ...(reserve.merklBorrows?.length && reserve.borrowApy !== undefined
+      ? { merklBorrows: scaleGroupedCampaignsWithContext(reserve.merklBorrows, reserve.borrowApy, 'borrow') }
+      : reserve.merklBorrows?.length ? { merklBorrows: scaleGroupedCampaigns(reserve.merklBorrows, (bd) => scaleMerklBreakdown(bd)) } : {}),
+    ...(reserve.merklHolds?.length ? { merklHolds: scaleGroupedCampaigns(reserve.merklHolds, (bd) => scaleMerklBreakdown(bd)) } : {}),
     ...(reserve.brevisSupplys?.length ? { brevisSupplys: scaleGroupedCampaigns(reserve.brevisSupplys, scaleBrevisBreakdown) } : {}),
     ...(reserve.brevisBorrows?.length ? { brevisBorrows: scaleGroupedCampaigns(reserve.brevisBorrows, scaleBrevisBreakdown) } : {}),
   };

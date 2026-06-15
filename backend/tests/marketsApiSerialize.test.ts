@@ -862,3 +862,183 @@ test('V3 reserve does not set collateralRisk (undefined by default)', () => {
   const api = serializeReserveForApi(reserve);
   assert.equal('collateralRisk' in api, false);
 });
+
+test('serializeReserveForApi computes incentive APR for TARGET_TOTAL_APR supply breakdown', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'tta-supply',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    supplyApy: 0.035,
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.077,
+            campaignType: 'TARGET_TOTAL_APR',
+            aprCap: 0.077,
+            totalBudget: 1000,
+            latestTvl: 5000,
+            plannedDaily: 100,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'tta-supply-id',
+            budgetBoundMode: 'MAX_APR',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignType, 'TARGET_TOTAL_APR');
+  assert.ok(breakdown!.campaignApr < 7.7, `campaignApr (${breakdown!.campaignApr}) should be less than targetAPR (7.7)`);
+  assert.ok(breakdown!.campaignApr > 0, `campaignApr (${breakdown!.campaignApr}) should be positive`);
+  assert.equal(breakdown?.aprCap, 7.7, 'aprCap should remain as targetAPR');
+});
+
+test('serializeReserveForApi computes incentive APR for TARGET_TOTAL_APR borrow breakdown', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'tta-borrow',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    borrowApy: 0.05,
+    merklBorrows: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.02,
+            campaignType: 'TARGET_TOTAL_APR',
+            aprCap: 0.02,
+            totalBudget: 1000,
+            latestTvl: 5000,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'tta-borrow-id',
+            budgetBoundMode: 'MAX_APR',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklBorrows?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignType, 'TARGET_TOTAL_APR');
+  assert.ok(breakdown!.campaignApr > 0, 'Borrow incentive APR should be positive when targetAPR < nativeBorrowAPY');
+  assert.equal(breakdown?.aprCap, 2.0, 'aprCap should remain as targetAPR');
+});
+
+test('serializeReserveForApi returns 0 incentive APR for TARGET_TOTAL_APR when nativeAPY already exceeds target', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'tta-noop',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    supplyApy: 0.10,
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.047,
+            campaignType: 'TARGET_TOTAL_APR',
+            aprCap: 0.047,
+            totalBudget: 1000,
+            latestTvl: 5000,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'tta-noop-id',
+            budgetBoundMode: 'MAX_APR',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignApr, 0, 'Incentive APR should be 0 when native exceeds target');
+});
+
+test('serializeReserveForApi preserves raw campaignApr for non-TARGET_TOTAL_APR breakdowns', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'max-type',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    supplyApy: 0.035,
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.05,
+            campaignType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+            aprCap: 0.05,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'max-id',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignApr, 5, 'Non-TARGET_TOTAL_APR should use raw campaignApr × 100');
+});
+
+test('serializeReserveForApi falls back to raw campaignApr for TARGET_TOTAL_APR when supplyApy is undefined', () => {
+  const reserve: RuntimeReserveData = {
+    reserveId: 'tta-no-apy',
+    marketName: 'm',
+    chainName: 'c',
+    chainId: 1,
+    tokenName: 'T',
+    tokenSymbol: 'T',
+    tokenAddress: '0x0',
+    merklSupplys: [
+      {
+        link: 'l',
+        breakdowns: [
+          {
+            campaignApr: 0.047,
+            campaignType: 'TARGET_TOTAL_APR',
+            aprCap: 0.047,
+            campaignStartedAt: '2025-01-01T00:00:00.000Z',
+            campaignEndedAt: '2025-12-31T00:00:00.000Z',
+            campaignId: 'tta-fallback-id',
+            budgetBoundMode: 'MAX_APR',
+          },
+        ],
+      },
+    ],
+  };
+
+  const api = serializeReserveForApi(reserve);
+  const breakdown = api.merklSupplys?.[0]?.breakdowns?.[0];
+
+  assert.equal(breakdown?.campaignApr, 4.7, 'Without supplyApy, TARGET_TOTAL_APR should fall back to raw campaignApr × 100');
+});

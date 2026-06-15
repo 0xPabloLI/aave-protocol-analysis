@@ -164,6 +164,7 @@ APR cap extraction changed from `extractMaxApr(campaign)` to `extractAprCap(camp
 - **Positive** (2026-06-15): `budgetBoundMode` fully passthrough from fetcher → API output; field rules dynamically select FIX/MAX rules based on budgetBoundMode for TARGET_TOTAL_APR
 - **Positive** (2026-06-15): `ApiMerklBreakdown` Pick list removed — field visibility now controlled solely by `BREAKDOWN_FIELD_RULES`, reducing sync burden from 3 locations to 2
 - **Positive** (2026-06-15): `spreadCap` removed from `MerklCampaignBreakdown` (YAGNI — vault data unavailable, no consumer). Vault mode documented as future reservation
+- **Positive** (2026-06-15): TARGET_TOTAL_APR `campaignApr` now outputs Merkl actual-paid APR (not targetAPR). Backend performs APR↔APY conversion (monthly compounding n=12, matching Aave interface and our frontend `rateCalculations.ts`) before subtracting nativeAPY, then converts back to APR. Frontend can treat `campaignApr` identically across all campaign types
 - **Neutral**: Function signatures changed — `mode` removed from `NormalizeCampaignTypeInput`; `extractMaxApr` renamed to `extractAprCap` with added `campaignType` parameter
 - **Neutral**: `ForecastCampaignMetaLite` interface retains `rawMode?` for `budgetBoundMode` passthrough
 - **Neutral** (2026-06-15): `getBreakdownFieldRule` / `getForecastFieldRule` now accept optional `budgetBoundMode` parameter for dynamic rule selection
