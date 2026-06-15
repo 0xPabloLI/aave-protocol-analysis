@@ -56,45 +56,7 @@ Railway 1GB 内存限制，当前余量 **835MB**。
 
 ## 待实施修复
 
-### Fix E: pg.Pool DB-unreachable 防护（高优先级）
-
-**问题**：当 Postgres 不可达时，`pg.Pool` 每次调用 `pool.query()` 都会尝试创建新 TCP 连接。连接超时（5 秒）后失败，但 **TCP socket + SSL buffer 已在内核层分配**（每个 ~5-10MB RSS）。cron 每分钟触发 `persistSnapshotIfNeeded` → 每分钟累积 5-10MB native 内存 → 1 小时后 RSS 暴涨 300-600MB。
-
-**这是之前 RSS 从 222MB 暴涨到 632MB 的直接原因**（Postgres volume 满 → 无法启动 → 每分钟重试 → native 内存累积）。
-
-**修复方向**：在 `dbPool.ts` 中加入 DB 可达性检查：
-
-```typescript
-// dbPool.ts 中增加
-let lastPoolErrorTime = 0;
-const POOL_BACKOFF_MS = 60_000; // 连续失败后 1 分钟内不再尝试
-
-export function isPoolHealthy(): boolean {
-  if (!pool || poolClosed) return false;
-  if (Date.now() - lastPoolErrorTime < POOL_BACKOFF_MS) return false;
-  return true;
-}
-
-// pool.on('error') 中记录错误时间
-pool.on('error', (err) => {
-  lastPoolErrorTime = Date.now();
-  logger.error('Unexpected database pool error:', err);
-});
-```
-
-然后在 `updateScheduler.ts` 和 `persistenceService.ts` 的 persist 调用前检查：
-
-```typescript
-if (isPersistenceEnabled() && isPoolHealthy()) {
-  await persistSnapshotIfNeeded(...);
-}
-```
-
-**效果**：DB 不可达时，每分钟只有 1 次连接尝试（首次），后续 60 秒内跳过所有 query。不再累积 TCP socket。
-
-**替代方案**：
-- 方案 B：在 `pool.query()` 的 catch 中调用 `pool.end()` 销毁整个 pool，下次 query 时重建。更激进但更干净。
-- 方案 C：用 `pg.Pool` 的 `allowExitOnIdle: true` 让空闲连接自动退出（但只影响 idle 连接，不影响正在创建的连接）。
+### Fix E: pg.Pool DB-unreachable 防护 ✅ 已完成（见上方）
 
 ### Fix C: Puppeteer 替代方案（低优先级）
 
@@ -177,7 +139,7 @@ Railway MCP server 需要 API token：
 | AAV-890 | Merkl AMOUNT variant batch dedup | Done |
 | AAV-893 | Replace googleapis full import with sub-path import | Done |
 | AAV-888 | Replace Puppeteer fallback | Open |
-| Fix E | pg.Pool DB-unreachable 防护 | **待创建** |
+| Fix E | pg.Pool DB-unreachable 防护 | **AAV-899** | Done |
 
 ---
 
