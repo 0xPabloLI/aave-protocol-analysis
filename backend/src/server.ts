@@ -214,10 +214,14 @@ app.use((req, res) => {
 // Auto-run pending DB migrations before any cron cycles start
 try {
   if (isPersistenceEnabled()) {
+    logger.info('🔄 Starting auto-migration — acquiring DB pool...');
     const migrationPool = getPool();
+    logger.info('🔄 DB pool acquired — running migrations...');
     await runMigrations(migrationPool);
+    logger.info('🔄 Migrations complete — warming config hashes...');
 
     await warmConfigHashes();
+    logger.info('🔄 Config hashes warmed — persistence ready');
   } else {
     logger.info('💾 Persistence disabled — skipping auto-migration');
   }
