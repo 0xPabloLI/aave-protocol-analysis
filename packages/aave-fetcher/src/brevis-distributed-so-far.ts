@@ -2,6 +2,7 @@ import { providers } from 'ethers';
 import {
   executeMulticall3,
   type Multicall3Call,
+  type ProviderPoolLike,
 } from '@internal/aave-rpc-infra';
 import { chainTokenKey } from '@internal/aave-shared-contracts';
 
@@ -47,8 +48,10 @@ export interface BrevisChainCallCampaign {
 }
 
 export interface FetchBrevisDistributedSoFarOptions {
-  rpcUrlsByChainId: Record<number, string[]>;
+  rpcUrlsByChainId?: Record<number, string[]>;
+  providerPool?: ProviderPoolLike;
   timeoutMs?: number;
+  _mockExecuteMulticall3?: (provider: unknown, calls: Multicall3Call[], options: { timeoutMs: number; label: string }) => Promise<{ success: boolean; returnData: string }[]>;
 }
 
 function encodeTokenCumulativeRewards(tokenAddr: string): string {
@@ -103,40 +106,72 @@ export async function fetchBrevisDistributedSoFar(
   }
 
   for (const [chainId, group] of byChain) {
-    const rpcUrls = options.rpcUrlsByChainId[chainId];
-    if (!rpcUrls?.length) {
-      for (const c of group) result.set(c.campaignId, undefined);
-      continue;
-    }
-
     const calls: Multicall3Call[] = group.map((c) => ({
       target: c.submitAddr,
       allowFailure: true,
       callData: encodeTokenCumulativeRewards(c.tokenAddr),
     }));
 
+    const multicallOptions = {
+      timeoutMs: options.timeoutMs ?? 15_000,
+      label: `Brevis tokenCumulativeRewards chain=${chainId}`,
+    };
+
     let multicallResults: { success: boolean; returnData: string }[] | undefined;
-    let lastError: unknown;
-    for (const rpcUrl of rpcUrls) {
+
+    if (options.providerPool) {
       try {
-        const provider = new providers.JsonRpcProvider(rpcUrl);
-        multicallResults = await executeMulticall3(provider, calls, {
-          timeoutMs: options.timeoutMs ?? 15_000,
-          label: `Brevis tokenCumulativeRewards chain=${chainId}`,
-        });
-        lastError = undefined;
-        break;
+        const poolResult = await options.providerPool.executeWithAutoRpc(chainId, {
+          primary: async (provider: providers.Provider) => {
+            if (options._mockExecuteMulticall3) {
+              return options._mockExecuteMulticall3(provider, calls, multicallOptions);
+            }
+            return executeMulticall3(provider, calls, multicallOptions);
+          },
+        }, { label: multicallOptions.label });
+        multicallResults = poolResult ?? undefined;
       } catch (err) {
-        lastError = err;
+        if (err instanceof Error && err.stack) {
+          console.warn(`Brevis multicall3 via ProviderPool failed for chain=${chainId}: ${err.message}`, err.stack);
+        } else if (err !== undefined) {
+          console.warn(`Brevis multicall3 via ProviderPool failed for chain=${chainId}:`, err);
+        }
       }
+    } else if (options.rpcUrlsByChainId) {
+      const rpcUrls = options.rpcUrlsByChainId[chainId];
+      if (!rpcUrls?.length) {
+        for (const c of group) result.set(c.campaignId, undefined);
+        continue;
+      }
+      let lastError: unknown;
+      for (const rpcUrl of rpcUrls) {
+        try {
+          const provider = new providers.JsonRpcProvider(rpcUrl);
+          multicallResults = await executeMulticall3(provider, calls, multicallOptions);
+          lastError = undefined;
+          break;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      if (!multicallResults) {
+        if (lastError instanceof Error && lastError.stack) {
+          console.warn(`Brevis multicall3 failed for chain=${chainId}: ${lastError.message}`, lastError.stack);
+        } else if (lastError !== undefined) {
+          console.warn(`Brevis multicall3 failed for chain=${chainId}:`, lastError);
+        }
+        for (const c of group) {
+          result.set(c.campaignId, undefined);
+          chainCallCache.set(cacheKey(c), { value: undefined, fetchedAt: now });
+        }
+        continue;
+      }
+    } else {
+      for (const c of group) result.set(c.campaignId, undefined);
+      continue;
     }
 
     if (!multicallResults) {
-      if (lastError instanceof Error && lastError.stack) {
-        console.warn(`Brevis multicall3 failed for chain=${chainId}: ${lastError.message}`, lastError.stack);
-      } else if (lastError !== undefined) {
-        console.warn(`Brevis multicall3 failed for chain=${chainId}:`, lastError);
-      }
       for (const c of group) {
         result.set(c.campaignId, undefined);
         chainCallCache.set(cacheKey(c), { value: undefined, fetchedAt: now });

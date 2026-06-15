@@ -1190,6 +1190,82 @@ export async function processMerklData(
   const campaignDetailsCache = new Map<string, MerklCampaignDetails | null>();
   const campaignAprUnavailableMap = new Map<string, 'NO_REWARD_TOKEN_PRICE' | 'NO_TARGET_TOKEN_PRICE'>();
   const campaignAccessMap = new Map<string, MerklCampaignAccess>();
+
+  type PriceLookupKey = `${number}:${string}:${string}`;
+  const preResolvedPrices = new Map<PriceLookupKey, number | undefined>();
+
+  const amountVariantEntries: Array<{
+    campaignId: string;
+    campaign: any;
+    opp: MerklOpportunity;
+    campaignType: ForecastCampaignTypeLite;
+  }> = [];
+  for (const opp of liveOpportunities) {
+    if (!Array.isArray(opp.campaigns)) continue;
+    for (const campaign of opp.campaigns) {
+      const id = String(campaign.id || '').trim();
+      if (!id) continue;
+      if (campaignDetailsCache.has(id)) continue;
+      const campaignType = normalizeForecastCampaignTypeLite({ distributionType: opp.distributionType });
+      if (isAmountVariant(campaignType) && campaignType) {
+        amountVariantEntries.push({ campaignId: id, campaign, opp, campaignType });
+      }
+    }
+  }
+
+  const tokensToResolve = new Set<PriceLookupKey>();
+  for (const entry of amountVariantEntries) {
+    const chainId = entry.opp.chainId ?? 0;
+    const rewardBreakdown = entry.opp.rewardsRecord?.breakdowns?.[0];
+    const rewardAddr = typeof rewardBreakdown?.token?.address === 'string' ? rewardBreakdown.token.address : '';
+    const rewardSym = typeof rewardBreakdown?.token?.symbol === 'string' ? rewardBreakdown.token.symbol : '';
+    if (rewardAddr || rewardSym) {
+      tokensToResolve.add(`${chainId}:${rewardAddr}:${rewardSym}` as PriceLookupKey);
+    }
+    if (entry.campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
+      || entry.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
+      const targetToken = Array.isArray(entry.opp.tokens) && entry.opp.tokens.length > 0 ? entry.opp.tokens[0] : undefined;
+      const targetAddr = typeof targetToken?.address === 'string' ? targetToken.address : '';
+      const targetSym = typeof targetToken?.symbol === 'string' ? targetToken.symbol : '';
+      if (targetAddr || targetSym) {
+        tokensToResolve.add(`${chainId}:${targetAddr}:${targetSym}` as PriceLookupKey);
+      }
+    }
+  }
+
+  for (const key of tokensToResolve) {
+    const [chainIdStr, addr, sym] = key.split(':');
+    const chainId = Number(chainIdStr);
+    const resolved = await resolveUsdPriceWithPriority({
+      chainId,
+      tokenAddress: addr || undefined,
+      tokenSymbol: sym || undefined,
+    });
+    preResolvedPrices.set(key, resolved.price);
+  }
+
+  const amountVariantPriceMap = new Map<string, { rewardTokenPrice?: number; targetTokenPrice?: number }>();
+  for (const entry of amountVariantEntries) {
+    const chainId = entry.opp.chainId ?? 0;
+    const rewardBreakdown = entry.opp.rewardsRecord?.breakdowns?.[0];
+    const rewardAddr = typeof rewardBreakdown?.token?.address === 'string' ? rewardBreakdown.token.address : '';
+    const rewardSym = typeof rewardBreakdown?.token?.symbol === 'string' ? rewardBreakdown.token.symbol : '';
+    const rewardKey = `${chainId}:${rewardAddr}:${rewardSym}` as PriceLookupKey;
+    const rewardTokenPrice = preResolvedPrices.get(rewardKey);
+
+    let targetTokenPrice: number | undefined;
+    if (entry.campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
+      || entry.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
+      const targetToken = Array.isArray(entry.opp.tokens) && entry.opp.tokens.length > 0 ? entry.opp.tokens[0] : undefined;
+      const targetAddr = typeof targetToken?.address === 'string' ? targetToken.address : '';
+      const targetSym = typeof targetToken?.symbol === 'string' ? targetToken.symbol : '';
+      const targetKey = `${chainId}:${targetAddr}:${targetSym}` as PriceLookupKey;
+      targetTokenPrice = preResolvedPrices.get(targetKey);
+    }
+
+    amountVariantPriceMap.set(entry.campaignId, { rewardTokenPrice, targetTokenPrice });
+  }
+
   const oppCampaignPromises: Promise<void>[] = [];
   for (const opp of liveOpportunities) {
     if (!Array.isArray(opp.campaigns)) continue;
@@ -1202,36 +1278,12 @@ export async function processMerklData(
         let rewardTokenPrice: number | undefined;
         let targetTokenPrice: number | undefined;
         if (isAmountVariant(campaignType)) {
-          const chainId = opp.chainId ?? 0;
-          const rewardBreakdown = opp.rewardsRecord?.breakdowns?.[0];
-          const rewardAddr = typeof rewardBreakdown?.token?.address === 'string'
-            ? rewardBreakdown.token.address : undefined;
-          const rewardSym = typeof rewardBreakdown?.token?.symbol === 'string'
-            ? rewardBreakdown.token.symbol : undefined;
-          const rewardSnap = rewardBreakdown?.token?.price;
-          const resolved = await resolveUsdPriceWithPriority({
-            chainId,
-            tokenAddress: rewardAddr,
-            tokenSymbol: rewardSym,
-            snapshotPrice: rewardSnap,
-          });
-          rewardTokenPrice = resolved.price;
-          if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
-            || campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
-            const targetToken = Array.isArray(opp.tokens) && opp.tokens.length > 0
-              ? opp.tokens[0] : undefined;
-            const targetAddr = targetToken?.address;
-            const targetSym = targetToken?.symbol;
-            if (targetAddr || targetSym) {
-              const targetResolved = await resolveUsdPriceWithPriority({
-                chainId,
-                tokenAddress: targetAddr,
-                tokenSymbol: targetSym,
-                snapshotPrice: targetToken?.price,
-              });
-              targetTokenPrice = targetResolved.price;
-            }
-          }
+          const preResolved = amountVariantPriceMap.get(id);
+          rewardTokenPrice = preResolved?.rewardTokenPrice;
+          targetTokenPrice = preResolved?.targetTokenPrice;
+        } else {
+          rewardTokenPrice = undefined;
+          targetTokenPrice = undefined;
         }
         const resolved = resolveCampaignApr(campaign, opp.distributionType, rewardTokenPrice, targetTokenPrice);
         campaignDetailsCache.set(id, {

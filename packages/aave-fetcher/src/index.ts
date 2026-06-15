@@ -10,7 +10,7 @@ import { logger } from './logger.js';
 import { writeJsonAtomic } from './file-utils.js';
 import { brevisApi, pruneBrevisCampaignForRuntime } from './brevis-api.js';
 import { fetchBrevisDistributedSoFar } from './brevis-distributed-so-far.js';
-import { getAaveRpcUrlsByChainId } from '@internal/aave-shared-config';
+import { providerPool } from '@internal/aave-rpc-infra';
 import { resolveUsdPriceWithPriority } from './token-price-resolver.js';
 import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
 import {
@@ -259,9 +259,7 @@ async function fetchBrevisAprs(
         brevisDistributedSoFar = await fetchBrevisDistributedSoFar(
           chainCampaigns,
           tokenPriceByChainAndAddress,
-          { rpcUrlsByChainId: Object.fromEntries(
-            [...new Set(chainCampaigns.map(c => c.submitChainId))].map(id => [id, getAaveRpcUrlsByChainId(id)])
-          )},
+          { providerPool },
         );
       } catch (error: any) {
         logger.warn(`⚠️ Brevis distributedSoFar chain read failed: ${error.message}`);

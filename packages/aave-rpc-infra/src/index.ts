@@ -624,7 +624,7 @@ export function buildFallbackV4SpokeEntries(topology: SpokeHubTopology): V4Spoke
   }));
 }
 
-type ProviderPoolLike = Pick<ProviderPool, 'getProvidersForChain' | 'reportProviderFailure' | 'reportProviderSuccess' | 'errorClassifier' | 'executeWithAutoRpc'>;
+export type ProviderPoolLike = Pick<ProviderPool, 'getProvidersForChain' | 'reportProviderFailure' | 'reportProviderSuccess' | 'errorClassifier' | 'executeWithAutoRpc'>;
 
 export interface FetchV4ReservesViaRpcOptions {
   entries?: V4SpokeEntry[];
