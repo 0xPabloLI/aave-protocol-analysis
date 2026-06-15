@@ -175,6 +175,7 @@ Canonical source for knowledge spanning frontend AND backend, or Aave protocol f
 - **本地 CI ≠ Docker 构建环境**：`ci:remote` 不跑 Docker build，本地残留目录会掩盖 ENOENT。build script 中 `writeFileSync` 的目标目录必须在 script 自身（`mkdirSync`）和 Dockerfile（`RUN mkdir -p`）至少一方保证存在。`buildScriptWriteSafety.test.ts` 做静态检查防回归。
 - **涉及外部依赖的测试必须用真实数据**：调用链上合约、第三方 API（Merkl/Brevis/CoinGecko）的测试不能用 mock，必须用真实 URL/合约地址验证。单元测试可覆盖内部逻辑，但集成测试必须对真实外部端点执行，确保数据格式、字段存在性、数值范围与实际一致。改了 API contract 后必须在 dev/staging 验证实际返回。
 - **Map key 必须用 shared 工具函数生成**：跨模块通过 Map 传递数据时，key 的生成方式必须统一。禁止在消费方重新实现 key 构造函数（即使逻辑"看起来一样"），必须 import 生产方的同一个函数。例：`brevis-distributed-so-far.ts` 本地 `chainTokenKey` 用 `-` 分隔，而 shared-contracts 用 `:` 分隔，导致 tokenPrice 查找永远 miss，distributedSoFar 全部 undefined，forecast 无 Brevis items。
+- **Handoff 文档必须在代码完成后反向验证**：handoff 文档记录了"要做什么"和"待修复项"，完成代码改动后必须回过头逐一检查文档中每个"待修复/需修正/错误"描述，将已完成的标记为"已完成"并删除过时内容。禁止只更新 ADR 而忽略 handoff 文档。例：TARGET_TOTAL_APR P1 完成后只更新了 ADR-0024，handoff 文档仍写着"TARGET_TOTAL_APR 当前硬编码为 mode: 'max'"和"5 个断路点待修复"，导致前端误以为未完成。
 
 ## Agent skills
 
