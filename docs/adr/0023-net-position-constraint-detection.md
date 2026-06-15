@@ -28,6 +28,11 @@ Merkl 机会的 `netPositionConstraint` 字段标识净头寸方向（supply/bor
 ```
 detectNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet, symbolLookup, cachedConstraint?, llmFn?)
     │
+    ├─ Layer 0: looping 排除                           ← 确定性规则（L1 前置）
+    │    触发条件: name/description 包含 "looping"
+    │    输出: return null（looping 不是 net position）
+    │    命中: 4/37 opps (sUSDe/USDe MULTILOG_DUTCH + USDe AAVE_SUPPLY)
+    │
     ├─ Layer 1: extractNetPositionConstraint()     ← 确定性规则
     │    触发条件: opportunityType.startsWith('AAVE_NET_')
     │    输入: opp.offsetTokenAddresses → resolveOffsetReserveIds
@@ -78,7 +83,7 @@ buildModelChain(primaryConfig?, openrouterConfig?, fetchFn)
 
 **设计意图**：链路 A 优先（付费模型更可靠），链路 B 兜底（free models 零成本但限速）。
 
-**当前实际**：链路 A 因 `LLM_FALLBACK_MODELS=[]` 也不走。两条链路均不生效，Layer 3 仅在 `primaryConfig` 有值时走一个空模型列表。
+**当前实际**：~~链路 A 因 `LLM_FALLBACK_MODELS=[]` 也不走。两条链路均不生效~~ → ✅ 已修复：`LLM_FALLBACK_MODELS` 恢复为 12 个模型（commit `0a8082d`），链路 A 现在走 primaryConfig 的模型列表。链路 B 仍为兜底。
 
 ### 线上数据（2026-05-29）
 
@@ -119,7 +124,7 @@ Layer 1 对 `AAVE_NET_*` 的覆盖率：100%（17/17）。
 
 **影响**：
 1. 若 `LLM_API_KEY` 未设置，`llmConfig` = undefined，`llmFn` = undefined，**Layer 3 完全不触发**
-2. 即使 `LLM_API_KEY` 有值，`LLM_FALLBACK_MODELS=[]`，链路 A 也是空，只走空循环后返回 null
+2. ~~即使 `LLM_API_KEY` 有值，`LLM_FALLBACK_MODELS=[]`，链路 A 也是空，只走空循环后返回 null~~ → ✅ 已修复：`LLM_FALLBACK_MODELS` 恢复为 12 个模型（commit `0a8082d`）
 3. OpenRouter free models 链路（`OPENROUTER_API_KEY`）永远不被调用
 
 **线上环境变量状态**：
@@ -191,9 +196,34 @@ Layer 1 对 `AAVE_NET_*` 的覆盖率：100%（17/17）。
 - **Positive**：三层架构职责清晰，Layer 1 覆盖率 100%，无需 Layer 4 启发式
 - **Positive**：修复 Defect 2 后，Layer 3 OpenRouter free models 链路可达，为未来非 `AAVE_NET_*` 类型提供 LLM 兜底能力
 - **Positive**：修复 Defect 1 后，缓存链路可用，减少 LLM 调用频次
+- **Positive**：Layer 0（looping 排除）防止 Ethena Liquid Leverage 等 looping 策略被误判为 net position
 - **Negative**：Layer 2 缓存修复需改 `fetchMarketsData` 签名，影响面较广
 - **Negative**：Layer 3 LLM 调用增加延迟（最坏 60s timeout），仅在 Layer 1 未命中时触发
 - **Negative**：OpenRouter free models 有 rate limit，大量机会同时走 Layer 3 时可能触发限速
+- **Negative**：LLM 失败（429/超时/key 缺失）时直接返回 null，无 Layer 4 fallback（待修复）
+
+### Defect 3: LLM_FALLBACK_MODELS 被误清空 ✅ 已修复
+
+**原因**：commit `3be25fe` 在修复 "merklLlmClient duplicate decl" 时将 `LLM_FALLBACK_MODELS` 从 12 个模型清空为 `[]`，同时将 `OPENROUTER_FREE_MODELS_FALLBACK` 从 20 个清空为只剩 `['openrouter/free']`。
+
+**影响**：链路 A（primaryConfig）因空模型列表不生效，链路 B（OpenRouter）仅剩 1 个 fallback 模型。
+
+**修复**：commit `0a8082d` 恢复了原始的 12 个 primary 模型和 20 个 OpenRouter free 模型。
+
+### Defect 4: LLM 失败时无 Layer 4 fallback（待修复）
+
+**现状**：LLM 返回 null 或失败（429/超时）时，`detectNetPositionConstraint` 直接 `return null`，不区分 "LLM 判定无 net position" 和 "LLM 不可用"。
+
+**影响**：当 OpenRouter rate limit 触发或 API key 缺失时，本应能通过正则 heuristic 判定的机会（如 "Borrowers not eligible"）也返回 null。
+
+**修复方向**：
+1. `llmFn` 返回结构需区分 "LLM 成功返回 null" 和 "LLM 失败"
+2. LLM 失败时 fallback 到 Layer 4 正则（基于 message 中的关键词模式）
+3. 正则比 LLM 更保守——宁可漏判也不误判
+
+### Related Issues
+
+- [AAV-895](https://linear.app/aaveapy/issue/AAV-895) — Borrow ETH with cbETH collateral: cross-asset offset 需专用公式，非标准 netPositionConstraint
 
 ## References
 
