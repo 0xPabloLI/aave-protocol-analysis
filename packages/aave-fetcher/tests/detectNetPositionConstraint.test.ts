@@ -16,6 +16,36 @@ const makeSymbolLookup = (entries: [number, string, string][]): Map<string, stri
 
 describe('B4: detectNetPositionConstraint — three-layer detection', () => {
 
+  it('L1 excludes looping — name contains "looping required" returns null', async () => {
+    const opp: MerklOpportunityData = {
+      supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
+      borrow: [], hold: [],
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
+      opportunityType: 'MULTILOG_DUTCH',
+      name: 'Lend USDe on Aave (looping required)',
+      description: 'Ethena Liquid Leverage program. Users must also borrow USDT0.',
+    };
+    const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusde']);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xusde', '1:0xpool:0xusde', reserveIdSet, symbolLookup);
+    assert.equal(result, null);
+  });
+
+  it('L1 excludes looping — description contains "looping" returns null', async () => {
+    const opp: MerklOpportunityData = {
+      supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
+      borrow: [], hold: [],
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
+      opportunityType: 'AAVE_SUPPLY',
+      name: 'Lend sUSDe and USDe on Aave',
+      description: 'This is a looping strategy where users supply and borrow the same asset.',
+    };
+    const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusde']);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xusde', '1:0xpool:0xusde', reserveIdSet, symbolLookup);
+    assert.equal(result, null);
+  });
+
   it('Layer 1 returns constraint for AAVE_NET_LENDING', async () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],

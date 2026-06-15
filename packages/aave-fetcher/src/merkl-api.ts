@@ -1603,6 +1603,9 @@ export async function detectNetPositionConstraint(
   cachedConstraint?: NetPositionConstraint | null,
   llmFn?: () => Promise<import('./merklLlmClient.js').LlmAnalysisResult | null>,
 ): Promise<NetPositionConstraint | null> {
+  const text = `${opp.name ?? ''} ${opp.description ?? ''}`.toLowerCase();
+  if (text.includes('looping')) return null;
+
   const layer1 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet);
   if (layer1) return layer1;
 

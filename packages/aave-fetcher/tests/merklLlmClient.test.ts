@@ -23,8 +23,8 @@ function mockFetch(responseBody: unknown, ok = true, contentType = 'application/
 }
 
 describe('B3: LLM client — model list + response parsing', () => {
-  it('LLM_FALLBACK_MODELS is empty (paid models resolved dynamically)', () => {
-    assert.equal(LLM_FALLBACK_MODELS.length, 0);
+  it('LLM_FALLBACK_MODELS has 12 entries for primary config', () => {
+    assert.equal(LLM_FALLBACK_MODELS.length, 12);
   });
 
   it('parseSseStream extracts content from SSE lines', () => {
@@ -87,9 +87,9 @@ describe('B3: LLM client — model list + response parsing', () => {
     assert.equal(parseLlmResponse('{"sourceSide":"supply","offsetTokenSymbols":"not-array"}'), null);
   });
 
-  it('OPENROUTER_FREE_MODELS_FALLBACK has 1 entry (openrouter/free)', () => {
-    assert.equal(OPENROUTER_FREE_MODELS_FALLBACK.length, 1);
-    assert.equal(OPENROUTER_FREE_MODELS_FALLBACK[0], 'openrouter/free');
+  it('OPENROUTER_FREE_MODELS_FALLBACK has 20 entries starting with deepseek', () => {
+    assert.equal(OPENROUTER_FREE_MODELS_FALLBACK.length, 20);
+    assert.equal(OPENROUTER_FREE_MODELS_FALLBACK[0], 'deepseek/deepseek-v4-flash:free');
   });
 
   it('buildModelChain combines primary + openrouter models', async () => {
@@ -97,7 +97,7 @@ describe('B3: LLM client — model list + response parsing', () => {
     const openrouter = { apiKey: 'o', baseUrl: 'https://openrouter.ai/api/v1' };
     const chain = await buildModelChain(primary, openrouter);
     assert.ok(chain.length > 0);
-    assert.equal(chain[0].config.apiKey, 'o');
+    assert.equal(chain[0].config.apiKey, 'p');
   });
 
   it('buildModelChain with only openrouter returns only openrouter models', async () => {
@@ -129,8 +129,8 @@ describe('B3: LLM client — model list + response parsing', () => {
     resetOpenRouterCache();
     const fetch = async () => new Response('error', { status: 500 }) as Response;
     const result = await fetchOpenRouterFreeModels(fetch);
-    assert.equal(result.length, 1);
-    assert.equal(result[0], 'openrouter/free');
+    assert.equal(result.length, OPENROUTER_FREE_MODELS_FALLBACK.length);
+    assert.equal(result[0], 'deepseek/deepseek-v4-flash:free');
     resetOpenRouterCache();
   });
 
