@@ -154,6 +154,44 @@ function findChainsWithAllSuppressed(rpcHealth: { endpoints: Array<{ chainId: nu
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
+// Temporary heap snapshot diagnostics (staging-only, guarded by env var)
+if (process.env.ENABLE_HEAP_SNAPSHOT === 'true') {
+  const v8 = await import('node:v8');
+  app.get('/debug/heap-snapshot', async (_req, res) => {
+    logger.info('📊 Generating heap snapshot...');
+    const startTime = Date.now();
+    try {
+      const stream = v8.default.getHeapSnapshot();
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+      const buf = Buffer.concat(chunks);
+      const elapsed = Date.now() - startTime;
+      logger.info(`📊 Heap snapshot generated: ${Math.round(buf.length / 1024 / 1024)}MB in ${elapsed}ms`);
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', 'attachment; filename="heap_snapshot.heapsnapshot"');
+      res.send(buf);
+    } catch (err) {
+      logger.error('📊 Heap snapshot failed:', err);
+      res.status(500).json({ error: 'Heap snapshot failed', message: (err as Error).message });
+    }
+  });
+  app.get('/debug/memory', (_req, res) => {
+    const mem = process.memoryUsage();
+    const fmt = (bytes: number) => `${Math.round(bytes / 1024 / 1024)}MB`;
+    res.json({
+      rss: fmt(mem.rss),
+      heapTotal: fmt(mem.heapTotal),
+      heapUsed: fmt(mem.heapUsed),
+      external: fmt(mem.external),
+      arrayBuffers: fmt(mem.arrayBuffers),
+      v8HeapStatistics: v8.default.getHeapStatistics(),
+    });
+  });
+  logger.info('📊 Heap snapshot diagnostics enabled (ENABLE_HEAP_SNAPSHOT=true)');
+}
+
 // Catch-all 404 handler — logs unmapped requests for bot/crawler monitoring.
 // Must be registered AFTER all valid routes so Express only reaches it on miss.
 const MAX_UA_LEN = 120;

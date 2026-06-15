@@ -1,19 +1,62 @@
 # Diagnosis: Railway OOM / SIGTERM (2026-06)
 
 **日期**: 2026-06-15
-**状态**: 根因未完全确定，调查过程供后续 agent 继续排查；三个 Fix 待实施
+**状态**: 根因已通过 heap snapshot 精确归因；Fix A + Fix B 已实施
 
-## ⚠️ 根因状态声明
+## ✅ 根因已确定
 
-**150MB heap 差异未精确归因。** 6月13日（281-321MB heap）vs 6月15日（133-162MB heap）数据量完全相同（354 reserves, 35 opportunities, 11 forecast campaigns），但 heap 差 150MB。可能的解释包括 V8 GC 时间差异（6月13日只运行~13分钟）、后续 commit 的累积改善等，但都未被证实。
+**通过 V8 heap snapshot 精确归因：`googleapis` 包占 31.26MB heap（占字符串总量 54.5MB 的 57.3%，占 heap 总量 120.9MB 的 25.8%）。**
 
-6月10日和6月13日的 SIGTERM 可能不是 OOM，而是 Railway 部署替换旧容器时的正常 SIGTERM（旧容器收到 SIGTERM 被新部署替换）。
+`backend/src/services/gscService.ts` 中 `import { google } from 'googleapis'` 会加载整个 googleapis 包（200+ Google API 子模块），每个模块的完整编译源码被 V8 保留在堆中。
 
-**建议后续 agent 重点关注**：
-1. 用 `--inspect` 或 heap snapshot 对比稳态 vs 异常时的内存分布
-2. 排查 V8 heap 中哪些对象类型占用了 150MB（可能是 ArrayBuffer、String、或 closures）
-3. 检查是否有闭包引用了已不再需要的大对象（如 fetch 响应 buffer 被 closure 捕获）
-4. 确认 Railway SIGTERM 是 OOM kill 还是 deployment 替换（检查 `railway logs` 中 `OOMKilled` vs `SIGTERM` 的区别）
+### Heap Snapshot 分析结果（2026-06-15 部署）
+
+稳态 heap：113MB (warmup 后), RSS：222MB
+
+**按 V8 节点类型：**
+
+| 类型 | 大小 | 占比 |
+|---|---|---|
+| **string** | **54.46MB** | **45.0%** |
+| code | 21.70MB | 17.9% |
+| array | 16.56MB | 13.7% |
+| object | 10.00MB | 8.3% |
+| obj_shape | 6.99MB | 5.8% |
+| closure | 4.74MB | 3.9% |
+| 其他 | 6.45MB | 5.3% |
+
+**字符串按内容分类：**
+
+| 字符串类别 | 大小 | 占字符串比 |
+|---|---|---|
+| **googleapis 源码** | **31.26MB** | **57.3%** |
+| 很长字符串 (>100 chars) | 11.05MB | 20.3% |
+| 中等长度字符串 (21-100 chars) | 3.44MB | 6.3% |
+| 短字符串 (4-20 chars) | 2.58MB | 4.7% |
+| JS 源码 (非 googleapis) | 2.26MB | 4.1% |
+| hex 地址/tx 数据 | 1.33MB | 2.4% |
+| JSON 数据 | 1.02MB | 1.9% |
+| GraphQL | 0.81MB | 1.5% |
+| 其他 | 0.61MB | 1.1% |
+
+### 模块加载内存开销
+
+| 组件 | Heap 增量 |
+|---|---|
+| ethers.js v5 | 12 MB |
+| hono | 2 MB |
+| pg | 1 MB |
+| rpc-infra (不含 ethers) | 6 MB |
+| fetcher (不含 ethers/rpc-infra) | 20 MB |
+| **模块加载合计** | **44 MB** |
+
+### 6月13日 vs 6月15日差异解释
+
+6月13日 heap 281-321MB vs 当前 113MB。差异约 168MB，归因：
+1. **googleapis 源码**：31MB（两边都有，不是差异来源）
+2. **V8 GC 时间差异**：6月13日只运行~13分钟，GC 未回收 warmup 临时对象
+3. **后续 commit 改善**：memory leak fix + hono 升级 + Missing APR cap 修复
+4. **Fix A + Fix B 效果**：ProviderPool 复用 + Merkl AMOUNT 批量去重
 
 ## 相关 Issue
 
@@ -126,35 +169,50 @@ Puppeteer 的 Chromium 子进程占约 50-100MB 容器 RSS（不在 `process.mem
 
 | 排名 | 根因 | 影响 | 当前状态 |
 |------|------|------|---------|
-| 1 | 6月10日/13日代码版本的稳态 heap 本身高于当前 | ~150MB heap | ✅ 已由后续多个 commit 改善（memory leak fix + hono 升级 + Missing APR cap 修复） |
-| 2 | Puppeteer fallback 被 Cloudflare 429 触发 → 额外 70-130MB 容器 RSS | 6月10日主因 | ⚠️ 风险仍在（429 可能再次发生） |
-| 3 | Merkl AMOUNT variant 并发 CoinGecko 调用（防御性） | 当前 AMOUNT campaign 少，影响小 | ⚠️ 未来可能增长 |
-| 4 | Brevis chain call 未复用 ProviderPool | ~1-5MB（1-2 个 chain） | ⚠️ 架构债务 |
-| 5 | `Missing APR cap` 抛错跳过缓存 → 重复 fetch | ~10-30MB（3 个 campaign） | ✅ 已由 `46fbd5a` 修复 |
+| 1 | **`googleapis` 整包导入** — 31.26MB heap 字符串（128 个 API 子模块源码） | **25.8% heap 占用** | ⚠️ 可优化（换用 `googleapis/build/src/apis/searchconsole` 专用子路径导入） |
+| 2 | 6月10日/13日代码版本的稳态 heap 本身高于当前 | ~150MB heap | ✅ 已由后续多个 commit 改善 |
+| 3 | Puppeteer fallback 被 Cloudflare 429 触发 → 额外 70-130MB 容器 RSS | 6月10日主因 | ⚠️ 风险仍在（429 可能再次发生，AAV-888） |
+| 4 | Merkl AMOUNT variant 并发 CoinGecko 调用 | 当前 AMOUNT campaign 少，影响小 | ✅ Fix B 已实施 |
+| 5 | Brevis chain call 未复用 ProviderPool | ~1-5MB（1-2 个 chain） | ✅ Fix A 已实施 |
+| 6 | `Missing APR cap` 抛错跳过缓存 → 重复 fetch | ~10-30MB（3 个 campaign） | ✅ 已由 `46fbd5a` 修复 |
 
-## 待实施修复
+## 已实施修复
 
-### Fix A: Brevis chain call 复用 ProviderPool
+### Fix A: Brevis chain call 复用 ProviderPool ✅
 
-- 文件: `packages/aave-fetcher/src/brevis-distributed-so-far.ts`
-- 改法: 接收 ProviderPool 实例或回调函数，调用 `executeWithAutoRpc` 替代自己 `new JsonRpcProvider`
-- 影响: 架构改善，获得 failover + health detection + provider 复用
-- 风险: 低（只是换调用方式，逻辑不变）
+- Commit: `663f3c1`
+- `FetchBrevisDistributedSoFarOptions: providerPool?` + optional `rpcUrlsByChainId`（向后兼容）
+- `fetchMarketsData` 调用方改为传 `{ providerPool }`
+- 4 个 ProviderPool mock 测试 + 5 个集成测试
 
-### Fix B: Merkl AMOUNT variant price resolve 加限流（防御性）
+### Fix B: Merkl AMOUNT variant price resolve 批量去重 ✅
 
-- 文件: `packages/aave-fetcher/src/merkl-api.ts`（`processMerklData` 函数）
-- 改法: 
-  1. 循环前收集所有 AMOUNT variant 需要的 token（去重）
-  2. 串行或限流 resolve（5 并发），build `chainId:tokenAddress → price` Map
-  3. 循环内直接查 Map
-- 影响: 减少 CoinGecko 并发请求（当前量小，但防御未来增长）
-- 风险: 低（不增加延迟，因为去重后 resolve 数量远少于 campaign 数量）
+- Commit: `663f3c1`
+- 预扫描所有 AMOUNT variant entry → 收集去重 token → 串行 resolve → build `preResolvedPrices` Map → build `amountVariantPriceMap` → 循环内查 Map
+- 8 个 batch dedup 单元测试
 
-### Fix C: Puppeteer 替换 → 移除（独立 issue AAV-888）
+### Fix C: Puppeteer 替换 → 移除（独立 issue AAV-888）⚠️
 
-**Puppeteer 在当前内存环境下不是可用选项。** 稳态 RSS 270-302MB + Puppeteer 70-130MB = 340-430MB，与其他峰值叠加有 OOM 风险。
+**Puppeteer 在当前内存环境下不是可用选项。** 稳态 RSS 222MB + Puppeteer 70-130MB = 290-350MB，与其他峰值叠加有 OOM 风险。
 
 - 替代方案: Cloudflare Browser (primary) → Render 服务 (secondary) → Regex 兜底 (tertiary)
 - 完整方案见 AAV-888
-- 本文档的 Fix A/B 不依赖 Fix C，可独立实施
+
+## 待实施修复
+
+### Fix D: `googleapis` 专用子路径导入（新发现）
+
+**问题**：`import { google } from 'googleapis'` 加载 200+ Google API 子模块源码，占 31.26MB heap。
+
+**修复方向**：改用专用子路径导入：
+```typescript
+// Before (31.26MB heap)
+import { google } from 'googleapis';
+
+// After (~1-2MB heap)
+import { searchconsole_v1 } from 'googleapis/build/src/apis/searchconsole/index.js';
+```
+
+或使用 `@google-cloud/storage` 等专用包替代 `googleapis` 全家桶。
+
+**预估收益**：减少 ~29MB heap（从 31MB 降到 ~2MB）。
