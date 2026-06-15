@@ -1,7 +1,7 @@
 # Diagnosis: Railway OOM / SIGTERM (2026-06)
 
 **日期**: 2026-06-15
-**状态**: 根因已通过 heap snapshot 精确归因；Fix A + Fix B 已实施
+**状态**: 根因已通过 heap snapshot 精确归因；Fix A + Fix B + Fix D 已实施
 
 ## ✅ 根因已确定
 
@@ -169,7 +169,7 @@ Puppeteer 的 Chromium 子进程占约 50-100MB 容器 RSS（不在 `process.mem
 
 | 排名 | 根因 | 影响 | 当前状态 |
 |------|------|------|---------|
-| 1 | **`googleapis` 整包导入** — 31.26MB heap 字符串（128 个 API 子模块源码） | **25.8% heap 占用** | ⚠️ 可优化（换用 `googleapis/build/src/apis/searchconsole` 专用子路径导入） |
+| 1 | **`googleapis` 整包导入** — 31.26MB heap 字符串（128 个 API 子模块源码） | **25.8% heap 占用** | ✅ Fix D 已实施（`4457fc5`，子路径导入节省 ~64MB） |
 | 2 | 6月10日/13日代码版本的稳态 heap 本身高于当前 | ~150MB heap | ✅ 已由后续多个 commit 改善 |
 | 3 | Puppeteer fallback 被 Cloudflare 429 触发 → 额外 70-130MB 容器 RSS | 6月10日主因 | ⚠️ 风险仍在（429 可能再次发生，AAV-888） |
 | 4 | Merkl AMOUNT variant 并发 CoinGecko 调用 | 当前 AMOUNT campaign 少，影响小 | ✅ Fix B 已实施 |
@@ -198,21 +198,11 @@ Puppeteer 的 Chromium 子进程占约 50-100MB 容器 RSS（不在 `process.mem
 - 替代方案: Cloudflare Browser (primary) → Render 服务 (secondary) → Regex 兜底 (tertiary)
 - 完整方案见 AAV-888
 
-## 待实施修复
+### Fix D: `googleapis` 专用子路径导入 ✅
 
-### Fix D: `googleapis` 专用子路径导入（新发现）
-
-**问题**：`import { google } from 'googleapis'` 加载 200+ Google API 子模块源码，占 31.26MB heap。
-
-**修复方向**：改用专用子路径导入：
-```typescript
-// Before (31.26MB heap)
-import { google } from 'googleapis';
-
-// After (~1-2MB heap)
-import { searchconsole_v1 } from 'googleapis/build/src/apis/searchconsole/index.js';
-```
-
-或使用 `@google-cloud/storage` 等专用包替代 `googleapis` 全家桶。
-
-**预估收益**：减少 ~29MB heap（从 31MB 降到 ~2MB）。
+- Commit: `4457fc5`
+- Linear: AAV-893
+- `import { google } from 'googleapis'` → `import { webmasters_v3 } from 'googleapis/build/src/apis/webmasters/v3.js'` + `import { JWT } from 'google-auth-library/build/src/auth/jwtclient.js'`
+- 模块加载内存: 69MB → 5MB（节省 ~64MB heap）
+- 4 个 TDD 测试
+- ⬜ 待 Railway 部署验证实际内存效果
