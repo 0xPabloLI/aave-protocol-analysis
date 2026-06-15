@@ -159,8 +159,8 @@ async function cleanupPostgres(retainDays: number): Promise<void> {
   const cutoff = `NOW() - INTERVAL '${retainDays} days'`;
 
   const tables = [
-    { table: 'market_snapshots', timeCol: 'captured_at' },
-    { table: 'oracle_prices', timeCol: 'captured_at' },
+    { table: 'market_snapshots', timeCol: 'snapshot_ts' },
+    { table: 'oracle_prices', timeCol: 'snapshot_ts' },
   ];
 
   for (const { table, timeCol } of tables) {
