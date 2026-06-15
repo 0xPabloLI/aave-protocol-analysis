@@ -158,23 +158,22 @@ app.get('/api/health', healthHandler);
 if (process.env.ENABLE_HEAP_SNAPSHOT === 'true') {
   const v8 = await import('node:v8');
   app.get('/debug/heap-snapshot', async (_req, res) => {
-    logger.info('📊 Generating heap snapshot...');
+    logger.info('📊 Generating heap snapshot (streaming)...');
     const startTime = Date.now();
     try {
       const stream = v8.default.getHeapSnapshot();
-      const chunks: Buffer[] = [];
-      for await (const chunk of stream) {
-        chunks.push(chunk);
-      }
-      const buf = Buffer.concat(chunks);
-      const elapsed = Date.now() - startTime;
-      logger.info(`📊 Heap snapshot generated: ${Math.round(buf.length / 1024 / 1024)}MB in ${elapsed}ms`);
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', 'attachment; filename="heap_snapshot.heapsnapshot"');
-      res.send(buf);
+      stream.pipe(res);
+      stream.on('end', () => {
+        const elapsed = Date.now() - startTime;
+        logger.info(`📊 Heap snapshot streamed in ${elapsed}ms`);
+      });
     } catch (err) {
       logger.error('📊 Heap snapshot failed:', err);
-      res.status(500).json({ error: 'Heap snapshot failed', message: (err as Error).message });
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Heap snapshot failed', message: (err as Error).message });
+      }
     }
   });
   app.get('/debug/memory', (_req, res) => {

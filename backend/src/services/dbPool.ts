@@ -41,6 +41,7 @@ export function markPoolUnhealthy(): void {
   lastPoolErrorTime = Date.now();
 }
 
+// ts-prune-ignore-next — used in tests only
 export function resetPoolHealth(): void {
   lastPoolErrorTime = 0;
 }
@@ -102,6 +103,24 @@ export function getPool(): PoolType {
   });
 
   return pool;
+}
+
+/**
+ * Execute a DB operation with automatic unhealthy marking on failure.
+ * Wraps pool.query() calls so all DB consumers benefit from the backoff
+ * without manually calling markPoolUnhealthy() in every catch block.
+ */
+export async function queryWithHealthTracking<T extends pg.QueryResultRow = Record<string, unknown>>(
+  text: string,
+  params?: unknown[],
+): Promise<pg.QueryResult<T>> {
+  const p = getPool();
+  try {
+    return await p.query<T>(text, params);
+  } catch (error) {
+    lastPoolErrorTime = Date.now();
+    throw error;
+  }
 }
 
 export async function closePool(): Promise<void> {
