@@ -1613,11 +1613,11 @@ export async function detectNetPositionConstraint(
   cachedConstraint?: NetPositionConstraint | null,
   llmFn?: () => Promise<import('./merklLlmClient.js').LlmAnalysisResult | null>,
 ): Promise<NetPositionConstraint | null> {
+  const layer0 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet);
+  if (layer0) return layer0;
+
   const text = `${opp.name ?? ''} ${opp.description ?? ''}`.toLowerCase();
   if (text.includes('looping')) return null;
-
-  const layer1 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet);
-  if (layer1) return layer1;
 
   if (cachedConstraint) return cachedConstraint;
 

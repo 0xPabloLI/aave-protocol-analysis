@@ -14,9 +14,26 @@ const makeSymbolLookup = (entries: [number, string, string][]): Map<string, stri
   return map;
 };
 
-describe('B4: detectNetPositionConstraint — three-layer detection', () => {
+describe('B4: detectNetPositionConstraint — four-layer detection', () => {
 
-  it('L1 excludes looping — name contains "looping required" returns null', async () => {
+  it('L0 (type match) takes priority over L1 (looping) — AAVE_NET_LENDING with "looping" in name still returns constraint', async () => {
+    const opp: MerklOpportunityData = {
+      supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
+      borrow: [], hold: [],
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
+      opportunityType: 'AAVE_NET_LENDING',
+      name: 'Net Lending USDT (looping)',
+      description: '',
+      offsetTokenAddresses: [{ address: '0xborrowtoken', reserveId: '1:0xpool:0xborrowtoken' }],
+    };
+    const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusdt', '1:0xpool:0xborrowtoken']);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet, symbolLookup);
+    assert.notEqual(result, null);
+    assert.equal(result!.sourceSide, 'supply');
+  });
+
+  it('L1 excludes looping — name contains "looping required" returns null (non-NET type)', async () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
@@ -31,7 +48,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     assert.equal(result, null);
   });
 
-  it('L1 excludes looping — description contains "looping" returns null', async () => {
+  it('L1 excludes looping — description contains "looping" returns null (non-NET type)', async () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
@@ -46,7 +63,7 @@ describe('B4: detectNetPositionConstraint — three-layer detection', () => {
     assert.equal(result, null);
   });
 
-  it('Layer 1 returns constraint for AAVE_NET_LENDING', async () => {
+  it('L0 returns constraint for AAVE_NET_LENDING', async () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
