@@ -1008,7 +1008,7 @@ export function generateMerklOpportunityLink(opportunity: MerklOpportunity): str
   if (!opportunity.identifier || !opportunity.type || !opportunity.chain?.name) {
     return null;
   }
-  
+
   // 将链名称转换为小写（Merkl URL 使用小写链名称）
   const chainName = opportunity.chain.name.toLowerCase();
   const baseUrl = 'https://app.merkl.xyz';
@@ -1604,6 +1604,27 @@ function extractOffsetTokenAddresses(
   });
 }
 
+const SUPPLY_PATTERN = /\b(supply|lend|deposit|stake)\b/i;
+const BORROW_PATTERN = /\b(borrow|loan|debt|repay)\b/i;
+const NET_SUPPLY_PATTERN = /\bnet\s*(supply|lend|deposit|long)\b/i;
+const NET_BORROW_PATTERN = /\bnet\s*(borrow|loan|debt|short)\b/i;
+
+export function regexNetPositionFallback(
+  opp: MerklOpportunityData,
+): NetPositionConstraint | null {
+  const text = `${opp.name ?? ''} ${opp.description ?? ''}`;
+  const action = (opp as any).action;
+
+  if (NET_BORROW_PATTERN.test(text) || (action === 'BORROW' && BORROW_PATTERN.test(text) && !SUPPLY_PATTERN.test(text))) {
+    return { sourceSide: 'borrow', offsetReserveIds: [] };
+  }
+  if (NET_SUPPLY_PATTERN.test(text) || (action === 'LEND' && SUPPLY_PATTERN.test(text) && !BORROW_PATTERN.test(text))) {
+    return { sourceSide: 'supply', offsetReserveIds: [] };
+  }
+
+  return null;
+}
+
 export async function detectNetPositionConstraint(
   opp: MerklOpportunityData,
   sourceTokenAddress: string,
@@ -1611,7 +1632,7 @@ export async function detectNetPositionConstraint(
   reserveIdSet: Set<string>,
   symbolLookup: Map<string, string>,
   cachedConstraint?: NetPositionConstraint | null,
-  llmFn?: () => Promise<import('./merklLlmClient.js').LlmAnalysisResult | null>,
+  llmFn?: () => Promise<import('./merklLlmClient.js').LlmOutcome>,
 ): Promise<NetPositionConstraint | null> {
   const layer0 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet);
   if (layer0) return layer0;
@@ -1621,10 +1642,11 @@ export async function detectNetPositionConstraint(
 
   if (cachedConstraint) return cachedConstraint;
 
+  let llmUnavailable = false;
   if (llmFn) {
-    const llmResult = await llmFn();
-    if (llmResult) {
-      const { sourceSide, offsetTokenSymbols } = llmResult;
+    const outcome = await llmFn();
+    if (outcome.tag === 'result' && outcome.value) {
+      const { sourceSide, offsetTokenSymbols } = outcome.value;
       if (offsetTokenSymbols && offsetTokenSymbols.length > 0) {
         const offsetReserveIds: string[] = [];
         const seen = new Set<string>();
@@ -1643,6 +1665,12 @@ export async function detectNetPositionConstraint(
         if (offsetReserveIds.length > 0) return { sourceSide, offsetReserveIds };
       }
     }
+    llmUnavailable = outcome.tag === 'unavailable';
+  }
+
+  if (llmUnavailable) {
+    const regexResult = regexNetPositionFallback(opp);
+    if (regexResult) return regexResult;
   }
 
   return null;

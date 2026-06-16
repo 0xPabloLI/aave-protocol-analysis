@@ -14,6 +14,7 @@ import {
   buildLlmPrompt,
   callLlmWithFallback,
   type LlmAnalysisResult,
+  type LlmOutcome,
 } from '../src/merklLlmClient.js';
 
 function mockFetch(responseBody: unknown, ok = true, contentType = 'application/json') {
@@ -221,7 +222,7 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
       choices: [{ message: { content: '{"sourceSide":"supply","offsetTokenSymbols":["USDe"]}' } }],
     });
     const result = await callLlmWithFallback('test prompt', undefined, config, fetch);
-    assert.deepEqual(result, { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] });
+    assert.deepEqual(result, { tag: 'result', value: { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] } });
   });
 
   it('returns null when LLM says null', async () => {
@@ -230,7 +231,7 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
       choices: [{ message: { content: 'null' } }],
     });
     const result = await callLlmWithFallback('test prompt', undefined, config, fetch);
-    assert.equal(result, null);
+    assert.deepEqual(result, { tag: 'result', value: null });
   });
 
   it('falls back to next model on non-ok response', async () => {
@@ -245,15 +246,15 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
       ) as Response;
     };
     const result = await callLlmWithFallback('test prompt', undefined, config, fetch);
-    assert.deepEqual(result, { sourceSide: 'borrow', offsetTokenSymbols: ['GHO'] });
+    assert.deepEqual(result, { tag: 'result', value: { sourceSide: 'borrow', offsetTokenSymbols: ['GHO'] } });
     assert.ok(callCount >= 2);
   });
 
-  it('returns null when all models fail', async () => {
+  it('returns unavailable when all models fail', async () => {
     resetOpenRouterCache();
     const fetch = async () => new Response('error', { status: 500 }) as Response;
     const result = await callLlmWithFallback('test prompt', undefined, { ...config, totalTimeoutMs: 100 }, fetch);
-    assert.equal(result, null);
+    assert.deepEqual(result, { tag: 'unavailable' });
   });
 
   it('handles SSE streaming response', async () => {
@@ -261,7 +262,7 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
     const sseBody = 'data: {"choices":[{"delta":{"content":"{\\"sourceSide\\":\\"supply\\",\\"offsetTokenSymbols\\":[\\"USDe\\"]}"}}]}\ndata: [DONE]\n';
     const fetch = mockFetch(sseBody, true, 'text/event-stream');
     const result = await callLlmWithFallback('test prompt', undefined, config, fetch);
-    assert.deepEqual(result, { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] });
+    assert.deepEqual(result, { tag: 'result', value: { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] } });
   });
 
   it('respects totalTimeoutMs', async () => {
@@ -270,12 +271,12 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
       setTimeout(() => resolve(new Response('timeout', { status: 500 })), 10000);
     });
     const result = await callLlmWithFallback('test prompt', undefined, { ...config, totalTimeoutMs: 50 }, slowFetch);
-    assert.equal(result, null);
+    assert.deepEqual(result, { tag: 'unavailable' });
   });
 
-  it('returns null when no config provided', async () => {
+  it('returns unavailable when no config provided', async () => {
     const result = await callLlmWithFallback('test prompt', undefined, undefined);
-    assert.equal(result, null);
+    assert.deepEqual(result, { tag: 'unavailable' });
   });
 
   it('uses openrouter models when only openrouterConfig provided', async () => {
@@ -285,7 +286,7 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
       choices: [{ message: { content: '{"sourceSide":"supply","offsetTokenSymbols":["USDe"]}' } }],
     });
     const result = await callLlmWithFallback('test prompt', undefined, openrouterConfig, fetch);
-    assert.deepEqual(result, { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] });
+    assert.deepEqual(result, { tag: 'result', value: { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] } });
   });
 });
 

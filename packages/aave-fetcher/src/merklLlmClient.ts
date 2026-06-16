@@ -3,6 +3,10 @@ export interface LlmAnalysisResult {
   offsetTokenSymbols: string[];
 }
 
+export type LlmOutcome =
+  | { tag: 'result'; value: LlmAnalysisResult | null }
+  | { tag: 'unavailable' };
+
 export const LLM_FALLBACK_MODELS = [
   'claude-haiku-4.5',
   'claude-sonnet-4.6',
@@ -253,13 +257,14 @@ export async function callLlmWithFallback(
   primaryConfig?: LlmClientConfig,
   openrouterConfig?: LlmClientConfig,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
-): Promise<LlmAnalysisResult | null> {
+): Promise<LlmOutcome> {
   const chain = await buildModelChain(primaryConfig, openrouterConfig, fetchFn);
-  if (chain.length === 0) return null;
+  if (chain.length === 0) return { tag: 'unavailable' };
 
   const timeout = (primaryConfig?.totalTimeoutMs ?? openrouterConfig?.totalTimeoutMs) ?? DEFAULT_TOTAL_TIMEOUT_MS;
   const retries = (primaryConfig?.perModelRetries ?? openrouterConfig?.perModelRetries) ?? DEFAULT_PER_MODEL_RETRIES;
   const deadline = Date.now() + timeout;
+  let llmAnswered = false;
 
   for (const { model, config } of chain) {
     if (Date.now() >= deadline) break;
@@ -294,12 +299,15 @@ export async function callLlmWithFallback(
           const json = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
           raw = json.choices?.[0]?.message?.content ?? '';
         }
+        llmAnswered = true;
         const parsed = parseLlmResponse(raw);
-        if (parsed !== null) return parsed;
+        if (parsed !== null) return { tag: 'result', value: parsed };
         const directNull = raw.trim() === 'null' || tryParseJson(raw.trim()) === null;
-        if (directNull) return null;
+        if (directNull) return { tag: 'result', value: null };
       } catch { /* next attempt or model */ }
     }
   }
-  return null;
+  return llmAnswered
+    ? { tag: 'result', value: null }
+    : { tag: 'unavailable' };
 }
