@@ -145,7 +145,7 @@ interface RuntimeReserveData {
     message?: string; // 活动说明文案
     latestTvl?: number; // 活动 TVL（USD）
     totalBudget?: number; // 活动总预算（USD）
-    perUserRewardCapUsd?: number; // 每用户奖励上限（USD，当前主要针对 MetaMask campaign）
+    positionCap?: number; // 每用户持仓上限（USD，从 campaign 描述文案中提取）
     campaignId?: string; // supply/borrow 两侧同 ID 代表同一个 Brevis campaign
   }>;
   brevisBorrows?: Array<{
@@ -156,7 +156,7 @@ interface RuntimeReserveData {
     message?: string; // 活动说明文案
     latestTvl?: number; // 活动 TVL（USD）
     totalBudget?: number; // 活动总预算（USD）
-    perUserRewardCapUsd?: number; // 每用户奖励上限（USD，当前主要针对 MetaMask campaign）
+    positionCap?: number; // 每用户持仓上限（USD，从 campaign 描述文案中提取）
     campaignId?: string; // supply/borrow 两侧同 ID 代表同一个 Brevis campaign
   }>;
 
@@ -767,7 +767,7 @@ Brevis 对外 contract 已收口到下面这组字段：
 | Message            | `message`                               | 活动说明文案                                       |
 | Latest TVL         | `latestTvl`                             | 当前活动 TVL（USD）                                |
 | Total budget       | `totalBudget`                           | 当前活动总预算（USD）                              |
-| Per-user cap (USD) | `perUserRewardCapUsd`                   | 从描述文案中提取（若可提取）                       |
+| Position cap (USD) | `positionCap`                           | 从描述文案中提取（若可提取）                       |
 | Campaign id        | `campaignId`                            | supply/borrow 两侧同 ID 代表同一个 Brevis campaign |
 
 补充说明：
@@ -818,7 +818,7 @@ Brevis 条目字段：
 
 - Merkl markets breakdown: `campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`campaignId`、`campaignType`、`totalBudget`、`aprCap`、`latestTvl`、`plannedDaily`
 - Merkl forecast side-data: `campaignId`、`requiredDaily`、`distributedSoFar`、`endTimestamp`
-- Brevis incentives: `campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`、`campaignId`
+- Brevis incentives: `campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`message`、`latestTvl`、`totalBudget`、`positionCap`、`campaignId`
 - Merkl upstream source naming: `distributionType` / `distributionMethod` 是上游字段名；对外仍建议统一看 `campaignType`
 - Forecast error item: `status` 仍是 optional，不能假设所有返回路径都有
 
@@ -840,7 +840,7 @@ Brevis 条目字段：
      - `startBlock` / `endBlock`: 可选的区块范围
      - `requiredBorrowTokens` / `requiredSupplyTokens`: 可选的条件要求 token 列表
    - `merklSupplys` / `merklBorrows` / `merklHolds`: 对象数组，每个对象包含 `link`、`name`（可选）、`message`（可选）和 `breakdowns` 数组；`breakdowns[].campaignApr` / `aprCap` 在 JSON 中亦为**百分数值**（与 `supplyApy` 一致）
-   - `brevisSupplys` / `brevisBorrows`: 对象数组，字段为 `link`、`campaignApr`（百分数）、`campaignStartedAt`、`campaignEndedAt`，以及可选字段 `message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`、`campaignId`
+   - `brevisSupplys` / `brevisBorrows`: 对象数组，字段为 `link`、`campaignApr`（百分数）、`campaignStartedAt`、`campaignEndedAt`，以及可选字段 `message`、`latestTvl`、`totalBudget`、`positionCap`、`campaignId`
 
 2. **可选字段和空值处理**:
    - 标记为 `?` 的字段为可选字段
@@ -1073,7 +1073,7 @@ curl http://localhost:3001/api/meta/side-data
   - **2026-03-14**：移除 `deficitAvailable` 标志；deficit 来自 `UiPoolDataProvider.getReservesHumanized()`（Aave v3.3.0+），RPC 失败时使用 5 分钟内的缓存，超时则字段缺失
   - **2026-03-24**：新增「Merkl Forecast：上游数据与派生字段」：区分 Merkl 原始输入、服务端二次计算与 HTTP `items[]` 暴露字段
   - **2026-03-24**：补充 **per-campaign metrics TTL**、opportunity 整表缓存与 10 分钟 forecast 快照的关系（各 campaign metrics 更新频率可不同）
-  - **2026-03-26（breaking）**：Brevis 对外 contract 收口为 canonical 字段：`campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`message`、`latestTvl`、`totalBudget`、`perUserRewardCapUsd`、`campaignId`；不再暴露 `apr`、`startDate`、`endDate`、`name` 及其他 deprecated 别名
+  - **2026-03-26（breaking）**：Brevis 对外 contract 收口为 canonical 字段：`campaignApr`、`campaignStartedAt`、`campaignEndedAt`、`message`、`latestTvl`、`totalBudget`、`positionCap`（原 `perUserRewardCapUsd`）、`campaignId`；不再暴露 `apr`、`startDate`、`endDate`、`name` 及其他 deprecated 别名
   - **2026-03-26**：补充 Brevis 数据源对比结论：`/sdk/v1/aaveCampaigns` 在当前环境实测为空，Aave 仍以 gRPC 路径为主
   - **2026-05-13**：`/api/markets` 的 `decimals` 字段不再输出值为 18 的 token（占绝大多数），仅非 18 位 token（如 USDC=6、WBTC=8）保留此字段。前端自动默认 18，无需额外处理。
   - **2026-05-20**：`incentive_details`（DB 列 + API 序列化）从聚合级改为 **per-campaign 级**，内含 `meritSupplys`/`meritBorrows`（带 `key`/`endDate`/`link`） + `merklSupplys`/`merklBorrows`/`merklHolds`（带 `groupId`/`breakdowns`） + `brevisSupplys`/`brevisBorrows`（带 `groupId`/`breakdowns`）。`_isExpired` 标志仅在 API 序列化时按 `now() > endDate` 动态计算，**不写入 DB**。

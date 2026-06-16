@@ -52,7 +52,7 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
             campaignId: '1754995104',
             latestTvl: 4_151_203.07,
             totalBudget: 9_998_600,
-            perUserRewardCapUsd: 5000,
+            positionCap: 5000,
           },
         ],
       },
@@ -71,7 +71,7 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
   assert.equal(api.brevisSupplys?.[0]?.name, 'MetaMask Card');
   assert.equal(api.brevisSupplys?.[0]?.message, 'Eligible MetaMask Card users');
   assert.equal(api.brevisSupplys?.[0]?.breakdowns?.[0]?.campaignApr, 2.4);
-  assert.equal(api.brevisSupplys?.[0]?.breakdowns?.[0]?.perUserRewardCapUsd, 5000);
+  assert.equal(api.brevisSupplys?.[0]?.breakdowns?.[0]?.positionCap, 5000);
 });
 
 test('serializeReserveForApi scales Brevis aprCap to percent', () => {

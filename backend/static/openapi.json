@@ -1327,14 +1327,8 @@
           "latestTvl": {
             "type": "number"
           },
-          "perUserRewardCapUsd": {
+          "positionCap": {
             "type": "number"
-          },
-          "budgetNormalizedAmount": {
-            "type": "number"
-          },
-          "budgetTokenSymbol": {
-            "type": "string"
           }
         },
         "required": [
@@ -1378,14 +1372,8 @@
                 "latestTvl": {
                   "type": "number"
                 },
-                "perUserRewardCapUsd": {
+                "positionCap": {
                   "type": "number"
-                },
-                "budgetNormalizedAmount": {
-                  "type": "number"
-                },
-                "budgetTokenSymbol": {
-                  "type": "string"
                 }
               },
               "required": [
@@ -1413,7 +1401,7 @@
           "latestTvl": {
             "type": "number"
           },
-          "perUserRewardCapUsd": {
+          "positionCap": {
             "type": "number"
           }
         },

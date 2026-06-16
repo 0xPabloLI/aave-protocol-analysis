@@ -58,7 +58,7 @@ function pruneBrevisBreakdown(b: BrevisCampaignBreakdown): BrevisCampaignBreakdo
     ...(b.aprCap !== undefined ? { aprCap: b.aprCap } : {}),
     ...(b.latestTvl !== undefined ? { latestTvl: b.latestTvl } : {}),
     ...(b.totalBudget !== undefined ? { totalBudget: b.totalBudget } : {}),
-    ...(b.perUserRewardCapUsd !== undefined ? { perUserRewardCapUsd: b.perUserRewardCapUsd } : {}),
+    ...(b.positionCap !== undefined ? { positionCap: b.positionCap } : {}),
   };
 }
 

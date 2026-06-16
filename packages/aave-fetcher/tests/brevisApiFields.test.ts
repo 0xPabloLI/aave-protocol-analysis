@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { BrevisCampaignItem } from '../src/brevis-api.js';
-import { pruneBrevisCampaignForRuntime } from '../src/brevis-api.js';
+import { pruneBrevisCampaignForRuntime, extractPositionCapFromDescription } from '../src/brevis-api.js';
 
 test('BrevisCampaignItem API-facing shape omits legacy raw reward field names', () => {
   const item: BrevisCampaignItem = {
@@ -17,7 +17,7 @@ test('BrevisCampaignItem API-facing shape omits legacy raw reward field names', 
         campaignId: '1754995104',
         totalBudget: 9_998_600,
         latestTvl: 4_151_203.07,
-        perUserRewardCapUsd: 5000,
+        positionCap: 5000,
       },
     ],
   };
@@ -46,4 +46,11 @@ test('pruneBrevisCampaignForRuntime removes transient budget parse fields', () =
   assert.equal('budgetTokenSymbol' in pruned.breakdowns[0]!, false);
   assert.equal(pruned.breakdowns[0]?.totalBudget, 999);
   assert.equal(pruned.link, 'x');
+});
+
+test('extractPositionCapFromDescription extracts cap from USDC description', () => {
+  assert.equal(extractPositionCapFromDescription('up to 5,000 USDC per user'), 5000);
+  assert.equal(extractPositionCapFromDescription('up to 10000 USD per user'), 10000);
+  assert.equal(extractPositionCapFromDescription('no cap info here'), null);
+  assert.equal(extractPositionCapFromDescription('up to 1,500 USDC'), 1500);
 });

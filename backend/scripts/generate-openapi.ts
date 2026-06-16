@@ -153,9 +153,7 @@ const brevisBreakdown = {
     campaignId:         { type: 'string' },
     totalBudget:        { type: 'number' },
     latestTvl:          { type: 'number' },
-    perUserRewardCapUsd: { type: 'number' },
-    budgetNormalizedAmount: { type: 'number' },
-    budgetTokenSymbol:  { type: 'string' },
+    positionCap:        { type: 'number' },
   },
   required: ['campaignApr', 'campaignStartedAt', 'campaignEndedAt'],
 };
@@ -174,7 +172,7 @@ const brevisCampaignItem = {
     campaignId:         { type: 'string' },
     totalBudget:        { type: 'number' },
     latestTvl:          { type: 'number' },
-    perUserRewardCapUsd: { type: 'number' },
+    positionCap:        { type: 'number' },
   },
   required: ['link'],
 };

@@ -87,26 +87,75 @@ export interface BrevisCampaignInfo {
 | `5002` | Aave borrow action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
 | `5003` | Aave lend_net action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
 | `6001` | Morpho lend action | 官方文档 | Incentra docs: Morpho campaigns (`action`) |
-| `3001` | Aave campaign（当前项目实测为 both） | 外部接口实测 + 项目代码映射 | `data/debug/brevis-raw-data.json` + `packages/aave-fetcher/src/brevis-api.ts`（`mapActionType`） |
+| `3001` | Aave campaign（gRPC 实测为 both, positionCapScope=combined） | 外部接口实测 + 项目代码映射 | gRPC 运行时数据 + `packages/aave-fetcher/src/brevis-api.ts`（`mapActionType`） |
 
-本项目当前 `/api/markets` 的 Brevis 解析逻辑中，`actionType` 映射为：
+### Action type 完整映射（2026-06-16 更新）
 
-- `2002 -> supply`
-- `2001 -> borrow`
-- `3001 -> both`
+本项目 `mapActionType` 映射为：
 
-当前实现未将 `5001/5002/5003` 直接映射到 `/api/markets` 的 Brevis actionType；这三类目前主要出现在官方 REST `aaveCampaigns` 文档语义中。
+| Type code | 协议 | actionType | positionCapScope | 证据来源 |
+|---|---|---|---|---|
+| `2001` | Euler | `borrow` | `borrow` | 官方文档 Incentra docs: Euler campaigns |
+| `2002` | Euler | `supply` | `supply` | 官方文档 Incentra docs: Euler campaigns |
+| `3001` | Aave (gRPC 实测) | `both` | `combined` | gRPC 运行时数据 + 项目代码映射 |
+| `5001` | Aave | `supply` | `supply` | 官方文档 Incentra docs: Aave campaigns |
+| `5002` | Aave | `borrow` | `borrow` | 官方文档 Incentra docs: Aave campaigns |
+| `5003` | Aave (lend_net) | `supply` | `supply` | 官方文档 Incentra docs: Aave campaigns |
+| `6001` | Morpho | `supply` | `supply` | 官方文档 Incentra docs: Morpho campaigns |
 
-补充说明（统一口径）：
+补充说明：
 
 - 对官方 SDK 文档：Aave `action` 定义为 `5001/5002/5003`。
-- 对本项目当前抓取路径（`GetAllProtocolDetail` + 运行时数据）：Aave 样本中可见 `type=3001`，并在代码中映射为 `both`（即不再拆分成独立 lend/borrow code）。
+- 对本项目 gRPC 抓取路径（`GetAllProtocolDetail`）：当前运行时数据中 Aave campaign 的 `type` 为 `3001`，映射为 `both`（positionCapScope = `combined`）。
+- `5001/5002/5003` 尚未在 gRPC 响应中观察到，但代码中已预留映射。
+- `positionCapScope` 由 actionType 推导：`supply`/`borrow` → cap 只约束该侧持仓；`combined` → supply + borrow 合计持仓受 cap 约束。
 
 官方文档入口：
 
 - `https://incentra-docs.brevis.network`
 - `https://incentra-docs.brevis.network/developer-sdk/get-campaigns`
 - `https://incentra-docs.brevis.network/print.html`
+
+---
+
+## 2.5. Position Cap 语义确认（铁证，勿反复讨论）
+
+**结论**：MetaMask Aave campaign 的 5,000 USDC cap 是 **position cap（持仓上限）**，不是 reward cap（奖励上限）。对 `type=3001` (both) 的 campaign，5000 USDC 是 **supply + borrow 合计持仓**的上限，即 `eligiblePosition = min(supplyPosition + borrowPosition, 5000)`。
+
+### 证据
+
+**1. Brevis 官方博客** (2025-08-13)：
+> "you will earn a passive 2.4% fixed APR in rewards by lending or borrowing USDC on Aave's Linea market—**up to a combined collateral and debt cap of 5,000 USDC**."
+>
+> 来源：https://blog.brevis.network/2025/08/13/setting-a-new-standard-for-on-chain-incentives-with-metamask-linea-and-brevis/
+
+**2. Linea 官方活动页**：
+> "These incentives are limited to **$5,000 combined balance per user (supply + borrow)**."
+>
+> 来源：https://linea.build/hub/events/boosted-yield-on-aave
+
+**3. 多家媒体报道**（均引用 Brevis 官方公告）：
+> "Rewards are limited to a **combined cap of 5,000 USDC in collateral and debt**."
+>
+> 来源：MEXC, BitcoinEthereumNews, CryptoDataSpace 等多家媒体，原文均来自 Brevis 2025-08-13 公告
+
+### 命名决策
+
+- `positionCap` ✅ — 语义正确，约束的是持仓金额，不是奖励金额
+- `rewardCap` ❌ — 语义错误，5000 不是奖励上限
+- `perUserRewardCapUsd` ❌ — 旧名，语义也错（把 cap 当成了 reward cap）
+
+### positionCapScope 语义
+
+| scope | 含义 | 前端计算 |
+|---|---|---|
+| `supply` | cap 只约束 supply 持仓 | `eligiblePosition = min(supplyPosition, positionCap)` |
+| `borrow` | cap 只约束 borrow 持仓 | `eligiblePosition = min(borrowPosition, positionCap)` |
+| `combined` | supply + borrow 合计持仓受 cap 约束 | `eligiblePosition = min(supplyPosition + borrowPosition, positionCap)` |
+
+### 当前代码的 bug
+
+`type=3001` (both) 的 campaign 被同时 push 到 `brevisSupplys` 和 `brevisBorrows`，两边都写了 `positionCap: 5000`。正确语义是 "supply + borrow 合计最多 5000"。前端 `computeBrevisSharedCampaignDeposits` 已按 `campaignId` 去重推导 shared cap，同一 campaignId 跨数组时 `positionCap` 自动视为合计。无需后端新增 `positionCapScope` 字段。
 
 ---
 

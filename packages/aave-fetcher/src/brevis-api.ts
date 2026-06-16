@@ -25,7 +25,7 @@ export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
   aprCap?: number;
   totalBudget?: number;
   latestTvl?: number;
-  perUserRewardCapUsd?: number;
+  positionCap?: number;
   budgetNormalizedAmount?: number;
   budgetTokenSymbol?: string;
 }
@@ -394,8 +394,8 @@ export class BrevisApiClient {
   }
 
   private mapActionType(campaignType: number): 'supply' | 'borrow' | 'both' | 'unknown' {
-    if (campaignType === 2002) return 'supply';
-    if (campaignType === 2001) return 'borrow';
+    if (campaignType === 2002 || campaignType === 5001 || campaignType === 5003 || campaignType === 6001) return 'supply';
+    if (campaignType === 2001 || campaignType === 5002) return 'borrow';
     if (campaignType === 3001) return 'both';
     return 'unknown';
   }
@@ -444,7 +444,7 @@ export class BrevisApiClient {
 
   /**
    * 从 Brevis 前端 JS bundle 动态提取 MetaMask campaign 描述文字
-   * 用于监控 per-user reward cap 等关键参数变化
+   * 用于监控 position cap 等关键参数变化
    *
    * 原理：该描述文字不在 gRPC API 中返回，而是硬编码在前端 _app JS chunk 中，
    * 条件为 campaign.type === CampaignType.METAMASK (3001)。
@@ -452,7 +452,7 @@ export class BrevisApiClient {
    */
   async fetchMetaMaskCampaignDescription(): Promise<{
     description: string;
-    perUserRewardCapUsd: number | null;
+    positionCap: number | null;
   } | null> {
     try {
       // 1. Fetch 页面 HTML，找到 _app chunk 文件名（含构建 hash）
@@ -546,14 +546,12 @@ export class BrevisApiClient {
 
       const description = textParts.join(' ').replace(/\s+/g, ' ').trim();
 
-      // 5. 从描述文字中解析 per-user cap 金额
-      const capMatch = description.match(/up to ([\d,]+)\s*(USDC|USD)/i);
-      const perUserRewardCapUsd = capMatch ? parseInt(capMatch[1].replace(/,/g, ''), 10) : null;
+      const positionCap = extractPositionCapFromDescription(description);
 
-      logger.info(`📋 MetaMask campaign 描述提取成功: perUserRewardCapUsd=${perUserRewardCapUsd}`);
+      logger.info(`📋 MetaMask campaign 描述提取成功: positionCap=${positionCap}`);
       logger.debug(`📋 完整描述: ${description}`);
 
-      return { description, perUserRewardCapUsd };
+      return { description, positionCap };
     } catch (error: any) {
       logger.warn(`⚠️ 提取 MetaMask campaign 描述失败: ${error.message}`);
       return null;
@@ -656,10 +654,10 @@ export class BrevisApiClient {
               ...(typeof config?.name === 'string' && config.name.trim().length > 0
                 ? { name: config.name.trim() }
                 : {}),
-              // METAMASK (3001) campaigns: 附加从前端 JS bundle 提取的描述和 per-user cap
-              ...(type === 3001 && metaMaskDesc ? {
-                message: metaMaskDesc.description,
-              } : {}),
+              // METAMASK campaigns: 附加从前端 JS bundle 提取的描述和 position cap
+              ...(metaMaskDesc ? {
+                 message: metaMaskDesc.description,
+               } : {}),
               breakdowns: [
                 {
                   campaignApr: apr,
@@ -674,8 +672,8 @@ export class BrevisApiClient {
                   ...(typeof protocol?.tvl === 'number' && Number.isFinite(protocol.tvl)
                     ? { latestTvl: protocol.tvl }
                     : {}),
-                  ...(type === 3001 && metaMaskDesc?.perUserRewardCapUsd != null
-                    ? { perUserRewardCapUsd: metaMaskDesc.perUserRewardCapUsd }
+                  ...(metaMaskDesc?.positionCap != null
+                    ? { positionCap: metaMaskDesc.positionCap }
                     : {}),
                   ...(normalizedTotalRewardNumber !== undefined && Number.isFinite(normalizedTotalRewardNumber)
                     ? { budgetNormalizedAmount: normalizedTotalRewardNumber }
@@ -739,6 +737,16 @@ export class BrevisApiClient {
     }
   }
 
+}
+
+/**
+ * 从 Brevis campaign 描述文字中提取 position cap（USD）。
+ * 提取方式：匹配 "up to X,XXX USDC/USD" 格式的文案。
+ * 不限 actionType——只要描述中能匹配到 cap 就设值。
+ */
+export function extractPositionCapFromDescription(description: string): number | null {
+  const capMatch = description.match(/up to ([\d,]+)\s*(USDC|USD)/i);
+  return capMatch ? parseInt(capMatch[1].replace(/,/g, ''), 10) : null;
 }
 
 // 导出单例实例
