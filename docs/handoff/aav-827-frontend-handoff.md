@@ -96,6 +96,24 @@ Merkl API → dsApr (points/USD/year 或 points/token/year)
 - AAV-827: 主 issue
 - PRD: AAV-876
 - PRD: AAV-896 (pointsPerThousandUsd targetTokenPrice 修正)
+- AAV-898: 前端 TYDRO_POINT_TO_USD_RATE 修改
 - Backend commit `9ef5779`: feat(merkl): resolve AMOUNT variant USD APR
 - Backend commit `266dd7b`: remove campaignAprUnavailableReason + extend points intensity to POINT type
 - Backend commit `f85aec3`: fix snapshotPrice in batch price resolve
+- Backend commit `57336ea`: multiply pointsPerThousandUsd by targetTokenPrice for AMOUNT_PER_AMOUNT
+
+## 已发现问题
+
+### Bug: forecastService `needsAprCap` 与 forecastModel `needsAprCap` 不一致
+
+- `merklForecastService.ts:778-781` 的 `needsAprCap` 只包含 `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE`、`FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE`、`TARGET_TOTAL_APR`
+- `merklForecastModel.ts:123-129` 的 `needsAprCap` 还包含 `FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE`、`FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT`、`MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT`
+- **后果**：AMOUNT 变体传入 `buildForecastState` 时 `aprCap = null`，但 model 侧 `needsAprCap = true` → `throw Error("Missing APR cap")` → AMOUNT 变体 forecast 被排除
+- **修复方案**：`merklForecastService.ts:778-781` 需要补上 AMOUNT 变体的 `needsAprCap` 判断，或 model 侧对 AMOUNT 变体去掉 `needsAprCap`（因为它们的 aprCap 来自 `distributionSettings.apr`，语义不同于 VALUE 变体）
+
+### `normalizeMerklCampaignTotalBudget` 双重换算风险
+
+- 对 TOKEN 类型：`rewardAmount × rewardTokenPrice` = USD ✅
+- 对 POINT/PRETGE 类型：`rewardToken.price` 几乎总是 null → `totalBudget = token 数量` → 前端 `convertMerklPointsAmountToUsd(× pointToUsdRate)` 转"伪 USD"
+- **风险**：如果某个 POINT token 碰巧有 Merkl 快照价格，`normalizeMerklCampaignTotalBudget` 会乘以 price 转成 USD，前端又乘 `pointToUsdRate`，双重换算
+- **建议**：`normalizeMerklCampaignTotalBudget` 对 `useTokenRateInMetrics=true` 的 campaign（POINT/PRETGE）不应乘 `rewardTokenPrice`，即使 price 存在

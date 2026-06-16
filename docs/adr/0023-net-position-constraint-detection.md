@@ -1,6 +1,6 @@
-# ADR-0023: netPositionConstraint 三层检测架构
+# ADR-0023: netPositionConstraint 检测架构
 
-Date: 2026-05-29
+Date: 2026-05-29 · Updated: 2026-06-16
 
 ## Status
 
@@ -8,227 +8,148 @@ Accepted
 
 ## Related Issues
 
-- [AAV-444](https://linear.app/aaveapy/issue/AAV-444) — 大模型解析 Merkl Opportunities 时的 hardcoded rules fallback（本 ADR 的 Layer 1 硬编码规则即为此 fallback 的实现）
+- [AAV-444](https://linear.app/aaveapy/issue/AAV-444) — hardcoded rules fallback
+- [AAV-895](https://linear.app/aaveapy/issue/AAV-895) — Borrow ETH cbETH cross-asset offset
 
 ## Context
 
-Merkl 机会的 `netPositionConstraint` 字段标识净头寸方向（supply/borrow）和抵消 reserve IDs。该字段决定了前端如何展示净 APY（supply APR - borrow APR of offset positions）。
-
-当前实现有三层检测逻辑，但存在两个实现缺陷：
-
-1. **~~Layer 2（缓存）是死代码~~ → ✅ 已修复**：`fetchMarketsData` 签名已加 `cachedConstraints` 参数，穿透到 `enrichDatasetWithIncentiveData` → `detectNetPositionConstraint(opp, ..., cachedConstraints?.get(opp.opportunityLink), llmFn)`。同时修复了 `NetPositionConstraint` 未从 `@internal/aave-fetcher` re-export 导致 backend import 编译失败的问题
-2. **~~Layer 3（LLM fallback）OpenRouter 链路不可达~~ → ✅ 已修复**：`callLlmWithFallback(prompt, llmConfig, openrouterConfig)` 现在传入第三个参数 `openrouterConfig`（从 `OPENROUTER_API_KEY` 构建），`llmFn` guard 条件改为 `(llmConfig || openrouterConfig)`
-
-此外，用户提出若干架构改进方向需记录。
+Merkl 机会的 `netPositionConstraint` 字段标识净头寸方向（supply/borrow）和抵消 reserve IDs。
 
 ## Decision
 
-三层检测架构正式化为以下契约：
+四层检测架构：
 
 ```
 detectNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet, symbolLookup, cachedConstraint?, llmFn?)
     │
-    ├─ Layer 0: looping 排除                           ← 确定性规则（L1 前置）
-    │    触发条件: name/description 包含 "looping"
-    │    输出: return null（looping 不是 net position）
-    │    命中: 4/37 opps (sUSDe/USDe MULTILOG_DUTCH + USDe AAVE_SUPPLY)
-    │
-    ├─ Layer 1: extractNetPositionConstraint()     ← 确定性规则
+    ├─ Layer 0: extractNetPositionConstraint()     ← 确定性规则（类型匹配）
     │    触发条件: opportunityType.startsWith('AAVE_NET_')
     │    输入: opp.offsetTokenAddresses → resolveOffsetReserveIds
     │    输出: { sourceSide, offsetReserveIds }
-    │    命中率: 17/17 AAVE_NET_* = 100%（线上实测 2026-05-29）
+    │    命中率: 21/21 AAVE_NET_* = 100%（线上实测 2026-06-16）
     │
-    ├─ Layer 2: cachedConstraint                    ← 快照缓存（当前死代码）
-    │    触发条件: Layer 1 返回 null 且 cachedConstraint 非空
-    │    输入: 上一次快照的同机会 constraint
-    │    输出: 直接返回缓存值
-    │    当前状态: ⚠️ 死代码 — fetchMarketsData 签名不接受 cachedConstraints
+    ├─ Layer 1: looping 排除                        ← 确定性规则（关键词排除）
+    │    触发条件: name/description 包含 "looping"
+    │    输出: return null（looping 不是 net position）
+    │    命中: 4/34 opps
+    │
+    ├─ Layer 2: cachedConstraint                    ← 快照缓存
+    │    触发条件: Layer 0 + Layer 1 均未命中且 cachedConstraint 非空
     │
     ├─ Layer 3: llmFn() → callLlmWithFallback()    ← LLM 两层 fallback
-    │    触发条件: Layer 1 + Layer 2 均未命中且 llmFn 非空
-    │    输入: buildLlmPrompt({ type, action, description, tokenSymbols })
-    │    链路: primaryConfig (LLM_FALLBACK_MODELS) → openrouterConfig (free models)
-    │    输出: { sourceSide, offsetTokenSymbols } → resolveOffsetReserveIds
-    │    当前缺陷: ⚠️ openrouterConfig 未传入，OpenRouter 链路不可达
+    │    链路: fetchAvailableModels(primary baseUrl) → fetchOpenRouterFreeModels()
+    │    硬编码 fallback: LLM_FALLBACK_MODELS (12) + OPENROUTER_FREE_MODELS_FALLBACK (20)
     │
     └─ fallback: return null
-         含义: 该机会无 net position constraint（如 AAVE_V4_HUB_SUPPLY, AAAVE_SUPPLY）
 ```
 
-### Layer 4 删除决策（已完成）
+**层级顺序说明**：Layer 0（类型匹配）优先于 Layer 1（looping 排除），因为类型匹配是确定性结构化规则，looping 排除是启发式关键词。类型匹配覆盖率 100%。
 
-此前存在 Layer 4 heuristic（`detectNetPositionConstraintHeuristic`），基于 `opportunityType` + `campaignType` 启发式推导。决策：**删除**。理由：
+### Merkl Campaign 数据结构差异（关键参考）
 
-- Layer 1 覆盖率 100%（17/17 AAVE_NET_* 全部命中）
-- 9 个无 constraint 机会均非 net position 类型，启发式推导语义不正确
-- 启发式结果无法验证，引入错误风险
+不同 `opportunityType` / `distributionType` 的 campaign `params` 结构完全不同：
 
-删除 commit: `b0fe98d`，三个调用入口改为 `return null`。
+| 字段 | AAVE_NET_\* | AAVE_SUPPLY | MULTILOG_DUTCH (MAX_REWARD) | AAVE_V4_HUB_SUPPLY | AAVE_V4_SPOKE_SUPPLY |
+|---|---|---|---|---|---|
+| params.tokens | ✅ 100% 有，含 underlyingToken/underlyingSymbol | ❌ 不存在 | ❌ 不存在 | ❌ 不存在 | ❌ 不存在 |
+| params.hooks | ✅ 但为空数组 | ✅ hookType:14 + borrowBytesLike | ❌ 空 | ❌ 空 | ❌ 空 |
+| params.targetToken | ❌ | ✅ (aToken 地址) | ✅ (aToken 或 vToken 地址) | ✅ (underlying 地址) | ❌ |
+| distributionSettings.side | ❌ | ❌ | ❌ | ✅ "supply" | ❌ |
+| params.borrowTokens | ✅ | ❌ | ❌ | ❌ | ❌ |
+| params.lendingToken | ✅ | ❌ | ❌ | ❌ | ❌ |
 
-### 两层大模型链路设计
+**params.tokens 路径**：`opp.campaigns[].params.tokens` — 仅 AAVE_NET_\* 类型有此字段。
+**params.hooks 路径**：`opp.campaigns[].params.hooks` — 仅 AAVE_SUPPLY 类型有 hookType:14 + borrowBytesLike。
+**distributionSettings 路径**：`opp.campaigns[].params.distributionMethodParameters.distributionSettings`
+
+### targetToken → side 推断
+
+`distributionSettings.targetToken` 指向 Merkl 计算 score 用的 token（不是 underlying），可推断 side：
+- targetToken = aToken → supply side（如 USDtb: `0xEc4e...ccc8` = aEthUSDtb）
+- targetToken = vToken → borrow side（如 USDC Horizon: `0x4139...0FC7` = variableDebtHorUSDC）
+- AAVE_V4_NET_APR 直接提供 `side` 字段
+
+### extractOffsetTokenAddresses 提取逻辑
+
+从 `params.tokens[]` 取 `underlyingToken` 地址（非 tokenAddress、非 aToken/vToken 地址），去重后通过 `resolveOffsetReserveIds` 映射到 reserveId。
+
+**AAVE_NET opps 的 params.tokens 总是包含自身 underlying token**（按 `underlyingSymbol` 匹配），这是正确的——net position 的 offset 包含自身（"USDT0 supply minus USDT0 borrows"）。
+
+### resolveOffsetReserveIds 匹配逻辑
+
+取 `oppReserveId` 的前两段（`chainId:poolAddress`）作为 prefix，拼接 offset token address，在 reserveIdSet 中查找。使用 pool prefix 而非 chainId+address 是因为 **offset 限定在同一 pool 内**（net position 是同一市场内的 supply-borrow 抵消）。
+
+v3: 精确匹配 `{prefix}:{tokenAddr}`
+v4: 前缀匹配 `{prefix}:{tokenAddr}:`（第四段是 hubAddress）
+
+### 8 个非 NET opp（L0/L1 未命中，2026-06-16）
+
+| # | name | type | chain | dt | hooks | targetToken | side | link |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Borrow USDT0 Plasma | MULTILOG_DUTCH | 9745 | DUTCH_AUCTION | N | - | - | [link](https://app.merkl.xyz/opportunity/9745/0xF5F05bc52587C14C51a0E04e73c0d91a3ef1924d) |
+| 2 | Supply USDG V4 Hub | AAVE_V4_HUB_SUPPLY | 1 | AAVE_V4_NET_APR | N | underlying | supply | [link](https://app.merkl.xyz/opportunity/1/0x44E12914eBFB4e4b5bcB4afb359eCca7D51e5E8a) |
+| 3 | Supply USDG V4 Spoke | AAVE_V4_SPOKE_SUPPLY | 1 | DUTCH_AUCTION | N | - | - | [link](https://app.merkl.xyz/opportunity/1/0xD8f06A54813A9549B88dB72798343376A89Eeb37) |
+| 4 | Supply frxUSD V4 Hub | AAVE_V4_HUB_SUPPLY | 1 | AAVE_V4_NET_APR | N | underlying | supply | [link](https://app.merkl.xyz/opportunity/1/0x92695585cCac2945Ae3019c9b19a754E0402979b) |
+| 5 | Supply frxUSD V4 Spoke | AAVE_V4_SPOKE_SUPPLY | 1 | DUTCH_AUCTION | N | - | - | [link](https://app.merkl.xyz/opportunity/1/0xE23606E9243f4ED370B15f0Fa159fB381Cc81834) |
+| 6 | Lend USDtb | AAVE_SUPPLY | 1 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | Y (hookType:14) | aToken(USDtb) | - | [link](https://app.merkl.xyz/opportunity/1/0xEc4ef66D4fCeEba34aBB4dE69dB391Bc5476ccc8BORROW_BL) |
+| 7 | Borrow ETH cbETH | MULTILOG_DUTCH | 8453 | DUTCH_AUCTION | N | - | - | [link](https://app.merkl.xyz/opportunity/8453/0xCBE5a66D821FC9364544b0156D26ECb5e4B58A0a) |
+| 8 | Borrow USDC Horizon | MULTILOG_DUTCH | 1 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | N | vToken(USDC) | - | [link](https://app.merkl.xyz/opportunity/1/0x46C636D606F1352b6B5d90BE8bd04a848245C728) |
+
+### LLM 模型链路设计
 
 ```
 buildModelChain(primaryConfig?, openrouterConfig?, fetchFn)
     │
-    ├─ 链路 A: primaryConfig + LLM_FALLBACK_MODELS
-    │    当前: LLM_FALLBACK_MODELS = [] (空)
-    │    用途: 预配置的付费模型列表
+    ├─ 链路 A: primaryConfig + fetchAvailableModels(baseUrl, apiKey)
+    │    从 {baseUrl}/models 动态获取可用模型列表
+    │    失败时 fallback 到硬编码 LLM_FALLBACK_MODELS (12 个)
     │
     └─ 链路 B: openrouterConfig + fetchOpenRouterFreeModels()
-         当前: 不可达（openrouterConfig 未传入）
-         用途: 动态获取 OpenRouter free models
-         环境变量: OPENROUTER_API_KEY → baseUrl=https://openrouter.ai/api/v1
+         从 OpenRouter /models 获取 free 模型，按 context_length 降序取前 20
+         失败时 fallback 到 OPENROUTER_FREE_MODELS_FALLBACK (20 个)
 ```
 
-**设计意图**：链路 A 优先（付费模型更可靠），链路 B 兜底（free models 零成本但限速）。
+**LLM_FALLBACK_MODELS** (硬编码 fallback)：claude-haiku-4.5, claude-sonnet-4.6, grok-4.20-fast, gpt-5.4, qwen3.5-397b, deepseek-v4-flash, kimi-k2.6, deepseek-v4-pro, gpt-5.2, qwen3.5-397b-a17b, openrouter/free, nematron-3-super-120b
 
-**当前实际**：~~链路 A 因 `LLM_FALLBACK_MODELS=[]` 也不走。两条链路均不生效~~ → ✅ 已修复：`LLM_FALLBACK_MODELS` 恢复为 12 个模型（commit `0a8082d`），链路 A 现在走 primaryConfig 的模型列表。链路 B 仍为兜底。
-
-### 线上数据（2026-05-29）
-
-| 类别 | 数量 | 有 constraint | 无 constraint |
-|------|------|--------------|--------------|
-| 全部 Merkl 机会 | 31 | 22 | 9 |
-| AAVE_NET_LENDING | 13 | 13 | 0 |
-| AAVE_NET_BORROWING | 4 | 4 | 0 |
-| AAVE_V4_HUB_SUPPLY | 8 | 0 | 8 |
-| AAAVE_SUPPLY | 1 | 0 | 1 |
-| MULTILOG_DUTCH | 5 | 5 | 0 |
-
-Layer 1 对 `AAVE_NET_*` 的覆盖率：100%（17/17）。
+**OPENROUTER_FREE_MODELS_FALLBACK** (硬编码 fallback)：deepseek/deepseek-v4-flash:free 等 20 个 OpenRouter free 模型
 
 ## Known Defects
 
 ### Defect 1: Layer 2 死代码 ✅ 已修复
 
-**原位置**：
-- `packages/aave-fetcher/src/index.ts`: `fetchMarketsData` 签名只接受 `{v4Fatal?}`
-- `packages/aave-fetcher/src/index.ts`: `cachedConstraint` 硬编码 `undefined`
-- `backend/src/services/marketsService.ts`: 传了 `cachedConstraints` 但被 TS 静默忽略（弱类型 `options?`）
-
-**原影响**：每个机会每次刷新都从 Layer 1 开始，无法复用上一快照的结果。当 Layer 1 因 Merkl 数据变化暂时返回 null 时，constraint 丢失而非降级到缓存。
-
-**修复内容**：
-1. `fetchMarketsData` 签名新增 `cachedConstraints?` 参数
-2. `fetchMarketsData` 内部调用 `enrichDatasetWithIncentiveData(..., options?.cachedConstraints)` 传入第 5 参数
-3. CLI 入口 `runMarketsFetcher` 调用时传 `undefined`
-
-**审查发现**：commit `c7a6305` 修改了签名但遗漏了内部调用穿透，Layer 2 仍为死代码。后续在代码审查中捕获并修复。
-
 ### Defect 2: Layer 3 OpenRouter 链路不可达 ✅ 已修复
 
-**原位置**：
-- `packages/aave-fetcher/src/index.ts` L505-507: `llmConfig` 来自 `LLM_API_KEY`/`LLM_BASE_URL`
-- `packages/aave-fetcher/src/index.ts` L538: `callLlmWithFallback(prompt, llmConfig)` — 只传 `primaryConfig`，未传 `openrouterConfig`
-
-**影响**：
-1. 若 `LLM_API_KEY` 未设置，`llmConfig` = undefined，`llmFn` = undefined，**Layer 3 完全不触发**
-2. ~~即使 `LLM_API_KEY` 有值，`LLM_FALLBACK_MODELS=[]`，链路 A 也是空，只走空循环后返回 null~~ → ✅ 已修复：`LLM_FALLBACK_MODELS` 恢复为 12 个模型（commit `0a8082d`）
-3. OpenRouter free models 链路（`OPENROUTER_API_KEY`）永远不被调用
-
-**线上环境变量状态**：
-- `OPENROUTER_API_KEY` ✅ 已部署到 Railway
-- `LLM_API_KEY` / `LLM_BASE_URL` ❌ 未部署
-
-**修复方向**：
-1. 从 `OPENROUTER_API_KEY` 构建 `openrouterConfig`
-2. `callLlmWithFallback(prompt, primaryConfig, openrouterConfig)` 传入第三个参数
-3. 或者：统一为一套环境变量，不再区分 `LLM_*` / `OPENROUTER_*`
-
-**修复内容**：已在 `c7a6305` 中实现方向 1+2。注意：Layer 3 仅在 `OPENROUTER_API_KEY` 有值时真正可达（`LLM_FALLBACK_MODELS=[]`，primary 链路为空），线上已部署此 key。
-
-## Open Questions
-
-### Q1: Layer 1 只匹配 opportunityType，不匹配 message/description
-
-**现状**：`extractNetPositionConstraint` L1383 `if (!type.startsWith('AAVE_NET_')) return null`。
-
-**风险**：若 Merkl 新增一种 net position 机会但 `opportunityType` 不以 `AAVE_NET_` 开头，Layer 1 不会命中。需依赖 Layer 3 LLM 或手动注册。
-
-**倾向**：当前覆盖率为 100%，暂不改。若未来出现漏匹配，优先在 Layer 1 中扩展前缀白名单。
-
-### Q2: Layer 3 能否 cross-check Layer 1 结果
-
-**方案**：Layer 1 命中后，额外调 LLM 验证 `offsetTokenSymbols` 是否与 `offsetReserveIds` 对应。
-
-**代价**：每个 AAVE_NET 机会多一次 LLM 调用（17 次/刷新），增加延迟和 token 成本。
-
-**倾向**：暂不实施。Layer 1 基于确定性规则（token address → reserveId），无歧义。LLM cross-check 仅在规则可能误匹配时有价值，当前无此场景。
-
-### Q3: 9 个无 constraint 的非 AAVE_NET 机会是否应走 Layer 3
-
-**现状**：8 个 `AAVE_V4_HUB_SUPPLY` + 1 个 `AAAVE_SUPPLY` + 1 个 `MULTILOG_DUTCH` 无 constraint，且 Layer 1 不匹配（非 `AAVE_NET_*`）。
-
-**分析**：
-- `AAVE_V4_HUB_SUPPLY`：Hub 级别的 supply 机会，本身不是净头寸概念（无 borrow 侧抵消）
-- `AAAVE_SUPPLY`：同上，单一 supply 机会
-- `MULTILOG_DUTCH`：5 个中有 5 个已有 constraint（通过 Layer 1 命中），1 个无 constraint 的可能是数据缺失
-
-**倾向**：`AAVE_V4_HUB_SUPPLY` 和 `AAAVE_SUPPLY` 语义上就不是 net position，走 LLM 只会返回 null。`MULTILOG_DUTCH` 缺失 constraint 的情况值得观察，暂不主动送 LLM。
-
-## Alternatives Considered
-
-### A. 保持 Layer 4 heuristic
-
-- Pro：覆盖 Layer 1 不命中的场景
-- Con：语义不正确、无验证、已删除（commit b0fe98d）
-- Rejected
-
-### B. Layer 1 匹配 message/description 而非仅 opportunityType
-
-- Pro：更灵活
-- Con：message/description 为自然语言，匹配规则脆弱且难测试
-- Rejected：opportunityType 是 Merkl 官方结构化字段，更可靠
-
-### C. 统一环境变量（只用 OPENROUTER_API_KEY，废弃 LLM_API_KEY/LLM_BASE_URL）
-
-- Pro：一套配置、一条链路
-- Con：失去 primaryConfig 路径（付费模型直连，不走 OpenRouter 路由）
-- 可选：当前项目只用 OpenRouter free 路径，统一可行
-
-### D. 当前决策（三层 + 修复两个缺陷 + 统一为 OPENROUTER 路径）
-
-- Accepted
-
-## Consequences
-
-- **Positive**：三层架构职责清晰，Layer 1 覆盖率 100%，无需 Layer 4 启发式
-- **Positive**：修复 Defect 2 后，Layer 3 OpenRouter free models 链路可达，为未来非 `AAVE_NET_*` 类型提供 LLM 兜底能力
-- **Positive**：修复 Defect 1 后，缓存链路可用，减少 LLM 调用频次
-- **Positive**：Layer 0（looping 排除）防止 Ethena Liquid Leverage 等 looping 策略被误判为 net position
-- **Negative**：Layer 2 缓存修复需改 `fetchMarketsData` 签名，影响面较广
-- **Negative**：Layer 3 LLM 调用增加延迟（最坏 60s timeout），仅在 Layer 1 未命中时触发
-- **Negative**：OpenRouter free models 有 rate limit，大量机会同时走 Layer 3 时可能触发限速
-- **Negative**：LLM 失败（429/超时/key 缺失）时直接返回 null，无 Layer 4 fallback（待修复）
-
 ### Defect 3: LLM_FALLBACK_MODELS 被误清空 ✅ 已修复
-
-**原因**：commit `3be25fe` 在修复 "merklLlmClient duplicate decl" 时将 `LLM_FALLBACK_MODELS` 从 12 个模型清空为 `[]`，同时将 `OPENROUTER_FREE_MODELS_FALLBACK` 从 20 个清空为只剩 `['openrouter/free']`。
-
-**影响**：链路 A（primaryConfig）因空模型列表不生效，链路 B（OpenRouter）仅剩 1 个 fallback 模型。
-
-**修复**：commit `0a8082d` 恢复了原始的 12 个 primary 模型和 20 个 OpenRouter free 模型。
 
 ### Defect 4: LLM 失败时无 Layer 4 fallback（待修复）
 
 **现状**：LLM 返回 null 或失败（429/超时）时，`detectNetPositionConstraint` 直接 `return null`，不区分 "LLM 判定无 net position" 和 "LLM 不可用"。
 
-**影响**：当 OpenRouter rate limit 触发或 API key 缺失时，本应能通过正则 heuristic 判定的机会（如 "Borrowers not eligible"）也返回 null。
-
 **修复方向**：
 1. `llmFn` 返回结构需区分 "LLM 成功返回 null" 和 "LLM 失败"
-2. LLM 失败时 fallback 到 Layer 4 正则（基于 message 中的关键词模式）
+2. LLM 失败时 fallback 到 Layer 4 正则（基于 description 关键词）
 3. 正则比 LLM 更保守——宁可漏判也不误判
 
-### Related Issues
+### 已清理：L1670 isNetType 死代码 ✅
 
-- [AAV-895](https://linear.app/aaveapy/issue/AAV-895) — Borrow ETH with cbETH collateral: cross-asset offset 需专用公式，非标准 netPositionConstraint
+**原代码**：`if (!isNetType && info.address.toLowerCase() === sourceAddrLower) continue;`
+**原因**：`extractNetPositionConstraint` 入口 `if (!type.startsWith('AAVE_NET_')) return null` 保证 type 一定是 AAVE_NET_ 前缀，而现有 AAVE_NET_ 子类型只有 LENDING 和 BORROWING，`isNetType` 恒为 true。
+**清理**：commit `c9fcf02` 后，删除 `isNetType` 变量和 L1670 条件分支。
+
+## Open Questions
+
+### Q1: AAVE_V4_HUB_SUPPLY / AAVE_V4_SPOKE_SUPPLY 的 parent-child 关系
+
+V4 Hub (parent) + V4 Spoke (child) 是 Merkl 的 parent-child opportunity 机制。Hub 的 distributionType 为 AAVE_V4_NET_APR（target total APR），Spoke 的 distributionType 为 DUTCH_AUCTION。用户存入 Spoke 时自动跟随 Hub 的 APR 计算，但 parent-child rewards 不叠加。
+
+核心疑问：用户存入符合 child opportunity 的 Spoke 时，是否自动走 child 的 APR？能否选择 parent 的 APR？待查 Merkl 官方文档和 Aave V4 SDK。
+
+### Q2: Borrow ETH cbETH cross-asset offset
+
+[AAV-895](https://linear.app/aaveapy/issue/AAV-895) — 非 AAVE_NET_ 类型但需要 net constraint，offset 是不同资产（cbETH supply offset ETH borrow）。需专用公式。
 
 ## References
 
-- ADR-0021: Three-Layer V4 Fallback（类似三层降级模式）
-- `packages/aave-fetcher/src/merkl-api.ts`: `detectNetPositionConstraint` L1335-1374, `extractNetPositionConstraint` L1376-1418
-- `packages/aave-fetcher/src/merklLlmClient.ts`: `buildModelChain` L47-65, `callLlmWithFallback` L183-237
-- `packages/aave-fetcher/src/index.ts`: Layer 3 调用处 L505-540
-- 删除 Layer 4 commit: `b0fe98d`
+- `packages/aave-fetcher/src/merkl-api.ts`: `detectNetPositionConstraint`, `extractNetPositionConstraint`, `extractOffsetTokenAddresses`, `resolveOffsetReserveIds`
+- `packages/aave-fetcher/src/merklLlmClient.ts`: `fetchAvailableModels`, `buildModelChain`, `callLlmWithFallback`
+- `packages/aave-fetcher/src/index.ts`: Layer 3 调用处

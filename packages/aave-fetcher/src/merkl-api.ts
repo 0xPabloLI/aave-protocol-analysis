@@ -1659,15 +1659,12 @@ export function extractNetPositionConstraint(
 
   const sourceSide: 'supply' | 'borrow' = type === 'AAVE_NET_BORROWING' ? 'borrow' : 'supply';
 
-  const sourceAddrLower = sourceTokenAddress.toLowerCase();
-  const isNetType = type === 'AAVE_NET_LENDING' || type === 'AAVE_NET_BORROWING';
   const offsetReserveIds: string[] = [];
   const seen = new Set<string>();
 
   const debugMissing: string[] = [];
 
   for (const info of (opp.offsetTokenAddresses ?? [])) {
-    if (!isNetType && info.address.toLowerCase() === sourceAddrLower) continue;
     if (info.reserveId && !seen.has(info.reserveId)) {
       seen.add(info.reserveId);
       offsetReserveIds.push(info.reserveId);
@@ -1686,7 +1683,7 @@ export function extractNetPositionConstraint(
   }
 
   if (offsetReserveIds.length === 0) {
-    logger.warn(`⚠️ extractNetPositionConstraint: no offsetReserveIds for opp "${opp.name}" type=${type} chain=${opp.chainId} sourceToken=${sourceAddrLower} offsetAddrs=${JSON.stringify(opp.offsetTokenAddresses)} missingAddrs=${JSON.stringify(debugMissing)} reserveIdSetSize=${reserveIdSet.size}`);
+    logger.warn(`⚠️ extractNetPositionConstraint: no offsetReserveIds for opp "${opp.name}" type=${type} chain=${opp.chainId} offsetAddrs=${JSON.stringify(opp.offsetTokenAddresses)} missingAddrs=${JSON.stringify(debugMissing)} reserveIdSetSize=${reserveIdSet.size}`);
     return null;
   }
 
