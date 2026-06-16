@@ -7,6 +7,8 @@ export type LlmOutcome =
   | { tag: 'result'; value: LlmAnalysisResult | null }
   | { tag: 'unavailable' };
 
+import { logger } from './logger.js';
+
 export const LLM_FALLBACK_MODELS = [
   'claude-haiku-4.5',
   'claude-sonnet-4.6',
@@ -259,7 +261,11 @@ export async function callLlmWithFallback(
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<LlmOutcome> {
   const chain = await buildModelChain(primaryConfig, openrouterConfig, fetchFn);
-  if (chain.length === 0) return { tag: 'unavailable' };
+  if (chain.length === 0) {
+    logger.debug('[LLM] no models available, returning unavailable');
+    return { tag: 'unavailable' };
+  }
+  logger.debug(`[LLM] model chain: ${chain.map(m => m.model).join(' → ')} (${chain.length} models)`);
 
   const timeout = (primaryConfig?.totalTimeoutMs ?? openrouterConfig?.totalTimeoutMs) ?? DEFAULT_TOTAL_TIMEOUT_MS;
   const retries = (primaryConfig?.perModelRetries ?? openrouterConfig?.perModelRetries) ?? DEFAULT_PER_MODEL_RETRIES;
@@ -267,7 +273,10 @@ export async function callLlmWithFallback(
   let llmAnswered = false;
 
   for (const { model, config } of chain) {
-    if (Date.now() >= deadline) break;
+    if (Date.now() >= deadline) {
+      logger.debug(`[LLM] deadline reached, stopping model chain`);
+      break;
+    }
     for (let attempt = 0; attempt < retries; attempt++) {
       if (Date.now() >= deadline) break;
       try {
@@ -290,7 +299,10 @@ export async function callLlmWithFallback(
             setTimeout(() => reject(new Error('timeout')), remaining)
           ),
         ]);
-        if (!res.ok) continue;
+        if (!res.ok) {
+          logger.debug(`[LLM] model ${model} returned ${res.status}, attempt ${attempt + 1}/${retries}`);
+          continue;
+        }
         const contentType = res.headers.get('content-type') ?? '';
         let raw: string;
         if (contentType.includes('text/event-stream')) {
@@ -301,13 +313,24 @@ export async function callLlmWithFallback(
         }
         llmAnswered = true;
         const parsed = parseLlmResponse(raw);
-        if (parsed !== null) return { tag: 'result', value: parsed };
+        if (parsed !== null) {
+          logger.info(`[LLM] model ${model} returned result: sourceSide=${parsed.sourceSide}, offsets=${parsed.offsetTokenSymbols.join(',')}`);
+          return { tag: 'result', value: parsed };
+        }
         const directNull = raw.trim() === 'null' || tryParseJson(raw.trim()) === null;
-        if (directNull) return { tag: 'result', value: null };
-      } catch { /* next attempt or model */ }
+        if (directNull) {
+          logger.info(`[LLM] model ${model} returned null (not a net position)`);
+          return { tag: 'result', value: null };
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        logger.debug(`[LLM] model ${model} attempt ${attempt + 1}/${retries} failed: ${msg}`);
+      }
     }
   }
-  return llmAnswered
-    ? { tag: 'result', value: null }
-    : { tag: 'unavailable' };
+  const outcome = llmAnswered
+    ? { tag: 'result' as const, value: null }
+    : { tag: 'unavailable' as const };
+  logger.info(`[LLM] chain exhausted, outcome: ${outcome.tag}${outcome.tag === 'result' ? ' (null)' : ''}`);
+  return outcome;
 }
