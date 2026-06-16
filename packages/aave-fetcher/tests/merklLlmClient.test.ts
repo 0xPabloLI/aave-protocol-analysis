@@ -396,7 +396,7 @@ describe('fetchAvailableModels — generic /models endpoint', () => {
 });
 
 describe('buildModelChain — with dynamic primary models', () => {
-  it('uses dynamically fetched models for primary config', async () => {
+  it('places hardcoded models before dynamically fetched models', async () => {
     resetPrimaryModelsCache();
     resetOpenRouterCache();
     const primary = { apiKey: 'p', baseUrl: 'https://primary.com/v1' };
@@ -414,10 +414,12 @@ describe('buildModelChain — with dynamic primary models', () => {
       return new Response('not found', { status: 404 }) as Response;
     };
     const chain = await buildModelChain(primary, undefined, fetch);
-    assert.ok(chain.length >= 2);
-    assert.equal(chain[0].model, 'dynamic-model-a');
-    assert.equal(chain[1].model, 'dynamic-model-b');
-    assert.equal(chain[0].config.apiKey, 'p');
+    assert.ok(chain.length >= LLM_FALLBACK_MODELS.length + 2);
+    assert.equal(chain[0].model, LLM_FALLBACK_MODELS[0]);
+    const dynamicStart = chain.findIndex(c => c.model === 'dynamic-model-a');
+    assert.ok(dynamicStart > 0, 'dynamic models should come after hardcoded');
+    assert.equal(chain[dynamicStart].model, 'dynamic-model-a');
+    assert.equal(chain[dynamicStart + 1].model, 'dynamic-model-b');
     resetPrimaryModelsCache();
     resetOpenRouterCache();
   });
