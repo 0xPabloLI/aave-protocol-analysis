@@ -1,10 +1,10 @@
 /**
- * E2E test: validates that two OpenRouter free models correctly parse
+ * E2E test: validates that LLM models correctly parse
  * real Merkl opportunity descriptions into netPositionConstraint.
  *
- * Run: OPENROUTER_API_KEY=sk-or-v1-... npx tsx --test packages/aave-fetcher/tests/merklLlmClient-e2e.test.ts
+ * Run: LLM_API_KEY=... LLM_BASE_URL=https://... npx tsx --test packages/aave-fetcher/tests/merklLlmClient-e2e.test.ts
  *
- * Skip: if OPENROUTER_API_KEY is not set, all tests are skipped.
+ * Skip: if LLM_API_KEY or LLM_BASE_URL is not set, all tests are skipped.
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,16 +14,15 @@ import {
   parseLlmResponse,
   type LlmAnalysisResult,
   type LlmClientConfig,
-  fetchOpenRouterFreeModels,
-  resetOpenRouterCache,
 } from '../src/merklLlmClient.js';
 
-const API_KEY = process.env.OPENROUTER_API_KEY;
-const skip = !API_KEY;
+const API_KEY = process.env.LLM_API_KEY;
+const BASE_URL = process.env.LLM_BASE_URL;
+const skip = !API_KEY || !BASE_URL;
 
-const openrouterConfig: LlmClientConfig = {
+const llmConfig: LlmClientConfig = {
   apiKey: API_KEY ?? '',
-  baseUrl: 'https://openrouter.ai/api/v1',
+  baseUrl: BASE_URL ?? '',
   totalTimeoutMs: 30_000,
   perModelRetries: 1,
 };
@@ -100,19 +99,13 @@ function resultMatch(actual: LlmAnalysisResult | null, expected: LlmAnalysisResu
   return true;
 }
 
-describe('E2E: LLM opportunity parsing with real OpenRouter models', { skip }, () => {
-  it('fetches available free models', async () => {
-    resetOpenRouterCache();
-    const models = await fetchOpenRouterFreeModels();
-    assert.ok(models.length >= 1, `expected at least 1 free model, got ${models.length}`);
-    console.log(`  Available free models (${models.length}): ${models.slice(0, 5).join(', ')}${models.length > 5 ? '...' : ''}`);
-  });
-
+describe('E2E: LLM opportunity parsing with real models', { skip }, () => {
   for (const tc of CASES) {
     it(tc.name, async () => {
-      resetOpenRouterCache();
       const prompt = buildLlmPrompt(tc.opp);
-      const result = await callLlmWithFallback(prompt, undefined, openrouterConfig);
+      const outcome = await callLlmWithFallback(prompt, llmConfig);
+
+      const result = outcome.tag === 'result' ? outcome.value : null;
 
       if (resultMatch(result, tc.expected)) {
         console.log(`  PASS: ${JSON.stringify(result)}`);

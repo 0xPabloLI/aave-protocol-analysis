@@ -368,9 +368,6 @@ async function enrichDatasetWithIncentiveData(
   const llmBaseUrl = process.env.LLM_BASE_URL;
   const llmConfig: LlmClientConfig | undefined = llmApiKey && llmBaseUrl ? { apiKey: llmApiKey, baseUrl: llmBaseUrl } : undefined;
 
-  const openrouterApiKey = process.env.OPENROUTER_API_KEY;
-  const openrouterConfig: LlmClientConfig | undefined = openrouterApiKey ? { apiKey: openrouterApiKey, baseUrl: 'https://openrouter.ai/api/v1' } : undefined;
-
   const enrichedItems = await Promise.all(baseDataset.map(async item => {
     const reserveProtocolVersion: 'v3' | 'v4' = item.marketName.startsWith('AaveV4') ? 'v4' : 'v3';
     const meritItemData = getMeritDataFromMarket(item.marketName, item.chainName, item.tokenSymbol, meritData);
@@ -402,9 +399,9 @@ async function enrichDatasetWithIncentiveData(
       
       // 收集所有 matchedOpportunities 中的 breakdowns
       for (const opp of matchedOpportunities) {
-        const llmFn = (llmConfig || openrouterConfig) ? () => {
+        const llmFn = llmConfig ? () => {
           const prompt = buildLlmPrompt({ type: opp.opportunityType ?? 'unknown', action: opp.name ?? opp.opportunityType ?? 'unknown', description: opp.description ?? '', tokenSymbols: [item.tokenSymbol] });
-          return callLlmWithFallback(prompt, llmConfig, openrouterConfig);
+          return callLlmWithFallback(prompt, llmConfig);
         } : undefined;
         const cachedConstraint = opp.opportunityLink ? cachedConstraints?.get(opp.opportunityLink) : undefined;
         const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, cachedConstraint, llmFn);

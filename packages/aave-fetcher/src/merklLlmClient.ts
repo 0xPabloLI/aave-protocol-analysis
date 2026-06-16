@@ -20,41 +20,10 @@ export const LLM_FALLBACK_MODELS = [
   'deepseek-v4-pro',
   'gpt-5.2',
   'qwen3.5-397b-a17b',
-  'openrouter/free',
   'nematron-3-super-120b',
 ] as const;
 
-export const OPENROUTER_FREE_MODELS_FALLBACK = [
-  'deepseek/deepseek-v4-flash:free',
-  'qwen/qwen3-coder:free',
-  'nvidia/nemotron-3-super-120b-a12b:free',
-  'google/gemma-4-31b-it:free',
-  'google/gemma-4-26b-a4b-it:free',
-  'moonshotai/kimi-k2.6:free',
-  'minimax/minimax-m2.5:free',
-  'qwen/qwen3-next-80b-a3b-instruct:free',
-  'poolside/laguna-m.1:free',
-  'poolside/laguna-xs.2:free',
-  'nvidia/nemotron-3-nano-30b-a3b:free',
-  'nousresearch/hermes-3-llama-3.1-405b:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'openai/gpt-oss-120b:free',
-  'z-ai/glm-4.5-air:free',
-  'openai/gpt-oss-20b:free',
-  'nvidia/nemotron-nano-12b-v2-vl:free',
-  'nvidia/nemotron-nano-9b-v2:free',
-  'meta-llama/llama-3.2-3b-instruct:free',
-  'openrouter/free',
-] as const;
-
-const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
-const OPENROUTER_FREE_MAX = 20;
-let openrouterFreeModelsCache: string[] | null = null;
 let primaryModelsCache: string[] | null = null;
-
-export function resetOpenRouterCache(): void {
-  openrouterFreeModelsCache = null;
-}
 
 export function resetPrimaryModelsCache(): void {
   primaryModelsCache = null;
@@ -90,36 +59,8 @@ export async function fetchAvailableModels(
   }
 }
 
-export async function fetchOpenRouterFreeModels(
-  fetchFn: typeof globalThis.fetch = globalThis.fetch,
-): Promise<string[]> {
-  if (openrouterFreeModelsCache !== null) return openrouterFreeModelsCache;
-
-  try {
-    const res = await fetchFn(OPENROUTER_MODELS_URL, {
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json() as {
-      data?: Array<{ id: string; context_length?: number }>;
-    };
-    const models = json.data ?? [];
-    const freeModels = models.filter(m => m.id.endsWith(':free') || m.id === 'openrouter/free');
-    freeModels.sort((a, b) => (b.context_length ?? 0) - (a.context_length ?? 0));
-    const top = freeModels.slice(0, OPENROUTER_FREE_MAX).map(m => m.id);
-    if (top.length === 0) throw new Error('no free models found');
-    openrouterFreeModelsCache = top;
-    return top;
-  } catch {
-    openrouterFreeModelsCache = [...OPENROUTER_FREE_MODELS_FALLBACK];
-    return openrouterFreeModelsCache;
-  }
-}
-
 export async function buildModelChain(
   primaryConfig?: LlmClientConfig,
-  openrouterConfig?: LlmClientConfig,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<Array<{ model: string; config: LlmClientConfig }>> {
   const hardcoded: Array<{ model: string; config: LlmClientConfig }> = [];
@@ -130,14 +71,6 @@ export async function buildModelChain(
       seen.add(model);
     }
   }
-  if (openrouterConfig) {
-    for (const model of OPENROUTER_FREE_MODELS_FALLBACK) {
-      if (!seen.has(model)) {
-        hardcoded.push({ model, config: openrouterConfig });
-        seen.add(model);
-      }
-    }
-  }
 
   const dynamic: Array<{ model: string; config: LlmClientConfig }> = [];
   if (primaryConfig) {
@@ -145,15 +78,6 @@ export async function buildModelChain(
     for (const model of models) {
       if (!seen.has(model)) {
         dynamic.push({ model, config: primaryConfig });
-        seen.add(model);
-      }
-    }
-  }
-  if (openrouterConfig) {
-    const freeModels = await fetchOpenRouterFreeModels(fetchFn);
-    for (const model of freeModels) {
-      if (!seen.has(model)) {
-        dynamic.push({ model, config: openrouterConfig });
         seen.add(model);
       }
     }
@@ -281,18 +205,17 @@ const DEFAULT_PER_MODEL_RETRIES = 2;
 export async function callLlmWithFallback(
   prompt: string,
   primaryConfig?: LlmClientConfig,
-  openrouterConfig?: LlmClientConfig,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<LlmOutcome> {
-  const chain = await buildModelChain(primaryConfig, openrouterConfig, fetchFn);
+  const chain = await buildModelChain(primaryConfig, fetchFn);
   if (chain.length === 0) {
     logger.debug('[LLM] no models available, returning unavailable');
     return { tag: 'unavailable' };
   }
   logger.debug(`[LLM] model chain: ${chain.map(m => m.model).join(' → ')} (${chain.length} models)`);
 
-  const timeout = (primaryConfig?.totalTimeoutMs ?? openrouterConfig?.totalTimeoutMs) ?? DEFAULT_TOTAL_TIMEOUT_MS;
-  const retries = (primaryConfig?.perModelRetries ?? openrouterConfig?.perModelRetries) ?? DEFAULT_PER_MODEL_RETRIES;
+  const timeout = primaryConfig?.totalTimeoutMs ?? DEFAULT_TOTAL_TIMEOUT_MS;
+  const retries = primaryConfig?.perModelRetries ?? DEFAULT_PER_MODEL_RETRIES;
   const deadline = Date.now() + timeout;
   let llmAnswered = false;
 
@@ -335,17 +258,19 @@ export async function callLlmWithFallback(
           const json = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
           raw = json.choices?.[0]?.message?.content ?? '';
         }
-        llmAnswered = true;
         const parsed = parseLlmResponse(raw);
         if (parsed !== null) {
+          llmAnswered = true;
           logger.info(`[LLM] model ${model} returned result: sourceSide=${parsed.sourceSide}, offsets=${parsed.offsetTokenSymbols.join(',')}`);
           return { tag: 'result', value: parsed };
         }
         const directNull = raw.trim() === 'null' || tryParseJson(raw.trim()) === null;
         if (directNull) {
+          llmAnswered = true;
           logger.info(`[LLM] model ${model} returned null (not a net position)`);
           return { tag: 'result', value: null };
         }
+        logger.debug(`[LLM] model ${model} returned unparseable content, treating as unanswered`);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         logger.debug(`[LLM] model ${model} attempt ${attempt + 1}/${retries} failed: ${msg}`);

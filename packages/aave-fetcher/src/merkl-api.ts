@@ -1409,6 +1409,7 @@ export async function processMerklData(
       continue;
     }
 
+    let firstDistributionType: string | undefined;
     for (const rewardBreakdown of rewardsBreakdowns) {
       const campaignId = String(rewardBreakdown.campaignId || '').trim();
       if (!campaignId) {
@@ -1421,11 +1422,15 @@ export async function processMerklData(
         continue;
       }
 
+      if (!firstDistributionType && rewardBreakdown.distributionType) {
+        firstDistributionType = rewardBreakdown.distributionType;
+      }
+
       const useIntensity = merklBreakdownUsesPointsIntensityFields(rewardBreakdown);
       const amountVariantPrices = amountVariantPriceMap.get(campaignId);
       const pointsFields = useIntensity
         ? merklPointsFieldsFromBreakdownValue(opp, rewardBreakdown, {
-            distributionType: opp.distributionType,
+            distributionType: rewardBreakdown.distributionType,
             targetTokenPrice: amountVariantPrices?.targetTokenPrice,
             campaignApr: campaignDetails.apr,
           })
@@ -1496,7 +1501,7 @@ export async function processMerklData(
       ...(opp.name && { name: opp.name }),
       ...(opp.description && { description: opp.description }),
       ...(opp.type && { opportunityType: opp.type }),
-      ...(opp.distributionType && { distributionType: opp.distributionType }),
+      ...(firstDistributionType && { distributionType: firstDistributionType }),
       ...(offsetTokenAddresses.length > 0 && { offsetTokenAddresses }),
     };
     
