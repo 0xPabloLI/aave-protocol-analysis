@@ -778,8 +778,37 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
       const needsAprCap =
         campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
         campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
-        campaignType === 'TARGET_TOTAL_APR';
-      const aprCap = needsAprCap ? extractAprCap(campaign, campaignType) : null;
+        campaignType === 'TARGET_TOTAL_APR' ||
+        campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE' ||
+        campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' ||
+        campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT';
+      let aprCap: number | null = null;
+      if (needsAprCap) {
+        const rawDsApr = extractAprCap(campaign, campaignType);
+        if (rawDsApr !== null && rawDsApr > 0) {
+          if (campaignType === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
+              campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
+              campaignType === 'TARGET_TOTAL_APR') {
+            aprCap = rawDsApr;
+          } else if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE') {
+            const rewardTokenPrice = toNumber(getAtPath(campaign, ['rewardToken', 'price']));
+            aprCap = (rewardTokenPrice !== null && rewardTokenPrice > 0)
+              ? rawDsApr * rewardTokenPrice
+              : null;
+          } else if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT') {
+            const rewardTokenPrice = toNumber(getAtPath(campaign, ['rewardToken', 'price']));
+            const targetTokenPrice = toNumber(getAtPath(campaign, ['tokens', '0', 'price']));
+            aprCap = (rewardTokenPrice !== null && rewardTokenPrice > 0 && targetTokenPrice !== null && targetTokenPrice > 0)
+              ? rawDsApr * (rewardTokenPrice / targetTokenPrice)
+              : null;
+          } else if (campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
+            const targetTokenPrice = toNumber(getAtPath(campaign, ['tokens', '0', 'price']));
+            aprCap = (targetTokenPrice !== null && targetTokenPrice > 0)
+              ? rawDsApr / targetTokenPrice
+              : null;
+          }
+        }
+      }
       const latestTvl = campaignOpportunityMeta?.tvl ?? extractLatestTvl(metrics);
 
       return buildForecastState({

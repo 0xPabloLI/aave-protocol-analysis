@@ -240,3 +240,73 @@ test('buildForecastState computes TARGET_TOTAL_APR forecast correctly', () => {
   assert.equal(state.plannedDaily, 500);
   assert.equal(state.requiredDaily, 600);
 });
+
+test('buildForecastState requires apr cap for FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', () => {
+  assert.throws(
+    () =>
+      buildForecastState({
+        campaignId: 'fix-amt-val-1',
+        campaignType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE',
+        totalBudget: 1000,
+        aprCap: null,
+        startTimestamp: 1_000,
+        endTimestamp: 1_000 + 10 * 86400,
+        nowTimestamp: 1_000 + 5 * 86400,
+        distributedSoFar: 300,
+        latestTvl: 1_000_000,
+      }),
+    /Missing APR cap/
+  );
+});
+
+test('buildForecastState accepts USD-converted aprCap for FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', () => {
+  const state = buildForecastState({
+    campaignId: 'fix-amt-val-2',
+    campaignType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE',
+    totalBudget: 5000,
+    aprCap: 0.035,
+    startTimestamp: 1_000,
+    endTimestamp: 1_000 + 10 * 86400,
+    nowTimestamp: 1_000 + 5 * 86400,
+    distributedSoFar: 1000,
+    latestTvl: 2_000_000,
+  });
+  assert.equal(state.aprCap, 0.035);
+  assert.equal(state.plannedDaily, 500);
+});
+
+test('buildForecastState requires apr cap for FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', () => {
+  assert.throws(
+    () =>
+      buildForecastState({
+        campaignId: 'fix-amt-amt-1',
+        campaignType: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT',
+        totalBudget: 1000,
+        aprCap: null,
+        startTimestamp: 1_000,
+        endTimestamp: 1_000 + 10 * 86400,
+        nowTimestamp: 1_000 + 5 * 86400,
+        distributedSoFar: 300,
+        latestTvl: 1_000_000,
+      }),
+    /Missing APR cap/
+  );
+});
+
+test('buildForecastState requires apr cap for MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT', () => {
+  assert.throws(
+    () =>
+      buildForecastState({
+        campaignId: 'max-val-amt-1',
+        campaignType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT',
+        totalBudget: 1000,
+        aprCap: null,
+        startTimestamp: 1_000,
+        endTimestamp: 1_000 + 10 * 86400,
+        nowTimestamp: 1_000 + 5 * 86400,
+        distributedSoFar: 300,
+        latestTvl: 1_000_000,
+      }),
+    /Missing APR cap/
+  );
+});

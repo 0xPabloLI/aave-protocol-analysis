@@ -1065,8 +1065,11 @@ export function parseMarketNameFromOpportunityName(opportunityName: string | und
 export function merklPointsFieldsFromBreakdownValue(
   opp: MerklOpportunity,
   rewardsBreakdown: { value?: number },
-  options?: { distributionType?: string; targetTokenPrice?: number }
+  options?: { distributionType?: string; targetTokenPrice?: number; campaignApr?: number }
 ): { pointsPerThousandUsd: number } | undefined {
+  if (options?.campaignApr !== undefined && options.campaignApr > 0) {
+    return undefined;
+  }
   if (rewardsBreakdown.value === undefined) {
     return undefined;
   }
@@ -1429,6 +1432,7 @@ export async function processMerklData(
         ? merklPointsFieldsFromBreakdownValue(opp, rewardBreakdown, {
             distributionType: opp.distributionType,
             targetTokenPrice: amountVariantPrices?.targetTokenPrice,
+            campaignApr: campaignDetails.apr,
           })
         : undefined;
 

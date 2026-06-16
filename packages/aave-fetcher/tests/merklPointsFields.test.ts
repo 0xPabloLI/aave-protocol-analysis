@@ -114,3 +114,31 @@ test('merklPointsFieldsFromBreakdownValue multiplies by targetTokenPrice for MAX
   const expected = (value / tvl) * 1000 * targetTokenPrice;
   assert.ok(Math.abs(out!.pointsPerThousandUsd - expected) < 1e-6);
 });
+
+test('merklPointsFieldsFromBreakdownValue returns undefined when campaignApr > 0', () => {
+  const out = merklPointsFieldsFromBreakdownValue(
+    oppWithTvl(1_000_000),
+    { value: 500 },
+    { campaignApr: 0.035 }
+  );
+  assert.equal(out, undefined);
+});
+
+test('merklPointsFieldsFromBreakdownValue returns result when campaignApr is 0', () => {
+  const out = merklPointsFieldsFromBreakdownValue(
+    oppWithTvl(23_711_444.51),
+    { value: 11_312 },
+    { campaignApr: 0 }
+  );
+  assert.ok(out);
+  assert.ok(Math.abs(out!.pointsPerThousandUsd - 0.477069) < 1e-4);
+});
+
+test('merklPointsFieldsFromBreakdownValue returns result when campaignApr is undefined', () => {
+  const out = merklPointsFieldsFromBreakdownValue(
+    oppWithTvl(23_711_444.51),
+    { value: 11_312 }
+  );
+  assert.ok(out);
+  assert.ok(Math.abs(out!.pointsPerThousandUsd - 0.477069) < 1e-4);
+});
