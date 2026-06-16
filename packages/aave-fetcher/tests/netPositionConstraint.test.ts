@@ -25,7 +25,7 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
     const result = extractNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet);
     assert.deepEqual(result, {
       sourceSide: 'supply',
-      offsetReserveIds: ['1:0xpool:0xusde', '1:0xpool:0xgho'],
+      offsetReserveIds: ['1:0xpool:0xusdt', '1:0xpool:0xusde', '1:0xpool:0xgho'],
     });
   });
 
@@ -44,7 +44,7 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
     const result = extractNetPositionConstraint(opp, '0xusde', '1:0xpool:0xusde', reserveIdSet);
     assert.deepEqual(result, {
       sourceSide: 'borrow',
-      offsetReserveIds: ['1:0xpool:0xusdc'],
+      offsetReserveIds: ['1:0xpool:0xusde', '1:0xpool:0xusdc'],
     });
   });
 
@@ -66,7 +66,7 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
     const result = extractNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet);
     assert.deepEqual(result, {
       sourceSide: 'supply',
-      offsetReserveIds: ['1:0xpool:0xusde'],
+      offsetReserveIds: ['1:0xpool:0xusdt', '1:0xpool:0xusde'],
     });
   });
 
@@ -98,7 +98,7 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
     assert.equal(result, null);
   });
 
-  it('returns null when offsetTokenAddresses is empty (all tokens excluded or missing)', () => {
+  it('returns self-only offsetReserveIds when offsetTokenAddresses is empty', () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [],
@@ -110,7 +110,10 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       offsetTokenAddresses: [],
     };
     const result = extractNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', new Set());
-    assert.equal(result, null);
+    assert.deepEqual(result, {
+      sourceSide: 'supply',
+      offsetReserveIds: ['1:0xpool:0xusdt'],
+    });
   });
 
   it('includes self token in offsetReserveIds for AAVE_NET types (Bug3 fix)', () => {
@@ -179,7 +182,7 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
     const result = extractNetPositionConstraint(opp, '0xsourceToken', oppReserveId, reserveIdSet);
     assert.deepEqual(result, {
       sourceSide: 'supply',
-      offsetReserveIds: ['1:0xv4spoke:0xrlusd:Core', '1:0xv4spoke:0xrlusd:Lido'],
+      offsetReserveIds: ['1:0xv4spoke:0xsourceToken:Core', '1:0xv4spoke:0xrlusd:Core', '1:0xv4spoke:0xrlusd:Lido'],
     });
   });
 });

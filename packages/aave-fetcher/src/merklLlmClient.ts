@@ -123,14 +123,19 @@ export async function buildModelChain(
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<Array<{ model: string; config: LlmClientConfig }>> {
   const hardcoded: Array<{ model: string; config: LlmClientConfig }> = [];
+  const seen = new Set<string>();
   if (primaryConfig) {
     for (const model of LLM_FALLBACK_MODELS) {
       hardcoded.push({ model, config: primaryConfig });
+      seen.add(model);
     }
   }
   if (openrouterConfig) {
     for (const model of OPENROUTER_FREE_MODELS_FALLBACK) {
-      hardcoded.push({ model, config: openrouterConfig });
+      if (!seen.has(model)) {
+        hardcoded.push({ model, config: openrouterConfig });
+        seen.add(model);
+      }
     }
   }
 
@@ -138,16 +143,18 @@ export async function buildModelChain(
   if (primaryConfig) {
     const models = await fetchAvailableModels(primaryConfig.baseUrl, primaryConfig.apiKey, fetchFn);
     for (const model of models) {
-      if (!hardcoded.some(h => h.model === model)) {
+      if (!seen.has(model)) {
         dynamic.push({ model, config: primaryConfig });
+        seen.add(model);
       }
     }
   }
   if (openrouterConfig) {
     const freeModels = await fetchOpenRouterFreeModels(fetchFn);
     for (const model of freeModels) {
-      if (!hardcoded.some(h => h.model === model) && !dynamic.some(d => d.model === model)) {
+      if (!seen.has(model)) {
         dynamic.push({ model, config: openrouterConfig });
+        seen.add(model);
       }
     }
   }

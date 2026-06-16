@@ -247,6 +247,7 @@ export interface MerklOpportunityData {
   name?: string;
   description?: string;
   opportunityType?: string;
+  distributionType?: string;
   offsetTokenAddresses?: OffsetTokenInfo[];
 }
 
@@ -1501,6 +1502,7 @@ export async function processMerklData(
       ...(opp.name && { name: opp.name }),
       ...(opp.description && { description: opp.description }),
       ...(opp.type && { opportunityType: opp.type }),
+      ...(opp.distributionType && { distributionType: opp.distributionType }),
       ...(offsetTokenAddresses.length > 0 && { offsetTokenAddresses }),
     };
     
@@ -1612,17 +1614,19 @@ const SUPPLY_PATTERN = /\b(supply|lend|deposit|stake)\b/i;
 const BORROW_PATTERN = /\b(borrow|loan|debt|repay)\b/i;
 const NET_SUPPLY_PATTERN = /\bnet\s*(supply|lend|deposit|long)\b/i;
 const NET_BORROW_PATTERN = /\bnet\s*(borrow|loan|debt|short)\b/i;
+const BOTH_SIDES_PATTERN = /(?:supply|lend|deposit|stake).*(?:borrow|loan|debt|repay)|(?:borrow|loan|debt|repay).*(?:supply|lend|deposit|stake)/i;
 
 export function regexNetPositionFallback(
   opp: MerklOpportunityData,
 ): NetPositionConstraint | null {
   const text = `${opp.name ?? ''} ${opp.description ?? ''}`;
-  const action = (opp as any).action;
+  const inferredBorrow = opp.borrow.length > 0;
+  const inferredSupply = opp.supply.length > 0;
 
-  if (NET_BORROW_PATTERN.test(text) || (action === 'BORROW' && BORROW_PATTERN.test(text) && !SUPPLY_PATTERN.test(text))) {
+  if (NET_BORROW_PATTERN.test(text) || (inferredBorrow && BOTH_SIDES_PATTERN.test(text))) {
     return { sourceSide: 'borrow', offsetReserveIds: [] };
   }
-  if (NET_SUPPLY_PATTERN.test(text) || (action === 'LEND' && SUPPLY_PATTERN.test(text) && !BORROW_PATTERN.test(text))) {
+  if (NET_SUPPLY_PATTERN.test(text) || (inferredSupply && BOTH_SIDES_PATTERN.test(text))) {
     return { sourceSide: 'supply', offsetReserveIds: [] };
   }
 
@@ -1680,6 +1684,8 @@ export async function detectNetPositionConstraint(
   return null;
 }
 
+const NET_DISTRIBUTION_TYPES = new Set(['AAVE_V4_NET_APR', 'AAVE_NET_APR']);
+
 export function extractNetPositionConstraint(
   opp: MerklOpportunityData,
   sourceTokenAddress: string,
@@ -1687,9 +1693,17 @@ export function extractNetPositionConstraint(
   reserveIdSet: Set<string>,
 ): NetPositionConstraint | null {
   const type = opp.opportunityType;
-  if (!type || !type.startsWith('AAVE_NET_')) return null;
+  const isNetType = type && type.startsWith('AAVE_NET_');
+  const isNetDistribution = !isNetType && opp.distributionType && NET_DISTRIBUTION_TYPES.has(opp.distributionType.toUpperCase());
 
-  const sourceSide: 'supply' | 'borrow' = type === 'AAVE_NET_BORROWING' ? 'borrow' : 'supply';
+  if (!isNetType && !isNetDistribution) return null;
+
+  let sourceSide: 'supply' | 'borrow';
+  if (isNetType) {
+    sourceSide = type === 'AAVE_NET_BORROWING' ? 'borrow' : 'supply';
+  } else {
+    sourceSide = opp.borrow.length > 0 ? 'borrow' : 'supply';
+  }
 
   const offsetReserveIds: string[] = [];
   const seen = new Set<string>();
@@ -1714,8 +1728,13 @@ export function extractNetPositionConstraint(
     }
   }
 
+  if (!seen.has(oppReserveId)) {
+    offsetReserveIds.unshift(oppReserveId);
+    seen.add(oppReserveId);
+  }
+
   if (offsetReserveIds.length === 0) {
-    logger.warn(`⚠️ extractNetPositionConstraint: no offsetReserveIds for opp "${opp.name}" type=${type} chain=${opp.chainId} offsetAddrs=${JSON.stringify(opp.offsetTokenAddresses)} missingAddrs=${JSON.stringify(debugMissing)} reserveIdSetSize=${reserveIdSet.size}`);
+    logger.warn(`⚠️ extractNetPositionConstraint: no offsetReserveIds for opp "${opp.name}" type=${type} dt=${opp.distributionType} chain=${opp.chainId} offsetAddrs=${JSON.stringify(opp.offsetTokenAddresses)} missingAddrs=${JSON.stringify(debugMissing)} reserveIdSetSize=${reserveIdSet.size}`);
     return null;
   }
 
