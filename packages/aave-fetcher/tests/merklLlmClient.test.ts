@@ -4,8 +4,10 @@ import {
   LLM_FALLBACK_MODELS,
   OPENROUTER_FREE_MODELS_FALLBACK,
   buildModelChain,
+  fetchAvailableModels,
   fetchOpenRouterFreeModels,
   resetOpenRouterCache,
+  resetPrimaryModelsCache,
   parseSseStream,
   parseMarkdownWrappedJson,
   parseLlmResponse,
@@ -284,5 +286,160 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
     });
     const result = await callLlmWithFallback('test prompt', undefined, openrouterConfig, fetch);
     assert.deepEqual(result, { sourceSide: 'supply', offsetTokenSymbols: ['USDe'] });
+  });
+});
+
+describe('fetchAvailableModels — generic /models endpoint', () => {
+  it('fetches model list from baseUrl/models', async () => {
+    resetPrimaryModelsCache();
+    const fakeModels = [
+      { id: 'claude-haiku-4.5' },
+      { id: 'gpt-5.4' },
+    ];
+    const fetch = async (url: string) => {
+      assert.ok(url.endsWith('/models'), `expected /models URL, got ${url}`);
+      return new Response(JSON.stringify({ data: fakeModels }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      }) as Response;
+    };
+    const result = await fetchAvailableModels('https://api.example.com/v1', 'test-key', fetch);
+    assert.deepEqual(result, ['claude-haiku-4.5', 'gpt-5.4']);
+    resetPrimaryModelsCache();
+  });
+
+  it('sends Authorization header with apiKey', async () => {
+    resetPrimaryModelsCache();
+    let capturedAuth = '';
+    const fetch = async (_url: string, opts: RequestInit) => {
+      capturedAuth = opts.headers?.['Authorization' as keyof HeadersInit] as string ?? '';
+      return new Response(JSON.stringify({ data: [{ id: 'test-model' }] }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      }) as Response;
+    };
+    await fetchAvailableModels('https://api.example.com/v1', 'my-secret-key', fetch);
+    assert.equal(capturedAuth, 'Bearer my-secret-key');
+    resetPrimaryModelsCache();
+  });
+
+  it('falls back to LLM_FALLBACK_MODELS on fetch error', async () => {
+    resetPrimaryModelsCache();
+    const fetch = async () => new Response('error', { status: 500 }) as Response;
+    const result = await fetchAvailableModels('https://api.example.com/v1', 'key', fetch);
+    assert.equal(result.length, LLM_FALLBACK_MODELS.length);
+    assert.equal(result[0], LLM_FALLBACK_MODELS[0]);
+    resetPrimaryModelsCache();
+  });
+
+  it('falls back to LLM_FALLBACK_MODELS on network error', async () => {
+    resetPrimaryModelsCache();
+    const fetch = async () => { throw new Error('network error'); };
+    const result = await fetchAvailableModels('https://api.example.com/v1', 'key', fetch);
+    assert.equal(result.length, LLM_FALLBACK_MODELS.length);
+    resetPrimaryModelsCache();
+  });
+
+  it('caches result on second call', async () => {
+    resetPrimaryModelsCache();
+    let callCount = 0;
+    const fetch = async () => {
+      callCount++;
+      return new Response(JSON.stringify({ data: [{ id: 'cached-model' }] }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      }) as Response;
+    };
+    const first = await fetchAvailableModels('https://api.example.com/v1', 'key', fetch);
+    assert.equal(callCount, 1);
+    const second = await fetchAvailableModels('https://api.example.com/v1', 'key', fetch);
+    assert.equal(callCount, 1);
+    assert.deepEqual(first, second);
+    resetPrimaryModelsCache();
+  });
+
+  it('resetPrimaryModelsCache clears cache', async () => {
+    resetPrimaryModelsCache();
+    let callCount = 0;
+    const fetch = async () => {
+      callCount++;
+      return new Response(JSON.stringify({ data: [{ id: 'fresh-model' }] }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      }) as Response;
+    };
+    await fetchAvailableModels('https://api.example.com/v1', 'key', fetch);
+    assert.equal(callCount, 1);
+    resetPrimaryModelsCache();
+    await fetchAvailableModels('https://api.example.com/v1', 'key', fetch);
+    assert.equal(callCount, 2);
+  });
+
+  it('handles response with empty data array by falling back', async () => {
+    resetPrimaryModelsCache();
+    const fetch = async () => new Response(JSON.stringify({ data: [] }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }) as Response;
+    const result = await fetchAvailableModels('https://api.example.com/v1', 'key', fetch);
+    assert.equal(result.length, LLM_FALLBACK_MODELS.length);
+    resetPrimaryModelsCache();
+  });
+
+  it('respects 10s timeout via AbortSignal', async () => {
+    resetPrimaryModelsCache();
+    const fetch = async (_url: string, opts: RequestInit) => {
+      assert.ok(opts.signal instanceof AbortSignal, 'expected AbortSignal');
+      return new Response(JSON.stringify({ data: [{ id: 'test' }] }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      }) as Response;
+    };
+    await fetchAvailableModels('https://api.example.com/v1', 'key', fetch);
+    resetPrimaryModelsCache();
+  });
+});
+
+describe('buildModelChain — with dynamic primary models', () => {
+  it('uses dynamically fetched models for primary config', async () => {
+    resetPrimaryModelsCache();
+    resetOpenRouterCache();
+    const primary = { apiKey: 'p', baseUrl: 'https://primary.com/v1' };
+    const fetch = async (url: string) => {
+      if (url.includes('/models')) {
+        if (url.includes('primary')) {
+          return new Response(JSON.stringify({ data: [{ id: 'dynamic-model-a' }, { id: 'dynamic-model-b' }] }), {
+            status: 200, headers: { 'content-type': 'application/json' },
+          }) as Response;
+        }
+        return new Response(JSON.stringify({ data: [{ id: 'or/free:free', context_length: 64000 }] }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        }) as Response;
+      }
+      return new Response('not found', { status: 404 }) as Response;
+    };
+    const chain = await buildModelChain(primary, undefined, fetch);
+    assert.ok(chain.length >= 2);
+    assert.equal(chain[0].model, 'dynamic-model-a');
+    assert.equal(chain[1].model, 'dynamic-model-b');
+    assert.equal(chain[0].config.apiKey, 'p');
+    resetPrimaryModelsCache();
+    resetOpenRouterCache();
+  });
+
+  it('falls back to LLM_FALLBACK_MODELS when primary /models fails', async () => {
+    resetPrimaryModelsCache();
+    resetOpenRouterCache();
+    const primary = { apiKey: 'p', baseUrl: 'https://primary.com/v1' };
+    const fetch = async (url: string) => {
+      if (url.includes('/models')) {
+        if (url.includes('primary')) {
+          return new Response('error', { status: 500 }) as Response;
+        }
+        return new Response(JSON.stringify({ data: [{ id: 'or/free:free', context_length: 64000 }] }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        }) as Response;
+      }
+      return new Response('not found', { status: 404 }) as Response;
+    };
+    const chain = await buildModelChain(primary, undefined, fetch);
+    assert.equal(chain.length, LLM_FALLBACK_MODELS.length);
+    assert.equal(chain[0].model, LLM_FALLBACK_MODELS[0]);
+    resetPrimaryModelsCache();
+    resetOpenRouterCache();
   });
 });

@@ -44,9 +44,44 @@ export const OPENROUTER_FREE_MODELS_FALLBACK = [
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 const OPENROUTER_FREE_MAX = 20;
 let openrouterFreeModelsCache: string[] | null = null;
+let primaryModelsCache: string[] | null = null;
 
 export function resetOpenRouterCache(): void {
   openrouterFreeModelsCache = null;
+}
+
+export function resetPrimaryModelsCache(): void {
+  primaryModelsCache = null;
+}
+
+export async function fetchAvailableModels(
+  baseUrl: string,
+  apiKey: string,
+  fetchFn: typeof globalThis.fetch = globalThis.fetch,
+): Promise<string[]> {
+  if (primaryModelsCache !== null) return primaryModelsCache;
+
+  try {
+    const url = baseUrl.endsWith('/') ? `${baseUrl}models` : `${baseUrl}/models`;
+    const res = await fetchFn(url, {
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json() as {
+      data?: Array<{ id: string }>;
+    };
+    const models = (json.data ?? []).map(m => m.id);
+    if (models.length === 0) throw new Error('no models found');
+    primaryModelsCache = models;
+    return models;
+  } catch {
+    primaryModelsCache = [...LLM_FALLBACK_MODELS];
+    return primaryModelsCache;
+  }
 }
 
 export async function fetchOpenRouterFreeModels(
@@ -83,7 +118,8 @@ export async function buildModelChain(
 ): Promise<Array<{ model: string; config: LlmClientConfig }>> {
   const chain: Array<{ model: string; config: LlmClientConfig }> = [];
   if (primaryConfig) {
-    for (const model of LLM_FALLBACK_MODELS) {
+    const models = await fetchAvailableModels(primaryConfig.baseUrl, primaryConfig.apiKey, fetchFn);
+    for (const model of models) {
       chain.push({ model, config: primaryConfig });
     }
   }
