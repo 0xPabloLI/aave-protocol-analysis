@@ -8,26 +8,7 @@ import {
 
 const TTA = 'TARGET_TOTAL_APR' as const;
 
-test('normalizeCampaignType: distributionMethod takes priority', () => {
-  assert.equal(
-    normalizeCampaignType({ distributionMethod: 'MAX_APR' }),
-    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  );
-  assert.equal(
-    normalizeCampaignType({ distributionMethod: 'FIX_APR' }),
-    'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  );
-  assert.equal(
-    normalizeCampaignType({ distributionMethod: 'DUTCH_AUCTION' }),
-    'DUTCH_AUCTION'
-  );
-  assert.equal(
-    normalizeCampaignType({ distributionMethod: 'AIRDROP' }),
-    null
-  );
-});
-
-test('normalizeCampaignType: distributionType fallback when method unrecognized', () => {
+test('normalizeCampaignType: Level 2 distributionType exact match', () => {
   assert.equal(
     normalizeCampaignType({ distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' }),
     'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
@@ -54,25 +35,6 @@ test('normalizeCampaignType: distributionType fallback when method unrecognized'
   );
 });
 
-test('normalizeCampaignType: 7 Target Total APR distributionMethod values map to TARGET_TOTAL_APR via L1', () => {
-  const methods = [
-    'AAVE_NET_APR',
-    'AAVE_V4_NET_APR',
-    'ERC4626_APR',
-    'ERC4626_SPREAD_CAPPED',
-    'ERC4626_TARGET_APR_WITH_MERKL',
-    'SOFR_SPREAD_RATCHET',
-    'DEEL_DISTRIBUTION',
-  ];
-  for (const method of methods) {
-    assert.equal(
-      normalizeCampaignType({ distributionMethod: method }),
-      TTA,
-      `distributionMethod=${method} should map to TARGET_TOTAL_APR`,
-    );
-  }
-});
-
 test('normalizeCampaignType: 7 Target Total APR distributionType values map to TARGET_TOTAL_APR via L2', () => {
   const types = [
     'AAVE_NET_APR',
@@ -92,36 +54,75 @@ test('normalizeCampaignType: 7 Target Total APR distributionType values map to T
   }
 });
 
-test('normalizeCampaignType: L3 mode mapping removed — mode is no longer a type signal', () => {
+test('normalizeCampaignType: Level 3 targetAPR fallback classifies as TARGET_TOTAL_APR', () => {
   assert.equal(
-    normalizeCampaignType({ mode: 'MAX_APR' }),
-    null,
-    'mode=MAX_APR should no longer resolve via L3',
-  );
-  assert.equal(
-    normalizeCampaignType({ mode: 'FIX_APR' }),
-    null,
-    'mode=FIX_APR should no longer resolve via L3',
-  );
-  assert.equal(
-    normalizeCampaignType({ distributionType: 'AAVE_NET_APR', mode: 'MAX_APR' }),
+    normalizeCampaignType({ targetAPR: 5.0 }),
     TTA,
-    'L2 should still resolve; mode is ignored',
+    'positive number targetAPR should classify as TARGET_TOTAL_APR',
+  );
+  assert.equal(
+    normalizeCampaignType({ targetAPR: '3.5' }),
+    TTA,
+    'positive string targetAPR should classify as TARGET_TOTAL_APR',
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'UNKNOWN_NEW_TYPE', targetAPR: 2.0 }),
+    TTA,
+    'Level 3 fallback activates when Level 2 misses',
   );
 });
 
-test('normalizeCampaignType: priority order method > type', () => {
+test('normalizeCampaignType: Level 3 targetAPR fallback does NOT activate for invalid values', () => {
   assert.equal(
-    normalizeCampaignType({ distributionMethod: 'FIX_APR', distributionType: 'DUTCH_AUCTION' }),
-    'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+    normalizeCampaignType({ targetAPR: 0 }),
+    null,
+    'targetAPR=0 should not trigger Level 3',
   );
   assert.equal(
-    normalizeCampaignType({ distributionMethod: 'AIRDROP', distributionType: 'DUTCH_AUCTION' }),
-    'DUTCH_AUCTION'
+    normalizeCampaignType({ targetAPR: -1 }),
+    null,
+    'negative targetAPR should not trigger Level 3',
   );
   assert.equal(
-    normalizeCampaignType({ distributionMethod: 'AAVE_NET_APR', distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' }),
-    TTA
+    normalizeCampaignType({ targetAPR: NaN }),
+    null,
+    'NaN targetAPR should not trigger Level 3',
+  );
+  assert.equal(
+    normalizeCampaignType({ targetAPR: 'not a number' }),
+    null,
+    'non-numeric string targetAPR should not trigger Level 3',
+  );
+  assert.equal(
+    normalizeCampaignType({ targetAPR: undefined }),
+    null,
+    'undefined targetAPR should not trigger Level 3',
+  );
+});
+
+test('normalizeCampaignType: Level 2 takes priority over Level 3', () => {
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'DUTCH_AUCTION', targetAPR: 5.0 }),
+    'DUTCH_AUCTION',
+    'Level 2 match should win over Level 3 fallback',
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE', targetAPR: 5.0 }),
+    'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
+    'Level 2 match should win over Level 3 fallback',
+  );
+});
+
+test('normalizeCampaignType: distributionMethod is no longer used (Level 1 removed)', () => {
+  assert.equal(
+    normalizeCampaignType({ distributionMethod: 'MAX_APR' } as any),
+    null,
+    'distributionMethod should be ignored after Level 1 removal',
+  );
+  assert.equal(
+    normalizeCampaignType({ distributionMethod: 'AAVE_NET_APR' } as any),
+    null,
+    'distributionMethod should be ignored after Level 1 removal',
   );
 });
 

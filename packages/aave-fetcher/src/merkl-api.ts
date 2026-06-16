@@ -362,7 +362,6 @@ interface ForecastCampaignMetaLite {
   campaignSnapshot: CampaignSnapshotLiteForForecastFile | null;
   useTokenRateInMetrics: boolean;
   rawDistributionType?: string;
-  rawDistributionMethod?: string;
   rawMode?: string;
 }
 
@@ -539,21 +538,8 @@ const persistMerklArtifacts = async (payload: MerklArtifactsPayload): Promise<vo
 
 export interface NormalizeForecastCampaignTypeLiteInput {
   distributionType?: string;
-  distributionMethod?: string;
+  targetAPR?: number | string;
 }
-
-const FORECAST_LITE_METHOD_MAP: Record<string, ForecastCampaignTypeLite> = {
-  MAX_APR: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
-  FIX_APR: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
-  DUTCH_AUCTION: 'DUTCH_AUCTION',
-  AAVE_NET_APR: 'TARGET_TOTAL_APR',
-  AAVE_V4_NET_APR: 'TARGET_TOTAL_APR',
-  ERC4626_APR: 'TARGET_TOTAL_APR',
-  ERC4626_SPREAD_CAPPED: 'TARGET_TOTAL_APR',
-  ERC4626_TARGET_APR_WITH_MERKL: 'TARGET_TOTAL_APR',
-  SOFR_SPREAD_RATCHET: 'TARGET_TOTAL_APR',
-  DEEL_DISTRIBUTION: 'TARGET_TOTAL_APR',
-};
 
 const FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS: Array<{
   pattern: string;
@@ -574,23 +560,30 @@ const FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS: Array<{
   { pattern: 'DEEL_DISTRIBUTION', result: 'TARGET_TOTAL_APR' },
 ];
 
+const toFinitePositiveNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+};
+
 export const normalizeForecastCampaignTypeLite = (
   input: NormalizeForecastCampaignTypeLiteInput | unknown
 ): ForecastCampaignTypeLite | null => {
   if (!input || typeof input !== 'object') return null;
-  const { distributionType, distributionMethod } = input as NormalizeForecastCampaignTypeLiteInput;
-
-  if (distributionMethod) {
-    const upper = distributionMethod.trim().toUpperCase();
-    const hit = FORECAST_LITE_METHOD_MAP[upper];
-    if (hit) return hit;
-  }
+  const { distributionType, targetAPR } = input as NormalizeForecastCampaignTypeLiteInput;
 
   if (distributionType) {
     const upper = distributionType.trim().toUpperCase();
     for (const { pattern, result } of FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS) {
       if (upper === pattern) return result;
     }
+  }
+
+  if (toFinitePositiveNumber(targetAPR) !== null) {
+    return 'TARGET_TOTAL_APR';
   }
 
   return null;
@@ -655,20 +648,19 @@ export const buildForecastCampaignMetaLiteMap = (
         (typeof breakdown?.distributionType === 'string' && breakdown.distributionType) ||
         (typeof opp?.distributionType === 'string' && opp.distributionType) ||
         undefined;
-      const breakdownDistributionMethod =
-        (typeof breakdown?.distributionMethod === 'string' && breakdown.distributionMethod) ||
-        undefined;
       const campaignObj = opp.campaigns?.find(
         (c: any) => String(c?.id || '') === campaignId
       );
       const mode =
         campaignObj?.params?.distributionMethodParameters?.distributionSettings?.mode ||
         undefined;
+      const targetAPR =
+        campaignObj?.params?.distributionMethodParameters?.distributionSettings?.targetAPR ??
+        undefined;
 
       const campaignTypeHint = normalizeForecastCampaignTypeLite({
         distributionType: breakdownDistributionType,
-        distributionMethod: breakdownDistributionMethod,
-        mode,
+        targetAPR,
       });
       if (!campaignTypeHint) continue;
 
@@ -684,7 +676,6 @@ export const buildForecastCampaignMetaLiteMap = (
           campaignSnapshot,
           useTokenRateInMetrics,
           rawDistributionType: breakdownDistributionType,
-          rawDistributionMethod: breakdownDistributionMethod,
           rawMode: typeof mode === 'string' ? mode : undefined,
         };
         continue;
@@ -697,7 +688,6 @@ export const buildForecastCampaignMetaLiteMap = (
         campaignSnapshot: existing.campaignSnapshot ?? campaignSnapshot,
         useTokenRateInMetrics: existing.useTokenRateInMetrics || useTokenRateInMetrics,
         rawDistributionType: existing.rawDistributionType ?? breakdownDistributionType,
-        rawDistributionMethod: existing.rawDistributionMethod ?? breakdownDistributionMethod,
         rawMode: existing.rawMode ?? (typeof mode === 'string' ? mode : undefined),
       };
     }
@@ -901,7 +891,11 @@ export const resolveCampaignApr = (
 ): ResolvedCampaignApr => {
   if (!campaign) return { apr: 0 };
   const topApr = Number(campaign.apr || 0);
-  const campaignType = normalizeForecastCampaignTypeLite({ distributionType });
+  const targetAPR =
+    campaign?.params?.distributionMethodParameters?.distributionSettings?.targetAPR ??
+    campaign?.distributionMethodParameters?.distributionSettings?.targetAPR ??
+    undefined;
+  const campaignType = normalizeForecastCampaignTypeLite({ distributionType, targetAPR });
 
   if (isAmountVariant(campaignType)) {
     const dsApr = extractDistributionSettingsApr(campaign);

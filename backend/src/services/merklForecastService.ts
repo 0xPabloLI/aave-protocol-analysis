@@ -477,11 +477,11 @@ const getFreshCampaignMetaMapFromLiteFile = async (): Promise<Map<string, Campai
       if (tvl === null || tvl < 0) continue;
 
       const rawDistributionType = getAtPath(value, ['rawDistributionType']);
-      const rawDistributionMethod = getAtPath(value, ['rawDistributionMethod']);
       const rawMode = getAtPath(value, ['rawMode']);
+      const rawTargetAPR = getAtPath(value, ['campaignSnapshot', 'params', 'distributionMethodParameters', 'distributionSettings', 'targetAPR']);
       const campaignTypeHint = normalizeCampaignType({
         distributionType: typeof rawDistributionType === 'string' ? rawDistributionType : undefined,
-        distributionMethod: typeof rawDistributionMethod === 'string' ? rawDistributionMethod : undefined,
+        targetAPR: rawTargetAPR,
       });
       if (!campaignTypeHint) continue;
 
@@ -536,15 +536,15 @@ export const buildCampaignOpportunityMetaMapFromOpportunities = (
         (typeof getAtPath(breakdown, ['distributionType']) === 'string' && getAtPath(breakdown, ['distributionType'])) ||
         (typeof oppDistributionTypeRaw === 'string' && oppDistributionTypeRaw) ||
         undefined;
-      const breakdownDistributionMethod =
-        (typeof getAtPath(breakdown, ['distributionMethod']) === 'string' && getAtPath(breakdown, ['distributionMethod'])) ||
-        undefined;
       const matchingCampaign = oppCampaigns.find(
         (c: any) => String(getAtPath(c, ['id']) || '') === campaignId
       );
+      const rawTargetAPR =
+        getAtPath(matchingCampaign, ['params', 'distributionMethodParameters', 'distributionSettings', 'targetAPR']) ??
+        undefined;
       const hintType = normalizeCampaignType({
         distributionType: breakdownDistributionType,
-        distributionMethod: breakdownDistributionMethod,
+        targetAPR: rawTargetAPR,
       });
       if (!hintType) return;
 

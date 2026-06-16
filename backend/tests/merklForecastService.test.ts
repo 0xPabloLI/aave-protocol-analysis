@@ -70,11 +70,11 @@ test('extractDailyRewardsRecords keeps using total for non-points campaigns', ()
   assert.deepEqual(records, [{ timestamp: 1774518967, total: 12.5 }]);
 });
 
-test('buildCampaignOpportunityMetaMapFromOpportunities: extracts breakdown distributionType and distributionMethod', () => {
+test('buildCampaignOpportunityMetaMapFromOpportunities: extracts breakdown distributionType (distributionMethod ignored after L1 removal)', () => {
   const opps = [{
     tvl: 1000,
     distributionType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
-    rewardsRecord: { breakdowns: [{ campaignId: 'c1', distributionType: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE', distributionMethod: 'FIX_APR' }] },
+    rewardsRecord: { breakdowns: [{ campaignId: 'c1', distributionType: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' }] },
     campaigns: [],
   }];
   const map = buildCampaignOpportunityMetaMapFromOpportunities(opps as any);
@@ -106,15 +106,15 @@ test('buildCampaignOpportunityMetaMapFromOpportunities: AAVE_NET_APR distributio
   assert.equal(map.get('c1')!.campaignTypeHint, 'TARGET_TOTAL_APR');
 });
 
-test('buildCampaignOpportunityMetaMapFromOpportunities: distributionMethod on breakdown takes priority over distributionType', () => {
+test('buildCampaignOpportunityMetaMapFromOpportunities: Level 3 targetAPR fallback classifies as TARGET_TOTAL_APR', () => {
   const opps = [{
     tvl: 1000,
-    rewardsRecord: { breakdowns: [{ campaignId: 'c1', distributionType: 'DUTCH_AUCTION', distributionMethod: 'MAX_APR' }] },
-    campaigns: [],
+    rewardsRecord: { breakdowns: [{ campaignId: 'c1', distributionType: 'SOME_NEW_NET_APR' }] },
+    campaigns: [{ id: 'c1', params: { distributionMethodParameters: { distributionSettings: { targetAPR: 4.7 } } } }],
   }];
   const map = buildCampaignOpportunityMetaMapFromOpportunities(opps as any);
   assert.ok(map.has('c1'));
-  assert.equal(map.get('c1')!.campaignTypeHint, 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE');
+  assert.equal(map.get('c1')!.campaignTypeHint, 'TARGET_TOTAL_APR');
 });
 
 test('buildCampaignOpportunityMetaMapFromOpportunities: AAVE_V4_NET_APR maps to TARGET_TOTAL_APR', () => {

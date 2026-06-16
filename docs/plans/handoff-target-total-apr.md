@@ -82,7 +82,7 @@
 
 - 3 种现有类型：`MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE`、`FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE`、`DUTCH_AUCTION`
 - 新增：`TARGET_TOTAL_APR`
-- 7 种子类型统一映射到 `TARGET_TOTAL_APR`，通过 `rawDistributionMethod` 透传具体子类型
+- 7 种子类型统一映射到 `TARGET_TOTAL_APR`（通过 `distributionType` Level 2 映射 + `targetAPR` Level 3 fallback）`rawDistributionMethod` 已于 2026-06-16 移除
 
 ### 决策 2：APR cap 读取策略
 

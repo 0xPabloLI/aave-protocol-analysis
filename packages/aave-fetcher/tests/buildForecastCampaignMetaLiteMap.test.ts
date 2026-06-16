@@ -20,21 +20,24 @@ function makeBreakdown(campaignId: string, overrides: Record<string, any> = {}) 
   return {
     campaignId,
     distributionType: undefined as string | undefined,
-    distributionMethod: undefined as string | undefined,
     ...overrides,
   };
 }
 
-function makeCampaign(id: string, mode?: string) {
+function makeCampaign(id: string, overrides: Record<string, any> = {}) {
+  const { mode, targetAPR, ...rest } = overrides;
+  const params: Record<string, any> = {};
+  const dmParams: Record<string, any> = {};
+  const dsParams: Record<string, any> = {};
+  if (mode !== undefined) dsParams.mode = mode;
+  if (targetAPR !== undefined) dsParams.targetAPR = targetAPR;
+  if (Object.keys(dsParams).length > 0) dmParams.distributionSettings = dsParams;
+  if (Object.keys(dmParams).length > 0) params.distributionMethodParameters = dmParams;
+
   return {
     id,
-    params: mode
-      ? {
-          distributionMethodParameters: {
-            distributionSettings: { mode },
-          },
-        }
-      : {},
+    ...(Object.keys(params).length > 0 ? { params } : {}),
+    ...rest,
   };
 }
 
@@ -86,7 +89,7 @@ test('rawMode is written from campaign params distributionSettings.mode', () => 
       rewardsRecord: {
         breakdowns: [makeBreakdown('camp-1', { distributionType: 'AAVE_NET_APR' })],
       },
-      campaigns: [makeCampaign('camp-1', 'MAX_APR')],
+      campaigns: [makeCampaign('camp-1', { mode: 'MAX_APR' })],
     }),
   ]);
   assert.equal(result['camp-1']?.rawMode, 'MAX_APR');
@@ -106,7 +109,7 @@ test('rawMode is undefined when no mode in campaign params', () => {
   assert.equal(result['camp-1']?.rawMode, undefined);
 });
 
-test('campaign with unknown distributionType is skipped (no entry)', () => {
+test('campaign with unknown distributionType and no targetAPR is skipped (no entry)', () => {
   const result = buildForecastCampaignMetaLiteMap([
     makeOpp({
       rewardsRecord: {
@@ -117,6 +120,35 @@ test('campaign with unknown distributionType is skipped (no entry)', () => {
     }),
   ]);
   assert.equal(result['camp-unknown'], undefined);
+});
+
+test('campaign with unknown distributionType but has targetAPR is classified as TARGET_TOTAL_APR via Level 3', () => {
+  const result = buildForecastCampaignMetaLiteMap([
+    makeOpp({
+      rewardsRecord: {
+        breakdowns: [
+          makeBreakdown('camp-l3', { distributionType: 'SOME_NEW_NET_APR' }),
+        ],
+      },
+      campaigns: [makeCampaign('camp-l3', { targetAPR: 4.7 })],
+    }),
+  ]);
+  assert.equal(result['camp-l3']?.campaignTypeHint, 'TARGET_TOTAL_APR');
+  assert.equal(result['camp-l3']?.rawDistributionType, 'SOME_NEW_NET_APR');
+});
+
+test('campaign with unknown distributionType and targetAPR=0 is still skipped', () => {
+  const result = buildForecastCampaignMetaLiteMap([
+    makeOpp({
+      rewardsRecord: {
+        breakdowns: [
+          makeBreakdown('camp-l3-zero', { distributionType: 'SOME_NEW_TYPE' }),
+        ],
+      },
+      campaigns: [makeCampaign('camp-l3-zero', { targetAPR: 0 })],
+    }),
+  ]);
+  assert.equal(result['camp-l3-zero'], undefined);
 });
 
 test('ERC4626_APR maps correctly and rawDistributionType is preserved', () => {

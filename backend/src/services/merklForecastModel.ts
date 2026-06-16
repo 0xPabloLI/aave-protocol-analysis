@@ -54,21 +54,8 @@ const safeNumber = (value: unknown, fallback = 0): number => {
 
 export interface NormalizeCampaignTypeInput {
   distributionType?: string;
-  distributionMethod?: string;
+  targetAPR?: number | string;
 }
-
-const METHOD_TYPE_MAP: Record<string, CampaignForecastType> = {
-  MAX_APR: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
-  FIX_APR: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE',
-  DUTCH_AUCTION: 'DUTCH_AUCTION',
-  AAVE_NET_APR: 'TARGET_TOTAL_APR',
-  AAVE_V4_NET_APR: 'TARGET_TOTAL_APR',
-  ERC4626_APR: 'TARGET_TOTAL_APR',
-  ERC4626_SPREAD_CAPPED: 'TARGET_TOTAL_APR',
-  ERC4626_TARGET_APR_WITH_MERKL: 'TARGET_TOTAL_APR',
-  SOFR_SPREAD_RATCHET: 'TARGET_TOTAL_APR',
-  DEEL_DISTRIBUTION: 'TARGET_TOTAL_APR',
-};
 
 const DISTRIBUTION_TYPE_PATTERNS: Array<{ pattern: string; result: CampaignForecastType }> = [
   { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
@@ -86,12 +73,6 @@ const DISTRIBUTION_TYPE_PATTERNS: Array<{ pattern: string; result: CampaignForec
   { pattern: 'DEEL_DISTRIBUTION', result: 'TARGET_TOTAL_APR' },
 ];
 
-const normalizeByDistributionMethod = (value: string | undefined): CampaignForecastType | null => {
-  if (!value) return null;
-  const upper = value.trim().toUpperCase();
-  return METHOD_TYPE_MAP[upper] ?? null;
-};
-
 const normalizeByDistributionType = (value: string | undefined): CampaignForecastType | null => {
   if (!value) return null;
   const upper = value.trim().toUpperCase();
@@ -101,14 +82,22 @@ const normalizeByDistributionType = (value: string | undefined): CampaignForecas
   return null;
 };
 
+const toFinitePositiveNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+};
+
 export const normalizeCampaignType = (input: NormalizeCampaignTypeInput | unknown): CampaignForecastType | null => {
   if (!input || typeof input !== 'object') return null;
-  const { distributionType, distributionMethod } = input as NormalizeCampaignTypeInput;
+  const { distributionType, targetAPR } = input as NormalizeCampaignTypeInput;
 
   return (
-    normalizeByDistributionMethod(distributionMethod) ??
     normalizeByDistributionType(distributionType) ??
-    null
+    (toFinitePositiveNumber(targetAPR) !== null ? 'TARGET_TOTAL_APR' : null)
   );
 };
 
