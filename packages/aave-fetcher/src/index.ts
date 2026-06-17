@@ -367,6 +367,13 @@ async function enrichDatasetWithIncentiveData(
   const llmApiKey = process.env.LLM_API_KEY;
   const llmBaseUrl = process.env.LLM_BASE_URL;
   const llmConfig: LlmClientConfig | undefined = llmApiKey && llmBaseUrl ? { apiKey: llmApiKey, baseUrl: llmBaseUrl } : undefined;
+  // Concurrent writes from Promise.all — order unpredictable; for aggregate stats only
+  const _llmCalls: { reserveId: string; elapsed: number; outcome: string }[] = [];
+  // Best-effort circuit breaker: not a strict mutex (JS is single-threaded but
+  // multiple llmFn closures may already be awaiting callLlmWithFallback when
+  // the first 'unavailable' lands). Scope is per-enrichDatasetWithIncentiveData
+  // invocation — next cron cycle starts fresh.
+  let llmCircuitOpen = false;
 
   const enrichedItems = await Promise.all(baseDataset.map(async item => {
     const reserveProtocolVersion: 'v3' | 'v4' = item.marketName.startsWith('AaveV4') ? 'v4' : 'v3';
@@ -400,8 +407,20 @@ async function enrichDatasetWithIncentiveData(
       // 收集所有 matchedOpportunities 中的 breakdowns
       for (const opp of matchedOpportunities) {
         const llmFn = llmConfig ? () => {
+          const _llmStart = Date.now();
+          if (llmCircuitOpen) {
+            _llmCalls.push({ reserveId: item.reserveId, elapsed: 0, outcome: 'circuit-open' });
+            return Promise.resolve({ tag: 'unavailable' as const });
+          }
           const prompt = buildLlmPrompt({ type: opp.opportunityType ?? 'unknown', action: opp.name ?? opp.opportunityType ?? 'unknown', description: opp.description ?? '', tokenSymbols: [item.tokenSymbol] });
-          return callLlmWithFallback(prompt, llmConfig);
+          return callLlmWithFallback(prompt, llmConfig).then(outcome => {
+            _llmCalls.push({ reserveId: item.reserveId, elapsed: Date.now() - _llmStart, outcome: outcome.tag });
+            if (outcome.tag === 'unavailable') {
+              llmCircuitOpen = true;
+              logger.info(`[enrich-llm] circuit opened after unavailable (${Date.now() - _llmStart}ms)`);
+            }
+            return outcome;
+          });
         } : undefined;
         const cachedConstraint = opp.opportunityLink ? cachedConstraints?.get(opp.opportunityLink) : undefined;
         const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, cachedConstraint, llmFn);
@@ -523,6 +542,15 @@ async function enrichDatasetWithIncentiveData(
     if (item.brevisBorrows) item.brevisBorrows = item.brevisBorrows.map(pruneBrevisItem);
     return item;
   }));
+
+  if (_llmCalls.length > 0) {
+    const _llmTotal = _llmCalls.reduce((s, c) => s + c.elapsed, 0);
+    const _llmMax = _llmCalls.reduce((m, c) => Math.max(m, c.elapsed), 0);
+    const _llmCircuitOpen = _llmCalls.filter(c => c.outcome === 'circuit-open').length;
+    const _llmUnavailable = _llmCalls.filter(c => c.outcome === 'unavailable').length;
+    const _llmResult = _llmCalls.filter(c => c.outcome === 'result').length;
+    logger.info(`[enrich-llm] calls=${_llmCalls.length} total=${_llmTotal}ms max=${_llmMax}ms unavailable=${_llmUnavailable} circuit-open=${_llmCircuitOpen} result=${_llmResult}`);
+  }
 
   return enrichedItems;
 }
@@ -1086,16 +1114,20 @@ function launchIncentiveFetches(reserveTokenPriceByChainAndAddress: Map<string, 
 export async function fetchMarketsData(options?: {
   cachedConstraints?: Map<string, NetPositionConstraint>;
 }): Promise<MarketsPayload> {
+  const _t0 = Date.now();
+  const _elapsed = () => `${Date.now() - _t0}ms`;
+
   // 🧹 启动时检查并清理 Cloudflare browser sessions
-  logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
+  logger.info(`🔧 Pre-flight check: Cloudflare browser session status... [${_elapsed()}]`);
   await checkAndReportSessionStatus();
 
   // V3/V4 并发 fetch + per-side 独立超时
-  logger.info('\n🚀 Starting V3/V4 concurrent fetch...');
+  logger.info(`🚀 Starting V3/V4 concurrent fetch... [${_elapsed()}]`);
   const [v3Settled, v4Settled] = await Promise.allSettled([
     fetchV3MarketsWithTimeout({ _fetchV3Fn: fetchRawMarketData }),
     fetchV4ReservesWithTimeout({ _fetchV4Fn: () => fetchV4ReservesData({ throwOnFinalFailure: false }) }),
   ]);
+  logger.info(`V3/V4 concurrent fetch done [${_elapsed()}]`);
 
   const v3Success = v3Settled.status === 'fulfilled';
   // fetchV4ReservesWithTimeout never rejects (Layer 2 handles all SDK failures).
@@ -1120,21 +1152,25 @@ export async function fetchMarketsData(options?: {
     throw new Error('Both V3 and V4 fetch failed');
   }
 
-  logger.info('\n📊 Formatting market data...');
+  logger.info(`📊 Formatting market data... [${_elapsed()}]`);
   const { baseDataset, v3Count, v4Count, v4Raw, spokeHubTopology } = buildMarketsBaseDataset(marketData.markets, v4Result);
   const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
+  logger.info(`Formatting done: ${baseDataset.length} reserves (V3=${v3Count}, V4=${v4Count}) [${_elapsed()}]`);
 
   // 并发获取 Merit、Merkl 和 Brevis 数据
-  logger.info('🚀 Starting incentive data fetching concurrently...');
+  logger.info(`🚀 Starting incentive data fetching concurrently... [${_elapsed()}]`);
   
   const { meritPromise, merklPromise, brevisPromise } = launchIncentiveFetches(reserveTokenPriceByChainAndAddress, baseDataset);
   const { merit: meritData, merkl: merklData, brevis: brevisData, merklResult, brevisResult } = await awaitIncentiveResults(meritPromise, merklPromise, brevisPromise);
+  logger.info(`Incentive data fetched (Merit keys=${Object.keys(meritData).length}, Merkl keys=${Object.keys(merklData).length}, Brevis keys=${Object.keys(brevisData).length}) [${_elapsed()}]`);
 
   // Enrich with incentive data
-  logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
+  const _enrichStart = Date.now();
+  logger.info(`💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)... [${_elapsed()}]`);
   const runtimeData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData, options?.cachedConstraints);
+  logger.info(`Enriching done: ${runtimeData.length} reserves [enrich=${Date.now() - _enrichStart}ms, total=${_elapsed()}]`);
 
-  logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves`);
+  logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves [${_elapsed()}]`);
 
   const payload: MarketsPayload = {
     _metadata: {

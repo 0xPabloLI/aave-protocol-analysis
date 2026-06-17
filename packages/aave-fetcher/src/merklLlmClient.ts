@@ -1,3 +1,5 @@
+import { readNumberEnv } from '@internal/aave-shared-config';
+
 export interface LlmAnalysisResult {
   sourceSide: 'supply' | 'borrow';
   offsetTokenSymbols: string[];
@@ -199,8 +201,8 @@ export interface LlmClientConfig {
   perModelRetries?: number;
 }
 
-const DEFAULT_TOTAL_TIMEOUT_MS = 60_000;
-const DEFAULT_PER_MODEL_RETRIES = 2;
+const DEFAULT_TOTAL_TIMEOUT_MS = readNumberEnv('LLM_TOTAL_TIMEOUT_MS', { defaultValue: 15_000, min: 1_000 });
+const DEFAULT_PER_MODEL_RETRIES = readNumberEnv('LLM_PER_MODEL_RETRIES', { defaultValue: 1, min: 0 });
 
 export async function callLlmWithFallback(
   prompt: string,

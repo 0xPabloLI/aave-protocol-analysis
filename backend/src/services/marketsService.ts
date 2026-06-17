@@ -218,6 +218,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
   refreshInProgress = (async () => {
     try {
       const startTime = Date.now();
+      const _phase = () => `[${Date.now() - startTime}ms]`;
       logger.info(`Starting markets refresh...`);
 
       const cachedConstraints = snapshot ? extractConstraintMap(snapshot.payload.data) : undefined;
@@ -233,6 +234,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
           MARKETS_FETCH_TIMEOUT_MS,
           'Markets fetch timeout'
         );
+        logger.info(`fetchMarketsData completed ${_phase()}`);
         fetchResult = getFetchResultOrDefault(payload._metadata);
         v3Succeeded = fetchResult.v3.success;
         v4Succeeded = fetchResult.v4.success;
@@ -303,6 +305,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       // Cache is maintained by separate cron job
       const onchainMap = getOnchainDataFromCache();
       const cacheStatus = getOnchainCacheStatus();
+      logger.info(`On-chain data merged ${_phase()}`);
 
       let mergedCount = 0;
       let fallbackCount = 0;
@@ -394,6 +397,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
           oracleOverrideCount++;
         }
       }
+      logger.info(`Oracle override done (${oracleOverrideCount} overrides) ${_phase()}`);
 
       const newSnapshot: MarketsSnapshot = {
         payload,
