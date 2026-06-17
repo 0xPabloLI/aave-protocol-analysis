@@ -114,6 +114,8 @@ const merklBreakdown = {
     campaignId:         { type: 'string' },
     whitelistOnly:       { type: 'boolean' },
     pointsPerThousandUsd: { type: 'number' },
+    rewardTokenSymbol:   { type: 'string' },
+    rewardTokenIconUrl:  { type: 'string' },
     campaignType:        { type: 'string' },
     totalBudget:         { type: 'number' },
     aprCap:              { type: 'number', nullable: true },

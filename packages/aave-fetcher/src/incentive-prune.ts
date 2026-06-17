@@ -27,6 +27,8 @@ function pruneMerklBreakdown(b: MerklCampaignBreakdown): MerklCampaignBreakdown 
     campaignId: b.campaignId,
     ...(b.whitelistOnly !== undefined ? { whitelistOnly: b.whitelistOnly } : {}),
     ...(b.pointsPerThousandUsd !== undefined ? { pointsPerThousandUsd: b.pointsPerThousandUsd } : {}),
+    ...(b.rewardTokenSymbol ? { rewardTokenSymbol: b.rewardTokenSymbol } : {}),
+    ...(b.rewardTokenIconUrl ? { rewardTokenIconUrl: b.rewardTokenIconUrl } : {}),
     ...(b.campaignType ? {
       campaignType: b.campaignType,
       totalBudget: b.totalBudget,

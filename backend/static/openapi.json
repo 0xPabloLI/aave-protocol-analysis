@@ -1191,6 +1191,12 @@
           "pointsPerThousandUsd": {
             "type": "number"
           },
+          "rewardTokenSymbol": {
+            "type": "string"
+          },
+          "rewardTokenIconUrl": {
+            "type": "string"
+          },
           "campaignType": {
             "type": "string"
           },
@@ -1249,6 +1255,12 @@
                 },
                 "pointsPerThousandUsd": {
                   "type": "number"
+                },
+                "rewardTokenSymbol": {
+                  "type": "string"
+                },
+                "rewardTokenIconUrl": {
+                  "type": "string"
                 },
                 "campaignType": {
                   "type": "string"

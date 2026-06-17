@@ -85,6 +85,33 @@ describe('arch-2: incentive-prune', () => {
       assert.equal('opportunityType' in r, false);
     });
 
+    it('keeps rewardTokenSymbol and rewardTokenIconUrl when present', () => {
+      const g: MerklOpportunityGroup = {
+        link: 'https://merkl',
+        breakdowns: [{
+          campaignApr: 0.04,
+          campaignStartedAt: '2025-01-01',
+          campaignEndedAt: '2025-12-31',
+          campaignId: 'c1',
+          rewardTokenSymbol: 'TydroInkPoints',
+          rewardTokenIconUrl: 'https://example.com/ink.svg',
+        }],
+      };
+      const r = pruneMerklGroup(g);
+      assert.equal(r.breakdowns[0].rewardTokenSymbol, 'TydroInkPoints');
+      assert.equal(r.breakdowns[0].rewardTokenIconUrl, 'https://example.com/ink.svg');
+    });
+
+    it('omits rewardTokenSymbol and rewardTokenIconUrl when absent', () => {
+      const g: MerklOpportunityGroup = {
+        link: 'https://merkl',
+        breakdowns: [{ campaignApr: 0.04, campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignId: 'c1' }],
+      };
+      const r = pruneMerklGroup(g);
+      assert.equal('rewardTokenSymbol' in r.breakdowns[0], false);
+      assert.equal('rewardTokenIconUrl' in r.breakdowns[0], false);
+    });
+
     it('keeps optional name/message on group', () => {
       const g: MerklOpportunityGroup = {
         link: 'https://merkl',

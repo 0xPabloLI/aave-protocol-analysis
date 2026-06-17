@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   merklBreakdownUsesPointsIntensityFields,
   merklPointsFieldsFromBreakdownValue,
+  extractRewardTokenFields,
   type MerklOpportunity,
 } from '../src/merkl-api.js';
 
@@ -141,4 +142,42 @@ test('merklPointsFieldsFromBreakdownValue returns result when campaignApr is und
   );
   assert.ok(out);
   assert.ok(Math.abs(out!.pointsPerThousandUsd - 0.477069) < 1e-4);
+});
+
+test('extractRewardTokenFields returns empty when token is undefined', () => {
+  assert.deepEqual(extractRewardTokenFields(undefined), {});
+});
+
+test('extractRewardTokenFields returns empty when token has no symbol or icon', () => {
+  assert.deepEqual(extractRewardTokenFields({}), {});
+  assert.deepEqual(extractRewardTokenFields({ type: 'TOKEN' }), {});
+});
+
+test('extractRewardTokenFields extracts symbol', () => {
+  assert.deepEqual(
+    extractRewardTokenFields({ symbol: 'TydroInkPoints' }),
+    { rewardTokenSymbol: 'TydroInkPoints' }
+  );
+});
+
+test('extractRewardTokenFields extracts icon', () => {
+  assert.deepEqual(
+    extractRewardTokenFields({ icon: 'https://example.com/icon.svg' }),
+    { rewardTokenIconUrl: 'https://example.com/icon.svg' }
+  );
+});
+
+test('extractRewardTokenFields extracts both symbol and icon', () => {
+  assert.deepEqual(
+    extractRewardTokenFields({ symbol: 'TydroInkPoints', icon: 'https://example.com/ink.svg', type: 'PRETGE' }),
+    { rewardTokenSymbol: 'TydroInkPoints', rewardTokenIconUrl: 'https://example.com/ink.svg' }
+  );
+});
+
+test('extractRewardTokenFields omits empty string symbol', () => {
+  assert.deepEqual(extractRewardTokenFields({ symbol: '' }), {});
+});
+
+test('extractRewardTokenFields omits empty string icon', () => {
+  assert.deepEqual(extractRewardTokenFields({ icon: '' }), {});
 });

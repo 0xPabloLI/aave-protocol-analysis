@@ -132,6 +132,7 @@ export interface MerklOpportunity {
         type?: string;
         chainId?: number;
         price?: number;
+        icon?: string;
         updatedAt?: number;
       };
       // API 可能返回其他字段，但处理逻辑中未使用
@@ -666,7 +667,11 @@ export const buildForecastCampaignMetaLiteMap = (
 
       const existing = result[campaignId];
       const campaignSnapshot = campaignSnapshotById.get(campaignId) ?? null;
-      const useTokenRateInMetrics = merklBreakdownUsesPointsIntensityFields(breakdown);
+      const useTokenRateInMetrics = !(
+        typeof breakdown?.token?.price === 'number' &&
+        Number.isFinite(breakdown.token.price) &&
+        breakdown.token.price > 0
+      );
 
       if (!existing) {
         result[campaignId] = {
@@ -796,7 +801,7 @@ const buildForecastFieldsFromOpportunity = async (
   if (totalBudget === null) return null;
   if (totalBudget <= 0) return null;
 
-  // For non-PRETGE (non-points) campaigns, do not emit token-unit fallback values.
+  // For campaigns with rewardTokenPrice (USD path), do not emit token-unit fallback values.
   if (!meta.useTokenRateInMetrics) {
     const resolvedPrice = Number(effectiveSnapshot.rewardToken?.price);
     if (!Number.isFinite(resolvedPrice) || resolvedPrice <= 0) {
@@ -1081,16 +1086,32 @@ export function merklPointsFieldsFromBreakdownValue(
 }
 
 export type MerklRewardsBreakdownForIntensity = {
-  token?: { type?: string; symbol?: string; name?: string };
+  token?: { type?: string; symbol?: string; name?: string; icon?: string };
 };
+
+export function extractRewardTokenFields(
+  token?: MerklRewardsBreakdownForIntensity['token']
+): { rewardTokenSymbol?: string; rewardTokenIconUrl?: string } {
+  if (!token) return {};
+  return {
+    ...(typeof token.symbol === 'string' && token.symbol
+      ? { rewardTokenSymbol: token.symbol }
+      : {}),
+    ...(typeof token.icon === 'string' && token.icon
+      ? { rewardTokenIconUrl: token.icon }
+      : {}),
+  };
+}
 
 /**
  * 是否应为该 breakdown 输出 `pointsPerThousandUsd`（由 `value`÷TVL 推导）。
  * 启用条件：Merkl 在 breakdown 上把奖励标为 `token.type === 'PRETGE'`（pre-TGE 积分）
  * 或 `token.type === 'POINT'`（纯积分）。PRETGE 覆盖 Ink/Tydro 等场景，
  * POINT 覆盖 AMOUNT 变体（FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE 等）的 points token。
- * 这只决定是否输出 points/intensity 字段，不决定 forecast 规则；forecast 仍按实际
- * `distributionType` / 规范化后的 `campaignType` 处理，不对 Tydro points 预设单独机制。
+ *
+ * 注意：这只决定是否输出 points/intensity 字段，不决定 forecast 的 token/USD 路径。
+ * forecast 路径由 `useTokenRateInMetrics` 决定，后者基于 rewardTokenPrice 是否存在：
+ * 有 price → useTokenRateInMetrics=false（USD 路径），无 price → true（token 路径）。
  */
 export function merklBreakdownUsesPointsIntensityFields(
   breakdown: MerklRewardsBreakdownForIntensity
@@ -1442,6 +1463,7 @@ export async function processMerklData(
         campaignEndedAt: campaignDetails.endedAt,
         campaignId,
         whitelistOnly: campaignDetails.whitelistOnly,
+        ...extractRewardTokenFields(rewardBreakdown.token),
         ...(pointsFields ?? {})
       });
     }
@@ -1647,7 +1669,7 @@ export async function detectNetPositionConstraint(
   const text = `${opp.name ?? ''} ${opp.description ?? ''}`.toLowerCase();
   if (text.includes('looping')) return null;
 
-  if (cachedConstraint) return cachedConstraint;
+  if (cachedConstraint !== undefined) return cachedConstraint;
 
   let llmUnavailable = false;
   if (llmFn) {
@@ -1741,8 +1763,9 @@ export function extractNetPositionConstraint(
 }
 
 /**
- * 根据 token 地址查找匹配的 Merkl opportunities，按 protocol version 过滤。
- * V3 reserve 只匹配 V3 opportunities，V4 reserve 只匹配 V4 opportunities。
+ * 根据 token 地址查找匹配的 Merkl opportunities。
+ * 地址类型驱动匹配：V3 reserve 只查 aToken/vToken，V4 reserve 只查 underlying/spokeAddress。
+ * 匹配本身天然隔离 V3/V4，无需后置版本过滤。
  */
 export function findMatchingMerklOpportunities(
   item: {
@@ -1751,45 +1774,32 @@ export function findMatchingMerklOpportunities(
     tokenAddress: string;
     aTokenAddress?: string | null;
     vTokenAddress?: string | null;
+    spokeAddress?: string | null;
   },
   merklData: Record<string, MerklOpportunityData[]>,
-  protocolVersion: 'v3' | 'v4',
 ): MerklOpportunityData[] {
   const matchedOpportunities: MerklOpportunityData[] = [];
   const seenOpportunities = new Set<MerklOpportunityData>();
-  let filteredByVersion = 0;
-  
-  const tokenAddressesToCheck: string[] = [
-    item.tokenAddress.toLowerCase(),
-    item.aTokenAddress?.toLowerCase(),
-    item.vTokenAddress?.toLowerCase()
-  ].filter((addr): addr is string => addr !== null && addr !== undefined);
-  
+  const isV4 = item.marketName.startsWith('AaveV4');
+
+  const tokenAddressesToCheck: string[] = isV4
+    ? [item.tokenAddress, item.spokeAddress].filter((addr): addr is string => addr !== null && addr !== undefined)
+    : [item.aTokenAddress, item.vTokenAddress].filter((addr): addr is string => addr !== null && addr !== undefined);
+
   for (const tokenAddr of tokenAddressesToCheck) {
-    const indexKey = `${item.chainId}-${tokenAddr}`;
-    
+    const indexKey = `${item.chainId}-${tokenAddr.toLowerCase()}`;
+
     const matchingOpportunities = merklData[indexKey];
     if (matchingOpportunities?.length > 0) {
       for (const opp of matchingOpportunities) {
         if (!seenOpportunities.has(opp)) {
           seenOpportunities.add(opp);
-          if (opp.protocolVersion === protocolVersion) {
-            matchedOpportunities.push(opp);
-          } else {
-            filteredByVersion++;
-          }
+          matchedOpportunities.push(opp);
         }
       }
     }
   }
-  
-  if (filteredByVersion > 0) {
-    logger.info('Merkl opportunities filtered by protocolVersion', {
-      chainId: item.chainId, tokenAddress: item.tokenAddress, marketName: item.marketName,
-      reserveVersion: protocolVersion, filteredCount: filteredByVersion,
-    });
-  }
-  
+
   return matchedOpportunities;
 }
 
