@@ -1,7 +1,7 @@
 # ADR-0024: Merkl Campaign Type Multi-Level Mapping
 
 Date: 2026-05-29
-Updated: 2026-06-16
+Updated: 2026-06-17
 
 ## Status
 
@@ -159,7 +159,7 @@ APR cap extraction changed from `extractMaxApr(campaign)` to `extractAprCap(camp
 - **Trade-off (DRY)**: `merklForecastModel.ts` and `merkl-api.ts` each define their own mapping tables + normalize functions with identical logic. This duplication is intentional: the former handles backend runtime normalization, the latter handles lite file preprocessing in the fetcher package. The cost is that new mapping entries must be added to both files — accepted as a 2-location sync burden.
 - **Precision**: Level 2 matching uses exact equality (`===`) rather than substring matching (`includes`) to prevent future false positives
 - **Semantic clarity**: Removing L3 eliminates the conflation between "budget-bound fallback strategy" (mode) and "campaign type classification" (CampaignForecastType)
-- **Known precision gap (AAV-827) — RESOLVED 2026-06-15**: AMOUNT 变体现在映射到独立枚举值（`FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE`、`FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT`、`MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT`），不再折叠到 VALUE。`resolveCampaignApr` 使用 `AMOUNT_VARIANT_TYPES` Set 判断变体，并通过 token price 计算真正的 USD APR。若 price 缺失则 `campaignApr = 0`，后端 log 记录即可。AMOUNT 变体的 `POINT` 类型 token 现在也输出 `pointsPerThousandUsd`（`merklBreakdownUsesPointsIntensityFields` 扩展为 `PRETGE || POINT`）。长期统一 normalize 函数见 AAV-862。
+- **Known precision gap (AAV-827) — RESOLVED 2026-06-17**: AMOUNT 变体映射到独立枚举值，`resolveCampaignApr` 通过 token price 计算 USD APR（有 price 时）或返回 0（无 price 时）。`useTokenRateInMetrics` 改为基于 `rewardTokenPrice` 是否存在（不再基于 `token.type`），使有 price 的 AMOUNT 变体走 USD 路径、无 price 的走 token 路径。forecastService 中 PER_AMOUNT + 有 targetTokenPrice 时 TVL 和 aprCap 均换算到 USD 维度。`merklBreakdownUsesPointsIntensityFields`（控制 points/intensity 字段输出）保持 `PRETGE || POINT`，和 `useTokenRateInMetrics` 解耦。
 
 ### AMOUNT Variant Verified Semantics (2026-06-14)
 
@@ -172,3 +172,7 @@ APR cap extraction changed from `extractMaxApr(campaign)` to `extractAprCap(camp
 | AMOUNT_PER_AMOUNT | 3650 (365000%) | `daily_tokens = targetTokenTVL_tokens × apr / 365` | token |
 
 AMOUNT_PER_AMOUNT 的 TVL 单位是 target token 数量而非 USD，无法仅从 opportunity TVL（USD）计算 daily rewards。`distributedSoFar` 需从 metrics API `dailyRewardsRecords.totalInToken` 累加。
+
+### AMOUNT Variant Data Flow (2026-06-17)
+
+> 完整数据流图、两条路径的字段维度表、维度换算推导见 [`aaveapy-doc/merkl-distribution-types.md` Section 6.7](../../aaveapy-doc/merkl-distribution-types.md)。

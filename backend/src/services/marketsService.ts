@@ -516,12 +516,12 @@ export async function warmMarketsCache(): Promise<void> {
   await refreshMarketsSnapshot();
 }
 
-export function extractConstraintMap(reserves: RuntimeReserveData[]): Map<string, NetPositionConstraint> {
-  const map = new Map<string, NetPositionConstraint>();
+export function extractConstraintMap(reserves: RuntimeReserveData[]): Map<string, NetPositionConstraint | null> {
+  const map = new Map<string, NetPositionConstraint | null>();
   for (const r of reserves) {
     for (const group of [...(r.merklSupplys ?? []), ...(r.merklBorrows ?? []), ...(r.merklHolds ?? [])]) {
-      if (group.netPositionConstraint && group.link) {
-        map.set(group.link, group.netPositionConstraint);
+      if (group.link && 'netPositionConstraint' in group) {
+        map.set(group.link, group.netPositionConstraint ?? null);
       }
     }
   }

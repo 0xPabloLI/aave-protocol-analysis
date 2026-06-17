@@ -94,7 +94,7 @@ function secureRandomIndex(maxExclusive: number): number {
   const buf = new Uint32Array(1);
 
   while (true) {
-    globalThis.crypto.getRandomValues(buf);
+    crypto.getRandomValues(buf);
     const r = buf[0];
     if (r < limit) return r % maxExclusive;
   }
@@ -128,10 +128,11 @@ export class BrowserPool {
   private browserRefCount = 0;
 
   private readonly defaultConcurrency = 2;
-  private readonly defaultMaxIdleMs = 600000;
+  private readonly defaultMaxIdleMs = 120000;
   private readonly defaultMinLaunchIntervalMs = 60000;
   // Cloudflare Free Plan: 3 new browser instances per minute (sliding window)
-  private readonly maxLaunchesPerMinute = 3;
+  // Use 2 to leave safety margin and avoid hitting the exact limit
+  private readonly maxLaunchesPerMinute = 2;
   // 请求超时时间（毫秒），防止请求卡死导致 browserRefCount 永远不减少
   // 注意：这个超时应该小于 Node.js 应用层的超时（30秒），以便 Worker 能先返回错误
   // 如果 Worker 超时时间大于应用层超时，应用层会先超时，看不到 Worker 返回的 429 错误
@@ -633,10 +634,10 @@ export class BrowserPool {
       // 2. this.browser === browser：确保 browser 还是同一个实例（避免关闭其他请求创建的 browser）
       if (this.browserRefCount === 0 && this.browser === browser) {
         try {
-          console.log(`[browser-pool] 🔒 All requests completed (refCount=0), closing browser...`);
-          await this.closeBrowser();
+          console.log(`[browser-pool] 🔒 All requests completed (refCount=0), scheduling idle close instead of immediate close`);
+          this.scheduleIdleClose();
         } catch (error) {
-          console.log(`[browser-pool] ⚠️ Error closing browser: ${error instanceof Error ? error.message : String(error)}`);
+          console.log(`[browser-pool] ⚠️ Error scheduling idle close: ${error instanceof Error ? error.message : String(error)}`);
         }
       } else if (this.browserRefCount > 0) {
         console.log(`[browser-pool] ℹ️ Request ${requestId} completed, but browser still in use (refCount=${this.browserRefCount})`);

@@ -352,7 +352,7 @@ async function enrichDatasetWithIncentiveData(
   meritData: MeritDataIndex,
   merklData: MerklDataIndex,
   brevisData: BrevisDataIndex,
-  cachedConstraints?: Map<string, NetPositionConstraint>,
+  cachedConstraints?: Map<string, NetPositionConstraint | null>,
 ): Promise<RuntimeReserveData[]> {
   const reserveIdSet = new Set<string>();
   const symbolLookup = new Map<string, string>();
@@ -376,14 +376,14 @@ async function enrichDatasetWithIncentiveData(
   let llmCircuitOpen = false;
 
   const enrichedItems = await Promise.all(baseDataset.map(async item => {
-    const reserveProtocolVersion: 'v3' | 'v4' = item.marketName.startsWith('AaveV4') ? 'v4' : 'v3';
+    const isV4Reserve = item.marketName.startsWith('AaveV4');
     const meritItemData = getMeritDataFromMarket(item.marketName, item.chainName, item.tokenSymbol, meritData);
     
     if (meritItemData) {
       if (meritItemData.meritSupplys.length > 0 || meritItemData.meritBorrows.length > 0) {
         item.meritSupplys = meritItemData.meritSupplys.length > 0 ? meritItemData.meritSupplys : undefined;
         item.meritBorrows = meritItemData.meritBorrows.length > 0 ? meritItemData.meritBorrows : undefined;
-        if (reserveProtocolVersion === 'v4') {
+        if (isV4Reserve) {
           logger.warn('V4 reserve matched Merit incentive (expected V3-only)', {
             chainId: item.chainId, tokenSymbol: item.tokenSymbol, marketName: item.marketName, source: 'merit',
           });
@@ -391,7 +391,7 @@ async function enrichDatasetWithIncentiveData(
       }
     }
     
-    const matchedOpportunities = findMatchingMerklOpportunities(item, merklData, reserveProtocolVersion);
+    const matchedOpportunities = findMatchingMerklOpportunities(item, merklData);
     
     if (matchedOpportunities.length > 0) {
       // 用于 CSV 格式化的平铺 breakdowns（带 opportunityLink 以保持对应关系）
@@ -424,6 +424,9 @@ async function enrichDatasetWithIncentiveData(
         } : undefined;
         const cachedConstraint = opp.opportunityLink ? cachedConstraints?.get(opp.opportunityLink) : undefined;
         const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, cachedConstraint, llmFn);
+        if (opp.opportunityLink && cachedConstraints && cachedConstraint === undefined) {
+          cachedConstraints.set(opp.opportunityLink, netPositionConstraint ?? null);
+        }
         if (opp.opportunityLink) {
           if (opp.supply.length > 0) {
             const supplyWithLinks = opp.supply.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
@@ -433,7 +436,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(netPositionConstraint && { netPositionConstraint }),
+              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
               breakdowns: opp.supply
             });
           }
@@ -445,7 +448,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(netPositionConstraint && { netPositionConstraint }),
+              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
               breakdowns: opp.borrow
             });
           }
@@ -457,7 +460,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(netPositionConstraint && { netPositionConstraint }),
+              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
               breakdowns: opp.hold
             });
           }
@@ -469,7 +472,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(netPositionConstraint && { netPositionConstraint }),
+              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
               breakdowns: opp.supply
             });
           }
@@ -480,7 +483,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(netPositionConstraint && { netPositionConstraint }),
+              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
               breakdowns: opp.borrow
             });
           }
@@ -491,7 +494,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.name && { name: opp.name }),
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(netPositionConstraint && { netPositionConstraint }),
+              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
               breakdowns: opp.hold
             });
           }
@@ -523,7 +526,7 @@ async function enrichDatasetWithIncentiveData(
       if (brevisInfo.brevisSupplys.length > 0 || brevisInfo.brevisBorrows.length > 0) {
         item.brevisSupplys = brevisInfo.brevisSupplys.length > 0 ? brevisInfo.brevisSupplys : undefined;
         item.brevisBorrows = brevisInfo.brevisBorrows.length > 0 ? brevisInfo.brevisBorrows : undefined;
-        if (reserveProtocolVersion === 'v4') {
+        if (isV4Reserve) {
           logger.warn('V4 reserve matched Brevis incentive (expected V3-only)', {
             chainId: item.chainId, tokenSymbol: item.tokenSymbol, marketName: item.marketName, source: 'brevis',
           });
@@ -1112,7 +1115,7 @@ function launchIncentiveFetches(reserveTokenPriceByChainAndAddress: Map<string, 
 // 返回内存中的 payload，不写文件
 // ts-prune-ignore-next
 export async function fetchMarketsData(options?: {
-  cachedConstraints?: Map<string, NetPositionConstraint>;
+  cachedConstraints?: Map<string, NetPositionConstraint | null>;
 }): Promise<MarketsPayload> {
   const _t0 = Date.now();
   const _elapsed = () => `${Date.now() - _t0}ms`;

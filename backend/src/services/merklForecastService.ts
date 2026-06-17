@@ -364,7 +364,11 @@ const hasForecastableMetrics = (metrics: ForecastMetricsLite): boolean =>
   Array.isArray(metrics.dailyRewardsRecords) && metrics.dailyRewardsRecords.length > 0;
 
 const campaignUsesTokenRateInMetrics = (breakdown: unknown): boolean =>
-  String(getAtPath(breakdown, ['token', 'type']) || '').trim().toUpperCase() === 'PRETGE';
+  !(
+    typeof getAtPath(breakdown, ['token', 'price']) === 'number' &&
+    Number.isFinite(getAtPath(breakdown, ['token', 'price']) as number) &&
+    (getAtPath(breakdown, ['token', 'price']) as number) > 0
+  );
 
 const estimateDistributedSoFar = (
   dailyRewardsRecords: TimeSeriesPoint[],
@@ -794,22 +798,38 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
             const rewardTokenPrice = toNumber(getAtPath(campaign, ['rewardToken', 'price']));
             aprCap = (rewardTokenPrice !== null && rewardTokenPrice > 0)
               ? rawDsApr * rewardTokenPrice
-              : null;
+              : rawDsApr;
           } else if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT') {
             const rewardTokenPrice = toNumber(getAtPath(campaign, ['rewardToken', 'price']));
             const targetTokenPrice = toNumber(getAtPath(campaign, ['tokens', '0', 'price']));
-            aprCap = (rewardTokenPrice !== null && rewardTokenPrice > 0 && targetTokenPrice !== null && targetTokenPrice > 0)
-              ? rawDsApr * (rewardTokenPrice / targetTokenPrice)
-              : null;
+            if (rewardTokenPrice !== null && rewardTokenPrice > 0 && targetTokenPrice !== null && targetTokenPrice > 0) {
+              aprCap = rawDsApr * (rewardTokenPrice / targetTokenPrice);
+            } else if (targetTokenPrice !== null && targetTokenPrice > 0) {
+              aprCap = rawDsApr / targetTokenPrice;
+            } else {
+              aprCap = rawDsApr;
+            }
           } else if (campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
             const targetTokenPrice = toNumber(getAtPath(campaign, ['tokens', '0', 'price']));
-            aprCap = (targetTokenPrice !== null && targetTokenPrice > 0)
-              ? rawDsApr / targetTokenPrice
-              : null;
+            if (targetTokenPrice !== null && targetTokenPrice > 0) {
+              aprCap = rawDsApr / targetTokenPrice;
+            } else {
+              aprCap = rawDsApr;
+            }
           }
         }
       }
-      const latestTvl = campaignOpportunityMeta?.tvl ?? extractLatestTvl(metrics);
+      let latestTvl = campaignOpportunityMeta?.tvl ?? extractLatestTvl(metrics);
+      if (
+        (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' ||
+         campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') &&
+        latestTvl > 0
+      ) {
+        const targetTokenPrice = toNumber(getAtPath(campaign, ['tokens', '0', 'price']));
+        if (targetTokenPrice !== null && targetTokenPrice > 0) {
+          latestTvl = latestTvl * targetTokenPrice;
+        }
+      }
 
       return buildForecastState({
         campaignId,

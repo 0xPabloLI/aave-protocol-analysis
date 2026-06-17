@@ -148,6 +148,8 @@ type MeritCampaignMetadataEntry = {
   endBlock?: string;
   name?: string;
   message?: MeritCampaignInfo[];
+  failedAt?: string;
+  lastCheckedAt?: string;
 };
 
 const _meritState = {
@@ -1667,6 +1669,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
 }
 
 const MERIT_CAMPAIGN_METADATA_MAX_ENTRIES = 500;
+const MERIT_FAILED_RETRY_INTERVAL_MS = 30 * 60 * 1000;
+const MERIT_ENDED_RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Shrink campaignMetadataMemoryCache by removing stale keys and enforcing max entries.
@@ -1761,7 +1765,11 @@ export async function fetchAllMeritTimeRanges(
       // Cache completeness is necessary but not sufficient:
       // once a campaign end date has passed, we must refetch to pick up renewed rounds.
       const cachedCampaignEnded = isMeritCampaignMetadataEnded(cached?.endDate);
-      const needsUpdate = !completeness.isComplete || cachedCampaignEnded;
+      const failedAtMs = cached?.failedAt ? new Date(cached.failedAt).getTime() : 0;
+      const withinRetryCooldown = failedAtMs > 0 && (Date.now() - failedAtMs) < MERIT_FAILED_RETRY_INTERVAL_MS;
+      const lastCheckedAtMs = cached?.lastCheckedAt ? new Date(cached.lastCheckedAt).getTime() : 0;
+      const withinEndedRecheck = cachedCampaignEnded && lastCheckedAtMs > 0 && (Date.now() - lastCheckedAtMs) < MERIT_ENDED_RECHECK_INTERVAL_MS;
+      const needsUpdate = !completeness.isComplete || (cachedCampaignEnded && !withinRetryCooldown && !withinEndedRecheck);
       if (completeness.isComplete) {
         logger.debug(
           `📦 Skip refresh for ${canonicalKey}: cached metadata is complete`
@@ -1874,10 +1882,21 @@ export async function fetchAllMeritTimeRanges(
       const hasSelfAuth =
         meritAPRs[`self-${key}`] !== null &&
         meritAPRs[`self-${key}`] !== undefined;
-      const data = await fetchMeritTimeRange(key, { hasSelfAuth });
+      const data: MeritCampaignMetadataEntry = await fetchMeritTimeRange(key, { hasSelfAuth });
+      data.lastCheckedAt = new Date().toISOString();
       results.push({ key, data });
     } catch (error) {
-      // 静默失败，继续处理其他 key
+      const cached = cachedTimeRanges[key] ?? cachedTimeRanges[getCanonicalKey(key)];
+      const failedEntry: MeritCampaignMetadataEntry = {
+        link: cached?.link ?? `https://apps.aavechan.com/merit/${key}`,
+        startDate: cached?.startDate ?? "",
+        endDate: cached?.endDate ?? "",
+        ...(cached?.name && { name: cached.name }),
+        ...(cached?.message && { message: cached.message }),
+        failedAt: new Date().toISOString(),
+      };
+      results.push({ key, data: failedEntry });
+      logger.warn(`⚠️ Merit timeRange fetch failed for ${key}, marked failedAt to suppress retry`);
     } finally {
       semaphore.count--;
     }

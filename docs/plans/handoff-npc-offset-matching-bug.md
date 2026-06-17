@@ -37,6 +37,18 @@
 - 考虑是否需要把 `tokenAddrToReserveId` 从 `Map<string, string>` 改为 `Map<string, string[]>`
 - 或者在匹配时使用更多上下文（如 opp 的 type/pool 信息）来消歧
 
+**调研 Aave Interface 前端匹配机制（待执行）**:
+
+需要查阅 Aave Interface 开源代码（`aave/interface` 仓库），重点关注：
+
+1. **Merkl incentive 数据获取与匹配**：搜索关键词 `merkl`、`incentive`、`opportunity`，找到前端如何获取 Merkl 数据并关联到 reserve
+2. **匹配维度**：前端是用什么维度做 opp → reserve 关联的？是仅用 `chainId + tokenAddress`，还是会用到 pool address / hub address / spoke address 等更多维度？
+3. **V4 hub 消歧**：V4 场景下同一 spoke 同一 token 在不同 hub 的 reserve，前端如何区分？是否有使用 `distributionSettings.hubAddress` 来消歧？
+4. **offset token 处理**：前端是否有 offset token 的概念？如果有，如何处理跨 pool/hub 的 offset 匹配？
+5. **核心入口文件**（推测）：`src/ui-config/reserves/reserves.ts`、`src/hooks/useIncentives.ts` 或类似命名
+
+关键问题：Aave Interface 前端可能根本不做 `reserveId` 级别的精确匹配——它可能直接用 Merkl opp 的 `explorerAddress` 和 reserve 的 underlying/aToken/vToken 做地址级匹配，然后依赖 UI 上下文（当前选中的 market/pool）来隐式消歧。这种方式不需要全局反查 Map。
+
 ### BUG-2: `resolveOffsetReserveIds` 用 pool/spoke 前缀限定可能不正确
 
 **文件**: `packages/aave-fetcher/src/merkl-api.ts:212-236`
