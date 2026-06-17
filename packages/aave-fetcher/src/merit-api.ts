@@ -2137,8 +2137,7 @@ async function extractMeritDynamicInfoWithBrowser(
 ): Promise<MeritDynamicInfo> {
   const { needCampaignInfo, needSelfAuth } = options;
   const allowLocalPlaywrightFallback =
-    process.env.MERIT_ALLOW_LOCAL_PLAYWRIGHT !== "false" &&
-    process.env.MERIT_ALLOW_LOCAL_PUPPETEER !== "false";
+    process.env.MERIT_ALLOW_LOCAL_PLAYWRIGHT !== "false";
 
   let workerResult: MeritDynamicInfo | null = null;
   try {

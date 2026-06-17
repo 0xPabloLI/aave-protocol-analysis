@@ -412,7 +412,7 @@ export interface MeritDynamicInfo {
  * - Self Authentication 描述（可能需要 JS 渲染）
  * 
  * 注意：此函数有超时保护，如果 Worker 响应时间超过配置的超时时间，会抛出错误
- * 调用方应该捕获错误并 fallback 到 puppeteer
+ * 调用方应该捕获错误并 fallback 到 Playwright
  */
 export async function extractMeritDynamicInfoWithWorker(key: string): Promise<MeritDynamicInfo | null> {
   if (!CLOUDFLARE_WORKER_URL) {
@@ -441,11 +441,11 @@ async function extractMeritDynamicInfoWithWorkerInternal(key: string, signal?: A
   }
 
   try {
-    // 如果 Worker 因为 429 被禁用，直接返回 null 让调用方 fallback 到 puppeteer
+    // 如果 Worker 因为 429 被禁用，直接返回 null 让调用方 fallback 到 Playwright
     // 而不是等待，因为等待可能导致超时，而且已经知道 Worker 不可用了
     if (Date.now() < workerDisabledUntil) {
       const waitMs = workerDisabledUntil - Date.now();
-      logger.info(`⏸️ Worker disabled until ${new Date(workerDisabledUntil).toISOString()} (${Math.round(waitMs / 1000)}s remaining), returning null for immediate fallback to puppeteer`);
+      logger.info(`⏸️ Worker disabled until ${new Date(workerDisabledUntil).toISOString()} (${Math.round(waitMs / 1000)}s remaining), returning null for immediate fallback to Playwright`);
       return null;
     }
 
@@ -453,7 +453,7 @@ async function extractMeritDynamicInfoWithWorkerInternal(key: string, signal?: A
       // 在 scheduleDynamicSlot 之前再次检查，避免在等待速率限制时超时
       if (Date.now() < workerDisabledUntil) {
         const waitMs = workerDisabledUntil - Date.now();
-        logger.info(`⏸️ Worker disabled during retry attempt ${attempt + 1}, returning null for immediate fallback to puppeteer`);
+        logger.info(`⏸️ Worker disabled during retry attempt ${attempt + 1}, returning null for immediate fallback to Playwright`);
         return null;
       }
       
@@ -462,7 +462,7 @@ async function extractMeritDynamicInfoWithWorkerInternal(key: string, signal?: A
       // 在 scheduleDynamicSlot 返回后再次检查，因为它可能因为 Worker 被禁用而提前返回
       if (Date.now() < workerDisabledUntil) {
         const waitMs = workerDisabledUntil - Date.now();
-        logger.info(`⏸️ Worker disabled after scheduleDynamicSlot, returning null for immediate fallback to puppeteer (${Math.round(waitMs / 1000)}s remaining)`);
+        logger.info(`⏸️ Worker disabled after scheduleDynamicSlot, returning null for immediate fallback to Playwright (${Math.round(waitMs / 1000)}s remaining)`);
         return null;
       }
 
@@ -485,7 +485,7 @@ async function extractMeritDynamicInfoWithWorkerInternal(key: string, signal?: A
         // 在获取 semaphore 后再次检查，防止并发请求在检查后、获取 semaphore 前 Worker 被禁用
         if (Date.now() < workerDisabledUntil) {
           const waitMs = workerDisabledUntil - Date.now();
-          logger.info(`⏸️ Worker disabled after acquiring semaphore, returning null for immediate fallback to puppeteer (${Math.round(waitMs / 1000)}s remaining)`);
+          logger.info(`⏸️ Worker disabled after acquiring semaphore, returning null for immediate fallback to Playwright (${Math.round(waitMs / 1000)}s remaining)`);
           safeRelease();
           return null;
         }
@@ -522,7 +522,7 @@ async function extractMeritDynamicInfoWithWorkerInternal(key: string, signal?: A
           logger.warn(`   • Raw error response: ${errorText ? trimErrorSnippet(errorText) : 'No error text'}`);
           logger.warn(`   • Retry-After header: ${retryAfter}s (实际等待: ${retryAfter > 0 ? `${retryAfter}s` : `${Math.round(waitMs / 1000)}s (使用默认间隔)`})`);
           if (WORKER_DYNAMIC_FAIL_FAST) {
-            logger.warn(`   • Fail-fast enabled: 立即返回 null，fallback 到 puppeteer（不等待 ${Math.round(waitMs / 1000)}s）`);
+            logger.warn(`   • Fail-fast enabled: 立即返回 null，fallback 到 Playwright（不等待 ${Math.round(waitMs / 1000)}s）`);
           } else {
             logger.warn(`   • Will wait: ${Math.round(waitMs / 1000)}s before retry`);
           }

@@ -22,11 +22,11 @@ export const cloudflareWorkerConfig = {
     defaultValue: 120000,
     min: 0,
   }),
-  // 如果为 true，遇到 429 时立即返回 null，让调用方 fallback 到 puppeteer
+  // 如果为 true，遇到 429 时立即返回 null，让调用方 fallback 到 Playwright
   // 如果为 false，会等待 dynamicMinIntervalMs 后重试
   // 注意：即使 fail-fast，dynamicMinIntervalMs 仍用于 scheduleDynamicSlot 的速率限制
   dynamicFailFast: readBooleanEnv('CLOUDFLARE_DYNAMIC_FAIL_FAST', true),
-  // Worker 请求超时时间（毫秒），超时后立即 fallback 到 puppeteer
+  // Worker 请求超时时间（毫秒），超时后立即 fallback 到 Playwright
   dynamicTimeoutMs: readNumberEnv('CLOUDFLARE_DYNAMIC_TIMEOUT_MS', {
     defaultValue: 30000, // 30秒，如果 Worker 在30秒内没有响应，立即 fallback
     min: 5000, // 最少5秒
