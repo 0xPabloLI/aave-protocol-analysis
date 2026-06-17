@@ -20,17 +20,16 @@
     "test": "npx --no-install tsx --test tests/*.test.ts"
   },
   "dependencies": {
+    "@aave-dao/aave-address-book": "^4.52.3",
     "@aave/client": "^0.6.1",
     "@aave/client-v4": "npm:@aave/client@^4.1.1",
-    "@aave-dao/aave-address-book": "^4.52.3",
     "@internal/aave-rpc-infra": "*",
     "@internal/aave-shared-config": "*",
     "@internal/aave-shared-contracts": "*",
-    "@types/puppeteer": "^5.4.7",
     "cheerio": "^1.1.2",
     "dotenv": "^17.3.1",
     "node-fetch": "^3.3.2",
-    "puppeteer": "^24.35.0",
+    "playwright": "^1.61.0",
     "winston": "^3.19.0",
     "zod": "^4.3.6"
   },

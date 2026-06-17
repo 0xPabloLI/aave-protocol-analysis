@@ -403,7 +403,7 @@ export async function extractCampaignInfoWithWorker(key: string): Promise<MeritC
 export interface MeritDynamicInfo {
   campaignInfo: MeritCampaignInfo[];
   selfAuthDescription: string | null;
-  source: 'worker' | 'puppeteer';
+  source: 'worker' | 'render' | 'playwright';
 }
 
 /**

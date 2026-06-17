@@ -26,29 +26,8 @@ RUN npm run build -w aave-dashboard-backend
 # Stage 2: Production
 FROM node:20-slim
 
-# Install Puppeteer/Chromium system dependencies (needed by fetcher package at runtime)
-# Split into two RUN commands to avoid OOM in Railway's build environment
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libgbm1 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
+# Install Playwright Chromium system dependencies
+RUN npx -y playwright install --with-deps chromium
 
 WORKDIR /app
 
@@ -78,6 +57,5 @@ RUN mkdir -p data logs backend/logs
 
 EXPOSE 3001
 
-# --max-old-space-size=800: GC triggers at 800MB, well below Railway's 1GB limit
-# This prevents OOM crashes by forcing GC before container memory is exhausted
-CMD ["node", "--max-old-space-size=800", "backend/dist/server.js"]
+# --max-old-space-size=1600: GC triggers at 1600MB, 80% of 2GB Railway container
+CMD ["node", "--max-old-space-size=1600", "backend/dist/server.js"]

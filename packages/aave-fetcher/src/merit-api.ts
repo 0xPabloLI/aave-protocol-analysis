@@ -1,6 +1,6 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import puppeteer, { type Browser, type Page } from "puppeteer";
+import { chromium, type Browser, type BrowserContext } from "playwright";
 import { mkdir, readFile } from "fs/promises";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -160,7 +160,6 @@ const _meritState = {
   > | null,
   campaignMetadataLoadedFromDisk: false,
   browserInstance: null as Browser | null,
-  pageSemaphore: null as Semaphore | null,
 };
 
 /** @internal test-only hook to reset all mutable state */
@@ -171,7 +170,6 @@ export function resetMeritState(): void {
   _meritState.campaignMetadataMemoryCache = null;
   _meritState.campaignMetadataLoadedFromDisk = false;
   _meritState.browserInstance = null;
-  _meritState.pageSemaphore = null;
 }
 
 const toIsoOrNull = (value: number | null | undefined): string | null => {
@@ -2007,24 +2005,26 @@ async function getBrowser(): Promise<Browser> {
   }
   if (_meritState.browserInstance) {
     try {
-      await _meritState.browserInstance.pages();
-      _browserLastUsedAt = Date.now();
-      return _meritState.browserInstance;
-    } catch (error) {
-      logger.warn("⚠️ Browser instance disconnected, closing old instance before creating new one");
-      const oldBrowser = _meritState.browserInstance;
-      _meritState.browserInstance = null;
-      _browserLastUsedAt = null;
-      try {
-        await oldBrowser.close();
-      } catch (closeErr) {
-        logger.warn("⚠️ Failed to close disconnected browser:", closeErr);
+      if (_meritState.browserInstance.isConnected()) {
+        _browserLastUsedAt = Date.now();
+        return _meritState.browserInstance;
       }
+    } catch (_error) {
+      // isConnected() failed — treat as disconnected
+    }
+    logger.warn("⚠️ Browser instance disconnected, closing old instance before creating new one");
+    const oldBrowser = _meritState.browserInstance;
+    _meritState.browserInstance = null;
+    _browserLastUsedAt = null;
+    try {
+      await oldBrowser.close();
+    } catch (closeErr) {
+      logger.warn("⚠️ Failed to close disconnected browser:", closeErr);
     }
   }
 
   try {
-    _meritState.browserInstance = await puppeteer.launch({
+    _meritState.browserInstance = await chromium.launch({
       headless: true,
       args: [
         "--no-sandbox",
@@ -2034,7 +2034,7 @@ async function getBrowser(): Promise<Browser> {
     });
     _browserLastUsedAt = Date.now();
     _browserClosing = false;
-    logger.info("✅ Browser instance created");
+    logger.info("✅ Playwright browser instance created");
     return _meritState.browserInstance;
   } catch (error) {
     _meritState.browserInstance = null;
@@ -2066,72 +2066,11 @@ setInterval(() => {
   }
 }, 60_000).unref();
 
-// ============================================================================
-// Semaphore for Page Concurrency Control
-// ============================================================================
-
-interface Semaphore {
-  acquire(): Promise<() => void>;
-}
-
-/**
- * 简单的 semaphore 实现，用于控制并发页面操作
- * PRODUCTION-GRADE: 防止无限制的并行 newPage() 调用
- */
-function createSemaphore(concurrency: number): Semaphore {
-  let available = concurrency;
-  const queue: Array<() => void> = [];
-
-  return {
-    async acquire(): Promise<() => void> {
-      return new Promise((resolve) => {
-        if (available > 0) {
-          available--;
-          resolve(() => {
-            available++;
-            const next = queue.shift();
-            if (next) next();
-          });
-        } else {
-          queue.push(() => {
-            available--;
-            resolve(() => {
-              available++;
-              const next = queue.shift();
-              if (next) next();
-            });
-          });
-        }
-      });
-    },
-  };
-}
-
-// 全局 semaphore，默认并发数：2（安全默认值）
-const DEFAULT_PAGE_CONCURRENCY = 2;
-
-function getPageSemaphore(): Semaphore {
-  if (!_meritState.pageSemaphore) {
-    const concurrency = Number(
-      process.env.PUPPETEER_PAGE_CONCURRENCY ?? DEFAULT_PAGE_CONCURRENCY
-    );
-    _meritState.pageSemaphore = createSemaphore(concurrency);
-    logger.info(
-      `📊 Created local Puppeteer page semaphore with concurrency=${concurrency} (controls browser.newPage() calls)`
-    );
-  }
-  return _meritState.pageSemaphore;
-}
-
-/**
- * 关闭浏览器实例
- * PRODUCTION-GRADE: 使用 browser.close() 而不是 disconnect()
- */
 export async function closeBrowser(): Promise<void> {
   if (_meritState.browserInstance) {
     try {
       await _meritState.browserInstance.close();
-      logger.info("✅ Browser instance closed");
+      logger.info("✅ Playwright browser instance closed");
     } catch (error) {
       logger.error("❌ Error closing browser instance:", error);
     } finally {
@@ -2143,7 +2082,7 @@ export async function closeBrowser(): Promise<void> {
 /**
  * 获取 Merit 页面 HTML 内容（静态 fetch，用于 name 和 date 提取）
  * name 和 date 在 SSR HTML 中就有，不需要 JavaScript 渲染
- * 这样可以减少性能消耗，避免不必要的 Puppeteer 调用
+ * 这样可以减少性能消耗，避免不必要的浏览器调用
  */
 // Runtime-discovered redirect aliases (in-memory only, not persisted)
 // New redirects discovered at runtime are logged but not saved to file
@@ -2197,11 +2136,10 @@ async function extractMeritDynamicInfoWithBrowser(
   options: { needCampaignInfo: boolean; needSelfAuth: boolean }
 ): Promise<MeritDynamicInfo> {
   const { needCampaignInfo, needSelfAuth } = options;
-  const allowLocalPuppeteerFallback =
+  const allowLocalPlaywrightFallback =
+    process.env.MERIT_ALLOW_LOCAL_PLAYWRIGHT !== "false" &&
     process.env.MERIT_ALLOW_LOCAL_PUPPETEER !== "false";
 
-  // Cloudflare Workers Browser Rendering primary (single navigation on worker side)
-  // 使用 try-catch 捕获超时错误，快速 fallback 到 puppeteer
   let workerResult: MeritDynamicInfo | null = null;
   try {
     workerResult = await extractMeritDynamicInfoWithWorker(key);
@@ -2215,130 +2153,89 @@ async function extractMeritDynamicInfoWithBrowser(
       };
     }
   } catch (error) {
-    // Worker 超时或失败，立即 fallback 到 puppeteer，不阻塞进程
     const errorMsg = error instanceof Error ? error.message : String(error);
     if (errorMsg.includes("timeout")) {
       logger.warn(
-        `⏱️ Cloudflare Worker timeout for ${key}, falling back to puppeteer: ${errorMsg}`
+        `⏱️ Cloudflare Worker timeout for ${key}, falling back to playwright: ${errorMsg}`
       );
     } else {
       logger.warn(
-        `⚠️ Cloudflare Worker failed for ${key}, falling back to puppeteer: ${errorMsg}`
+        `⚠️ Cloudflare Worker failed for ${key}, falling back to playwright: ${errorMsg}`
       );
     }
-    // 继续执行 fallback 逻辑
   }
 
-  if (!allowLocalPuppeteerFallback) {
-    return { campaignInfo: [], selfAuthDescription: null, source: "puppeteer" };
+  // Render service stub (secondary fallback, to be configured)
+  const renderResult = await extractMeritDynamicInfoWithRender(key);
+  if (renderResult) {
+    return {
+      campaignInfo: needCampaignInfo ? renderResult.campaignInfo : [],
+      selfAuthDescription: needSelfAuth
+        ? renderResult.selfAuthDescription
+        : null,
+      source: "render",
+    };
   }
 
-  // Fallback: local Puppeteer (single navigation locally)
-  // PRODUCTION-GRADE: Use semaphore for concurrency control
-  const semaphore = getPageSemaphore();
-  logger.debug(
-    `📊 [Puppeteer Semaphore] Acquiring semaphore for dynamic info extraction (key: ${key})`
-  );
-  const release = await semaphore.acquire();
-  logger.debug(
-    `📊 [Puppeteer Semaphore] Acquired semaphore for dynamic info extraction (key: ${key})`
-  );
+  if (!allowLocalPlaywrightFallback) {
+    return { campaignInfo: [], selfAuthDescription: null, source: "playwright" };
+  }
 
-  let page: Page | null = null;
+  let context: BrowserContext | null = null;
 
   try {
     const url = `https://apps.aavechan.com/merit/${key}`;
     const browser = await getBrowser();
-    page = await browser.newPage();
+    context = await browser.newContext({
+      viewport: { width: 1920, height: 1080 },
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    });
+    const page = await context.newPage();
 
-    // 修复 tsx 编译引入 __name 的问题
-    // tsx 会在编译时添加 __name 辅助函数，但在浏览器环境中不存在
-    // 在页面加载前注入 __name 定义
-    await page.evaluateOnNewDocument(() => {
-      // @ts-ignore
-      if (typeof globalThis.__name === "undefined") {
-        // @ts-ignore
-        globalThis.__name = (func: any) => func;
+    await page.addInitScript(() => {
+      if (typeof (globalThis as any).__name === "undefined") {
+        (globalThis as any).__name = (func: any) => func;
       }
     });
 
     try {
-      await page.setViewport({ width: 1920, height: 1080 });
-      await page.setUserAgent(
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      );
-
       await page.goto(url, {
-        waitUntil: "networkidle2",
+        waitUntil: "networkidle",
         timeout: 30000,
       });
 
       await page.waitForSelector("body", { timeout: 10000 });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
 
       const [campaignInfo, selfAuthDescription] = await Promise.all([
         (async () => {
           if (!needCampaignInfo) return [];
           try {
-            const buttons = await page.$$("button");
-            for (const button of buttons) {
-              const text = await page.evaluate((el) => {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                return (el as any).textContent || "";
-              }, button);
-              if (text && /campaign\s+info/i.test(text)) {
-                await button.click();
-                await new Promise((resolve) => setTimeout(resolve, 800));
-                break;
-              }
-            }
-          } catch (e) {
-            logger.debug(
-              `merit puppeteer: campaign info button click failed: ${e instanceof Error ? e.message : String(e)}`
-            );
-          }
-
-          try {
-            const infoButtonIndex = await page.$$eval("button", (buttons) => {
-              return buttons.findIndex((btn) => {
-                const text = btn.textContent || "";
-                return /info/i.test(text) && text.length < 50;
-              });
+            const campaignInfoButton = page.locator("button", {
+              hasText: /campaign\s+info/i,
             });
-            if (infoButtonIndex >= 0) {
-              const buttons = await page.$$("button");
-              if (buttons[infoButtonIndex]) {
-                await buttons[infoButtonIndex].click();
-                await new Promise((resolve) => setTimeout(resolve, 800));
-              }
+            if ((await campaignInfoButton.count()) > 0) {
+              await campaignInfoButton.first().click();
+              await page.waitForSelector("table tbody tr", { timeout: 5000 });
             }
           } catch (e) {
             logger.debug(
-              `merit puppeteer: info button click failed: ${e instanceof Error ? e.message : String(e)}`
+              `merit playwright: campaign info button click failed: ${e instanceof Error ? e.message : String(e)}`
             );
           }
 
           const infos = await page.evaluate(() => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const infos: Array<{ action?: string; description?: string }> = [];
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const doc = (globalThis as any).document;
+            const doc = globalThis.document;
             if (!doc) return infos;
             const tables = doc.querySelectorAll("table");
             for (let i = 0; i < tables.length; i++) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const table = tables[i] as any;
-              const rows = table.querySelectorAll("tbody tr");
+              const rows = tables[i].querySelectorAll("tbody tr");
               for (let j = 0; j < rows.length; j++) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const row = rows[j] as any;
-                const cells = row.querySelectorAll("td");
+                const cells = rows[j].querySelectorAll("td");
                 if (cells.length >= 2) {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const action = (cells[0] as any)?.textContent?.trim() || "";
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const description =
-                    (cells[1] as any)?.textContent?.trim() || "";
+                  const action = cells[0]?.textContent?.trim() || "";
+                  const description = cells[1]?.textContent?.trim() || "";
                   if (
                     action.length > 0 &&
                     description.length > action.length &&
@@ -2357,28 +2254,21 @@ async function extractMeritDynamicInfoWithBrowser(
         (async () => {
           if (!needSelfAuth) return null;
           logger.info(
-            `🔍 [Puppeteer Fallback] Starting self-auth extraction for ${key}`
+            `🔍 [Playwright Fallback] Starting self-auth extraction for ${key}`
           );
           let result: string | null = null;
           try {
-            // 使用箭头函数避免 TypeScript 编译引入 __name 等辅助变量
-            // 这样可以避免编译后的代码在浏览器环境中不可用
-            // @ts-ignore - page.evaluate 中的代码在浏览器环境中执行，DOM API 可用
             result = (await page.evaluate(() => {
-              // @ts-ignore
               const doc = globalThis.document;
               if (!doc) return null;
 
-              // 使用箭头函数避免 TypeScript 编译引入 __name 等辅助变量
-              // @ts-ignore
-              const norm = (s) => {
+              const norm = (s: any) => {
                 return String(s || "")
                   .replace(/\s+/g, " ")
                   .trim();
               };
 
-              // @ts-ignore
-              const hasSelfAuth = (s) => {
+              const hasSelfAuth = (s: any) => {
                 const t = String(s || "").toLowerCase();
                 return (
                   t.includes("self") &&
@@ -2388,8 +2278,7 @@ async function extractMeritDynamicInfoWithBrowser(
                 );
               };
 
-              // @ts-ignore
-              const scoreEl = (el) => {
+              const scoreEl = (el: Element) => {
                 const text = norm(el ? el.textContent : null);
                 if (!text || !hasSelfAuth(text)) return -1;
                 let score = 0;
@@ -2397,7 +2286,6 @@ async function extractMeritDynamicInfoWithBrowser(
                 if (text.toLowerCase().includes("supply")) score += 1;
                 if (text.toLowerCase().includes("borrow")) score += 1;
                 try {
-                  // @ts-ignore
                   const cs = globalThis.getComputedStyle(el);
                   const bg = cs ? cs.backgroundColor : "";
                   if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent")
@@ -2410,7 +2298,6 @@ async function extractMeritDynamicInfoWithBrowser(
                   )
                     score += 1;
                 } catch (e) {
-                  // browser-context: console.warn available in Puppeteer page.evaluate
                   console.warn("merit: style scoring failed:", e);
                 }
                 if (text.length > 900) score -= 3;
@@ -2422,7 +2309,7 @@ async function extractMeritDynamicInfoWithBrowser(
                   "section,article,aside,div,p,li"
                 );
 
-                let best = null;
+                let best: Element | null = null;
                 let bestScore = -1;
                 for (let i = 0; i < candidates.length; i++) {
                   const el = candidates[i];
@@ -2462,7 +2349,6 @@ async function extractMeritDynamicInfoWithBrowser(
                         : finalText;
                     }
                   }
-                  // 如果向上查找失败，尝试使用 best 元素本身的文本（放宽长度限制）
                   const bestText = norm(best.textContent);
                   if (
                     bestText &&
@@ -2476,11 +2362,9 @@ async function extractMeritDynamicInfoWithBrowser(
                   }
                 }
               } catch (e) {
-                // browser-context: console.warn available in Puppeteer page.evaluate
                 console.warn("merit: description extraction failed:", e);
               }
 
-              // text-based fallback
               const allElements = doc.querySelectorAll("*");
               for (let i = 0; i < allElements.length; i++) {
                 const element = allElements[i];
@@ -2499,7 +2383,7 @@ async function extractMeritDynamicInfoWithBrowser(
             })) as string | null;
           } catch (evalError) {
             logger.error(
-              `❌ [Puppeteer Fallback] Error in page.evaluate for ${key}:`,
+              `❌ [Playwright Fallback] Error in page.evaluate for ${key}:`,
               evalError
             );
             result = null;
@@ -2507,39 +2391,29 @@ async function extractMeritDynamicInfoWithBrowser(
 
           if (result) {
             logger.info(
-              `✅ [Puppeteer Fallback] Self-auth extracted for ${key}: ${result.substring(0, 100)}...`
+              `✅ [Playwright Fallback] Self-auth extracted for ${key}: ${result.substring(0, 100)}...`
             );
           } else {
             logger.warn(
-              `⚠️ [Puppeteer Fallback] No self-auth found for ${key}`
+              `⚠️ [Playwright Fallback] No self-auth found for ${key}`
             );
-            // 尝试获取页面文本内容用于调试
             try {
-              // 获取页面文本用于调试
-              // @ts-ignore - page.evaluate 中的代码在浏览器环境中执行
               const pageText = (await page.evaluate(() => {
-                // @ts-ignore
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const doc = (globalThis as any).document;
+                const doc = globalThis.document;
                 const body = doc ? doc.body : null;
                 const innerText = body ? body.innerText : "";
                 return innerText ? innerText.substring(0, 1000) : "";
               })) as string;
-              // 检查页面文本中是否包含 self-auth 相关关键词
               const hasSelfAuthInText = /self.*(auth|verify|proof)/i.test(
                 pageText
               );
               logger.info(
-                `🔍 [Puppeteer Fallback] Page text sample (${pageText.length} chars, has self-auth keywords: ${hasSelfAuthInText}): ${pageText.substring(0, 200)}...`
+                `🔍 [Playwright Fallback] Page text sample (${pageText.length} chars, has self-auth keywords: ${hasSelfAuthInText}): ${pageText.substring(0, 200)}...`
               );
 
-              // 尝试查找所有包含 self 的文本
-              // @ts-ignore - page.evaluate 中的代码在浏览器环境中执行
               const selfTexts = (await page.evaluate(() => {
-                // @ts-ignore
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const doc = (globalThis as any).document;
-                const results = [];
+                const doc = globalThis.document;
+                const results: string[] = [];
                 const body = doc ? doc.body : null;
                 const allText = body ? body.innerText : "";
                 const lines = allText ? allText.split("\n") : [];
@@ -2559,25 +2433,23 @@ async function extractMeritDynamicInfoWithBrowser(
               })) as string[];
               if (selfTexts.length > 0) {
                 logger.info(
-                  `🔍 [Puppeteer Fallback] Found ${selfTexts.length} potential self-auth texts:`,
+                  `🔍 [Playwright Fallback] Found ${selfTexts.length} potential self-auth texts:`,
                   selfTexts
                 );
-                // 如果找到了 self-auth 文本，但提取函数返回 null，说明提取逻辑有问题
-                // 尝试使用找到的第一个文本作为结果
                 if (!result && selfTexts.length > 0) {
                   result = selfTexts[0];
                   logger.info(
-                    `✅ [Puppeteer Fallback] Using first found self-auth text for ${key}: ${result.substring(0, 100)}...`
+                    `✅ [Playwright Fallback] Using first found self-auth text for ${key}: ${result.substring(0, 100)}...`
                   );
                 }
               } else {
                 logger.warn(
-                  `⚠️ [Puppeteer Fallback] No self-auth texts found in page content for ${key}`
+                  `⚠️ [Playwright Fallback] No self-auth texts found in page content for ${key}`
                 );
               }
             } catch (debugError) {
               logger.warn(
-                `⚠️ [Puppeteer Fallback] Failed to get debug info: ${debugError}`
+                `⚠️ [Playwright Fallback] Failed to get debug info: ${debugError}`
               );
             }
           }
@@ -2586,32 +2458,38 @@ async function extractMeritDynamicInfoWithBrowser(
         })(),
       ]);
 
-      return { campaignInfo, selfAuthDescription, source: "puppeteer" };
+      return { campaignInfo, selfAuthDescription, source: "playwright" };
     } finally {
-      // PRODUCTION-GRADE: Always close page, even on errors
-      if (page) {
+      if (context) {
         try {
-          await page.close();
+          await context.close();
         } catch (error) {
-          logger.warn("⚠️ Error closing page:", error);
+          logger.warn("⚠️ Error closing browser context:", error);
         }
       }
-      // Release semaphore slot
-      release();
     }
   } catch (error) {
-    if (page) {
+    if (context) {
       try {
-        await page.close();
+        await context.close();
       } catch (_) {}
     }
-    release();
     logger.warn(
       `⚠️ extractMeritDynamicInfoWithBrowser failed for ${key}:`,
       error
     );
-    return { campaignInfo: [], selfAuthDescription: null, source: "puppeteer" };
+    return { campaignInfo: [], selfAuthDescription: null, source: "playwright" };
   }
+}
+
+async function extractMeritDynamicInfoWithRender(
+  _key: string
+): Promise<MeritDynamicInfo | null> {
+  if (!process.env.RENDER_SERVICE_URL) {
+    return null;
+  }
+  // TODO: Implement Render service integration when configured
+  return null;
 }
 
 /**
@@ -3172,7 +3050,7 @@ export async function fetchMeritTimeRange(
   const shouldFetchMessage = keyParts.length > 2;
 
   try {
-    // 获取页面 HTML（使用静态 fetch，name 和 date 在 SSR 中就有，不需要 Puppeteer）
+    // 获取页面 HTML（使用静态 fetch，name 和 date 在 SSR 中就有，不需要浏览器渲染）
     const page = await fetchMeritPageHtmlStatic(key);
     if (!page) {
       logger.warn(`⚠️ Failed to fetch HTML for key: ${key}`);
@@ -3181,7 +3059,7 @@ export async function fetchMeritTimeRange(
     const { html, finalKey } = page;
     // Note: redirect detection and alias recording already happened in fetchMeritPageHtmlStatic
 
-    // 提取 campaign 名称（使用静态 HTML，原来方法就很好，不需要 Puppeteer）
+    // 提取 campaign 名称（使用静态 HTML，原来方法就很好，不需要浏览器渲染）
     const name = extractCampaignName(html);
 
     const { hasSelfAuth = false } = options;
@@ -3201,7 +3079,7 @@ export async function fetchMeritTimeRange(
     const needDynamicCampaignInfo = shouldFetchMessage && message.length === 0;
     const needDynamicSelfAuth = hasSelfAuth;
 
-    let dynamicSource: "worker" | "puppeteer" | null = null;
+    let dynamicSource: "worker" | "render" | "playwright" | null = null;
     if (needDynamicCampaignInfo || needDynamicSelfAuth) {
       const dynamic = await extractMeritDynamicInfoWithBrowser(key, {
         needCampaignInfo: needDynamicCampaignInfo,
@@ -3231,9 +3109,9 @@ export async function fetchMeritTimeRange(
           `⚠️ Self Authentication description missing for ${key} (dynamic extraction returned empty, source: ${dynamic.source})`
         );
         // 记录更详细的错误信息，帮助诊断问题
-        if (dynamic.source === "puppeteer") {
-          logger.warn(
-            `   → Puppeteer fallback may have failed. Check if page loaded correctly.`
+        if (dynamic.source === "playwright") {
+            logger.warn(
+              `   → Playwright fallback may have failed. Check if page loaded correctly.`
           );
         } else if (dynamic.source === "worker") {
           logger.warn(`   → Worker extraction may have failed or timed out.`);
