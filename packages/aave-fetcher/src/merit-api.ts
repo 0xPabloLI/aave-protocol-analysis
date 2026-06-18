@@ -13,7 +13,7 @@ import {
   type MeritDynamicInfo,
 } from "./cloudflare-browser.js";
 import { meritKeyAliases } from "./config.js";
-import { fifoEvict } from "@internal/aave-shared-contracts";
+import { fifoEvict, type MeritCampaignGroup } from "@internal/aave-shared-contracts";
 import {
   createMerklConcurrencyLimitedFetch,
   getAaveRpcUrlsByChainName,
@@ -71,6 +71,8 @@ export interface MeritAprEntry {
 export interface MeritDataItem {
   meritSupplys: MeritAprEntry[];
   meritBorrows: MeritAprEntry[];
+  meritCampaignSupplys: MeritCampaignGroup[];
+  meritCampaignBorrows: MeritCampaignGroup[];
   /** Protocol version. Currently only V3. */
   protocolVersion: "v3" | "v4";
 }
@@ -1218,6 +1220,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         meritData[indexKey] = {
           meritSupplys: [],
           meritBorrows: [],
+          meritCampaignSupplys: [],
+          meritCampaignBorrows: [],
           protocolVersion: "v3",
         };
       }
@@ -1590,6 +1594,27 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       meritData[key].meritBorrows = filterRecentExpiredMerit(
         meritData[key].meritBorrows
       );
+    }
+
+    // 构建 CampaignGroup 格式数据
+    const MERIT_LINK_PREFIX = 'https://apps.aavechan.com/merit/';
+    for (const [indexKey, item] of Object.entries(meritData)) {
+      for (const entry of item.meritSupplys) {
+        const meritKey = entry.link.startsWith(MERIT_LINK_PREFIX)
+          ? entry.link.slice(MERIT_LINK_PREFIX.length)
+          : `${indexKey}-supply`;
+        item.meritCampaignSupplys.push(
+          buildCampaignGroupFromMeritEntry(entry, meritKey)
+        );
+      }
+      for (const entry of item.meritBorrows) {
+        const meritKey = entry.link.startsWith(MERIT_LINK_PREFIX)
+          ? entry.link.slice(MERIT_LINK_PREFIX.length)
+          : `${indexKey}-borrow`;
+        item.meritCampaignBorrows.push(
+          buildCampaignGroupFromMeritEntry(entry, meritKey)
+        );
+      }
     }
 
     logger.info(
@@ -3133,4 +3158,37 @@ export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput)
   }
 
   return breakdowns;
+}
+
+export function buildCampaignGroupFromMeritEntry(
+  entry: MeritAprEntry,
+  meritKey: string
+): MeritCampaignGroup {
+  const selfAuthMsg = (entry.message ?? []).find(
+    (m) => m.action?.toLowerCase().includes('self authentication')
+  );
+  let selfPositionCap: number | null = null;
+  if (selfAuthMsg?.description) {
+    const match = selfAuthMsg.description.match(/\$\s*([\d,]+(?:\.\d+)?)/);
+    if (match) {
+      const parsed = Number(match[1].replace(/,/g, ''));
+      if (Number.isFinite(parsed) && parsed > 0) selfPositionCap = parsed;
+    }
+  }
+  const breakdowns = buildMeritCampaignBreakdowns({
+    baseApr: entry.apr,
+    selfApr: entry.selfApr ?? 0,
+    startDate: entry.startDate,
+    endDate: entry.endDate,
+    meritKey,
+    selfPositionCap,
+  });
+  return {
+    link: entry.link,
+    ...(entry.name ? { name: entry.name } : {}),
+    ...(entry.message && entry.message.length > 0
+      ? { message: JSON.stringify(entry.message) }
+      : {}),
+    breakdowns,
+  };
 }

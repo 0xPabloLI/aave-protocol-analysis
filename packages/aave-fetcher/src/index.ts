@@ -32,7 +32,7 @@ import {
   getMeritDataFromMarket
 } from './merit-api.js';
 import type { BrevisCampaignBreakdown, BrevisCampaignItem, BrevisDataItem } from './brevis-api.js';
-import { pruneMeritEntry, pruneMerklGroup, pruneBrevisItem } from './incentive-prune.js';
+import { pruneMeritEntry, pruneMeritCampaignGroup, pruneMerklGroup, pruneBrevisItem } from './incentive-prune.js';
 import {
   checkAndReportSessionStatus,
   closeBrowserInstances
@@ -225,7 +225,7 @@ async function fetchBrevisAprs(
             const resolved = await resolveUsdPriceWithPriority({
               chainId,
               tokenAddress: rewardTokenAddress,
-              tokenSymbol: breakdown.budgetTokenSymbol,
+              tokenSymbol: breakdown.rewardTokenSymbol,
               snapshotPrice: undefined,
               reservePrice: reserveTokenPrice,
             });
@@ -383,6 +383,8 @@ async function enrichDatasetWithIncentiveData(
       if (meritItemData.meritSupplys.length > 0 || meritItemData.meritBorrows.length > 0) {
         item.meritSupplys = meritItemData.meritSupplys.length > 0 ? meritItemData.meritSupplys : undefined;
         item.meritBorrows = meritItemData.meritBorrows.length > 0 ? meritItemData.meritBorrows : undefined;
+        item.meritCampaignSupplys = meritItemData.meritCampaignSupplys.length > 0 ? meritItemData.meritCampaignSupplys : undefined;
+        item.meritCampaignBorrows = meritItemData.meritCampaignBorrows.length > 0 ? meritItemData.meritCampaignBorrows : undefined;
         if (isV4Reserve) {
           logger.warn('V4 reserve matched Merit incentive (expected V3-only)', {
             chainId: item.chainId, tokenSymbol: item.tokenSymbol, marketName: item.marketName, source: 'merit',
@@ -423,7 +425,8 @@ async function enrichDatasetWithIncentiveData(
           });
         } : undefined;
         const cachedConstraint = opp.opportunityLink ? cachedConstraints?.get(opp.opportunityLink) : undefined;
-        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, cachedConstraint, llmFn);
+        const oppOffsetLevel: 'hub' | 'spoke' = opp.opportunityType?.includes('SPOKE_SUPPLY') ? 'spoke' : 'hub';
+        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, cachedConstraint, llmFn, oppOffsetLevel);
         if (opp.opportunityLink && cachedConstraints && cachedConstraint === undefined) {
           cachedConstraints.set(opp.opportunityLink, netPositionConstraint ?? null);
         }
@@ -538,6 +541,8 @@ async function enrichDatasetWithIncentiveData(
     if (item.vTokenAddress === null) item.vTokenAddress = undefined;
     if (item.meritSupplys) item.meritSupplys = item.meritSupplys.map(pruneMeritEntry);
     if (item.meritBorrows) item.meritBorrows = item.meritBorrows.map(pruneMeritEntry);
+    if (item.meritCampaignSupplys) item.meritCampaignSupplys = item.meritCampaignSupplys.map(pruneMeritCampaignGroup);
+    if (item.meritCampaignBorrows) item.meritCampaignBorrows = item.meritCampaignBorrows.map(pruneMeritCampaignGroup);
     if (item.merklSupplys) item.merklSupplys = item.merklSupplys.map(pruneMerklGroup);
     if (item.merklBorrows) item.merklBorrows = item.merklBorrows.map(pruneMerklGroup);
     if (item.merklHolds) item.merklHolds = item.merklHolds.map(pruneMerklGroup);

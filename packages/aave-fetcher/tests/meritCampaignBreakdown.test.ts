@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   extractPositionCapFromSelfAuth,
   buildMeritCampaignBreakdowns,
+  buildCampaignGroupFromMeritEntry,
 } from '../src/merit-api.js';
+import type { MeritAprEntry } from '../src/merit-api.js';
 
 describe('AAV-960: Merit format unification', () => {
   describe('extractPositionCapFromSelfAuth', () => {
@@ -103,6 +105,71 @@ describe('AAV-960: Merit format unification', () => {
       });
       assert.equal(breakdowns.length, 1);
       assert.equal('positionCap' in breakdowns[0], false);
+    });
+  });
+
+  describe('buildCampaignGroupFromMeritEntry', () => {
+    it('builds CampaignGroup from entry with self auth message', () => {
+      const entry: MeritAprEntry = {
+        apr: 0.05,
+        selfApr: 0.03,
+        link: 'https://apps.aavechan.com/merit/ethereum-supply-weth',
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        name: 'Supply WETH',
+        message: [
+          { action: 'Supply WETH', description: 'Base rewards' },
+          { action: 'Self Authentication', description: 'Incentive on first $1,000 of deposit' },
+        ],
+      };
+      const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
+      assert.equal(group.link, 'https://apps.aavechan.com/merit/ethereum-supply-weth');
+      assert.equal(group.name, 'Supply WETH');
+      assert.ok(group.message);
+      assert.equal(group.breakdowns.length, 2);
+      assert.equal(group.breakdowns[0].campaignApr, 0.05);
+      assert.equal(group.breakdowns[0].campaignId, 'ethereum-supply-weth-base');
+      assert.equal(group.breakdowns[1].campaignApr, 0.03);
+      assert.equal(group.breakdowns[1].campaignId, 'ethereum-supply-weth-self');
+      assert.equal(group.breakdowns[1].positionCap, 1000);
+    });
+
+    it('builds CampaignGroup from entry without self auth', () => {
+      const entry: MeritAprEntry = {
+        apr: 0.05,
+        link: 'https://apps.aavechan.com/merit/ethereum-supply-weth',
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      };
+      const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
+      assert.equal(group.breakdowns.length, 1);
+      assert.equal(group.breakdowns[0].campaignApr, 0.05);
+      assert.equal('positionCap' in group.breakdowns[0], false);
+    });
+
+    it('builds CampaignGroup from entry with empty message', () => {
+      const entry: MeritAprEntry = {
+        apr: 0.05,
+        selfApr: 0.02,
+        link: 'https://apps.aavechan.com/merit/ethereum-supply-weth',
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        message: [],
+      };
+      const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
+      assert.equal(group.breakdowns.length, 2);
+      assert.equal('positionCap' in group.breakdowns[1], false);
+    });
+
+    it('does not set message when entry has no message', () => {
+      const entry: MeritAprEntry = {
+        apr: 0.05,
+        link: 'https://apps.aavechan.com/merit/ethereum-supply-weth',
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+      };
+      const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
+      assert.equal('message' in group, false);
     });
   });
 });
