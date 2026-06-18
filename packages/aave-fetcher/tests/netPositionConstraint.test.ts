@@ -179,7 +179,7 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       '1:0xmainPool:0xrlusd',
     ]);
     const oppReserveId = '1:0xv4spoke:0xsourceToken:Core';
-    const result = extractNetPositionConstraint(opp, '0xsourceToken', oppReserveId, reserveIdSet);
+    const result = extractNetPositionConstraint(opp, '0xsourceToken', oppReserveId, reserveIdSet, 'spoke');
     assert.deepEqual(result, {
       sourceSide: 'supply',
       offsetReserveIds: ['1:0xv4spoke:0xsourceToken:Core', '1:0xv4spoke:0xrlusd:Core', '1:0xv4spoke:0xrlusd:Lido'],

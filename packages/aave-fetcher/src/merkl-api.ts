@@ -214,6 +214,7 @@ export function resolveOffsetReserveIds(
   oppReserveId: string,
   offsetTokenAddress: string,
   reserveIdSet: Set<string>,
+  offsetLevel: 'hub' | 'spoke' = 'hub',
 ): string[] {
   const version = inferVersionFromReserveId(oppReserveId);
   const prefix = extractPoolSpokePrefix(oppReserveId);
@@ -226,7 +227,16 @@ export function resolveOffsetReserveIds(
     return reserveIdSet.has(candidate) ? [candidate] : [];
   }
 
-  const base = `${prefix}:${normalizedAddr}`;
+  const parts = oppReserveId.split(':');
+  const spokePrefix = `${parts[0]}:${parts[1]}`;
+  const base = `${spokePrefix}:${normalizedAddr}`;
+
+  if (offsetLevel === 'hub') {
+    const hubSuffix = parts.length >= 4 ? `:${parts[3]}` : '';
+    const exact = `${base}${hubSuffix}`;
+    return reserveIdSet.has(exact) ? [exact] : [];
+  }
+
   const results: string[] = [];
   for (const rid of reserveIdSet) {
     if (rid.startsWith(base + ':')) {
@@ -1507,8 +1517,9 @@ export async function processMerklData(
     const oppReserveId = tokenAddrToReserveId.get(chainTokenKey(opp.chainId, explorerAddress));
     const reserveIdSet = mergedOptions.reserveIdSet ?? new Set<string>();
 
+    const offsetLevel: 'hub' | 'spoke' = opp.type?.includes('SPOKE_SUPPLY') ? 'spoke' : 'hub';
     const offsetTokenAddresses = oppReserveId
-      ? extractOffsetTokenAddresses(opp, oppReserveId, reserveIdSet)
+      ? extractOffsetTokenAddresses(opp, oppReserveId, reserveIdSet, offsetLevel)
       : [];
 
     // 创建 opportunity 数据对象，根据 action 直接设置对应数组
@@ -1604,6 +1615,7 @@ function extractOffsetTokenAddresses(
   opp: MerklOpportunity,
   oppReserveId: string,
   reserveIdSet: Set<string>,
+  offsetLevel: 'hub' | 'spoke' = 'hub',
 ): OffsetTokenInfo[] {
   if (!Array.isArray(opp.campaigns)) return [];
   const seen = new Set<string>();
@@ -1625,7 +1637,7 @@ function extractOffsetTokenAddresses(
     }
   }
   return rawAddrs.map(addr => {
-    const resolvedIds = resolveOffsetReserveIds(oppReserveId, addr, reserveIdSet);
+    const resolvedIds = resolveOffsetReserveIds(oppReserveId, addr, reserveIdSet, offsetLevel);
     if (resolvedIds.length === 1) return { address: addr, reserveId: resolvedIds[0] };
     return { address: addr };
   });
@@ -1662,8 +1674,9 @@ export async function detectNetPositionConstraint(
   symbolLookup: Map<string, string>,
   cachedConstraint?: NetPositionConstraint | null,
   llmFn?: () => Promise<import('./merklLlmClient.js').LlmOutcome>,
+  offsetLevel: 'hub' | 'spoke' = 'hub',
 ): Promise<NetPositionConstraint | null> {
-  const layer0 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet);
+  const layer0 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet, offsetLevel);
   if (layer0) return layer0;
 
   const text = `${opp.name ?? ''} ${opp.description ?? ''}`.toLowerCase();
@@ -1682,7 +1695,7 @@ export async function detectNetPositionConstraint(
         for (const symbol of offsetTokenSymbols) {
           const tokenAddr = symbolLookup.get(chainSymbolKey(opp.chainId, symbol));
           if (!tokenAddr) return null;
-          const resolvedIds = resolveOffsetReserveIds(oppReserveId, tokenAddr.toLowerCase(), reserveIdSet);
+          const resolvedIds = resolveOffsetReserveIds(oppReserveId, tokenAddr.toLowerCase(), reserveIdSet, offsetLevel);
           if (resolvedIds.length === 0) return null;
           for (const rid of resolvedIds) {
             if (!seen.has(rid)) {
@@ -1712,6 +1725,7 @@ export function extractNetPositionConstraint(
   sourceTokenAddress: string,
   oppReserveId: string,
   reserveIdSet: Set<string>,
+  offsetLevel: 'hub' | 'spoke' = 'hub',
 ): NetPositionConstraint | null {
   const type = opp.opportunityType;
   const isNetType = type && type.startsWith('AAVE_NET_');
@@ -1736,7 +1750,7 @@ export function extractNetPositionConstraint(
       seen.add(info.reserveId);
       offsetReserveIds.push(info.reserveId);
     } else if (!info.reserveId) {
-      const resolvedIds = resolveOffsetReserveIds(oppReserveId, info.address.toLowerCase(), reserveIdSet);
+      const resolvedIds = resolveOffsetReserveIds(oppReserveId, info.address.toLowerCase(), reserveIdSet, offsetLevel);
       for (const rid of resolvedIds) {
         if (!seen.has(rid)) {
           seen.add(rid);

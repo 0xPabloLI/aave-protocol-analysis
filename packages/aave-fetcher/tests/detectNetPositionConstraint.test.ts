@@ -320,7 +320,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
     ]);
     const symbolLookup = makeSymbolLookup([]);
     const oppReserveId = '1:0xv4spoke:0xsourceToken:Core';
-    const result = await detectNetPositionConstraint(opp, '0xsourceToken', oppReserveId, reserveIdSet, symbolLookup);
+    const result = await detectNetPositionConstraint(opp, '0xsourceToken', oppReserveId, reserveIdSet, symbolLookup, undefined, undefined, 'spoke');
     assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xv4spoke:0xsourceToken:Core', '1:0xv4spoke:0xrlusd:Core', '1:0xv4spoke:0xrlusd:Lido'] });
   });
 
