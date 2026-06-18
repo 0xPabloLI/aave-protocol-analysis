@@ -83,3 +83,26 @@ V4 underlying tokens are in a separate lookup (only maps to v4) because they can
 - **Positive**: Self-healing for future Merkl types (step 1 catches explicit V4; step 2 catches address-based)
 - **Neutral**: `processMerklData()` now receives `baseDataset` parameter
 - **Neutral**: `findMatchingMerklOpportunities()` now takes a `protocolVersion` filter parameter
+
+## Superseded
+
+This ADR's 4-step derivation and post-filtering approach has been superseded by **address-type-driven matching** (AAV-925, committed `1d5cbfc`).
+
+### What changed
+
+1. **Matching strategy**: `findMatchingMerklOpportunities` no longer uses `protocolVersion` parameter or post-filtering. Instead, V3 reserves query `[aToken, vToken]` and V4 reserves query `[underlying, spokeAddress]`. The address type itself determines version isolation — no post-filter needed.
+
+2. **`deriveProtocolVersion` and `buildProtocolVersionLookup`**: Preserved (not removed). Still used by `processMerklData` for the index-building path where `protocolVersion` is assigned to each opportunity. The index-building path needs version info to set `opportunityData.protocolVersion`, even though the matching path no longer filters by it.
+
+3. **spokeAddress added to V4 query list** (AAV-908 fix): V4 SPOKE_SUPPLY opps have spoke address as `explorerAddress`. Before this fix, spokeAddress was never queried, causing V4 spoke opps to never match any reserve.
+
+### Preserved 4-step logic (for reference)
+
+```
+1. type starts with AAVE_V4_ → v4
+2. Unambiguous address lookup → v3/v4
+3. V4 underlying token lookup → v4
+4. Default → v3
+```
+
+This logic remains active in `processMerklData` for `protocolVersion` assignment, but is no longer used for opp→reserve matching.
