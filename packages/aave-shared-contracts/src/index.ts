@@ -68,6 +68,18 @@ export interface MeritAprEntry {
   lastRoundRewardUsd?: number;
 }
 
+export interface MeritCampaignBreakdown extends BaseCampaignBreakdown {
+  campaignId: string;
+  campaignType?: ForecastCampaignTypeLite;
+  positionCap?: number;
+  aprCap?: number;
+  rewardTokenSymbol?: string;
+  totalBudget?: number;
+  latestTvl?: number;
+}
+
+export type MeritCampaignGroup = CampaignGroup<MeritCampaignBreakdown>;
+
 export type ForecastCampaignTypeLite =
   | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
   | 'DUTCH_AUCTION'
@@ -100,6 +112,7 @@ export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
   totalBudget?: number;
   latestTvl?: number;
   positionCap?: number;
+  rewardTokenSymbol?: string;
 }
 
 export interface BrevisCampaignItem extends CampaignGroup<BrevisCampaignBreakdown> {}
@@ -149,6 +162,8 @@ export interface RuntimeReserveData {
   aaveProReserveId?: string;
   meritSupplys?: MeritAprEntry[];
   meritBorrows?: MeritAprEntry[];
+  meritCampaignSupplys?: MeritCampaignGroup[];
+  meritCampaignBorrows?: MeritCampaignGroup[];
   merklSupplys?: MerklOpportunityGroup[];
   merklBorrows?: MerklOpportunityGroup[];
   merklHolds?: MerklOpportunityGroup[];
@@ -172,6 +187,14 @@ export type ApiMeritAprEntry = Pick<
   'apr' | 'selfApr' | 'link' | 'name' | 'message' | 'startDate' | 'endDate' | 'lastRoundRewardUsd'
 >;
 
+export type ApiMeritCampaignBreakdown = Pick<
+  MeritCampaignBreakdown,
+  'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
+  | 'campaignType' | 'positionCap' | 'aprCap' | 'rewardTokenSymbol' | 'totalBudget' | 'latestTvl'
+>;
+
+export type ApiMeritCampaignGroup = CampaignGroup<ApiMeritCampaignBreakdown>;
+
 export type ApiMerklBreakdown = MerklCampaignBreakdown;
 
 export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown>;
@@ -179,7 +202,7 @@ export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown>;
 export type ApiBrevisBreakdown = Pick<
   BrevisCampaignBreakdown,
   'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
-  |   'campaignType' | 'aprCap' | 'totalBudget' | 'latestTvl' | 'positionCap'
+  | 'campaignType' | 'aprCap' | 'totalBudget' | 'latestTvl' | 'positionCap' | 'rewardTokenSymbol'
 >;
 
 export type ApiBrevisCampaignItem = CampaignGroup<ApiBrevisBreakdown>;

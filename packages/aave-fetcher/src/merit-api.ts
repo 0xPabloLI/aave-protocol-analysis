@@ -3081,3 +3081,56 @@ export async function fetchMeritTimeRange(
     return result;
   }
 }
+
+export interface MeritCampaignBreakdownInput {
+  baseApr: number;
+  selfApr: number;
+  startDate: string;
+  endDate: string;
+  meritKey: string;
+  selfPositionCap: number | null;
+}
+
+export function extractPositionCapFromSelfAuth(text: string | null): number | null {
+  if (!text) return null;
+  if (!text.toLowerCase().includes('self')) return null;
+  const match = text.match(/\$\s*([\d,]+(?:\.\d+)?)/);
+  if (!match) return null;
+  const parsed = Number(match[1].replace(/,/g, ''));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput) {
+  const { baseApr, selfApr, startDate, endDate, meritKey, selfPositionCap } = input;
+  const breakdowns: Array<{
+    campaignApr: number;
+    campaignStartedAt: string;
+    campaignEndedAt: string;
+    campaignId: string;
+    campaignType: 'DUTCH_AUCTION';
+    positionCap?: number;
+  }> = [];
+
+  if (baseApr > 0) {
+    breakdowns.push({
+      campaignApr: baseApr,
+      campaignStartedAt: startDate,
+      campaignEndedAt: endDate,
+      campaignId: `${meritKey}-base`,
+      campaignType: 'DUTCH_AUCTION',
+    });
+  }
+
+  if (selfApr > 0) {
+    breakdowns.push({
+      campaignApr: selfApr,
+      campaignStartedAt: startDate,
+      campaignEndedAt: endDate,
+      campaignId: `${meritKey}-self`,
+      campaignType: 'DUTCH_AUCTION',
+      ...(selfPositionCap != null && selfPositionCap > 0 ? { positionCap: selfPositionCap } : {}),
+    });
+  }
+
+  return breakdowns;
+}

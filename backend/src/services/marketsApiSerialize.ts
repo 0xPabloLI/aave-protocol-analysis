@@ -23,6 +23,17 @@ function scaleMeritEntry<T extends { apr: number; selfApr?: number }>(e: T): T {
   };
 }
 
+function scaleMeritCampaignBreakdown<T extends { campaignApr: number; positionCap?: number; aprCap?: number }>(b: T): T {
+  const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
+  if (Object.prototype.hasOwnProperty.call(b, 'positionCap') && b.positionCap !== undefined) {
+    (next as { positionCap?: number }).positionCap = roundTo6(b.positionCap * 100);
+  }
+  if (Object.prototype.hasOwnProperty.call(b, 'aprCap') && b.aprCap !== undefined) {
+    (next as { aprCap?: number }).aprCap = roundTo6(b.aprCap * 100);
+  }
+  return next;
+}
+
 function scaleMerklBreakdown<
   T extends {
     campaignApr: number;
@@ -130,6 +141,8 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.collateralRisk !== undefined ? { collateralRisk: roundTo6(reserve.collateralRisk) } : {}),
     ...(reserve.meritSupplys?.length ? { meritSupplys: reserve.meritSupplys.map((e) => scaleMeritEntry(e)) } : {}),
     ...(reserve.meritBorrows?.length ? { meritBorrows: reserve.meritBorrows.map((e) => scaleMeritEntry(e)) } : {}),
+    ...(reserve.meritCampaignSupplys?.length ? { meritCampaignSupplys: scaleGroupedCampaigns(reserve.meritCampaignSupplys, scaleMeritCampaignBreakdown) } : {}),
+    ...(reserve.meritCampaignBorrows?.length ? { meritCampaignBorrows: scaleGroupedCampaigns(reserve.meritCampaignBorrows, scaleMeritCampaignBreakdown) } : {}),
     ...(reserve.merklSupplys?.length && reserve.supplyApy !== undefined
       ? { merklSupplys: scaleGroupedCampaignsWithContext(reserve.merklSupplys, reserve.supplyApy, 'supply') }
       : reserve.merklSupplys?.length ? { merklSupplys: scaleGroupedCampaigns(reserve.merklSupplys, (bd) => scaleMerklBreakdown(bd)) } : {}),
@@ -208,6 +221,22 @@ export function computeSchemaFingerprint(): string {
     meritBorrows: [{
       apr: 0.01, link: '__fingerprint__',
       startDate: '2025-01-01', endDate: '2025-01-01',
+    }],
+    meritCampaignSupplys: [{
+      link: '__fingerprint__',
+      breakdowns: [{
+        campaignApr: 0.01, campaignId: '__fingerprint__-base',
+        campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
+        campaignType: 'DUTCH_AUCTION',
+      }],
+    }],
+    meritCampaignBorrows: [{
+      link: '__fingerprint__',
+      breakdowns: [{
+        campaignApr: 0.01, campaignId: '__fingerprint__-base',
+        campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
+        campaignType: 'DUTCH_AUCTION',
+      }],
     }],
     merklSupplys: [{
       link: '__fingerprint__',

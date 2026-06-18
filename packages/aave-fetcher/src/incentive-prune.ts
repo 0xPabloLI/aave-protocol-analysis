@@ -1,5 +1,7 @@
 import type {
   MeritAprEntry,
+  MeritCampaignGroup,
+  MeritCampaignBreakdown,
   MerklOpportunityGroup,
   MerklCampaignBreakdown,
   BrevisCampaignItem,
@@ -16,6 +18,30 @@ export function pruneMeritEntry(e: MeritAprEntry): MeritAprEntry {
     startDate: e.startDate,
     endDate: e.endDate,
     ...(e.lastRoundRewardUsd !== undefined ? { lastRoundRewardUsd: e.lastRoundRewardUsd } : {}),
+  };
+}
+
+function pruneMeritCampaignBreakdown(b: MeritCampaignBreakdown): MeritCampaignBreakdown {
+  return {
+    campaignApr: b.campaignApr,
+    campaignStartedAt: b.campaignStartedAt,
+    campaignEndedAt: b.campaignEndedAt,
+    campaignId: b.campaignId,
+    ...(b.campaignType ? { campaignType: b.campaignType } : {}),
+    ...(b.positionCap !== undefined ? { positionCap: b.positionCap } : {}),
+    ...(b.aprCap !== undefined ? { aprCap: b.aprCap } : {}),
+    ...(b.rewardTokenSymbol ? { rewardTokenSymbol: b.rewardTokenSymbol } : {}),
+    ...(b.totalBudget !== undefined ? { totalBudget: b.totalBudget } : {}),
+    ...(b.latestTvl !== undefined ? { latestTvl: b.latestTvl } : {}),
+  };
+}
+
+export function pruneMeritCampaignGroup(g: MeritCampaignGroup): MeritCampaignGroup {
+  return {
+    link: g.link,
+    ...(g.name ? { name: g.name } : {}),
+    ...(g.message ? { message: g.message } : {}),
+    breakdowns: (g.breakdowns ?? []).map(pruneMeritCampaignBreakdown),
   };
 }
 
@@ -61,6 +87,7 @@ function pruneBrevisBreakdown(b: BrevisCampaignBreakdown): BrevisCampaignBreakdo
     ...(b.latestTvl !== undefined ? { latestTvl: b.latestTvl } : {}),
     ...(b.totalBudget !== undefined ? { totalBudget: b.totalBudget } : {}),
     ...(b.positionCap !== undefined ? { positionCap: b.positionCap } : {}),
+    ...(b.rewardTokenSymbol ? { rewardTokenSymbol: b.rewardTokenSymbol } : {}),
   };
 }
 

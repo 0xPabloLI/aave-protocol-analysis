@@ -36,14 +36,14 @@ test('pruneBrevisCampaignForRuntime removes transient budget parse fields', () =
         campaignEndedAt: '2030-01-01T00:00:00.000Z',
         campaignId: '123',
         budgetNormalizedAmount: 1_000_000,
-        budgetTokenSymbol: 'USDC',
+        rewardTokenSymbol: 'USDC',
         totalBudget: 999,
       },
     ],
   };
   const pruned = pruneBrevisCampaignForRuntime(withBudget);
   assert.equal('budgetNormalizedAmount' in pruned.breakdowns[0]!, false);
-  assert.equal('budgetTokenSymbol' in pruned.breakdowns[0]!, false);
+  assert.equal(pruned.breakdowns[0]?.rewardTokenSymbol, 'USDC');
   assert.equal(pruned.breakdowns[0]?.totalBudget, 999);
   assert.equal(pruned.link, 'x');
 });

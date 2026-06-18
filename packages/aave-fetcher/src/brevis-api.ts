@@ -27,7 +27,7 @@ export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
   latestTvl?: number;
   positionCap?: number;
   budgetNormalizedAmount?: number;
-  budgetTokenSymbol?: string;
+  rewardTokenSymbol?: string;
 }
 
 // Brevis Campaign Item（按 campaign group 对外；细节放到 breakdowns 内）
@@ -41,7 +41,7 @@ export function pruneBrevisCampaignForRuntime(campaign: BrevisCampaignItem): Bre
   return {
     ...campaign,
     breakdowns: (campaign.breakdowns ?? []).map((breakdown) => {
-      const { budgetNormalizedAmount: _n, budgetTokenSymbol: _s, ...rest } = breakdown;
+      const { budgetNormalizedAmount: _n, ...rest } = breakdown;
       return rest;
     }),
   };
@@ -678,7 +678,7 @@ export class BrevisApiClient {
                   ...(normalizedTotalRewardNumber !== undefined && Number.isFinite(normalizedTotalRewardNumber)
                     ? { budgetNormalizedAmount: normalizedTotalRewardNumber }
                     : {}),
-                  ...(token?.symbol ? { budgetTokenSymbol: token.symbol } : {}),
+                  ...(token?.symbol ? { rewardTokenSymbol: token.symbol } : {}),
                 },
               ],
             };
