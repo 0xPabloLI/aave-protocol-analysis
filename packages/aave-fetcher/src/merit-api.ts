@@ -2510,112 +2510,9 @@ async function extractMeritDynamicInfoWithRender(
   return null;
 }
 
-/**
- * 优先级 #1：从 DOM 直接提取日期
- * 使用 cheerio 解析 HTML，查找带有 class "text-xs whitespace-nowrap" 的 span 元素
- * 这种方法比正则表达式更可靠，能正确处理复杂的 HTML 结构
- */
-function extractDatesFromDom(html: string): {
-  startDate?: string;
-  endDate?: string;
-} {
-  try {
-    const $ = cheerio.load(html);
 
-    // 查找所有带有 class "text-xs whitespace-nowrap" 的 span 元素
-    const candidateSpans: string[] = [];
-    $("span.text-xs.whitespace-nowrap").each((_index: number, element: any) => {
-      const text = $(element).text().trim();
-      if (text) {
-        candidateSpans.push(text);
-      }
-    });
 
-    // 过滤出符合日期格式的内容
-    // 匹配格式：Mon/Tue/Wed/Thu/Fri/Sat/Sun + 月份缩写 + 日期 + 年份
-    const dateRegex =
-      /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Za-z]{3}\s+\d{1,2}\s+\d{4}$/;
-    const dates = candidateSpans.filter((txt) => dateRegex.test(txt));
 
-    if (dates.length >= 2) {
-      return {
-        startDate: dates[0],
-        endDate: dates[1],
-      };
-    }
-  } catch (error) {
-    // 忽略错误，继续使用其他方法
-  }
-
-  return {};
-}
-
-/**
- * 优先级 #2：使用正则表达式匹配各种日期格式
- */
-function extractDatesWithRegex(html: string): {
-  startDate?: string;
-  endDate?: string;
-} {
-  const dates: string[] = [];
-
-  // 匹配各种日期格式
-  const patterns = [
-    // Thu Jan 01 2026
-    /(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{4}/g,
-    // 2026-01-01 (ISO)
-    /\d{4}-\d{2}-\d{2}/g,
-    // Jan 1, 2026
-    /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}/g,
-    // 01/01/2026 (美式)
-    /\d{1,2}\/\d{1,2}\/\d{4}/g,
-    // 01-01-2026
-    /\d{1,2}-\d{1,2}-\d{4}/g,
-  ];
-
-  for (const pattern of patterns) {
-    const matches = html.match(pattern);
-    if (matches) {
-      dates.push(...matches);
-    }
-  }
-
-  // 去重并排序
-  const uniqueDates = [...new Set(dates)];
-
-  if (uniqueDates.length >= 2) {
-    // 尝试解析并排序日期，选择最早和最晚的
-    const parsedDates = uniqueDates
-      .map((dateStr) => {
-        try {
-          const date = new Date(dateStr);
-          if (!isNaN(date.getTime())) {
-            return { original: dateStr, parsed: date };
-          }
-        } catch {
-          // 忽略解析失败的日期
-        }
-        return null;
-      })
-      .filter((d): d is { original: string; parsed: Date } => d !== null)
-      .sort((a, b) => a.parsed.getTime() - b.parsed.getTime());
-
-    if (parsedDates.length >= 2) {
-      return {
-        startDate: parsedDates[0].original,
-        endDate: parsedDates[parsedDates.length - 1].original,
-      };
-    }
-
-    // 如果无法解析，直接使用前两个
-    return {
-      startDate: uniqueDates[0],
-      endDate: uniqueDates[1],
-    };
-  }
-
-  return {};
-}
 
 /**
  * 优先级 #3：提取区块号
@@ -3144,63 +3041,12 @@ export async function fetchMeritTimeRange(
       result.message = [];
     }
 
-    // Strategy summary (helps optimize resource usage) — logged after date strategy is decided.
-
-    // 优先级 #1：从 DOM 直接提取日期（基于 class "text-xs whitespace-nowrap" 的 span 元素）
-    let dates = extractDatesFromDom(html);
-    if (dates.startDate && dates.endDate) {
-      result.startDate = dates.startDate;
-      result.endDate = dates.endDate;
-      dateStrategy = "date:p1:dom-spans";
-
-      // 同时尝试提取区块号
-      const blocks = extractBlockNumbers(html);
-      if (blocks.startBlock) result.startBlock = blocks.startBlock;
-      if (blocks.endBlock) result.endBlock = blocks.endBlock;
-
-      logger.info(
-        `🧠 Merit crawl strategies for ${key}: ${[
-          messageStrategy ?? "message:none",
-          hasSelfAuth
-            ? (selfAuthStrategy ?? "self-auth:missing")
-            : "self-auth:n/a",
-          dateStrategy ?? "date:missing",
-        ].join(" | ")}`
-      );
-      return result;
-    }
-
-    // 优先级 #2：使用正则表达式匹配各种日期格式
-    dates = extractDatesWithRegex(html);
-    if (dates.startDate && dates.endDate) {
-      result.startDate = dates.startDate;
-      result.endDate = dates.endDate;
-      dateStrategy = "date:p2:regex";
-
-      // 同时尝试提取区块号
-      const blocks = extractBlockNumbers(html);
-      if (blocks.startBlock) result.startBlock = blocks.startBlock;
-      if (blocks.endBlock) result.endBlock = blocks.endBlock;
-
-      logger.info(
-        `🧠 Merit crawl strategies for ${key}: ${[
-          messageStrategy ?? "message:none",
-          hasSelfAuth
-            ? (selfAuthStrategy ?? "self-auth:missing")
-            : "self-auth:n/a",
-          dateStrategy ?? "date:missing",
-        ].join(" | ")}`
-      );
-      return result;
-    }
-
-    // 优先级 #3：提取区块号并通过链查询转换为日期
+    // 提取区块号并通过链上 RPC 转换为 ISO 日期
     const blocks = extractBlockNumbers(html);
     if (blocks.startBlock || blocks.endBlock) {
       if (blocks.startBlock) result.startBlock = blocks.startBlock;
       if (blocks.endBlock) result.endBlock = blocks.endBlock;
 
-      // 尝试通过 RPC 获取区块时间戳
       const parts = key.split("-");
       const chainName = parts[0];
       const blockDates = await convertBlocksToDates(
@@ -3210,26 +3056,16 @@ export async function fetchMeritTimeRange(
       );
       if (blockDates.startDate) result.startDate = blockDates.startDate;
       if (blockDates.endDate) result.endDate = blockDates.endDate;
-      dateStrategy = "date:p3:block->rpc";
-
-      // 如果仍然没有日期，使用空字符串（必填字段）
-      if (!result.startDate) result.startDate = "";
-      if (!result.endDate) result.endDate = "";
-
-      logger.info(
-        `🧠 Merit crawl strategies for ${key}: ${[
-          messageStrategy ?? "message:none",
-          hasSelfAuth
-            ? (selfAuthStrategy ?? "self-auth:missing")
-            : "self-auth:n/a",
-          dateStrategy ?? "date:missing",
-        ].join(" | ")}`
-      );
-      return result;
+      dateStrategy = "date:block->rpc";
     }
 
-    logger.warn(`⚠️ Could not extract time range information for key: ${key}`);
-    // 即使没有找到，也返回默认值（必填字段）
+    if (!result.startDate) result.startDate = "";
+    if (!result.endDate) result.endDate = "";
+
+    if (!dateStrategy) {
+      logger.warn(`⚠️ Could not extract time range information for key: ${key}`);
+    }
+
     logger.info(
       `🧠 Merit crawl strategies for ${key}: ${[
         messageStrategy ?? "message:none",
