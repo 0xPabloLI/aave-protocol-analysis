@@ -1617,6 +1617,25 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       }
     }
 
+    // 修复过期 endDate：如果 APR API 返回了非零值说明 campaign 仍在活跃，
+    // 但缓存的 endDate 已过期（因为 Merit 页面是客户端渲染，SSR HTML 中的 block numbers 是旧的），
+    // 此时将 endDate 延长到 7 天后，避免前端 isCampaignActive 误判为过期。
+    const MERIT_STALE_ENDED_DATE_FIX_DAYS = 7;
+    for (const item of Object.values(meritData)) {
+      for (const entry of [...item.meritSupplys, ...item.meritBorrows]) {
+        const hasActiveApr = entry.apr > 0 || (entry.selfApr ?? 0) > 0;
+        const endDateObj = entry.endDate ? new Date(entry.endDate) : null;
+        const isEnded = endDateObj ? endDateObj.getTime() < Date.now() : false;
+        if (hasActiveApr && isEnded) {
+          const fixedEndDate = new Date(Date.now() + MERIT_STALE_ENDED_DATE_FIX_DAYS * 86400000);
+          entry.endDate = fixedEndDate.toISOString();
+          logger.info(
+            `📅 Fixed stale endDate for merit entry (apr=${entry.apr}, old=${endDateObj!.toISOString()}, new=${entry.endDate})`
+          );
+        }
+      }
+    }
+
     logger.info(
       `✅ Indexed Merit data for ${Object.keys(meritData).length} chain-token combinations`
     );
