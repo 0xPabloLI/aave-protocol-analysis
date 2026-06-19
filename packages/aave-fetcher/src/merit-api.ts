@@ -1023,6 +1023,11 @@ async function loadCachedMeritCampaignMetadata(): Promise<
         timeRange.startDate &&
         timeRange.startDate.trim() !== "";
 
+      const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/;
+      const datesAreIso =
+        (!timeRange.startDate || ISO_DATE_PATTERN.test(timeRange.startDate)) &&
+        (!timeRange.endDate || timeRange.endDate.trim() === "" || ISO_DATE_PATTERN.test(timeRange.endDate));
+
       const hasBlockFields =
         timeRange.startBlock &&
         timeRange.startBlock.trim() !== "" &&
@@ -1041,7 +1046,7 @@ async function loadCachedMeritCampaignMetadata(): Promise<
         !shouldHaveMessage || timeRange.message !== undefined;
 
       const isValidEntry =
-        hasLinkAndStart && hasName && (hasEndIndicator || hasBlockFields || timeRange.endDate !== undefined) && hasMessage;
+        hasLinkAndStart && hasName && datesAreIso && (hasEndIndicator || hasBlockFields || timeRange.endDate !== undefined) && hasMessage;
 
       if (isValidEntry) {
         if (timeRange.startBlock || timeRange.endBlock) {
@@ -1071,6 +1076,7 @@ async function loadCachedMeritCampaignMetadata(): Promise<
         if (!hasEndIndicator && timeRange.endDate === undefined)
           missingFields.push("endDate/endBlock");
         if (!hasMessage && shouldHaveMessage) missingFields.push("message");
+        if (!datesAreIso) missingFields.push("iso-dates");
         logger.warn(
           `⚠️ Cached entry "${key}" missing fields: ${missingFields.join(", ")}, will refetch`
         );
@@ -1137,9 +1143,12 @@ export function isCachedTimeRangeComplete(params: {
   const missing: string[] = [];
   if (!cached) return { isComplete: false, missing: ["missing-cache"] };
 
+  const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/;
   const linkOk = !!cached.link && cached.link.trim() !== "";
   const startDateOk = !!cached.startDate && cached.startDate.trim() !== "";
+  const startDateIsoOk = !cached.startDate || ISO_DATE_PATTERN.test(cached.startDate);
   const endDateOk = cached.endDate !== undefined;
+  const endDateIsoOk = !cached.endDate || cached.endDate.trim() === "" || ISO_DATE_PATTERN.test(cached.endDate);
   const nameOk = cached.name !== undefined;
   const hasEndIndicatorOk =
     (cached.endDate !== undefined && cached.endDate.trim() !== "") ||
@@ -1147,7 +1156,9 @@ export function isCachedTimeRangeComplete(params: {
 
   if (!linkOk) missing.push("link");
   if (!startDateOk) missing.push("startDate");
+  if (!startDateIsoOk) missing.push("startDate-iso");
   if (!endDateOk) missing.push("endDate");
+  if (!endDateIsoOk) missing.push("endDate-iso");
   if (!nameOk) missing.push("name");
   if (!hasEndIndicatorOk && cached.endDate === undefined)
     missing.push("endDate/endBlock");
@@ -1614,25 +1625,6 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         item.meritCampaignBorrows.push(
           buildCampaignGroupFromMeritEntry(entry, meritKey)
         );
-      }
-    }
-
-    // 修复过期 endDate：如果 APR API 返回了非零值说明 campaign 仍在活跃，
-    // 但缓存的 endDate 已过期（因为 Merit 页面是客户端渲染，SSR HTML 中的 block numbers 是旧的），
-    // 此时将 endDate 延长到 7 天后，避免前端 isCampaignActive 误判为过期。
-    const MERIT_STALE_ENDED_DATE_FIX_DAYS = 7;
-    for (const item of Object.values(meritData)) {
-      for (const entry of [...item.meritSupplys, ...item.meritBorrows]) {
-        const hasActiveApr = entry.apr > 0 || (entry.selfApr ?? 0) > 0;
-        const endDateObj = entry.endDate ? new Date(entry.endDate) : null;
-        const isEnded = endDateObj ? endDateObj.getTime() < Date.now() : false;
-        if (hasActiveApr && isEnded) {
-          const fixedEndDate = new Date(Date.now() + MERIT_STALE_ENDED_DATE_FIX_DAYS * 86400000);
-          entry.endDate = fixedEndDate.toISOString();
-          logger.info(
-            `📅 Fixed stale endDate for merit entry (apr=${entry.apr}, old=${endDateObj!.toISOString()}, new=${entry.endDate})`
-          );
-        }
       }
     }
 
@@ -2554,8 +2546,7 @@ async function extractMeritDynamicInfoWithRender(
   return null;
 }
 
-
-
+const ETHEREUM_AVERAGE_BLOCK_TIME_S = 12;
 
 
 /**
@@ -2594,20 +2585,12 @@ function extractBlockNumbers(html: string): {
   return {};
 }
 
-/**
- * 通过 RPC 查询区块时间戳
- */
-async function getBlockTimestamp(
-  blockNumber: string,
-  chainName?: string
+async function getEthereumBlockTimestamp(
+  blockNumber: string
 ): Promise<string | null> {
   try {
-    // 根据链名选择 RPC 端点
-    const rpcUrls = chainName ? getRpcUrlsFromChainName(chainName) : [];
-
-    if (rpcUrls.length === 0) {
-      return null;
-    }
+    const rpcUrls = getRpcUrlsFromChainName("ethereum");
+    if (rpcUrls.length === 0) return null;
 
     for (const rpcUrl of rpcUrls) {
       const controller = new AbortController();
@@ -2616,9 +2599,7 @@ async function getBlockTimestamp(
       try {
         const response = await fetch(rpcUrl, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify({
             jsonrpc: "2.0",
@@ -2628,31 +2609,40 @@ async function getBlockTimestamp(
           }),
         });
 
-        if (!response.ok) {
-          continue;
-        }
+        if (!response.ok) continue;
 
         const data = (await response.json()) as {
           result?: { timestamp?: string };
         };
 
         if (data.result?.timestamp) {
-          // 将十六进制时间戳转换为日期字符串
           const timestamp = parseInt(data.result.timestamp, 16);
-          const date = new Date(timestamp * 1000);
-          return date.toISOString();
+          return new Date(timestamp * 1000).toISOString();
         }
       } catch {
-        // ignore and try next rpc
+        // try next rpc
       } finally {
         clearTimeout(timeoutId);
       }
     }
 
     return null;
-  } catch (error) {
+  } catch {
     return null;
   }
+}
+
+function estimateEndBlockTimestamp(
+  startBlockTsIso: string,
+  startBlock: string,
+  endBlock: string
+): string {
+  const startTsMs = new Date(startBlockTsIso).getTime();
+  const blockDiff =
+    parseInt(endBlock, 10) - parseInt(startBlock, 10);
+  const estimatedTsMs =
+    startTsMs + blockDiff * ETHEREUM_AVERAGE_BLOCK_TIME_S * 1000;
+  return new Date(estimatedTsMs).toISOString();
 }
 
 /**
@@ -2660,22 +2650,30 @@ async function getBlockTimestamp(
  */
 async function convertBlocksToDates(
   startBlock?: string,
-  endBlock?: string,
-  chainName?: string
-): Promise<{ startDate?: string; endDate?: string }> {
-  const result: { startDate?: string; endDate?: string } = {};
+  endBlock?: string
+): Promise<{ startDate?: string; endDate?: string; startDateSource?: string; endDateSource?: string }> {
+  const result: { startDate?: string; endDate?: string; startDateSource?: string; endDateSource?: string } = {};
 
   if (startBlock) {
-    const startDate = await getBlockTimestamp(startBlock, chainName);
+    const startDate = await getEthereumBlockTimestamp(startBlock);
     if (startDate) {
       result.startDate = startDate;
+      result.startDateSource = "ethereum-rpc";
     }
   }
 
   if (endBlock) {
-    const endDate = await getBlockTimestamp(endBlock, chainName);
+    const endDate = await getEthereumBlockTimestamp(endBlock);
     if (endDate) {
       result.endDate = endDate;
+      result.endDateSource = "ethereum-rpc";
+    } else if (result.startDate && startBlock) {
+      result.endDate = estimateEndBlockTimestamp(
+        result.startDate,
+        startBlock,
+        endBlock
+      );
+      result.endDateSource = "ethereum-rpc-estimated";
     }
   }
 
@@ -3085,22 +3083,26 @@ export async function fetchMeritTimeRange(
       result.message = [];
     }
 
-    // 提取区块号并通过链上 RPC 转换为 ISO 日期
     const blocks = extractBlockNumbers(html);
     if (blocks.startBlock || blocks.endBlock) {
       if (blocks.startBlock) result.startBlock = blocks.startBlock;
       if (blocks.endBlock) result.endBlock = blocks.endBlock;
-
-      const parts = key.split("-");
-      const chainName = parts[0];
       const blockDates = await convertBlocksToDates(
         blocks.startBlock,
-        blocks.endBlock,
-        chainName
+        blocks.endBlock
       );
       if (blockDates.startDate) result.startDate = blockDates.startDate;
       if (blockDates.endDate) result.endDate = blockDates.endDate;
-      dateStrategy = "date:block->rpc";
+      const srcParts = [
+        blockDates.startDateSource ?? "none",
+        blockDates.endDateSource ?? "none",
+      ];
+      dateStrategy = `date:block->${srcParts.join("+")}`;
+      if (blockDates.endDateSource === "ethereum-rpc-estimated") {
+        logger.info(
+          `📅 Merit endDate estimated for ${key}: endBlock ${blocks.endBlock} not yet mined, using ${ETHEREUM_AVERAGE_BLOCK_TIME_S}s/block estimate`
+        );
+      }
     }
 
     if (!result.startDate) result.startDate = "";
