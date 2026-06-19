@@ -36,6 +36,9 @@ updates:
     commit-message:
       prefix: "chore"
       include: scope
+    ignore:
+      - dependency-name: "ethers"
+        update-types: ["version-update:semver-major"]
     groups:
       security-all:
         applies-to: security-updates
@@ -59,6 +62,9 @@ updates:
     commit-message:
       prefix: "chore"
       include: scope
+    ignore:
+      - dependency-name: "ethers"
+        update-types: ["version-update:semver-major"]
     groups:
       security-all:
         applies-to: security-updates

@@ -57,7 +57,8 @@
     "ethers": "5.8.0",
     "h3": "^1.15.5",
     "hono": "^4.12.25",
-    "preact": "^10.28.3"
+    "preact": "^10.28.3",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/cheerio": "^0.22.35",
