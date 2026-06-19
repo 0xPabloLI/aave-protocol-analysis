@@ -210,23 +210,48 @@ app.use((req, res) => {
 // unnoticed for days).
 // Moved under /api/seo/ to reuse SEO admin auth middleware.
 
-// Auto-run pending DB migrations before any cron cycles start
-try {
-  if (isPersistenceEnabled()) {
-    logger.info('🔄 Starting auto-migration — acquiring DB pool...');
-    const migrationPool = getPool();
-    logger.info('🔄 DB pool acquired — running migrations...');
-    await runMigrations(migrationPool);
-    logger.info('🔄 Migrations complete — warming config hashes...');
+// Auto-run pending DB migrations before any cron cycles start.
+// Non-blocking: if DB is unreachable, the server still starts and serves
+// from memory cache. A background retry attempts migration every 60s.
+let migrationReady = false;
 
-    await warmConfigHashes();
-    logger.info('🔄 Config hashes warmed — persistence ready');
-  } else {
-    logger.info('💾 Persistence disabled — skipping auto-migration');
+async function runMigrationWithWarmup(): Promise<void> {
+  const migrationPool = getPool();
+  await runMigrations(migrationPool);
+  await warmConfigHashes();
+  migrationReady = true;
+}
+
+if (isPersistenceEnabled()) {
+  logger.info('🔄 Starting auto-migration — acquiring DB pool...');
+  try {
+    logger.info('🔄 DB pool acquired — running migrations...');
+    await runMigrationWithWarmup();
+    logger.info('🔄 Migrations complete — persistence ready');
+  } catch (error) {
+    logger.error('❌ Auto-migration failed — starting server anyway (DB may be unreachable). Background retry every 60s:', error);
+    migrationReady = false;
+    // Background retry: attempt migration every 60s until it succeeds.
+    // Server stays up and serves from memory cache; persistence cron skips
+    // via isPoolHealthy() check until DB recovers.
+    const migrationRetryTimer = setInterval(async () => {
+      if (migrationReady) {
+        clearInterval(migrationRetryTimer);
+        return;
+      }
+      try {
+        logger.info('🔄 Background migration retry — acquiring DB pool...');
+        await runMigrationWithWarmup();
+        logger.info('🔄 Background migration succeeded — persistence ready');
+        clearInterval(migrationRetryTimer);
+      } catch (error) {
+        logger.warn('⚠️  Background migration retry failed (will retry in 60s):', error);
+      }
+    }, 60_000).unref();
   }
-} catch (error) {
-  logger.error('❌ Auto-migration failed — refusing to start with incomplete schema:', error);
-  process.exit(1);
+} else {
+  logger.info('💾 Persistence disabled — skipping auto-migration');
+  migrationReady = true;
 }
 
 // Start HTTP server immediately — healthcheck returns 503 until caches are warm.
