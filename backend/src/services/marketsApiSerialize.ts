@@ -25,9 +25,6 @@ function scaleMeritEntry<T extends { apr: number; selfApr?: number }>(e: T): T {
 
 function scaleMeritCampaignBreakdown<T extends { campaignApr: number; positionCap?: number; aprCap?: number }>(b: T): T {
   const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
-  if (Object.prototype.hasOwnProperty.call(b, 'positionCap') && b.positionCap !== undefined) {
-    (next as { positionCap?: number }).positionCap = roundTo6(b.positionCap * 100);
-  }
   if (Object.prototype.hasOwnProperty.call(b, 'aprCap') && b.aprCap !== undefined) {
     (next as { aprCap?: number }).aprCap = roundTo6(b.aprCap * 100);
   }
