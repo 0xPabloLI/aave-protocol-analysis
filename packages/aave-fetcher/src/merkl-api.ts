@@ -315,8 +315,8 @@ export function buildProtocolVersionLookup(
  *   3. V4 underlying token lookup           → v4  (safe: V3 never uses underlying as explorerAddress)
  *   4. Default                               → v3  (conservative)
  */
-export function isV4HubOpportunity(type: string | undefined): boolean {
-  return !!type?.startsWith('AAVE_V4_HUB_');
+export function isV4SpokeOpportunity(type: string | undefined): boolean {
+  return !!type?.startsWith('AAVE_V4_SPOKE_');
 }
 
 export function deriveProtocolVersion(
@@ -1418,11 +1418,12 @@ export async function processMerklData(
       continue;
     }
 
-    // ADR-0030: Skip AAVE_V4_HUB_* opportunities to avoid double-counting with Spoke.
-    // Hub dailyRewards includes the portion forwarded to Spoke (same reward pool).
-    // Users claim from Spoke Merkle leaf, so Spoke APR is the correct value to display.
-    if (isV4HubOpportunity(opp.type)) {
-      logger.info(`   ⏭️ Skipping V4 Hub opportunity ${opp.id} (${opp.type}) — Spoke provides correct APR`);
+    // ADR-0030: Skip AAVE_V4_SPOKE_* opportunities to avoid double-counting with Hub.
+    // Hub distributes the full incentive budget (Hub-direct + Spoke-forwarded) at targetAPR.
+    // Users receive rewards at Hub APR level (confirmed via Merkl API breakdowns).
+    // Spoke APR (Dutch Auction rate) understates actual rewards by ~5% (≈ nativeAPY delta).
+    if (isV4SpokeOpportunity(opp.type)) {
+      logger.info(`   ⏭️ Skipping V4 Spoke opportunity ${opp.id} (${opp.type}) — Hub provides correct APR`);
       continue;
     }
 

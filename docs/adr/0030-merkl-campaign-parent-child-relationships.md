@@ -1,10 +1,10 @@
 # ADR-0030: Merkl Campaign Parent-Child Relationships
 
-**Status**: Implemented (Mode 3 Hub/Spoke double-counting fix deployed)
+**Status**: Implemented (Mode 3 Hub/Spoke double-counting fix — REVISED to filter Spoke, keep Hub)
 
 **Date**: 2026-06-17
 
-**Updated**: 2026-06-19
+**Updated**: 2026-06-20
 
 ## Context
 
@@ -249,8 +249,8 @@ Hub amount ≠ Spoke1 amount + Spoke2 amount. The diff (15,309 USDG) is: (a) bud
 3. Merkl engine allocates sub-budget from Hub's total budget to Spoke (33,168.59 USDG), leaving Hub self-retained budget (9,209.07 USDG)
 4. Hub dailyRewards = `min(budget/duration, TVL × targetAPR / 365)` — computed against **all** Hub TVL (including Spoke contract's deposit)
 5. Spoke dailyRewards = `spoke_amount / duration` — Dutch auction constant rate, independent of Hub's targetAPR cap
-6. **Hub and Spoke are independent Merkle tree leaves** — users claim from one or the other, not both
-7. V4 users deposit through Spoke → claim from Spoke Merkle leaf → receive Spoke APR (6.52%)
+6. **Hub and Spoke are MERGED in the same Merkle tree** — a user's leaf = `keccak256(user, token, cumulativeAmount)`, where `cumulativeAmount` includes rewards from ALL campaigns (Hub + Spoke)
+7. V4 users deposit through Spoke → their Merkle leaf includes rewards attributed to the Hub campaign (confirmed via Merkl API `/users/{addr}/rewards` breakdowns)
 8. Hub self-retained budget (9,209.07 USDG) is for direct Hub depositors, but in practice nearly zero direct depositors exist (TVL_hub ≈ TVL_spoke)
 
 **Evidence that Spoke is NOT an on-chain campaign**:
@@ -274,9 +274,9 @@ Deficit = 1,290.23 USDG
 ```
 Merkl engine allocates less budget to Spoke than what's needed to reach targetAPR, because it reserves budget for Hub's direct depositors. This means Spoke depositors always get slightly less APR than Hub's targetAPR.
 
-**No double-counting at Merkl engine level**: The engine knows about the parent-child relationship and constructs separate Merkle tree leaves. A user who deposited through Spoke claims from the Spoke leaf only.
+**No double-counting at Merkl engine level**: The engine constructs a single Merkle tree where each `(user, token)` leaf contains the cumulative reward from ALL campaigns. A user's leaf = `sum(breakdown amounts from all campaigns for that token)`. The Merkl API breakdowns attribute rewards to the originating campaign — for V4, all breakdowns point to Hub campaigns, confirming that Hub budget is the source of all V4 incentive rewards.
 
-**But our API DOES double-count**: Both Hub and Spoke opportunities map to the same V4 reserve, and both are included in the reserve's Merkl incentive APR.
+**But our API DOES double-count**: Both Hub and Spoke opportunities map to the same V4 reserve, and both contribute independently to the reserve's Merkl incentive APR. Since Hub dailyRewards already includes the Spoke-forwarded portion, showing both = ~2x the actual reward rate.
 
 ### Capped Reward Rate — Key to Understanding MAX_APR
 
@@ -341,16 +341,17 @@ merkl-api.ts:1809-1812 → if (!seenOpportunities.has(opp)) → adds both Hub an
 - These are genuinely different addresses, so the Merkl index stores them under different keys
 
 **Mitigation options**:
-1. **Filter out `AAVE_V4_HUB_*` opportunities entirely** — simplest approach, Hub is an implementation detail
-2. **Deduplicate by reserve + parent-child relationship** — when Hub and Spoke map to same reserve, prefer Spoke
-3. **Use only Spoke opportunities for V4** — more targeted than option 1
+1. **Filter out `AAVE_V4_SPOKE_*` opportunities entirely** — simplest approach, Spoke is a subset of Hub
+2. **Deduplicate by reserve + parent-child relationship** — when Hub and Spoke map to same reserve, prefer Hub
+3. **Use only Hub opportunities for V4** — more targeted than option 1
 
-**Recommended**: Option 1 (filter out `AAVE_V4_HUB_*`) because:
-- Spoke APR (6.52%) is what V4 users actually receive — they deposit through Spoke and claim from Spoke Merkle leaf
-- Hub APR (6.77%) is a targetAPR virtual cap — nearly zero users claim from Hub Merkle leaf
-- Hub `explorerAddress` = underlying token creates a spurious match alongside Spoke's pool address match
-- **IMPORTANT**: Spoke dailyRewards does NOT include Hub's forwarded portion — they are independent Merkle tree leaves with independent budgets. But Spoke is the correct APR to show because it's what V4 depositors can actually claim.
-- **Caveat**: Spoke APR will always be slightly less than Hub targetAPR (6.52% vs 6.77%) because Spoke budget < budget needed to reach targetAPR
+**Recommended**: Option 1 (filter out `AAVE_V4_SPOKE_*`) because:
+- Hub APR (6.77% = targetAPR) is the TRUE total incentive APR that users actually receive
+- User reward breakdowns in Merkl API all attribute to Hub campaigns, not Spoke campaigns
+- Hub dailyRewards = TVL × targetAPR / 365 includes both Hub-direct and Spoke-forwarded portions
+- Spoke APR (6.46%) is only the Dutch Auction distribution rate — it understates actual rewards by ~0.31pp (≈nativeAPY delta)
+- Spoke budget < Hub total budget because Merkl reserves ~21% for Hub-direct distribution
+- **Evidence**: Creator address breakdowns show all 4 USDG rewards attributed to Hub campaigns (campaignId = hash format), not Spoke campaigns (campaignId = small integer format)
 
 ## Impact on Current Code
 
@@ -364,40 +365,72 @@ Research phase complete. Key findings:
 
 1. **Mode 1 (tree hierarchy)**: Organizational only, no calculation logic. Low priority — double-counting risk is theoretical since parent/child map to different reserves.
 2. **Mode 2 (composed calculation)**: `composedCampaignsCompute` and `composedMultiplier` not processed. AAV-948 filed. Only 6 unique opportunities affected; 4 with non-1.0x multipliers.
-3. **Mode 3 (V4 Hub-Spoke)**: CONFIRMED double-counting. **FIX IMPLEMENTED** — `AAVE_V4_HUB_*` opportunities are filtered out in `merkl-api.ts` opportunity processing loop.
+3. **Mode 3 (V4 Hub-Spoke)**: CONFIRMED double-counting. **FIX IMPLEMENTED (REVISED)** — `AAVE_V4_SPOKE_*` opportunities are filtered out in `merkl-api.ts` opportunity processing loop.
 
-### Implementation: AAVE_V4_HUB_* Filter (2026-06-19)
+### Implementation: AAVE_V4_SPOKE_* Filter (2026-06-20, REVISED from Hub filter)
 
-**Code change**: `packages/aave-fetcher/src/merkl-api.ts` — added early `continue` after `explorerAddress` check, before `deriveProtocolVersion`:
+**Code change**: `packages/aave-fetcher/src/merkl-api.ts` — added `isV4SpokeOpportunity()` and early `continue` after `explorerAddress` check, before `deriveProtocolVersion`:
 
 ```typescript
-if (opp.type?.startsWith('AAVE_V4_HUB_')) {
-  logger.info(`   ⏭️ Skipping V4 Hub opportunity ${opp.id} (${opp.type}) — Spoke provides correct APR`);
+export function isV4SpokeOpportunity(type: string | undefined): boolean {
+  return !!type?.startsWith('AAVE_V4_SPOKE_');
+}
+
+// In processMerklData loop:
+if (isV4SpokeOpportunity(opp.type)) {
+  logger.info(`   ⏭️ Skipping V4 Spoke opportunity ${opp.id} (${opp.type}) — Hub provides correct APR`);
   continue;
 }
 ```
 
-**Why this works**:
+**Why this works (REVISED)**:
 - Hub `explorerAddress` = underlying token address (e.g., `0xe34316...` for USDG)
 - Spoke `explorerAddress` = Spoke pool contract (e.g., `0x94e7a5...`)
-- After filtering Hub, `merklData` no longer has the underlying token key
+- After filtering Spoke, `merklData` no longer has the Spoke pool contract key
 - V4 reserve lookup (`findMatchingMerklOpportunities`) checks `tokenAddress` + `spokeAddress`
-- `tokenAddress` (underlying) → no match (Hub filtered out)
-- `spokeAddress` (Spoke pool) → matches Spoke opportunity → correct APR
+- `tokenAddress` (underlying) → matches Hub opportunity → correct APR (targetAPR)
+- `spokeAddress` (Spoke pool) → no match (Spoke filtered out)
 
 **Verified with live Merkl API data** (both USDG and frxUSD pairs):
 
-| Asset | Hub APR | Spoke APR | Before (double) | After (correct) |
+| Asset | Hub APR (targetAPR) | Spoke APR (Dutch Auction) | Before (double) | After (correct) |
 |---|---|---|---|---|
-| USDG | 6.77% | 6.48% | 13.25% | 6.48% |
-| frxUSD | 5.36% | 4.87% | 10.23% | 4.87% |
+| USDG | 6.77% | 6.48% | 13.25% | 6.77% |
+| frxUSD | 5.36% | 4.87% | 10.23% | 5.36% |
 
-**Why Spoke APR is correct (not Hub targetAPR)**:
-- Hub dailyRewards is a virtual cap: `min(budget/duration, TVL × targetAPR / 365)`
-- Hub dailyRewards INCLUDES the portion forwarded to Spoke (same reward pool, not cumulative)
-- Spoke dailyRewards = Spoke budget / duration (constant rate Dutch auction)
-- Users deposit through Spoke and claim from Spoke Merkle leaf — Spoke APR is what they actually receive
-- Spoke APR < Hub targetAPR because Merkl engine reserves ~21% of budget for Hub direct depositors (who barely exist)
+**Why Hub APR is correct (not Spoke) — REVISED with evidence**:
+
+1. **Merkl API user breakdowns** confirm ALL V4 reward amounts are attributed to Hub campaigns:
+   - Creator address USDG breakdowns: 4 entries, all with Hub campaign IDs (hash format)
+   - No breakdown entries point to Spoke campaigns (small integer format)
+   - This means the Merkle tree leaf = sum of Hub campaign breakdowns
+
+2. **Hub dailyRewards = TVL × targetAPR / 365** (verified exact match for both USDG and frxUSD)
+   - targetAPR = total APR cap (native + incentive)
+   - Hub distributes the FULL incentive budget at targetAPR level
+
+3. **Spoke dailyRewards ≈ TVL × (targetAPR - nativeAPY) / 365** (verified within 0.2%)
+   - Spoke gets only the incentive portion, not the Hub-direct portion
+   - The Hub-direct portion ≈ TVL × nativeAPY / 365 (~$239/day for USDG)
+
+4. **Budget allocation confirms the split**:
+   ```
+   Hub total budget (Period 5): 42,378 USDG
+   Spoke budget:               32,631 USDG (77.0%)
+   ERC20LOGPROCESSOR:          94 USDG (0.2%)
+   Hub self-retained:          9,653 USDG (22.8%)
+   ```
+   Hub self-retained budget is NOT wasted — it's distributed via Hub Merkle leaf to direct Hub depositors.
+
+5. **Spoke APR understates actual rewards** by ~0.31pp (≈nativeAPY):
+   - Users receive rewards at Hub APR level (6.77%) via merged Merkle tree
+   - Spoke APR alone (6.48%) would understate by ~5%
+
+**Previous implementation (filtering Hub) was INCORRECT because**:
+- It assumed users claim from Spoke Merkle leaf only
+- It assumed Hub dailyRewards is a "virtual cap" not actually distributed
+- In reality, the global Merkle tree merges Hub + Spoke rewards into a single cumulative amount per (user, token) pair
+- User breakdowns prove rewards are attributed to Hub campaigns, not Spoke
 
 Issues filed:
 - AAV-947: Parent-child relationship research (completed → this ADR)
