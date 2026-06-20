@@ -171,5 +171,74 @@ describe('AAV-960: Merit format unification', () => {
       const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
       assert.equal('message' in group, false);
     });
+
+    it('distributes self auth message to self breakdown and keeps base message on opportunity', () => {
+      const entry: MeritAprEntry = {
+        apr: 0.05,
+        selfApr: 0.03,
+        link: 'https://apps.aavechan.com/merit/ethereum-supply-weth',
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        name: 'Supply WETH',
+        message: [
+          { action: 'Supply WETH', description: 'Rewards are distributed using the following formula: f(USD₮ aToken Holding - USD₮ vToken Holding / USD₮ Liquidation Threshold)' },
+          { action: 'Self Authentication', description: 'Supply USDT and double your yield by verifying your humanity through Self for the first $1,000 USDT supplied per user.' },
+        ],
+      };
+      const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
+      assert.equal(group.breakdowns.length, 2);
+
+      // Base breakdown: no breakdown-level message
+      assert.equal('message' in group.breakdowns[0], false);
+
+      // Self breakdown: has breakdown-level message with self auth entry
+      assert.ok(group.breakdowns[1].message);
+      const selfMsg = JSON.parse(group.breakdowns[1].message!);
+      assert.equal(selfMsg.length, 1);
+      assert.equal(selfMsg[0].action, 'Self Authentication');
+
+      // Opportunity-level message: only has non-self entries
+      assert.ok(group.message);
+      const oppMsg = JSON.parse(group.message!);
+      assert.equal(oppMsg.length, 1);
+      assert.equal(oppMsg[0].action, 'Supply WETH');
+    });
+
+    it('does not set breakdown message when no self auth entry exists', () => {
+      const entry: MeritAprEntry = {
+        apr: 0.05,
+        selfApr: 0.03,
+        link: 'https://apps.aavechan.com/merit/ethereum-supply-weth',
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        message: [
+          { action: 'Supply WETH', description: 'Base rewards formula' },
+        ],
+      };
+      const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
+      assert.equal(group.breakdowns.length, 2);
+      assert.equal('message' in group.breakdowns[0], false);
+      assert.equal('message' in group.breakdowns[1], false);
+      assert.ok(group.message);
+      const oppMsg = JSON.parse(group.message!);
+      assert.equal(oppMsg.length, 1);
+    });
+
+    it('sets breakdown message even without positionCap', () => {
+      const entry: MeritAprEntry = {
+        apr: 0.05,
+        selfApr: 0.03,
+        link: 'https://apps.aavechan.com/merit/ethereum-supply-weth',
+        startDate: '2025-01-01',
+        endDate: '2025-12-31',
+        message: [
+          { action: 'Self Authentication', description: 'Verify your humanity through Self' },
+        ],
+      };
+      const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
+      assert.equal(group.breakdowns.length, 2);
+      assert.equal('positionCap' in group.breakdowns[1], false);
+      assert.ok(group.breakdowns[1].message);
+    });
   });
 });

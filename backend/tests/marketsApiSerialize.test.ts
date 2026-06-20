@@ -18,11 +18,24 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
     borrowApy: 0.04,
     meritSupplys: [
       {
-        apr: 0.03,
-        selfApr: 0.01,
         link: 'https://merit.example/s',
-        startDate: '2025-01-01',
-        endDate: '2025-12-31',
+        breakdowns: [
+          {
+            campaignApr: 0.03,
+            campaignId: 'test-base',
+            campaignStartedAt: '2025-01-01',
+            campaignEndedAt: '2025-12-31',
+            campaignType: 'DUTCH_AUCTION',
+          },
+          {
+            campaignApr: 0.01,
+            campaignId: 'test-self',
+            campaignStartedAt: '2025-01-01',
+            campaignEndedAt: '2025-12-31',
+            campaignType: 'DUTCH_AUCTION',
+            positionCap: 10000,
+          },
+        ],
       },
     ],
     merklSupplys: [
@@ -63,8 +76,9 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
 
   assert.equal(api.supplyApy, 5.2);
   assert.equal(api.borrowApy, 4);
-  assert.equal(api.meritSupplys?.[0]?.apr, 3);
-  assert.equal(api.meritSupplys?.[0]?.selfApr, 1);
+  assert.equal(api.meritSupplys?.[0]?.breakdowns?.[0]?.campaignApr, 3);
+  assert.equal(api.meritSupplys?.[0]?.breakdowns?.[1]?.campaignApr, 1);
+  assert.equal(api.meritSupplys?.[0]?.breakdowns?.[1]?.positionCap, 10000);
   const bd = api.merklSupplys?.[0]?.breakdowns?.[0];
   assert.equal(bd?.campaignApr, 4);
   assert.equal(bd?.aprCap, 6);
@@ -790,8 +804,8 @@ function makeFullReserve(): RuntimeReserveData {
     optimalUtilization: 80,
     baseBorrowRate: 0.5,
     aaveProReserveId: '12345',
-    meritSupplys: [{ apr: 0.01, link: 'https://test', startDate: '2025-01-01', endDate: '2025-12-31' }],
-    meritBorrows: [{ apr: 0.02, link: 'https://test', startDate: '2025-01-01', endDate: '2025-12-31' }],
+    meritSupplys: [{ link: 'https://test', breakdowns: [{ campaignApr: 0.01, campaignId: 'test-base', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignType: 'DUTCH_AUCTION' }] }],
+    meritBorrows: [{ link: 'https://test', breakdowns: [{ campaignApr: 0.02, campaignId: 'test-base', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignType: 'DUTCH_AUCTION' }] }],
     merklSupplys: [{ link: 'https://test', breakdowns: [{ campaignApr: 0.03, campaignId: 'cmp-1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }],
     merklBorrows: [{ link: 'https://test', breakdowns: [{ campaignApr: 0.04, campaignId: 'cmp-2', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }],
     merklHolds: [{ link: 'https://test', breakdowns: [{ campaignApr: 0.05, campaignId: 'cmp-3', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }],

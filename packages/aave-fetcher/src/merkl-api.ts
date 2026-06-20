@@ -315,6 +315,10 @@ export function buildProtocolVersionLookup(
  *   3. V4 underlying token lookup           → v4  (safe: V3 never uses underlying as explorerAddress)
  *   4. Default                               → v3  (conservative)
  */
+export function isV4HubOpportunity(type: string | undefined): boolean {
+  return !!type?.startsWith('AAVE_V4_HUB_');
+}
+
 export function deriveProtocolVersion(
   opportunityType: string | undefined,
   explorerAddress: string | undefined,
@@ -1413,7 +1417,15 @@ export async function processMerklData(
       logger.warn(`   ⚠️ No explorerAddress found for opportunity ${opp.id}${oppLink ? ` — ${oppLink}` : ''}`);
       continue;
     }
-    
+
+    // ADR-0030: Skip AAVE_V4_HUB_* opportunities to avoid double-counting with Spoke.
+    // Hub dailyRewards includes the portion forwarded to Spoke (same reward pool).
+    // Users claim from Spoke Merkle leaf, so Spoke APR is the correct value to display.
+    if (isV4HubOpportunity(opp.type)) {
+      logger.info(`   ⏭️ Skipping V4 Hub opportunity ${opp.id} (${opp.type}) — Spoke provides correct APR`);
+      continue;
+    }
+
     // Derive protocol version from opportunity (ADR-0018 4-step priority)
     const protocolVersion = deriveProtocolVersion(
       opp.type,

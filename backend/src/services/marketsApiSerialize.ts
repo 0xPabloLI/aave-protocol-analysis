@@ -15,14 +15,6 @@ export function roundTo6(n: number): number {
   return Number(n.toFixed(6));
 }
 
-function scaleMeritEntry<T extends { apr: number; selfApr?: number }>(e: T): T {
-  return {
-    ...e,
-    apr: roundTo6(e.apr * 100),
-    ...(e.selfApr !== undefined ? { selfApr: roundTo6(e.selfApr * 100) } : {}),
-  };
-}
-
 function scaleMeritCampaignBreakdown<T extends { campaignApr: number; positionCap?: number; aprCap?: number }>(b: T): T {
   const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
   if (Object.prototype.hasOwnProperty.call(b, 'aprCap') && b.aprCap !== undefined) {
@@ -136,10 +128,8 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     ...(reserve.optimalUtilization !== undefined ? { optimalUtilization: roundTo6(reserve.optimalUtilization) } : {}),
     ...(reserve.baseBorrowRate !== undefined ? { baseBorrowRate: roundTo6(reserve.baseBorrowRate) } : {}),
     ...(reserve.collateralRisk !== undefined ? { collateralRisk: roundTo6(reserve.collateralRisk) } : {}),
-    ...(reserve.meritSupplys?.length ? { meritSupplys: reserve.meritSupplys.map((e) => scaleMeritEntry(e)) } : {}),
-    ...(reserve.meritBorrows?.length ? { meritBorrows: reserve.meritBorrows.map((e) => scaleMeritEntry(e)) } : {}),
-    ...(reserve.meritCampaignSupplys?.length ? { meritCampaignSupplys: scaleGroupedCampaigns(reserve.meritCampaignSupplys, scaleMeritCampaignBreakdown) } : {}),
-    ...(reserve.meritCampaignBorrows?.length ? { meritCampaignBorrows: scaleGroupedCampaigns(reserve.meritCampaignBorrows, scaleMeritCampaignBreakdown) } : {}),
+    ...(reserve.meritSupplys?.length ? { meritSupplys: scaleGroupedCampaigns(reserve.meritSupplys, scaleMeritCampaignBreakdown) } : {}),
+    ...(reserve.meritBorrows?.length ? { meritBorrows: scaleGroupedCampaigns(reserve.meritBorrows, scaleMeritCampaignBreakdown) } : {}),
     ...(reserve.merklSupplys?.length && reserve.supplyApy !== undefined
       ? { merklSupplys: scaleGroupedCampaignsWithContext(reserve.merklSupplys, reserve.supplyApy, 'supply') }
       : reserve.merklSupplys?.length ? { merklSupplys: scaleGroupedCampaigns(reserve.merklSupplys, (bd) => scaleMerklBreakdown(bd)) } : {}),
@@ -212,14 +202,6 @@ export function computeSchemaFingerprint(): string {
     baseBorrowRate: 0.01,
     deficit: '1',
     meritSupplys: [{
-      apr: 0.01, link: '__fingerprint__',
-      startDate: '2025-01-01', endDate: '2025-01-01',
-    }],
-    meritBorrows: [{
-      apr: 0.01, link: '__fingerprint__',
-      startDate: '2025-01-01', endDate: '2025-01-01',
-    }],
-    meritCampaignSupplys: [{
       link: '__fingerprint__',
       breakdowns: [{
         campaignApr: 0.01, campaignId: '__fingerprint__-base',
@@ -227,7 +209,7 @@ export function computeSchemaFingerprint(): string {
         campaignType: 'DUTCH_AUCTION',
       }],
     }],
-    meritCampaignBorrows: [{
+    meritBorrows: [{
       link: '__fingerprint__',
       breakdowns: [{
         campaignApr: 0.01, campaignId: '__fingerprint__-base',

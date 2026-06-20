@@ -1,5 +1,4 @@
 import type {
-  MeritAprEntry,
   MeritCampaignGroup,
   MeritCampaignBreakdown,
   MerklOpportunityGroup,
@@ -7,19 +6,6 @@ import type {
   BrevisCampaignItem,
   BrevisCampaignBreakdown,
 } from '@internal/aave-shared-contracts';
-
-export function pruneMeritEntry(e: MeritAprEntry): MeritAprEntry {
-  return {
-    apr: e.apr,
-    ...(e.selfApr !== undefined ? { selfApr: e.selfApr } : {}),
-    link: e.link,
-    ...(e.name ? { name: e.name } : {}),
-    ...(e.message ? { message: e.message } : {}),
-    startDate: e.startDate,
-    endDate: e.endDate,
-    ...(e.lastRoundRewardUsd !== undefined ? { lastRoundRewardUsd: e.lastRoundRewardUsd } : {}),
-  };
-}
 
 function pruneMeritCampaignBreakdown(b: MeritCampaignBreakdown): MeritCampaignBreakdown {
   return {
@@ -29,6 +15,7 @@ function pruneMeritCampaignBreakdown(b: MeritCampaignBreakdown): MeritCampaignBr
     campaignId: b.campaignId,
     ...(b.campaignType ? { campaignType: b.campaignType } : {}),
     ...(b.positionCap !== undefined ? { positionCap: b.positionCap } : {}),
+    ...(b.message ? { message: b.message } : {}),
     ...(b.aprCap !== undefined ? { aprCap: b.aprCap } : {}),
     ...(b.rewardTokenSymbol ? { rewardTokenSymbol: b.rewardTokenSymbol } : {}),
     ...(b.totalBudget !== undefined ? { totalBudget: b.totalBudget } : {}),

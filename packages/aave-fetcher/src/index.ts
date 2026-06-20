@@ -27,12 +27,11 @@ import { buildLlmPrompt, callLlmWithFallback } from './merklLlmClient.js';
 import type { LlmClientConfig } from './merklLlmClient.js';
 import {
   MeritDataItem,
-  MeritAprEntry,
   fetchMeritData,
   getMeritDataFromMarket
 } from './merit-api.js';
 import type { BrevisCampaignBreakdown, BrevisCampaignItem, BrevisDataItem } from './brevis-api.js';
-import { pruneMeritEntry, pruneMeritCampaignGroup, pruneMerklGroup, pruneBrevisItem } from './incentive-prune.js';
+import { pruneMeritCampaignGroup, pruneMerklGroup, pruneBrevisItem } from './incentive-prune.js';
 import {
   checkAndReportSessionStatus,
   closeBrowserInstances
@@ -53,7 +52,7 @@ export type {
   BrevisCampaignBreakdown,
   BrevisCampaignItem,
 } from '@internal/aave-shared-contracts';
-export type { MeritAprEntry } from '@internal/aave-shared-contracts';
+
 
 export function getDataDir(): string {
   return process.env.FETCHER_DATA_DIR || join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'data');
@@ -383,8 +382,6 @@ async function enrichDatasetWithIncentiveData(
       if (meritItemData.meritSupplys.length > 0 || meritItemData.meritBorrows.length > 0) {
         item.meritSupplys = meritItemData.meritSupplys.length > 0 ? meritItemData.meritSupplys : undefined;
         item.meritBorrows = meritItemData.meritBorrows.length > 0 ? meritItemData.meritBorrows : undefined;
-        item.meritCampaignSupplys = meritItemData.meritCampaignSupplys.length > 0 ? meritItemData.meritCampaignSupplys : undefined;
-        item.meritCampaignBorrows = meritItemData.meritCampaignBorrows.length > 0 ? meritItemData.meritCampaignBorrows : undefined;
         if (isV4Reserve) {
           logger.warn('V4 reserve matched Merit incentive (expected V3-only)', {
             chainId: item.chainId, tokenSymbol: item.tokenSymbol, marketName: item.marketName, source: 'merit',
@@ -539,10 +536,8 @@ async function enrichDatasetWithIncentiveData(
     
     if (item.aTokenAddress === null) item.aTokenAddress = undefined;
     if (item.vTokenAddress === null) item.vTokenAddress = undefined;
-    if (item.meritSupplys) item.meritSupplys = item.meritSupplys.map(pruneMeritEntry);
-    if (item.meritBorrows) item.meritBorrows = item.meritBorrows.map(pruneMeritEntry);
-    if (item.meritCampaignSupplys) item.meritCampaignSupplys = item.meritCampaignSupplys.map(pruneMeritCampaignGroup);
-    if (item.meritCampaignBorrows) item.meritCampaignBorrows = item.meritCampaignBorrows.map(pruneMeritCampaignGroup);
+    if (item.meritSupplys) item.meritSupplys = item.meritSupplys.map(pruneMeritCampaignGroup);
+    if (item.meritBorrows) item.meritBorrows = item.meritBorrows.map(pruneMeritCampaignGroup);
     if (item.merklSupplys) item.merklSupplys = item.merklSupplys.map(pruneMerklGroup);
     if (item.merklBorrows) item.merklBorrows = item.merklBorrows.map(pruneMerklGroup);
     if (item.merklHolds) item.merklHolds = item.merklHolds.map(pruneMerklGroup);
@@ -613,39 +608,42 @@ function generateCSV(data: RuntimeReserveData[]): string {
       `"${row.tokenAddress}"`,
       row.supplyApy !== undefined ? ratioToPercentString(row.supplyApy) : '',
       row.borrowApy !== undefined ? ratioToPercentString(row.borrowApy) : '',
-      // 格式化 meritSupplys：平铺所有数据，格式为 "APR1:selfApr1:link1:startDate1:endDate1:startBlock1:endBlock1:name1:message1;APR2:..."
-      // message 格式为 "action1|description1;action2|description2"（多条用分号分隔，action和description用竖线分隔）
       (row.meritSupplys && row.meritSupplys.length > 0) 
-        ? `"${row.meritSupplys.map(e => {
-            const parts = [ratioToPercentString(e.apr)];
-            if (e.selfApr !== undefined) parts.push(ratioToPercentString(e.selfApr));
-            parts.push(e.link, e.startDate, e.endDate);
-            if (e.startBlock) parts.push(e.startBlock);
-            if (e.endBlock) parts.push(e.endBlock);
-            if (e.name) parts.push(e.name);
-            if (e.message && e.message.length > 0) {
-              const messageStr = e.message.map(m => `${m.action || ''}|${m.description || ''}`).join(';');
-              parts.push(messageStr);
-            }
-            if (e.requiredBorrowTokens) parts.push(`req:${e.requiredBorrowTokens.join(',')}`);
-            return parts.join(':');
+        ? `"${row.meritSupplys.map(g => {
+            const parts: string[] = [];
+            if (g.name) parts.push(`name:${g.name}`);
+            if (g.message) parts.push(`msg:${g.message}`);
+            const breakdownStr = (g.breakdowns ?? []).map(b => {
+              const fields = [
+                ratioToPercentString(b.campaignApr),
+                b.campaignStartedAt,
+                b.campaignEndedAt,
+                b.campaignId || '',
+              ];
+              return fields.join(':');
+            }).join(';');
+            if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
+            parts.push(`link:${g.link}`);
+            return parts.join('|');
           }).join(';')}"` 
         : '',
-      // 格式化 meritBorrows：平铺所有数据，格式同上
       (row.meritBorrows && row.meritBorrows.length > 0) 
-        ? `"${row.meritBorrows.map(e => {
-            const parts = [ratioToPercentString(e.apr)];
-            if (e.selfApr !== undefined) parts.push(ratioToPercentString(e.selfApr));
-            parts.push(e.link, e.startDate, e.endDate);
-            if (e.startBlock) parts.push(e.startBlock);
-            if (e.endBlock) parts.push(e.endBlock);
-            if (e.name) parts.push(e.name);
-            if (e.message && e.message.length > 0) {
-              const messageStr = e.message.map(m => `${m.action || ''}|${m.description || ''}`).join(';');
-              parts.push(messageStr);
-            }
-            if (e.requiredSupplyTokens) parts.push(`req:${e.requiredSupplyTokens.join(',')}`);
-            return parts.join(':');
+        ? `"${row.meritBorrows.map(g => {
+            const parts: string[] = [];
+            if (g.name) parts.push(`name:${g.name}`);
+            if (g.message) parts.push(`msg:${g.message}`);
+            const breakdownStr = (g.breakdowns ?? []).map(b => {
+              const fields = [
+                ratioToPercentString(b.campaignApr),
+                b.campaignStartedAt,
+                b.campaignEndedAt,
+                b.campaignId || '',
+              ];
+              return fields.join(':');
+            }).join(';');
+            if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
+            parts.push(`link:${g.link}`);
+            return parts.join('|');
           }).join(';')}"` 
         : '',
       // 格式化 Merkl Supplys：包含 name 和 message

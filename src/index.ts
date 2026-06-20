@@ -1,7 +1,6 @@
 export type {
   RuntimeReserveData,
   MarketsPayload,
-  MeritAprEntry,
   MerklCampaignBreakdown,
   MerklOpportunityGroup,
   BrevisCampaignBreakdown,

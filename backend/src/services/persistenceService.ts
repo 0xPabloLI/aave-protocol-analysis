@@ -671,12 +671,17 @@ function nullableBigintString(v: unknown): string | null {
 // Per-campaign IncentiveDetails
 // ---------------------------------------------------------------------------
 
-export interface MeritCampaignEntry {
+export interface MeritCampaignBreakdownEntry {
   key: string;
   apr: number;
-  name?: string;
   endDate: string;
   link: string;
+}
+
+export interface MeritCampaignGroupEntry {
+  link: string;
+  name?: string;
+  breakdowns: MeritCampaignBreakdownEntry[];
 }
 
 export interface MerklBreakdownEntry {
@@ -714,8 +719,8 @@ export interface BrevisGroupEntry {
 }
 
 export interface PerCampaignIncentiveDetails {
-  meritSupplys?: MeritCampaignEntry[];
-  meritBorrows?: MeritCampaignEntry[];
+  meritSupplys?: MeritCampaignGroupEntry[];
+  meritBorrows?: MeritCampaignGroupEntry[];
   merklSupplys?: MerklGroupEntry[];
   merklBorrows?: MerklGroupEntry[];
   merklHolds?: MerklGroupEntry[];
@@ -726,25 +731,37 @@ export interface PerCampaignIncentiveDetails {
 export function buildIncentiveDetails(reserve: RuntimeReserveData): PerCampaignIncentiveDetails {
   const out: PerCampaignIncentiveDetails = {};
 
-  const meritSupplys: MeritCampaignEntry[] = [];
-  for (const m of reserve.meritSupplys ?? []) {
-    const key = `${String(m.link ?? '')}::${String(m.endDate ?? '')}`;
-    if (!key || key === '::') {
-      logger.warn(`buildIncentiveDetails: skipping merit supply entry with invalid key (reserveId=${reserve.reserveId})`);
-      continue;
+  const meritSupplys: MeritCampaignGroupEntry[] = [];
+  for (const g of reserve.meritSupplys ?? []) {
+    const breakdowns: MeritCampaignBreakdownEntry[] = [];
+    for (const b of g.breakdowns ?? []) {
+      const key = `${String(g.link ?? '')}::${String(b.campaignId ?? '')}::${String(b.campaignEndedAt ?? '')}`;
+      if (!key.replace(/::/g, '').trim()) {
+        logger.warn(`buildIncentiveDetails: skipping merit supply breakdown with invalid key (reserveId=${reserve.reserveId})`);
+        continue;
+      }
+      breakdowns.push({ key, apr: b.campaignApr, endDate: b.campaignEndedAt, link: g.link });
     }
-    meritSupplys.push({ key, apr: m.apr, name: m.name, endDate: m.endDate, link: m.link });
+    if (breakdowns.length) {
+      meritSupplys.push({ link: g.link, ...(g.name ? { name: g.name } : {}), breakdowns });
+    }
   }
   if (meritSupplys.length) out.meritSupplys = meritSupplys;
 
-  const meritBorrows: MeritCampaignEntry[] = [];
-  for (const m of reserve.meritBorrows ?? []) {
-    const key = `${String(m.link ?? '')}::${String(m.endDate ?? '')}`;
-    if (!key || key === '::') {
-      logger.warn(`buildIncentiveDetails: skipping merit borrow entry with invalid key (reserveId=${reserve.reserveId})`);
-      continue;
+  const meritBorrows: MeritCampaignGroupEntry[] = [];
+  for (const g of reserve.meritBorrows ?? []) {
+    const breakdowns: MeritCampaignBreakdownEntry[] = [];
+    for (const b of g.breakdowns ?? []) {
+      const key = `${String(g.link ?? '')}::${String(b.campaignId ?? '')}::${String(b.campaignEndedAt ?? '')}`;
+      if (!key.replace(/::/g, '').trim()) {
+        logger.warn(`buildIncentiveDetails: skipping merit borrow breakdown with invalid key (reserveId=${reserve.reserveId})`);
+        continue;
+      }
+      breakdowns.push({ key, apr: b.campaignApr, endDate: b.campaignEndedAt, link: g.link });
     }
-    meritBorrows.push({ key, apr: m.apr, name: m.name, endDate: m.endDate, link: m.link });
+    if (breakdowns.length) {
+      meritBorrows.push({ link: g.link, ...(g.name ? { name: g.name } : {}), breakdowns });
+    }
   }
   if (meritBorrows.length) out.meritBorrows = meritBorrows;
 

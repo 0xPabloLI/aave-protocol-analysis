@@ -1,61 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { pruneMeritEntry, pruneMerklGroup, pruneBrevisItem } from '../src/incentive-prune.js';
+import { pruneMerklGroup, pruneBrevisItem } from '../src/incentive-prune.js';
 import type {
-  MeritAprEntry,
   MerklOpportunityGroup,
   BrevisCampaignItem,
 } from '@internal/aave-shared-contracts';
 
 describe('arch-2: incentive-prune', () => {
-  describe('pruneMeritEntry', () => {
-    it('keeps required fields', () => {
-      const e: MeritAprEntry = {
-        apr: 0.05,
-        link: 'https://merit',
-        startDate: '2025-01-01',
-        endDate: '2025-12-31',
-      };
-      const r = pruneMeritEntry(e);
-      assert.equal(r.apr, 0.05);
-      assert.equal(r.link, 'https://merit');
-      assert.equal(r.startDate, '2025-01-01');
-      assert.equal(r.endDate, '2025-12-31');
-    });
-
-    it('keeps optional fields when present', () => {
-      const e: MeritAprEntry = {
-        apr: 0.05,
-        selfApr: 0.03,
-        link: 'https://merit',
-        startDate: '2025-01-01',
-        endDate: '2025-12-31',
-        name: 'test',
-        lastRoundRewardUsd: 100,
-        message: [{ action: 'supply', description: 'desc' }],
-      };
-      const r = pruneMeritEntry(e);
-      assert.equal(r.selfApr, 0.03);
-      assert.equal(r.name, 'test');
-      assert.equal(r.lastRoundRewardUsd, 100);
-      assert.deepEqual(r.message, [{ action: 'supply', description: 'desc' }]);
-    });
-
-    it('omits optional fields when undefined', () => {
-      const e: MeritAprEntry = {
-        apr: 0.05,
-        link: 'https://merit',
-        startDate: '2025-01-01',
-        endDate: '2025-12-31',
-      };
-      const r = pruneMeritEntry(e);
-      assert.equal('selfApr' in r, false);
-      assert.equal('name' in r, false);
-      assert.equal('lastRoundRewardUsd' in r, false);
-      assert.equal('message' in r, false);
-    });
-  });
-
   describe('pruneMerklGroup', () => {
     it('keeps required fields and breakdowns', () => {
       const g: MerklOpportunityGroup = {

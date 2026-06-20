@@ -22,8 +22,8 @@ function baseReserve(overrides: Partial<RuntimeReserveData> = {}): RuntimeReserv
 
 test('buildIncentiveDetails: output contains 7 field keys when all sides populated', () => {
   const r = baseReserve({
-    meritSupplys: [{ apr: 0.01, link: 'x', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritSupplys'],
-    meritBorrows: [{ apr: 0.02, link: 'y', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritBorrows'],
+    meritSupplys: [{ link: 'x', breakdowns: [{ campaignApr: 0.01, campaignId: 's-base', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignType: 'DUTCH_AUCTION' }] }] as RuntimeReserveData['meritSupplys'],
+    meritBorrows: [{ link: 'y', breakdowns: [{ campaignApr: 0.02, campaignId: 'b-base', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignType: 'DUTCH_AUCTION' }] }] as RuntimeReserveData['meritBorrows'],
     merklSupplys: [{ link: 'l', breakdowns: [{ campaignApr: 0.01, campaignId: 's1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }] as unknown as RuntimeReserveData['merklSupplys'],
     merklBorrows: [{ link: 'l', breakdowns: [{ campaignApr: 0.01, campaignId: 'b1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }] as unknown as RuntimeReserveData['merklBorrows'],
     merklHolds: [{ link: 'l', breakdowns: [{ campaignApr: 0.01, campaignId: 'h1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }] }] as unknown as RuntimeReserveData['merklHolds'],
@@ -42,21 +42,26 @@ test('buildIncentiveDetails: output contains 7 field keys when all sides populat
   assert.ok(keys.includes('brevisBorrows'));
 });
 
-test('buildIncentiveDetails: MeritCampaignEntry structure correct', () => {
+test('buildIncentiveDetails: MeritCampaignGroupEntry structure correct', () => {
   const r = baseReserve({
     meritSupplys: [
-      { apr: 0.005, link: 'https://m.com/1', name: 'Round 1', startDate: '2025-01-01', endDate: '2025-06-30' },
+      { link: 'https://m.com/1', name: 'Round 1', breakdowns: [
+        { campaignApr: 0.005, campaignId: 'r1-base', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-06-30', campaignType: 'DUTCH_AUCTION' },
+      ] },
     ] as RuntimeReserveData['meritSupplys'],
   });
   const details = buildIncentiveDetails(r);
-  const entry = details.meritSupplys?.[0];
-  assert.ok(entry);
-  assert.equal(typeof entry!.key, 'string');
-  assert.ok(entry!.key.length > 0);
-  assert.equal(entry!.apr, 0.005);
-  assert.equal(entry!.name, 'Round 1');
-  assert.equal(entry!.endDate, '2025-06-30');
-  assert.equal(entry!.link, 'https://m.com/1');
+  const group = details.meritSupplys?.[0];
+  assert.ok(group);
+  assert.equal(group!.link, 'https://m.com/1');
+  assert.equal(group!.name, 'Round 1');
+  assert.equal(group!.breakdowns.length, 1);
+  const bd = group!.breakdowns[0];
+  assert.equal(typeof bd.key, 'string');
+  assert.ok(bd.key.length > 0);
+  assert.equal(bd.apr, 0.005);
+  assert.equal(bd.endDate, '2025-06-30');
+  assert.equal(bd.link, 'https://m.com/1');
 });
 
 test('buildIncentiveDetails: MerklGroupEntry structure correct', () => {
@@ -154,7 +159,7 @@ test('buildIncentiveDetails: BrevisGroupEntry structure correct', () => {
 test('buildIncentiveDetails: merit entry with missing key fields is skipped', () => {
   const r = baseReserve({
     meritSupplys: [
-      { apr: 0.01, link: '', endDate: '', startDate: '2025-01-01' },
+      { link: '', breakdowns: [{ campaignApr: 0.01, campaignId: '', campaignStartedAt: '2025-01-01', campaignEndedAt: '' }] },
     ] as unknown as RuntimeReserveData['meritSupplys'],
   });
   const details = buildIncentiveDetails(r);
@@ -173,10 +178,10 @@ test('buildIncentiveDetails: empty reserve produces minimal output', () => {
 test('buildIncentiveDetails performance < 1ms per reserve', () => {
   const r = baseReserve({
     meritSupplys: Array.from({ length: 20 }, (_, i) => ({
-      apr: 0.01, link: `https://m.com/s/${i}`, startDate: '2025-01-01', endDate: '2025-12-31',
+      link: `https://m.com/s/${i}`, breakdowns: [{ campaignApr: 0.01, campaignId: `s-${i}-base`, campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignType: 'DUTCH_AUCTION' }],
     })) as RuntimeReserveData['meritSupplys'],
     meritBorrows: Array.from({ length: 20 }, (_, i) => ({
-      apr: 0.01, link: `https://m.com/b/${i}`, startDate: '2025-01-01', endDate: '2025-12-31',
+      link: `https://m.com/b/${i}`, breakdowns: [{ campaignApr: 0.01, campaignId: `b-${i}-base`, campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignType: 'DUTCH_AUCTION' }],
     })) as RuntimeReserveData['meritBorrows'],
     merklSupplys: Array.from({ length: 10 }, (_, i) => ({
       link: `https://merkl.com/s/${i}`,
@@ -201,10 +206,10 @@ test('buildIncentiveDetails performance < 1ms per reserve', () => {
 
 test('buildIncentiveDetails: hash differentiates distinct incentive data', () => {
   const r1 = baseReserve({
-    meritSupplys: [{ apr: 0.01, link: 'https://m.com/1', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritSupplys'],
+    meritSupplys: [{ link: 'https://m.com/1', breakdowns: [{ campaignApr: 0.01, campaignId: 's-base', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignType: 'DUTCH_AUCTION' }] }] as RuntimeReserveData['meritSupplys'],
   });
   const r2 = baseReserve({
-    meritSupplys: [{ apr: 0.02, link: 'https://m.com/1', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritSupplys'],
+    meritSupplys: [{ link: 'https://m.com/1', breakdowns: [{ campaignApr: 0.02, campaignId: 's-base', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignType: 'DUTCH_AUCTION' }] }] as RuntimeReserveData['meritSupplys'],
   });
   const h1 = computeHash([buildIncentiveDetails(r1)]);
   const h2 = computeHash([buildIncentiveDetails(r2)]);
@@ -213,7 +218,7 @@ test('buildIncentiveDetails: hash differentiates distinct incentive data', () =>
 
 test('buildIncentiveDetails: hash stable for identical incentive data', () => {
   const r = baseReserve({
-    meritSupplys: [{ apr: 0.01, link: 'https://m.com/1', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritSupplys'],
+    meritSupplys: [{ link: 'https://m.com/1', breakdowns: [{ campaignApr: 0.01, campaignId: 's-base', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignType: 'DUTCH_AUCTION' }] }] as RuntimeReserveData['meritSupplys'],
   });
   const h1 = computeHash([buildIncentiveDetails(r)]);
   const h2 = computeHash([buildIncentiveDetails(r)]);

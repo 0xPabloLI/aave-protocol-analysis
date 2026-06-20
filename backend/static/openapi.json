@@ -189,13 +189,13 @@
                           "meritSupplys": {
                             "type": "array",
                             "items": {
-                              "$ref": "#/components/schemas/MeritAprEntry"
+                              "$ref": "#/components/schemas/MeritCampaignGroup"
                             }
                           },
                           "meritBorrows": {
                             "type": "array",
                             "items": {
-                              "$ref": "#/components/schemas/MeritAprEntry"
+                              "$ref": "#/components/schemas/MeritCampaignGroup"
                             }
                           },
                           "merklSupplys": {
@@ -707,13 +707,13 @@
                 "meritSupplys": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/MeritAprEntry"
+                    "$ref": "#/components/schemas/MeritCampaignGroup"
                   }
                 },
                 "meritBorrows": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/MeritAprEntry"
+                    "$ref": "#/components/schemas/MeritCampaignGroup"
                   }
                 },
                 "merklSupplys": {
@@ -1082,13 +1082,13 @@
           "meritSupplys": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/MeritAprEntry"
+              "$ref": "#/components/schemas/MeritCampaignGroup"
             }
           },
           "meritBorrows": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/MeritAprEntry"
+              "$ref": "#/components/schemas/MeritCampaignGroup"
             }
           },
           "merklSupplys": {
@@ -1132,15 +1132,53 @@
           "tokenAddress"
         ]
       },
-      "MeritAprEntry": {
+      "MeritCampaignBreakdown": {
         "type": "object",
         "properties": {
-          "apr": {
+          "campaignApr": {
             "type": "number"
           },
-          "selfApr": {
+          "campaignStartedAt": {
+            "type": "string"
+          },
+          "campaignEndedAt": {
+            "type": "string"
+          },
+          "campaignId": {
+            "type": "string"
+          },
+          "campaignType": {
+            "type": "string"
+          },
+          "positionCap": {
             "type": "number"
           },
+          "message": {
+            "type": "string"
+          },
+          "aprCap": {
+            "type": "number"
+          },
+          "rewardTokenSymbol": {
+            "type": "string"
+          },
+          "totalBudget": {
+            "type": "number"
+          },
+          "latestTvl": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "campaignApr",
+          "campaignStartedAt",
+          "campaignEndedAt",
+          "campaignId"
+        ]
+      },
+      "MeritCampaignGroup": {
+        "type": "object",
+        "properties": {
           "link": {
             "type": "string"
           },
@@ -1148,26 +1186,58 @@
             "type": "string"
           },
           "message": {
+            "type": "string"
+          },
+          "breakdowns": {
             "type": "array",
             "items": {
-              "type": "object"
+              "type": "object",
+              "properties": {
+                "campaignApr": {
+                  "type": "number"
+                },
+                "campaignStartedAt": {
+                  "type": "string"
+                },
+                "campaignEndedAt": {
+                  "type": "string"
+                },
+                "campaignId": {
+                  "type": "string"
+                },
+                "campaignType": {
+                  "type": "string"
+                },
+                "positionCap": {
+                  "type": "number"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "aprCap": {
+                  "type": "number"
+                },
+                "rewardTokenSymbol": {
+                  "type": "string"
+                },
+                "totalBudget": {
+                  "type": "number"
+                },
+                "latestTvl": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "campaignApr",
+                "campaignStartedAt",
+                "campaignEndedAt",
+                "campaignId"
+              ]
             }
-          },
-          "startDate": {
-            "type": "string"
-          },
-          "endDate": {
-            "type": "string"
-          },
-          "lastRoundRewardUsd": {
-            "type": "number"
           }
         },
         "required": [
-          "apr",
-          "link",
-          "startDate",
-          "endDate"
+          "breakdowns"
         ]
       },
       "MerklCampaignBreakdown": {

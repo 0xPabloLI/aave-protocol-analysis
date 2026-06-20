@@ -48,30 +48,11 @@ export function getErrorCode(error: unknown): string | undefined {
 // Incentive types
 // ============================================================
 
-export interface MeritCampaignInfo {
-  action?: string;
-  description?: string;
-}
-
-export interface MeritAprEntry {
-  apr: number;
-  selfApr?: number;
-  link: string;
-  startDate: string;
-  endDate: string;
-  startBlock?: string;
-  endBlock?: string;
-  name?: string;
-  message?: MeritCampaignInfo[];
-  requiredBorrowTokens?: string[];
-  requiredSupplyTokens?: string[];
-  lastRoundRewardUsd?: number;
-}
-
 export interface MeritCampaignBreakdown extends BaseCampaignBreakdown {
   campaignId: string;
   campaignType?: ForecastCampaignTypeLite;
   positionCap?: number;
+  message?: string;
   aprCap?: number;
   rewardTokenSymbol?: string;
   totalBudget?: number;
@@ -160,10 +141,8 @@ export interface RuntimeReserveData {
   optimalUtilization?: number;
   baseBorrowRate?: number;
   aaveProReserveId?: string;
-  meritSupplys?: MeritAprEntry[];
-  meritBorrows?: MeritAprEntry[];
-  meritCampaignSupplys?: MeritCampaignGroup[];
-  meritCampaignBorrows?: MeritCampaignGroup[];
+  meritSupplys?: MeritCampaignGroup[];
+  meritBorrows?: MeritCampaignGroup[];
   merklSupplys?: MerklOpportunityGroup[];
   merklBorrows?: MerklOpportunityGroup[];
   merklHolds?: MerklOpportunityGroup[];
@@ -182,15 +161,10 @@ export interface RuntimeReserveData {
 // API layer types (derived from runtime types)
 // ============================================================
 
-export type ApiMeritAprEntry = Pick<
-  MeritAprEntry,
-  'apr' | 'selfApr' | 'link' | 'name' | 'message' | 'startDate' | 'endDate' | 'lastRoundRewardUsd'
->;
-
 export type ApiMeritCampaignBreakdown = Pick<
   MeritCampaignBreakdown,
   'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
-  | 'campaignType' | 'positionCap' | 'aprCap' | 'rewardTokenSymbol' | 'totalBudget' | 'latestTvl'
+  | 'campaignType' | 'positionCap' | 'message' | 'aprCap' | 'rewardTokenSymbol' | 'totalBudget' | 'latestTvl'
 >;
 
 export type ApiMeritCampaignGroup = CampaignGroup<ApiMeritCampaignBreakdown>;

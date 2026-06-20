@@ -1,6 +1,6 @@
 import type {
   RuntimeReserveData,
-  ApiMeritAprEntry,
+  ApiMeritCampaignGroup,
   ApiMerklOpportunityGroup,
   ApiBrevisCampaignItem,
 } from '@internal/aave-shared-contracts';
@@ -16,8 +16,8 @@ export type MarketWithSpread = Omit<
 > & {
   supplyApy?: number | null;
   borrowApy?: number | null;
-  meritSupplys?: ApiMeritAprEntry[];
-  meritBorrows?: ApiMeritAprEntry[];
+  meritSupplys?: ApiMeritCampaignGroup[];
+  meritBorrows?: ApiMeritCampaignGroup[];
   merklSupplys?: ApiMerklOpportunityGroup[];
   merklBorrows?: ApiMerklOpportunityGroup[];
   merklHolds?: ApiMerklOpportunityGroup[];

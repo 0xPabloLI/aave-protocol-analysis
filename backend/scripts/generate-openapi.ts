@@ -72,8 +72,8 @@ const RESERVE_PROPERTIES: Record<string, unknown> = {
   collateralRisk:     { type: 'number' },
 
   // --- 覆写区：激励数组 ---
-  meritSupplys:   { type: 'array', items: { $ref: '#/components/schemas/MeritAprEntry' } },
-  meritBorrows:   { type: 'array', items: { $ref: '#/components/schemas/MeritAprEntry' } },
+  meritSupplys:   { type: 'array', items: { $ref: '#/components/schemas/MeritCampaignGroup' } },
+  meritBorrows:   { type: 'array', items: { $ref: '#/components/schemas/MeritCampaignGroup' } },
   merklSupplys:   { type: 'array', items: { $ref: '#/components/schemas/MerklOpportunityGroup' } },
   merklBorrows:   { type: 'array', items: { $ref: '#/components/schemas/MerklOpportunityGroup' } },
   merklHolds:     { type: 'array', items: { $ref: '#/components/schemas/MerklOpportunityGroup' } },
@@ -90,19 +90,33 @@ const RESERVE_REQUIRED = [
 // 子类型 schema 定义
 // ============================================================
 
-const meritAprEntry = {
+const meritCampaignBreakdown = {
   type: 'object',
   properties: {
-    apr:             { type: 'number' },
-    selfApr:         { type: 'number' },
-    link:            { type: 'string' },
-    name:            { type: 'string' },
-    message:         { type: 'array', items: { type: 'object' } },
-    startDate:       { type: 'string' },
-    endDate:         { type: 'string' },
-    lastRoundRewardUsd: { type: 'number' },
+    campaignApr:        { type: 'number' },
+    campaignStartedAt:  { type: 'string' },
+    campaignEndedAt:    { type: 'string' },
+    campaignId:         { type: 'string' },
+    campaignType:       { type: 'string' },
+    positionCap:        { type: 'number' },
+    message:            { type: 'string' },
+    aprCap:             { type: 'number' },
+    rewardTokenSymbol:  { type: 'string' },
+    totalBudget:        { type: 'number' },
+    latestTvl:          { type: 'number' },
   },
-  required: ['apr', 'link', 'startDate', 'endDate'],
+  required: ['campaignApr', 'campaignStartedAt', 'campaignEndedAt', 'campaignId'],
+};
+
+const meritCampaignGroup = {
+  type: 'object',
+  properties: {
+    link:       { type: 'string' },
+    name:       { type: 'string' },
+    message:    { type: 'string' },
+    breakdowns: { type: 'array', items: meritCampaignBreakdown },
+  },
+  required: ['breakdowns'],
 };
 
 const merklBreakdown = {
@@ -379,7 +393,8 @@ const spec: OpenAPISpec = {
         properties: RESERVE_PROPERTIES,
         required: RESERVE_REQUIRED,
       },
-      MeritAprEntry: meritAprEntry,
+      MeritCampaignBreakdown: meritCampaignBreakdown,
+      MeritCampaignGroup: meritCampaignGroup,
       MerklCampaignBreakdown: merklBreakdown,
       MerklOpportunityGroup: merklOpportunityGroup,
       BrevisCampaignBreakdown: brevisBreakdown,

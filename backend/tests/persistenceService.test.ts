@@ -95,14 +95,15 @@ test('buildSnapshotRow: supply_incentives_apr position is null (column removed)'
 
 test('buildSnapshotRow: incentive_details is per-campaign structure (JSON parseable)', () => {
   const r = baseReserve({
-    meritSupplys: [{ apr: 0.02, link: 'https://m.com/r1', startDate: '2025-01-01', endDate: '2025-12-31' }] as RuntimeReserveData['meritSupplys'],
+    meritSupplys: [{ link: 'https://m.com/r1', breakdowns: [{ campaignApr: 0.02, campaignId: 'test-base', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignType: 'DUTCH_AUCTION' }] }] as RuntimeReserveData['meritSupplys'],
   });
   const details = buildIncentiveDetails(r);
   const json = JSON.stringify(details);
   const parsed = JSON.parse(json);
   assert.ok(parsed.meritSupplys);
-  assert.equal(parsed.meritSupplys[0].key, 'https://m.com/r1::2025-12-31');
-  assert.equal(parsed.meritSupplys[0].apr, 0.02);
+  assert.equal(parsed.meritSupplys[0].link, 'https://m.com/r1');
+  assert.equal(parsed.meritSupplys[0].breakdowns[0].apr, 0.02);
+  assert.equal(parsed.meritSupplys[0].breakdowns[0].key, 'https://m.com/r1::test-base::2025-12-31');
 });
 
 // ── buildConfigRow: content_hash warm-start dedup ──────────────────────────

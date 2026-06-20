@@ -67,12 +67,9 @@ export interface MeritAprEntry {
   lastRoundRewardUsd?: number; // 最近一轮 Merkl JSON_AIRDROP 总奖励（USD）
 }
 
-// Merit 数据项结构（简化：只保留 supply 和 borrow）
 export interface MeritDataItem {
-  meritSupplys: MeritAprEntry[];
-  meritBorrows: MeritAprEntry[];
-  meritCampaignSupplys: MeritCampaignGroup[];
-  meritCampaignBorrows: MeritCampaignGroup[];
+  meritSupplys: MeritCampaignGroup[];
+  meritBorrows: MeritCampaignGroup[];
   /** Protocol version. Currently only V3. */
   protocolVersion: "v3" | "v4";
 }
@@ -924,18 +921,22 @@ function isMeritCampaignMetadataEnded(endDateRaw?: string): boolean {
   return hasEndedByMeritEndDate(endDateRaw);
 }
 
-export function filterRecentExpiredMerit<T extends { endDate?: string }>(
-  entries: T[]
-): T[] {
+export function filterRecentExpiredMeritCampaigns(groups: MeritCampaignGroup[]): MeritCampaignGroup[] {
   const now = new Date();
-  const active = entries.filter(
-    (e) => !e.endDate || new Date(e.endDate) >= now
-  );
-  const expired = entries.filter((e) => e.endDate && new Date(e.endDate) < now);
+  const active = groups.filter(g => {
+    const bd = g.breakdowns ?? [];
+    return bd.length === 0 || bd.some(b => !b.campaignEndedAt || new Date(b.campaignEndedAt) >= now);
+  });
+  const expired = groups.filter(g => {
+    const bd = g.breakdowns ?? [];
+    return bd.length > 0 && bd.every(b => b.campaignEndedAt && new Date(b.campaignEndedAt) < now);
+  });
   if (expired.length === 0) return active;
-  const latest = expired.reduce((a, b) =>
-    new Date(a.endDate!) > new Date(b.endDate!) ? a : b
-  );
+  const latest = expired.reduce((a, b) => {
+    const aEnd = Math.max(...(a.breakdowns ?? []).map(bd => bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0));
+    const bEnd = Math.max(...(b.breakdowns ?? []).map(bd => bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0));
+    return aEnd >= bEnd ? a : b;
+  });
   return [...active, latest];
 }
 
@@ -1225,14 +1226,11 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
     logger.info("🔍 Indexing Merit APR data...");
     const meritData: Record<string, MeritDataItem> = {};
 
-    // 创建索引条目的辅助函数
     function createIndexEntry(indexKey: string) {
       if (!(indexKey in meritData)) {
         meritData[indexKey] = {
           meritSupplys: [],
           meritBorrows: [],
-          meritCampaignSupplys: [],
-          meritCampaignBorrows: [],
           protocolVersion: "v3",
         };
       }
@@ -1443,6 +1441,11 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
 
       const { supplyTokens, borrowTokens, chainKey } = nonSelfInfo;
 
+      const MERIT_LINK_PREFIX = 'https://apps.aavechan.com/merit/';
+      const meritKey = link.startsWith(MERIT_LINK_PREFIX)
+        ? link.slice(MERIT_LINK_PREFIX.length)
+        : undefined;
+
       const borrowTargets = borrowTokens.filter((t) => t !== "multiple");
       const supplyTargets = supplyTokens.filter((t) => t !== "multiple");
       const hasBorrowTokens = borrowTargets.length > 0;
@@ -1454,9 +1457,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         for (const bt of borrowTargets) {
           const indexKey = `${chainKey.toLowerCase()}-${bt.toLowerCase()}`;
           const incentives = createIndexEntry(indexKey);
+          const campaignKey = meritKey ?? `${indexKey}-borrow`;
 
           if (supplyTokens.length > 0) {
-            // borrow with supply requirement
             const estimate = getMeritEstimateForEntry(
               meritRoundEstimates,
               chainKey,
@@ -1478,9 +1481,8 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               ...(finalMessage.length > 0 && { message: finalMessage }),
               ...(estimate ?? {}),
             };
-            incentives.meritBorrows.push(entry);
+            incentives.meritBorrows.push(buildCampaignGroupFromMeritEntry(entry, campaignKey));
           } else {
-            // 简单 borrow
             const estimate = getMeritEstimateForEntry(
               meritRoundEstimates,
               chainKey,
@@ -1501,7 +1503,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               ...(finalMessage.length > 0 && { message: finalMessage }),
               ...(estimate ?? {}),
             };
-            incentives.meritBorrows.push(entry);
+            incentives.meritBorrows.push(buildCampaignGroupFromMeritEntry(entry, campaignKey));
           }
         }
 
@@ -1509,7 +1511,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
           for (const st of supplyTargets) {
             const supplyIndexKey = `${chainKey.toLowerCase()}-${st.toLowerCase()}`;
             const supplyIncentives = createIndexEntry(supplyIndexKey);
-            // supply with borrow requirement
+            const campaignKey = meritKey ?? `${supplyIndexKey}-supply`;
             const estimate = getMeritEstimateForEntry(
               meritRoundEstimates,
               chainKey,
@@ -1531,7 +1533,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               ...(finalMessage.length > 0 && { message: finalMessage }),
               ...(estimate ?? {}),
             };
-            supplyIncentives.meritSupplys.push(entry);
+            supplyIncentives.meritSupplys.push(buildCampaignGroupFromMeritEntry(entry, campaignKey));
           }
         }
       }
@@ -1541,7 +1543,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         for (const st of supplyTargets) {
           const indexKey = `${chainKey.toLowerCase()}-${st.toLowerCase()}`;
           const incentives = createIndexEntry(indexKey);
-          // supply with borrow requirement (multiple)
+          const campaignKey = meritKey ?? `${indexKey}-supply`;
           const estimate = getMeritEstimateForEntry(
             meritRoundEstimates,
             chainKey,
@@ -1563,7 +1565,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             ...(finalMessage.length > 0 && { message: finalMessage }),
             ...(estimate ?? {}),
           };
-          incentives.meritSupplys.push(entry);
+          incentives.meritSupplys.push(buildCampaignGroupFromMeritEntry(entry, campaignKey));
         }
       }
 
@@ -1572,6 +1574,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
         for (const st of supplyTargets) {
           const indexKey = `${chainKey.toLowerCase()}-${st.toLowerCase()}`;
           const incentives = createIndexEntry(indexKey);
+          const campaignKey = meritKey ?? `${indexKey}-supply`;
           const estimate = getMeritEstimateForEntry(
             meritRoundEstimates,
             chainKey,
@@ -1592,40 +1595,18 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             ...(finalMessage.length > 0 && { message: finalMessage }),
             ...(estimate ?? {}),
           };
-          incentives.meritSupplys.push(entry);
+          incentives.meritSupplys.push(buildCampaignGroupFromMeritEntry(entry, campaignKey));
         }
       }
     }
 
-    // 对每个 indexKey 的 meritSupplys 和 meritBorrows 应用最近过期过滤
     for (const key of Object.keys(meritData)) {
-      meritData[key].meritSupplys = filterRecentExpiredMerit(
+      meritData[key].meritSupplys = filterRecentExpiredMeritCampaigns(
         meritData[key].meritSupplys
       );
-      meritData[key].meritBorrows = filterRecentExpiredMerit(
+      meritData[key].meritBorrows = filterRecentExpiredMeritCampaigns(
         meritData[key].meritBorrows
       );
-    }
-
-    // 构建 CampaignGroup 格式数据
-    const MERIT_LINK_PREFIX = 'https://apps.aavechan.com/merit/';
-    for (const [indexKey, item] of Object.entries(meritData)) {
-      for (const entry of item.meritSupplys) {
-        const meritKey = entry.link.startsWith(MERIT_LINK_PREFIX)
-          ? entry.link.slice(MERIT_LINK_PREFIX.length)
-          : `${indexKey}-supply`;
-        item.meritCampaignSupplys.push(
-          buildCampaignGroupFromMeritEntry(entry, meritKey)
-        );
-      }
-      for (const entry of item.meritBorrows) {
-        const meritKey = entry.link.startsWith(MERIT_LINK_PREFIX)
-          ? entry.link.slice(MERIT_LINK_PREFIX.length)
-          : `${indexKey}-borrow`;
-        item.meritCampaignBorrows.push(
-          buildCampaignGroupFromMeritEntry(entry, meritKey)
-        );
-      }
     }
 
     logger.info(
@@ -3135,6 +3116,7 @@ export interface MeritCampaignBreakdownInput {
   endDate: string;
   meritKey: string;
   selfPositionCap: number | null;
+  selfBreakdownMessage?: string;
 }
 
 export function extractPositionCapFromSelfAuth(text: string | null): number | null {
@@ -3147,7 +3129,7 @@ export function extractPositionCapFromSelfAuth(text: string | null): number | nu
 }
 
 export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput) {
-  const { baseApr, selfApr, startDate, endDate, meritKey, selfPositionCap } = input;
+  const { baseApr, selfApr, startDate, endDate, meritKey, selfPositionCap, selfBreakdownMessage } = input;
   const breakdowns: Array<{
     campaignApr: number;
     campaignStartedAt: string;
@@ -3155,6 +3137,7 @@ export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput)
     campaignId: string;
     campaignType: 'DUTCH_AUCTION';
     positionCap?: number;
+    message?: string;
   }> = [];
 
   if (baseApr > 0) {
@@ -3175,6 +3158,7 @@ export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput)
       campaignId: `${meritKey}-self`,
       campaignType: 'DUTCH_AUCTION',
       ...(selfPositionCap != null && selfPositionCap > 0 ? { positionCap: selfPositionCap } : {}),
+      ...(selfBreakdownMessage ? { message: selfBreakdownMessage } : {}),
     });
   }
 
@@ -3196,6 +3180,11 @@ export function buildCampaignGroupFromMeritEntry(
       if (Number.isFinite(parsed) && parsed > 0) selfPositionCap = parsed;
     }
   }
+
+  const selfBreakdownMessage = selfAuthMsg
+    ? JSON.stringify([selfAuthMsg])
+    : undefined;
+
   const breakdowns = buildMeritCampaignBreakdowns({
     baseApr: entry.apr,
     selfApr: entry.selfApr ?? 0,
@@ -3203,12 +3192,18 @@ export function buildCampaignGroupFromMeritEntry(
     endDate: entry.endDate,
     meritKey,
     selfPositionCap,
+    selfBreakdownMessage,
   });
+
+  const nonSelfMessages = (entry.message ?? []).filter(
+    (m) => !m.action?.toLowerCase().includes('self authentication')
+  );
+
   return {
     link: entry.link,
     ...(entry.name ? { name: entry.name } : {}),
-    ...(entry.message && entry.message.length > 0
-      ? { message: JSON.stringify(entry.message) }
+    ...(nonSelfMessages.length > 0
+      ? { message: JSON.stringify(nonSelfMessages) }
       : {}),
     breakdowns,
   };
