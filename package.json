@@ -44,11 +44,9 @@
     "@internal/aave-shared-config": "*",
     "@internal/aave-shared-contracts": "*",
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "@types/puppeteer": "^5.4.7",
     "cheerio": "^1.1.2",
     "dotenv": "^17.4.2",
     "node-fetch": "^3.3.2",
-    "puppeteer": "^24.35.0",
     "winston": "^3.19.0",
     "zod": "^4.3.6"
   },
@@ -58,6 +56,7 @@
     "h3": "^1.15.5",
     "hono": "^4.12.25",
     "preact": "^10.28.3",
+    "undici": "^7.28.0",
     "ws": "^8.21.0"
   },
   "devDependencies": {
