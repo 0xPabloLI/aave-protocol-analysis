@@ -125,13 +125,15 @@ describe('AAV-960: Merit format unification', () => {
       const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
       assert.equal(group.link, 'https://apps.aavechan.com/merit/ethereum-supply-weth');
       assert.equal(group.name, 'Supply WETH');
-      assert.ok(group.message);
+      assert.equal('message' in group, false);
       assert.equal(group.breakdowns.length, 2);
       assert.equal(group.breakdowns[0].campaignApr, 0.05);
       assert.equal(group.breakdowns[0].campaignId, 'ethereum-supply-weth-base');
+      assert.ok(group.breakdowns[0].message);
       assert.equal(group.breakdowns[1].campaignApr, 0.03);
       assert.equal(group.breakdowns[1].campaignId, 'ethereum-supply-weth-self');
       assert.equal(group.breakdowns[1].positionCap, 1000);
+      assert.ok(group.breakdowns[1].message);
     });
 
     it('builds CampaignGroup from entry without self auth', () => {
@@ -161,7 +163,7 @@ describe('AAV-960: Merit format unification', () => {
       assert.equal('positionCap' in group.breakdowns[1], false);
     });
 
-    it('does not set message when entry has no message', () => {
+    it('does not set breakdown message when entry has no message', () => {
       const entry: MeritAprEntry = {
         apr: 0.05,
         link: 'https://apps.aavechan.com/merit/ethereum-supply-weth',
@@ -170,9 +172,10 @@ describe('AAV-960: Merit format unification', () => {
       };
       const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
       assert.equal('message' in group, false);
+      assert.equal('message' in group.breakdowns[0], false);
     });
 
-    it('distributes self auth message to self breakdown and keeps base message on opportunity', () => {
+    it('distributes self auth message to self breakdown and base message to base breakdown', () => {
       const entry: MeritAprEntry = {
         apr: 0.05,
         selfApr: 0.03,
@@ -188,8 +191,11 @@ describe('AAV-960: Merit format unification', () => {
       const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
       assert.equal(group.breakdowns.length, 2);
 
-      // Base breakdown: no breakdown-level message
-      assert.equal('message' in group.breakdowns[0], false);
+      // Base breakdown: has breakdown-level message with base entry
+      assert.ok(group.breakdowns[0].message);
+      const baseMsg = JSON.parse(group.breakdowns[0].message!);
+      assert.equal(baseMsg.length, 1);
+      assert.equal(baseMsg[0].action, 'Supply WETH');
 
       // Self breakdown: has breakdown-level message with self auth entry
       assert.ok(group.breakdowns[1].message);
@@ -197,14 +203,11 @@ describe('AAV-960: Merit format unification', () => {
       assert.equal(selfMsg.length, 1);
       assert.equal(selfMsg[0].action, 'Self Authentication');
 
-      // Opportunity-level message: only has non-self entries
-      assert.ok(group.message);
-      const oppMsg = JSON.parse(group.message!);
-      assert.equal(oppMsg.length, 1);
-      assert.equal(oppMsg[0].action, 'Supply WETH');
+      // Opportunity-level message: not set (all distributed to breakdowns)
+      assert.equal('message' in group, false);
     });
 
-    it('does not set breakdown message when no self auth entry exists', () => {
+    it('distributes base message to base breakdown when no self auth exists', () => {
       const entry: MeritAprEntry = {
         apr: 0.05,
         selfApr: 0.03,
@@ -217,11 +220,12 @@ describe('AAV-960: Merit format unification', () => {
       };
       const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
       assert.equal(group.breakdowns.length, 2);
-      assert.equal('message' in group.breakdowns[0], false);
+      assert.ok(group.breakdowns[0].message);
+      const baseMsg = JSON.parse(group.breakdowns[0].message!);
+      assert.equal(baseMsg.length, 1);
+      assert.equal(baseMsg[0].action, 'Supply WETH');
       assert.equal('message' in group.breakdowns[1], false);
-      assert.ok(group.message);
-      const oppMsg = JSON.parse(group.message!);
-      assert.equal(oppMsg.length, 1);
+      assert.equal('message' in group, false);
     });
 
     it('sets breakdown message even without positionCap', () => {

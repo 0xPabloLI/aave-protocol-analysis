@@ -3116,6 +3116,7 @@ export interface MeritCampaignBreakdownInput {
   endDate: string;
   meritKey: string;
   selfPositionCap: number | null;
+  baseBreakdownMessage?: string;
   selfBreakdownMessage?: string;
 }
 
@@ -3129,7 +3130,7 @@ export function extractPositionCapFromSelfAuth(text: string | null): number | nu
 }
 
 export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput) {
-  const { baseApr, selfApr, startDate, endDate, meritKey, selfPositionCap, selfBreakdownMessage } = input;
+  const { baseApr, selfApr, startDate, endDate, meritKey, selfPositionCap, baseBreakdownMessage, selfBreakdownMessage } = input;
   const breakdowns: Array<{
     campaignApr: number;
     campaignStartedAt: string;
@@ -3147,6 +3148,7 @@ export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput)
       campaignEndedAt: endDate,
       campaignId: `${meritKey}-base`,
       campaignType: 'DUTCH_AUCTION',
+      ...(baseBreakdownMessage ? { message: baseBreakdownMessage } : {}),
     });
   }
 
@@ -3181,6 +3183,12 @@ export function buildCampaignGroupFromMeritEntry(
     }
   }
 
+  const nonSelfMessages = (entry.message ?? []).filter(
+    (m) => !m.action?.toLowerCase().includes('self authentication')
+  );
+  const baseBreakdownMessage = nonSelfMessages.length > 0
+    ? JSON.stringify(nonSelfMessages)
+    : undefined;
   const selfBreakdownMessage = selfAuthMsg
     ? JSON.stringify([selfAuthMsg])
     : undefined;
@@ -3192,19 +3200,13 @@ export function buildCampaignGroupFromMeritEntry(
     endDate: entry.endDate,
     meritKey,
     selfPositionCap,
+    baseBreakdownMessage,
     selfBreakdownMessage,
   });
-
-  const nonSelfMessages = (entry.message ?? []).filter(
-    (m) => !m.action?.toLowerCase().includes('self authentication')
-  );
 
   return {
     link: entry.link,
     ...(entry.name ? { name: entry.name } : {}),
-    ...(nonSelfMessages.length > 0
-      ? { message: JSON.stringify(nonSelfMessages) }
-      : {}),
     breakdowns,
   };
 }
