@@ -246,6 +246,13 @@ export function resolveOffsetReserveIds(
   return results;
 }
 
+export interface ComposedSubCampaign {
+  underlyingToken?: string;
+  campaignType?: number;
+  composedType?: string;
+  composedMultiplier?: string;
+}
+
 export interface MerklOpportunityData {
   supply: MerklCampaignBreakdown[];
   borrow: MerklCampaignBreakdown[];
@@ -260,6 +267,8 @@ export interface MerklOpportunityData {
   opportunityType?: string;
   distributionType?: string;
   offsetTokenAddresses?: OffsetTokenInfo[];
+  composedCampaignsCompute?: string;
+  composedSubCampaigns?: ComposedSubCampaign[];
 }
 
 /**
@@ -1535,6 +1544,8 @@ export async function processMerklData(
       ? extractOffsetTokenAddresses(opp, oppReserveId, reserveIdSet, offsetLevel)
       : [];
 
+    const { composedCampaignsCompute, composedSubCampaigns } = extractComposedCampaignInfo(opp);
+
     // 创建 opportunity 数据对象，根据 action 直接设置对应数组
     const opportunityData: MerklOpportunityData = {
       supply: opp.action === 'LEND' ? filteredBreakdowns : [],
@@ -1549,6 +1560,8 @@ export async function processMerklData(
       ...(opp.type && { opportunityType: opp.type }),
       ...(firstDistributionType && { distributionType: firstDistributionType }),
       ...(offsetTokenAddresses.length > 0 && { offsetTokenAddresses }),
+      ...(composedCampaignsCompute && { composedCampaignsCompute }),
+      ...(composedSubCampaigns && composedSubCampaigns.length > 0 && { composedSubCampaigns }),
     };
     
     // 创建索引键：chainId + explorerAddress（protocolVersion 在匹配时过滤，不需要在 key 中）
@@ -1603,6 +1616,34 @@ export async function processMerklData(
   }
 
   return { index: merklData, campaignAccess: campaignAccessArr };
+}
+
+function extractComposedCampaignInfo(opp: MerklOpportunity): {
+  composedCampaignsCompute?: string;
+  composedSubCampaigns?: ComposedSubCampaign[];
+} {
+  if (!Array.isArray(opp.campaigns)) return {};
+  for (const campaign of opp.campaigns) {
+    const compute = campaign?.params?.composedCampaignsCompute;
+    if (typeof compute !== 'string' || !compute) continue;
+    // Only the first campaign with composedCampaignsCompute is used;
+    // in practice each MULTILOG_DUTCH opportunity has at most one.
+    const rawSubs = campaign?.params?.composedCampaigns;
+    const composedSubCampaigns: ComposedSubCampaign[] = [];
+    if (Array.isArray(rawSubs)) {
+      for (const sub of rawSubs) {
+        const underlyingToken = sub?.campaignParameters?.underlyingToken;
+        composedSubCampaigns.push({
+          underlyingToken: typeof underlyingToken === 'string' ? underlyingToken.toLowerCase() : undefined,
+          campaignType: typeof sub?.campaignType === 'number' ? sub.campaignType : undefined,
+          composedType: typeof sub?.composedType === 'string' ? sub.composedType : undefined,
+          composedMultiplier: typeof sub?.composedMultiplier === 'string' ? sub.composedMultiplier : undefined,
+        });
+      }
+    }
+    return { composedCampaignsCompute: compute, composedSubCampaigns };
+  }
+  return {};
 }
 
 export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[]): MerklCampaignBreakdown[] {
@@ -1664,19 +1705,59 @@ const BOTH_SIDES_PATTERN = /(?:supply|lend|deposit|stake).*(?:borrow|loan|debt|r
 
 export function regexNetPositionFallback(
   opp: MerklOpportunityData,
+  oppReserveId?: string,
 ): NetPositionConstraint | null {
   const text = `${opp.name ?? ''} ${opp.description ?? ''}`;
   const inferredBorrow = opp.borrow.length > 0;
   const inferredSupply = opp.supply.length > 0;
 
   if (NET_BORROW_PATTERN.test(text) || (inferredBorrow && BOTH_SIDES_PATTERN.test(text))) {
-    return { sourceSide: 'borrow', offsetReserveIds: [] };
+    return { sourceSide: 'borrow', offsetReserveIds: oppReserveId ? [oppReserveId] : [] };
   }
   if (NET_SUPPLY_PATTERN.test(text) || (inferredSupply && BOTH_SIDES_PATTERN.test(text))) {
-    return { sourceSide: 'supply', offsetReserveIds: [] };
+    return { sourceSide: 'supply', offsetReserveIds: oppReserveId ? [oppReserveId] : [] };
   }
 
   return null;
+}
+
+export function composedNetPositionConstraint(
+  opp: MerklOpportunityData,
+  oppReserveId: string,
+  reserveIdSet: Set<string>,
+  offsetLevel: 'hub' | 'spoke' = 'hub',
+): NetPositionConstraint | null {
+  if (opp.composedCampaignsCompute !== '1-2') return null;
+
+  // Side inferred from action via breakdown arrays:
+  // action=LEND → supply[], action=BORROW → borrow[], consistent with L0.
+  const sourceSide: 'supply' | 'borrow' = opp.borrow.length > 0 ? 'borrow' : 'supply';
+
+  const offsetReserveIds: string[] = [];
+  const seen = new Set<string>();
+
+  if (opp.composedSubCampaigns) {
+    for (const sub of opp.composedSubCampaigns) {
+      if (sub.underlyingToken) {
+        const resolvedIds = resolveOffsetReserveIds(oppReserveId, sub.underlyingToken, reserveIdSet, offsetLevel);
+        for (const rid of resolvedIds) {
+          if (!seen.has(rid)) {
+            seen.add(rid);
+            offsetReserveIds.push(rid);
+          }
+        }
+      }
+    }
+  }
+
+  if (!seen.has(oppReserveId)) {
+    offsetReserveIds.unshift(oppReserveId);
+    seen.add(oppReserveId);
+  }
+
+  if (offsetReserveIds.length === 0) return null;
+
+  return { sourceSide, offsetReserveIds };
 }
 
 export async function detectNetPositionConstraint(
@@ -1691,6 +1772,9 @@ export async function detectNetPositionConstraint(
 ): Promise<NetPositionConstraint | null> {
   const layer0 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet, offsetLevel);
   if (layer0) return layer0;
+
+  const layer05 = composedNetPositionConstraint(opp, oppReserveId, reserveIdSet, offsetLevel);
+  if (layer05) return layer05;
 
   const text = `${opp.name ?? ''} ${opp.description ?? ''}`.toLowerCase();
   if (text.includes('looping')) return null;
@@ -1724,7 +1808,7 @@ export async function detectNetPositionConstraint(
   }
 
   if (llmUnavailable) {
-    const regexResult = regexNetPositionFallback(opp);
+    const regexResult = regexNetPositionFallback(opp, oppReserveId);
     if (regexResult) return regexResult;
   }
 

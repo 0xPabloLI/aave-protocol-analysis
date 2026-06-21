@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectNetPositionConstraint } from '../src/merkl-api.js';
+import { detectNetPositionConstraint, composedNetPositionConstraint } from '../src/merkl-api.js';
 import type { MerklOpportunityData } from '../src/merkl-api.js';
 import type { NetPositionConstraint } from '@internal/aave-shared-contracts';
 import type { LlmOutcome } from '../src/merklLlmClient.js';
@@ -403,7 +403,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
     const symbolLookup = makeSymbolLookup([]);
     const mockLlm = async (): Promise<LlmOutcome> => ({ tag: 'unavailable' });
     const result = await detectNetPositionConstraint(opp, '0xusdc', '1:0xpool:0xusdc', reserveIdSet, symbolLookup, undefined, mockLlm);
-    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: [] });
+    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusdc'] });
   });
 
   it('Layer 4 regex fallback — net borrow keyword when LLM unavailable', async () => {
@@ -418,7 +418,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
     const symbolLookup = makeSymbolLookup([]);
     const mockLlm = async (): Promise<LlmOutcome> => ({ tag: 'unavailable' });
     const result = await detectNetPositionConstraint(opp, '0xusdc', '1:0xpool:0xusdc', reserveIdSet, symbolLookup, undefined, mockLlm);
-    assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: [] });
+    assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['1:0xpool:0xusdc'] });
   });
 
   it('Layer 4 regex fallback NOT triggered when LLM returns result (even null)', async () => {
@@ -447,7 +447,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
     const symbolLookup = makeSymbolLookup([]);
     const mockLlm = async (): Promise<LlmOutcome> => ({ tag: 'unavailable' });
     const result = await detectNetPositionConstraint(opp, '0xusdc', '1:0xpool:0xusdc', reserveIdSet, symbolLookup, undefined, mockLlm);
-    assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: [] });
+    assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['1:0xpool:0xusdc'] });
   });
 
   it('Layer 4 regex fallback — inferred supply side from opp.supply array + both-side text', async () => {
@@ -461,7 +461,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
     const symbolLookup = makeSymbolLookup([]);
     const mockLlm = async (): Promise<LlmOutcome> => ({ tag: 'unavailable' });
     const result = await detectNetPositionConstraint(opp, '0xusdc', '1:0xpool:0xusdc', reserveIdSet, symbolLookup, undefined, mockLlm);
-    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: [] });
+    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusdc'] });
   });
 
   it('Layer 4 regex fallback — single-side keyword only is not net position', async () => {
@@ -491,6 +491,107 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
     const mockLlm = async (): Promise<LlmOutcome> => ({ tag: 'unavailable' });
     const result = await detectNetPositionConstraint(opp, '0xusdc', '1:0xpool:0xusdc', reserveIdSet, symbolLookup, undefined, mockLlm);
     assert.equal(result, null);
+  });
+
+});
+
+describe('L0.5: composedNetPositionConstraint — 1-2 compute detection', () => {
+
+  it('1-2 BORROW → returns net borrow with self reserveId', async () => {
+    const opp: MerklOpportunityData = {
+      supply: [], borrow: [{ campaignApr: 0.02, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }], hold: [],
+      marketName: 'AaveV3Plasma', chainId: 9745, protocolVersion: 'v3',
+      opportunityType: 'MULTILOG_DUTCH',
+      composedCampaignsCompute: '1-2',
+      composedSubCampaigns: [
+        { underlyingToken: '0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb', campaignType: 61, composedType: 'MAIN' },
+        { underlyingToken: '0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb', campaignType: 60, composedType: 'DEFAULT' },
+      ],
+    };
+    const reserveIdSet = makeReserveIdSet(['9745:0xpool:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb']);
+    const result = composedNetPositionConstraint(opp, '9745:0xpool:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb', reserveIdSet);
+    assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['9745:0xpool:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb'] });
+  });
+
+  it('1-2 LEND → returns net supply with self reserveId', () => {
+    const opp: MerklOpportunityData = {
+      supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }], borrow: [], hold: [],
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
+      opportunityType: 'MULTILOG_DUTCH',
+      composedCampaignsCompute: '1-2',
+      composedSubCampaigns: [
+        { underlyingToken: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', campaignType: 60, composedType: 'MAIN' },
+        { underlyingToken: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', campaignType: 61, composedType: 'DEFAULT' },
+      ],
+    };
+    const reserveIdSet = makeReserveIdSet(['1:0xpool:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48']);
+    const result = composedNetPositionConstraint(opp, '1:0xpool:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', reserveIdSet);
+    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'] });
+  });
+
+  it('min(1,2) → returns null (not net position)', () => {
+    const opp: MerklOpportunityData = {
+      supply: [], borrow: [{ campaignApr: 0.01, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }], hold: [],
+      marketName: 'AaveV3Base', chainId: 8453, protocolVersion: 'v3',
+      opportunityType: 'MULTILOG_DUTCH',
+      composedCampaignsCompute: 'min(1,2)',
+    };
+    const reserveIdSet = makeReserveIdSet([]);
+    const result = composedNetPositionConstraint(opp, '8453:0xpool:0xweth', reserveIdSet);
+    assert.equal(result, null);
+  });
+
+  it('1+2+3 → returns null', () => {
+    const opp: MerklOpportunityData = {
+      supply: [], borrow: [], hold: [{ campaignApr: 0.01, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
+      marketName: 'Unknown', chainId: 1, protocolVersion: 'v3',
+      composedCampaignsCompute: '1+2+3',
+    };
+    const reserveIdSet = makeReserveIdSet([]);
+    const result = composedNetPositionConstraint(opp, '1:0xpool:0xtoken', reserveIdSet);
+    assert.equal(result, null);
+  });
+
+  it('no composedCampaignsCompute → returns null', () => {
+    const opp: MerklOpportunityData = {
+      supply: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }], borrow: [], hold: [],
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
+      opportunityType: 'AAVE_SUPPLY',
+    };
+    const reserveIdSet = makeReserveIdSet([]);
+    const result = composedNetPositionConstraint(opp, '1:0xpool:0xusdc', reserveIdSet);
+    assert.equal(result, null);
+  });
+
+  it('1-2 integration: L0.5 captures before L1 looping check', async () => {
+    const opp: MerklOpportunityData = {
+      supply: [], borrow: [{ campaignApr: 0.02, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }], hold: [],
+      marketName: 'AaveV3Plasma', chainId: 9745, protocolVersion: 'v3',
+      opportunityType: 'MULTILOG_DUTCH',
+      name: 'Borrow USDT0 (looping required)',
+      composedCampaignsCompute: '1-2',
+      composedSubCampaigns: [
+        { underlyingToken: '0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb', campaignType: 61 },
+        { underlyingToken: '0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb', campaignType: 60 },
+      ],
+    };
+    const reserveIdSet = makeReserveIdSet(['9745:0xpool:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb']);
+    const symbolLookup = makeSymbolLookup([]);
+    const result = await detectNetPositionConstraint(opp, '0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb', '9745:0xpool:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb', reserveIdSet, symbolLookup);
+    assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['9745:0xpool:0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb'] });
+  });
+
+  it('1-2 with no sub-campaign underlyingToken → still returns self reserveId', () => {
+    const opp: MerklOpportunityData = {
+      supply: [], borrow: [{ campaignApr: 0.02, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }], hold: [],
+      marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
+      opportunityType: 'MULTILOG_DUTCH',
+      composedCampaignsCompute: '1-2',
+      composedSubCampaigns: [],
+    };
+    const reserveIdSet = makeReserveIdSet([]);
+    const result = composedNetPositionConstraint(opp, '1:0xpool:0xusdc', reserveIdSet);
+    assert.deepEqual(result, { sourceSide: 'borrow', offsetReserveIds: ['1:0xpool:0xusdc'] });
   });
 
 });

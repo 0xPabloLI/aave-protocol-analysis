@@ -1,6 +1,6 @@
 # ADR-0023: netPositionConstraint 检测架构
 
-Date: 2026-05-29 · Updated: 2026-06-16
+Date: 2026-05-29 · Updated: 2026-06-21
 
 ## Status
 
@@ -17,16 +17,24 @@ Merkl 机会的 `netPositionConstraint` 字段标识净头寸方向（supply/bor
 
 ## Decision
 
-四层检测架构：
+五层检测架构：
 
 ```
 detectNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet, symbolLookup, cachedConstraint?, llmFn?)
     │
     ├─ Layer 0: extractNetPositionConstraint()     ← 确定性规则（类型匹配）
-    │    触发条件: opportunityType.startsWith('AAVE_NET_')
+    │    触发条件: opportunityType.startsWith('AAVE_NET_') 或 distributionType ∈ NET_DISTRIBUTION_TYPES
     │    输入: opp.offsetTokenAddresses → resolveOffsetReserveIds
-    │    输出: { sourceSide, offsetReserveIds }
+    │    输出: { sourceSide, offsetReserveIds }（always include self reserveId）
     │    命中率: 20/20 AAVE_NET_* = 100%（线上实测 2026-06-16）
+    │
+    ├─ Layer 0.5: composedNetPosition()            ← 确定性规则（composedCampaignsCompute）
+    │    触发条件: composedCampaignsCompute === '1-2'
+    │    语义: 同资产 supply-borrow 对冲 = net position
+    │    side 推断: action=LEND → supply, action=BORROW → borrow
+    │    offset: 从子 campaign 的 underlyingToken 提取 → resolveOffsetReserveIds + always include self
+    │    不触发: compute 为 min/max/+ 等非减法类型
+    │    参考: ADR-0030 Mode 2, AAV-948
     │
     ├─ Layer 1: looping 排除                        ← 确定性规则（关键词排除）
     │    触发条件: name/description 包含 "looping"
@@ -34,7 +42,7 @@ detectNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet,
     │    命中: 4/34 opps
     │
     ├─ Layer 2: cachedConstraint                    ← 快照缓存
-    │    触发条件: Layer 0 + Layer 1 均未命中且 cachedConstraint 非空
+    │    触发条件: Layer 0 + Layer 0.5 + Layer 1 均未命中且 cachedConstraint 非空
     │
     ├─ Layer 3: llmFn() → callLlmWithFallback()    ← LLM 两层 fallback
     │    返回类型: LlmOutcome = { tag: 'result', value } | { tag: 'unavailable' }
@@ -50,7 +58,16 @@ detectNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet,
     └─ fallback: return null
 ```
 
-**层级顺序说明**：Layer 0（类型匹配）优先于 Layer 1（looping 排除），因为类型匹配是确定性结构化规则，looping 排除是启发式关键词。类型匹配覆盖率 100%。
+### Layer 0.5 设计依据
+
+`1-2` compute 的 composed campaign 天然是 net position：
+- `1-2` = Sub[1] APR − Sub[2] APR = 同一资产 supply 侧激励 − borrow 侧激励 = net position
+- Merkl 官方文档确认："reward based on net lending position (lending minus borrowing)"
+- 与 `min(1,2)` 本质不同：`min` 是跨资产配对约束（如 cbETH supply + ETH borrow 取较小值），不是同资产对冲
+
+**`min(1,2)` 不纳入 L0.5**：当前所有 `min(1,2)` 案例都是跨资产配对（sUSDe/USDe looping ×3, cbETH/ETH ×1），非同资产 net offset。
+
+**层级顺序说明**：Layer 0（类型匹配）→ Layer 0.5（composed compute）→ Layer 1（looping 排除），确定性结构化规则优先于启发式关键词。
 
 **Layer 4 设计原则**：
 - 只在 LLM 完全不可用时 fallback，不否决 LLM 的判定
@@ -104,20 +121,30 @@ buildModelChain(primaryConfig?, openrouterConfig?, fetchFn)
 
 **日志**：callLlmWithFallback 内置结构化日志（[LLM] 前缀），debug 级别记录模型链/HTTP 状态/重试，info 级别记录最终 outcome。
 
-### 8 个非 NET opp（L0/L1 未命中，2026-06-16）
+### 非 NET opp 分类（2026-06-21 更新）
 
-| # | name | type | chain | dt | hooks | targetToken | side | link |
-|---|---|---|---|---|---|---|---|---|
-| 1 | Borrow USDT0 Plasma | MULTILOG_DUTCH | 9745 | DUTCH_AUCTION | N | - | - | [link](https://app.merkl.xyz/opportunity/9745/0xF5F05bc52587C14C51a0E04e73c0d91a3ef1924d) |
-| 2 | Supply USDG V4 Hub | AAVE_V4_HUB_SUPPLY | 1 | AAVE_V4_NET_APR | N | underlying | supply | [link](https://app.merkl.xyz/opportunity/1/0x44E12914eBFB4e4b5bcB4afb359eCca7D51e5E8a) |
-| 3 | Supply USDG V4 Spoke | AAVE_V4_SPOKE_SUPPLY | 1 | DUTCH_AUCTION | N | - | - | [link](https://app.merkl.xyz/opportunity/1/0xD8f06A54813A9549B88dB72798343376A89Eeb37) |
-| 4 | Supply frxUSD V4 Hub | AAVE_V4_HUB_SUPPLY | 1 | AAVE_V4_NET_APR | N | underlying | supply | [link](https://app.merkl.xyz/opportunity/1/0x92695585cCac2945Ae3019c9b19a754E0402979b) |
-| 5 | Supply frxUSD V4 Spoke | AAVE_V4_SPOKE_SUPPLY | 1 | DUTCH_AUCTION | N | - | - | [link](https://app.merkl.xyz/opportunity/1/0xE23606E9243f4ED370B15f0Fa159fB381Cc81834) |
-| 6 | Lend USDtb | AAVE_SUPPLY | 1 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | Y (hookType:14) | aToken(USDtb) | - | [link](https://app.merkl.xyz/opportunity/1/0xEc4ef66D4fCeEba34aBB4dE69dB391Bc5476ccc8BORROW_BL) |
-| 7 | Borrow ETH cbETH | MULTILOG_DUTCH | 8453 | DUTCH_AUCTION | N | - | - | [link](https://app.merkl.xyz/opportunity/8453/0xCBE5a66D821FC9364544b0156D26ECb5e4B58A0a) |
-| 8 | Borrow USDC Horizon | MULTILOG_DUTCH | 1 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | N | vToken(USDC) | - | [link](https://app.merkl.xyz/opportunity/1/0x46C636D606F1352b6B5d90BE8bd04a848245C728) |
+| # | name | type | chain | dt | L0/L0.5 命中? | 备注 |
+|---|---|---|---|---|---|---|
+| 1 | Borrow USDT0 Plasma | MULTILOG_DUTCH | 9745 | DUTCH_AUCTION | **L0.5** (1-2 compute) | net borrow |
+| 2 | Supply USDG V4 Hub | AAVE_V4_HUB_SUPPLY | 1 | AAVE_V4_NET_APR | **L0** (NET_DISTRIBUTION_TYPES) | ✅ 已命中 |
+| 3 | Supply USDG V4 Spoke | AAVE_V4_SPOKE_SUPPLY | 1 | DUTCH_AUCTION | 未命中 | — |
+| 4 | Supply frxUSD V4 Hub | AAVE_V4_HUB_SUPPLY | 1 | AAVE_V4_NET_APR | **L0** (NET_DISTRIBUTION_TYPES) | ✅ 已命中 |
+| 5 | Supply frxUSD V4 Spoke | AAVE_V4_SPOKE_SUPPLY | 1 | DUTCH_AUCTION | 未命中 | — |
+| 6 | Lend USDtb | AAVE_SUPPLY | 1 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | 未命中 | hookType:14, LLM判定 supply |
+| 7 | Borrow ETH cbETH | MULTILOG_DUTCH | 8453 | DUTCH_AUCTION | 未命中 | min(1,2) 跨资产配对，非 net position |
+| 8 | Borrow USDC Horizon | MULTILOG_DUTCH | 1 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | **L0.5** (1-2 compute) | net borrow |
+
+**L0.5 新增后**：#1 (Borrow USDT0) 和 #8 (Borrow USDC Horizon) 将被 L0.5 结构化规则捕获，不再依赖 LLM/regex。
 
 ## Changelog
+
+### 2026-06-21 Session
+- **Layer 0.5 新增**：composed `1-2` compute 作为确定性 net position 规则
+- **L0/L0.5 顺序**：类型匹配 → composed compute → looping 排除
+- **修正表格**：#2 (USDG V4 Hub) 和 #4 (frxUSD V4 Hub) 已被 L0 `NET_DISTRIBUTION_TYPES` 命中，不应列为"未命中"
+- **#1 (Borrow USDT0) 和 #8 (Borrow USDC Horizon)** 将被 L0.5 结构化规则捕获
+- **cbETH/ETH min(1,2)** 确认为跨资产配对 incentive，不是 net position，不纳入 L0.5
+- **regexNetPositionFallback offsetReserveIds bug**：regex 分支返回 `[]` 但未 include self reserveId（L0 有 "always include self" 但 L0 不触发此路径）
 
 ### 2026-06-16 Session
 - **L0/L1 顺序对调**：类型匹配优先于 looping 排除（确定性优先于启发式）
@@ -140,7 +167,7 @@ Hub (parent) + Spoke (child) 关系：Hub 有 AAVE_V4_NET_APR，Spoke 有 DUTCH_
 
 ### Q3: Borrow ETH cbETH cross-asset offset
 
-[AAV-895](https://linear.app/aaveapy/issue/AAV-895) — 非 AAVE_NET_ 类型但需要 net constraint，offset 是不同资产（cbETH supply offset ETH borrow）。需专用公式。
+[AAV-895](https://linear.app/aaveapy/issue/AAV-895) — cbETH/ETH 的 `min(1,2)` 是跨资产配对 incentive（不是同资产 net offset），不纳入 L0.5。0.823x discount 反映 cbETH 相对 ETH 的折价率。
 
 ## References
 
