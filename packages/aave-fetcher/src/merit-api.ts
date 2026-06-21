@@ -2475,6 +2475,36 @@ async function extractSelfAuthFromPage(
   return result;
 }
 
+let renderLastWarmTimestamp = 0;
+const RENDER_WARM_INTERVAL_MS = 5 * 60 * 1000;
+
+async function warmRenderService(): Promise<void> {
+  const renderUrl = process.env.RENDER_SERVICE_URL;
+  if (!renderUrl) return;
+
+  const elapsed = Date.now() - renderLastWarmTimestamp;
+  if (elapsed < RENDER_WARM_INTERVAL_MS) return;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    const response = await fetch(`${renderUrl}/json/version`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (response.ok) {
+      renderLastWarmTimestamp = Date.now();
+      logger.info(
+        `🔥 [Render] Warm-up ping OK (status=${response.status})`
+      );
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.debug(`🔥 [Render] Warm-up ping failed (expected if cold-starting): ${msg.substring(0, 100)}`);
+  }
+}
+
 async function extractMeritDynamicInfoWithRender(
   key: string
 ): Promise<MeritDynamicInfo | null> {
@@ -2493,7 +2523,7 @@ async function extractMeritDynamicInfoWithRender(
     );
 
     browser = await chromium.connectOverCDP(wsEndpoint, {
-      timeout: 30000,
+      timeout: 90000,
     });
 
     context = await browser.newContext({
@@ -2518,6 +2548,8 @@ async function extractMeritDynamicInfoWithRender(
 
     const campaignInfo = await extractCampaignInfoFromPage(page, key);
     const selfAuthDescription = await extractSelfAuthFromPage(page, key);
+
+    renderLastWarmTimestamp = Date.now();
 
     logger.info(
       `✅ [Render Fallback] Extracted for ${key}: campaigns=${campaignInfo.length}, selfAuth=${!!selfAuthDescription}`
@@ -3035,6 +3067,7 @@ export async function fetchMeritTimeRange(
 
     let dynamicSource: "worker" | "render" | "playwright" | null = null;
     if (needDynamicCampaignInfo || needDynamicSelfAuth) {
+      warmRenderService().catch(() => {});
       const dynamic = await extractMeritDynamicInfoWithBrowser(key, {
         needCampaignInfo: needDynamicCampaignInfo,
         needSelfAuth: needDynamicSelfAuth,
