@@ -2177,6 +2177,19 @@ async function extractMeritDynamicInfoWithBrowser(
   const allowLocalPlaywrightFallback =
     process.env.MERIT_ALLOW_LOCAL_PLAYWRIGHT !== "false";
 
+  // Primary: Render browserless (CDP) — most reliable, no memory cost on Railway
+  const renderResult = await extractMeritDynamicInfoWithRender(key);
+  if (renderResult) {
+    return {
+      campaignInfo: needCampaignInfo ? renderResult.campaignInfo : [],
+      selfAuthDescription: needSelfAuth
+        ? renderResult.selfAuthDescription
+        : null,
+      source: "render",
+    };
+  }
+
+  // Secondary: Cloudflare Worker — free tier 429-prone but zero local cost
   let workerResult: MeritDynamicInfo | null = null;
   try {
     workerResult = await extractMeritDynamicInfoWithWorker(key);
@@ -2193,25 +2206,13 @@ async function extractMeritDynamicInfoWithBrowser(
     const errorMsg = error instanceof Error ? error.message : String(error);
     if (errorMsg.includes("timeout")) {
       logger.warn(
-        `⏱️ Cloudflare Worker timeout for ${key}, falling back to playwright: ${errorMsg}`
+        `⏱️ Cloudflare Worker timeout for ${key}, falling back to Playwright: ${errorMsg}`
       );
     } else {
       logger.warn(
-        `⚠️ Cloudflare Worker failed for ${key}, falling back to playwright: ${errorMsg}`
+        `⚠️ Cloudflare Worker failed for ${key}, falling back to Playwright: ${errorMsg}`
       );
     }
-  }
-
-  // Render service stub (secondary fallback, to be configured)
-  const renderResult = await extractMeritDynamicInfoWithRender(key);
-  if (renderResult) {
-    return {
-      campaignInfo: needCampaignInfo ? renderResult.campaignInfo : [],
-      selfAuthDescription: needSelfAuth
-        ? renderResult.selfAuthDescription
-        : null,
-      source: "render",
-    };
   }
 
   if (!allowLocalPlaywrightFallback) {

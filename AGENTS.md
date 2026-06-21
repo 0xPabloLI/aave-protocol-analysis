@@ -144,7 +144,7 @@ When touching one area, check its pair:
 ## High-Risk Areas (Coordinate Carefully)
 - Fetch orchestration: `packages/aave-fetcher/src/index.ts`
 - Incentive adapters: `packages/aave-fetcher/src/merit-api.ts`, `merkl-api.ts`, `brevis-api.ts`, `brevis-distributed-so-far.ts`
-- Merit dynamic info fallback chain: Worker → Render (CDP) → Playwright (local) → null
+- Merit dynamic info fallback chain: Render (CDP) → Worker → Playwright (local) → null
   - `RENDER_SERVICE_URL` env var enables Render browserless fallback (free tier: ~90s cold start, 750h/month)
   - `MERIT_ALLOW_LOCAL_PLAYWRIGHT` — default `true`; set to `"false"` in production to prevent Chromium OOM on Railway
   - Shared helpers: `extractCampaignInfoFromPage()`, `extractSelfAuthFromPage()`, `createMeritPage()`
