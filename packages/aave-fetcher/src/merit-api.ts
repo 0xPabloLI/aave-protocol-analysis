@@ -2503,7 +2503,7 @@ async function extractMeritDynamicInfoWithRender(
   try {
     const wsEndpoint = renderUrl.replace(/^https?/, "wss");
     const recentlyActive = isRenderRecentlyActive();
-    const cdpTimeout = recentlyActive ? 15000 : 90000;
+    const cdpTimeout = recentlyActive ? 15000 : 120000;
     logger.info(
       `🔗 [Render Fallback] Connecting to remote browser at ${renderUrl} for ${key} (recentlyActive=${recentlyActive}, timeout=${cdpTimeout}ms)`
     );
