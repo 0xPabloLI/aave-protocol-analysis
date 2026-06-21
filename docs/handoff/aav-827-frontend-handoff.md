@@ -46,12 +46,14 @@
 | 字段 | AMOUNT_PER_VALUE | AMOUNT_PER_AMOUNT | MAX_PER_AMOUNT |
 |---|---|---|---|
 | totalBudget | reward token 数量 | reward token 数量 | reward token 数量 |
-| aprCap | dsApr (token/USD/year) | dsApr / targetPrice (token/USD/year) 或 dsApr (token/token/year) | dsApr / targetPrice (USD/token/year→USD/USD/year) 或 dsApr (原始) |
-| latestTvl | USD（原始） | TVL × targetPrice (USD) 或 token 数量 | TVL × targetPrice (USD) 或 token 数量 |
+| aprCap | dsApr (token/USD/year) | 有 targetTokenPrice → dsApr/targetPrice (token/USD/year)；无 → dsApr (token/token/year) | 有 targetTokenPrice → dsApr/targetPrice (USD/USD/year)；无 → dsApr (USD/target/year) |
+| latestTvl | USD（原始） | 有 targetTokenPrice → TVL×targetPrice (USD)；无 → token 数量 | 有 targetTokenPrice → TVL×targetPrice (USD)；无 → token 数量 |
 | campaignApr | 0 | 0 | 0 |
 | distributedSoFar | token 数量（读 totalInToken） | token 数量（读 totalInToken） | token 数量（读 totalInToken） |
 
 → `campaignApr = 0` + `pointsPerThousandUsd > 0`，前端走 points fallback。
+
+⚠️ **注意**：token 路径的 `aprCap` 不是 dimensionless APR（如 0.03 = 3%），而是 `reward/USD/year` 或 `reward/target/year` 维度的比率。前端不应直接将 `aprCap` 作为百分比 APR 显示。`aprCap` 仅用于 forecast 内部的 dilution 计算。
 
 ### 维度分析（为什么这样换算是正确的）
 
