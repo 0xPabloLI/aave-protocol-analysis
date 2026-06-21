@@ -102,6 +102,7 @@ scripts/*
 !scripts/check-workspace-coverage.sh
 !scripts/check-no-omit-dev-in-ci-autofix.sh
 !scripts/check-no-globstar-in-test.sh
+!scripts/audit-allowlist.sh
 !scripts/verification/
 
 data/
