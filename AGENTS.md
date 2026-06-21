@@ -144,6 +144,11 @@ When touching one area, check its pair:
 ## High-Risk Areas (Coordinate Carefully)
 - Fetch orchestration: `packages/aave-fetcher/src/index.ts`
 - Incentive adapters: `packages/aave-fetcher/src/merit-api.ts`, `merkl-api.ts`, `brevis-api.ts`, `brevis-distributed-so-far.ts`
+- Merit dynamic info fallback chain: Worker → Render (CDP) → Playwright (local) → null
+  - `RENDER_SERVICE_URL` env var enables Render browserless fallback (free tier: ~90s cold start, 750h/month)
+  - `MERIT_ALLOW_LOCAL_PLAYWRIGHT` — default `true`; set to `"false"` in production to prevent Chromium OOM on Railway
+  - Shared helpers: `extractCampaignInfoFromPage()`, `extractSelfAuthFromPage()`, `createMeritPage()`
+  - Source type: `'worker' | 'render' | 'playwright'`
 - Token pricing + chain mapping: `packages/aave-fetcher/src/token-price-resolver.ts`, `generated/coingecko-platform-by-chain-id.ts`
 - Backend freshness/caching: `backend/src/services/marketsService.ts`, `onchainDataService.ts`, `merklForecastService.ts`, `cacheTtl.ts`
 - Shared contracts: `packages/aave-shared-contracts/src/index.ts` (source of truth for `RuntimeReserveData` and `EXPECTED_RUNTIME_FIELDS`)
