@@ -2172,6 +2172,8 @@ async function extractMeritDynamicInfoWithBrowser(
   options: { needCampaignInfo: boolean; needSelfAuth: boolean }
 ): Promise<MeritDynamicInfo> {
   const { needCampaignInfo, needSelfAuth } = options;
+  // Production: set MERIT_ALLOW_LOCAL_PLAYWRIGHT=false to prevent Chromium OOM on Railway.
+  // Development: default true allows local Playwright as last-resort fallback.
   const allowLocalPlaywrightFallback =
     process.env.MERIT_ALLOW_LOCAL_PLAYWRIGHT !== "false";
 
@@ -2219,29 +2221,14 @@ async function extractMeritDynamicInfoWithBrowser(
   let context: BrowserContext | null = null;
 
   try {
-    const url = `https://apps.aavechan.com/merit/${key}`;
     const browser = await getBrowser();
     context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      viewport: MERIT_PAGE_VIEWPORT,
+      userAgent: MERIT_PAGE_USER_AGENT,
     });
-    const page = await context.newPage();
-
-    await page.addInitScript(() => {
-      if (typeof (globalThis as any).__name === "undefined") {
-        (globalThis as any).__name = (func: any) => func;
-      }
-    });
+    const page = await createMeritPage(context, key);
 
     try {
-      await page.goto(url, {
-        waitUntil: "networkidle",
-        timeout: 30000,
-      });
-
-      await page.waitForSelector("body", { timeout: 10000 });
-
       const [campaignInfo, selfAuthDescription] = await Promise.all([
         needCampaignInfo
           ? extractCampaignInfoFromPage(page, key)
@@ -2276,6 +2263,26 @@ async function extractMeritDynamicInfoWithBrowser(
 }
 
 type PlaywrightPage = import("playwright").Page;
+
+async function createMeritPage(
+  context: BrowserContext,
+  key: string
+): Promise<import("playwright").Page> {
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    if (typeof (globalThis as any).__name === "undefined") {
+      (globalThis as any).__name = (func: any) => func;
+    }
+  });
+  const url = `https://apps.aavechan.com/merit/${key}`;
+  await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+  await page.waitForSelector("body", { timeout: 10000 });
+  return page;
+}
+
+const MERIT_PAGE_VIEWPORT = { width: 1920, height: 1080 };
+const MERIT_PAGE_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 async function extractCampaignInfoFromPage(
   page: PlaywrightPage,
@@ -2485,7 +2492,7 @@ function isRenderRecentlyActive(): boolean {
 async function extractMeritDynamicInfoWithRender(
   key: string
 ): Promise<MeritDynamicInfo | null> {
-  const renderUrl = process.env.RENDER_SERVICE_URL;
+  const renderUrl = process.env.RENDER_SERVICE_URL?.trim();
   if (!renderUrl) {
     return null;
   }
@@ -2506,24 +2513,10 @@ async function extractMeritDynamicInfoWithRender(
     });
 
     context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      viewport: MERIT_PAGE_VIEWPORT,
+      userAgent: MERIT_PAGE_USER_AGENT,
     });
-    const page = await context.newPage();
-
-    await page.addInitScript(() => {
-      if (typeof (globalThis as any).__name === "undefined") {
-        (globalThis as any).__name = (func: any) => func;
-      }
-    });
-
-    const url = `https://apps.aavechan.com/merit/${key}`;
-    await page.goto(url, {
-      waitUntil: "networkidle",
-      timeout: 30000,
-    });
-    await page.waitForSelector("body", { timeout: 10000 });
+    const page = await createMeritPage(context, key);
 
     const campaignInfo = await extractCampaignInfoFromPage(page, key);
     const selfAuthDescription = await extractSelfAuthFromPage(page, key);
@@ -2548,7 +2541,7 @@ async function extractMeritDynamicInfoWithRender(
     }
     if (browser) {
       try {
-        browser.close();
+        await browser.close();
       } catch (_) {}
     }
   }
