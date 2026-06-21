@@ -153,7 +153,7 @@ export interface BrevisCampaignInfo {
 | `borrow` | cap 只约束 borrow 持仓 | `eligiblePosition = min(borrowPosition, positionCap)` |
 | `combined` | supply + borrow 合计持仓受 cap 约束 | `eligiblePosition = min(supplyPosition + borrowPosition, positionCap)` |
 
-### 当前代码的 bug
+### Shared cap 处理（已解决）
 
 `type=3001` (both) 的 campaign 被同时 push 到 `brevisSupplys` 和 `brevisBorrows`，两边都写了 `positionCap: 5000`。正确语义是 "supply + borrow 合计最多 5000"。前端 `computeBrevisSharedCampaignDeposits` 已按 `campaignId` 去重推导 shared cap，同一 campaignId 跨数组时 `positionCap` 自动视为合计。无需后端新增 `positionCapScope` 字段。
 
