@@ -2277,6 +2277,7 @@ async function createMeritPage(
   const url = `https://apps.aavechan.com/merit/${key}`;
   await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
   await page.waitForSelector("body", { timeout: 10000 });
+  await page.waitForTimeout(3000);
   return page;
 }
 
