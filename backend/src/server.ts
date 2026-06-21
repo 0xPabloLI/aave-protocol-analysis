@@ -17,7 +17,6 @@ import { refreshOnchainCache } from './services/onchainDataService.js';
 import { refreshOracleCache } from './services/oracleService.js';
 import { logger } from './logger.js';
 import { providerPool } from '@internal/aave-rpc-infra';
-import { closeBrowser } from '@internal/aave-fetcher';
 import { explainServerListenError } from './startup.js';
 import { closePool, getPool, isPersistenceEnabled } from './services/dbPool.js';
 import { getPersistenceStatus, warmConfigHashes } from './services/persistenceService.js';
@@ -27,7 +26,6 @@ import { runMigrations } from './services/autoMigrate.js';
 providerPool.configure({
   logFn: (level, msg, meta) => logger.log(level, msg, meta),
 });
-providerPool.startCleanupTimer();
 
 const app = express();
 app.set('etag', 'weak');
@@ -154,43 +152,6 @@ function findChainsWithAllSuppressed(rpcHealth: { endpoints: Array<{ chainId: nu
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
-// Temporary heap snapshot diagnostics (staging-only, guarded by env var)
-if (process.env.ENABLE_HEAP_SNAPSHOT === 'true') {
-  const v8 = await import('node:v8');
-  app.get('/debug/heap-snapshot', async (_req, res) => {
-    logger.info('📊 Generating heap snapshot (streaming)...');
-    const startTime = Date.now();
-    try {
-      const stream = v8.default.getHeapSnapshot();
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', 'attachment; filename="heap_snapshot.heapsnapshot"');
-      stream.pipe(res);
-      stream.on('end', () => {
-        const elapsed = Date.now() - startTime;
-        logger.info(`📊 Heap snapshot streamed in ${elapsed}ms`);
-      });
-    } catch (err) {
-      logger.error('📊 Heap snapshot failed:', err);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Heap snapshot failed', message: (err as Error).message });
-      }
-    }
-  });
-  app.get('/debug/memory', (_req, res) => {
-    const mem = process.memoryUsage();
-    const fmt = (bytes: number) => `${Math.round(bytes / 1024 / 1024)}MB`;
-    res.json({
-      rss: fmt(mem.rss),
-      heapTotal: fmt(mem.heapTotal),
-      heapUsed: fmt(mem.heapUsed),
-      external: fmt(mem.external),
-      arrayBuffers: fmt(mem.arrayBuffers),
-      v8HeapStatistics: v8.default.getHeapStatistics(),
-    });
-  });
-  logger.info('📊 Heap snapshot diagnostics enabled (ENABLE_HEAP_SNAPSHOT=true)');
-}
-
 // Catch-all 404 handler — logs unmapped requests for bot/crawler monitoring.
 // Must be registered AFTER all valid routes so Express only reaches it on miss.
 const MAX_UA_LEN = 120;
@@ -213,13 +174,17 @@ app.use((req, res) => {
 // Auto-run pending DB migrations before any cron cycles start.
 // Non-blocking: if DB is unreachable, the server still starts and serves
 // from memory cache. A background retry attempts migration every 60s.
+// Note: migrationReady only controls the retry timer — persistence cron
+// uses isPoolHealthy() to guard DB writes, not this flag.
 let migrationReady = false;
 
 async function runMigrationWithWarmup(): Promise<void> {
   const migrationPool = getPool();
   await runMigrations(migrationPool);
-  await warmConfigHashes();
+  // Mark ready before warmConfigHashes so a warmConfigHashes failure
+  // doesn't trigger unnecessary re-migration on the next retry.
   migrationReady = true;
+  await warmConfigHashes();
 }
 
 if (isPersistenceEnabled()) {
@@ -230,22 +195,28 @@ if (isPersistenceEnabled()) {
     logger.info('🔄 Migrations complete — persistence ready');
   } catch (error) {
     logger.error('❌ Auto-migration failed — starting server anyway (DB may be unreachable). Background retry every 60s:', error);
-    migrationReady = false;
     // Background retry: attempt migration every 60s until it succeeds.
     // Server stays up and serves from memory cache; persistence cron skips
     // via isPoolHealthy() check until DB recovers.
+    let retryCount = 0;
+    const MAX_RETRIES = 1440; // 24h at 60s intervals
     const migrationRetryTimer = setInterval(async () => {
       if (migrationReady) {
         clearInterval(migrationRetryTimer);
         return;
       }
+      if (++retryCount > MAX_RETRIES) {
+        logger.error('🔄 Migration retry exhausted after 24h — giving up. Restart the server to retry.');
+        clearInterval(migrationRetryTimer);
+        return;
+      }
       try {
-        logger.info('🔄 Background migration retry — acquiring DB pool...');
+        logger.info(`🔄 Background migration retry #${retryCount} — acquiring DB pool...`);
         await runMigrationWithWarmup();
         logger.info('🔄 Background migration succeeded — persistence ready');
         clearInterval(migrationRetryTimer);
       } catch (error) {
-        logger.warn('⚠️  Background migration retry failed (will retry in 60s):', error);
+        logger.warn(`⚠️  Background migration retry #${retryCount} failed (will retry in 60s):`, error);
       }
     }, 60_000).unref();
   }
@@ -282,7 +253,6 @@ const shutdown = (signal: string) => {
     if (err) logger.warn('Error closing HTTP server:', err);
     closePool()
       .catch((e) => logger.warn('Error closing DB pool:', e))
-      .then(() => closeBrowser().catch((e) => logger.warn('Error closing browser:', e)))
       .finally(() => process.exit(0));
   });
   // Hard timeout: force-exit if shutdown stalls (>10s).
@@ -310,8 +280,8 @@ setInterval(() => {
   );
 
   if (RSS_RESTART_THRESHOLD_MB > 0 && mem.rss > RSS_RESTART_THRESHOLD_MB * 1024 * 1024) {
-    logger.error(
-      `🧹 RSS ${fmt(mem.rss)} exceeds threshold ${RSS_RESTART_THRESHOLD_MB}MB — initiating graceful restart (heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} external=${fmt(mem.external)})`
+    logger.warn(
+      `🧹 RSS ${fmt(mem.rss)} exceeds threshold ${RSS_RESTART_THRESHOLD_MB}MB — initiating graceful restart`
     );
     process.kill(process.pid, 'SIGTERM');
   }
