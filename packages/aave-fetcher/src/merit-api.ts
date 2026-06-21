@@ -2243,254 +2243,12 @@ async function extractMeritDynamicInfoWithBrowser(
       await page.waitForSelector("body", { timeout: 10000 });
 
       const [campaignInfo, selfAuthDescription] = await Promise.all([
-        (async () => {
-          if (!needCampaignInfo) return [];
-          try {
-            const campaignInfoButton = page.locator("button", {
-              hasText: /campaign\s+info/i,
-            });
-            if ((await campaignInfoButton.count()) > 0) {
-              await campaignInfoButton.first().click();
-              await page.waitForSelector("table tbody tr", { timeout: 5000 });
-            }
-          } catch (e) {
-            logger.debug(
-              `merit playwright: campaign info button click failed: ${e instanceof Error ? e.message : String(e)}`
-            );
-          }
-
-          const infos = await page.evaluate(() => {
-            const infos: Array<{ action?: string; description?: string }> = [];
-            const doc = globalThis.document;
-            if (!doc) return infos;
-            const tables = doc.querySelectorAll("table");
-            for (let i = 0; i < tables.length; i++) {
-              const rows = tables[i].querySelectorAll("tbody tr");
-              for (let j = 0; j < rows.length; j++) {
-                const cells = rows[j].querySelectorAll("td");
-                if (cells.length >= 2) {
-                  const action = cells[0]?.textContent?.trim() || "";
-                  const description = cells[1]?.textContent?.trim() || "";
-                  if (
-                    action.length > 0 &&
-                    description.length > action.length &&
-                    description.length > 20
-                  ) {
-                    infos.push({ action, description });
-                  }
-                }
-              }
-            }
-            return infos;
-          });
-
-          return (Array.isArray(infos) ? infos : []) as MeritCampaignInfo[];
-        })(),
-        (async () => {
-          if (!needSelfAuth) return null;
-          logger.info(
-            `🔍 [Playwright Fallback] Starting self-auth extraction for ${key}`
-          );
-          let result: string | null = null;
-          try {
-            result = (await page.evaluate(() => {
-              const doc = globalThis.document;
-              if (!doc) return null;
-
-              const norm = (s: any) => {
-                return String(s || "")
-                  .replace(/\s+/g, " ")
-                  .trim();
-              };
-
-              const hasSelfAuth = (s: any) => {
-                const t = String(s || "").toLowerCase();
-                return (
-                  t.includes("self") &&
-                  (t.includes("authentication") ||
-                    t.includes("verify") ||
-                    t.includes("proof"))
-                );
-              };
-
-              const scoreEl = (el: Element) => {
-                const text = norm(el ? el.textContent : null);
-                if (!text || !hasSelfAuth(text)) return -1;
-                let score = 0;
-                if (text.length >= 60 && text.length <= 900) score += 3;
-                if (text.toLowerCase().includes("supply")) score += 1;
-                if (text.toLowerCase().includes("borrow")) score += 1;
-                try {
-                  const cs = globalThis.getComputedStyle(el);
-                  const bg = cs ? cs.backgroundColor : "";
-                  if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent")
-                    score += 2;
-                  const border = cs ? cs.borderColor : "";
-                  if (
-                    border &&
-                    border !== "rgba(0, 0, 0, 0)" &&
-                    border !== "transparent"
-                  )
-                    score += 1;
-                } catch (e) {
-                  console.warn("merit: style scoring failed:", e);
-                }
-                if (text.length > 900) score -= 3;
-                return score;
-              };
-
-              try {
-                const candidates = doc.querySelectorAll(
-                  "section,article,aside,div,p,li"
-                );
-
-                let best: Element | null = null;
-                let bestScore = -1;
-                for (let i = 0; i < candidates.length; i++) {
-                  const el = candidates[i];
-                  const s = scoreEl(el);
-                  if (s > bestScore) {
-                    bestScore = s;
-                    best = el;
-                  }
-                }
-
-                if (best) {
-                  let container: Element | null = best;
-                  let foundValid = false;
-                  for (let i = 0; i < 4; i++) {
-                    const t = norm(container ? container.textContent : null);
-                    if (
-                      t &&
-                      t.length >= 60 &&
-                      t.length <= 900 &&
-                      hasSelfAuth(t)
-                    ) {
-                      foundValid = true;
-                      break;
-                    }
-                    container = container ? container.parentElement : null;
-                    if (!container) break;
-                  }
-                  if (foundValid && container) {
-                    const finalText = norm(container.textContent);
-                    if (
-                      finalText &&
-                      hasSelfAuth(finalText) &&
-                      finalText.length <= 1200
-                    ) {
-                      return finalText.length > 950
-                        ? finalText.slice(0, 950)
-                        : finalText;
-                    }
-                  }
-                  const bestText = norm(best.textContent);
-                  if (
-                    bestText &&
-                    hasSelfAuth(bestText) &&
-                    bestText.length >= 60 &&
-                    bestText.length <= 1200
-                  ) {
-                    return bestText.length > 950
-                      ? bestText.slice(0, 950)
-                      : bestText;
-                  }
-                }
-              } catch (e) {
-                console.warn("merit: description extraction failed:", e);
-              }
-
-              const allElements = doc.querySelectorAll("*");
-              for (let i = 0; i < allElements.length; i++) {
-                const element = allElements[i];
-                if (!element) continue;
-                const text = norm(element.textContent || "");
-                if (
-                  hasSelfAuth(text) &&
-                  text.length > 60 &&
-                  text.length < 1000
-                ) {
-                  return text;
-                }
-              }
-
-              return null;
-            })) as string | null;
-          } catch (evalError) {
-            logger.error(
-              `❌ [Playwright Fallback] Error in page.evaluate for ${key}:`,
-              evalError
-            );
-            result = null;
-          }
-
-          if (result) {
-            logger.info(
-              `✅ [Playwright Fallback] Self-auth extracted for ${key}: ${result.substring(0, 100)}...`
-            );
-          } else {
-            logger.warn(
-              `⚠️ [Playwright Fallback] No self-auth found for ${key}`
-            );
-            try {
-              const pageText = (await page.evaluate(() => {
-                const doc = globalThis.document;
-                const body = doc ? doc.body : null;
-                const innerText = body ? body.innerText : "";
-                return innerText ? innerText.substring(0, 1000) : "";
-              })) as string;
-              const hasSelfAuthInText = /self.*(auth|verify|proof)/i.test(
-                pageText
-              );
-              logger.info(
-                `🔍 [Playwright Fallback] Page text sample (${pageText.length} chars, has self-auth keywords: ${hasSelfAuthInText}): ${pageText.substring(0, 200)}...`
-              );
-
-              const selfTexts = (await page.evaluate(() => {
-                const doc = globalThis.document;
-                const results: string[] = [];
-                const body = doc ? doc.body : null;
-                const allText = body ? body.innerText : "";
-                const lines = allText ? allText.split("\n") : [];
-                for (let i = 0; i < lines.length; i++) {
-                  const line = lines[i];
-                  const lower = line.toLowerCase();
-                  if (
-                    lower.includes("self") &&
-                    (lower.includes("auth") ||
-                      lower.includes("verify") ||
-                      lower.includes("proof"))
-                  ) {
-                    results.push(line.trim().substring(0, 200));
-                  }
-                }
-                return results;
-              })) as string[];
-              if (selfTexts.length > 0) {
-                logger.info(
-                  `🔍 [Playwright Fallback] Found ${selfTexts.length} potential self-auth texts:`,
-                  selfTexts
-                );
-                if (!result && selfTexts.length > 0) {
-                  result = selfTexts[0];
-                  logger.info(
-                    `✅ [Playwright Fallback] Using first found self-auth text for ${key}: ${result.substring(0, 100)}...`
-                  );
-                }
-              } else {
-                logger.warn(
-                  `⚠️ [Playwright Fallback] No self-auth texts found in page content for ${key}`
-                );
-              }
-            } catch (debugError) {
-              logger.warn(
-                `⚠️ [Playwright Fallback] Failed to get debug info: ${debugError}`
-              );
-            }
-          }
-
-          return result;
-        })(),
+        needCampaignInfo
+          ? extractCampaignInfoFromPage(page, key)
+          : Promise.resolve([]),
+        needSelfAuth
+          ? extractSelfAuthFromPage(page, key)
+          : Promise.resolve(null),
       ]);
 
       return { campaignInfo, selfAuthDescription, source: "playwright" };
@@ -2517,14 +2275,272 @@ async function extractMeritDynamicInfoWithBrowser(
   }
 }
 
+type PlaywrightPage = import("playwright").Page;
+
+async function extractCampaignInfoFromPage(
+  page: PlaywrightPage,
+  key: string
+): Promise<MeritCampaignInfo[]> {
+  try {
+    const campaignInfoButton = page.locator("button", {
+      hasText: /campaign\s+info/i,
+    });
+    if ((await campaignInfoButton.count()) > 0) {
+      await campaignInfoButton.first().click();
+      await page.waitForSelector("table tbody tr", {
+        timeout: 5000,
+        state: "attached",
+      });
+    }
+  } catch (e) {
+    logger.debug(
+      `merit: campaign info button click failed for ${key}: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
+
+  const infos = await page.evaluate(() => {
+    const infos: Array<{ action?: string; description?: string }> = [];
+    const doc = globalThis.document;
+    if (!doc) return infos;
+    const tables = doc.querySelectorAll("table");
+    for (let i = 0; i < tables.length; i++) {
+      const rows = tables[i].querySelectorAll("tbody tr");
+      for (let j = 0; j < rows.length; j++) {
+        const cells = rows[j].querySelectorAll("td");
+        if (cells.length >= 2) {
+          const action = cells[0]?.textContent?.trim() || "";
+          const description = cells[1]?.textContent?.trim() || "";
+          if (
+            action.length > 0 &&
+            description.length > action.length &&
+            description.length > 20
+          ) {
+            infos.push({ action, description });
+          }
+        }
+      }
+    }
+    return infos;
+  });
+
+  return (Array.isArray(infos) ? infos : []) as MeritCampaignInfo[];
+}
+
+async function extractSelfAuthFromPage(
+  page: PlaywrightPage,
+  key: string
+): Promise<string | null> {
+  logger.info(`🔍 Starting self-auth extraction for ${key}`);
+  let result: string | null = null;
+  try {
+    result = (await page.evaluate(() => {
+      const doc = globalThis.document;
+      if (!doc) return null;
+
+      const norm = (s: any) => {
+        return String(s || "")
+          .replace(/\s+/g, " ")
+          .trim();
+      };
+
+      const hasSelfAuth = (s: any) => {
+        const t = String(s || "").toLowerCase();
+        return (
+          t.includes("self") &&
+          (t.includes("authentication") ||
+            t.includes("verify") ||
+            t.includes("proof"))
+        );
+      };
+
+      const scoreEl = (el: Element) => {
+        const text = norm(el ? el.textContent : null);
+        if (!text || !hasSelfAuth(text)) return -1;
+        let score = 0;
+        if (text.length >= 60 && text.length <= 900) score += 3;
+        if (text.toLowerCase().includes("supply")) score += 1;
+        if (text.toLowerCase().includes("borrow")) score += 1;
+        try {
+          const cs = globalThis.getComputedStyle(el);
+          const bg = cs ? cs.backgroundColor : "";
+          if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent")
+            score += 2;
+          const border = cs ? cs.borderColor : "";
+          if (
+            border &&
+            border !== "rgba(0, 0, 0, 0)" &&
+            border !== "transparent"
+          )
+            score += 1;
+        } catch (e) {
+          console.warn("merit: style scoring failed:", e);
+        }
+        if (text.length > 900) score -= 3;
+        return score;
+      };
+
+      try {
+        const candidates = doc.querySelectorAll(
+          "section,article,aside,div,p,li"
+        );
+
+        let best: Element | null = null;
+        let bestScore = -1;
+        for (let i = 0; i < candidates.length; i++) {
+          const el = candidates[i];
+          const s = scoreEl(el);
+          if (s > bestScore) {
+            bestScore = s;
+            best = el;
+          }
+        }
+
+        if (best) {
+          let container: Element | null = best;
+          let foundValid = false;
+          for (let i = 0; i < 4; i++) {
+            const t = norm(container ? container.textContent : null);
+            if (
+              t &&
+              t.length >= 60 &&
+              t.length <= 900 &&
+              hasSelfAuth(t)
+            ) {
+              foundValid = true;
+              break;
+            }
+            container = container ? container.parentElement : null;
+            if (!container) break;
+          }
+          if (foundValid && container) {
+            const finalText = norm(container.textContent);
+            if (
+              finalText &&
+              hasSelfAuth(finalText) &&
+              finalText.length <= 1200
+            ) {
+              return finalText.length > 950
+                ? finalText.slice(0, 950)
+                : finalText;
+            }
+          }
+          const bestText = norm(best.textContent);
+          if (
+            bestText &&
+            hasSelfAuth(bestText) &&
+            bestText.length >= 60 &&
+            bestText.length <= 1200
+          ) {
+            return bestText.length > 950
+              ? bestText.slice(0, 950)
+              : bestText;
+          }
+        }
+      } catch (e) {
+        console.warn("merit: description extraction failed:", e);
+      }
+
+      const allElements = doc.querySelectorAll("*");
+      for (let i = 0; i < allElements.length; i++) {
+        const element = allElements[i];
+        if (!element) continue;
+        const text = norm(element.textContent || "");
+        if (
+          hasSelfAuth(text) &&
+          text.length > 60 &&
+          text.length < 1000
+        ) {
+          return text;
+        }
+      }
+
+      return null;
+    })) as string | null;
+  } catch (evalError) {
+    logger.error(
+      `❌ Error in page.evaluate for self-auth ${key}:`,
+      evalError
+    );
+    result = null;
+  }
+
+  if (result) {
+    logger.info(
+      `✅ Self-auth extracted for ${key}: ${result.substring(0, 100)}...`
+    );
+  } else {
+    logger.warn(`⚠️ No self-auth found for ${key}`);
+  }
+
+  return result;
+}
+
 async function extractMeritDynamicInfoWithRender(
-  _key: string
+  key: string
 ): Promise<MeritDynamicInfo | null> {
-  if (!process.env.RENDER_SERVICE_URL) {
+  const renderUrl = process.env.RENDER_SERVICE_URL;
+  if (!renderUrl) {
     return null;
   }
-  // TODO: Implement Render service integration when configured
-  return null;
+
+  let context: BrowserContext | null = null;
+  let browser: Browser | null = null;
+
+  try {
+    const wsEndpoint = renderUrl.replace(/^https?/, "wss");
+    logger.info(
+      `🔗 [Render Fallback] Connecting to remote browser at ${renderUrl} for ${key}`
+    );
+
+    browser = await chromium.connectOverCDP(wsEndpoint, {
+      timeout: 30000,
+    });
+
+    context = await browser.newContext({
+      viewport: { width: 1920, height: 1080 },
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    });
+    const page = await context.newPage();
+
+    await page.addInitScript(() => {
+      if (typeof (globalThis as any).__name === "undefined") {
+        (globalThis as any).__name = (func: any) => func;
+      }
+    });
+
+    const url = `https://apps.aavechan.com/merit/${key}`;
+    await page.goto(url, {
+      waitUntil: "networkidle",
+      timeout: 30000,
+    });
+    await page.waitForSelector("body", { timeout: 10000 });
+
+    const campaignInfo = await extractCampaignInfoFromPage(page, key);
+    const selfAuthDescription = await extractSelfAuthFromPage(page, key);
+
+    logger.info(
+      `✅ [Render Fallback] Extracted for ${key}: campaigns=${campaignInfo.length}, selfAuth=${!!selfAuthDescription}`
+    );
+
+    return { campaignInfo, selfAuthDescription, source: "render" };
+  } catch (error) {
+    logger.warn(
+      `⚠️ [Render Fallback] Failed for ${key}: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return null;
+  } finally {
+    if (context) {
+      try {
+        await context.close();
+      } catch (_) {}
+    }
+    if (browser) {
+      try {
+        browser.close();
+      } catch (_) {}
+    }
+  }
 }
 
 const ETHEREUM_AVERAGE_BLOCK_TIME_S = 12;
