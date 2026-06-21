@@ -2486,6 +2486,8 @@ async function extractSelfAuthFromPage(
 
 let renderLastActiveTimestamp = 0;
 const RENDER_RECENTLY_ACTIVE_MS = 5 * 60 * 1000;
+let renderConcurrentCount = 0;
+const RENDER_MAX_CONCURRENT = 1;
 
 function isRenderRecentlyActive(): boolean {
   return Date.now() - renderLastActiveTimestamp < RENDER_RECENTLY_ACTIVE_MS;
@@ -2498,6 +2500,15 @@ async function extractMeritDynamicInfoWithRender(
   if (!renderUrl) {
     return null;
   }
+
+  if (renderConcurrentCount >= RENDER_MAX_CONCURRENT) {
+    logger.debug(
+      `⏭️ [Render Fallback] Skipping ${key}: ${renderConcurrentCount} concurrent connections (limit: ${RENDER_MAX_CONCURRENT})`
+    );
+    return null;
+  }
+
+  renderConcurrentCount++;
 
   let context: BrowserContext | null = null;
   let browser: Browser | null = null;
@@ -2546,6 +2557,7 @@ async function extractMeritDynamicInfoWithRender(
         await browser.close();
       } catch (_) {}
     }
+    renderConcurrentCount--;
   }
 }
 
