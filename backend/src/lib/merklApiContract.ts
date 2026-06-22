@@ -101,9 +101,9 @@ export const FORECAST_FIELD_RULES: Record<Exclude<CampaignForecastType, 'TARGET_
 /** 获取指定类型的 breakdown 字段规则 */
 export function getBreakdownFieldRule(type: CampaignForecastType, budgetBoundMode?: string): BreakdownFieldRule {
   if (type === 'TARGET_TOTAL_APR') {
-    if (budgetBoundMode === 'FIX_APR') return BREAKDOWN_FIELD_RULES.FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
-    if (budgetBoundMode === 'MAX_APR') return BREAKDOWN_FIELD_RULES.MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
-    throw new Error(`TARGET_TOTAL_APR requires budgetBoundMode, got: ${budgetBoundMode ?? 'undefined'}`);
+    const mode = budgetBoundMode || 'MAX_APR';
+    if (mode === 'FIX_APR') return BREAKDOWN_FIELD_RULES.FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
+    return BREAKDOWN_FIELD_RULES.MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
   }
   return BREAKDOWN_FIELD_RULES[type];
 }
@@ -111,9 +111,9 @@ export function getBreakdownFieldRule(type: CampaignForecastType, budgetBoundMod
 /** 获取指定类型的 forecast 字段规则 */
 export function getForecastFieldRule(type: CampaignForecastType, budgetBoundMode?: string): ForecastFieldRule {
   if (type === 'TARGET_TOTAL_APR') {
-    if (budgetBoundMode === 'FIX_APR') return FORECAST_FIELD_RULES.FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
-    if (budgetBoundMode === 'MAX_APR') return FORECAST_FIELD_RULES.MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
-    throw new Error(`TARGET_TOTAL_APR requires budgetBoundMode, got: ${budgetBoundMode ?? 'undefined'}`);
+    const mode = budgetBoundMode || 'MAX_APR';
+    if (mode === 'FIX_APR') return FORECAST_FIELD_RULES.FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
+    return FORECAST_FIELD_RULES.MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
   }
   return FORECAST_FIELD_RULES[type];
 }

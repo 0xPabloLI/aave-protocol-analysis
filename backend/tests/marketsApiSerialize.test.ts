@@ -439,7 +439,7 @@ test('serializeReserveForApi preserves plannedDaily for TARGET_TOTAL_APR with MA
   assert.equal(breakdown?.plannedDaily, 100);
 });
 
-test('serializeReserveForApi throws for TARGET_TOTAL_APR without budgetBoundMode', () => {
+test('serializeReserveForApi falls back to MAX_APR for TARGET_TOTAL_APR without budgetBoundMode', () => {
   const reserve: RuntimeReserveData = {
     reserveId: 'tta-no-mode',
     marketName: 'm',
@@ -468,10 +468,10 @@ test('serializeReserveForApi throws for TARGET_TOTAL_APR without budgetBoundMode
     ],
   };
 
-  assert.throws(
-    () => serializeReserveForApi(reserve),
-    /TARGET_TOTAL_APR requires budgetBoundMode/,
-  );
+  const result = serializeReserveForApi(reserve);
+  const bd = result.merklSupplys![0].breakdowns[0];
+  assert.equal(bd.campaignType, 'TARGET_TOTAL_APR');
+  assert.equal('plannedDaily' in bd, true);
 });
 
 test('serializeReserveForApi passes through aaveProReserveId for V4 reserves', () => {
