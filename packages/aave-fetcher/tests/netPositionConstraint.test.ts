@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractNetPositionConstraint } from '../src/merkl-api.js';
-import type { MerklOpportunityData } from '../src/merkl-api.js';
+import type { MerklOpportunityData, OffsetTokenInfo } from '../src/merkl-api.js';
 
 const makeReserveIdSet = (reserveIds: string[]): Set<string> => new Set(reserveIds);
 
@@ -16,13 +16,13 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       chainId: 1,
       protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: [
-        { address: '0xusde', reserveId: '1:0xpool:0xusde' },
-        { address: '0xgho', reserveId: '1:0xpool:0xgho' },
-      ],
     };
+    const offsetTokenAddresses: OffsetTokenInfo[] = [
+      { address: '0xusde', reserveId: '1:0xpool:0xusde' },
+      { address: '0xgho', reserveId: '1:0xpool:0xgho' },
+    ];
     const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusdt', '1:0xpool:0xusde', '1:0xpool:0xgho']);
-    const result = extractNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet);
+    const result = extractNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet, 'hub', offsetTokenAddresses);
     assert.deepEqual(result, {
       sourceSide: 'supply',
       offsetReserveIds: ['1:0xpool:0xusdt', '1:0xpool:0xusde', '1:0xpool:0xgho'],
@@ -38,10 +38,10 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       chainId: 1,
       protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_BORROWING',
-      offsetTokenAddresses: [{ address: '0xusdc', reserveId: '1:0xpool:0xusdc' }],
     };
+    const offsetTokenAddresses: OffsetTokenInfo[] = [{ address: '0xusdc', reserveId: '1:0xpool:0xusdc' }];
     const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusde', '1:0xpool:0xusdc']);
-    const result = extractNetPositionConstraint(opp, '0xusde', '1:0xpool:0xusde', reserveIdSet);
+    const result = extractNetPositionConstraint(opp, '0xusde', '1:0xpool:0xusde', reserveIdSet, 'hub', offsetTokenAddresses);
     assert.deepEqual(result, {
       sourceSide: 'borrow',
       offsetReserveIds: ['1:0xpool:0xusde', '1:0xpool:0xusdc'],
@@ -57,13 +57,13 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       chainId: 1,
       protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: [
-        { address: '0xusde', reserveId: '1:0xpool:0xusde' },
-        { address: '0xunknown' },
-      ],
     };
+    const offsetTokenAddresses: OffsetTokenInfo[] = [
+      { address: '0xusde', reserveId: '1:0xpool:0xusde' },
+      { address: '0xunknown' },
+    ];
     const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusdt', '1:0xpool:0xusde']);
-    const result = extractNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet);
+    const result = extractNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet, 'hub', offsetTokenAddresses);
     assert.deepEqual(result, {
       sourceSide: 'supply',
       offsetReserveIds: ['1:0xpool:0xusdt', '1:0xpool:0xusde'],
@@ -107,9 +107,8 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       chainId: 1,
       protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: [],
     };
-    const result = extractNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', new Set());
+    const result = extractNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', new Set(), 'hub', []);
     assert.deepEqual(result, {
       sourceSide: 'supply',
       offsetReserveIds: ['1:0xpool:0xusdt'],
@@ -125,13 +124,13 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       chainId: 1,
       protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: [
-        { address: '0xusdt', reserveId: '1:0xpool:0xusdt' },
-        { address: '0xusde', reserveId: '1:0xpool:0xusde' },
-      ],
     };
+    const offsetTokenAddresses: OffsetTokenInfo[] = [
+      { address: '0xusdt', reserveId: '1:0xpool:0xusdt' },
+      { address: '0xusde', reserveId: '1:0xpool:0xusde' },
+    ];
     const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusdt', '1:0xpool:0xusde']);
-    const result = extractNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet);
+    const result = extractNetPositionConstraint(opp, '0xusdt', '1:0xpool:0xusdt', reserveIdSet, 'hub', offsetTokenAddresses);
     assert.deepEqual(result, {
       sourceSide: 'supply',
       offsetReserveIds: ['1:0xpool:0xusdt', '1:0xpool:0xusde'],
@@ -147,15 +146,15 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       chainId: 1,
       protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: [{ address: '0xrlusd' }],
     };
+    const offsetTokenAddresses: OffsetTokenInfo[] = [{ address: '0xrlusd' }];
     const reserveIdSet = makeReserveIdSet([
       '1:0xhorizonPool:0xrlusd',
       '1:0xmainPool:0xrlusd',
       '1:0xv4spoke:0xrlusd:Core',
     ]);
     const oppReserveId = '1:0xhorizonPool:0xrlusd';
-    const result = extractNetPositionConstraint(opp, '0xrlusd', oppReserveId, reserveIdSet);
+    const result = extractNetPositionConstraint(opp, '0xrlusd', oppReserveId, reserveIdSet, 'hub', offsetTokenAddresses);
     assert.deepEqual(result, {
       sourceSide: 'supply',
       offsetReserveIds: ['1:0xhorizonPool:0xrlusd'],
@@ -171,15 +170,15 @@ describe('B2: Layer 1 — netPositionConstraint extraction', () => {
       chainId: 1,
       protocolVersion: 'v4',
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: [{ address: '0xrlusd' }],
     };
+    const offsetTokenAddresses: OffsetTokenInfo[] = [{ address: '0xrlusd' }];
     const reserveIdSet = makeReserveIdSet([
       '1:0xv4spoke:0xrlusd:Core',
       '1:0xv4spoke:0xrlusd:Lido',
       '1:0xmainPool:0xrlusd',
     ]);
     const oppReserveId = '1:0xv4spoke:0xsourceToken:Core';
-    const result = extractNetPositionConstraint(opp, '0xsourceToken', oppReserveId, reserveIdSet, 'spoke');
+    const result = extractNetPositionConstraint(opp, '0xsourceToken', oppReserveId, reserveIdSet, 'spoke', offsetTokenAddresses);
     assert.deepEqual(result, {
       sourceSide: 'supply',
       offsetReserveIds: ['1:0xv4spoke:0xsourceToken:Core', '1:0xv4spoke:0xrlusd:Core', '1:0xv4spoke:0xrlusd:Lido'],

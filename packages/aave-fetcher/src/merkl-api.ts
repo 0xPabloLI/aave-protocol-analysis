@@ -197,7 +197,6 @@ export interface OffsetTokenInfo {
   address: string;
   reserveId?: string;
 }
-
 export function inferVersionFromReserveId(reserveId: string): 'v3' | 'v4' | null {
   const segments = reserveId.split(':').length;
   if (segments === 3) return 'v3';
@@ -211,28 +210,53 @@ export function extractPoolSpokePrefix(reserveId: string): string | null {
   return `${parts[0]}:${parts[1]}`;
 }
 
+export type OffsetLevel = 'reserve' | 'hub-cross-spoke' | 'spoke-cross-hub' | 'hub' | 'spoke';
+
+function normalizeOffsetLevel(level: OffsetLevel): 'reserve' | 'hub-cross-spoke' | 'spoke-cross-hub' {
+  if (level === 'hub') return 'reserve';
+  if (level === 'spoke') return 'spoke-cross-hub';
+  return level;
+}
+
 export function resolveOffsetReserveIds(
   oppReserveId: string,
   offsetTokenAddress: string,
   reserveIdSet: Set<string>,
-  offsetLevel: 'hub' | 'spoke' = 'hub',
+  offsetLevel: OffsetLevel = 'hub',
 ): string[] {
   const version = inferVersionFromReserveId(oppReserveId);
   const prefix = extractPoolSpokePrefix(oppReserveId);
   if (!prefix || !version) return [];
 
   const normalizedAddr = offsetTokenAddress.toLowerCase();
+  const resolvedLevel = normalizeOffsetLevel(offsetLevel);
 
   if (version === 'v3') {
+    if (resolvedLevel === 'hub-cross-spoke') return [];
     const candidate = `${prefix}:${normalizedAddr}`;
     return reserveIdSet.has(candidate) ? [candidate] : [];
   }
 
   const parts = oppReserveId.split(':');
+  const chainId = parts[0];
+  const hubAddress = parts.length >= 4 ? parts[3] : '';
+
+  if (resolvedLevel === 'hub-cross-spoke') {
+    if (!hubAddress) return [];
+    const results: string[] = [];
+    const target = `:${normalizedAddr}:${hubAddress}`;
+    for (const rid of reserveIdSet) {
+      if (rid.startsWith(`${chainId}:`) && rid.endsWith(target) && rid.split(':').length >= 4) {
+        results.push(rid);
+      }
+    }
+    return results;
+  }
+
   const spokePrefix = `${parts[0]}:${parts[1]}`;
   const base = `${spokePrefix}:${normalizedAddr}`;
 
-  if (offsetLevel === 'hub') {
+  if (resolvedLevel === 'reserve') {
     const hubSuffix = parts.length >= 4 ? `:${parts[3]}` : '';
     const exact = `${base}${hubSuffix}`;
     return reserveIdSet.has(exact) ? [exact] : [];
@@ -1401,25 +1425,6 @@ export async function processMerklData(
   // Build forecast meta map early so breakdowns can be enriched with opportunity-only forecast data
   const forecastCampaignMetaLite = buildForecastCampaignMetaLiteMap(liveOpportunities);
 
-  // 反查 Map: chainId:address → reserveId（用于从 opp 的 explorerAddress 反查对应 reserveId）
-  // explorerAddress 可能是 underlying token、aToken、vToken 或 spoke 地址
-  const tokenAddrToReserveId = new Map<string, string>();
-  if (mergedOptions.baseDataset) {
-    for (const r of mergedOptions.baseDataset) {
-      const addMapping = (addr: string | undefined | null) => {
-        if (!addr) return;
-        const key = chainTokenKey(r.chainId, addr);
-        if (!tokenAddrToReserveId.has(key)) {
-          tokenAddrToReserveId.set(key, r.reserveId);
-        }
-      };
-      addMapping(r.tokenAddress);
-      addMapping(r.aTokenAddress);
-      addMapping(r.vTokenAddress);
-      addMapping(r.spokeAddress);
-    }
-  }
-
   // 处理所有 live opportunities（现在可以快速从缓存中获取数据）
   for (const opp of liveOpportunities) {
     if (!opp.explorerAddress) {
@@ -1464,6 +1469,10 @@ export async function processMerklData(
     }
 
     let firstDistributionType: string | undefined;
+    const oppLevelDistributionType = typeof opp.distributionType === 'string' ? opp.distributionType : undefined;
+    if (oppLevelDistributionType && NET_DISTRIBUTION_TYPES.has(oppLevelDistributionType.toUpperCase())) {
+      firstDistributionType = oppLevelDistributionType;
+    }
     for (const rewardBreakdown of rewardsBreakdowns) {
       const campaignId = String(rewardBreakdown.campaignId || '').trim();
       if (!campaignId) {
@@ -1536,14 +1545,7 @@ export async function processMerklData(
       continue;
     }
 
-    // 反查 opp 对应的 reserveId
-    const oppReserveId = tokenAddrToReserveId.get(chainTokenKey(opp.chainId, explorerAddress));
-    const reserveIdSet = mergedOptions.reserveIdSet ?? new Set<string>();
-
-    const offsetLevel: 'hub' | 'spoke' = opp.type?.includes('SPOKE_SUPPLY') ? 'spoke' : 'hub';
-    const offsetTokenAddresses = oppReserveId
-      ? extractOffsetTokenAddresses(opp, oppReserveId, reserveIdSet, offsetLevel)
-      : [];
+    const offsetTokenAddresses = extractOffsetTokenAddresses(opp);
 
     const { composedCampaignsCompute, composedSubCampaigns } = extractComposedCampaignInfo(opp);
 
@@ -1668,13 +1670,10 @@ export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[
 
 function extractOffsetTokenAddresses(
   opp: MerklOpportunity,
-  oppReserveId: string,
-  reserveIdSet: Set<string>,
-  offsetLevel: 'hub' | 'spoke' = 'hub',
 ): OffsetTokenInfo[] {
   if (!Array.isArray(opp.campaigns)) return [];
   const seen = new Set<string>();
-  const rawAddrs: string[] = [];
+  const results: OffsetTokenInfo[] = [];
   for (const campaign of opp.campaigns) {
     const tokens: unknown = campaign?.params?.tokens;
     if (Array.isArray(tokens)) {
@@ -1686,16 +1685,12 @@ function extractOffsetTokenAddresses(
             : null;
         if (addr && !seen.has(addr)) {
           seen.add(addr);
-          rawAddrs.push(addr);
+          results.push({ address: addr });
         }
       }
     }
   }
-  return rawAddrs.map(addr => {
-    const resolvedIds = resolveOffsetReserveIds(oppReserveId, addr, reserveIdSet, offsetLevel);
-    if (resolvedIds.length === 1) return { address: addr, reserveId: resolvedIds[0] };
-    return { address: addr };
-  });
+  return results;
 }
 
 const SUPPLY_PATTERN = /\b(supply|lend|deposit|stake)\b/i;
@@ -1726,7 +1721,7 @@ export function composedNetPositionConstraint(
   opp: MerklOpportunityData,
   oppReserveId: string,
   reserveIdSet: Set<string>,
-  offsetLevel: 'hub' | 'spoke' = 'hub',
+  offsetLevel: OffsetLevel = 'hub',
 ): NetPositionConstraint | null {
   if (opp.composedCampaignsCompute !== '1-2') return null;
 
@@ -1769,9 +1764,11 @@ export async function detectNetPositionConstraint(
   symbolLookup: Map<string, string>,
   cachedConstraint?: NetPositionConstraint | null,
   llmFn?: () => Promise<import('./merklLlmClient.js').LlmOutcome>,
-  offsetLevel: 'hub' | 'spoke' = 'hub',
+  offsetLevel: OffsetLevel = 'hub',
+  offsetTokenAddresses?: OffsetTokenInfo[],
 ): Promise<NetPositionConstraint | null> {
-  const layer0 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet, offsetLevel);
+  const resolvedOffsetAddrs = offsetTokenAddresses ?? opp.offsetTokenAddresses;
+  const layer0 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet, offsetLevel, resolvedOffsetAddrs);
   if (layer0) return layer0;
 
   const layer05 = composedNetPositionConstraint(opp, oppReserveId, reserveIdSet, offsetLevel);
@@ -1823,7 +1820,8 @@ export function extractNetPositionConstraint(
   sourceTokenAddress: string,
   oppReserveId: string,
   reserveIdSet: Set<string>,
-  offsetLevel: 'hub' | 'spoke' = 'hub',
+  offsetLevel: OffsetLevel = 'hub',
+  offsetTokenAddresses?: OffsetTokenInfo[],
 ): NetPositionConstraint | null {
   const type = opp.opportunityType;
   const isNetType = type && type.startsWith('AAVE_NET_');
@@ -1843,7 +1841,7 @@ export function extractNetPositionConstraint(
 
   const debugMissing: string[] = [];
 
-  for (const info of (opp.offsetTokenAddresses ?? [])) {
+  for (const info of (offsetTokenAddresses ?? [])) {
     if (info.reserveId && !seen.has(info.reserveId)) {
       seen.add(info.reserveId);
       offsetReserveIds.push(info.reserveId);
@@ -1867,7 +1865,7 @@ export function extractNetPositionConstraint(
   }
 
   if (offsetReserveIds.length === 0) {
-    logger.warn(`⚠️ extractNetPositionConstraint: no offsetReserveIds for opp "${opp.name}" type=${type} dt=${opp.distributionType} chain=${opp.chainId} offsetAddrs=${JSON.stringify(opp.offsetTokenAddresses)} missingAddrs=${JSON.stringify(debugMissing)} reserveIdSetSize=${reserveIdSet.size}`);
+    logger.warn(`⚠️ extractNetPositionConstraint: no offsetReserveIds for opp "${opp.name}" type=${type} dt=${opp.distributionType} chain=${opp.chainId} offsetAddrs=${JSON.stringify(offsetTokenAddresses)} missingAddrs=${JSON.stringify(debugMissing)} reserveIdSetSize=${reserveIdSet.size}`);
     return null;
   }
 

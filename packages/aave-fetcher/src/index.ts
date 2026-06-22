@@ -22,6 +22,7 @@ import {
   formatMerklBreakdown,
   detectNetPositionConstraint,
 } from './merkl-api.js';
+import type { OffsetLevel } from './merkl-api.js';
 import type { NetPositionConstraint } from '@internal/aave-shared-contracts';
 import { buildLlmPrompt, callLlmWithFallback } from './merklLlmClient.js';
 import type { LlmClientConfig } from './merklLlmClient.js';
@@ -422,8 +423,9 @@ async function enrichDatasetWithIncentiveData(
           });
         } : undefined;
         const cachedConstraint = opp.opportunityLink ? cachedConstraints?.get(opp.opportunityLink) : undefined;
-        const oppOffsetLevel: 'hub' | 'spoke' = opp.opportunityType?.includes('SPOKE_SUPPLY') ? 'spoke' : 'hub';
-        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, cachedConstraint, llmFn, oppOffsetLevel);
+        const oppOffsetLevel: OffsetLevel = opp.opportunityType?.includes('SPOKE_SUPPLY') ? 'spoke' : opp.opportunityType?.includes('HUB_SUPPLY') ? 'hub-cross-spoke' : 'hub';
+        const oppOffsetTokenAddresses = opp.offsetTokenAddresses;
+        const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, cachedConstraint, llmFn, oppOffsetLevel, oppOffsetTokenAddresses);
         if (opp.opportunityLink && cachedConstraints && cachedConstraint === undefined) {
           cachedConstraints.set(opp.opportunityLink, netPositionConstraint ?? null);
         }
