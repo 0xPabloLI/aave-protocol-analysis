@@ -93,22 +93,22 @@ export interface BrevisCampaignInfo {
 
 本项目 `mapActionType` 映射为：
 
-| Type code | 协议 | actionType | positionCapScope | 证据来源 |
-|---|---|---|---|---|
-| `2001` | Euler | `borrow` | `borrow` | 官方文档 Incentra docs: Euler campaigns |
-| `2002` | Euler | `supply` | `supply` | 官方文档 Incentra docs: Euler campaigns |
-| `3001` | Aave (gRPC 实测) | `both` | `combined` | gRPC 运行时数据 + 项目代码映射 |
-| `5001` | Aave | `supply` | `supply` | 官方文档 Incentra docs: Aave campaigns |
-| `5002` | Aave | `borrow` | `borrow` | 官方文档 Incentra docs: Aave campaigns |
-| `5003` | Aave (lend_net) | `supply` | `supply` | 官方文档 Incentra docs: Aave campaigns |
-| `6001` | Morpho | `supply` | `supply` | 官方文档 Incentra docs: Morpho campaigns |
+| Type code | 协议 | actionType | 证据来源 |
+|---|---|---|---|
+| `2001` | Euler | `borrow` | 官方文档 Incentra docs: Euler campaigns |
+| `2002` | Euler | `supply` | 官方文档 Incentra docs: Euler campaigns |
+| `3001` | Aave (gRPC 实测) | `both` | gRPC 运行时数据 + 项目代码映射 |
+| `5001` | Aave | `supply` | 官方文档 Incentra docs: Aave campaigns |
+| `5002` | Aave | `borrow` | 官方文档 Incentra docs: Aave campaigns |
+| `5003` | Aave (lend_net) | `supply` | 官方文档 Incentra docs: Aave campaigns |
+| `6001` | Morpho | `supply` | 官方文档 Incentra docs: Morpho campaigns |
 
 补充说明：
 
 - 对官方 SDK 文档：Aave `action` 定义为 `5001/5002/5003`。
-- 对本项目 gRPC 抓取路径（`GetAllProtocolDetail`）：当前运行时数据中 Aave campaign 的 `type` 为 `3001`，映射为 `both`（positionCapScope = `combined`）。
+- 对本项目 gRPC 抓取路径（`GetAllProtocolDetail`）：当前运行时数据中 Aave campaign 的 `type` 为 `3001`，映射为 `both`（supply + borrow 合计持仓受 positionCap 约束）。
 - `5001/5002/5003` 尚未在 gRPC 响应中观察到，但代码中已预留映射。
-- `positionCapScope` 由 actionType 推导：`supply`/`borrow` → cap 只约束该侧持仓；`combined` → supply + borrow 合计持仓受 cap 约束。
+- **不加 `positionCapScope` 字段**（YAGNI）：前端已按 `campaignId` 去重推导 shared cap（`computeBrevisSharedCampaignDeposits`），后端不需要额外字段。
 
 官方文档入口：
 
