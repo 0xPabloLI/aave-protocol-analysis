@@ -199,14 +199,14 @@ if (isPersistenceEnabled()) {
     // Server stays up and serves from memory cache; persistence cron skips
     // via isPoolHealthy() check until DB recovers.
     let retryCount = 0;
-    const MAX_RETRIES = 1440; // 24h at 60s intervals
+    const MAX_RETRIES = 60; // 1h at 60s intervals — DB outages rarely exceed 5min
     const migrationRetryTimer = setInterval(async () => {
       if (migrationReady) {
         clearInterval(migrationRetryTimer);
         return;
       }
       if (++retryCount > MAX_RETRIES) {
-        logger.error('🔄 Migration retry exhausted after 24h — giving up. Restart the server to retry.');
+        logger.error('🔄 Migration retry exhausted after 1h — giving up. Restart the server to retry.');
         clearInterval(migrationRetryTimer);
         return;
       }
