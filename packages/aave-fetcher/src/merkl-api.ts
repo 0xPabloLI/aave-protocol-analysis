@@ -148,6 +148,7 @@ interface MerklEmbeddedCampaign {
   endTimestamp?: string | number | bigint;
   apr?: number;
   params?: any;
+  distributionType?: string;
 }
 
 export interface MerklCampaignDetails {
@@ -1255,7 +1256,7 @@ export async function processMerklData(
       const id = String(campaign.id || '').trim();
       if (!id) continue;
       if (campaignDetailsCache.has(id)) continue;
-      const campaignType = normalizeForecastCampaignTypeLite({ distributionType: opp.distributionType });
+      const campaignType = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
       if (isAmountVariant(campaignType) && campaignType) {
         amountVariantEntries.push({ campaignId: id, campaign, opp, campaignType });
       }
@@ -1338,7 +1339,7 @@ export async function processMerklData(
       if (!id) continue;
       if (campaignDetailsCache.has(id)) continue;
       oppCampaignPromises.push((async () => {
-        const campaignType = normalizeForecastCampaignTypeLite({ distributionType: opp.distributionType });
+        const campaignType = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
         let rewardTokenPrice: number | undefined;
         let targetTokenPrice: number | undefined;
         if (isAmountVariant(campaignType)) {
@@ -1349,7 +1350,7 @@ export async function processMerklData(
           rewardTokenPrice = undefined;
           targetTokenPrice = undefined;
         }
-        const resolved = resolveCampaignApr(campaign, opp.distributionType, rewardTokenPrice, targetTokenPrice);
+        const resolved = resolveCampaignApr(campaign, campaign.distributionType, rewardTokenPrice, targetTokenPrice);
         campaignDetailsCache.set(id, {
           startedAt: toIsoFromUnixLike(campaign.startTimestamp),
           endedAt: toIsoFromUnixLike(campaign.endTimestamp),

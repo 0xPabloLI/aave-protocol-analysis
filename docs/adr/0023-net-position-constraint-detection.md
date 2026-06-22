@@ -1,6 +1,6 @@
 # ADR-0023: netPositionConstraint 检测架构
 
-Date: 2026-05-29 · Updated: 2026-06-21
+Date: 2026-05-29 · Updated: 2026-06-22
 
 ## Status
 
@@ -98,20 +98,40 @@ AAVE_V4_NET_APR 是 Merkl 的 **Target Total APR** distribution type，含义：
 - 保证用户获得 target APR = max(target - native APR, 0) + native APR
 - Merkl 付差价（当 native yield 低于 target 时），不付超额（当 native yield 已达标）
 - 与 supply-borrow 对冲是**正交概念**：一个 opp 可以既是 net position 又使用 Target Total APR
+- `distributionSettings.mode: "MAX_APR"` 是 TARGET_TOTAL_APR 的一种 **dilutive mode**，不是"规范化"
+- Merkl API **没有** `offsetTokenAddresses` 字段
 
 来源：[Merkl Distribution Types 文档](https://docs.merkl.xyz/merkl-mechanisms/distributions)
+
+### Merkl API distributionType 数据源
+
+`distributionType` 在 Merkl API 中的实际位置：
+- **campaign/breakdown 级别**有值（`campaign.distributionType`、`breakdown.distributionType`）
+- **opp 顶层**始终为空字符串（`opp.distributionType` 不可用）
+
+提取策略：
+- **opp 级别代表值**：从 breakdown 取第一个非空值 → `firstDistributionType`（line 1478-1479），设置到 `MerklOpportunityData.distributionType`（line 1561）
+- **campaignDetailsCache 构建**：必须从 `campaign.distributionType` 取值（line 974、1008、1258、1341、1352）
+- **历史 bug**：`processMerklData` 中 line 1258/1341/1352 曾误用 `opp.distributionType`（始终为空），导致 amount variant campaign 无法识别，APR 计算走错分支（AAV-991）
+
+### LLM 空内容处理
+
+`callLlmWithFallback` 中 `llmAnswered` 标志的逻辑：
+- `parseLlmResponse` 返回有效结果 → `llmAnswered = true` → 返回 `{ tag: 'result', value: parsed }`
+- LLM 明确返回 null（`raw.trim() === 'null'`） → `llmAnswered = true` → 返回 `{ tag: 'result', value: null }`
+- 未解析内容 → `llmAnswered` 保持 false → 视为 unanswered，继续尝试下一个模型
+- 模型链全部耗尽后：`llmAnswered = true` → 返回 `{ tag: 'result', value: null }`；`llmAnswered = false` → 返回 `{ tag: 'unavailable' }`
 
 ### LLM 模型链路设计
 
 ```
-buildModelChain(primaryConfig?, openrouterConfig?, fetchFn)
+buildModelChain(primaryConfig?, fetchFn)
     │
     ├─ 硬编码优先（立即可用，无网络请求）
-    │    LLM_FALLBACK_MODELS (12) + OPENROUTER_FREE_MODELS_FALLBACK (20)
+    │    LLM_FALLBACK_MODELS (12)
     │
     └─ 动态获取追加（去重）
-         ├─ fetchAvailableModels(baseUrl, apiKey) → primary models
-         └─ fetchOpenRouterFreeModels() → openrouter free models
+         └─ fetchAvailableModels(baseUrl, apiKey) → primary models
 ```
 
 **callLlmWithFallback 返回 LlmOutcome**：
@@ -137,6 +157,13 @@ buildModelChain(primaryConfig?, openrouterConfig?, fetchFn)
 **L0.5 新增后**：#1 (Borrow USDT0) 和 #8 (Borrow USDC Horizon) 将被 L0.5 结构化规则捕获，不再依赖 LLM/regex。
 
 ## Changelog
+
+### 2026-06-22 Session
+- **distributionType 数据源记录**：opp 顶层始终为空，campaign/breakdown 级别有值；提取策略文档化
+- **LLM 空内容处理文档化**：`llmAnswered` 仅在成功解析或明确返回 null 时设 true
+- **OpenRouter 移除**：`buildModelChain` 只用 `primaryConfig`，删除 `OPENROUTER_FREE_MODELS_FALLBACK` 和 `fetchOpenRouterFreeModels()` 引用
+- **V4 HUB_SUPPLY 理解修正**：`MAX_APR` 是 dilutive mode 不是"规范化"；Merkl API 没有 `offsetTokenAddresses`
+- **AAV-991 bug fix**：`processMerklData` 中 3 处 `opp.distributionType` → `campaign.distributionType`
 
 ### 2026-06-21 Session
 - **Layer 0.5 新增**：composed `1-2` compute 作为确定性 net position 规则

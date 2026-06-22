@@ -97,6 +97,48 @@ test('batch dedup: AMOUNT_PER_AMOUNT entries collect both reward and target toke
   assert.ok(tokensToResolve.has('1:0xtarget:TARGET'));
 });
 
+test('campaign.distributionType used over opp.distributionType when opp is empty', () => {
+  const oppDistributionType = '';
+  const campaignDistributionType = 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT';
+
+  const fromOpp = normalizeForecastCampaignTypeLite({ distributionType: oppDistributionType });
+  const fromCampaign = normalizeForecastCampaignTypeLite({ distributionType: campaignDistributionType });
+
+  assert.equal(fromOpp, null, 'opp.distributionType="" should yield null');
+  assert.equal(fromCampaign, 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT',
+    'campaign.distributionType should identify AMOUNT variant');
+  assert.equal(isAmountVariant(fromOpp), false,
+    'amount variant NOT detected when using opp.distributionType');
+  assert.equal(isAmountVariant(fromCampaign), true,
+    'amount variant detected when using campaign.distributionType');
+});
+
+test('campaign.distributionType used over opp.distributionType for MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT', () => {
+  const oppDistributionType = '';
+  const campaignDistributionType = 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT';
+
+  const fromOpp = normalizeForecastCampaignTypeLite({ distributionType: oppDistributionType });
+  const fromCampaign = normalizeForecastCampaignTypeLite({ distributionType: campaignDistributionType });
+
+  assert.equal(fromOpp, null);
+  assert.equal(fromCampaign, 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT');
+  assert.equal(isAmountVariant(fromOpp), false);
+  assert.equal(isAmountVariant(fromCampaign), true);
+});
+
+test('campaign.distributionType used over opp.distributionType for FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', () => {
+  const oppDistributionType = '';
+  const campaignDistributionType = 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE';
+
+  const fromOpp = normalizeForecastCampaignTypeLite({ distributionType: oppDistributionType });
+  const fromCampaign = normalizeForecastCampaignTypeLite({ distributionType: campaignDistributionType });
+
+  assert.equal(fromOpp, null);
+  assert.equal(fromCampaign, 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE');
+  assert.equal(isAmountVariant(fromOpp), false);
+  assert.equal(isAmountVariant(fromCampaign), true);
+});
+
 test('batch dedup: preResolvedPrices Map lookup by campaignId', () => {
   type PriceLookupKey = `${number}:${string}:${string}`;
   const preResolvedPrices = new Map<PriceLookupKey, number | undefined>();

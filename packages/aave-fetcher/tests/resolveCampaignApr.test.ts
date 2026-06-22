@@ -110,6 +110,38 @@ test('DUTCH_AUCTION and TARGET_TOTAL_APR are not AMOUNT variants', () => {
   assert.equal(r2.apr, 0.035);
 });
 
+test('BUG: passing undefined distributionType (opp.distributionType) vs correct campaign.distributionType for AMOUNT variant', () => {
+  const campaign = { apr: 0, distributionSettings: { apr: 18.25 } };
+  const wrongDt = undefined;
+  const correctDt = 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE';
+  const rewardTokenPrice = 0.001;
+
+  const withWrongDt = resolveCampaignApr(campaign, wrongDt, rewardTokenPrice);
+  const withCorrectDt = resolveCampaignApr(campaign, correctDt, rewardTokenPrice);
+
+  assert.equal(withWrongDt.apr, 0,
+    'undefined distributionType falls through VALUE path → apr=0 because campaign.apr=0');
+  assert.equal(withCorrectDt.apr, 0.01825,
+    'correct distributionType activates AMOUNT path → computes USD APR');
+});
+
+test('BUG: passing undefined distributionType vs correct for FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', () => {
+  const campaign = { apr: 0, distributionSettings: { apr: 3650 } };
+  const wrongDt = undefined;
+  const correctDt = 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT';
+  const rewardTokenPrice = 0.001;
+  const targetTokenPrice = 3000;
+
+  const withWrongDt = resolveCampaignApr(campaign, wrongDt, rewardTokenPrice, targetTokenPrice);
+  const withCorrectDt = resolveCampaignApr(campaign, correctDt, rewardTokenPrice, targetTokenPrice);
+
+  assert.equal(withWrongDt.apr, 0,
+    'undefined distributionType → VALUE path, apr=0');
+  assert.ok(withCorrectDt.apr > 0,
+    'correct distributionType → AMOUNT_PER_AMOUNT path, apr > 0');
+  assert.equal(withCorrectDt.apr, 3650 * 0.001 / 3000);
+});
+
 test('both zero returns 0', () => {
   assert.equal(resolveCampaignApr({ apr: 0 }).apr, 0);
   assert.equal(resolveCampaignApr({ apr: 0 }, 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE').apr, 0);
