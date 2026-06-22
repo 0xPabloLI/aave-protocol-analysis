@@ -116,24 +116,23 @@ test('toForecastResponseItem preserves requiredDaily for TARGET_TOTAL_APR with M
   assert.equal(item!.distributedSoFar, 300);
 });
 
-test('toForecastResponseItem preserves requiredDaily for TARGET_TOTAL_APR without budgetBoundMode (fallback to MAX rules)', () => {
-  const item = toForecastResponseItem({
-    campaignId: 'tta-no-mode-id',
-    campaignType: 'TARGET_TOTAL_APR',
-    totalBudget: 1000,
-    plannedDaily: 100,
-    requiredDaily: 140,
-    aprCap: 0.047,
-    remainingBudget: 700,
-    remainingDays: 7,
-    asOf: Date.now(),
-    distributedSoFar: 300,
-    latestTvl: 5000,
-    startTimestamp: 1,
-    endTimestamp: 2,
-  } satisfies MerklForecastState);
-
-  assert.equal(item!.campaignId, 'tta-no-mode-id');
-  assert.equal(item!.requiredDaily, 140);
-  assert.equal(item!.distributedSoFar, 300);
+test('toForecastResponseItem throws for TARGET_TOTAL_APR without budgetBoundMode', () => {
+  assert.throws(
+    () => toForecastResponseItem({
+      campaignId: 'tta-no-mode-id',
+      campaignType: 'TARGET_TOTAL_APR',
+      totalBudget: 1000,
+      plannedDaily: 100,
+      requiredDaily: 140,
+      aprCap: 0.047,
+      remainingBudget: 700,
+      remainingDays: 7,
+      asOf: Date.now(),
+      distributedSoFar: 300,
+      latestTvl: 5000,
+      startTimestamp: 1,
+      endTimestamp: 2,
+    } satisfies MerklForecastState),
+    /TARGET_TOTAL_APR requires budgetBoundMode/,
+  );
 });

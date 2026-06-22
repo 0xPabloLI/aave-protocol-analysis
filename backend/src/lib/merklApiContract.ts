@@ -36,8 +36,8 @@ export interface ForecastFieldRule {
   includeEndTimestamp: boolean;
 }
 
-/** Campaign type 到 breakdown 字段规则的映射 */
-export const BREAKDOWN_FIELD_RULES: Record<CampaignForecastType, BreakdownFieldRule> = {
+/** Campaign type 到 breakdown 字段规则的映射（TARGET_TOTAL_APR 无独立规则，由 budgetBoundMode 决定） */
+export const BREAKDOWN_FIELD_RULES: Record<Exclude<CampaignForecastType, 'TARGET_TOTAL_APR'>, BreakdownFieldRule> = {
   DUTCH_AUCTION: {
     omit: ['aprCap', 'totalBudget'],
   },
@@ -45,9 +45,6 @@ export const BREAKDOWN_FIELD_RULES: Record<CampaignForecastType, BreakdownFieldR
     omit: ['plannedDaily'],
   },
   MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE: {
-    omit: [],
-  },
-  TARGET_TOTAL_APR: {
     omit: [],
   },
   FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE: {
@@ -61,8 +58,8 @@ export const BREAKDOWN_FIELD_RULES: Record<CampaignForecastType, BreakdownFieldR
   },
 };
 
-/** Campaign type 到 forecast 字段规则的映射 */
-export const FORECAST_FIELD_RULES: Record<CampaignForecastType, ForecastFieldRule> = {
+/** Campaign type 到 forecast 字段规则的映射（TARGET_TOTAL_APR 无独立规则，由 budgetBoundMode 决定） */
+export const FORECAST_FIELD_RULES: Record<Exclude<CampaignForecastType, 'TARGET_TOTAL_APR'>, ForecastFieldRule> = {
   DUTCH_AUCTION: {
     mode: 'none',
     includeRequiredDaily: false,
@@ -76,12 +73,6 @@ export const FORECAST_FIELD_RULES: Record<CampaignForecastType, ForecastFieldRul
     includeEndTimestamp: true,
   },
   MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE: {
-    mode: 'max',
-    includeRequiredDaily: true,
-    includeDistributedSoFar: true,
-    includeEndTimestamp: true,
-  },
-  TARGET_TOTAL_APR: {
     mode: 'max',
     includeRequiredDaily: true,
     includeDistributedSoFar: true,
@@ -109,21 +100,25 @@ export const FORECAST_FIELD_RULES: Record<CampaignForecastType, ForecastFieldRul
 
 /** 获取指定类型的 breakdown 字段规则 */
 export function getBreakdownFieldRule(type: CampaignForecastType, budgetBoundMode?: string): BreakdownFieldRule {
-  if (type === 'TARGET_TOTAL_APR' && budgetBoundMode === 'FIX_APR') {
-    return BREAKDOWN_FIELD_RULES.FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
+  if (type === 'TARGET_TOTAL_APR') {
+    if (budgetBoundMode === 'FIX_APR') return BREAKDOWN_FIELD_RULES.FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
+    if (budgetBoundMode === 'MAX_APR') return BREAKDOWN_FIELD_RULES.MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
+    throw new Error(`TARGET_TOTAL_APR requires budgetBoundMode, got: ${budgetBoundMode ?? 'undefined'}`);
   }
   return BREAKDOWN_FIELD_RULES[type];
 }
 
 /** 获取指定类型的 forecast 字段规则 */
 export function getForecastFieldRule(type: CampaignForecastType, budgetBoundMode?: string): ForecastFieldRule {
-  if (type === 'TARGET_TOTAL_APR' && budgetBoundMode === 'FIX_APR') {
-    return FORECAST_FIELD_RULES.FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
+  if (type === 'TARGET_TOTAL_APR') {
+    if (budgetBoundMode === 'FIX_APR') return FORECAST_FIELD_RULES.FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
+    if (budgetBoundMode === 'MAX_APR') return FORECAST_FIELD_RULES.MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE;
+    throw new Error(`TARGET_TOTAL_APR requires budgetBoundMode, got: ${budgetBoundMode ?? 'undefined'}`);
   }
   return FORECAST_FIELD_RULES[type];
 }
 
-/** 判断 forecast 类型是否应生成条目（DUTCH_AUCTION 返回 null） */
-export function shouldIncludeForecastItem(type: CampaignForecastType): boolean {
-  return getForecastFieldRule(type).mode !== 'none';
+/** 判断 forecast 类型是否应生成条目（DUTCH_AUCTION 返回 false） */
+export function shouldIncludeForecastItem(type: CampaignForecastType, budgetBoundMode?: string): boolean {
+  return getForecastFieldRule(type, budgetBoundMode).mode !== 'none';
 }

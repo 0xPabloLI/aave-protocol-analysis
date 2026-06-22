@@ -19,7 +19,7 @@ export const toForecastResponseItem = (
   state: Awaited<ReturnType<typeof getMerklForecastState>>,
 ) => {
   const type = state.campaignType as CampaignForecastType;
-  if (!shouldIncludeForecastItem(type)) return null;
+  if (!shouldIncludeForecastItem(type, state.budgetBoundMode)) return null;
 
   const rule = getForecastFieldRule(type, state.budgetBoundMode);
   const item: { campaignId: string; requiredDaily?: number; distributedSoFar: number; endTimestamp: number } = {
@@ -100,8 +100,15 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
 
   results.forEach((result, i) => {
     if (result.status === 'fulfilled') {
-      const item = toForecastResponseItem(result.value);
-      if (item) items.push(item);
+      try {
+        const item = toForecastResponseItem(result.value);
+        if (item) items.push(item);
+      } catch (err) {
+        errors.push({
+          campaignId: campaignIds[i],
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
     } else {
       errors.push({
         campaignId: campaignIds[i],
