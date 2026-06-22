@@ -22,7 +22,7 @@
     "dev:watch": "tsx watch src/cli.ts",
     "start": "node dist/cli.js",
     "postinstall": "node scripts/patch-ethers-exports.js",
-    "audit": "scripts/audit-allowlist.sh",
+    "audit": "npm audit --omit=dev --audit-level=high >/tmp/_audit1 2>/dev/null; head -1 /tmp/_audit1 | grep -qE '^found|^# npm audit report' || { cat /tmp/_audit1 >&2; exit 1; }; grep -oE 'GHSA-[a-z0-9-]+' /tmp/_audit1 | sort -u | grep -vE 'GHSA-848j-6mx2-7j84|GHSA-58qx-3vcg-4xpx' | grep -q . && exit 1; npm audit --omit=dev --audit-level=moderate >/tmp/_audit2 2>/dev/null; head -1 /tmp/_audit2 | grep -qE '^found|^# npm audit report' || { cat /tmp/_audit2 >&2; exit 1; }; grep -oE 'GHSA-[a-z0-9-]+' /tmp/_audit2 | sort -u | grep -vE 'GHSA-848j-6mx2-7j84|GHSA-58qx-3vcg-4xpx' | grep -q . && exit 1; exit 0",
     "ci": "npm ci && npm run build && npm run prune && npm run build -w aave-dashboard-backend && npm run prune -w aave-dashboard-backend && npm run test -w @internal/aave-shared-contracts && npm run test:typecheck -w aave-dashboard-backend && npm run test -w aave-dashboard-backend",
     "ci:remote": "npm run ci && npm run check:bin-paths && npm run check:workspace-coverage && npm run check:no-globstar && npm run audit",
     "ci:auto-fix": "npm audit fix --omit=dev",

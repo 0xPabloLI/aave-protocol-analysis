@@ -102,7 +102,6 @@ scripts/*
 !scripts/check-workspace-coverage.sh
 !scripts/check-no-omit-dev-in-ci-autofix.sh
 !scripts/check-no-globstar-in-test.sh
-!scripts/audit-allowlist.sh
 !scripts/verification/
 
 data/
@@ -129,3 +128,6 @@ SESSION-BOARD.md
 
 # Git worktrees
 .worktrees/
+
+# Research/debug scripts (not part of build or runtime)
+packages/aave-fetcher/scripts/

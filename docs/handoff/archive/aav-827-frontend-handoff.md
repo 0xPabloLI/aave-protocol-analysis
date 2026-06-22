@@ -1,5 +1,11 @@
 # AAV-827 前端 Handoff: AMOUNT 变体 Campaign APR 处理
 
+> **Status: Completed** (2026-06-22)
+>
+> 后端: `9ef5779` `266dd7b` `f85aec3` `57336ea` `6bd31ca` · 前端: `e5d8a911` `de67116f` `f0c3a41b`
+>
+> 本文档保留作为 AMOUNT 变体维度换算逻辑的参考。
+
 ## 后端已完成
 
 ### 核心变更
@@ -260,3 +266,35 @@ Ink 的 TydroInkPoints 没有 Merkl snapshot price，`useTokenRateInMetrics = tr
 - Backend commit `f85aec3`: fix snapshotPrice in batch price resolve
 - Backend commit `57336ea`: multiply pointsPerThousandUsd by targetTokenPrice for AMOUNT_PER_AMOUNT
 - Backend commit `6bd31ca`: sync needsAprCap + suppress pointsPerThousandUsd when campaignApr > 0
+
+---
+
+## 前端已完成
+
+### Commits (branch: `fix/automerge-race-condition`)
+
+| Commit | Description |
+|---|---|
+| `e5d8a911` | Main implementation: pointRateMap, safePointToUsdRate, getPointToUsdRate, AMOUNT variant recognition, schema fields |
+| `0564d739` | Local token icon first (later corrected in de67116f) |
+| `de67116f` | Restore resolveRewardTokenIconSrc + campaignsHaveUniformIcon functions |
+| `f0c3a41b` | Code review fixes + IncentiveTooltip overlay restoration |
+
+### Changes Summary
+
+| Item | Status |
+|---|---|
+| `safePointToUsdRate` fallback → 0 | Done |
+| `getPointToUsdRate(symbol, pointRateMap)` per-campaign routing | Done |
+| `pointRateMap: Record<string, number>` across all components | Done |
+| Remove default params `= TYDRO_POINT_TO_USD_RATE` | Done |
+| `MerklCampaignBreakdown` adds `rewardTokenSymbol` / `rewardTokenIconUrl` | Done |
+| `forecastWithTVL` recognizes AMOUNT variant campaignTypes + `TARGET_TOTAL_APR` | Done |
+| IncentiveTooltip reward token icon + `campaignsHaveUniformIcon` + grid alignment | Done |
+| Zod schema updated | Done |
+
+### Deferred (Out of Scope)
+
+- `normalizeUsdUnit` / `latestTvl` AMOUNT精细化 (low priority, separate issue)
+- PER_AMOUNT without targetTokenPrice (FastLane) edge case
+- CoinGecko fallback for `resolveCampaignApr`
