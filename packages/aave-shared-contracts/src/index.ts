@@ -82,6 +82,8 @@ export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   latestTvl?: number;
   plannedDaily?: number;
   budgetBoundMode?: string;
+  /** V4 Spoke campaign's parent Hub campaign ID (for Hub/Spoke deduplication; stripped from API payload). */
+  parentCampaignId?: string;
 }
 
 export interface MerklOpportunityGroup extends CampaignGroup<MerklCampaignBreakdown> {}

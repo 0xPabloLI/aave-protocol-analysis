@@ -43,6 +43,8 @@ function scaleMerklBreakdown<
     campaignAprScaled = roundTo6(b.campaignApr * 100);
   }
   const next = { ...b, campaignApr: campaignAprScaled } as T;
+  // parentCampaignId is an internal Hub/Spoke dedup field — strip from API payload
+  delete (next as Record<string, unknown>).parentCampaignId;
   if (Object.prototype.hasOwnProperty.call(b, 'aprCap')) {
     const cap = b.aprCap;
     (next as { aprCap?: number | null }).aprCap =

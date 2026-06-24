@@ -1,10 +1,10 @@
 # ADR-0030: Merkl Campaign Parent-Child Relationships
 
-**Status**: Implemented (Mode 3 Hub/Spoke double-counting fix — REVISED to filter Spoke, keep Hub)
+**Status**: Implemented (Mode 3 Hub/Spoke double-counting fix — REVISED to spoke-priority dedup via parentCampaignId)
 
 **Date**: 2026-06-17
 
-**Updated**: 2026-06-20
+**Updated**: 2026-06-25
 
 ## Context
 
@@ -367,75 +367,51 @@ Research phase complete. Key findings:
 2. **Mode 2 (composed calculation)**: `composedCampaignsCompute` and `composedMultiplier` not processed. AAV-948 filed. Only 6 unique opportunities affected; 4 with non-1.0x multipliers.
 3. **Mode 3 (V4 Hub-Spoke)**: CONFIRMED double-counting. **FIX IMPLEMENTED (REVISED)** — `AAVE_V4_SPOKE_*` opportunities are filtered out in `merkl-api.ts` opportunity processing loop.
 
-### Implementation: AAVE_V4_SPOKE_* Filter (2026-06-20, REVISED from Hub filter)
+### Implementation: Spoke-Priority Dedup via parentCampaignId (2026-06-25, REVISED from filter-Spoke)
 
-**Code change**: `packages/aave-fetcher/src/merkl-api.ts` — added `isV4SpokeOpportunity()` and early `continue` after `explorerAddress` check, before `deriveProtocolVersion`:
+**Previous approach (filter Spoke, keep Hub) replaced because**:
+1. Hub `campaignType = TARGET_TOTAL_APR` → backend `scaleMerklBreakdown` converts targetAPR to incentiveAPR via `computeTargetTotalAprIncentiveApr(targetAPR, nativeAPY, side)`. This conversion depends on `reserve.supplyApy` (nativeAPY).
+2. RPC fallback (SDK failure) does not provide `supplyApy` → conversion falls to `campaignApr × 100` = targetAPR (too high by nativeAPY).
+3. Spoke `campaignType = DUTCH_AUCTION` → `scaleMerklBreakdown` directly passes through `campaignApr × 100` = incentiveAPR. No `supplyApy` dependency.
 
-```typescript
-export function isV4SpokeOpportunity(type: string | undefined): boolean {
-  return !!type?.startsWith('AAVE_V4_SPOKE_');
-}
+**New approach**: When Hub and Spoke are parent-child and match the same V4 reserve, keep Spoke (incentiveAPR) and remove the parent Hub breakdown. Independent Hub campaigns (non-parent) are preserved.
 
-// In processMerklData loop:
-if (isV4SpokeOpportunity(opp.type)) {
-  logger.info(`   ⏭️ Skipping V4 Spoke opportunity ${opp.id} (${opp.type}) — Hub provides correct APR`);
-  continue;
-}
+**Key API fact (verified 2026-06-25)**: `parentCampaignId` is a **top-level field** on the Merkl campaign API response (`GET /v4/campaigns/{id}`), not inside `params`:
+
+```
+Spoke campaign: parentCampaignId = "11526583104559356735" (top-level)
+Hub campaign:   parentCampaignId = null, childCampaignIds = ["5055...", "13451..."]
 ```
 
-**Why this works (REVISED)**:
-- Hub `explorerAddress` = underlying token address (e.g., `0xe34316...` for USDG)
-- Spoke `explorerAddress` = Spoke pool contract (e.g., `0x94e7a5...`)
-- After filtering Spoke, `merklData` no longer has the Spoke pool contract key
-- V4 reserve lookup (`findMatchingMerklOpportunities`) checks `tokenAddress` + `spokeAddress`
-- `tokenAddress` (underlying) → matches Hub opportunity → correct APR (targetAPR)
-- `spokeAddress` (Spoke pool) → no match (Spoke filtered out)
+**Code changes**:
 
-**Verified with live Merkl API data** (both USDG and frxUSD pairs):
+1. `packages/aave-shared-contracts/src/index.ts` — `MerklCampaignBreakdown` added `parentCampaignId?: string`
+2. `packages/aave-fetcher/src/merkl-api.ts` — `MerklCampaignDetails` added `parentCampaignId?: string`; `fetchMerklCampaignDetails` extracts `campaign.parentCampaignId` (top-level)
+3. `packages/aave-fetcher/src/merkl-api.ts` — breakdown building populates `parentCampaignId` from `campaignDetails`
+4. `packages/aave-fetcher/src/merkl-api.ts` — removed Spoke filter block (`isV4SpokeOpportunity` continue); Spoke opportunities now indexed normally
+5. `packages/aave-fetcher/src/merkl-api.ts` — new `deduplicateHubSpokeBreakdowns()` function: collects Spoke `parentCampaignId`s, removes matching Hub breakdowns at the **breakdown level** (not opportunity level, to preserve independent Hub campaigns from other creators)
+6. `packages/aave-fetcher/src/index.ts` — calls `deduplicateHubSpokeBreakdowns` on supply/borrow/hold groups after collecting matched opportunities
+7. `backend/src/services/marketsApiSerialize.ts` — `scaleMerklBreakdown` strips `parentCampaignId` from API payload (internal dedup field)
 
-| Asset | Hub APR (targetAPR) | Spoke APR (Dutch Auction) | Before (double) | After (correct) |
+**Why breakdown-level dedup (not opportunity-level)**:
+A single Hub opportunity (explorerAddress = underlying token) can aggregate campaigns from multiple creators. Dropping the entire Hub opportunity would lose independent Hub campaigns. Breakdown-level dedup removes only the specific parent Hub breakdown, preserving independent campaigns.
+
+**Hub-only reserves** (no LIVE Spoke): Hub is kept with `TARGET_TOTAL_APR` conversion (existing behavior). This is an acceptable fallback — only triggers when Spoke is not LIVE.
+
+**Verified with live Merkl API data**:
+
+| Asset | Hub APR (targetAPR) | Spoke APR (incentiveAPR) | Before (double) | After (Spoke-priority) |
 |---|---|---|---|---|
-| USDG | 6.77% | 6.48% | 13.25% | 6.77% |
-| frxUSD | 5.36% | 4.87% | 10.23% | 5.36% |
+| USDG | 6.77% | 6.48% | 13.25% | 6.48% |
+| frxUSD | 5.36% | 4.87% | 10.23% | 4.87% |
 
-**Why Hub APR is correct (not Spoke) — REVISED with evidence**:
-
-1. **Merkl API user breakdowns** confirm ALL V4 reward amounts are attributed to Hub campaigns:
-   - Creator address USDG breakdowns: 4 entries, all with Hub campaign IDs (hash format)
-   - No breakdown entries point to Spoke campaigns (small integer format)
-   - This means the Merkle tree leaf = sum of Hub campaign breakdowns
-
-2. **Hub dailyRewards = TVL × targetAPR / 365** (verified exact match for both USDG and frxUSD)
-   - targetAPR = total APR cap (native + incentive)
-   - Hub distributes the FULL incentive budget at targetAPR level
-
-3. **Spoke dailyRewards ≈ TVL × (targetAPR - nativeAPY) / 365** (verified within 0.2%)
-   - Spoke gets only the incentive portion, not the Hub-direct portion
-   - The Hub-direct portion ≈ TVL × nativeAPY / 365 (~$239/day for USDG)
-
-4. **Budget allocation confirms the split**:
-   ```
-   Hub total budget (Period 5): 42,378 USDG
-   Spoke budget:               32,631 USDG (77.0%)
-   ERC20LOGPROCESSOR:          94 USDG (0.2%)
-   Hub self-retained:          9,653 USDG (22.8%)
-   ```
-   Hub self-retained budget is NOT wasted — it's distributed via Hub Merkle leaf to direct Hub depositors.
-
-5. **Spoke APR understates actual rewards** by ~0.31pp (≈nativeAPY):
-   - Users receive rewards at Hub APR level (6.77%) via merged Merkle tree
-   - Spoke APR alone (6.48%) would understate by ~5%
-
-**Previous implementation (filtering Hub) was INCORRECT because**:
-- It assumed users claim from Spoke Merkle leaf only
-- It assumed Hub dailyRewards is a "virtual cap" not actually distributed
-- In reality, the global Merkle tree merges Hub + Spoke rewards into a single cumulative amount per (user, token) pair
-- User breakdowns prove rewards are attributed to Hub campaigns, not Spoke
+**Forecast**: DUTCH_AUCTION is not in `needsAprCap` list → `aprCap = null`. Forecast uses Spoke's own parameters (totalBudget = Spoke budget, plannedDaily = budget/duration). No forecast code changes needed.
 
 Issues filed:
 - AAV-947: Parent-child relationship research (completed → this ADR)
 - AAV-948: composedMultiplier correction (updated with 6-opportunity full data)
-- AAV-959: Hub/Spoke double-counting fix (**IMPLEMENTED**)
+- AAV-959: Hub/Spoke double-counting fix (Done — filter-Spoke approach, superseded)
+- AAV-1004: Spoke-priority dedup via parentCampaignId (this revision)
 
 Open items:
 - Composed multiplier decay formula still unknown (engine is proprietary)

@@ -19,6 +19,7 @@ import {
   MerklOpportunityGroup,
   processMerklData,
   findMatchingMerklOpportunities,
+  deduplicateHubSpokeBreakdowns,
   formatMerklBreakdown,
   detectNetPositionConstraint,
 } from './merkl-api.js';
@@ -519,14 +520,19 @@ async function enrichDatasetWithIncentiveData(
       }
       
       // 用于 JSON：按 opportunity 分组的数据（避免重复，结构清晰）
-      if (supplyOpportunities.length > 0) {
-        item.merklSupplys = supplyOpportunities;
+      // ADR-0030 revised: V4 Hub/Spoke breakdown-level dedup — remove parent Hub
+      // breakdowns when a matching child Spoke exists (Spoke campaignApr = incentiveAPR)
+      const dedupedSupply = deduplicateHubSpokeBreakdowns(supplyOpportunities);
+      const dedupedBorrow = deduplicateHubSpokeBreakdowns(borrowOpportunities);
+      const dedupedHold = deduplicateHubSpokeBreakdowns(holdOpportunities);
+      if (dedupedSupply.length > 0) {
+        item.merklSupplys = dedupedSupply;
       }
-      if (borrowOpportunities.length > 0) {
-        item.merklBorrows = borrowOpportunities;
+      if (dedupedBorrow.length > 0) {
+        item.merklBorrows = dedupedBorrow;
       }
-      if (holdOpportunities.length > 0) {
-        item.merklHolds = holdOpportunities;
+      if (dedupedHold.length > 0) {
+        item.merklHolds = dedupedHold;
       }
     }
     

@@ -149,6 +149,8 @@ interface MerklEmbeddedCampaign {
   apr?: number;
   params?: any;
   distributionType?: string;
+  parentCampaignId?: string;
+  rootCampaignId?: string;
 }
 
 export interface MerklCampaignDetails {
@@ -158,6 +160,8 @@ export interface MerklCampaignDetails {
   /** Annual yield ratio; upstream `campaign.apr` is percent → divided by 100 when cached. */
   apr: number;
   whitelistOnly: boolean;
+  /** V4 Spoke campaign's parent Hub campaign ID (top-level field on Merkl API response). */
+  parentCampaignId?: string;
 }
 
 const hasEntries = (value: unknown): boolean => {
@@ -1043,12 +1047,16 @@ export async function fetchMerklCampaignDetails(campaignId: string): Promise<Mer
     }
     
     const resolved = resolveCampaignApr(campaign, campaign.distributionType, rewardTokenPrice, targetTokenPrice);
+    const parentCampaignId = typeof campaign.parentCampaignId === 'string' && campaign.parentCampaignId
+      ? campaign.parentCampaignId
+      : undefined;
     return {
       startedAt,
       endedAt,
       id: campaignId,
       apr: resolved.apr,
       whitelistOnly: isCampaignWhitelistOnly(campaign),
+      ...(parentCampaignId && { parentCampaignId }),
     };
   } catch (error) {
     logger.error(`❌ Error fetching campaign ${campaignId}:`, error);
@@ -1387,12 +1395,16 @@ export async function processMerklData(
           targetTokenPrice = undefined;
         }
         const resolved = resolveCampaignApr(campaign, campaign.distributionType, rewardTokenPrice, targetTokenPrice);
+        const embeddedParentId = typeof campaign.parentCampaignId === 'string' && campaign.parentCampaignId
+          ? campaign.parentCampaignId
+          : undefined;
         campaignDetailsCache.set(id, {
           startedAt: toIsoFromUnixLike(campaign.startTimestamp),
           endedAt: toIsoFromUnixLike(campaign.endTimestamp),
           id,
           apr: resolved.apr,
           whitelistOnly: isCampaignWhitelistOnly(campaign),
+          ...(embeddedParentId && { parentCampaignId: embeddedParentId }),
         });
         const params = campaign.params ?? {};
         const wl = Array.isArray(params.whitelist) ? (params.whitelist as string[]).filter(Boolean) : [];
@@ -1445,14 +1457,11 @@ export async function processMerklData(
       continue;
     }
 
-    // ADR-0030: Skip AAVE_V4_SPOKE_* opportunities to avoid double-counting with Hub.
-    // Hub distributes the full incentive budget (Hub-direct + Spoke-forwarded) at targetAPR.
-    // Users receive rewards at Hub APR level (confirmed via Merkl API breakdowns).
-    // Spoke APR (Dutch Auction rate) understates actual rewards by ~5% (≈ nativeAPY delta).
-    if (isV4SpokeOpportunity(opp.type)) {
-      logger.info(`   ⏭️ Skipping V4 Spoke opportunity ${opp.id} (${opp.type}) — Hub provides correct APR`);
-      continue;
-    }
+    // ADR-0030 (revised): V4 Spoke opportunities are now indexed alongside Hub.
+    // Hub/Spoke deduplication happens at the breakdown level in enrichDatasetWithIncentiveData
+    // (index.ts) using parentCampaignId — parent Hub breakdowns are removed when a
+    // matching child Spoke exists. Spoke campaignApr = incentiveAPR (Dutch Auction result),
+    // which needs no supplyApy-dependent TARGET_TOTAL_APR conversion.
 
     // Derive protocol version from opportunity (ADR-0018 4-step priority)
     const protocolVersion = deriveProtocolVersion(
@@ -1518,7 +1527,8 @@ export async function processMerklData(
         campaignId,
         whitelistOnly: campaignDetails.whitelistOnly,
         ...extractRewardTokenFields(rewardBreakdown.token),
-        ...(pointsFields ?? {})
+        ...(pointsFields ?? {}),
+        ...(campaignDetails.parentCampaignId && { parentCampaignId: campaignDetails.parentCampaignId }),
       });
     }
 
@@ -1936,6 +1946,56 @@ export function findMatchingMerklOpportunities(
   }
 
   return matchedOpportunities;
+}
+
+/**
+ * V4 Hub/Spoke breakdown-level dedup (ADR-0030 revised).
+ *
+ * When a V4 Spoke campaign's parentCampaignId matches a V4 Hub campaign's campaignId
+ * within the same reserve's matched opportunity groups, the parent Hub breakdown is
+ * removed and the Spoke breakdown is kept. Spoke campaignApr = incentiveAPR (Dutch
+ * Auction result) and needs no supplyApy-dependent TARGET_TOTAL_APR conversion.
+ *
+ * Independent Hub campaigns (non-parent) are preserved. Non-V4 groups pass through untouched.
+ */
+export function deduplicateHubSpokeBreakdowns(
+  groups: MerklOpportunityGroup[],
+): MerklOpportunityGroup[] {
+  // 1. Collect parentCampaignIds from V4 Spoke groups
+  const replacedHubIds = new Set<string>();
+  for (const group of groups) {
+    if (!isV4SpokeOpportunity(group.opportunityType)) continue;
+    for (const bd of group.breakdowns) {
+      if (bd.parentCampaignId) {
+        replacedHubIds.add(bd.parentCampaignId);
+      }
+    }
+  }
+  if (replacedHubIds.size === 0) return groups;
+
+  // 2. Remove Hub breakdowns whose campaignId is a parent of a matched Spoke
+  const result: MerklOpportunityGroup[] = [];
+  let removedCount = 0;
+  for (const group of groups) {
+    if (!group.opportunityType?.startsWith('AAVE_V4_HUB_')) {
+      result.push(group);
+      continue;
+    }
+    const filtered = group.breakdowns.filter((bd) => {
+      if (replacedHubIds.has(bd.campaignId)) {
+        removedCount++;
+        return false;
+      }
+      return true;
+    });
+    if (filtered.length > 0) {
+      result.push({ ...group, breakdowns: filtered });
+    }
+  }
+  if (removedCount > 0) {
+    logger.info(`   🔄 Hub/Spoke dedup: removed ${removedCount} parent Hub breakdown(s) replaced by Spoke`);
+  }
+  return result;
 }
 
 /**
