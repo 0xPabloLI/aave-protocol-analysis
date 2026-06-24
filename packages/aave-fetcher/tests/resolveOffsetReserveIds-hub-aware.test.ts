@@ -90,15 +90,15 @@ describe('AAV-906: resolveOffsetReserveIds hub-aware matching', () => {
     });
   });
 
-  describe('V4 default: hub level (backward compatible)', () => {
-    it('without offsetLevel param, defaults to hub-level matching', () => {
+  describe('V4 default: spoke level (contract-semantic)', () => {
+    it('without offsetLevel param, defaults to spoke-level matching', () => {
       const set = makeReserveIdSet([
         '1:0xspokeA:0xusdt:0xhub1',
         '1:0xspokeA:0xusde:0xhub1',
         '1:0xspokeA:0xusde:0xhub2',
       ]);
       const result = resolveOffsetReserveIds('1:0xspokeA:0xusdt:0xhub1', '0xusde', set);
-      assert.deepEqual(result, ['1:0xspokeA:0xusde:0xhub1']);
+      assert.deepEqual(result.sort(), ['1:0xspokeA:0xusde:0xhub1', '1:0xspokeA:0xusde:0xhub2'].sort());
     });
 
     it("'hub' alias maps to 'reserve' behavior", () => {
@@ -194,6 +194,34 @@ describe('AAV-906: resolveOffsetReserveIds hub-aware matching', () => {
       ]);
       const result = resolveOffsetReserveIds('1:0xmainpool:0xusdt', '0xusde', set, 'reserve');
       assert.deepEqual(result, ['1:0xmainpool:0xusde']);
+    });
+  });
+
+  describe('cross-market offset level', () => {
+    it('matches same token across all pools/markets on same chainId', () => {
+      const set = new Set([
+        '1:0xmainpool:0xusdtb',
+        '1:0xlidopool:0xusdtb',
+        '1:0xhorizonpool:0xusdtb',
+        '1:0xspokeA:0xusdtb:0xhub1',
+        '137:0xotherpool:0xusdtb',
+      ]);
+      const result = resolveOffsetReserveIds('1:0xmainpool:0xusdtb', '0xusdtb', set, 'cross-market');
+      assert.deepEqual(result.sort(), [
+        '1:0xhorizonpool:0xusdtb',
+        '1:0xlidopool:0xusdtb',
+        '1:0xmainpool:0xusdtb',
+        '1:0xspokeA:0xusdtb:0xhub1',
+      ]);
+    });
+
+    it('returns empty when no matching token on same chain', () => {
+      const set = new Set([
+        '1:0xmainpool:0xusdt',
+        '137:0xotherpool:0xusdtb',
+      ]);
+      const result = resolveOffsetReserveIds('1:0xmainpool:0xusdtb', '0xusdtb', set, 'cross-market');
+      assert.deepEqual(result, []);
     });
   });
 });

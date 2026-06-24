@@ -24,7 +24,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
       opportunityType: 'AAVE_NET_LENDING',
       name: 'Net Lending USDT (looping)',
       description: '',
-      offsetTokenAddresses: [{ address: '0xborrowtoken', reserveId: '1:0xpool:0xborrowtoken' }],
+      offsetTokenAddresses: ['0xborrowtoken'],
     };
     const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusdt', '1:0xpool:0xborrowtoken']);
     const symbolLookup = makeSymbolLookup([]);
@@ -70,8 +70,8 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
       marketName: 'AaveV3Plasma', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
       offsetTokenAddresses: [
-        { address: '0xusde', reserveId: '1:0xpool:0xusde' },
-        { address: '0xgho', reserveId: '1:0xpool:0xgho' },
+        '0xusde',
+        '0xgho',
       ],
     };
     const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusdt', '1:0xpool:0xusde', '1:0xpool:0xgho']);
@@ -120,7 +120,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
       marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_SUPPLY',
       description: 'USDT net lending',
-      offsetTokenAddresses: [{ address: '0xusdt', reserveId: '1:0xpool:0xusdt' }],
+      offsetTokenAddresses: ['0xusdt'],
     };
     const mockLlm = async (): Promise<LlmOutcome> => ({ tag: 'result', value: null });
     const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusdt']);
@@ -215,7 +215,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
       marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_BORROWING',
       distributionType: 'AAVE_V4_NET_APR',
-      offsetTokenAddresses: [{ address: '0xusde', reserveId: '1:0xpool:0xusde' }],
+      offsetTokenAddresses: ['0xusde'],
     };
     const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusde']);
     const symbolLookup = makeSymbolLookup([]);
@@ -230,7 +230,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
       borrow: [], hold: [],
       marketName: 'AaveV3MegaETH', chainId: 4326, protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: [{ address: '0xusdm', reserveId: '4326:0xpool:0xusdm' }],
+      offsetTokenAddresses: ['0xusdm'],
     };
     const reserveIdSet = makeReserveIdSet(['4326:0xpool:0xusdm']);
     const symbolLookup = makeSymbolLookup([]);
@@ -243,7 +243,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
       supply: [], borrow: [{ campaignApr: 0.03, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }], hold: [],
       marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_BORROWING',
-      offsetTokenAddresses: [{ address: '0xgho', reserveId: '1:0xpool:0xgho' }],
+      offsetTokenAddresses: ['0xgho'],
     };
     const reserveIdSet = makeReserveIdSet(['1:0xpool:0xgho']);
     const symbolLookup = makeSymbolLookup([]);
@@ -258,8 +258,8 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
       marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
       offsetTokenAddresses: [
-        { address: '0xusde', reserveId: '1:0xpool:0xusde' },
-        { address: '0xgho', reserveId: '1:0xpool:0xgho' },
+        '0xusde',
+        '0xgho',
       ],
     };
     const reserveIdSet = makeReserveIdSet(['1:0xpool:0xusde', '1:0xpool:0xgho']);
@@ -275,7 +275,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
       marketName: 'AaveV3Ethereum', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_SUPPLY',
       description: 'net lending opportunity',
-      offsetTokenAddresses: [{ address: '0xusdt', reserveId: '1:0xpool:0xusdt' }],
+      offsetTokenAddresses: ['0xusdt'],
     };
     const mockLlm = async (): Promise<LlmOutcome> => ({
       tag: 'result',
@@ -293,7 +293,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
       borrow: [], hold: [],
       marketName: 'AaveV3EthereumHorizon', chainId: 1, protocolVersion: 'v3',
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: [{ address: '0xrlusd' }],
+      offsetTokenAddresses: ['0xrlusd'],
     };
     const reserveIdSet = makeReserveIdSet([
       '1:0xhorizonPool:0xrlusd',
@@ -311,7 +311,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
       borrow: [], hold: [],
       marketName: 'AaveV4Ethereum', chainId: 1, protocolVersion: 'v4',
       opportunityType: 'AAVE_NET_LENDING',
-      offsetTokenAddresses: [{ address: '0xrlusd' }],
+      offsetTokenAddresses: ['0xrlusd'],
     };
     const reserveIdSet = makeReserveIdSet([
       '1:0xv4spoke:0xrlusd:Core',

@@ -193,10 +193,6 @@ const toIsoFromUnixLike = (value: unknown): string => {
 
 // Merkl 数据结构：NetPositionConstraint 已迁移到 @internal/aave-shared-contracts
 
-export interface OffsetTokenInfo {
-  address: string;
-  reserveId?: string;
-}
 export function inferVersionFromReserveId(reserveId: string): 'v3' | 'v4' | null {
   const segments = reserveId.split(':').length;
   if (segments === 3) return 'v3';
@@ -210,9 +206,9 @@ export function extractPoolSpokePrefix(reserveId: string): string | null {
   return `${parts[0]}:${parts[1]}`;
 }
 
-export type OffsetLevel = 'reserve' | 'hub-cross-spoke' | 'spoke-cross-hub' | 'hub' | 'spoke';
+export type OffsetLevel = 'reserve' | 'hub-cross-spoke' | 'spoke-cross-hub' | 'cross-market' | 'hub' | 'spoke';
 
-function normalizeOffsetLevel(level: OffsetLevel): 'reserve' | 'hub-cross-spoke' | 'spoke-cross-hub' {
+function normalizeOffsetLevel(level: OffsetLevel): 'reserve' | 'hub-cross-spoke' | 'spoke-cross-hub' | 'cross-market' {
   if (level === 'hub') return 'reserve';
   if (level === 'spoke') return 'spoke-cross-hub';
   return level;
@@ -222,7 +218,7 @@ export function resolveOffsetReserveIds(
   oppReserveId: string,
   offsetTokenAddress: string,
   reserveIdSet: Set<string>,
-  offsetLevel: OffsetLevel = 'hub',
+  offsetLevel: OffsetLevel = 'spoke',
 ): string[] {
   const version = inferVersionFromReserveId(oppReserveId);
   const prefix = extractPoolSpokePrefix(oppReserveId);
@@ -230,6 +226,20 @@ export function resolveOffsetReserveIds(
 
   const normalizedAddr = offsetTokenAddress.toLowerCase();
   const resolvedLevel = normalizeOffsetLevel(offsetLevel);
+
+  if (resolvedLevel === 'cross-market') {
+    const chainId = oppReserveId.split(':')[0];
+    const results: string[] = [];
+    for (const rid of reserveIdSet) {
+      if (!rid.startsWith(`${chainId}:`)) continue;
+      const segments = rid.split(':');
+      const tokenSeg = segments.length >= 3 ? segments[2] : '';
+      if (tokenSeg.toLowerCase() === normalizedAddr) {
+        results.push(rid);
+      }
+    }
+    return results;
+  }
 
   if (version === 'v3') {
     if (resolvedLevel === 'hub-cross-spoke') return [];
@@ -291,9 +301,11 @@ export interface MerklOpportunityData {
   description?: string;
   opportunityType?: string;
   distributionType?: string;
-  offsetTokenAddresses?: OffsetTokenInfo[];
+  offsetTokenAddresses?: string[];
+  hasCrossMarketNpc?: boolean;
   composedCampaignsCompute?: string;
   composedSubCampaigns?: ComposedSubCampaign[];
+  borrowBlacklist?: boolean;
 }
 
 /**
@@ -1546,6 +1558,8 @@ export async function processMerklData(
     }
 
     const offsetTokenAddresses = extractOffsetTokenAddresses(opp);
+    const crossMarketNpc = hasHookType14(opp);
+    const isBorrowBl = opp.identifier?.includes('BORROW_BL') ?? false;
 
     const { composedCampaignsCompute, composedSubCampaigns } = extractComposedCampaignInfo(opp);
 
@@ -1563,6 +1577,8 @@ export async function processMerklData(
       ...(opp.type && { opportunityType: opp.type }),
       ...(firstDistributionType && { distributionType: firstDistributionType }),
       ...(offsetTokenAddresses.length > 0 && { offsetTokenAddresses }),
+      ...(crossMarketNpc && { hasCrossMarketNpc: true }),
+      ...(isBorrowBl && { borrowBlacklist: true }),
       ...(composedCampaignsCompute && { composedCampaignsCompute }),
       ...(composedSubCampaigns && composedSubCampaigns.length > 0 && { composedSubCampaigns }),
     };
@@ -1668,12 +1684,25 @@ export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[
   return [...active, ...byType.values()];
 }
 
+function hasHookType14(opp: MerklOpportunity): boolean {
+  if (!Array.isArray(opp.campaigns)) return false;
+  for (const c of opp.campaigns) {
+    const hooks: unknown = c?.params?.hooks;
+    if (Array.isArray(hooks)) {
+      for (const h of hooks) {
+        if (typeof h === 'object' && h !== null && (h as any).hookType === 14) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function extractOffsetTokenAddresses(
   opp: MerklOpportunity,
-): OffsetTokenInfo[] {
+): string[] {
   if (!Array.isArray(opp.campaigns)) return [];
   const seen = new Set<string>();
-  const results: OffsetTokenInfo[] = [];
+  const results: string[] = [];
   for (const campaign of opp.campaigns) {
     const tokens: unknown = campaign?.params?.tokens;
     if (Array.isArray(tokens)) {
@@ -1685,7 +1714,7 @@ function extractOffsetTokenAddresses(
             : null;
         if (addr && !seen.has(addr)) {
           seen.add(addr);
-          results.push({ address: addr });
+          results.push(addr);
         }
       }
     }
@@ -1721,7 +1750,7 @@ export function composedNetPositionConstraint(
   opp: MerklOpportunityData,
   oppReserveId: string,
   reserveIdSet: Set<string>,
-  offsetLevel: OffsetLevel = 'hub',
+  offsetLevel: OffsetLevel = 'spoke',
 ): NetPositionConstraint | null {
   if (opp.composedCampaignsCompute !== '1-2') return null;
 
@@ -1764,8 +1793,8 @@ export async function detectNetPositionConstraint(
   symbolLookup: Map<string, string>,
   cachedConstraint?: NetPositionConstraint | null,
   llmFn?: () => Promise<import('./merklLlmClient.js').LlmOutcome>,
-  offsetLevel: OffsetLevel = 'hub',
-  offsetTokenAddresses?: OffsetTokenInfo[],
+  offsetLevel: OffsetLevel = 'spoke',
+  offsetTokenAddresses?: string[],
 ): Promise<NetPositionConstraint | null> {
   const resolvedOffsetAddrs = offsetTokenAddresses ?? opp.offsetTokenAddresses;
   const layer0 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet, offsetLevel, resolvedOffsetAddrs);
@@ -1820,8 +1849,8 @@ export function extractNetPositionConstraint(
   sourceTokenAddress: string,
   oppReserveId: string,
   reserveIdSet: Set<string>,
-  offsetLevel: OffsetLevel = 'hub',
-  offsetTokenAddresses?: OffsetTokenInfo[],
+  offsetLevel: OffsetLevel = 'spoke',
+  offsetTokenAddresses?: string[],
 ): NetPositionConstraint | null {
   const type = opp.opportunityType;
   const isNetType = type && type.startsWith('AAVE_NET_');
@@ -1841,21 +1870,17 @@ export function extractNetPositionConstraint(
 
   const debugMissing: string[] = [];
 
-  for (const info of (offsetTokenAddresses ?? [])) {
-    if (info.reserveId && !seen.has(info.reserveId)) {
-      seen.add(info.reserveId);
-      offsetReserveIds.push(info.reserveId);
-    } else if (!info.reserveId) {
-      const resolvedIds = resolveOffsetReserveIds(oppReserveId, info.address.toLowerCase(), reserveIdSet, offsetLevel);
-      for (const rid of resolvedIds) {
-        if (!seen.has(rid)) {
-          seen.add(rid);
-          offsetReserveIds.push(rid);
-        }
+  for (const addr of (offsetTokenAddresses ?? [])) {
+    const normalizedAddr = addr.toLowerCase();
+    const resolvedIds = resolveOffsetReserveIds(oppReserveId, normalizedAddr, reserveIdSet, offsetLevel);
+    for (const rid of resolvedIds) {
+      if (!seen.has(rid)) {
+        seen.add(rid);
+        offsetReserveIds.push(rid);
       }
-      if (resolvedIds.length === 0) {
-        debugMissing.push(info.address.toLowerCase());
-      }
+    }
+    if (resolvedIds.length === 0) {
+      debugMissing.push(normalizedAddr);
     }
   }
 

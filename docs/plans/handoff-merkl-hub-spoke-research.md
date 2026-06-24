@@ -7,6 +7,82 @@
 
 ---
 
+## 0.1 修正记录（2026-06-21 深度调查）
+
+> 以下是对早期结论的重要修正，基于全量 leaderboard 数据验证 + Merkl 官方文档 + API schema。
+
+### 修正 1: Hub 的 AAVE_V4_NET_APR 确实动态执行
+
+**早期错误结论**：Hub 的 targetAPR 只在创建时起作用，后面不执行。
+
+**修正**：Merkl 官方文档明确说明 Target Total APR "automatically adapts each engine run based on live external yield data"。Hub 的 `dailyRewardsBreakdown.amount` < `maxAmount` 也证明动态计算在执行：
+- `maxAmount` = targetAPR × TVL / 365（nativeAPY=0 时的最大消耗）
+- `amount` = (targetAPR - nativeAPY) × TVL / 365（实际消耗）
+- Period 5: amount/maxAmount = 80.96% → nativeAPY 覆盖了 ~19% 的 target
+
+### 修正 2: Hub apr ≠ 用户从 Merkl 收到的 reward APR
+
+**早期错误结论**：Hub APR (6.77% = targetAPR) 是用户实际收到的 incentive APR。
+
+**修正**：
+- **Hub apr (6.77%) = targetAPR** = 总 APR 目标（含 nativeAPY）
+- **Spoke apr (6.48%) = 实际 Merkl incentive APR** = 用户从 Merkl 实际收到的 reward APR
+- **nativeAPY = Hub apr - Spoke apr = 0.29%**（非 Merkl reward，链上自动获得）
+- 用户从 Merkl 收到的 reward = Spoke apr × 余额，NOT Hub apr × 余额
+
+### 修正 3: end_campaign 是预算退款，非 nativeAPY 调节
+
+**已验证公式**：`Hub_budget = Spoke_actual_user_rewards + end_campaign_refund`
+
+| Period | Hub Budget | Spoke Actual (用户收到) | end_campaign (退款) | 验证 |
+|--------|-----------|----------------------|-------------------|------|
+| 1 | $15,908.00 | $12,060.23 | $3,847.77 | ✅ diff=0 |
+| 2 | $30,769.43 | $25,120.07 | $5,649.36 | ✅ diff=0 |
+| 3 | $44,423.50 | $29,434.03 | $14,989.00 | ✅ diff<$0.50 |
+| 4 | $44,423.50 | $29,756.46 | $14,666.91 | ✅ diff<$0.50 |
+
+end_campaign 退款给 campaign creator (0x89587e...)，不给用户。
+
+### 修正 4: Hub forwarding 镜像 Spoke 分发（97%+ 精确匹配）
+
+**全量 leaderboard 验证**：同一用户在 Hub 和 Spoke 的 reward amount 精确到 wei 完全一致。
+
+| Period | Hub 用户数 | Spoke 用户数 | 精确匹配 | 匹配率 |
+|--------|----------|-----------|---------|-------|
+| 1 | 42 | 41 | 41 | 100% |
+| 2 | 107 | 106 | 106 | 100% |
+| 3 | 134 | 133 | 132 | 99.2% |
+| 4 | 137 | 134 | 133 | 99.3% |
+| 5 | 147 | 144 | 143 | 99.3% |
+
+Hub leaderboard 比 Spoke 多出的 1-3 个用户是 end_campaign 退款接收者 + ERC20LOGPROCESSOR 小额分发。
+
+### 修正 5: Spoke 的 distributionSettings 为空 = Hub 控制的执行壳
+
+**所有 5 个 period 的 Spoke campaign** 的 `distributionSettings` 都是 `{}`（空）：
+- Hub: `distributionSettings: { mode: "MAX_APR", targetAPR: "0.0677", ... }`
+- Spoke: `distributionSettings: {}` ← 空，参数由 Hub 通过 forwarding 注入
+
+Spoke 不是独立配置的 campaign，而是 Hub 的执行壳。
+
+### 修正 6: V3 vs V4 机制完全不同
+
+| 维度 | V3 (AAVE_NET_APR) | V4 (Hub/Spoke) |
+|------|-------------------|----------------|
+| 结构 | 单 campaign | Hub + Spoke 双 campaign |
+| 分发方法 | MAX_APR | Hub: AAVE_V4_NET_APR, Spoke: DUTCH_AUCTION |
+| distributionSettings | 完整配置 | Spoke 为 `{}`（Hub 注入） |
+| 动态调整 | 是（单 campaign 直接执行） | Spoke 固定 Dutch auction（创建时定预算） |
+
+### 对 ADR-0030 的影响
+
+ADR-0030 的核心决策（过滤 Spoke 保留 Hub 避免 double-counting）仍然正确。但 ADR 中 "Hub APR is the TRUE total incentive APR" 的表述需要修正：
+- Hub APR = targetAPR = 总 APR 目标（含 native）
+- 用户从 Merkl 实际收到的 reward APR = Spoke APR = targetAPR - nativeAPY
+- 如果前端展示的是 "Merkl reward APR"，应该用 Spoke APR；如果展示 "总回报 APR"，Hub APR 正确
+
+---
+
 ## 0. 研究结论摘要
 
 ### 假说 C 已验证 ✅
@@ -44,37 +120,50 @@ Hub 实际消耗 = TVL × incentiveAPR / 365（= targetAPR - nativeAPY）
 - Spoke leaderboard = 仅 spoke 用户的 reward 子集
 - 实际总分发 = Hub 的实际消耗（不是 Hub + Spoke）
 
-### 用户实际按哪个 APR 获得 reward？✅ 已确认
+### 用户实际按哪个 APR 获得 reward？✅ 已确认（2026-06-21 修正）
 
-**两条路径下，用户获得的 Merkl reward 相同，都按 incentiveAPR 支付**
+**用户从 Merkl 收到的 reward = Spoke 的 Dutch auction 分发，按 Spoke apr (incentiveAPR) 计算**
 
-- **Hub.apr (6.77%) = targetAPR（含 native）**
-  - Hub 的 `dailyRewards` 按 targetAPR 计算（展示值）
-  - Hub 实际消耗按 incentiveAPR 计算（= targetAPR - nativeAPY ≈ 6.45%）
-  - 因为 nativeAPY > 0，实际消耗 < budget，未消耗部分退回 creator
-  - `/v4/rewards/total` API 返回 budget 值，造成"100% 分发"的假象
+- **Hub.apr (6.77%) = targetAPR（总 APR 目标，含 native）**
+  - Hub 的 `dailyRewards` 按 targetAPR 计算（展示值，含 native）
+  - Hub 的 `dailyRewardsBreakdown.amount` < `maxAmount` 证明 AAVE_V4_NET_APR 动态执行
+  - 但 Hub apr 不是用户从 Merkl 收到的 reward APR
 
-- **Spoke.apr (6.46%) ≈ incentiveAPR（纯 incentive，Dutch Auction 追踪）**
+- **Spoke.apr (6.48%) = incentiveAPR（纯 Merkl incentive，用户实际收到）**
   - Spoke budget 是 Hub budget 的预分配份额（65-77%），创建时设定
-  - Spoke 按 Dutch Auction 机制分发，APR 由当前 TVL 和分发速率动态计算
+  - Spoke 按 Dutch Auction 机制分发：固定 reward/秒，按 time-weighted balance 比例分配
+  - **这是用户从 Merkl 实际收到的 reward APR**
 
-- **用户的 total return = nativeAPY (链上自动) + incentiveAPR (Merkl) = targetAPR**
-- Leaderboard 显示的是 Merkl 支付的 incentive（不含 native）
+- **用户的 total return = nativeAPY (链上自动, 0.29%) + incentiveAPR (Merkl, 6.48%) = targetAPR (6.77%)**
+- **用户从 Merkl 收到的 reward = incentiveAPR (6.48%)，NOT targetAPR (6.77%)**
+- Leaderboard 显示的是 Merkl 支付的 incentive（不含 native），Hub 和 Spoke 金额一致（forwarding 镜像）
 
-### Distribution 完整机制 ✅
+### Distribution 完整机制 ✅（2026-06-21 修正）
 
 1. Creator 存入 Hub budget = `maxAmount × 7`（按 targetAPR 算的 7 天预算）
-2. Merkl 引擎自动创建 Spoke child campaign，分配 Spoke budget = `amount × 7`（按 incentiveAPR 算的 7 天预算）
-3. 每个 engine run：Hub 按 `incentiveAPR = max(targetAPR - nativeAPY, 0)` 分配 reward；Spoke Dutch Auction 按固定速率消耗 budget，APR ≈ incentiveAPR
-4. Campaign 结束：Spoke budget 全部消耗；Hub budget 有剩余退回 creator（退回 ≈ Hub budget × nativeAPY / targetAPR）
+2. Merkl 引擎自动创建 Spoke child campaign（`distributionSettings: {}`，由 Hub 注入参数），分配 Spoke budget = `amount × 7`（按 incentiveAPR 算的 7 天预算）
+3. 每个 engine run（~20-30 分钟间隔）：
+   - Hub 的 AAVE_V4_NET_APR 动态计算 `incentiveAPR = max(targetAPR - nativeAPY, 0)`（官方文档确认 "automatically adapts each engine run"）
+   - Spoke Dutch Auction 按固定速率消耗 budget（`reward/秒 = Spoke_budget / campaign_duration`），按 time-weighted balance 比例分配给用户
+   - **用户实际收到的 reward = Spoke 的 Dutch auction 分发**
+4. Campaign 结束：`end_campaign_refund = Hub_budget - Spoke_actual_user_rewards`，退回给 creator（0x89587e...），不给用户
 
-### ADR-0030 决策确认 ✅
+**关键修正**：Spoke 不是独立按 incentiveAPR 动态调整，而是按创建时固定的 Dutch auction 速率分发。Hub 的动态计算影响的是 budget 分配和 end_campaign 退款，不影响用户实际领取的 reward 金额。
 
-过滤 Spoke 保留 Hub 的决策正确：
-1. Hub + Spoke = double-counting → 必须只选一个
-2. Hub 是源 campaign，有完整 budget/targetAPR 元数据
-3. Hub 的 AAVE_V4_NET_APR 类型可被后端 scaleMerklBreakdown 正确处理
-4. Hub reward 已包含 Spoke 用户的全部 incentive → 过滤 Spoke 不丢失信息
+### ADR-0030 决策确认 ✅（2026-06-21 修正）
+
+过滤 Spoke 保留 Hub 的决策正确（避免 double-counting）：
+1. Hub + Spoke = double-counting → 必须只选一个 ✅
+2. Hub 是源 campaign，有完整 budget/targetAPR 元数据 ✅
+3. Hub 的 AAVE_V4_NET_APR 类型可被后端 scaleMerklBreakdown 正确处理 ✅
+4. Hub reward 已包含 Spoke 用户的全部 incentive（forwarding 镜像，97%+ 精确匹配）✅
+
+**⚠️ 需要注意的偏差**：
+- ADR 中 "Hub APR is the TRUE total incentive APR" 表述不准确
+- Hub APR = targetAPR = 总 APR 目标（含 nativeAPY）
+- 用户从 Merkl 实际收到的 reward APR = Spoke APR = targetAPR - nativeAPY
+- 当前代码用 Hub APR (6.77%) 作为 `campaignApr`，这展示的是总回报 APR，不是纯 Merkl reward APR
+- 如果业务需求是展示 "Merkl reward only"，应改用 Spoke APR 或从 Hub 数据中减去 nativeAPY
 
 ---
 
@@ -376,13 +465,20 @@ commit `4138e59`: 过滤 Spoke，保留 Hub
 - **假说 C 已验证**：Hub reward 包含 Spoke 用户的全部 incentive，过滤 Spoke 不丢失信息
 - 用户的 claim 路径不受影响（claim 是通过 Merkl 合约，不是通过 opportunity 类型）
 
-### 7.4 Hub vs Spoke APR 差异机制
+### 7.4 Hub vs Spoke APR 差异机制（2026-06-21 修正）
 
-当前: Hub APR = 6.77% vs Spoke APR = 6.45%，差异 = 0.32%
+当前: Hub APR = 6.77% vs Spoke APR = 6.48%，差异 = 0.29% = nativeAPY
 
-- Hub: 显示 targetAPR = 6.77%（Merkl pays targetAPR - nativeAPY）
-- Spoke: 显示 Dutch Auction rate = 6.45%（≈ targetAPR - nativeAPY delta）
-- 差异来源: (1) Dutch Auction rate 是上次 engine run 时的值，不是实时 (2) TVL 差异 (3) engine run 间隔内的近似
+- **Hub APR (6.77%) = targetAPR** = 总 APR 目标（含 native）
+  - Hub 的 `dailyRewardsBreakdown.amount` < `maxAmount` 证明 AAVE_V4_NET_APR 动态执行
+  - 但 Hub APR 不是用户从 Merkl 收到的 reward APR
+
+- **Spoke APR (6.48%) = incentiveAPR** = 用户从 Merkl 实际收到的 reward APR
+  - Spoke Dutch Auction 按固定速率分发（budget/duration）
+  - Spoke APR = Spoke_daily_amount × 365 / Spoke_TVL
+
+- **差异 = nativeAPY = 0.29%**（非 Dutch Auction 近似误差，而是 nativeAPY）
+- **用户从 Merkl 收到的 reward = Spoke APR × 余额，NOT Hub APR × 余额**
 
 ---
 
@@ -484,28 +580,35 @@ nativeAPY = targetAPR - Spoke APR = 6.77% - 6.46% ≈ 0.31%
 - 从 Aave V4 链上 supplyApy = 0.3172% → 与反推值接近 ✅
 - Hub daily - Spoke daily = $4,900 - $4,664 = $236 ≈ Hub daily × nativeAPY / targetAPR = $230 ✅
 
-### 9.6 用户 Reward 计算公式
+### 9.6 用户 Reward 计算公式（2026-06-21 修正）
 
-**Hub 路径** (每个用户):
+**用户从 Merkl 收到的 reward**（不含 native）：
 ```
-Merkl reward = 用户 TVL × incentiveAPR / 365 = 用户 TVL × (targetAPR - nativeAPY) / 365
+Merkl reward = 用户 time-weighted balance / 总 TVL × Spoke_budget
+             = 用户 TVL × Spoke APR / 365
+             = 用户 TVL × incentiveAPR / 365
+```
+
+**用户总回报**（含 native）：
+```
 Total return = nativeAPY (链上自动) + incentiveAPR (Merkl) = targetAPR
 ```
 
-**Spoke 路径** (每个用户):
-```
-Merkl reward = 用户 TVL × Spoke APR / 365 ≈ 用户 TVL × incentiveAPR / 365
-Total return = nativeAPY (链上自动) + Spoke APR ≈ targetAPR
-```
+**⚠️ 关键修正**：
+- 用户从 Merkl 收到的 reward 按 **Spoke APR (incentiveAPR)** 计算，NOT Hub APR (targetAPR)
+- 当前代码用 Hub APR 作为 `campaignApr`，展示的是 targetAPR（含 native），不是纯 Merkl reward APR
+- 如果 `campaignApr` 的语义是 "Merkl reward APR"，应改用 Spoke APR
+- 如果 `campaignApr` 的语义是 "用户总回报 APR"，Hub APR 正确
 
-**两条路径等价**: 差异 ≈ 0.01% (Dutch Auction 近似误差)
+### 9.7 Leaderboard 金额的含义（2026-06-21 修正）
 
-### 9.7 Leaderboard 金额的含义
-
-- Leaderboard 显示的是 **Merkl 支付的 incentive** (不含 native)
-- 同一用户在 Hub 和 Spoke 的 leaderboard 金额:
-  - 如果用户 100% 通过 Spoke 存入: Hub incentive = Spoke incentive (两者相等)
-  - 如果用户有 Hub-direct 部分: Hub incentive > Spoke incentive (差 = Hub-direct incentive)
+- Leaderboard 显示的是 **Merkl 支付的 incentive**（不含 native）
+- **Hub 和 Spoke 的 leaderboard 金额一致**（forwarding 镜像，97%+ 精确匹配到 wei）
+  - 这是因为 Hub 通过 forwarding 机制镜像记录 Spoke 的分发
+  - Hub leaderboard 比 Spoke 多出的 1-3 个用户是 end_campaign 退款接收者
+- 同一用户在 Hub 和 Spoke 的 leaderboard 金额：
+  - 如果用户 100% 通过 Spoke 存入: Hub incentive = Spoke incentive（两者相等）
+  - 如果用户有 Hub-direct 部分: Hub incentive > Spoke incentive（差 = Hub-direct incentive）
 
 ### 9.8 Budget 退回机制
 

@@ -423,7 +423,16 @@ async function enrichDatasetWithIncentiveData(
           });
         } : undefined;
         const cachedConstraint = opp.opportunityLink ? cachedConstraints?.get(opp.opportunityLink) : undefined;
-        const oppOffsetLevel: OffsetLevel = opp.opportunityType?.includes('SPOKE_SUPPLY') ? 'spoke' : opp.opportunityType?.includes('HUB_SUPPLY') ? 'hub-cross-spoke' : 'hub';
+        // Offset scope: cross-market (hookType=14) is a superset of hub-cross-spoke.
+        // If a future opp is both V4 HUB_SUPPLY and has hookType=14, cross-market
+        // correctly expands the scope beyond a single hub — no information loss.
+        const oppOffsetLevel: OffsetLevel = opp.hasCrossMarketNpc
+          ? 'cross-market'
+          : opp.opportunityType?.includes('SPOKE_SUPPLY')
+            ? 'spoke'
+            : opp.opportunityType?.includes('HUB_SUPPLY')
+              ? 'hub-cross-spoke'
+              : 'spoke';
         const oppOffsetTokenAddresses = opp.offsetTokenAddresses;
         const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, cachedConstraint, llmFn, oppOffsetLevel, oppOffsetTokenAddresses);
         if (opp.opportunityLink && cachedConstraints && cachedConstraint === undefined) {
@@ -439,6 +448,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
+              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
               breakdowns: opp.supply
             });
           }
@@ -451,6 +461,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
+              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
               breakdowns: opp.borrow
             });
           }
@@ -463,6 +474,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
+              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
               breakdowns: opp.hold
             });
           }
@@ -475,6 +487,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
+              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
               breakdowns: opp.supply
             });
           }
@@ -486,6 +499,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
+              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
               breakdowns: opp.borrow
             });
           }
@@ -497,6 +511,7 @@ async function enrichDatasetWithIncentiveData(
               ...(opp.description && { message: opp.description }),
               ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
               ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
+              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
               breakdowns: opp.hold
             });
           }

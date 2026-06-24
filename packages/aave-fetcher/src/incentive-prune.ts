@@ -59,6 +59,7 @@ export function pruneMerklGroup(g: MerklOpportunityGroup): MerklOpportunityGroup
     ...(g.message ? { message: g.message } : {}),
     ...(g.opportunityType ? { opportunityType: g.opportunityType } : {}),
     ...(g.netPositionConstraint !== undefined ? { netPositionConstraint: g.netPositionConstraint } : {}),
+    ...(g.borrowBlacklist ? { borrowBlacklist: true } : {}),
     breakdowns: (g.breakdowns ?? []).map(pruneMerklBreakdown),
   };
 }

@@ -37,6 +37,7 @@ export interface CampaignGroup<TBreakdown extends BaseCampaignBreakdown = BaseCa
     sourceSide: 'supply' | 'borrow';
     offsetReserveIds: string[];
   } | null;
+  borrowBlacklist?: boolean;
 }
 
 export const DEFAULT_SPOKE_HUB_TOPOLOGY: { chainId: number; spokeAddress: string; hubAddress: string; }[];
