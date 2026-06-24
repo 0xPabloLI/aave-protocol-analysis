@@ -164,6 +164,10 @@ _Avoid_: merklSupplyIncentives, merklBorrowIncentives
 Brevis（证明系统）激励，按 CampaignGroup 组织的 per-Campaign APR 数组。目前仅服务于 V3。
 _Avoid_: brevisSupplyIncentives, brevisBorrowIncentives
 
+**borrowBlacklist**:
+Merkl CampaignGroup 级约束标志。当 `borrowBlacklist=true` 时，用户有 borrow position → 该 supply incentive 归零（二元排除）。由 Merkl opportunity 的 `identifier` 字段包含 `BORROW_BL` 后缀时触发。与 **netPositionConstraint**（按比例抵消）语义不同，不复用同一字段。
+_Avoid_: borrowBl, blConstraint
+
 ### 价格
 
 **tokenPrice**:

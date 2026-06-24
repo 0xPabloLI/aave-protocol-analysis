@@ -89,28 +89,26 @@ BORROW_BL opp 的 simulation 规则：
 
 ## 实现方向
 
-### 后端：新增字段
+### 后端：新增字段 ✅ 已实现 (AAV-924)
 
-在 `MerklOpportunityData` 或 `MerklCampaignBreakdown` 中新增：
-
-```typescript
-borrowBlacklist?: boolean;  // true = 有 borrow position 则 incentive 归零
-```
+`borrowBlacklist?: boolean` 放在 **CampaignGroup** 级（与 `netPositionConstraint` 同级），而非 breakdown 级。
 
 检测逻辑（在 `processMerklData` 中）：
 
 ```typescript
 const isBorrowBl = opp.identifier?.includes('BORROW_BL') ?? false;
-// ...写入 opportunityData
+// ...写入 opportunityData: ...(isBorrowBl && { borrowBlacklist: true })
 ```
 
-### 前端：Simulation 归零
+传播链路：`MerklOpportunityData.borrowBlacklist` → `enrichDatasetWithIncentiveData` → `CampaignGroup.borrowBlacklist` → `pruneMerklGroup` → API 输出
+
+### 前端：Simulation 归零（待前端实现）
 
 在 incentive simulation 逻辑中：
 
 ```typescript
-if (breakdown.borrowBlacklist && userBorrowAmount > 0) {
-  // 该 breakdown 的 incentive 归零
+if (group.borrowBlacklist && userBorrowAmount > 0) {
+  // 该 group 的 incentive 归零
   effectiveApr = 0;
 }
 ```

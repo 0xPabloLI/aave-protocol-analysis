@@ -257,4 +257,4 @@ const matchedOpps = merklData[item.reserveId] ?? [];
 - AAV-906: hub-aware offset ✅
 - AAV-908: spokeAddress in query ✅
 - AAV-905: 多值映射（Slice 3 范畴）
-- AAV-921: NPC offset hub-aware（AAV-906 已覆盖核心）
+- AAV-921: NPC offset hub-aware ✅ (offsetLevel 默认值已从 'hub' 改为 'spoke')
