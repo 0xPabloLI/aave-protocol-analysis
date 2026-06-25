@@ -305,7 +305,7 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
     assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xhorizonPool:0xsourceToken', '1:0xhorizonPool:0xrlusd'] });
   });
 
-  it('Bug5: V4 opp resolves offset via spoke prefix, across hubs', async () => {
+  it('Bug5: V4 opp with reserve offsetLevel resolves exact match only', async () => {
     const opp: MerklOpportunityData = {
       supply: [{ campaignApr: 0.05, campaignId: 'c1', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
       borrow: [], hold: [],
@@ -320,8 +320,8 @@ describe('B4: detectNetPositionConstraint — four-layer detection', () => {
     ]);
     const symbolLookup = makeSymbolLookup([]);
     const oppReserveId = '1:0xv4spoke:0xsourceToken:Core';
-    const result = await detectNetPositionConstraint(opp, '0xsourceToken', oppReserveId, reserveIdSet, symbolLookup, undefined, undefined, 'spoke');
-    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xv4spoke:0xsourceToken:Core', '1:0xv4spoke:0xrlusd:Core', '1:0xv4spoke:0xrlusd:Lido'] });
+    const result = await detectNetPositionConstraint(opp, '0xsourceToken', oppReserveId, reserveIdSet, symbolLookup, undefined, undefined, 'reserve');
+    assert.deepEqual(result, { sourceSide: 'supply', offsetReserveIds: ['1:0xv4spoke:0xsourceToken:Core', '1:0xv4spoke:0xrlusd:Core'] });
   });
 
   it('Bug5: LLM fallback uses symbolLookup + oppReserveId for pool-scoped resolution', async () => {

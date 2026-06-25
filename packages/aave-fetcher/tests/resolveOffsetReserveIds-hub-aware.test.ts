@@ -4,7 +4,7 @@ import { resolveOffsetReserveIds } from '../src/merkl-api.js';
 
 const makeReserveIdSet = (ids: string[]): Set<string> => new Set(ids);
 
-describe('AAV-906: resolveOffsetReserveIds hub-aware matching', () => {
+describe('resolveOffsetReserveIds hub-aware matching', () => {
 
   describe('V3: same-pool offset (unchanged)', () => {
     it('exact match within same pool', () => {
@@ -25,103 +25,29 @@ describe('AAV-906: resolveOffsetReserveIds hub-aware matching', () => {
       const result = resolveOffsetReserveIds('1:0xmainpool:0xusdt', '0xusde', set);
       assert.deepEqual(result, []);
     });
-  });
 
-  describe('V4 Hub campaign: offset at hub level', () => {
-    it('matches offset token in same hub, same spoke', () => {
+    it('hub-cross-spoke returns empty for V3 reserveId', () => {
       const set = makeReserveIdSet([
-        '1:0xspokeA:0xusdt:0xhub1',
-        '1:0xspokeA:0xusde:0xhub1',
-        '1:0xspokeA:0xusdt:0xhub2',
-        '1:0xspokeA:0xusde:0xhub2',
-        '1:0xspokeB:0xusde:0xhub1',
+        '1:0xmainpool:0xusdt',
+        '1:0xmainpool:0xusde',
       ]);
-      const result = resolveOffsetReserveIds('1:0xspokeA:0xusdt:0xhub1', '0xusde', set, 'hub');
-      assert.deepEqual(result, ['1:0xspokeA:0xusde:0xhub1']);
-    });
-
-    it('does NOT match offset token in different hub (same spoke)', () => {
-      const set = makeReserveIdSet([
-        '1:0xspokeA:0xusdt:0xhub1',
-        '1:0xspokeA:0xusde:0xhub2',
-      ]);
-      const result = resolveOffsetReserveIds('1:0xspokeA:0xusdt:0xhub1', '0xusde', set, 'hub');
+      const result = resolveOffsetReserveIds('1:0xmainpool:0xusdt', '0xusde', set, 'hub-cross-spoke');
       assert.deepEqual(result, []);
     });
-
-    it('does NOT match offset token in different spoke (same hub)', () => {
-      const set = makeReserveIdSet([
-        '1:0xspokeA:0xusdt:0xhub1',
-        '1:0xspokeB:0xusde:0xhub1',
-      ]);
-      const result = resolveOffsetReserveIds('1:0xspokeA:0xusdt:0xhub1', '0xusde', set, 'hub');
-      assert.deepEqual(result, []);
-    });
-
-    it('self as offset resolves correctly', () => {
-      const set = makeReserveIdSet([
-        '1:0xspokeA:0xusdt:0xhub1',
-      ]);
-      const result = resolveOffsetReserveIds('1:0xspokeA:0xusdt:0xhub1', '0xusdt', set, 'hub');
-      assert.deepEqual(result, ['1:0xspokeA:0xusdt:0xhub1']);
-    });
   });
 
-  describe('V4 Spoke campaign: offset at spoke level', () => {
-    it('matches offset token across hubs under same spoke', () => {
+  describe('default: reserve level matching', () => {
+    it('without offsetLevel param, defaults to reserve-level matching', () => {
       const set = makeReserveIdSet([
         '1:0xspokeA:0xusdt:0xhub1',
         '1:0xspokeA:0xusde:0xhub1',
-        '1:0xspokeA:0xusde:0xhub2',
-        '1:0xspokeB:0xusde:0xhub1',
-      ]);
-      const result = resolveOffsetReserveIds('1:0xspokeA:0xusdt:0xhub2', '0xusde', set, 'spoke');
-      assert.deepEqual(result.sort(), ['1:0xspokeA:0xusde:0xhub1', '1:0xspokeA:0xusde:0xhub2'].sort());
-    });
-
-    it('does NOT match offset token in different spoke', () => {
-      const set = makeReserveIdSet([
-        '1:0xspokeA:0xusdt:0xhub1',
-        '1:0xspokeB:0xusde:0xhub1',
-        '1:0xspokeA:0xusde:0xhub1',
-      ]);
-      const result = resolveOffsetReserveIds('1:0xspokeA:0xusdt:0xhub1', '0xusde', set, 'spoke');
-      assert.deepEqual(result, ['1:0xspokeA:0xusde:0xhub1']);
-    });
-  });
-
-  describe('V4 default: spoke level (contract-semantic)', () => {
-    it('without offsetLevel param, defaults to spoke-level matching', () => {
-      const set = makeReserveIdSet([
-        '1:0xspokeA:0xusdt:0xhub1',
-        '1:0xspokeA:0xusde:0xhub1',
-        '1:0xspokeA:0xusde:0xhub2',
       ]);
       const result = resolveOffsetReserveIds('1:0xspokeA:0xusdt:0xhub1', '0xusde', set);
-      assert.deepEqual(result.sort(), ['1:0xspokeA:0xusde:0xhub1', '1:0xspokeA:0xusde:0xhub2'].sort());
-    });
-
-    it("'hub' alias maps to 'reserve' behavior", () => {
-      const set = makeReserveIdSet([
-        '1:0xspokeA:0xusdt:0xhub1',
-        '1:0xspokeA:0xusde:0xhub1',
-      ]);
-      const result = resolveOffsetReserveIds('1:0xspokeA:0xusdt:0xhub1', '0xusde', set, 'hub');
       assert.deepEqual(result, ['1:0xspokeA:0xusde:0xhub1']);
-    });
-
-    it("'spoke' alias maps to 'spoke-cross-hub' behavior", () => {
-      const set = makeReserveIdSet([
-        '1:0xspokeA:0xusdt:0xhub1',
-        '1:0xspokeA:0xusde:0xhub1',
-        '1:0xspokeA:0xusde:0xhub2',
-      ]);
-      const result = resolveOffsetReserveIds('1:0xspokeA:0xusdt:0xhub1', '0xusde', set, 'spoke');
-      assert.deepEqual(result.sort(), ['1:0xspokeA:0xusde:0xhub1', '1:0xspokeA:0xusde:0xhub2'].sort());
     });
   });
 
-  describe('AAV-997: hub-cross-spoke offset (V4 HUB_SUPPLY)', () => {
+  describe('hub-cross-spoke offset (V4 HUB_SUPPLY)', () => {
     it('matches offset token across spokes within same hub', () => {
       const set = makeReserveIdSet([
         '1:0xspokeA:0xusdt:0xhub1',
@@ -176,7 +102,7 @@ describe('AAV-906: resolveOffsetReserveIds hub-aware matching', () => {
     });
   });
 
-  describe('AAV-997: reserve mode (explicit per-reserve matching)', () => {
+  describe('reserve mode (explicit per-reserve matching)', () => {
     it('V4 reserve mode: exact 4-segment match', () => {
       const set = makeReserveIdSet([
         '1:0xspokeA:0xusdt:0xhub1',
@@ -187,7 +113,7 @@ describe('AAV-906: resolveOffsetReserveIds hub-aware matching', () => {
       assert.deepEqual(result, ['1:0xspokeA:0xusde:0xhub1']);
     });
 
-    it('V3 reserve mode: same as hub-level exact match', () => {
+    it('V3 reserve mode: same as pool-internal exact match', () => {
       const set = makeReserveIdSet([
         '1:0xmainpool:0xusdt',
         '1:0xmainpool:0xusde',
@@ -195,32 +121,13 @@ describe('AAV-906: resolveOffsetReserveIds hub-aware matching', () => {
       const result = resolveOffsetReserveIds('1:0xmainpool:0xusdt', '0xusde', set, 'reserve');
       assert.deepEqual(result, ['1:0xmainpool:0xusde']);
     });
-  });
 
-  describe('cross-market offset level', () => {
-    it('matches same token across all pools/markets on same chainId', () => {
-      const set = new Set([
-        '1:0xmainpool:0xusdtb',
-        '1:0xlidopool:0xusdtb',
-        '1:0xhorizonpool:0xusdtb',
-        '1:0xspokeA:0xusdtb:0xhub1',
-        '137:0xotherpool:0xusdtb',
+    it('V4 reserve mode: does NOT cross spoke boundary', () => {
+      const set = makeReserveIdSet([
+        '1:0xspokeA:0xusdt:0xhub1',
+        '1:0xspokeB:0xusde:0xhub1',
       ]);
-      const result = resolveOffsetReserveIds('1:0xmainpool:0xusdtb', '0xusdtb', set, 'cross-market');
-      assert.deepEqual(result.sort(), [
-        '1:0xhorizonpool:0xusdtb',
-        '1:0xlidopool:0xusdtb',
-        '1:0xmainpool:0xusdtb',
-        '1:0xspokeA:0xusdtb:0xhub1',
-      ]);
-    });
-
-    it('returns empty when no matching token on same chain', () => {
-      const set = new Set([
-        '1:0xmainpool:0xusdt',
-        '137:0xotherpool:0xusdtb',
-      ]);
-      const result = resolveOffsetReserveIds('1:0xmainpool:0xusdtb', '0xusdtb', set, 'cross-market');
+      const result = resolveOffsetReserveIds('1:0xspokeA:0xusdt:0xhub1', '0xusde', set, 'reserve');
       assert.deepEqual(result, []);
     });
   });
