@@ -289,7 +289,6 @@ export interface ComposedSubCampaign {
   underlyingToken?: string;
   campaignType?: number;
   composedType?: string;
-  composedMultiplier?: number;
 }
 
 export interface MerklOpportunityData {
@@ -1655,7 +1654,7 @@ export async function processMerklData(
   return { index: merklData, campaignAccess: campaignAccessArr };
 }
 
-export function extractComposedCampaignInfo(opp: MerklOpportunity): {
+function extractComposedCampaignInfo(opp: MerklOpportunity): {
   composedCampaignsCompute?: string;
   composedSubCampaigns?: ComposedSubCampaign[];
 } {
@@ -1674,11 +1673,6 @@ export function extractComposedCampaignInfo(opp: MerklOpportunity): {
           underlyingToken: typeof underlyingToken === 'string' ? underlyingToken.toLowerCase() : undefined,
           campaignType: typeof sub?.campaignType === 'number' ? sub.campaignType : undefined,
           composedType: typeof sub?.composedType === 'string' ? sub.composedType : undefined,
-          composedMultiplier: typeof sub?.composedMultiplier === 'string' && sub.composedMultiplier
-            ? Number(sub.composedMultiplier) / 1e9
-            : typeof sub?.composedMultiplier === 'number'
-              ? sub.composedMultiplier / 1e9
-              : undefined,
         });
       }
     }

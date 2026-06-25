@@ -324,7 +324,7 @@ This is `DUTCH_AUCTION`:
 
 **Interaction with `composedCampaignsCompute`**: RESOLVED — Merkl engine applies multiplier before compute internally and returns the final APR. We cannot and do not need to replicate this calculation.
 
-**Code change (AAV-1006)**: `composedMultiplier` now stored as human-readable float (`1.196` instead of `"1196000000"`) for debugging convenience. No APR calculation impact.
+**Code change (AAV-1006)**: `composedMultiplier` field removed from `ComposedSubCampaign` (YAGNI — proven never needed for APR calculation, no downstream consumers).
 
 Refs: AAV-948, AAV-1005, AAV-1006
 
