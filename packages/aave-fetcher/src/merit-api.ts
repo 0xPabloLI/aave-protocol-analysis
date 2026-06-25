@@ -163,6 +163,24 @@ const _meritState = {
   browserInstance: null as Browser | null,
 };
 
+export function getMeritCacheStats(): {
+  roundEstimateCache: number;
+  campaignMetadataCache: number;
+  blockNumberCache: number;
+  redirectAliases: number;
+  browserActive: boolean;
+} {
+  return {
+    roundEstimateCache: _meritState.roundEstimateCache?.size ?? 0,
+    campaignMetadataCache: _meritState.campaignMetadataMemoryCache
+      ? Object.keys(_meritState.campaignMetadataMemoryCache).length
+      : 0,
+    blockNumberCache: meritCurrentBlockNumberCache.size,
+    redirectAliases: discoveredRedirectAliases.size,
+    browserActive: _meritState.browserInstance?.isConnected() ?? false,
+  };
+}
+
 /** @internal test-only hook to reset all mutable state */
 export function resetMeritState(): void {
   _meritState.roundEstimateCache = null;

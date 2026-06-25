@@ -13,13 +13,14 @@ import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controlle
 import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
 import { getMerklForecastCacheStats } from './services/merklForecastService.js';
 import { warmMarketsCache, getMarketsData } from './services/marketsService.js';
-import { refreshOnchainCache } from './services/onchainDataService.js';
-import { refreshOracleCache } from './services/oracleService.js';
+import { refreshOnchainCache, getOnchainCacheStatus } from './services/onchainDataService.js';
+import { refreshOracleCache, getOracleCacheStats } from './services/oracleService.js';
 import { logger } from './logger.js';
 import { providerPool } from '@internal/aave-rpc-infra';
+import { getMeritCacheStats, getTokenPriceCacheStats, getBrevisCacheStats } from '@internal/aave-fetcher';
 import { explainServerListenError } from './startup.js';
 import { closePool, getPool, isPersistenceEnabled } from './services/dbPool.js';
-import { getPersistenceStatus, warmConfigHashes } from './services/persistenceService.js';
+import { getPersistenceStatus, getHashMapSizes, warmConfigHashes } from './services/persistenceService.js';
 import { runMigrations } from './services/autoMigrate.js';
 
 // Wire ProviderPool logFn to winston logger
@@ -274,9 +275,26 @@ setInterval(() => {
   const mem = process.memoryUsage();
   const fmt = (bytes: number) => `${Math.round(bytes / 1024 / 1024)}MB`;
   const merklStats = getMerklForecastCacheStats();
+  const onchainStats = getOnchainCacheStatus();
+  const oracleStats = getOracleCacheStats();
+  const meritStats = getMeritCacheStats();
+  const tokenPriceStats = getTokenPriceCacheStats();
+  const brevisStats = getBrevisCacheStats();
+  const hashSizes = getHashMapSizes();
+  const providerStats = providerPool.getCacheStats();
+  const snapshots = getMarketsData();
   logger.info(
-    `📊 Memory: heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} rss=${fmt(mem.rss)} external=${fmt(mem.external)} | ` +
-    `merkl metricsCache=${merklStats.metricsCacheSize} zeroBaseline=${merklStats.zeroBaselineCacheSize} inFlight=${merklStats.inFlightSize} oppCacheAge=${merklStats.campaignOpportunityCacheAge ?? 'none'}ms`
+    `📊 Memory: heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} rss=${fmt(mem.rss)} arrayBuffers=${fmt(mem.arrayBuffers ?? 0)} | ` +
+    `reserves=${snapshots?.payload?.data?.length ?? 0} ` +
+    `onchain=${onchainStats.poolCount}pools/${onchainStats.reserveCount}res ` +
+    `oracle=${oracleStats.leanPrice}+${oracleStats.v4ReserveToken} ` +
+    `merkl=${merklStats.metricsCacheSize}+${merklStats.zeroBaselineCacheSize}z+${merklStats.inFlightSize}f ` +
+    `merit=${meritStats.roundEstimateCache}r+${meritStats.campaignMetadataCache}m+${meritStats.blockNumberCache}b+${meritStats.redirectAliases}a ` +
+    `tokenPrice=${tokenPriceStats.priceCache}+${tokenPriceStats.inFlight}f ` +
+    `brevis=${brevisStats.chainCallCache} ` +
+    `hashes=${hashSizes.marketRow}+${hashSizes.marketConfig}+${hashSizes.oraclePrice} ` +
+    `rpc=${providerStats.providers}p+${providerStats.endpoints}e+${providerStats.rpcUrls}u ` +
+    `browser=${meritStats.browserActive}`
   );
 
   if (RSS_RESTART_THRESHOLD_MB > 0 && mem.rss > RSS_RESTART_THRESHOLD_MB * 1024 * 1024) {

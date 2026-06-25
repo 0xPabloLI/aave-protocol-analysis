@@ -46,6 +46,10 @@ export class DynamicRpcCache {
     return this.cache.get(chainId);
   }
 
+  get size(): number {
+    return this.cache.size;
+  }
+
   set(chainId: number, urls: string[]): void {
     this.cache.set(chainId, urls);
     this.evictOverflow();

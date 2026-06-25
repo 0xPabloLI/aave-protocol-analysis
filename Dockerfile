@@ -57,5 +57,5 @@ RUN mkdir -p data logs backend/logs
 
 EXPOSE 3001
 
-# --max-old-space-size=1600: GC triggers at 1600MB, 80% of 2GB Railway container
-CMD ["node", "--max-old-space-size=1600", "backend/dist/server.js"]
+# --max-old-space-size=768: GC triggers at 768MB, 75% of 1GB Railway container
+CMD ["node", "--max-old-space-size=768", "backend/dist/server.js"]

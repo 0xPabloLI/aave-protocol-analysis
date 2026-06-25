@@ -456,3 +456,7 @@ export function getV4OraclePrice(chainId: number, spokeAddress: string, tokenAdd
 export function getCachedOraclePricesSnapshot(): OraclePricesSnapshot | null {
   return cachedSnapshot;
 }
+
+export function getOracleCacheStats(): { leanPrice: number; v4ReserveToken: number } {
+  return { leanPrice: leanPriceCache.size, v4ReserveToken: V4_RESERVE_TOKEN_CACHE.size };
+}

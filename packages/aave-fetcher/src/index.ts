@@ -302,7 +302,9 @@ async function fetchBrevisAprs(
 
 
 export { FETCH_TIMEOUT_MS } from './concurrent-fetch.js';
-export { closeBrowser } from './merit-api.js';
+export { closeBrowser, getMeritCacheStats } from './merit-api.js';
+export { getTokenPriceCacheStats } from './token-price-resolver.js';
+export { getBrevisCacheStats } from './brevis-distributed-so-far.js';
 
 export function buildMarketsBaseDataset(v3Markets: any[], v4Result: V4FetchResult): ReturnType<typeof _buildMarketsBaseDataset> {
   return _buildMarketsBaseDataset(v3Markets, v4Result);
@@ -424,16 +426,18 @@ async function enrichDatasetWithIncentiveData(
           });
         } : undefined;
         const cachedConstraint = opp.opportunityLink ? cachedConstraints?.get(opp.opportunityLink) : undefined;
-        // Offset scope: cross-market (hookType=14) is a superset of hub-cross-spoke.
-        // If a future opp is both V4 HUB_SUPPLY and has hookType=14, cross-market
-        // correctly expands the scope beyond a single hub — no information loss.
-        const oppOffsetLevel: OffsetLevel = opp.hasCrossMarketNpc
-          ? 'cross-market'
-          : opp.opportunityType?.includes('SPOKE_SUPPLY')
-            ? 'spoke'
-            : opp.opportunityType?.includes('HUB_SUPPLY')
-              ? 'hub-cross-spoke'
-              : 'spoke';
+        // offsetLevel is deterministic per opportunityType (ADR-0032 revised):
+        //   SPOKE_SUPPLY → 'reserve' (4-segment exact match, no cross-hub needed)
+        //   HUB_SUPPLY   → 'hub-cross-spoke' (lacks spokeAddress, must resolve across spokes)
+        //   V3 NET_*     → 'reserve' (pool-internal exact match)
+        //   V4 NET_APR   → 'hub-cross-spoke' (same as HUB_SUPPLY)
+        // hookType=14 (BORROW_BL) opps have empty offsetTokenAddresses, so offsetLevel
+        // is never actually exercised for them — the mapping still defaults to 'reserve'.
+        const oppOffsetLevel: OffsetLevel =
+          opp.opportunityType?.includes('SPOKE_SUPPLY') ? 'reserve'
+          : opp.opportunityType?.includes('HUB_SUPPLY') ? 'hub-cross-spoke'
+          : opp.opportunityType?.includes('V4_NET_APR') ? 'hub-cross-spoke'
+          : 'reserve';
         const oppOffsetTokenAddresses = opp.offsetTokenAddresses;
         const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, cachedConstraint, llmFn, oppOffsetLevel, oppOffsetTokenAddresses);
         if (opp.opportunityLink && cachedConstraints && cachedConstraint === undefined) {

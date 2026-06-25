@@ -262,3 +262,11 @@ export async function resolveUsdPriceWithPriority({
   }
   return { source: 'missing' };
 }
+
+export function getTokenPriceCacheStats(): { priceCache: number; inFlight: number; platformCache: boolean } {
+  return {
+    priceCache: tokenPriceResolveCache.size,
+    inFlight: tokenPriceResolveInFlight.size,
+    platformCache: coingeckoPlatformCache !== null,
+  };
+}

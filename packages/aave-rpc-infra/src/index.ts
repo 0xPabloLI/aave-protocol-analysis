@@ -319,6 +319,14 @@ export class ProviderPool {
     };
   }
 
+  getCacheStats(): { providers: number; endpoints: number; rpcUrls: number } {
+    return {
+      providers: this.providerByKey.size,
+      endpoints: this.endpointHealthByKey.size,
+      rpcUrls: this.dynamicRpcCache?.size ?? 0,
+    };
+  }
+
   getProvidersForChain(chainId: number, fallbackUrls: string[]): ProviderCandidate[] {
     const healthyCandidates: Array<ProviderCandidate & { lastSuccessAt: number; index: number }> = [];
     const suppressedCandidates: ProviderCandidate[] = [];

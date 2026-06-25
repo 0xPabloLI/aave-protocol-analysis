@@ -230,6 +230,10 @@ export async function fetchBrevisDistributedSoFar(
   return result;
 }
 
+export function getBrevisCacheStats(): { chainCallCache: number } {
+  return { chainCallCache: chainCallCache.size };
+}
+
 export function __resetBrevisChainCallCacheForTests(): void {
   chainCallCache.clear();
 }
