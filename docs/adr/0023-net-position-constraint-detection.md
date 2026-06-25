@@ -150,13 +150,18 @@ buildModelChain(primaryConfig?, fetchFn)
 | 3 | Supply USDG V4 Spoke | AAVE_V4_SPOKE_SUPPLY | 1 | DUTCH_AUCTION | 未命中 | — |
 | 4 | Supply frxUSD V4 Hub | AAVE_V4_HUB_SUPPLY | 1 | AAVE_V4_NET_APR | **L0** (NET_DISTRIBUTION_TYPES) | ✅ 已命中 |
 | 5 | Supply frxUSD V4 Spoke | AAVE_V4_SPOKE_SUPPLY | 1 | DUTCH_AUCTION | 未命中 | — |
-| 6 | Lend USDtb | AAVE_SUPPLY | 1 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | 未命中 | hookType:14, LLM判定 supply |
+| 6 | Lend USDtb | AAVE_SUPPLY | 1 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | 未命中 | hookType:14, borrowBlacklist=true (identifier BORROW_BL + blacklist+hookType=14), ADR-0033 |
 | 7 | Borrow ETH cbETH | MULTILOG_DUTCH | 8453 | DUTCH_AUCTION | 未命中 | min(1,2) 跨资产配对，非 net position |
 | 8 | Borrow USDC Horizon | MULTILOG_DUTCH | 1 | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE | **L0.5** (1-2 compute) | net borrow |
 
 **L0.5 新增后**：#1 (Borrow USDT0) 和 #8 (Borrow USDC Horizon) 将被 L0.5 结构化规则捕获，不再依赖 LLM/regex。
 
 ## Changelog
+
+### 2026-06-25 Session
+- **AAV-958 borrowBlacklist 增强检测**：`isBorrowBl` 从 `identifier.includes('BORROW_BL')` 扩展为 `|| hasBlacklistWithBorrowHook(opp)`（params.blacklist + hookType=14）
+- **USDtb opp #6 更新**：borrowBlacklist=true 已通过双重检测路径自动识别，无需 LLM 判定
+- **ADR-0033**：跨协议 BORROW_BL offset 与 blacklist 自动识别设计决策
 
 ### 2026-06-22 Session
 - **distributionType 数据源记录**：opp 顶层始终为空，campaign/breakdown 级别有值；提取策略文档化
