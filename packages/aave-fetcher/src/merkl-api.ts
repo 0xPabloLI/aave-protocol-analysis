@@ -1593,8 +1593,16 @@ export async function processMerklData(
       ...(composedSubCampaigns && composedSubCampaigns.length > 0 && { composedSubCampaigns }),
     };
     
-    // 创建索引键：chainId + explorerAddress（protocolVersion 在匹配时过滤，不需要在 key 中）
-    const indexKey = `${opp.chainId}-${explorerAddress}`;
+    // 创建索引键：chainId + address
+    // V4 Spoke opportunities share the same explorerAddress (spoke pool contract) across
+    // all tokens on that spoke. Index by the underlying token (from tokens[0]) instead,
+    // so reserves match only Spoke opportunities for their own token — not every token
+    // on the same spoke. Falls back to explorerAddress if tokens[] is unavailable.
+    const isV4Spoke = isV4SpokeOpportunity(opp.type);
+    const indexAddress = isV4Spoke && opp.tokens?.[0]?.address
+      ? opp.tokens[0].address.toLowerCase()
+      : explorerAddress;
+    const indexKey = `${opp.chainId}-${indexAddress}`;
     
     if (!merklData[indexKey]) {
       merklData[indexKey] = [];
