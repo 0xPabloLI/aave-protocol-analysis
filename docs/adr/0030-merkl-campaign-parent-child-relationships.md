@@ -301,22 +301,32 @@ This is `DUTCH_AUCTION`:
 - TVL↑ → APR↓, TVL↓ → APR↑ (inverse TVL relationship, NOT time decay)
 - The "Dutch auction" name is misleading — it's actually a **constant-rate, variable-APR** model
 
-## Open Questions (Unresolved)
+## Open Questions (Resolved)
 
-### Composed Multiplier (Dutch Auction Decay)
+### Composed Multiplier (Dutch Auction Decay) — RESOLVED (2026-06-25)
 
 19 sub-campaigns have non-1.0x `composedMultiplier`. All belong to `MULTILOG_DUTCH` campaigns:
 
 | Opp | Chain | Compute | Sub Multipliers | APR |
 |---|---|---|---|---|
-| Lend sUSDe/USDe | Plasma | min(1,2) | 1.196x, 1.0x | 3.28% |
-| Lend sUSDe/USDe | Ethereum | min(1,2) | 1.196x, 1.0x | 3.05% |
+| Lend sUSDe/USDe | Plasma | min(1,2) | 1.196x, 1.0x | 3.50% |
+| Lend sUSDe/USDe | Ethereum | min(1,2) | 1.196x, 1.0x | 3.50% |
 | Lend sUSDe/USDe | Mantle | min(1,2) | 1.196x, 1.0x | 3.50% |
-| Borrow cbETH/ETH | Base | min(1,2) | 0.823x, 1.0x | 1.11% |
+| Borrow cbETH/ETH | Base | min(1,2) | 0.823x, 1.0x | 0.86% |
 
-The multiplier scales the Dutch auction reward rate. It appears to be a **time-dependent decay parameter** (starting at `composedMultiplier` and decaying toward 1.0x), but the exact decay formula is unknown — the engine code is proprietary. Our current code does not use `composedMultiplier` at all.
+**Resolution**: Merkl API returns `opp.apr` and `campaign.apr` as **already-computed final values** that include both `composedCampaignsCompute` and `composedMultiplier` effects. Our code correctly uses `campaign.apr / 100` — no modification to APR calculation logic is needed.
 
-**Interaction with `composedCampaignsCompute`**: Unknown whether multiplier is applied before or after the compute expression. Likely: `compute(multiplier × sub1_APR, sub2_APR)` but needs verification.
+**Evidence**:
+1. Compared all 6 LIVE composed opportunities: `opp.apr === campaign.apr` (100% match)
+2. Sub-campaign objects in `composedCampaigns[]` have no independent `apr`/`rate` field — only `composedMultiplier` and `rewardToken`
+3. Merkl app displayed APR matches API returned APR (e.g., cbETH/ETH = 0.86%)
+4. `composedMultiplier` is a **static initial value** (1e9 integer units: `1196000000` = 1.196x) — the current actual multiplier is computed by the proprietary Merkl engine internally
+
+**Interaction with `composedCampaignsCompute`**: RESOLVED — Merkl engine applies multiplier before compute internally and returns the final APR. We cannot and do not need to replicate this calculation.
+
+**Code change (AAV-1006)**: `composedMultiplier` now stored as human-readable float (`1.196` instead of `"1196000000"`) for debugging convenience. No APR calculation impact.
+
+Refs: AAV-948, AAV-1005, AAV-1006
 
 ### Hub/Spoke Double-Counting Risk in Our API — CONFIRMED WITH CODE EVIDENCE
 
@@ -414,5 +424,5 @@ Issues filed:
 - AAV-1004: Spoke-priority dedup via parentCampaignId (this revision)
 
 Open items:
-- Composed multiplier decay formula still unknown (engine is proprietary)
-- Need to verify if Merkl's returned `apr` at opportunity level already accounts for composed compute/multiplier
+- ~~Composed multiplier decay formula still unknown (engine is proprietary)~~ RESOLVED: Merkl API returns final APR, no client-side multiplier calculation needed
+- ~~Need to verify if Merkl's returned `apr` at opportunity level already accounts for composed compute/multiplier~~ RESOLVED: Verified `opp.apr === campaign.apr`, Merkl engine handles compute+multiplier internally
