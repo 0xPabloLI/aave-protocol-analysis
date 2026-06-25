@@ -209,6 +209,11 @@ describe('findMatchingMerklOpportunities — address-type-driven matching', () =
   const USDG_ADDR = '0xusdg';
   const FRXUSD_ADDR = '0xfrxusd';
 
+  // Pre-compute reserve ID keys (avoids inline function calls in object literals)
+  const usdgSpokeRid = v4ReserveId(1, SPOKE_ADDR, USDG_ADDR, HUB_ADDR);
+  const frxusdSpokeRid = v4ReserveId(1, SPOKE_ADDR, FRXUSD_ADDR, HUB_ADDR);
+  const usdgHubScope = v4HubScopeKey(1, USDG_ADDR, HUB_ADDR);
+
   const v4SpokeUSDG: MerklOpportunityData = {
     supply: [{ campaignApr: 0.06, campaignId: 'c-usdg', campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31' }],
     borrow: [],
@@ -217,7 +222,7 @@ describe('findMatchingMerklOpportunities — address-type-driven matching', () =
     chainId: 1,
     protocolVersion: 'v4',
     opportunityType: 'AAVE_V4_SPOKE_SUPPLY',
-    campaignReserveId: v4ReserveId(1, SPOKE_ADDR, USDG_ADDR, HUB_ADDR),
+    campaignReserveId: usdgSpokeRid,
   };
 
   const v4SpokeFRXUSD: MerklOpportunityData = {
@@ -228,7 +233,7 @@ describe('findMatchingMerklOpportunities — address-type-driven matching', () =
     chainId: 1,
     protocolVersion: 'v4',
     opportunityType: 'AAVE_V4_SPOKE_SUPPLY',
-    campaignReserveId: v4ReserveId(1, SPOKE_ADDR, FRXUSD_ADDR, HUB_ADDR),
+    campaignReserveId: frxusdSpokeRid,
   };
 
   const v4HubUSDG: MerklOpportunityData = {
@@ -239,7 +244,7 @@ describe('findMatchingMerklOpportunities — address-type-driven matching', () =
     chainId: 1,
     protocolVersion: 'v4',
     opportunityType: 'AAVE_V4_HUB_SUPPLY',
-    hubScopeKey: v4HubScopeKey(1, USDG_ADDR, HUB_ADDR),
+    hubScopeKey: usdgHubScope,
   };
 
   const v4SpokeUSDGBorrow: MerklOpportunityData = {
@@ -250,7 +255,7 @@ describe('findMatchingMerklOpportunities — address-type-driven matching', () =
     chainId: 1,
     protocolVersion: 'v4',
     opportunityType: 'AAVE_V4_SPOKE_BORROW',
-    campaignReserveId: v4ReserveId(1, SPOKE_ADDR, USDG_ADDR, HUB_ADDR),
+    campaignReserveId: usdgSpokeRid,
   };
 
   describe('V4 reserve ID matching — Spoke', () => {
@@ -273,7 +278,7 @@ describe('findMatchingMerklOpportunities — address-type-driven matching', () =
         merklData,
       );
       assert.equal(result.length, 1);
-      assert.equal(result[0]!.campaignReserveId, v4ReserveId(1, SPOKE_ADDR, USDG_ADDR, HUB_ADDR));
+      assert.equal(result[0]!.campaignReserveId, usdgSpokeRid);
     });
 
     it('matches frxUSD Spoke opp for frxUSD reserve (correct reserve ID)', () => {
@@ -289,7 +294,7 @@ describe('findMatchingMerklOpportunities — address-type-driven matching', () =
         merklData,
       );
       assert.equal(result.length, 1);
-      assert.equal(result[0]!.campaignReserveId, v4ReserveId(1, SPOKE_ADDR, FRXUSD_ADDR, HUB_ADDR));
+      assert.equal(result[0]!.campaignReserveId, frxusdSpokeRid);
     });
 
     it('rejects cross-token: USDG reserve does NOT get frxUSD Spoke', () => {
@@ -304,7 +309,7 @@ describe('findMatchingMerklOpportunities — address-type-driven matching', () =
         },
         merklData,
       );
-      assert.ok(!result.some(o => o.campaignReserveId === v4ReserveId(1, SPOKE_ADDR, FRXUSD_ADDR, HUB_ADDR)));
+      assert.ok(!result.some(o => o.campaignReserveId === frxusdSpokeRid));
     });
 
     it('rejects cross-hub: different hubAddress in reserveId', () => {
