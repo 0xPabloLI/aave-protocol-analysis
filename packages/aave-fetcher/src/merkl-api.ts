@@ -280,6 +280,10 @@ export interface MerklOpportunityData {
   composedCampaignsCompute?: string;
   composedSubCampaigns?: ComposedSubCampaign[];
   borrowBlacklist?: boolean;
+  /** Campaign params for V4 reserve ID matching (from opp.campaigns[0].params). */
+  underlyingTokenAddress?: string;
+  spokePoolAddress?: string;
+  hubContractAddress?: string;
 }
 
 /**
@@ -1544,6 +1548,18 @@ export async function processMerklData(
 
     const { composedCampaignsCompute, composedSubCampaigns } = extractComposedCampaignInfo(opp);
 
+    // Extract campaign params for V4 reserve ID matching (ADR-0018 reserve ID approach)
+    const firstParams = opp.campaigns?.[0]?.params;
+    const underlyingTokenAddress = typeof firstParams?.underlyingToken === 'string'
+      ? firstParams.underlyingToken.toLowerCase()
+      : undefined;
+    const spokePoolAddress = typeof firstParams?.spokeAddress === 'string'
+      ? firstParams.spokeAddress.toLowerCase()
+      : undefined;
+    const hubContractAddress = typeof firstParams?.hubAddress === 'string'
+      ? firstParams.hubAddress.toLowerCase()
+      : undefined;
+
     // 创建 opportunity 数据对象，根据 action 直接设置对应数组
     const opportunityData: MerklOpportunityData = {
       supply: opp.action === 'LEND' ? filteredBreakdowns : [],
@@ -1561,18 +1577,15 @@ export async function processMerklData(
       ...(isBorrowBl && { borrowBlacklist: true }),
       ...(composedCampaignsCompute && { composedCampaignsCompute }),
       ...(composedSubCampaigns && composedSubCampaigns.length > 0 && { composedSubCampaigns }),
+      ...(underlyingTokenAddress && { underlyingTokenAddress }),
+      ...(spokePoolAddress && { spokePoolAddress }),
+      ...(hubContractAddress && { hubContractAddress }),
     };
     
-    // 创建索引键：chainId + address
-    // V4 Spoke opportunities share the same explorerAddress (spoke pool contract) across
-    // all tokens on that spoke. Index by the underlying token (from tokens[0]) instead,
-    // so reserves match only Spoke opportunities for their own token — not every token
-    // on the same spoke. Falls back to explorerAddress if tokens[] is unavailable.
-    const isV4Spoke = isV4SpokeOpportunity(opp.type);
-    const indexAddress = isV4Spoke && opp.tokens?.[0]?.address
-      ? opp.tokens[0].address.toLowerCase()
-      : explorerAddress;
-    const indexKey = `${opp.chainId}-${indexAddress}`;
+    // 创建索引键：chainId + explorerAddress
+    // V4 Spoke opportunities are indexed by explorerAddress (spoke pool), same as before.
+    // Precise reserve ID matching is done in findMatchingMerklOpportunities using campaign params.
+    const indexKey = `${opp.chainId}-${explorerAddress}`;
     
     if (!merklData[indexKey]) {
       merklData[indexKey] = [];
@@ -1940,6 +1953,8 @@ export function findMatchingMerklOpportunities(
     aTokenAddress?: string | null;
     vTokenAddress?: string | null;
     spokeAddress?: string | null;
+    hubAddress?: string | null;
+    reserveId?: string;
   },
   merklData: Record<string, MerklOpportunityData[]>,
 ): MerklOpportunityData[] {
@@ -1957,10 +1972,26 @@ export function findMatchingMerklOpportunities(
     const matchingOpportunities = merklData[indexKey];
     if (matchingOpportunities?.length > 0) {
       for (const opp of matchingOpportunities) {
-        if (!seenOpportunities.has(opp)) {
-          seenOpportunities.add(opp);
-          matchedOpportunities.push(opp);
+        if (seenOpportunities.has(opp)) continue;
+
+        // V4 reserve ID matching (ADR-0018): when campaign params are available on the
+        // opportunity, filter by constructing the reserve ID from campaign params and
+        // matching against the reserve's identity. This prevents cross-token matching
+        // when multiple tokens share the same spoke pool (explorerAddress).
+        if (isV4 && item.reserveId) {
+          if (opp.spokePoolAddress && opp.underlyingTokenAddress && opp.hubContractAddress) {
+            // Spoke: construct full 4-component reserve ID: chainId:spoke:token:hub
+            const constructedReserveId = `${item.chainId}:${opp.spokePoolAddress}:${opp.underlyingTokenAddress}:${opp.hubContractAddress}`;
+            if (constructedReserveId !== item.reserveId) continue;
+          } else if (opp.underlyingTokenAddress && opp.hubContractAddress) {
+            // Hub: match by chainId + underlyingToken + hubAddress (no spoke in Hub params)
+            if (opp.underlyingTokenAddress !== item.tokenAddress.toLowerCase()) continue;
+            if (item.hubAddress && opp.hubContractAddress !== item.hubAddress.toLowerCase()) continue;
+          }
         }
+
+        seenOpportunities.add(opp);
+        matchedOpportunities.push(opp);
       }
     }
   }
