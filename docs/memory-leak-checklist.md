@@ -203,7 +203,10 @@ map.set(oraclePriceKey(r.chainId, r.tokenAddress, r.configId), hash);
 
 ### 线上内存监控（已部署）
 - 60s 间隔 `📊 Memory:` 日志：heap/rss/external + merkl cache sizes
-- RSS restart guard：`RSS_RESTART_THRESHOLD_MB=800`，超限自动 SIGTERM
+- RSS restart guard：`RSS_RESTART_THRESHOLD_MB` 可配置，当前设为 0（warn-only，不自动 SIGTERM），避免掩盖内存增长过程
+- Playwright RSS guard：本地 Playwright 启动前检查 `process.memoryUsage().rss`，超过 700MB 跳过启动 + warn log
+- Playwright 动态 import：`import { chromium }` 改为 `await import("playwright")`，减少启动时内存占用
+- `MERIT_ALLOW_LOCAL_PLAYWRIGHT=true`（默认），RSS guard 自动守卫而非硬禁用
 
 ### 验证泄漏是否修复
 - 需要 24h+ 的 `📊 Memory:` 日志，观察 heapUsed 是否有单调增长趋势

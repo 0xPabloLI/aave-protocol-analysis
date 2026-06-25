@@ -13,7 +13,7 @@ import {
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
 import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol, RuntimeReserveData, NetPositionConstraint } from '@internal/aave-shared-contracts';
-import { chainTokenKey, chainSymbolKey, getErrorCode, spokeKey } from '@internal/aave-shared-contracts';
+import { chainTokenKey, chainSymbolKey, getErrorCode, spokeKey, v4ReserveId, v4HubScopeKey } from '@internal/aave-shared-contracts';
 export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol } from '@internal/aave-shared-contracts';
 import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
@@ -280,10 +280,10 @@ export interface MerklOpportunityData {
   composedCampaignsCompute?: string;
   composedSubCampaigns?: ComposedSubCampaign[];
   borrowBlacklist?: boolean;
-  /** Campaign params for V4 reserve ID matching (from opp.campaigns[0].params). */
-  underlyingTokenAddress?: string;
-  spokePoolAddress?: string;
-  hubContractAddress?: string;
+  /** Pre-computed reserve ID for V4 Spoke matching (chainId:spoke:token:hub via v4ReserveId). */
+  campaignReserveId?: string;
+  /** Pre-computed hub scope key for V4 Hub matching (chainId:token:hub via v4HubScopeKey). */
+  hubScopeKey?: string;
 }
 
 /**
@@ -1548,17 +1548,14 @@ export async function processMerklData(
 
     const { composedCampaignsCompute, composedSubCampaigns } = extractComposedCampaignInfo(opp);
 
-    // Extract campaign params for V4 reserve ID matching (ADR-0018 reserve ID approach)
+    // Pre-compute V4 reserve ID keys for precise matching in findMatchingMerklOpportunities.
+    // Spoke: full 4-component (chainId:spoke:token:hub). Hub: 3-component (chainId:token:hub, no spoke).
     const firstParams = opp.campaigns?.[0]?.params;
-    const underlyingTokenAddress = typeof firstParams?.underlyingToken === 'string'
-      ? firstParams.underlyingToken.toLowerCase()
-      : undefined;
-    const spokePoolAddress = typeof firstParams?.spokeAddress === 'string'
-      ? firstParams.spokeAddress.toLowerCase()
-      : undefined;
-    const hubContractAddress = typeof firstParams?.hubAddress === 'string'
-      ? firstParams.hubAddress.toLowerCase()
-      : undefined;
+    const ut = typeof firstParams?.underlyingToken === 'string' ? firstParams.underlyingToken : undefined;
+    const sa = typeof firstParams?.spokeAddress === 'string' ? firstParams.spokeAddress : undefined;
+    const ha = typeof firstParams?.hubAddress === 'string' ? firstParams.hubAddress : undefined;
+    const campaignReserveId = sa && ut && ha ? v4ReserveId(opp.chainId, sa, ut, ha) : undefined;
+    const hubScopeKey = ut && ha ? v4HubScopeKey(opp.chainId, ut, ha) : undefined;
 
     // 创建 opportunity 数据对象，根据 action 直接设置对应数组
     const opportunityData: MerklOpportunityData = {
@@ -1577,9 +1574,8 @@ export async function processMerklData(
       ...(isBorrowBl && { borrowBlacklist: true }),
       ...(composedCampaignsCompute && { composedCampaignsCompute }),
       ...(composedSubCampaigns && composedSubCampaigns.length > 0 && { composedSubCampaigns }),
-      ...(underlyingTokenAddress && { underlyingTokenAddress }),
-      ...(spokePoolAddress && { spokePoolAddress }),
-      ...(hubContractAddress && { hubContractAddress }),
+      ...(campaignReserveId && { campaignReserveId }),
+      ...(hubScopeKey && { hubScopeKey }),
     };
     
     // 创建索引键：chainId + explorerAddress
@@ -1974,19 +1970,15 @@ export function findMatchingMerklOpportunities(
       for (const opp of matchingOpportunities) {
         if (seenOpportunities.has(opp)) continue;
 
-        // V4 reserve ID matching (ADR-0018): when campaign params are available on the
-        // opportunity, filter by constructing the reserve ID from campaign params and
-        // matching against the reserve's identity. This prevents cross-token matching
-        // when multiple tokens share the same spoke pool (explorerAddress).
+        // V4 reserve ID matching: Spoke opps pre-computed campaignReserveId (full 4-component)
+        // compared against the reserve's reserveId. Hub opps pre-computed hubScopeKey
+        // (3-component: chainId:token:hub) compared against the reserve's hubScopeKey.
+        // Falls through (kept) when no campaign params available.
         if (isV4 && item.reserveId) {
-          if (opp.spokePoolAddress && opp.underlyingTokenAddress && opp.hubContractAddress) {
-            // Spoke: construct full 4-component reserve ID: chainId:spoke:token:hub
-            const constructedReserveId = `${item.chainId}:${opp.spokePoolAddress}:${opp.underlyingTokenAddress}:${opp.hubContractAddress}`;
-            if (constructedReserveId !== item.reserveId) continue;
-          } else if (opp.underlyingTokenAddress && opp.hubContractAddress) {
-            // Hub: match by chainId + underlyingToken + hubAddress (no spoke in Hub params)
-            if (opp.underlyingTokenAddress !== item.tokenAddress.toLowerCase()) continue;
-            if (item.hubAddress && opp.hubContractAddress !== item.hubAddress.toLowerCase()) continue;
+          if (opp.campaignReserveId) {
+            if (opp.campaignReserveId !== item.reserveId) continue;
+          } else if (opp.hubScopeKey && item.hubAddress) {
+            if (opp.hubScopeKey !== v4HubScopeKey(item.chainId, item.tokenAddress, item.hubAddress)) continue;
           }
         }
 

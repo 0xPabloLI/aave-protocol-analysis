@@ -136,8 +136,8 @@ Railway 部署 FAILED 的根因：`8f237d6` 引入 `gen:openapi` 时 `writeFileS
 
 | 变量 | 值 |
 |------|---|
-| `RSS_RESTART_THRESHOLD_MB` | `0` (禁用，OOM 时 Railway 告警) |
-| `MERIT_ALLOW_LOCAL_PUPPETEER` | `true` |
+| `RSS_RESTART_THRESHOLD_MB` | `0` (warn-only，不自动 SIGTERM) |
+| `MERIT_ALLOW_LOCAL_PLAYWRIGHT` | `true` (RSS guard 700MB 自动守卫) |
 
 ---
 

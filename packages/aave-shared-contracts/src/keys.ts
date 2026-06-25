@@ -56,6 +56,15 @@ export function v4ReserveId(
   return `${chainId}:${normalizeAddress(spokeAddress)}:${normalizeAddress(tokenAddress)}:${normalizeAddress(hubAddress)}`;
 }
 
+/** 3-component key for Hub-level matching (no spoke — Hub applies across all spokes). */
+export function v4HubScopeKey(
+  chainId: number,
+  tokenAddress: string,
+  hubAddress: string,
+): string {
+  return `${chainId}:${normalizeAddress(tokenAddress)}:${normalizeAddress(hubAddress)}`;
+}
+
 export function aaveProReserveId(
   chainId: number,
   spokeAddress: string,
