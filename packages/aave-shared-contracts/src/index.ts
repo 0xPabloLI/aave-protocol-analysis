@@ -100,11 +100,17 @@ export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
 
 export interface BrevisCampaignItem extends CampaignGroup<BrevisCampaignBreakdown> {}
 
+export interface MerklBorrowHookProtocol {
+  protocol: number;
+  borrowBytesLike: string[];
+}
+
 export interface MerklCampaignAccess {
   campaignId: string;
   chainId: number;
   whitelist: string[];
   blacklist: string[];
+  borrowHookProtocols?: MerklBorrowHookProtocol[];
 }
 
 // ============================================================

@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { logger } from '../logger.js';
 import { getCoingeckoCategoriesSnapshot, getCoingeckoFdvSnapshot } from './coingeckoController.js';
 import { getForecastSnapshot, type ForecastSnapshot } from './merklForecastController.js';
+import type { MerklBorrowHookProtocol } from '@internal/aave-shared-contracts';
 import { getCampaignAccessSnapshot } from '../services/merklCampaignAccessService.js';
 
 type SideDataPayload = {
@@ -11,7 +12,7 @@ type SideDataPayload = {
   fdv?: { items: Array<{ symbol: string | null; fdvUsd: number | null }>; fetchedAt: string; staleTimeMs: number };
   forecast?: ForecastSnapshot;
   campaignAccess?: {
-    campaigns: Record<string, { chainId: number; whitelist: string[]; blacklist: string[] }>;
+    campaigns: Record<string, { chainId: number; whitelist: string[]; blacklist: string[]; borrowHookProtocols?: MerklBorrowHookProtocol[] }>;
     updatedAt: string;
   };
   errors?: Record<string, string>;

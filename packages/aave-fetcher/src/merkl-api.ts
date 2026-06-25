@@ -12,9 +12,9 @@ import {
   normalizeMerklCampaignTotalBudget,
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
-import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, RuntimeReserveData, NetPositionConstraint } from '@internal/aave-shared-contracts';
+import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol, RuntimeReserveData, NetPositionConstraint } from '@internal/aave-shared-contracts';
 import { chainTokenKey, chainSymbolKey, getErrorCode, spokeKey } from '@internal/aave-shared-contracts';
-export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess } from '@internal/aave-shared-contracts';
+export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol } from '@internal/aave-shared-contracts';
 import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
 const merklLimitedFetch = createMerklConcurrencyLimitedFetch(
@@ -1408,12 +1408,14 @@ export async function processMerklData(
         const params = campaign.params ?? {};
         const wl = Array.isArray(params.whitelist) ? (params.whitelist as string[]).filter(Boolean) : [];
         const bl = Array.isArray(params.blacklist) ? (params.blacklist as string[]).filter(Boolean) : [];
-        if (wl.length > 0 || bl.length > 0) {
+        const borrowHookProtocols = extractBorrowHookProtocols(params.hooks);
+        if (wl.length > 0 || bl.length > 0 || borrowHookProtocols.length > 0) {
           campaignAccessMap.set(id, {
             campaignId: id,
             chainId: opp.chainId ?? 0,
             whitelist: wl,
             blacklist: bl,
+            ...(borrowHookProtocols.length > 0 && { borrowHookProtocols }),
           });
         }
       })());
@@ -1568,7 +1570,7 @@ export async function processMerklData(
 
     const offsetTokenAddresses = extractOffsetTokenAddresses(opp);
     const crossMarketNpc = hasHookType14(opp);
-    const isBorrowBl = opp.identifier?.includes('BORROW_BL') ?? false;
+    const isBorrowBl = (opp.identifier?.includes('BORROW_BL') ?? false) || hasBlacklistWithBorrowHook(opp);
 
     const { composedCampaignsCompute, composedSubCampaigns } = extractComposedCampaignInfo(opp);
 
@@ -1700,10 +1702,53 @@ export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[
   return [...active, ...byType.values()];
 }
 
-function hasHookType14(opp: MerklOpportunity): boolean {
+export function hasHookType14(opp: MerklOpportunity): boolean {
   if (!Array.isArray(opp.campaigns)) return false;
   for (const c of opp.campaigns) {
     const hooks: unknown = c?.params?.hooks;
+    if (Array.isArray(hooks)) {
+      for (const h of hooks) {
+        if (typeof h === 'object' && h !== null && (h as any).hookType === 14) return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function extractBorrowHookProtocols(hooks: unknown): MerklBorrowHookProtocol[] {
+  if (!Array.isArray(hooks)) return [];
+  const protocols: MerklBorrowHookProtocol[] = [];
+  for (const h of hooks) {
+    if (typeof h === 'object' && h !== null && (h as any).hookType === 14) {
+      const hook = h as { protocol?: number; borrowBytesLike?: unknown };
+      const borrowBytesLike: string[] = [];
+      if (Array.isArray(hook.borrowBytesLike)) {
+        for (const b of hook.borrowBytesLike) {
+          if (typeof b === 'string' && b.trim()) {
+            borrowBytesLike.push(b);
+          }
+        }
+      }
+      if (borrowBytesLike.length > 0) {
+        protocols.push({
+          protocol: hook.protocol ?? -1,
+          borrowBytesLike,
+        });
+      }
+    }
+  }
+  return protocols;
+}
+
+export function hasBlacklistWithBorrowHook(opp: MerklOpportunity): boolean {
+  if (!Array.isArray(opp.campaigns)) return false;
+  for (const c of opp.campaigns) {
+    const params = c?.params;
+    if (!params || typeof params !== 'object') continue;
+    const bl = (params as any).blacklist;
+    const hasBlacklist = Array.isArray(bl) && bl.filter(Boolean).length > 0;
+    if (!hasBlacklist) continue;
+    const hooks: unknown = (params as any).hooks;
     if (Array.isArray(hooks)) {
       for (const h of hooks) {
         if (typeof h === 'object' && h !== null && (h as any).hookType === 14) return true;

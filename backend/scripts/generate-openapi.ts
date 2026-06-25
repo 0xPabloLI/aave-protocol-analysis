@@ -313,6 +313,17 @@ const sideDataMetaResponse = {
               chainId:   { type: 'number' },
               whitelist: { type: 'array', items: { type: 'string' } },
               blacklist: { type: 'array', items: { type: 'string' } },
+              borrowHookProtocols: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    protocol: { type: 'number' },
+                    borrowBytesLike: { type: 'array', items: { type: 'string' } },
+                  },
+                  required: ['protocol', 'borrowBytesLike'],
+                },
+              },
             },
             required: ['chainId', 'whitelist', 'blacklist'],
           },

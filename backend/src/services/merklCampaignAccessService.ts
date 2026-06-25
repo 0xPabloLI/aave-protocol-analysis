@@ -1,4 +1,4 @@
-import type { MerklCampaignAccess } from '@internal/aave-shared-contracts';
+import type { MerklCampaignAccess, MerklBorrowHookProtocol } from '@internal/aave-shared-contracts';
 import { logger } from '../logger.js';
 
 let snapshot: MerklCampaignAccess[] | null = null;
@@ -11,16 +11,17 @@ export function setCampaignAccessSnapshot(data: MerklCampaignAccess[]): void {
 }
 
 export function getCampaignAccessSnapshot(): {
-  campaigns: Record<string, { chainId: number; whitelist: string[]; blacklist: string[] }>;
+  campaigns: Record<string, { chainId: number; whitelist: string[]; blacklist: string[]; borrowHookProtocols?: MerklBorrowHookProtocol[] }>;
   updatedAt: string;
 } | null {
   if (!snapshot || !updatedAt) return null;
-  const campaigns: Record<string, { chainId: number; whitelist: string[]; blacklist: string[] }> = {};
+  const campaigns: Record<string, { chainId: number; whitelist: string[]; blacklist: string[]; borrowHookProtocols?: MerklBorrowHookProtocol[] }> = {};
   for (const entry of snapshot) {
     campaigns[entry.campaignId] = {
       chainId: entry.chainId,
       whitelist: entry.whitelist,
       blacklist: entry.blacklist,
+      ...(entry.borrowHookProtocols && entry.borrowHookProtocols.length > 0 && { borrowHookProtocols: entry.borrowHookProtocols }),
     };
   }
   return { campaigns, updatedAt };
