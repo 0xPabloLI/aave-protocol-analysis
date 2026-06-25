@@ -1,6 +1,6 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { chromium, type Browser, type BrowserContext } from "playwright";
+import type { Browser, BrowserContext } from "playwright";
 import { mkdir, readFile } from "fs/promises";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -2078,6 +2078,7 @@ async function getBrowser(): Promise<Browser> {
   }
 
   try {
+    const { chromium } = await import("playwright");
     _meritState.browserInstance = await chromium.launch({
       headless: true,
       args: [
@@ -2234,6 +2235,15 @@ async function extractMeritDynamicInfoWithBrowser(
   }
 
   if (!allowLocalPlaywrightFallback) {
+    return { campaignInfo: [], selfAuthDescription: null, source: "playwright" };
+  }
+
+  const PLAYWRIGHT_RSS_GUARD_MB = 700;
+  const rssBeforeLaunch = process.memoryUsage().rss / 1024 / 1024;
+  if (rssBeforeLaunch > PLAYWRIGHT_RSS_GUARD_MB) {
+    logger.warn(
+      `🛡️ Skipping Playwright fallback for ${key}: RSS ${Math.round(rssBeforeLaunch)}MB exceeds guard ${PLAYWRIGHT_RSS_GUARD_MB}MB`
+    );
     return { campaignInfo: [], selfAuthDescription: null, source: "playwright" };
   }
 
@@ -2539,7 +2549,7 @@ async function extractMeritDynamicInfoWithRender(
       `🔗 [Render Fallback] Connecting to remote browser at ${renderUrl} for ${key} (recentlyActive=${recentlyActive}, timeout=${cdpTimeout}ms)`
     );
 
-    browser = await chromium.connectOverCDP(wsEndpoint, {
+    browser = await (await import("playwright")).chromium.connectOverCDP(wsEndpoint, {
       timeout: cdpTimeout,
     });
 

@@ -299,9 +299,8 @@ setInterval(() => {
 
   if (RSS_RESTART_THRESHOLD_MB > 0 && mem.rss > RSS_RESTART_THRESHOLD_MB * 1024 * 1024) {
     logger.warn(
-      `🧹 RSS ${fmt(mem.rss)} exceeds threshold ${RSS_RESTART_THRESHOLD_MB}MB — initiating graceful restart`
+      `⚠️ RSS ${fmt(mem.rss)} exceeds threshold ${RSS_RESTART_THRESHOLD_MB}MB — no auto-restart (warn-only, investigate memory growth with cache stats above)`
     );
-    process.kill(process.pid, 'SIGTERM');
   }
 }, 60_000).unref();
 
