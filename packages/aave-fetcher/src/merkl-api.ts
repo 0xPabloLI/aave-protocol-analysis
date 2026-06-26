@@ -1511,7 +1511,7 @@ export async function processMerklData(
     const intensityCount = breakdowns.filter((b) => b.pointsPerThousandUsd !== undefined).length;
     if (intensityCount > 0) {
       const tvl = Number(opp.tvl) || 0;
-      logger.info(
+      logger.debug(
         `   📊 Opportunity ${opp.id}: ${intensityCount} breakdown(s) with reward-intensity fields, TVL: ${tvl}`
       );
     }
@@ -1628,7 +1628,7 @@ export async function processMerklData(
 
   const campaignAccessArr = Array.from(campaignAccessMap.values());
   if (campaignAccessArr.length > 0) {
-    logger.info(`📋 Campaign access: ${campaignAccessArr.length} campaigns with whitelist/blacklist data`);
+    logger.debug(`📋 Campaign access: ${campaignAccessArr.length} campaigns with whitelist/blacklist data`);
   }
 
   return { index: merklData, campaignAccess: campaignAccessArr };

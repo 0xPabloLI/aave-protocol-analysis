@@ -229,12 +229,15 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       let fetchResult: ReturnType<typeof getFetchResultOrDefault>;
 
       try {
+        const memBeforeFetch = process.memoryUsage();
         payload = await withTimeout(
           fetchMarketsData({ cachedConstraints }),
           MARKETS_FETCH_TIMEOUT_MS,
           'Markets fetch timeout'
         );
-        logger.info(`fetchMarketsData completed ${_phase()}`);
+        const memAfterFetch = process.memoryUsage();
+        const fetchHeapDelta = (memAfterFetch.heapUsed - memBeforeFetch.heapUsed) / (1024 * 1024);
+        logger.info(`fetchMarketsData completed ${_phase()} heap+${fetchHeapDelta.toFixed(1)}MB`);
         fetchResult = getFetchResultOrDefault(payload._metadata);
         v3Succeeded = fetchResult.v3.success;
         v4Succeeded = fetchResult.v4.success;
@@ -399,6 +402,8 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       }
       logger.info(`Oracle override done (${oracleOverrideCount} overrides) ${_phase()}`);
 
+      const memBeforeSnapshot = process.memoryUsage();
+
       const newSnapshot: MarketsSnapshot = {
         payload,
         fetchedAt: now,
@@ -433,6 +438,13 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       const v3FreshLabel = mergeResult.v3Fresh ? 'fresh' : 'stale';
       const v4FreshLabel = mergeResult.v4Fresh ? 'fresh' : 'stale';
       const elapsed = now - startTime;
+
+      const memAfterSnapshot = process.memoryUsage();
+      const snapshotHeapDelta = (memAfterSnapshot.heapUsed - memBeforeSnapshot.heapUsed) / (1024 * 1024);
+      if (Math.abs(snapshotHeapDelta) > 0.5) {
+        logger.info(`🔍 heap-diff [snapshot-assign] heap+${snapshotHeapDelta.toFixed(1)}MB`);
+      }
+
       logger.info(
         `✅ Markets refresh: ${mergeResult.mergedData.length} reserves ` +
         `(V3:${mergeResult.newStaleV3Data.length}/${v3FreshLabel}, V4:${mergeResult.newStaleV4Data.length}/${v4FreshLabel}) ` +

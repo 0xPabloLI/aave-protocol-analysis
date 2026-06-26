@@ -284,7 +284,7 @@ async function fetchBrevisAprs(
       // 处理后的索引数据
       index: brevisIndex
     });
-    logger.info(`💾 Brevis raw data saved to ${brevisRawPath}`);
+    logger.debug(`💾 Brevis raw data saved to ${brevisRawPath}`);
     
     logger.info(`✅ Indexed Brevis campaign data for ${Object.keys(brevisIndex).length} chain-token combinations`);
     logger.info(`   Supply campaigns: ${totalSupply}, Borrow campaigns: ${totalBorrow}`);
@@ -1050,7 +1050,7 @@ export async function runMarketsFetcher(): Promise<void> {
     await writeFile(csvPath, csvData, 'utf-8');
     
     const outputPath = join(DEBUG_DATA_DIR, 'v3-raw-sdk-response.json');
-    logger.info(`💾 V3 raw SDK data saved to ${outputPath}`);
+    logger.debug(`💾 V3 raw SDK data saved to ${outputPath}`);
     logger.info(`🧪 V3+V4 enriched JSON saved to ${debugFormattedJsonFullPath}`);
     logger.info(`📈 CSV data saved to ${csvPath}`);
     logger.info(`📁 Debug data dir: ${DEBUG_DATA_DIR}`);
@@ -1084,7 +1084,7 @@ export async function runMarketsFetcher(): Promise<void> {
       await mkdir(DEBUG_DATA_DIR, { recursive: true });
       const errorPath = join(DEBUG_DATA_DIR, 'aave-all-markets-error.json');
       await writeJsonAtomic(errorPath, errorData);
-      logger.info(`💾 Error data saved to ${errorPath}`);
+      logger.debug(`💾 Error data saved to ${errorPath}`);
     } catch (writeError) {
       logger.error('❌ Failed to save error data:', writeError);
     }
@@ -1280,7 +1280,7 @@ async function writeDebugSnapshot(
     await writeFile(join(DEBUG_DATA_DIR, 'v4-raw-sdk-response.json'), rawJson, 'utf-8');
   }
 
-  logger.info(
+  logger.debug(
     `💾 Debug snapshots written (enriched: ${enrichedData.length}, V3: ${v3Count}, V4: ${v4Count})`,
   );
 }

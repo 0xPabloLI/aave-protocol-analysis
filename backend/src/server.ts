@@ -27,6 +27,10 @@ import { runMigrations } from './services/autoMigrate.js';
 providerPool.configure({
   logFn: (level, msg, meta) => logger.log(level, msg, meta),
 });
+// Start periodic 30-min provider TTL cleanup so idle/low-traffic periods still
+// reclaim stale viem providers (each holds a connection pool). Without this,
+// cleanup only runs on the request path, and TTL eviction never fires when idle.
+const stopProviderCleanup = providerPool.startCleanupTimer();
 
 const app = express();
 app.set('etag', 'weak');
@@ -252,6 +256,7 @@ const shutdown = (signal: string) => {
   logger.info(`📴 Received ${signal}, shutting down gracefully…`);
   server.close((err) => {
     if (err) logger.warn('Error closing HTTP server:', err);
+    stopProviderCleanup();
     closePool()
       .catch((e) => logger.warn('Error closing DB pool:', e))
       .finally(() => process.exit(0));

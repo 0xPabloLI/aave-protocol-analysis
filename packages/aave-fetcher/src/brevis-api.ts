@@ -548,7 +548,7 @@ export class BrevisApiClient {
 
       const positionCap = extractPositionCapFromDescription(description);
 
-      logger.info(`📋 MetaMask campaign 描述提取成功: positionCap=${positionCap}`);
+      logger.debug(`📋 MetaMask campaign 描述提取成功: positionCap=${positionCap}`);
       logger.debug(`📋 完整描述: ${description}`);
 
       return { description, positionCap };

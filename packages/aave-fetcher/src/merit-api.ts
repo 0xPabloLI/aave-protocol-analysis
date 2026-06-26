@@ -1671,7 +1671,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       lastRoundRewards: serializeMeritRoundEstimates(meritRoundEstimates),
       cacheState: serializeMeritRoundEstimateCache(),
     });
-    logger.info(`💾 Merit Merkl raw data saved to ${meritMerklRawDataPath}`);
+    logger.debug(`💾 Merit Merkl raw data saved to ${meritMerklRawDataPath}`);
 
     await writeJsonAtomic(
       MERIT_CAMPAIGN_METADATA_CACHE_PATH,
@@ -1694,7 +1694,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
       campaignMetadataByKey: timeRanges,
       index: meritData,
     });
-    logger.info(`💾 Merit raw data saved to ${meritRawDataPath}`);
+    logger.debug(`💾 Merit raw data saved to ${meritRawDataPath}`);
 
     return meritData;
   } catch (error) {
@@ -1881,23 +1881,23 @@ export async function fetchAllMeritTimeRanges(
     );
   }
   if (keysToFetch.length > 0) {
-    logger.info("🧾 Merit campaigns to fetch (index -> key):");
+    logger.debug("🧾 Merit campaigns to fetch (index -> key):");
     keysToFetch.forEach((key, idx) => {
       const hasSelfAuth =
         meritAPRs[`self-${key}`] !== null &&
         meritAPRs[`self-${key}`] !== undefined;
-      logger.info(
+      logger.debug(
         `   • [${idx + 1}/${keysToFetch.length}] ${key}${hasSelfAuth ? " (has self-auth)" : ""}`
       );
     });
   }
   if (keysToSkip.length > 0) {
-    logger.info("🧾 Merit campaigns using cache (index -> key):");
+    logger.debug("🧾 Merit campaigns using cache (index -> key):");
     keysToSkip.forEach((key, idx) => {
       const hasSelfAuth =
         meritAPRs[`self-${key}`] !== null &&
         meritAPRs[`self-${key}`] !== undefined;
-      logger.info(
+      logger.debug(
         `   • [${idx + 1}/${keysToSkip.length}] ${key}${hasSelfAuth ? " (has self-auth)" : ""}`
       );
     });

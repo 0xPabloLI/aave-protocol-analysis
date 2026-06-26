@@ -34,7 +34,7 @@
 | 5 | onchainDataService | `POOL_CONFIGS` | Map | ✅ | ➖(静态初始化) | ➖(V3配置数量) | ➖(运行时不变) | 🟢 | 从V3_ENTRIES静态构建，数量=pool数(~20)，运行时不变 |
 | 6 | onchainDataService | `poolCache` | Map | ✅ | ✅(30min) | ✅(50) | ✅(cron覆盖+FIFO overflow) | 🟢 | |
 | 7 | onchainDataService | `v4SpokeCache` | Map | ✅ | ✅(30min) | ✅(80) | ✅(cron覆盖+FIFO overflow) | 🟢 | |
-| 8 | onchainDataService | `cachedHubMapping` | Map | ✅ | ✅(10min,整体置null) | ✅(MAX_HUB_ASSET_COUNT=200/hub) | ✅(TTL过期整体重建) | 🟢 | |
+| 8 | onchainDataService | `cachedHubMapping` | Map | ✅ | ✅(10min,整体置null) | ➖(hub数≤V4_SPOKE_CONFIGS,~20) | ✅(TTL过期整体重建) | 🟢 | 外层条目数由 V4_SPOKE_CONFIGS(~20 hub) 天然限定；MAX_HUB_ASSET_COUNT=200 是单个 hub 的 multicall 防护(非Map.size上限) |
 | 9 | oracleService | `cachedSnapshot` | 单条 | ✅ | ✅(cron每分钟) | ➖(单条) | ✅(替换) | 🟢 | |
 | 10 | oracleService | `leanPriceCache` | Map | ✅ | ✅(cron整量替换) | ✅(500) | ✅(整量替换+FIFO overflow) | 🟢 | |
 | 11 | oracleService | `V4_RESERVE_TOKEN_CACHE` | Map | ✅ | ✅(1h+2h惰性删) | ✅(100) | ✅(2×TTL惰性删+FIFO overflow) | 🟢 | |
@@ -51,32 +51,34 @@
 | 22 | seoController | `batchRateMap` | Map | ✅ | ✅(60s窗口清理) | ⚠️(无max) | ✅(setInterval删过期) | 🟡 | key=IP，窗口内理论无限，但60s清理保证短期不累积；单实例QPS低，实际IP并发<100 |
 | 23 | rateLimit | `store` | Map | ✅ | ✅(windowMs) | ⚠️(无max) | ✅(setInterval删过期) | 🟡 | 同上，IP限流场景，窗口清理足够 |
 | 24 | marketsApiSerialize | `_cachedFingerprint` | 单条 | ✅ | ➖(schema不变则永久有效) | ➖(单条) | ➖(计算后不变) | 🟢 | 纯计算结果的fingerprint，schema不变则永远有效 |
+| 25 | dbPool | `pool` | 单例PG Pool | ✅ | ➖(进程生命周期,pg自带连接复用) | ✅(max=3) | ➖(单例,进程退出释放) | 🟢 | 长连接池;max=3(每SSL conn ~5-10MB),已从5优化到3;POOL_BACKOFF_MS 60s防DB挂掉时socket堆积 |
+| 26 | gscService | `cachedClient` | 单例 | ✅ | ➖(懒加载后永久) | ➖(单条) | ➖(单例) | 🟢 | googleapis JWT+Webmasters client,单实例从不累积 |
 
 ### packages/aave-fetcher/src/
 
 | # | 文件 | 变量 | 类型 | Domain | TTL | Max | Shrink | 结论 | 不需要理由 |
 |---|------|------|------|--------|-----|-----|--------|------|-----------|
-| 25 | merit-api | `roundEstimateCache` | Map | ✅ | ✅(48h) | ✅(200) | ✅(TTL+FIFO) | 🟢 | |
-| 26 | merit-api | `campaignMetadataMemoryCache` | Record | ✅ | ➖(key跟campaign走) | ✅(500) | ✅(shrinkCampaignMetadataCache+FIFO) | 🟢 | |
-| 27 | merit-api | `meritCurrentBlockNumberCache` | Map | ✅ | ✅(60s) | ✅(50) | ✅(TTL+FIFO) | 🟢 | |
-| 28 | merit-api | `discoveredRedirectAliases` | Map | ✅ | ⚠️(无TTL) | ⚠️(无max) | ✅(fetchMeritData清空) | 🟡 | fetchMeritData开头clear()，每轮cron(~5min)清空；redirect数量有限(几十) |
-| 29 | token-price-resolver | `tokenPriceResolveCache` | Map | ✅ | ✅(24h/5min) | ✅(2000) | ✅(TTL+FIFO) | 🟢 | |
-| 30 | token-price-resolver | `tokenPriceResolveInFlight` | Map | ✅ | ➖(Promise完成即删) | ➖(并发有限) | ➖(Promise自删) | 🟢 | 短生命周期，同#3 |
-| 31 | token-price-resolver | `coingeckoPlatformCache` | 单条+Map | ✅ | ✅(24h) | ➖(Map=chainId数) | ✅(整量替换) | 🟢 | 内含Map按chainId，数量=链数(~20) |
-| 32 | merklLlmClient | `openrouterFreeModelsCache` | 单条 | ✅ | ➖(fetch后永久缓存) | ➖(单条) | ➖(有resetOpenRouterCache hook) | 🟢 | 模型列表，数量有限且稳定 |
-| 33 | merkl-api | `lastSuccessfulSnapshot` | 单条 | ✅ | ➖(cron替换) | ➖(单条) | ✅(替换) | 🟢 | |
-| 34 | cloudflare-browser | `workerDisabledResolvers` | Set | ✅ | ➖(Promise自删) | ➖(并发有限) | ✅(resolve后自删除) | 🟢 | 已从Array改为Set，resolve后自删除 |
-| 35 | brevis-distributed-so-far | `chainCallCache` | Map | ✅ | ✅(1h TTL+2h惰性删) | ✅(100) | ✅(pruneCache+FIFO) | 🟢 | tokenCumulativeRewards约4h变一次，1h TTL足够 |
+| 27 | merit-api | `roundEstimateCache` | Map | ✅ | ✅(48h) | ✅(200) | ✅(TTL+FIFO) | 🟢 | |
+| 28 | merit-api | `campaignMetadataMemoryCache` | Record | ✅ | ➖(key跟campaign走) | ✅(500) | ✅(shrinkCampaignMetadataCache+FIFO) | 🟢 | |
+| 29 | merit-api | `meritCurrentBlockNumberCache` | Map | ✅ | ✅(60s) | ✅(50) | ✅(TTL+FIFO) | 🟢 | |
+| 30 | merit-api | `discoveredRedirectAliases` | Map | ✅ | ⚠️(无TTL) | ⚠️(无max) | ✅(fetchMeritData清空) | 🟡 | fetchMeritData开头clear()，每轮cron(~5min)清空；redirect数量有限(几十) |
+| 31 | token-price-resolver | `tokenPriceResolveCache` | Map | ✅ | ✅(24h/5min) | ✅(2000) | ✅(TTL+FIFO) | 🟢 | |
+| 32 | token-price-resolver | `tokenPriceResolveInFlight` | Map | ✅ | ➖(Promise完成即删) | ➖(并发有限) | ➖(Promise自删) | 🟢 | 短生命周期，同#3 |
+| 33 | token-price-resolver | `coingeckoPlatformCache` | 单条+Map | ✅ | ✅(24h) | ➖(Map=chainId数) | ✅(整量替换) | 🟢 | 内含Map按chainId，数量=链数(~20) |
+| 34 | merklLlmClient | `primaryModelsCache` | 单条 | ✅ | ➖(fetch后永久缓存) | ➖(单条) | ➖(有resetPrimaryModelsCache hook) | 🟢 | 模型列表，数量有限且稳定 |
+| 35 | merkl-api | `_merklState` | 单例对象 | ✅ | ➖(cron替换) | ➖(单条) | ✅(替换) | 🟢 | 内含 lastSuccessfulSnapshot + lastFetchError,fetch后整体替换 |
+| 36 | cloudflare-browser | `workerDisabledResolvers` | Set | ✅ | ➖(Promise自删) | ➖(并发有限) | ✅(resolve后自删除) | 🟢 | 已从Array改为Set，resolve后自删除 |
+| 37 | brevis-distributed-so-far | `chainCallCache` | Map | ✅ | ✅(1h TTL+2h惰性删) | ✅(100) | ✅(pruneCache+FIFO) | 🟢 | tokenCumulativeRewards约4h变一次，1h TTL足够 |
 
 ### packages/aave-rpc-infra/src/
 
 | # | 文件 | 变量 | 类型 | Domain | TTL | Max | Shrink | 结论 | 不需要理由 |
 |---|------|------|------|--------|-----|-----|--------|------|-----------|
-| 35 | index (ProviderPool) | `providerByKey` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(pruneStaleProviders+FIFO overflow) | 🟢 | max=150 ≥ DynamicRpcCache.max(50) × 每chain平均URL数(~3)；FIFO overflow 保留内联（需联动删 endpointHealthByKey + providerLastUsedAt） |
-| 36 | index (ProviderPool) | `endpointHealthByKey` | Map | ✅ | ✅(随provider) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上，与providerByKey一一对应 |
-| 37 | index (ProviderPool) | `providerLastUsedAt` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上 |
-| 38 | index (ProviderPool) | `viemChainCache` | 单条 | ✅ | ➖(lazy init后永久) | ➖(单条) | ➖(不变) | 🟢 | |
-| 39 | dynamicRpcCache | `cache` | Map | ✅ | ✅(shrink: invalidate由ProviderPool health检测驱动) | ✅(50) | ✅(FIFO overflow) | 🟢 | key=chainId(~20)，domain严格有界；TTL不需要：URL列表是静态元数据不会变旧，失效靠ProviderPool检测到所有suppressed时主动invalidate(shrink层)；FIFO overflow是Size层兜底 |
+| 38 | index (ProviderPool) | `providerByKey` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(pruneStaleProviders+FIFO overflow) | 🟢 | max=150 ≥ DynamicRpcCache.max(50) × 每chain平均URL数(~3)；FIFO overflow 保留内联（需联动删 endpointHealthByKey + providerLastUsedAt） |
+| 39 | index (ProviderPool) | `endpointHealthByKey` | Map | ✅ | ✅(随provider) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上，与providerByKey一一对应 |
+| 40 | index (ProviderPool) | `providerLastUsedAt` | Map | ✅ | ✅(providerTtlMs=30min) | ✅(150) | ✅(随pruneStaleProviders) | 🟢 | 同上 |
+| 41 | index (ProviderPool) | `viemChainCache` | 单条 | ✅ | ➖(lazy init后永久) | ➖(单条) | ➖(不变) | 🟢 | |
+| 42 | dynamicRpcCache | `cache` | Map | ✅ | ✅(shrink: invalidate由ProviderPool health检测驱动) | ✅(50) | ✅(FIFO overflow) | 🟢 | key=chainId(~20)，domain严格有界；TTL不需要：URL列表是静态元数据不会变旧，失效靠ProviderPool检测到所有suppressed时主动invalidate(shrink层)；FIFO overflow是Size层兜底 |
 
 ### packages/aave-shared-contracts/src/ + aave-shared-config/src/
 
@@ -92,8 +94,8 @@
 | 7 | `v4SpokeCache` | max entries | max 80 (V4 spoke 数 ~40) |
 | 10 | `leanPriceCache` | max entries | max 500 (token 总数 ~300) |
 | 11 | `V4_RESERVE_TOKEN_CACHE` | max entries | max 100 (V4 spoke 数 ~40) |
-| 35-37 | `providerByKey` 等 3 个 | max entries | max 150 (≥ DynamicRpcCache.max × 每chain平均URL数) |
-| 39 | `DynamicRpcCache.cache` | max entries + shrink | max 50 (chainId 数 ~20，留 2.5× 余量)；shrink=invalidate(由ProviderPool health驱动) |
+| 38-40 | `providerByKey` 等 3 个 | max entries | max 150 (≥ DynamicRpcCache.max × 每chain平均URL数) |
+| 42 | `DynamicRpcCache.cache` | max entries + shrink | max 50 (chainId 数 ~20，留 2.5× 余量)；shrink=invalidate(由ProviderPool health驱动) |
 
 ### 🟡 可接受不补的 Cache（🟡 保持）
 
@@ -188,7 +190,8 @@ map.set(oraclePriceKey(r.chainId, r.tokenAddress, r.configId), hash);
 | `discoveredRedirectAliases` 累积 | 运行时累积，无清理 | 每次 fetchMeritData 清空 | `1b3368f` |
 | `oraclePriceHashes` shrink 失效 | key 格式不匹配（reserveId vs chainId\|tokenAddr\|configId） | 修 key 格式 + shrinkOraclePriceHashes | `1b3368f` |
 | `V4_RESERVE_TOKEN_CACHE` 无 eviction | 只有 TTL 检查，无过期删除 | 写入后遍历删除 2×TTL 的条目 | `1b3368f` |
-| `ProviderPool` 无定时清理 | 只在请求时清理，无请求则不清理 | startCleanupTimer 30min 周期 | `1b3368f` |
+| `ProviderPool` 无定时清理 | 只在请求时清理，无请求则不清理 | startCleanupTimer 30min 周期 | `1b3368f`（接线补于 server.ts，见下）|
+| `startCleanupTimer` 死代码 | 定义了但构造函数/server.ts 均未调用，空闲期 TTL 回收失效 | server.ts 在 configure() 后启动 + shutdown 时释放 disposer | pending |
 | Puppeteer browser 不关闭 | 空闲后未关闭，占 50-100MB | 2min idle timeout + _browserClosing guard | `0437905` |
 | `zeroBaselineFirstSeenAt` 无界 | Map 只写不删 | max 500 条 | `bf88358` |
 | PG pool 过大 | 5 个 SSL 连接各占 5-10MB native memory | 减到 3 | `e82bbe1` |

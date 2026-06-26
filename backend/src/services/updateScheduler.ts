@@ -14,6 +14,35 @@ import { runArchiveCheck } from './archiveService.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
+const MB = 1024 * 1024;
+
+function snapshotMem(): { heapUsed: number; heapTotal: number; rss: number; arrayBuffers: number } {
+  const m = process.memoryUsage();
+  return { heapUsed: m.heapUsed, heapTotal: m.heapTotal, rss: m.rss, arrayBuffers: m.arrayBuffers ?? 0 };
+}
+
+function logHeapDiff(label: string, before: ReturnType<typeof snapshotMem>): void {
+  const after = snapshotMem();
+  const dHeap = (after.heapUsed - before.heapUsed) / MB;
+  const dRss = (after.rss - before.rss) / MB;
+  const dAb = (after.arrayBuffers - before.arrayBuffers) / MB;
+  const absHeap = after.heapUsed / MB;
+  if (Math.abs(dHeap) > 0.5 || Math.abs(dRss) > 0.5) {
+    logger.info(
+      `🔍 heap-diff [${label}] heap=${dHeap >= 0 ? '+' : ''}${dHeap.toFixed(1)}MB rss=${dRss >= 0 ? '+' : ''}${dRss.toFixed(1)}MB ab=${dAb >= 0 ? '+' : ''}${dAb.toFixed(1)}MB → absHeap=${absHeap.toFixed(0)}MB`
+    );
+  }
+}
+
+async function withHeapTrace<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  const before = snapshotMem();
+  try {
+    return await fn();
+  } finally {
+    logHeapDiff(label, before);
+  }
+}
+
 /**
  * 启动定时更新任务
  * 所有数据使用 cron-write/API-read-only 模式
@@ -34,10 +63,9 @@ export function startUpdateScheduler(): void {
   logger.info('   • GSC daily fetch: every day at 06:00 UTC');
   logger.info('   • Archive-clean pipeline: every hour at :40');
 
-  // Markets refresh every minute at second 0, with short retry on failure
   schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
     try {
-      await refreshMarketsSnapshot();
+      await withHeapTrace('markets', refreshMarketsSnapshot);
     } catch (error) {
       logger.warn(
         `Markets refresh scheduler failed: ${error instanceof Error ? error.message : String(error)}`
@@ -45,10 +73,9 @@ export function startUpdateScheduler(): void {
     }
   });
 
-  // On-chain data refresh every minute at second 10 (per-chain concurrent, no overall timeout)
   schedule(BACKEND_SCHEDULE_CRON.onchainDataWarmEveryMinuteAtSecond10, async () => {
     try {
-      await refreshOnchainCache();
+      await withHeapTrace('onchain', refreshOnchainCache);
     } catch (error) {
       logger.warn(
         `On-chain cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
@@ -73,10 +100,9 @@ export function startUpdateScheduler(): void {
     }
   });
 
-  // Oracle price refresh every minute
   schedule(BACKEND_SCHEDULE_CRON.oraclePriceWarmEveryMinuteAtSecond0, async () => {
     try {
-      await refreshOracleCache();
+      await withHeapTrace('oracle', refreshOracleCache);
     } catch (error) {
       logger.warn(
         `Oracle cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
@@ -84,10 +110,9 @@ export function startUpdateScheduler(): void {
     }
   });
 
-  // Warm FDV cache every 15 minutes so frontend reads hot snapshots.
   schedule(BACKEND_SCHEDULE_CRON.coingeckoFdvWarmEveryFifteenMinutesAtSecond5, async () => {
     try {
-      await warmCoingeckoFdvCache();
+      await withHeapTrace('fdv', warmCoingeckoFdvCache);
     } catch (error) {
       logger.warn(
         `FDV warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
@@ -95,10 +120,9 @@ export function startUpdateScheduler(): void {
     }
   });
 
-  // Refresh campaign forecast snapshot every 10 minutes (cron-write, API-read-only pattern).
   schedule(BACKEND_SCHEDULE_CRON.campaignForecastWarmEveryTenMinutesAtSecond30, async () => {
     try {
-      const summary = await warmCampaignForecastStatesCache();
+      const summary = await withHeapTrace('forecast', warmCampaignForecastStatesCache);
       logger.info(
         `✅ Campaign forecast warm scheduler finished: requested=${summary.requested}, fulfilled=${summary.fulfilled}, failed=${summary.failed}`
       );
@@ -109,10 +133,9 @@ export function startUpdateScheduler(): void {
     }
   });
 
-  // Warm categories cache every 6 hours to reduce cold-start risk after failures.
   schedule(BACKEND_SCHEDULE_CRON.coingeckoCategoriesWarmEverySixHoursAtSecond10, async () => {
     try {
-      await warmCoingeckoCategoriesCache();
+      await withHeapTrace('categories', warmCoingeckoCategoriesCache);
     } catch (error) {
       logger.warn(
         `Categories warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
