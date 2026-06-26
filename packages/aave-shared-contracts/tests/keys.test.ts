@@ -12,6 +12,7 @@ import {
   chainSymbolKey,
   topologySortKey,
   v4ReserveId,
+  v4HubScopeKey,
   aaveProReserveId,
 } from '../src/keys.js';
 
@@ -211,6 +212,26 @@ describe('v4ReserveId', () => {
     const reserveId = v4ReserveId(1, '0xspoke', '0xtoken', '0xhub');
     const onchainKey = v4OnchainKey(1, '0xspoke', '0xtoken', '0xhub');
     assert.equal(reserveId, onchainKey);
+  });
+});
+
+describe('v4HubScopeKey', () => {
+  test('produces chainId:normalizedToken:normalizedHub format', () => {
+    assert.equal(v4HubScopeKey(1, '0xToken', '0xHub'), '1:0xtoken:0xhub');
+  });
+
+  test('normalizes mixed-case addresses to lowercase', () => {
+    assert.equal(v4HubScopeKey(1, '0xTOKEN', '0xHUB'), '1:0xtoken:0xhub');
+  });
+
+  test('different any-parameter produces different key', () => {
+    const k1 = v4HubScopeKey(1, '0xA', '0xB');
+    const k2 = v4HubScopeKey(2, '0xA', '0xB');
+    const k3 = v4HubScopeKey(1, '0xC', '0xB');
+    const k4 = v4HubScopeKey(1, '0xA', '0xD');
+    assert.notEqual(k1, k2);
+    assert.notEqual(k1, k3);
+    assert.notEqual(k1, k4);
   });
 });
 

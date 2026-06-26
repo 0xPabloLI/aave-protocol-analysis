@@ -1977,8 +1977,8 @@ export function findMatchingMerklOpportunities(
         if (isV4 && item.reserveId) {
           if (opp.campaignReserveId) {
             if (opp.campaignReserveId !== item.reserveId) continue;
-          } else if (opp.hubScopeKey && item.hubAddress) {
-            if (opp.hubScopeKey !== v4HubScopeKey(item.chainId, item.tokenAddress, item.hubAddress)) continue;
+          } else if (opp.hubScopeKey) {
+            if (opp.hubScopeKey !== v4HubScopeKey(item.chainId, item.tokenAddress, item.hubAddress ?? '')) continue;
           }
         }
 
