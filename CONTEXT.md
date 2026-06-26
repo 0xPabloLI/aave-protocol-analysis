@@ -168,6 +168,10 @@ _Avoid_: brevisSupplyIncentives, brevisBorrowIncentives
 Merkl CampaignGroup 级约束标志。当 `borrowBlacklist=true` 时，用户有 borrow position → 该 supply incentive 归零（二元排除）。由 Merkl opportunity 的 `identifier` 字段包含 `BORROW_BL` 后缀时触发。与 **netPositionConstraint**（按比例抵消）语义不同，不复用同一字段。
 _Avoid_: borrowBl, blConstraint
 
+**offsetLevel**:
+Net position constraint 的 offset 匹配范围，由 opportunityType 决定性映射（无运行时推导，无 fallback）。`'reserve'` = 精确匹配（V3 同 pool、V4 SPOKE_SUPPLY 同 reserve）；`'hub-cross-spoke'` = 匹配同 hub 同 token 下所有 spoke（V4 HUB_SUPPLY、AAVE_V4_NET_APR，因缺少 spokeAddress）。
+_Avoid_: spoke-cross-hub, cross-market（已移除的死路径）
+
 ### 价格
 
 **tokenPrice**:
