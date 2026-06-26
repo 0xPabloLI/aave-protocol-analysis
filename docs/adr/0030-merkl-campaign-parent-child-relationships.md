@@ -4,7 +4,7 @@
 
 **Date**: 2026-06-17
 
-**Updated**: 2026-06-25
+**Updated**: 2026-06-26
 
 ## Context
 
@@ -426,3 +426,25 @@ Issues filed:
 Open items:
 - ~~Composed multiplier decay formula still unknown (engine is proprietary)~~ RESOLVED: Merkl API returns final APR, no client-side multiplier calculation needed
 - ~~Need to verify if Merkl's returned `apr` at opportunity level already accounts for composed compute/multiplier~~ RESOLVED: Verified `opp.apr === campaign.apr`, Merkl engine handles compute+multiplier internally
+
+### V4 Reserve ID Matching (2026-06-26, cross-token fix)
+
+**Problem**: V4 Spoke opportunities sharing the same `explorerAddress` (spoke pool) caused cross-token matching. AAVE on Main Spoke incorrectly received USDG and frxUSD Spoke rewards because all three reserves shared spoke pool `0x94e7A5...` as their index key.
+
+**Root cause**: `findMatchingMerklOpportunities` used a coarse `chainId-explorerAddress` index. All V4 Spoke opps on the same spoke pool shared one index key, so every reserve on that spoke matched every Spoke opp regardless of token.
+
+**Fix**: Replaced the coarse index with precise 4-component reserve ID matching, same mechanism as the NPC `resolveOffsetReserveIds` code. Campaign params (`underlyingToken`, `spokeAddress`, `hubAddress`) from `opp.campaigns[0].params` are pre-computed into:
+- `campaignReserveId` (Spoke, full 4-component via `v4ReserveId`) — compared against `item.reserveId`
+- `hubScopeKey` (Hub, 3-component via `v4HubScopeKey`) — compared against reserve's `chainId:token:hub`
+
+Index reverted to `explorerAddress` (broad lookup); the reserve ID filter provides precision. Falls back to keeping opps when no campaign params are available.
+
+**Shared utilities**: Uses `v4ReserveId` and new `v4HubScopeKey` from `keys.ts` (shared-contracts), centralizing reserve ID construction. Hub opps filtered even when `item.hubAddress` is missing (uses `item.hubAddress ?? ''`).
+
+**Code review fixes** (P2):
+- Hub opp filter: removed `item.hubAddress` guard so Hub opps are always filtered (previously bypassed when reserve lacked `hubAddress` field)
+- Added `v4HubScopeKey` unit tests in `keys.test.ts` (format, normalization, per-parameter distinctness)
+
+**Verified via dev server**: AAVE on Main Spoke `merklSupplys=0`, USDG and frxUSD get correct Spoke data on Main Spoke, Hub data on other spokes. `parentCampaignId` leak: 0.
+
+Commits: `55feedd` (reserve ID matching), `a3f2a2c` (refactor to pre-computed keys), `2597bc2` (test fix), `f4b6371` (code review fixes)
