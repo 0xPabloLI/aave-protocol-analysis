@@ -117,7 +117,10 @@ jobs:
           BUILD_ROOT=$?
           npm run build -w aave-dashboard-backend
           BUILD_BACKEND=$?
-          npm audit --omit=dev --audit-level=moderate
+          # Use the SAME gate as CI (`npm run audit`): root high + backend moderate,
+          # with the shared GHSA allowlist. Mirroring CI guarantees we never open a
+          # PR that the canonical security-audit job will reject.
+          npm run audit
           AUDIT=$?
           if [ "$BUILD_ROOT" -eq 0 ] && [ "$BUILD_BACKEND" -eq 0 ] && [ "$AUDIT" -eq 0 ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
@@ -203,4 +206,66 @@ jobs:
               );
             } catch (error) {
               core.warning(`Enable auto-merge failed for PR #${prNumber}: ${error.message}`);
+            }
+
+      # B2: When automated remediation cannot produce a passing fix (verify failed),
+      # `npm audit fix` is the wrong tool for this repo's override-based vuln pattern.
+      # Escalate to a human/agent via an issue instead of silently doing nothing.
+      - name: Read audit output for escalation
+        if: steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true'
+        id: audit-out
+        run: |
+          {
+            echo 'report<<AUDIT_EOF'
+            echo '## Root audit (audit-level=high)'
+            echo '```'
+            cat /tmp/_audit1 2>/dev/null | tail -60 || echo '(no root audit output)'
+            echo '```'
+            echo '## Backend audit (audit-level=moderate)'
+            echo '```'
+            cat /tmp/_audit2 2>/dev/null | tail -60 || echo '(no backend audit output)'
+            echo '```'
+            echo AUDIT_EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Escalate via issue when remediation fails
+        if: steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const branch = '${{ steps.branch.outputs.name }}';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const title = `Auto-remediation could not fix CI security audit on \`${branch}\``;
+            const marker = '<!-- ci-auto-remediation-failed -->';
+            const body = [
+              marker,
+              `Automated \`npm audit fix\` could not produce a fix that passes the canonical \`npm run audit\` gate on \`${branch}\`.`,
+              '',
+              'This repo fixes transitive vulnerabilities via `overrides` in `package.json`, which `npm audit fix` cannot do correctly. A human or agent should bump the relevant `overrides` (root and/or `backend`) to safe versions, as in PR #136.',
+              '',
+              `Remediation run: ${runUrl}`,
+              '',
+              '<details><summary>Audit output</summary>',
+              '',
+              `${{ steps.audit-out.outputs.report }}`,
+              '',
+              '</details>',
+            ].join('\n');
+
+            const existing = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'ci-auto-remediation',
+            });
+            const found = existing.data.find((i) => i.body && i.body.includes(marker) && i.title === title);
+            if (found) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: found.number,
+                body: `Remediation failed again on \`${branch}\`.\n\nRun: ${runUrl}`,
+              });
+              core.notice(`Updated existing escalation issue #${found.number}`);
+            } else {
+              const created = await github.rest.issues.create({
+                owner, repo, title, body, labels: ['ci-auto-remediation', 'dependencies'],
+              });
+              core.notice(`Opened escalation issue #${created.data.number}`);
             }
