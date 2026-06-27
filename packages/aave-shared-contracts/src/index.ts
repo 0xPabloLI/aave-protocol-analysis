@@ -143,6 +143,8 @@ export interface RuntimeReserveData {
   deficit?: string;
   supplied?: string;
   borrowed?: string;
+  hubBorrowed?: string;
+  hubSupplied?: string;
   liquidity?: string;
   protocolFee?: number;
   slopeBelowOptimal?: number;
@@ -257,6 +259,8 @@ export const EXPECTED_RUNTIME_FIELDS = [
   'deficit',
   'supplied',
   'borrowed',
+  'hubBorrowed',
+  'hubSupplied',
   'liquidity',
   'protocolFee',
   'slopeBelowOptimal',

@@ -92,7 +92,7 @@ function scaleGroupedCampaignsWithContext<
 
 const PASSTHROUGH_FIELDS: readonly (keyof RuntimeReserveData)[] = [
   'tokenPrice', 'utilizationPct', 'aTokenAddress', 'vTokenAddress',
-  'liquidity', 'hubBorrowed', 'borrowed', 'supplied', 'supplyCap', 'borrowCap', 'deficit',
+  'liquidity', 'hubBorrowed', 'hubSupplied', 'borrowed', 'supplied', 'supplyCap', 'borrowCap', 'deficit',
   'hubId', 'hubName', 'spokeId', 'spokeName',
 ] as const;
 

@@ -131,6 +131,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     const utilizationPct = percentValueToPercent(a?.summary?.utilizationRate);
     const liquidity = a?.summary?.availableLiquidity?.amount?.onChainValue?.toString?.() ?? undefined;
     const hubBorrowed = a?.summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined;
+    const hubSupplied = a?.summary?.supplied?.amount?.onChainValue?.toString?.() ?? undefined;
 
     const protocolFee = percentValueToPercent(a?.settings?.liquidityFee);
     const slopeBelowOptimal = percentValueToPercent(a?.settings?.slopeBelowOptimal);
@@ -176,6 +177,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(decimals !== undefined && decimals !== 18 ? { decimals } : {}),
       ...(liquidity ? { liquidity } : {}),
       ...(hubBorrowed ? { hubBorrowed } : {}),
+      ...(hubSupplied ? { hubSupplied } : {}),
       ...(borrowed ? { borrowed } : {}),
       ...(supplied ? { supplied } : {}),
       ...(supplyCap ? { supplyCap } : {}),
