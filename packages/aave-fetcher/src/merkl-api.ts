@@ -151,6 +151,7 @@ interface MerklEmbeddedCampaign {
   distributionType?: string;
   parentCampaignId?: string;
   rootCampaignId?: string;
+  rewardToken?: { symbol?: string; name?: string; id?: string };
 }
 
 export interface MerklCampaignDetails {
@@ -1159,12 +1160,12 @@ export function merklPointsFieldsFromBreakdownValue(
 }
 
 export type MerklRewardsBreakdownForIntensity = {
-  token?: { type?: string; symbol?: string; name?: string; icon?: string };
+  token?: { type?: string; symbol?: string; name?: string; icon?: string; id?: string };
 };
 
 export function extractRewardTokenFields(
   token?: MerklRewardsBreakdownForIntensity['token']
-): { rewardTokenSymbol?: string; rewardTokenIconUrl?: string } {
+): { rewardTokenSymbol?: string; rewardTokenIconUrl?: string; rewardTokenId?: string } {
   if (!token) return {};
   return {
     ...(typeof token.symbol === 'string' && token.symbol
@@ -1172,6 +1173,9 @@ export function extractRewardTokenFields(
       : {}),
     ...(typeof token.icon === 'string' && token.icon
       ? { rewardTokenIconUrl: token.icon }
+      : {}),
+    ...(typeof token.id === 'string' && token.id
+      ? { rewardTokenId: token.id }
       : {}),
   };
 }
@@ -1539,6 +1543,40 @@ export async function processMerklData(
       });
     }
 
+    const coveredCampaignIds = new Set(breakdowns.map(b => b.campaignId));
+    if (Array.isArray(opp.campaigns)) {
+      let stubCount = 0;
+      let checkedCount = 0;
+      for (const campaign of opp.campaigns) {
+        const cId = String(campaign.id || '').trim();
+        if (!cId || coveredCampaignIds.has(cId)) continue;
+        const details = campaignDetailsCache.get(cId);
+        checkedCount++;
+        if (!details) continue;
+        if (!isRecentlyEnded(details.endedAt)) continue;
+        const type = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
+        const rtSymbol = typeof campaign.rewardToken?.symbol === 'string' && campaign.rewardToken.symbol
+          ? campaign.rewardToken.symbol : undefined;
+        const rtId = typeof campaign.rewardToken?.id === 'string' && campaign.rewardToken.id
+          ? campaign.rewardToken.id : undefined;
+        breakdowns.push({
+          campaignApr: 0,
+          campaignStartedAt: details.startedAt,
+          campaignEndedAt: details.endedAt,
+          campaignId: cId,
+          ...(type && { campaignType: type }),
+          ...(rtSymbol && { rewardTokenSymbol: rtSymbol }),
+          ...(rtId && { rewardTokenId: rtId }),
+          ...(details.parentCampaignId && { parentCampaignId: details.parentCampaignId }),
+        });
+        coveredCampaignIds.add(cId);
+        stubCount++;
+      }
+      if (stubCount > 0) {
+        logger.debug(`   Opp ${opp.id}: ${stubCount} recently-ended stub(s) added from ${checkedCount} uncovered`);
+      }
+    }
+
     const intensityCount = breakdowns.filter((b) => b.pointsPerThousandUsd !== undefined).length;
     if (intensityCount > 0) {
       const tvl = Number(opp.tvl) || 0;
@@ -1697,16 +1735,16 @@ export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[
   const active = breakdowns.filter(b =>
     !b.campaignEndedAt || new Date(b.campaignEndedAt).getTime() >= nowMs
   );
-  const byType = new Map<string, MerklCampaignBreakdown>();
+  const byRewardToken = new Map<string, MerklCampaignBreakdown>();
   for (const b of breakdowns) {
     if (!isRecentlyEnded(b.campaignEndedAt, nowMs)) continue;
-    const type = b.campaignType ?? 'UNKNOWN';
-    const existing = byType.get(type);
+    const key = b.rewardTokenId ?? b.rewardTokenSymbol ?? b.campaignType ?? 'UNKNOWN';
+    const existing = byRewardToken.get(key);
     if (!existing || new Date(b.campaignEndedAt!).getTime() > new Date(existing.campaignEndedAt!).getTime()) {
-      byType.set(type, b);
+      byRewardToken.set(key, b);
     }
   }
-  return [...active, ...byType.values()];
+  return [...active, ...byRewardToken.values()];
 }
 
 export function hasHookType14(opp: MerklOpportunity): boolean {

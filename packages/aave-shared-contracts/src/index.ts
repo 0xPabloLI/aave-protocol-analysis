@@ -95,6 +95,7 @@ export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   pointsPerThousandUsd?: number;
   rewardTokenSymbol?: string;
   rewardTokenIconUrl?: string;
+  rewardTokenId?: string;
   campaignType?: ForecastCampaignTypeLite;
   totalBudget?: number;
   aprCap?: number | null;

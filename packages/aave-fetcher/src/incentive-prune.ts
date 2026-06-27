@@ -42,6 +42,7 @@ function pruneMerklBreakdown(b: MerklCampaignBreakdown): MerklCampaignBreakdown 
     ...(b.pointsPerThousandUsd !== undefined ? { pointsPerThousandUsd: b.pointsPerThousandUsd } : {}),
     ...(b.rewardTokenSymbol ? { rewardTokenSymbol: b.rewardTokenSymbol } : {}),
     ...(b.rewardTokenIconUrl ? { rewardTokenIconUrl: b.rewardTokenIconUrl } : {}),
+    ...(b.rewardTokenId ? { rewardTokenId: b.rewardTokenId } : {}),
     ...(b.campaignType ? {
       campaignType: b.campaignType,
       totalBudget: b.totalBudget,

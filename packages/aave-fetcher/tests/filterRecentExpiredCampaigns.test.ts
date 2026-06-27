@@ -6,7 +6,7 @@ import { filterRecentExpiredBrevis } from '../src/brevis-api.js';
 import type { MerklCampaignBreakdown, MeritCampaignGroup } from '@internal/aave-shared-contracts';
 
 describe('filterRecentExpiredCampaigns (Merkl)', () => {
-  it('5条DUTCH_AUCTION过期 → 仅保留endDate最大的1条', () => {
+  it('5条同rewardTokenSymbol的DUTCH_AUCTION过期 → 仅保留endDate最大的1条', () => {
     const now = new Date();
     const past = (days: number) => new Date(now.getTime() - days * 86400000).toISOString();
     const breakdowns: MerklCampaignBreakdown[] = Array.from({ length: 5 }, (_, i) => ({
@@ -15,6 +15,7 @@ describe('filterRecentExpiredCampaigns (Merkl)', () => {
       campaignEndedAt: past(i + 1),
       campaignId: `expired-${i}`,
       campaignType: 'DUTCH_AUCTION' as const,
+      rewardTokenSymbol: 'WXPL',
     }));
     const result = filterRecentExpiredCampaigns(breakdowns);
     assert.equal(result.length, 1);
@@ -28,15 +29,30 @@ describe('filterRecentExpiredCampaigns (Merkl)', () => {
     const breakdowns: MerklCampaignBreakdown[] = [
       { campaignApr: 0.02, campaignStartedAt: past(30), campaignEndedAt: future(10), campaignId: 'active-1', campaignType: 'DUTCH_AUCTION' },
       { campaignApr: 0.01, campaignStartedAt: past(30), campaignEndedAt: future(5), campaignId: 'active-2', campaignType: 'DUTCH_AUCTION' },
-      { campaignApr: 0.005, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: 'expired-1', campaignType: 'DUTCH_AUCTION' },
-      { campaignApr: 0.003, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: 'expired-2', campaignType: 'DUTCH_AUCTION' },
-      { campaignApr: 0.004, campaignStartedAt: past(30), campaignEndedAt: past(3), campaignId: 'expired-3', campaignType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
+      { campaignApr: 0.005, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: 'expired-1', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
+      { campaignApr: 0.003, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: 'expired-2', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
+      { campaignApr: 0.004, campaignStartedAt: past(30), campaignEndedAt: past(3), campaignId: 'expired-3', campaignType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE', rewardTokenSymbol: 'USDe' },
     ];
     const result = filterRecentExpiredCampaigns(breakdowns);
     assert.equal(result.filter(b => b.campaignId!.startsWith('active')).length, 2);
     assert.equal(result.filter(b => b.campaignId!.startsWith('expired')).length, 2);
     assert.ok(result.find(b => b.campaignId === 'expired-1'));
     assert.ok(result.find(b => b.campaignId === 'expired-3'));
+  });
+
+  it('同campaignType不同rewardToken → 各保留1条', () => {
+    const now = new Date();
+    const past = (days: number) => new Date(now.getTime() - days * 86400000).toISOString();
+    const breakdowns: MerklCampaignBreakdown[] = [
+      { campaignApr: 0.01, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: 'wxpl-1', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
+      { campaignApr: 0.02, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: 'wxpl-2', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
+      { campaignApr: 0.03, campaignStartedAt: past(30), campaignEndedAt: past(2), campaignId: 'agho-1', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'aGHO' },
+      { campaignApr: 0.04, campaignStartedAt: past(30), campaignEndedAt: past(6), campaignId: 'agho-2', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'aGHO' },
+    ];
+    const result = filterRecentExpiredCampaigns(breakdowns);
+    assert.equal(result.length, 2);
+    assert.ok(result.find(b => b.campaignId === 'wxpl-1'));
+    assert.ok(result.find(b => b.campaignId === 'agho-1'));
   });
 
   it('无过期campaign → 原样返回', () => {
@@ -49,7 +65,7 @@ describe('filterRecentExpiredCampaigns (Merkl)', () => {
     assert.equal(result.length, 1);
   });
 
-  it('campaignType缺失 → 归为UNKNOWN分组', () => {
+  it('rewardTokenSymbol缺失 → fallback到campaignType分组', () => {
     const now = new Date();
     const past = (days: number) => new Date(now.getTime() - days * 86400000).toISOString();
     const breakdowns: MerklCampaignBreakdown[] = [

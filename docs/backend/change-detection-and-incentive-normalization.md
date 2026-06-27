@@ -369,7 +369,7 @@ Merkl LIVE opportunities 中包含已过期 campaign（实测 26 个 LIVE opp �
 
 ### 过滤策略
 
-对每个 (opportunity, campaignType)，只保留**最近一条过期**的 campaign：
+对每个 (opportunity, rewardTokenId)，只保留**最近一条过期**的 campaign。Merkl UI 按 rewardToken 分组展示，同 opp 同 campaignType 但不同 rewardToken 的 campaign 是不同"种"，应各保留一条。`rewardTokenSymbol` 在同 opp 内有碰撞（MEGA 3个ID、aManWMNT/frxUSD/USDG 各2个），因此首选 `rewardTokenId` 作为去重 key。
 
 ```ts
 function filterRecentExpired(breakdowns: MerklCampaignBreakdown[]): MerklCampaignBreakdown[] {
@@ -377,27 +377,27 @@ function filterRecentExpired(breakdowns: MerklCampaignBreakdown[]): MerklCampaig
   const active = breakdowns.filter(b => !b.campaignEndedAt || new Date(b.campaignEndedAt) >= now);
   const expired = breakdowns.filter(b => b.campaignEndedAt && new Date(b.campaignEndedAt) < now);
   
-  // 按 campaignType 分组，每组只保留 endDate 最大的
-  const byType = new Map<string, MerklCampaignBreakdown>();
+  // 按 rewardTokenId（首选）→ rewardTokenSymbol → campaignType 分组，每组只保留 endDate 最大的
+  const byKey = new Map<string, MerklCampaignBreakdown>();
   for (const b of expired) {
-    const type = b.campaignType ?? 'UNKNOWN';
-    const existing = byType.get(type);
+    const key = b.rewardTokenId ?? b.rewardTokenSymbol ?? b.campaignType ?? 'UNKNOWN';
+    const existing = byKey.get(key);
     if (!existing || new Date(b.campaignEndedAt) > new Date(existing.campaignEndedAt)) {
-      byType.set(type, b);
+      byKey.set(key, b);
     }
   }
   
-  return [...active, ...byType.values()];
+  return [...active, ...byKey.values()];
 }
 ```
 
-121 条 → ~25 条（每个有过期 campaign 的 opportunity 保留 1 条/类型）。
+121 条 → ~32 条（每个有过期 campaign 的 opportunity 保留 1 条/rewardToken）。
 
 ### fetcher 改动
 
 | 文件 | 改动 |
 |------|------|
-| `merkl-api.ts` | `filterExpiredCampaigns()` → `filterRecentExpiredCampaigns()`，保留最近一条过期 |
+| `merkl-api.ts` | `filterExpiredCampaigns()` → `filterRecentExpiredCampaigns()`，按 rewardTokenId 去重保留最近一条过期 |
 | `merit-api.ts` | `isMeritCampaignExpired()` → 改为保留最近一条过期的 merit round |
 | `brevis-api.ts` | Brevis 过滤 → 同理保留最近一条过期 |
 
