@@ -53,6 +53,7 @@
 | 24 | marketsApiSerialize | `_cachedFingerprint` | 单条 | ✅ | ➖(schema不变则永久有效) | ➖(单条) | ➖(计算后不变) | 🟢 | 纯计算结果的fingerprint，schema不变则永远有效 |
 | 25 | dbPool | `pool` | 单例PG Pool | ✅ | ➖(进程生命周期,pg自带连接复用) | ✅(max=3) | ➖(单例,进程退出释放) | 🟢 | 长连接池;max=3(每SSL conn ~5-10MB),已从5优化到3;POOL_BACKOFF_MS 60s防DB挂掉时socket堆积 |
 | 26 | gscService | `cachedClient` | 单例 | ✅ | ➖(懒加载后永久) | ➖(单条) | ➖(单例) | 🟢 | googleapis JWT+Webmasters client,单实例从不累积 |
+| 26b | server.ts (undici) | `globalDispatcher` | 全局单例 | ✅ | ✅(keepAliveTimeout=30s) | ✅(connections=10/host) | ✅(连接超时自动关闭) | 🟢 | 限制undici TLS连接池;之前默认无限制导致native memory(OpenSSL缓冲区)持续累积~14MB/h |
 
 ### packages/aave-fetcher/src/
 

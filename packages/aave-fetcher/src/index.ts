@@ -899,6 +899,8 @@ async function fetchRawMarketData(): Promise<MarketData> {
   return marketData;
 }
 
+// TEMP(memory-leak-diag): rss-diff helpers for diagnosing native memory leak.
+// Remove or gate behind env var once leak is confirmed fixed.
 const MB = 1024 * 1024;
 function rssDelta(label: string, beforeRss: number): number {
   const after = process.memoryUsage().rss;
@@ -1211,18 +1213,14 @@ export async function fetchMarketsData(options?: {
   
   const { meritPromise, merklPromise, brevisPromise } = launchIncentiveFetches(reserveTokenPriceByChainAndAddress, baseDataset);
 
+  // Wrap each promise with rss-diff (baseline is pre-incentive; all three share the same baseline
+  // since they run concurrently, so each rss-diff shows the absolute delta from that shared baseline).
   const meritDone = meritPromise.then(v => { rssDelta('merit-done', rssMark); return v; });
   const merklDone = merklPromise.then(v => { rssDelta('merkl-done', rssMark); return v; });
   const brevisDone = brevisPromise.then(v => { rssDelta('brevis-done', rssMark); return v; });
 
-  const [meritSettled, merklSettled, brevisSettled] = await Promise.allSettled([meritDone, merklDone, brevisDone]);
+  const { merit: meritData, merkl: merklData, brevis: brevisData, merklResult, brevisResult } = await awaitIncentiveResults(meritDone, merklDone, brevisDone);
   rssMark = process.memoryUsage().rss;
-
-  const meritData: MeritDataIndex = meritSettled.status === 'fulfilled' ? meritSettled.value : {};
-  const merklResult: MerklProcessedData = merklSettled.status === 'fulfilled' ? merklSettled.value : { index: {} as MerklDataIndex };
-  const merklData: MerklDataIndex = merklResult.index;
-  const brevisResult: BrevisProcessedData = brevisSettled.status === 'fulfilled' ? brevisSettled.value : { index: {} as BrevisDataIndex, brevisDistributedSoFar: new Map<string, number | undefined>() };
-  const brevisData: BrevisDataIndex = brevisResult.index;
 
   logger.info(`Incentive data fetched (Merit keys=${Object.keys(meritData).length}, Merkl keys=${Object.keys(merklData).length}, Brevis keys=${Object.keys(brevisData).length}) [${_elapsed()}]`);
 

@@ -442,7 +442,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       const memAfterSnapshot = process.memoryUsage();
       const snapshotHeapDelta = (memAfterSnapshot.heapUsed - memBeforeSnapshot.heapUsed) / (1024 * 1024);
       if (Math.abs(snapshotHeapDelta) > 0.5) {
-        logger.info(`🔍 heap-diff [snapshot-assign] heap+${snapshotHeapDelta.toFixed(1)}MB`);
+        logger.info(`🔍 heap-diff [snapshot-assign] heap=${snapshotHeapDelta >= 0 ? '+' : ''}${snapshotHeapDelta.toFixed(1)}MB`);
       }
 
       logger.info(

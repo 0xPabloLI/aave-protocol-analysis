@@ -14,6 +14,7 @@ import { runArchiveCheck } from './archiveService.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
+// TEMP(memory-leak-diag): heap-diff helpers. Remove or gate behind env var once leak is confirmed fixed.
 const MB = 1024 * 1024;
 
 function snapshotMem(): { heapUsed: number; heapTotal: number; rss: number; arrayBuffers: number } {

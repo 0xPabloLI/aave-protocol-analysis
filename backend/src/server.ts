@@ -1,6 +1,7 @@
 import './env.js';
 import express from 'express';
 import compression from 'compression';
+import { Agent, setGlobalDispatcher } from 'undici';
 import { corsMiddleware } from './middleware/cors.js';
 import { apiCacheHeadersMiddleware } from './middleware/cacheHeaders.js';
 import { rateLimitMiddleware } from './middleware/rateLimit.js';
@@ -22,6 +23,22 @@ import { explainServerListenError } from './startup.js';
 import { closePool, getPool, isPersistenceEnabled } from './services/dbPool.js';
 import { getPersistenceStatus, getHashMapSizes, warmConfigHashes } from './services/persistenceService.js';
 import { runMigrations } from './services/autoMigrate.js';
+
+// Limit undici globalDispatcher connection pool to cap native memory (TLS buffers)
+// consumed by Node.js built-in fetch. Without this, each fetchMarketsData call
+// creates ~20 GraphQL requests whose TLS connections allocate native memory
+// outside V8 heap, causing steady RSS growth (~14 MB/h). Capping connections
+// per host + short keep-alive prevents unbounded accumulation.
+try {
+  setGlobalDispatcher(new Agent({
+    connections: 10,
+    pipelining: 1,
+    keepAliveTimeout: 30_000,
+    keepAliveMaxTimeout: 60_000,
+  }));
+} catch (e) {
+  logger.warn('Failed to set undici globalDispatcher (non-fatal, using defaults):', e instanceof Error ? e.message : String(e));
+}
 
 // Wire ProviderPool logFn to winston logger
 providerPool.configure({
