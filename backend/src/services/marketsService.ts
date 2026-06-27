@@ -402,7 +402,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       }
       logger.info(`Oracle override done (${oracleOverrideCount} overrides) ${_phase()}`);
 
-      const memBeforeSnapshot = process.memoryUsage();
+      const memBeforeSnapshot = process.env.MEMORY_DIAG === '1' ? process.memoryUsage() : null;
 
       const newSnapshot: MarketsSnapshot = {
         payload,
@@ -439,10 +439,12 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       const v4FreshLabel = mergeResult.v4Fresh ? 'fresh' : 'stale';
       const elapsed = now - startTime;
 
-      const memAfterSnapshot = process.memoryUsage();
-      const snapshotHeapDelta = (memAfterSnapshot.heapUsed - memBeforeSnapshot.heapUsed) / (1024 * 1024);
-      if (Math.abs(snapshotHeapDelta) > 0.5) {
-        logger.info(`🔍 heap-diff [snapshot-assign] heap=${snapshotHeapDelta >= 0 ? '+' : ''}${snapshotHeapDelta.toFixed(1)}MB`);
+      if (memBeforeSnapshot) {
+        const memAfterSnapshot = process.memoryUsage();
+        const snapshotHeapDelta = (memAfterSnapshot.heapUsed - memBeforeSnapshot.heapUsed) / (1024 * 1024);
+        if (Math.abs(snapshotHeapDelta) > 0.5) {
+          logger.info(`🔍 heap-diff [snapshot-assign] heap=${snapshotHeapDelta >= 0 ? '+' : ''}${snapshotHeapDelta.toFixed(1)}MB`);
+        }
       }
 
       logger.info(

@@ -14,8 +14,8 @@ import { runArchiveCheck } from './archiveService.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
-// TEMP(memory-leak-diag): heap-diff helpers. Remove or gate behind env var once leak is confirmed fixed.
-const MB = 1024 * 1024;
+const _MB = 1024 * 1024;
+const _heapDiagEnabled = process.env.MEMORY_DIAG === '1';
 
 function snapshotMem(): { heapUsed: number; heapTotal: number; rss: number; arrayBuffers: number } {
   const m = process.memoryUsage();
@@ -23,11 +23,12 @@ function snapshotMem(): { heapUsed: number; heapTotal: number; rss: number; arra
 }
 
 function logHeapDiff(label: string, before: ReturnType<typeof snapshotMem>): void {
+  if (!_heapDiagEnabled) return;
   const after = snapshotMem();
-  const dHeap = (after.heapUsed - before.heapUsed) / MB;
-  const dRss = (after.rss - before.rss) / MB;
-  const dAb = (after.arrayBuffers - before.arrayBuffers) / MB;
-  const absHeap = after.heapUsed / MB;
+  const dHeap = (after.heapUsed - before.heapUsed) / _MB;
+  const dRss = (after.rss - before.rss) / _MB;
+  const dAb = (after.arrayBuffers - before.arrayBuffers) / _MB;
+  const absHeap = after.heapUsed / _MB;
   if (Math.abs(dHeap) > 0.5 || Math.abs(dRss) > 0.5) {
     logger.info(
       `🔍 heap-diff [${label}] heap=${dHeap >= 0 ? '+' : ''}${dHeap.toFixed(1)}MB rss=${dRss >= 0 ? '+' : ''}${dRss.toFixed(1)}MB ab=${dAb >= 0 ? '+' : ''}${dAb.toFixed(1)}MB → absHeap=${absHeap.toFixed(0)}MB`

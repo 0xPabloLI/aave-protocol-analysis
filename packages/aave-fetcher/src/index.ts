@@ -899,14 +899,14 @@ async function fetchRawMarketData(): Promise<MarketData> {
   return marketData;
 }
 
-// TEMP(memory-leak-diag): rss-diff helpers for diagnosing native memory leak.
-// Remove or gate behind env var once leak is confirmed fixed.
-const MB = 1024 * 1024;
+const _MB = 1024 * 1024;
+const _memoryDiagEnabled = process.env.MEMORY_DIAG === '1';
 function rssDelta(label: string, beforeRss: number): number {
+  if (!_memoryDiagEnabled) return process.memoryUsage().rss;
   const after = process.memoryUsage().rss;
-  const delta = (after - beforeRss) / MB;
+  const delta = (after - beforeRss) / _MB;
   if (Math.abs(delta) > 0.5) {
-    logger.info(`🔍 rss-diff [${label}] rss=${delta >= 0 ? '+' : ''}${delta.toFixed(1)}MB → absRss=${(after / MB).toFixed(0)}MB`);
+    logger.info(`🔍 rss-diff [${label}] rss=${delta >= 0 ? '+' : ''}${delta.toFixed(1)}MB → absRss=${(after / _MB).toFixed(0)}MB`);
   }
   return after;
 }
