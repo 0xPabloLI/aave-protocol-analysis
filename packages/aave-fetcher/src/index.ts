@@ -899,18 +899,26 @@ async function fetchRawMarketData(): Promise<MarketData> {
   return marketData;
 }
 
+const MB = 1024 * 1024;
+function rssDelta(label: string, beforeRss: number): number {
+  const after = process.memoryUsage().rss;
+  const delta = (after - beforeRss) / MB;
+  if (Math.abs(delta) > 0.5) {
+    logger.info(`🔍 rss-diff [${label}] rss=${delta >= 0 ? '+' : ''}${delta.toFixed(1)}MB → absRss=${(after / MB).toFixed(0)}MB`);
+  }
+  return after;
+}
+
 export async function runMarketsFetcher(): Promise<void> {
-  // 🧹 启动时检查并清理 Cloudflare browser sessions
-  // 这是为了避免之前程序异常退出后残留的 session 占用配额
+  let rssMark = process.memoryUsage().rss;
+
   logger.info('🔧 Pre-flight check: Cloudflare browser session status...');
   await checkAndReportSessionStatus();
+  rssMark = rssDelta('pre-flight', rssMark);
 
-  // 如果环境变量 CLOSE_BROWSERS_ON_START 设置为 true，则关闭所有现有浏览器实例
-  // 注意：这会关闭浏览器实例释放配额，不是清理 session。Session 应该尽量复用。
   if (process.env.CLOSE_BROWSERS_ON_START === 'true') {
     logger.info('🔌 CLOSE_BROWSERS_ON_START=true, closing existing browser instances...');
     await closeBrowserInstances();
-    // 关闭后等待一段时间，让 Cloudflare 有时间释放资源
     logger.info('⏳ Waiting 30s after closing browsers for Cloudflare to release resources...');
     await new Promise(resolve => setTimeout(resolve, 30000));
   }
@@ -922,6 +930,7 @@ export async function runMarketsFetcher(): Promise<void> {
       fetchV3MarketsWithTimeout({ _fetchV3Fn: fetchRawMarketData }),
       fetchV4ReservesWithTimeout({ _fetchV4Fn: () => fetchV4ReservesData({ throwOnFinalFailure: false }) }),
     ]);
+    rssMark = rssDelta('v3v4-fetch', rssMark);
 
     const v3Success = v3Settled.status === 'fulfilled';
     const v4SettledValue = v4Settled.status === 'fulfilled' ? v4Settled.value : { mapped: [], raw: { reserves: [] }, spokeHubTopology: [], source: 'none' as const };
@@ -950,6 +959,7 @@ export async function runMarketsFetcher(): Promise<void> {
     logger.info('📊 Creating unified base dataset (V3 + V4)...');
     const { baseDataset, v3Count, v4Count } = buildMarketsBaseDataset(marketData.markets, v4Result);
     const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
+    rssMark = rssDelta('base-dataset', rssMark);
 
     // 并发获取 Merit、Merkl 和 Brevis 数据（它们之间没有依赖关系）
     // 注意：程序是定期触发的，设置超时避免某个任务卡住导致所有数据被卡住
@@ -1019,12 +1029,14 @@ export async function runMarketsFetcher(): Promise<void> {
       }),
       timeoutPromise,
     ]);
+    rssMark = rssDelta('incentive-fetch', rssMark);
     
     logger.info('✅ Using available incentive data (some tasks may still be running in background)');
     
     // 第二步：将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
     logger.info('💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)...');
     const enrichedData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData, undefined);
+    rssMark = rssDelta('enrich', rssMark);
 
     logger.info(`🎯 Final dataset contains ${enrichedData.length} token combinations`);
     
@@ -1149,10 +1161,12 @@ export async function fetchMarketsData(options?: {
 }): Promise<MarketsPayload> {
   const _t0 = Date.now();
   const _elapsed = () => `${Date.now() - _t0}ms`;
+  let rssMark = process.memoryUsage().rss;
 
   // 🧹 启动时检查并清理 Cloudflare browser sessions
   logger.info(`🔧 Pre-flight check: Cloudflare browser session status... [${_elapsed()}]`);
   await checkAndReportSessionStatus();
+  rssMark = rssDelta('pre-flight', rssMark);
 
   // V3/V4 并发 fetch + per-side 独立超时
   logger.info(`🚀 Starting V3/V4 concurrent fetch... [${_elapsed()}]`);
@@ -1161,6 +1175,7 @@ export async function fetchMarketsData(options?: {
     fetchV4ReservesWithTimeout({ _fetchV4Fn: () => fetchV4ReservesData({ throwOnFinalFailure: false }) }),
   ]);
   logger.info(`V3/V4 concurrent fetch done [${_elapsed()}]`);
+  rssMark = rssDelta('v3v4-fetch', rssMark);
 
   const v3Success = v3Settled.status === 'fulfilled';
   // fetchV4ReservesWithTimeout never rejects (Layer 2 handles all SDK failures).
@@ -1189,12 +1204,26 @@ export async function fetchMarketsData(options?: {
   const { baseDataset, v3Count, v4Count, v4Raw, spokeHubTopology } = buildMarketsBaseDataset(marketData.markets, v4Result);
   const reserveTokenPriceByChainAndAddress = buildReserveTokenPriceMap(baseDataset);
   logger.info(`Formatting done: ${baseDataset.length} reserves (V3=${v3Count}, V4=${v4Count}) [${_elapsed()}]`);
+  rssMark = rssDelta('base-dataset', rssMark);
 
   // 并发获取 Merit、Merkl 和 Brevis 数据
   logger.info(`🚀 Starting incentive data fetching concurrently... [${_elapsed()}]`);
   
   const { meritPromise, merklPromise, brevisPromise } = launchIncentiveFetches(reserveTokenPriceByChainAndAddress, baseDataset);
-  const { merit: meritData, merkl: merklData, brevis: brevisData, merklResult, brevisResult } = await awaitIncentiveResults(meritPromise, merklPromise, brevisPromise);
+
+  const meritDone = meritPromise.then(v => { rssDelta('merit-done', rssMark); return v; });
+  const merklDone = merklPromise.then(v => { rssDelta('merkl-done', rssMark); return v; });
+  const brevisDone = brevisPromise.then(v => { rssDelta('brevis-done', rssMark); return v; });
+
+  const [meritSettled, merklSettled, brevisSettled] = await Promise.allSettled([meritDone, merklDone, brevisDone]);
+  rssMark = process.memoryUsage().rss;
+
+  const meritData: MeritDataIndex = meritSettled.status === 'fulfilled' ? meritSettled.value : {};
+  const merklResult: MerklProcessedData = merklSettled.status === 'fulfilled' ? merklSettled.value : { index: {} as MerklDataIndex };
+  const merklData: MerklDataIndex = merklResult.index;
+  const brevisResult: BrevisProcessedData = brevisSettled.status === 'fulfilled' ? brevisSettled.value : { index: {} as BrevisDataIndex, brevisDistributedSoFar: new Map<string, number | undefined>() };
+  const brevisData: BrevisDataIndex = brevisResult.index;
+
   logger.info(`Incentive data fetched (Merit keys=${Object.keys(meritData).length}, Merkl keys=${Object.keys(merklData).length}, Brevis keys=${Object.keys(brevisData).length}) [${_elapsed()}]`);
 
   // Enrich with incentive data
@@ -1202,6 +1231,7 @@ export async function fetchMarketsData(options?: {
   logger.info(`💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)... [${_elapsed()}]`);
   const runtimeData = await enrichDatasetWithIncentiveData(baseDataset, meritData, merklData, brevisData, options?.cachedConstraints);
   logger.info(`Enriching done: ${runtimeData.length} reserves [enrich=${Date.now() - _enrichStart}ms, total=${_elapsed()}]`);
+  rssMark = rssDelta('enrich', rssMark);
 
   logger.info(`🎯 Final dataset contains ${runtimeData.length} reserves [${_elapsed()}]`);
 
