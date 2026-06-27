@@ -13,7 +13,7 @@ import {
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
 import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol, RuntimeReserveData, NetPositionConstraint } from '@internal/aave-shared-contracts';
-import { chainTokenKey, chainSymbolKey, getErrorCode, spokeKey, v4ReserveId, v4HubScopeKey } from '@internal/aave-shared-contracts';
+import { chainTokenKey, chainSymbolKey, getErrorCode, spokeKey, v4ReserveId, v4HubScopeKey, isRecentlyEnded, RECENTLY_ENDED_LOOKBACK_DAYS } from '@internal/aave-shared-contracts';
 export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol } from '@internal/aave-shared-contracts';
 import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
@@ -889,13 +889,44 @@ const buildForecastFieldsFromOpportunity = async (
 export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
   try {
     logger.info('🔄 Fetching Merkl opportunities for Aave + Tydro (LIVE, campaigns=true, short-page pagination)...');
-    const allOpportunities = (await fetchMerklOpportunitiesSnapshot({
+    const liveOpportunities = (await fetchMerklOpportunitiesSnapshot({
       baseUrl: 'https://api.merkl.xyz/v4',
       ttlMs: OPPORTUNITIES_SOFT_TTL_MS,
       fetchImpl: fetch as unknown as typeof globalThis.fetch,
     })) as MerklOpportunity[];
+
+    let pastOpportunities: MerklOpportunity[] = [];
+    try {
+      const rawPast = (await fetchMerklOpportunitiesSnapshot({
+        baseUrl: 'https://api.merkl.xyz/v4',
+        status: 'PAST',
+        ttlMs: OPPORTUNITIES_SOFT_TTL_MS,
+        fetchImpl: fetch as unknown as typeof globalThis.fetch,
+      })) as MerklOpportunity[];
+
+      const nowMs = Date.now();
+      const lookbackMs = RECENTLY_ENDED_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
+      const liveIds = new Set(liveOpportunities.map(o => String(o.id)));
+      pastOpportunities = rawPast.filter(opp => {
+        if (liveIds.has(String(opp.id))) return false;
+        const campaigns = opp.campaigns ?? [];
+        return campaigns.some(c => {
+          const endTs = Number(c.endTimestamp ?? 0);
+          if (endTs <= 0) return false;
+          const endMs = endTs > 1_000_000_000_000 ? endTs : endTs * 1000;
+          return endMs >= nowMs - lookbackMs && endMs < nowMs;
+        });
+      });
+      if (pastOpportunities.length > 0) {
+        logger.info(`📦 Fetched ${rawPast.length} PAST opportunities, ${pastOpportunities.length} within ${RECENTLY_ENDED_LOOKBACK_DAYS}-day window (deduped from LIVE)`);
+      }
+    } catch (pastError) {
+      logger.warn(`⚠️ Failed to fetch Merkl PAST opportunities: ${pastError instanceof Error ? pastError.message : String(pastError)}`);
+    }
+
+    const allOpportunities = [...liveOpportunities, ...pastOpportunities];
     _merklState.lastFetchError = null;
-    logger.info(`✅ Fetched ${allOpportunities.length} live opportunities from Merkl`);
+    logger.info(`✅ Fetched ${liveOpportunities.length} live + ${pastOpportunities.length} recent-past opportunities from Merkl`);
     return allOpportunities;
   } catch (error) {
     logger.error('❌ Error fetching Merkl opportunities:', error);
@@ -1662,18 +1693,16 @@ function extractComposedCampaignInfo(opp: MerklOpportunity): {
 }
 
 export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[]): MerklCampaignBreakdown[] {
-  const now = new Date();
+  const nowMs = Date.now();
   const active = breakdowns.filter(b =>
-    !b.campaignEndedAt || new Date(b.campaignEndedAt) >= now
-  );
-  const expired = breakdowns.filter(b =>
-    b.campaignEndedAt && new Date(b.campaignEndedAt) < now
+    !b.campaignEndedAt || new Date(b.campaignEndedAt).getTime() >= nowMs
   );
   const byType = new Map<string, MerklCampaignBreakdown>();
-  for (const b of expired) {
+  for (const b of breakdowns) {
+    if (!isRecentlyEnded(b.campaignEndedAt, nowMs)) continue;
     const type = b.campaignType ?? 'UNKNOWN';
     const existing = byType.get(type);
-    if (!existing || new Date(b.campaignEndedAt!) > new Date(existing.campaignEndedAt!)) {
+    if (!existing || new Date(b.campaignEndedAt!).getTime() > new Date(existing.campaignEndedAt!).getTime()) {
       byType.set(type, b);
     }
   }

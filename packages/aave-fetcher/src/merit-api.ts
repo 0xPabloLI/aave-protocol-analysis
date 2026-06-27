@@ -13,7 +13,7 @@ import {
   type MeritDynamicInfo,
 } from "./cloudflare-browser.js";
 import { meritKeyAliases } from "./config.js";
-import { fifoEvict, type MeritCampaignGroup } from "@internal/aave-shared-contracts";
+import { fifoEvict, type MeritCampaignGroup, isRecentlyEnded } from "@internal/aave-shared-contracts";
 import {
   createMerklConcurrencyLimitedFetch,
   getAaveRpcUrlsByChainName,
@@ -940,17 +940,19 @@ function isMeritCampaignMetadataEnded(endDateRaw?: string): boolean {
 }
 
 export function filterRecentExpiredMeritCampaigns(groups: MeritCampaignGroup[]): MeritCampaignGroup[] {
-  const now = new Date();
+  const nowMs = Date.now();
   const active = groups.filter(g => {
     const bd = g.breakdowns ?? [];
-    return bd.length === 0 || bd.some(b => !b.campaignEndedAt || new Date(b.campaignEndedAt) >= now);
+    return bd.length === 0 || bd.some(b => !b.campaignEndedAt || new Date(b.campaignEndedAt).getTime() >= nowMs);
   });
-  const expired = groups.filter(g => {
+  const recentlyEnded = groups.filter(g => {
     const bd = g.breakdowns ?? [];
-    return bd.length > 0 && bd.every(b => b.campaignEndedAt && new Date(b.campaignEndedAt) < now);
+    if (bd.length === 0) return false;
+    if (!bd.every(b => b.campaignEndedAt && new Date(b.campaignEndedAt).getTime() < nowMs)) return false;
+    return bd.some(b => isRecentlyEnded(b.campaignEndedAt, nowMs));
   });
-  if (expired.length === 0) return active;
-  const latest = expired.reduce((a, b) => {
+  if (recentlyEnded.length === 0) return active;
+  const latest = recentlyEnded.reduce((a, b) => {
     const aEnd = Math.max(...(a.breakdowns ?? []).map(bd => bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0));
     const bEnd = Math.max(...(b.breakdowns ?? []).map(bd => bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0));
     return aEnd >= bEnd ? a : b;

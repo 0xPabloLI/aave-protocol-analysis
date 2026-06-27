@@ -46,6 +46,24 @@ export function getErrorCode(error: unknown): string | undefined {
 }
 
 // ============================================================
+// Recently ended campaign constants
+// ============================================================
+
+export const RECENTLY_ENDED_LOOKBACK_DAYS = 7;
+
+export function isRecentlyEnded(
+  campaignEndedAt: string | undefined,
+  nowMs: number = Date.now(),
+  lookbackDays: number = RECENTLY_ENDED_LOOKBACK_DAYS,
+): boolean {
+  if (!campaignEndedAt) return false;
+  const endMs = new Date(campaignEndedAt).getTime();
+  if (!Number.isFinite(endMs) || endMs <= 0) return false;
+  const lookbackMs = lookbackDays * 24 * 60 * 60 * 1000;
+  return endMs >= nowMs - lookbackMs && endMs < nowMs;
+}
+
+// ============================================================
 // Incentive types
 // ============================================================
 

@@ -2,6 +2,7 @@ import fetch from 'node-fetch';
 import { logger } from './logger.js';
 import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
 import type { ForecastCampaignTypeLite } from '@internal/aave-shared-contracts';
+import { RECENTLY_ENDED_LOOKBACK_DAYS, isRecentlyEnded } from '@internal/aave-shared-contracts';
 
 /**
  * Brevis Incentra API 客户端
@@ -47,23 +48,30 @@ export function pruneBrevisCampaignForRuntime(campaign: BrevisCampaignItem): Bre
   };
 }
 
-export function filterRecentExpiredBrevis<T extends { breakdowns?: Array<{ campaignEndedAt?: string }> }>(items: T[]): T[] {
-  const now = new Date();
+export function filterRecentExpiredBrevis<T extends { breakdowns?: Array<{ campaignEndedAt?: string; campaignType?: ForecastCampaignTypeLite }> }>(items: T[]): T[] {
+  const nowMs = Date.now();
   const active = items.filter(item => {
     const bd = item.breakdowns ?? [];
-    return bd.length === 0 || bd.some(b => !b.campaignEndedAt || new Date(b.campaignEndedAt) >= now);
+    return bd.length === 0 || bd.some(b => !b.campaignEndedAt || new Date(b.campaignEndedAt).getTime() >= nowMs);
   });
-  const expired = items.filter(item => {
+  const byType = new Map<string, T>();
+  for (const item of items) {
     const bd = item.breakdowns ?? [];
-    return bd.length > 0 && bd.every(b => b.campaignEndedAt && new Date(b.campaignEndedAt) < now);
-  });
-  if (expired.length === 0) return active;
-  const latest = expired.reduce((a, b) => {
-    const aEnd = Math.max(...(a.breakdowns ?? []).map(bd => bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0));
-    const bEnd = Math.max(...(b.breakdowns ?? []).map(bd => bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0));
-    return aEnd >= bEnd ? a : b;
-  });
-  return [...active, latest];
+    if (bd.length === 0) continue;
+    if (!bd.every(b => b.campaignEndedAt && new Date(b.campaignEndedAt).getTime() < nowMs)) continue;
+    const allRecent = bd.every(b => isRecentlyEnded(b.campaignEndedAt, nowMs));
+    if (!allRecent) continue;
+    const type = bd[0]?.campaignType ?? 'UNKNOWN';
+    const existing = byType.get(type);
+    const itemEnd = Math.max(...bd.map(b => b.campaignEndedAt ? new Date(b.campaignEndedAt).getTime() : 0));
+    const existingEnd = existing
+      ? Math.max(...(existing.breakdowns ?? []).map(b => b.campaignEndedAt ? new Date(b.campaignEndedAt).getTime() : 0))
+      : 0;
+    if (!existing || itemEnd > existingEnd) {
+      byType.set(type, item);
+    }
+  }
+  return [...active, ...byType.values()];
 }
 
 // Brevis 数据项结构（类似 MeritDataItem）
@@ -636,9 +644,18 @@ export class BrevisApiClient {
             const endTime = config?.end || 0;
             const now = Math.floor(Date.now() / 1000);
 
-            // 仅保留 ACTIVE 活动（status = 4）
-            if (campaignStatus !== 4) {
+            if (campaignStatus !== 4 && campaignStatus !== 5) {
               continue;
+            }
+
+            const isEnded = campaignStatus === 5;
+            if (isEnded) {
+              const endTimeMs = endTime > 0 ? endTime * 1000 : 0;
+              const nowMs = Date.now();
+              const lookbackMs = RECENTLY_ENDED_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
+              if (endTimeMs <= 0 || endTimeMs < nowMs - lookbackMs || endTimeMs >= nowMs) {
+                continue;
+              }
             }
 
             const tokenAddressLower =
