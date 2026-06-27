@@ -795,6 +795,8 @@ function makeFullReserve(): RuntimeReserveData {
     deficit: '0',
     supplied: '500000',
     borrowed: '300000',
+    hubBorrowed: '200000',
+    hubSupplied: '400000',
     liquidity: '200000',
     protocolFee: 10,
     slopeBelowOptimal: 4,
