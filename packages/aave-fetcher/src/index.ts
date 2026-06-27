@@ -1220,7 +1220,7 @@ export async function fetchMarketsData(options?: {
   const brevisDone = brevisPromise.then(v => { rssDelta('brevis-done', rssMark); return v; });
 
   const { merit: meritData, merkl: merklData, brevis: brevisData, merklResult, brevisResult } = await awaitIncentiveResults(meritDone, merklDone, brevisDone);
-  rssMark = process.memoryUsage().rss;
+  rssMark = rssDelta('incentive-fetch', rssMark);
 
   logger.info(`Incentive data fetched (Merit keys=${Object.keys(meritData).length}, Merkl keys=${Object.keys(merklData).length}, Brevis keys=${Object.keys(brevisData).length}) [${_elapsed()}]`);
 

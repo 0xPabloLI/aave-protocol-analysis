@@ -29,13 +29,15 @@ import { runMigrations } from './services/autoMigrate.js';
 // creates ~20 GraphQL requests whose TLS connections allocate native memory
 // outside V8 heap, causing steady RSS growth (~14 MB/h). Capping connections
 // per host + short keep-alive prevents unbounded accumulation.
+let globalAgent: Agent | undefined;
 try {
-  setGlobalDispatcher(new Agent({
+  globalAgent = new Agent({
     connections: 10,
     pipelining: 1,
     keepAliveTimeout: 30_000,
     keepAliveMaxTimeout: 60_000,
-  }));
+  });
+  setGlobalDispatcher(globalAgent);
 } catch (e) {
   logger.warn('Failed to set undici globalDispatcher (non-fatal, using defaults):', e instanceof Error ? e.message : String(e));
 }
@@ -274,6 +276,7 @@ const shutdown = (signal: string) => {
   server.close((err) => {
     if (err) logger.warn('Error closing HTTP server:', err);
     stopProviderCleanup();
+    globalAgent?.close().catch(() => {});
     closePool()
       .catch((e) => logger.warn('Error closing DB pool:', e))
       .finally(() => process.exit(0));
