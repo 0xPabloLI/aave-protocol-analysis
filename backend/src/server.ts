@@ -114,12 +114,29 @@ app.get('/.well-known/security.txt', (_req, res) => {
   );
 });
 
+// Debug endpoint: trigger V8 heap snapshot (MEMORY_DIAG=1 only)
+// Writes .heapsnapshot file to /app/ and returns the file path.
+// Use with Chrome DevTools → Memory → Load to identify leaking JS objects.
+// CAUTION: snapshot is ~50-100MB, blocks the main thread for ~2-5s.
+app.get('/api/debug/heap-snapshot', (_req, res) => {
+  if (process.env.MEMORY_DIAG !== '1') {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  try {
+    const filePath = v8.writeHeapSnapshot();
+    logger.info(`🔬 Heap snapshot written: ${filePath}`);
+    res.json({ filePath, heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB` });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // Routes
 app.use('/api/markets', marketsRouter);
 app.use('/api/meta', metaRouter);
 app.use('/api/seo', seoRouter);
 app.use('/api/docs', swaggerRouter);
-// Note: /api/rate-inputs endpoint removed - rate-inputs are now merged into /api/markets
 
 const healthHandler = (_req: express.Request, res: express.Response) => {
   const markets = getMarketsData();

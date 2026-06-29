@@ -57,6 +57,9 @@ RUN mkdir -p data logs backend/logs
 
 EXPOSE 3001
 
-# --max-old-space-size=768: GC triggers at 768MB, 75% of 1GB Railway container
+# --max-old-space-size=384: force aggressive old_space GC to prevent ~23MB/h leak
+# (768MB was too permissive — V8 didn't GC until approaching limit, allowing old_space
+# to grow unchecked. 384MB ≈ 2× steady-state heap ~95MB, gives enough headroom while
+# forcing GC before RSS reaches ~600MB where OOM risk is high on 1GB Railway container.)
 # --expose-gc: expose globalThis.gc() for manual GC triggering in diagnostics
-CMD ["node", "--max-old-space-size=768", "--expose-gc", "backend/dist/server.js"]
+CMD ["node", "--max-old-space-size=384", "--expose-gc", "backend/dist/server.js"]
