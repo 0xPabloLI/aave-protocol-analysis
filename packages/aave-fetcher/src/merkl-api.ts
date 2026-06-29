@@ -275,7 +275,7 @@ export interface MerklOpportunityData {
   chainId: number;
   /** Protocol version derived from Merkl opportunity type (e.g. AAVE_V4_HUB_SUPPLY = v4). */
   protocolVersion: 'v3' | 'v4';
-  opportunityLink?: string;
+  opportunityId?: string;
   name?: string;
   description?: string;
   opportunityType?: string;
@@ -1474,8 +1474,7 @@ export async function processMerklData(
   // 处理所有 live opportunities（现在可以快速从缓存中获取数据）
   for (const opp of liveOpportunities) {
     if (!opp.explorerAddress) {
-      const oppLink = generateMerklOpportunityLink(opp);
-      logger.warn(`   ⚠️ No explorerAddress found for opportunity ${opp.id}${oppLink ? ` — ${oppLink}` : ''}`);
+      logger.warn(`   ⚠️ No explorerAddress found for opportunity ${opp.id}`);
       continue;
     }
 
@@ -1498,11 +1497,10 @@ export async function processMerklData(
       : 'Unknown';
     const explorerAddress = opp.explorerAddress.toLowerCase();
     
-    // 生成 Merkl opportunity 链接（在 if-else 之前生成，以便在外部使用）
-    const opportunityLink = generateMerklOpportunityLink(opp);
+    const opportunityId = String(opp.id || '').trim();
     
-    if (!opportunityLink) {
-      logger.warn(`   ⚠️ Could not generate link for opportunity ${opp.id}: missing identifier, type, or chain.name`);
+    if (!opportunityId) {
+      logger.warn(`   ⚠️ No opportunity ID found for opportunity ${opp.id}`);
     }
     
     const breakdowns: MerklCampaignBreakdown[] = [];
@@ -1647,7 +1645,7 @@ export async function processMerklData(
       marketName,
       chainId: opp.chainId,
       protocolVersion,
-      ...(opportunityLink && { opportunityLink }),
+      ...(opportunityId && { opportunityId }),
       ...(opp.name && { name: opp.name }),
       ...(opp.description && { description: opp.description }),
       ...(opp.type && { opportunityType: opp.type }),
@@ -2130,23 +2128,22 @@ export function deduplicateHubSpokeBreakdowns(
  * 
  * @param breakdowns Merkl campaign breakdowns 数组（用于 CSV 时，每个 breakdown 可能包含 opportunityLink 属性）
  */
-export function formatMerklBreakdown(breakdowns: Array<MerklCampaignBreakdown & { opportunityLink?: string }>): string {
+export function formatMerklBreakdown(breakdowns: Array<MerklCampaignBreakdown & { opportunityId?: string }>): string {
   if (breakdowns.length === 0) {
     return '';
   }
   
-  // 按 opportunityLink 分组
-  const groupedByLink = new Map<string, Array<MerklCampaignBreakdown & { opportunityLink?: string }>>();
-  const noLinkBreakdowns: Array<MerklCampaignBreakdown & { opportunityLink?: string }> = [];
+  const groupedByOppId = new Map<string, Array<MerklCampaignBreakdown & { opportunityId?: string }>>();
+  const noOppIdBreakdowns: Array<MerklCampaignBreakdown & { opportunityId?: string }> = [];
   
   for (const b of breakdowns) {
-    if (b.opportunityLink) {
-      if (!groupedByLink.has(b.opportunityLink)) {
-        groupedByLink.set(b.opportunityLink, []);
+    if (b.opportunityId) {
+      if (!groupedByOppId.has(b.opportunityId)) {
+        groupedByOppId.set(b.opportunityId, []);
       }
-      groupedByLink.get(b.opportunityLink)!.push(b);
+      groupedByOppId.get(b.opportunityId)!.push(b);
     } else {
-      noLinkBreakdowns.push(b);
+      noOppIdBreakdowns.push(b);
     }
   }
   
@@ -2182,15 +2179,15 @@ export function formatMerklBreakdown(breakdowns: Array<MerklCampaignBreakdown & 
   // 构建分组后的字符串
   const parts: string[] = [];
   
-  // 处理有链接的分组：每个分组的 breakdowns 后跟其链接
-  for (const [link, groupBreakdowns] of groupedByLink.entries()) {
+  // 处理有 oppId 的分组：每个分组的 breakdowns 后跟其 oppId
+  for (const [oppId, groupBreakdowns] of groupedByOppId.entries()) {
     const breakdownsStr = groupBreakdowns.map(formatBreakdown).join('; ');
-    parts.push(`${breakdownsStr}, ${link}`);
+    parts.push(`${breakdownsStr}, oppId:${oppId}`);
   }
   
-  // 处理没有链接的 breakdowns
-  if (noLinkBreakdowns.length > 0) {
-    parts.push(noLinkBreakdowns.map(formatBreakdown).join('; '));
+  // 处理没有 oppId 的 breakdowns
+  if (noOppIdBreakdowns.length > 0) {
+    parts.push(noOppIdBreakdowns.map(formatBreakdown).join('; '));
   }
   
   return parts.join('; ');

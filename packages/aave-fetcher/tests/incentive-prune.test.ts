@@ -10,35 +10,31 @@ describe('arch-2: incentive-prune', () => {
   describe('pruneMerklGroup', () => {
     it('keeps required fields and breakdowns', () => {
       const g: MerklOpportunityGroup = {
-        link: 'https://merkl',
+        link: '',
+        opportunityId: '9830701213305656660',
         breakdowns: [{ campaignApr: 0.04, campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignId: 'c1' }],
       };
       const r = pruneMerklGroup(g);
-      assert.equal(r.link, 'https://merkl');
+      assert.equal(r.link, 'https://app.merkl.xyz/opportunities/9830701213305656660');
+      assert.equal(r.opportunityId, '9830701213305656660');
       assert.equal(r.breakdowns.length, 1);
       assert.equal(r.breakdowns[0].campaignApr, 0.04);
       assert.equal(r.breakdowns[0].campaignId, 'c1');
     });
 
-    it('preserves opportunityType (bug fix)', () => {
+    it('omits opportunityType from output', () => {
       const g: MerklOpportunityGroup = {
-        link: 'https://merkl',
-        opportunityType: 'NET',
+        link: '',
+        opportunityId: '123',
         breakdowns: [],
       };
-      const r = pruneMerklGroup(g);
-      assert.equal(r.opportunityType, 'NET');
-    });
-
-    it('omits opportunityType when absent', () => {
-      const g: MerklOpportunityGroup = { link: 'https://merkl', breakdowns: [] };
       const r = pruneMerklGroup(g);
       assert.equal('opportunityType' in r, false);
     });
 
     it('keeps rewardTokenSymbol and rewardTokenIconUrl when present', () => {
       const g: MerklOpportunityGroup = {
-        link: 'https://merkl',
+        link: '',
         breakdowns: [{
           campaignApr: 0.04,
           campaignStartedAt: '2025-01-01',
@@ -55,7 +51,7 @@ describe('arch-2: incentive-prune', () => {
 
     it('omits rewardTokenSymbol and rewardTokenIconUrl when absent', () => {
       const g: MerklOpportunityGroup = {
-        link: 'https://merkl',
+        link: '',
         breakdowns: [{ campaignApr: 0.04, campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-12-31', campaignId: 'c1' }],
       };
       const r = pruneMerklGroup(g);
@@ -65,7 +61,7 @@ describe('arch-2: incentive-prune', () => {
 
     it('keeps optional name/message on group', () => {
       const g: MerklOpportunityGroup = {
-        link: 'https://merkl',
+        link: '',
         name: 'test',
         message: 'desc',
         breakdowns: [],

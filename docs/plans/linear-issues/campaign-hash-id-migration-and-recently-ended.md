@@ -119,3 +119,44 @@ Remove `campaignDatabaseId` from the API schema across all backend layers. The f
 
 ### Blocked by
 Slice 1 (completed)
+
+---
+
+## Slice 5: Merkl URL Simplification (both repos)
+
+### Parent
+PRD: Campaign Hash ID Migration + Recently Ended Embedding
+
+### What to build
+Merkl has simplified their URL format from `/opportunities/{chain}/{type}/{identifier}` to `/opportunities/{oppId}`. Campaign URLs follow `/opportunities/{oppId}/campaigns/{hash}`. This allows:
+- Backend to stop generating full Merkl opportunity links — just expose `opportunityId`
+- Frontend to construct all Merkl URLs from `opportunityId` + `campaignId`
+- Remove `opportunityType` from API output (backend-only field)
+
+### What to change
+
+**Backend:**
+1. `packages/aave-shared-contracts/src/index.ts`: Add `opportunityId?: string` to `MerklOpportunityGroup`
+2. `packages/aave-fetcher/src/merkl-api.ts`: Populate `opportunityId` from `opp.id`; stop calling `generateMerklOpportunityLink()` for Merkl groups; output `link: undefined` for Merkl
+3. `packages/aave-fetcher/src/incentive-prune.ts`: Add `opportunityId` passthrough; remove `opportunityType` passthrough for Merkl
+4. `backend/src/types/index.ts`: Add `opportunityId`; remove `opportunityType` from Merkl group type
+
+**Frontend:**
+1. `src/components/dashboard/IncentiveTooltip.tsx`: Replace `getMerklLink()` with `opportunityId`-based URL construction (`https://app.merkl.xyz/opportunities/${opportunityId}`); update `campaignUrl` construction; remove `opportunity.link` dependency for Merkl
+2. `src/shared/market-contract/schemas.ts`: Add `opportunityId`; remove `opportunityType`
+3. `src/types/aave.ts`: Add `opportunityId`; remove `opportunityType`
+
+### Acceptance criteria
+- [ ] `opportunityId` present on Merkl opportunity groups in API response
+- [ ] Merkl groups no longer have `link` field populated
+- [ ] `opportunityType` no longer in API output for Merkl groups
+- [ ] Frontend constructs opportunity URL as `https://app.merkl.xyz/opportunities/${opportunityId}`
+- [ ] Frontend constructs campaign URL as `https://app.merkl.xyz/opportunities/${opportunityId}/campaigns/${campaignId}`
+- [ ] `getMerklLink()` helper removed from IncentiveTooltip.tsx
+- [ ] Merit/Brevis `link` fields unaffected
+- [ ] `npm run ci:remote` passes (backend)
+- [ ] Frontend build + tests pass
+- [ ] Playwright verification: Merkl campaign ExternalLink icons navigate to correct URLs
+
+### Blocked by
+Slice 3 + Slice 4 (completed)

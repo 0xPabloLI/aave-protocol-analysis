@@ -13,9 +13,10 @@ function mkBreakdown(campaignId: string, apr: number, parentCampaignId?: string)
   };
 }
 
-function mkGroup(opportunityType: string, breakdowns: MerklCampaignBreakdown[], link = 'https://merkl.xyz/opp/1'): MerklOpportunityGroup {
+function mkGroup(opportunityType: string, breakdowns: MerklCampaignBreakdown[], opportunityId = '1234567890'): MerklOpportunityGroup {
   return {
-    link,
+    link: opportunityId ? `https://app.merkl.xyz/opportunities/${opportunityId}` : '',
+    opportunityId,
     opportunityType,
     breakdowns,
   };
@@ -154,7 +155,7 @@ describe('deduplicateHubSpokeBreakdowns — V4 Hub/Spoke breakdown-level dedup',
       const groups = [
         mkGroup('AAVE_V4_HUB_SUPPLY', [mkBreakdown(HUB_ID, 0.0677)]),
         mkGroup('AAVE_V4_SPOKE_SUPPLY', [mkBreakdown('spoke-a', 0.0648, HUB_ID)]),
-        mkGroup('AAVE_V4_SPOKE_SUPPLY', [mkBreakdown('spoke-b', 0.0600, HUB_ID)], 'https://merkl.xyz/opp/2'),
+        mkGroup('AAVE_V4_SPOKE_SUPPLY', [mkBreakdown('spoke-b', 0.0600, HUB_ID)], '9876543210'),
       ];
       const result = deduplicateHubSpokeBreakdowns(groups);
       // Both Spoke groups kept, Hub group dropped

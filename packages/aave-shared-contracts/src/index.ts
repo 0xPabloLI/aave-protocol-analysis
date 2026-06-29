@@ -107,7 +107,9 @@ export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   parentCampaignId?: string;
 }
 
-export interface MerklOpportunityGroup extends CampaignGroup<MerklCampaignBreakdown> {}
+export interface MerklOpportunityGroup extends CampaignGroup<MerklCampaignBreakdown> {
+  opportunityId?: string;
+}
 
 export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
   campaignId: string;

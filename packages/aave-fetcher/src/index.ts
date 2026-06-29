@@ -425,14 +425,7 @@ async function enrichDatasetWithIncentiveData(
             return outcome;
           });
         } : undefined;
-        const cachedConstraint = opp.opportunityLink ? cachedConstraints?.get(opp.opportunityLink) : undefined;
-        // offsetLevel is deterministic per opportunityType (ADR-0032 revised):
-        //   SPOKE_SUPPLY → 'reserve' (4-segment exact match, no cross-hub needed)
-        //   HUB_SUPPLY   → 'hub-cross-spoke' (lacks spokeAddress, must resolve across spokes)
-        //   V3 NET_*     → 'reserve' (pool-internal exact match)
-        //   V4 NET_APR   → 'hub-cross-spoke' (same as HUB_SUPPLY)
-        // hookType=14 (BORROW_BL) opps have empty offsetTokenAddresses, so offsetLevel
-        // is never actually exercised for them — the mapping still defaults to 'reserve'.
+        const cachedConstraint = opp.opportunityId ? cachedConstraints?.get(opp.opportunityId) : undefined;
         const oppOffsetLevel: OffsetLevel =
           opp.opportunityType?.includes('SPOKE_SUPPLY') ? 'reserve'
           : opp.opportunityType?.includes('HUB_SUPPLY') ? 'hub-cross-spoke'
@@ -440,86 +433,37 @@ async function enrichDatasetWithIncentiveData(
           : 'reserve';
         const oppOffsetTokenAddresses = opp.offsetTokenAddresses;
         const netPositionConstraint = await detectNetPositionConstraint(opp, item.tokenAddress, item.reserveId, reserveIdSet, symbolLookup, cachedConstraint, llmFn, oppOffsetLevel, oppOffsetTokenAddresses);
-        if (opp.opportunityLink && cachedConstraints && cachedConstraint === undefined) {
-          cachedConstraints.set(opp.opportunityLink, netPositionConstraint ?? null);
+        if (opp.opportunityId && cachedConstraints && cachedConstraint === undefined) {
+          cachedConstraints.set(opp.opportunityId, netPositionConstraint ?? null);
         }
-        if (opp.opportunityLink) {
-          if (opp.supply.length > 0) {
-            const supplyWithLinks = opp.supply.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
-            supplyBreakdowns.push(...supplyWithLinks);
-            supplyOpportunities.push({
-              link: opp.opportunityLink || '',
-              ...(opp.name && { name: opp.name }),
-              ...(opp.description && { message: opp.description }),
-              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
-              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
-              breakdowns: opp.supply
-            });
-          }
-          if (opp.borrow.length > 0) {
-            const borrowWithLinks = opp.borrow.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
-            borrowBreakdowns.push(...borrowWithLinks);
-            borrowOpportunities.push({
-              link: opp.opportunityLink || '',
-              ...(opp.name && { name: opp.name }),
-              ...(opp.description && { message: opp.description }),
-              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
-              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
-              breakdowns: opp.borrow
-            });
-          }
-          if (opp.hold.length > 0) {
-            const holdWithLinks = opp.hold.map(b => ({ ...b, opportunityLink: opp.opportunityLink }));
-            holdBreakdowns.push(...holdWithLinks);
-            holdOpportunities.push({
-              link: opp.opportunityLink || '',
-              ...(opp.name && { name: opp.name }),
-              ...(opp.description && { message: opp.description }),
-              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
-              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
-              breakdowns: opp.hold
-            });
-          }
-        } else {
-          if (opp.supply.length > 0) {
-            supplyBreakdowns.push(...opp.supply);
-            supplyOpportunities.push({
-              link: '',
-              ...(opp.name && { name: opp.name }),
-              ...(opp.description && { message: opp.description }),
-              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
-              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
-              breakdowns: opp.supply
-            });
-          }
-          if (opp.borrow.length > 0) {
-            borrowBreakdowns.push(...opp.borrow);
-            borrowOpportunities.push({
-              link: '',
-              ...(opp.name && { name: opp.name }),
-              ...(opp.description && { message: opp.description }),
-              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
-              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
-              breakdowns: opp.borrow
-            });
-          }
-          if (opp.hold.length > 0) {
-            holdBreakdowns.push(...opp.hold);
-            holdOpportunities.push({
-              link: '',
-              ...(opp.name && { name: opp.name }),
-              ...(opp.description && { message: opp.description }),
-              ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
-              ...(opp.opportunityLink && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
-              ...(opp.borrowBlacklist && { borrowBlacklist: true }),
-              breakdowns: opp.hold
-            });
-          }
+        const oppBase = {
+          link: opp.opportunityId ? `https://app.merkl.xyz/opportunities/${opp.opportunityId}` : '',
+          ...(opp.opportunityId && { opportunityId: opp.opportunityId }),
+          ...(opp.name && { name: opp.name }),
+          ...(opp.description && { message: opp.description }),
+          ...(opp.opportunityId && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
+          ...(opp.borrowBlacklist && { borrowBlacklist: true }),
+        };
+        if (opp.supply.length > 0) {
+          supplyBreakdowns.push(...opp.supply);
+          supplyOpportunities.push({
+            ...oppBase,
+            breakdowns: opp.supply
+          });
+        }
+        if (opp.borrow.length > 0) {
+          borrowBreakdowns.push(...opp.borrow);
+          borrowOpportunities.push({
+            ...oppBase,
+            breakdowns: opp.borrow
+          });
+        }
+        if (opp.hold.length > 0) {
+          holdBreakdowns.push(...opp.hold);
+          holdOpportunities.push({
+            ...oppBase,
+            breakdowns: opp.hold
+          });
         }
       }
       
@@ -682,11 +626,10 @@ function generateCSV(data: RuntimeReserveData[]): string {
             if (g.message) parts.push(`msg:${g.message}`);
             // 添加 breakdowns（格式化为字符串）
             const breakdownStr = formatMerklBreakdown(
-              g.breakdowns.map(b => ({ ...b, opportunityLink: g.link }))
+              g.breakdowns.map(b => ({ ...b, opportunityId: g.opportunityId }))
             );
             if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
-            // 添加 link
-            parts.push(`link:${g.link}`);
+            if (g.opportunityId) parts.push(`oppId:${g.opportunityId}`);
             return parts.join('|');
           }).join(';')}"`
         : '',
@@ -697,10 +640,10 @@ function generateCSV(data: RuntimeReserveData[]): string {
             if (g.name) parts.push(`name:${g.name}`);
             if (g.message) parts.push(`msg:${g.message}`);
             const breakdownStr = formatMerklBreakdown(
-              g.breakdowns.map(b => ({ ...b, opportunityLink: g.link }))
+              g.breakdowns.map(b => ({ ...b, opportunityId: g.opportunityId }))
             );
             if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
-            parts.push(`link:${g.link}`);
+            if (g.opportunityId) parts.push(`oppId:${g.opportunityId}`);
             return parts.join('|');
           }).join(';')}"`
         : '',
@@ -711,10 +654,10 @@ function generateCSV(data: RuntimeReserveData[]): string {
             if (g.name) parts.push(`name:${g.name}`);
             if (g.message) parts.push(`msg:${g.message}`);
             const breakdownStr = formatMerklBreakdown(
-              g.breakdowns.map(b => ({ ...b, opportunityLink: g.link }))
+              g.breakdowns.map(b => ({ ...b, opportunityId: g.opportunityId }))
             );
             if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
-            parts.push(`link:${g.link}`);
+            if (g.opportunityId) parts.push(`oppId:${g.opportunityId}`);
             return parts.join('|');
           }).join(';')}"`
         : '',

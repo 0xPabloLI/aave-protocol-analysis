@@ -55,10 +55,10 @@ function pruneMerklBreakdown(b: MerklCampaignBreakdown): MerklCampaignBreakdown 
 
 export function pruneMerklGroup(g: MerklOpportunityGroup): MerklOpportunityGroup {
   return {
-    link: g.link,
+    link: g.opportunityId ? `https://app.merkl.xyz/opportunities/${g.opportunityId}` : '',
+    ...(g.opportunityId ? { opportunityId: g.opportunityId } : {}),
     ...(g.name ? { name: g.name } : {}),
     ...(g.message ? { message: g.message } : {}),
-    ...(g.opportunityType ? { opportunityType: g.opportunityType } : {}),
     ...(g.netPositionConstraint !== undefined ? { netPositionConstraint: g.netPositionConstraint } : {}),
     ...(g.borrowBlacklist ? { borrowBlacklist: true } : {}),
     breakdowns: (g.breakdowns ?? []).map(pruneMerklBreakdown),

@@ -11,7 +11,7 @@ describe('AAV-924: borrowBlacklist field on MerklOpportunityData', () => {
       marketName: 'Aave V3 Ethereum',
       chainId: 1,
       protocolVersion: 'v3',
-      opportunityLink: 'https://app.merkl.xyz/opportunities/ethereum/AAVE_SUPPLY/0xEc4ef66D4fCeEba34aBB4dE69dB391Bc5476ccc8BORROW_BL',
+      opportunityId: '9830701213305656660',
       opportunityType: 'AAVE_SUPPLY',
       borrowBlacklist: true,
     };
