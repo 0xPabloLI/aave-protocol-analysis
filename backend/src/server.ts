@@ -2,6 +2,7 @@ import './env.js';
 import express from 'express';
 import compression from 'compression';
 import { Agent, setGlobalDispatcher } from 'undici';
+import v8 from 'v8';
 import { corsMiddleware } from './middleware/cors.js';
 import { apiCacheHeadersMiddleware } from './middleware/cacheHeaders.js';
 import { rateLimitMiddleware } from './middleware/rateLimit.js';
@@ -242,7 +243,27 @@ if (isPersistenceEnabled()) {
       } catch (error) {
         logger.warn(`⚠️  Background migration retry #${retryCount} failed (will retry in 60s):`, error);
       }
-    }, 60_000).unref();
+}, 60_000).unref();
+
+// Detailed heap diagnostics every 10 min (MEMORY_DIAG=1 only).
+// Tracks V8 malloced_memory, external_memory, and heap space breakdown
+// to distinguish V8 heap growth from native/C++ binding leaks.
+if (process.env.MEMORY_DIAG === '1') {
+  let diagBaseline: { heapUsed: number; rss: number; malloced: number; external: number } | null = null;
+  setInterval(() => {
+    const mem = process.memoryUsage();
+    const heapStats = v8.getHeapStatistics();
+    const fmt = (bytes: number) => `${Math.round(bytes / 1024 / 1024)}MB`;
+    const now = { heapUsed: mem.heapUsed, rss: mem.rss, malloced: heapStats.malloced_memory, external: heapStats.external_memory };
+    if (!diagBaseline) diagBaseline = { ...now };
+    const d = (cur: number, base: number) => `${cur >= base ? '+' : ''}${((cur - base) / 1024 / 1024).toFixed(0)}MB`;
+    logger.info(
+      `🔬 Heap detail: heap=${fmt(mem.heapUsed)} rss=${fmt(mem.rss)} external=${fmt(heapStats.external_memory)} malloced=${fmt(heapStats.malloced_memory)} ` +
+      `totalPhysical=${fmt(heapStats.total_physical_size)} totalAvailable=${fmt(heapStats.total_available_size)} ` +
+      `| Δfrom1st: heap=${d(now.heapUsed, diagBaseline.heapUsed)} rss=${d(now.rss, diagBaseline.rss)} malloced=${d(now.malloced, diagBaseline.malloced)} external=${d(now.external, diagBaseline.external)}`
+    );
+  }, 10 * 60_000).unref();
+}
   }
 } else {
   logger.info('💾 Persistence disabled — skipping auto-migration');
@@ -308,6 +329,11 @@ setInterval(() => {
   const hashSizes = getHashMapSizes();
   const providerStats = providerPool.getCacheStats();
   const snapshots = getMarketsData();
+  // Log undici connection pool stats (connected/free/running per origin)
+  const undiciStats = globalAgent?.stats ?? {};
+  const undiciSummary = Object.entries(undiciStats as Record<string, { connected?: number; free?: number; running?: number; queued?: number }>)
+    .map(([origin, s]) => `${new URL(origin).hostname}=${s.connected ?? 0}/${s.free ?? 0}/${s.running ?? 0}`)
+    .join(' ') || 'none';
   logger.info(
     `📊 Memory: heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} rss=${fmt(mem.rss)} arrayBuffers=${fmt(mem.arrayBuffers ?? 0)} | ` +
     `reserves=${snapshots?.payload?.data?.length ?? 0} ` +
@@ -319,7 +345,8 @@ setInterval(() => {
     `brevis=${brevisStats.chainCallCache} ` +
     `hashes=${hashSizes.marketRow}+${hashSizes.marketConfig}+${hashSizes.oraclePrice} ` +
     `rpc=${providerStats.providers}p+${providerStats.endpoints}e+${providerStats.rpcUrls}u ` +
-    `browser=${meritStats.browserActive}`
+    `browser=${meritStats.browserActive} ` +
+    `undici=[${undiciSummary}]`
   );
 
   if (RSS_RESTART_THRESHOLD_MB > 0 && mem.rss > RSS_RESTART_THRESHOLD_MB * 1024 * 1024) {

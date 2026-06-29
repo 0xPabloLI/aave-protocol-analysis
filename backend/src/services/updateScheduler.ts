@@ -41,7 +41,13 @@ async function withHeapTrace<T>(label: string, fn: () => Promise<T>): Promise<T>
   try {
     return await fn();
   } finally {
-    logHeapDiff(label, before);
+    if (_heapDiagEnabled) {
+      logHeapDiff(label + ':pre-gc', before);
+      if (globalThis.gc) {
+        globalThis.gc();
+        logHeapDiff(label + ':post-gc', before);
+      }
+    }
   }
 }
 
