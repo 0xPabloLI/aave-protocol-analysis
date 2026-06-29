@@ -2,7 +2,8 @@
  * Persistence service — batch-writes market & oracle snapshots to PostgreSQL.
  *
  * Design highlights:
- * - Throttled to once every PERSIST_INTERVAL_MS (default 5 min).
+ * - Throttled to once every PERSIST_INTERVAL_MS (default 5 min, was 1 min — increased to reduce
+ *   WAL generation and PITR egress by ~80%).
  * - Skipped silently when DATABASE_URL is unset (treat persistence as opt-in).
  * - Uses parameterised INSERT (`$1, $2, …`) — never string concatenation.
  * - Content-hash change detection: only writes rows whose data actually changed
@@ -24,7 +25,7 @@ import type { MarketsPayload, RuntimeReserveData } from '@internal/aave-shared-c
 import { fifoEvict } from '@internal/aave-shared-contracts';
 import type { OraclePricesSnapshot } from './oracleService.js';
 
-const PERSIST_INTERVAL_MS = Number.parseInt(process.env.PERSIST_INTERVAL_MS ?? '', 10) || 60 * 1000;
+const PERSIST_INTERVAL_MS = Number.parseInt(process.env.PERSIST_INTERVAL_MS ?? '', 10) || 5 * 60 * 1000;
 
 let lastPersistTs = 0;
 let lastPersistSuccessTs = 0;

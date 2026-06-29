@@ -74,7 +74,7 @@ export function startUpdateScheduler(): void {
   logger.info('📅 Starting cron schedulers (all cron-write/API-read-only):');
   logger.info('   • Markets (V3+V4 merged): every 1 minute at :00');
   logger.info('   • On-chain (deficit, baseRate): every 1 minute at :10');
-  logger.info('   • Persistence (PostgreSQL): every 1 minute at :20');
+  logger.info('   • Persistence (PostgreSQL): every 1 min at :20 (throttled to 5 min by PERSIST_INTERVAL_MS)');
   logger.info('   • Oracle (V3+V4 prices): every 60s (60s TTL, V4 reserveToken 1h cached)');
   logger.info('   • Forecast: every 10 minutes');
   logger.info('   • FDV: every 15 minutes');
@@ -104,7 +104,8 @@ export function startUpdateScheduler(): void {
     }
   });
 
-  // Persist memory snapshots to PostgreSQL every minute at :20.
+  // Persist memory snapshots to PostgreSQL — cron triggers every minute at :20,
+  // but PERSIST_INTERVAL_MS (default 5 min) throttles actual writes.
   // Runs independently after markets (:00) + oracle (:00) + onchain (:10) settle.
   // Onchain failure does NOT block persist — markets + oracle data is still valid.
   schedule(BACKEND_SCHEDULE_CRON.persistSnapshotsEveryMinuteAtSecond20, async () => {
