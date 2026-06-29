@@ -54,7 +54,7 @@ Slice 1 (completed)
 
 ---
 
-## Slice 3: Frontend Recently Ended Embedding + Campaign URL (aaveapy repo)
+## Slice 3: Frontend Recently Ended Embedding + Campaign URL (aaveapy repo) — ✅ DONE (fbfe6474)
 
 ### Parent
 PRD: Campaign Hash ID Migration + Recently Ended Embedding
@@ -90,7 +90,7 @@ Slice 4 (backend must remove `campaignDatabaseId` first for schema consistency)
 
 ---
 
-## Slice 4: Backend Remove campaignDatabaseId (aave-protocol-analysis repo)
+## Slice 4: Backend Remove campaignDatabaseId (aave-protocol-analysis repo) — ✅ DONE (84836ab)
 
 ### Parent
 PRD: Campaign Hash ID Migration + Recently Ended Embedding

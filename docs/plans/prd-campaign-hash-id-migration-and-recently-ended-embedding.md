@@ -5,9 +5,9 @@
 | Requirement | Status | Commit |
 |---|---|---|
 | R1: Campaign Hash ID Migration (Backend) | ✅ Done | 90348a2 |
-| R2: Recently Ended Embedding (Frontend) | 🔲 In Progress | — |
+| R2: Recently Ended Embedding (Frontend) | ✅ Done | fbfe6474 |
 | R3: Remove PAST Opportunities Fetch | ✅ Done | 90348a2 |
-| R4: Campaign URL + Remove campaignDatabaseId | 🔲 Pending | — |
+| R4: Campaign URL + Remove campaignDatabaseId | ✅ Done | 84836ab (backend), fbfe6474 (frontend) |
 
 ## Summary
 
