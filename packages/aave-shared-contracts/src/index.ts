@@ -90,7 +90,10 @@ export type ForecastCampaignTypeLite =
   | 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT';
 
 export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
+  /** Merkl Campaign Hash ID (hex, e.g. 0x0cf07a3891...). Used as Map key and in Merkl web UI URLs. */
   campaignId: string;
+  /** Merkl Campaign Database ID (numeric). Only consumed by fetchMerklCampaignDetails() API call. */
+  campaignDatabaseId?: string;
   whitelistOnly?: boolean;
   pointsPerThousandUsd?: number;
   rewardTokenSymbol?: string;
@@ -126,6 +129,7 @@ export interface MerklBorrowHookProtocol {
 }
 
 export interface MerklCampaignAccess {
+  /** Merkl Campaign Hash ID. */
   campaignId: string;
   chainId: number;
   whitelist: string[];

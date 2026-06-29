@@ -13,13 +13,13 @@ describe('filterRecentExpiredCampaigns (Merkl)', () => {
       campaignApr: 0.01,
       campaignStartedAt: past(30 + i),
       campaignEndedAt: past(i + 1),
-      campaignId: `expired-${i}`,
+      campaignId: `0xexpired${i}a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6`,
       campaignType: 'DUTCH_AUCTION' as const,
       rewardTokenSymbol: 'WXPL',
     }));
     const result = filterRecentExpiredCampaigns(breakdowns);
     assert.equal(result.length, 1);
-    assert.equal(result[0].campaignId, 'expired-0');
+    assert.equal(result[0].campaignId, '0xexpired0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6');
   });
 
   it('活跃+过期混合 → 活跃全保留+每组1条最近过期', () => {
@@ -27,39 +27,39 @@ describe('filterRecentExpiredCampaigns (Merkl)', () => {
     const past = (days: number) => new Date(now.getTime() - days * 86400000).toISOString();
     const future = (days: number) => new Date(now.getTime() + days * 86400000).toISOString();
     const breakdowns: MerklCampaignBreakdown[] = [
-      { campaignApr: 0.02, campaignStartedAt: past(30), campaignEndedAt: future(10), campaignId: 'active-1', campaignType: 'DUTCH_AUCTION' },
-      { campaignApr: 0.01, campaignStartedAt: past(30), campaignEndedAt: future(5), campaignId: 'active-2', campaignType: 'DUTCH_AUCTION' },
-      { campaignApr: 0.005, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: 'expired-1', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
-      { campaignApr: 0.003, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: 'expired-2', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
-      { campaignApr: 0.004, campaignStartedAt: past(30), campaignEndedAt: past(3), campaignId: 'expired-3', campaignType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE', rewardTokenSymbol: 'USDe' },
+      { campaignApr: 0.02, campaignStartedAt: past(30), campaignEndedAt: future(10), campaignId: '0xactive1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION' },
+      { campaignApr: 0.01, campaignStartedAt: past(30), campaignEndedAt: future(5), campaignId: '0xactive2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION' },
+      { campaignApr: 0.005, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: '0xexpired1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
+      { campaignApr: 0.003, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: '0xexpired2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
+      { campaignApr: 0.004, campaignStartedAt: past(30), campaignEndedAt: past(3), campaignId: '0xexpired3a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE', rewardTokenSymbol: 'USDe' },
     ];
     const result = filterRecentExpiredCampaigns(breakdowns);
-    assert.equal(result.filter(b => b.campaignId!.startsWith('active')).length, 2);
-    assert.equal(result.filter(b => b.campaignId!.startsWith('expired')).length, 2);
-    assert.ok(result.find(b => b.campaignId === 'expired-1'));
-    assert.ok(result.find(b => b.campaignId === 'expired-3'));
+    assert.equal(result.filter(b => b.campaignId!.startsWith('0xactive')).length, 2);
+    assert.equal(result.filter(b => b.campaignId!.startsWith('0xexpired')).length, 2);
+    assert.ok(result.find(b => b.campaignId === '0xexpired1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6'));
+    assert.ok(result.find(b => b.campaignId === '0xexpired3a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6'));
   });
 
   it('同campaignType不同rewardToken → 各保留1条', () => {
     const now = new Date();
     const past = (days: number) => new Date(now.getTime() - days * 86400000).toISOString();
     const breakdowns: MerklCampaignBreakdown[] = [
-      { campaignApr: 0.01, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: 'wxpl-1', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
-      { campaignApr: 0.02, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: 'wxpl-2', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
-      { campaignApr: 0.03, campaignStartedAt: past(30), campaignEndedAt: past(2), campaignId: 'agho-1', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'aGHO' },
-      { campaignApr: 0.04, campaignStartedAt: past(30), campaignEndedAt: past(6), campaignId: 'agho-2', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'aGHO' },
+      { campaignApr: 0.01, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: '0xwxpl1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
+      { campaignApr: 0.02, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: '0xwxpl2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
+      { campaignApr: 0.03, campaignStartedAt: past(30), campaignEndedAt: past(2), campaignId: '0xagho1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'aGHO' },
+      { campaignApr: 0.04, campaignStartedAt: past(30), campaignEndedAt: past(6), campaignId: '0xagho2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'aGHO' },
     ];
     const result = filterRecentExpiredCampaigns(breakdowns);
     assert.equal(result.length, 2);
-    assert.ok(result.find(b => b.campaignId === 'wxpl-1'));
-    assert.ok(result.find(b => b.campaignId === 'agho-1'));
+    assert.ok(result.find(b => b.campaignId === '0xwxpl1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6'));
+    assert.ok(result.find(b => b.campaignId === '0xagho1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6'));
   });
 
   it('无过期campaign → 原样返回', () => {
     const now = new Date();
     const future = (days: number) => new Date(now.getTime() + days * 86400000).toISOString();
     const breakdowns: MerklCampaignBreakdown[] = [
-      { campaignApr: 0.02, campaignStartedAt: future(-30), campaignEndedAt: future(10), campaignId: 'active-1' },
+      { campaignApr: 0.02, campaignStartedAt: future(-30), campaignEndedAt: future(10), campaignId: '0xactive1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6' },
     ];
     const result = filterRecentExpiredCampaigns(breakdowns);
     assert.equal(result.length, 1);
@@ -69,12 +69,12 @@ describe('filterRecentExpiredCampaigns (Merkl)', () => {
     const now = new Date();
     const past = (days: number) => new Date(now.getTime() - days * 86400000).toISOString();
     const breakdowns: MerklCampaignBreakdown[] = [
-      { campaignApr: 0.005, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: 'expired-no-type-1' },
-      { campaignApr: 0.003, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: 'expired-no-type-2' },
+      { campaignApr: 0.005, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: '0xexpirednotype1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2' },
+      { campaignApr: 0.003, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: '0xexpirednotype2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2' },
     ];
     const result = filterRecentExpiredCampaigns(breakdowns);
     assert.equal(result.length, 1);
-    assert.equal(result[0].campaignId, 'expired-no-type-1');
+    assert.equal(result[0].campaignId, '0xexpirednotype1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2');
   });
 });
 

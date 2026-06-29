@@ -221,8 +221,10 @@ const extractAprCap = (campaign: unknown, campaignType: CampaignForecastType): n
 };
 
 const buildCampaignSnapshotLite = (campaign: unknown): CampaignSnapshotLite | null => {
-  const id = getAtPath(campaign, ['id']);
-  if (typeof id !== 'string' || !id) return null;
+  const hashId = getAtPath(campaign, ['campaignId']);
+  const dbId = getAtPath(campaign, ['id']);
+  const id = typeof hashId === 'string' && hashId ? hashId : typeof dbId === 'string' && dbId ? dbId : '';
+  if (!id) return null;
 
   const amount = getAtPath(campaign, ['amount']);
   const startTimestamp = getAtPath(campaign, ['startTimestamp']);
@@ -523,17 +525,28 @@ export const buildCampaignOpportunityMetaMapFromOpportunities = (
     const oppCampaignsRaw = getAtPath(opp, ['campaigns']);
     const oppCampaigns = Array.isArray(oppCampaignsRaw) ? oppCampaignsRaw : [];
     const campaignSnapshotById = new Map<string, CampaignSnapshotLite>();
+    const localDbIdToHashId = new Map<string, string>();
     oppCampaigns.forEach((campaign) => {
       const snapshotLite = buildCampaignSnapshotLite(campaign);
       if (snapshotLite) {
-        campaignSnapshotById.set(snapshotLite.id, snapshotLite);
+        const hashId = typeof getAtPath(campaign, ['campaignId']) === 'string'
+          ? String(getAtPath(campaign, ['campaignId'])) : '';
+        const dbId = typeof getAtPath(campaign, ['id']) === 'string'
+          ? String(getAtPath(campaign, ['id'])) : '';
+        if (hashId) {
+          campaignSnapshotById.set(hashId, snapshotLite);
+          if (dbId) localDbIdToHashId.set(dbId, hashId);
+        } else if (dbId) {
+          campaignSnapshotById.set(dbId, snapshotLite);
+        }
       }
     });
 
     breakdowns.forEach((breakdown) => {
-      const campaignId = getAtPath(breakdown, ['campaignId']);
-      if (typeof campaignId !== 'string' || !campaignId) return;
-      const campaignSnapshot = campaignSnapshotById.get(campaignId) ?? null;
+      const breakdownDbId = getAtPath(breakdown, ['campaignId']);
+      if (typeof breakdownDbId !== 'string' || !breakdownDbId) return;
+      const hashId = localDbIdToHashId.get(breakdownDbId) || breakdownDbId;
+      const campaignSnapshot = campaignSnapshotById.get(hashId) ?? null;
       const useTokenRateInMetrics = campaignUsesTokenRateInMetrics(breakdown);
 
       const breakdownDistributionType =
@@ -541,7 +554,7 @@ export const buildCampaignOpportunityMetaMapFromOpportunities = (
         (typeof oppDistributionTypeRaw === 'string' && oppDistributionTypeRaw) ||
         undefined;
       const matchingCampaign = oppCampaigns.find(
-        (c: any) => String(getAtPath(c, ['id']) || '') === campaignId
+        (c: any) => String(getAtPath(c, ['id']) || '') === breakdownDbId
       );
       const rawTargetAPR =
         getAtPath(matchingCampaign, ['params', 'distributionMethodParameters', 'distributionSettings', 'targetAPR']) ??
@@ -552,9 +565,9 @@ export const buildCampaignOpportunityMetaMapFromOpportunities = (
       });
       if (!hintType) return;
 
-      const previous = map.get(campaignId);
+      const previous = map.get(hashId);
       if (!previous) {
-        map.set(campaignId, {
+        map.set(hashId, {
           tvl,
           campaignTypeHint: hintType,
           campaignSnapshot,
@@ -563,7 +576,7 @@ export const buildCampaignOpportunityMetaMapFromOpportunities = (
         return;
       }
 
-      map.set(campaignId, {
+      map.set(hashId, {
         tvl: previous.tvl > 0 ? previous.tvl : tvl,
         campaignTypeHint: previous.campaignTypeHint,
         campaignSnapshot: previous.campaignSnapshot ?? campaignSnapshot,
