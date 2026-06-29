@@ -45,7 +45,12 @@ async function withHeapTrace<T>(label: string, fn: () => Promise<T>): Promise<T>
       logHeapDiff(label + ':pre-gc', before);
       if (globalThis.gc) {
         globalThis.gc();
-        logHeapDiff(label + ':post-gc', before);
+        const afterGc = snapshotMem();
+        const dHeap = (afterGc.heapUsed - before.heapUsed) / _MB;
+        const dRss = (afterGc.rss - before.rss) / _MB;
+        logger.info(
+          `🔍 heap-diff [${label}:post-gc] heap=${dHeap >= 0 ? '+' : ''}${dHeap.toFixed(1)}MB rss=${dRss >= 0 ? '+' : ''}${dRss.toFixed(1)}MB → absHeap=${(afterGc.heapUsed / _MB).toFixed(0)}MB absRss=${(afterGc.rss / _MB).toFixed(0)}MB`
+        );
       }
     }
   }
