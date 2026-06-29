@@ -334,8 +334,15 @@ setInterval(() => {
   const undiciSummary = Object.entries(undiciStats as Record<string, { connected?: number; free?: number; running?: number; queued?: number }>)
     .map(([origin, s]) => `${new URL(origin).hostname}=${s.connected ?? 0}/${s.free ?? 0}/${s.running ?? 0}`)
     .join(' ') || 'none';
+  // V8 heap space breakdown (old_space is where long-lived objects accumulate)
+  const heapSpaces = v8.getHeapSpaceStatistics();
+  const spaceSummary = heapSpaces
+    .filter(s => s.space_used_size > 1024 * 1024)
+    .map(s => `${s.space_name.replace(/_space$/, '')}=${Math.round(s.space_used_size / 1024 / 1024)}/${Math.round(s.space_size / 1024 / 1024)}`)
+    .join(' ');
   logger.info(
     `📊 Memory: heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} rss=${fmt(mem.rss)} arrayBuffers=${fmt(mem.arrayBuffers ?? 0)} external=${fmt(v8.getHeapStatistics().external_memory)} malloced=${fmt(v8.getHeapStatistics().malloced_memory)} | ` +
+    `spaces=[${spaceSummary}] ` +
     `reserves=${snapshots?.payload?.data?.length ?? 0} ` +
     `onchain=${onchainStats.poolCount}pools/${onchainStats.reserveCount}res ` +
     `oracle=${oracleStats.leanPrice}+${oracleStats.v4ReserveToken} ` +
