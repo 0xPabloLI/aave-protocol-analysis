@@ -335,7 +335,7 @@ setInterval(() => {
     .map(([origin, s]) => `${new URL(origin).hostname}=${s.connected ?? 0}/${s.free ?? 0}/${s.running ?? 0}`)
     .join(' ') || 'none';
   logger.info(
-    `📊 Memory: heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} rss=${fmt(mem.rss)} arrayBuffers=${fmt(mem.arrayBuffers ?? 0)} | ` +
+    `📊 Memory: heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} rss=${fmt(mem.rss)} arrayBuffers=${fmt(mem.arrayBuffers ?? 0)} external=${fmt(v8.getHeapStatistics().external_memory)} malloced=${fmt(v8.getHeapStatistics().malloced_memory)} | ` +
     `reserves=${snapshots?.payload?.data?.length ?? 0} ` +
     `onchain=${onchainStats.poolCount}pools/${onchainStats.reserveCount}res ` +
     `oracle=${oracleStats.leanPrice}+${oracleStats.v4ReserveToken} ` +
