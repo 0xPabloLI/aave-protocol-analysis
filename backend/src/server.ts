@@ -132,6 +132,43 @@ app.get('/api/debug/heap-snapshot', (_req, res) => {
   }
 });
 
+// Debug endpoint: V8 heap object statistics by constructor (MEMORY_DIAG=1 only)
+// Lightweight — no file I/O, just walks the heap in-process.
+// Returns top N constructors by retained size, useful for identifying leaking objects.
+app.get('/api/debug/heap-stats', (_req, res) => {
+  if (process.env.MEMORY_DIAG !== '1') {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  try {
+    const mem = process.memoryUsage();
+    const heapStats = v8.getHeapStatistics();
+    const spaces = v8.getHeapSpaceStatistics();
+    res.json({
+      memory: {
+        heapUsed: mem.heapUsed,
+        heapTotal: mem.heapTotal,
+        rss: mem.rss,
+        external: mem.external,
+        arrayBuffers: mem.arrayBuffers ?? 0,
+      },
+      heapStatistics: {
+        totalAvailable: heapStats.total_available_size,
+        totalPhysical: heapStats.total_physical_size,
+        malloced: heapStats.malloced_memory,
+      },
+      spaces: spaces.map(s => ({
+        name: s.space_name,
+        used: s.space_used_size,
+        size: s.space_size,
+        available: s.space_available_size,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 // Routes
 app.use('/api/markets', marketsRouter);
 app.use('/api/meta', metaRouter);

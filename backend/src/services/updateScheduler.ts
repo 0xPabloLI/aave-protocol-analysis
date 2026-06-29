@@ -17,6 +17,12 @@ import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 const _MB = 1024 * 1024;
 const _heapDiagEnabled = process.env.MEMORY_DIAG === '1';
 
+function tryGc(): void {
+  if (globalThis.gc) {
+    globalThis.gc();
+  }
+}
+
 function snapshotMem(): { heapUsed: number; heapTotal: number; rss: number; arrayBuffers: number } {
   const m = process.memoryUsage();
   return { heapUsed: m.heapUsed, heapTotal: m.heapTotal, rss: m.rss, arrayBuffers: m.arrayBuffers ?? 0 };
@@ -79,6 +85,7 @@ export function startUpdateScheduler(): void {
   schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
     try {
       await withHeapTrace('markets', refreshMarketsSnapshot);
+      tryGc();
     } catch (error) {
       logger.warn(
         `Markets refresh scheduler failed: ${error instanceof Error ? error.message : String(error)}`
@@ -89,6 +96,7 @@ export function startUpdateScheduler(): void {
   schedule(BACKEND_SCHEDULE_CRON.onchainDataWarmEveryMinuteAtSecond10, async () => {
     try {
       await withHeapTrace('onchain', refreshOnchainCache);
+      tryGc();
     } catch (error) {
       logger.warn(
         `On-chain cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
@@ -116,6 +124,7 @@ export function startUpdateScheduler(): void {
   schedule(BACKEND_SCHEDULE_CRON.oraclePriceWarmEveryMinuteAtSecond0, async () => {
     try {
       await withHeapTrace('oracle', refreshOracleCache);
+      tryGc();
     } catch (error) {
       logger.warn(
         `Oracle cache refresh failed: ${error instanceof Error ? error.message : String(error)}`

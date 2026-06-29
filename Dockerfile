@@ -57,6 +57,13 @@ RUN mkdir -p data logs backend/logs
 
 EXPOSE 3001
 
+# MALLOC_ARENA_MAX=2: limit glibc malloc arenas to reduce memory fragmentation.
+# Default is 8×CPU cores, each arena holds independent memory pools that can't be
+# returned to OS. On 1GB Railway container, this fragmentation causes RSS to grow
+# ~30MB/h even though V8 heap is stable. Limiting to 2 arenas trades some
+# throughput for much lower RSS growth.
+ENV MALLOC_ARENA_MAX=2
+
 # --max-old-space-size=384: force aggressive old_space GC to prevent ~23MB/h leak
 # (768MB was too permissive — V8 didn't GC until approaching limit, allowing old_space
 # to grow unchecked. 384MB ≈ 2× steady-state heap ~95MB, gives enough headroom while
