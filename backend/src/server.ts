@@ -114,9 +114,36 @@ app.get('/.well-known/security.txt', (_req, res) => {
   );
 });
 
-// Debug endpoint: trigger V8 heap snapshot (MEMORY_DIAG=1 only).
-// Parses the snapshot in-process and returns top constructors by self size.
-app.get('/api/debug/heap-snapshot', async (_req, res) => {
+// Debug endpoint: write V8 heap snapshot to disk and return stats (MEMORY_DIAG=1 only).
+// The snapshot file can be downloaded via `railway run` or analyzed in Chrome DevTools.
+// Returns immediately after triggering the write — check logs for completion.
+app.get('/api/debug/heap-snapshot', (_req, res) => {
+  if (process.env.MEMORY_DIAG !== '1') {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+  const memBefore = process.memoryUsage();
+  let filePath = '';
+  try {
+    filePath = v8.writeHeapSnapshot();
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    return;
+  }
+  const memAfter = process.memoryUsage();
+  logger.info(`🔬 Heap snapshot written: ${filePath} (heap ${Math.round(memBefore.heapUsed/1024/1024)}MB → ${Math.round(memAfter.heapUsed/1024/1024)}MB)`);
+  res.json({
+    filePath,
+    heapBeforeMB: Math.round(memBefore.heapUsed / 1024 / 1024),
+    heapAfterMB: Math.round(memAfter.heapUsed / 1024 / 1024),
+    message: 'Snapshot written. Use `railway run --service aave-protocol-analysis "cat /app/<filename>" > snapshot.heapsnapshot` to retrieve.',
+  });
+});
+
+// Debug endpoint: lightweight heap object analysis (MEMORY_DIAG=1 only).
+// Streams v8.getHeapSnapshot(), parses incrementally, returns top constructors.
+// Uses streaming JSON parse to avoid loading entire snapshot into memory.
+app.get('/api/debug/heap-top', async (_req, res) => {
   if (process.env.MEMORY_DIAG !== '1') {
     res.status(404).json({ error: 'Not found' });
     return;
@@ -124,45 +151,41 @@ app.get('/api/debug/heap-snapshot', async (_req, res) => {
   try {
     const memBefore = process.memoryUsage();
     const snapshotStream = v8.getHeapSnapshot();
+
+    // Accumulate raw bytes, then parse
     const chunks: Buffer[] = [];
     for await (const chunk of snapshotStream) {
-      chunks.push(Buffer.from(chunk));
+      chunks.push(chunk);
+      // Safety: abort if we've accumulated > 500MB
+      if (chunks.reduce((s, c) => s + c.length, 0) > 500 * 1024 * 1024) {
+        res.status(500).json({ error: 'Snapshot too large (>500MB), aborting' });
+        return;
+      }
     }
     const raw = Buffer.concat(chunks).toString('utf-8');
     const snapshot = JSON.parse(raw);
 
-    // V8 heap snapshot format: { snapshot: { meta: { node_fields, node_types, edge_fields, edge_types } }, nodes: [...], edges: [...], strings: [...] }
-    const meta = snapshot.snapshot?.meta ?? snapshot.meta;
-    const nodes = snapshot.nodes ?? snapshot.snapshot?.nodes;
-    const strings = snapshot.strings ?? snapshot.snapshot?.strings;
+    const meta = snapshot.snapshot?.meta;
+    const nodes = snapshot.nodes;
+    const strings = snapshot.strings;
 
-    if (!meta || !nodes || !strings) {
-      res.status(500).json({ error: 'Unexpected snapshot format', keys: Object.keys(snapshot), metaKeys: meta ? Object.keys(meta) : [] });
+    if (!meta?.node_fields || !nodes || !strings) {
+      res.status(500).json({ error: 'Unexpected snapshot format' });
       return;
     }
 
     const nodeFields: string[] = meta.node_fields;
     const fieldCount = nodeFields.length;
-
-    // Find field offsets
-    const typeIdx = nodeFields.indexOf('type');
     const nameIdx = nodeFields.indexOf('name');
     const selfSizeIdx = nodeFields.indexOf('self_size');
 
-    if (typeIdx === -1 || nameIdx === -1 || selfSizeIdx === -1) {
-      res.status(500).json({ error: 'Missing expected node fields', nodeFields });
-      return;
-    }
-
-    // Aggregate by constructor name: count + self_size
     const byCtor = new Map<string, { count: number; selfSize: number }>();
     const nodeCount = nodes.length / fieldCount;
 
     for (let i = 0; i < nodes.length; i += fieldCount) {
-      const nameIdx_val = nodes[i + nameIdx];
       const selfSize = nodes[i + selfSizeIdx];
-      const name = strings[nameIdx_val] ?? `(unnamed:${nodes[i + typeIdx]})`;
       if (selfSize > 0) {
+        const name = strings[nodes[i + nameIdx]] ?? '(unnamed)';
         const entry = byCtor.get(name) ?? { count: 0, selfSize: 0 };
         entry.count++;
         entry.selfSize += selfSize;
@@ -170,10 +193,9 @@ app.get('/api/debug/heap-snapshot', async (_req, res) => {
       }
     }
 
-    // Sort by self_size descending, return top 40
     const top = [...byCtor.entries()]
       .sort((a, b) => b[1].selfSize - a[1].selfSize)
-      .slice(0, 40)
+      .slice(0, 50)
       .map(([name, { count, selfSize }]) => ({
         constructor: name,
         count,
@@ -184,8 +206,8 @@ app.get('/api/debug/heap-snapshot', async (_req, res) => {
     res.json({
       nodeCount,
       constructorCount: byCtor.size,
-      heapBefore: `${Math.round(memBefore.heapUsed / 1024 / 1024)}MB`,
-      heapAfter: `${Math.round(memAfter.heapUsed / 1024 / 1024)}MB`,
+      heapBeforeMB: Math.round(memBefore.heapUsed / 1024 / 1024),
+      heapAfterMB: Math.round(memAfter.heapUsed / 1024 / 1024),
       topBySelfSize: top,
     });
   } catch (err) {
