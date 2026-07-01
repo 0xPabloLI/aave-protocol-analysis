@@ -401,17 +401,48 @@ if (process.env.MEMORY_DIAG === '1') {
     );
   }, 10 * 60_000).unref();
 
-  // Auto heap snapshot at 4h and 8h uptime (MEMORY_DIAG=1 only).
-  // V8 heap snapshots are the definitive way to identify which JS objects
-  // are accumulating in old_space. File is written to /app/ and can be
-  // retrieved via `railway run` or similar.
-  // CAUTION: each snapshot is ~50-100MB, blocks main thread for ~2-5s.
-  const SNAPSHOT_HOURS = [4, 8];
+  // Auto heap snapshot + analysis at 2h, 4h, 8h uptime (MEMORY_DIAG=1 only).
+  // Writes .heapsnapshot file AND logs top 30 constructors by self_size.
+  // The analysis runs in-process after writing the file, which may cause
+  // temporary RSS spike, but the results are logged for immediate diagnosis.
+  const SNAPSHOT_HOURS = [2, 4, 8];
   for (const hours of SNAPSHOT_HOURS) {
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
         const filePath = v8.writeHeapSnapshot();
-        logger.info(`🔬 Auto heap snapshot at ${hours}h: ${filePath} (heap=${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB)`);
+        const mem = process.memoryUsage();
+        logger.info(`🔬 Auto heap snapshot at ${hours}h: ${filePath} (heap=${Math.round(mem.heapUsed / 1024 / 1024)}MB)`);
+
+        // Parse snapshot in-process to find top constructors
+        const { readFile } = await import('fs/promises');
+        const raw = await readFile(filePath, 'utf-8');
+        const snapshot = JSON.parse(raw);
+        const meta = snapshot.snapshot?.meta;
+        const nodes = snapshot.nodes;
+        const strings = snapshot.strings;
+        if (meta?.node_fields && nodes && strings) {
+          const nodeFields: string[] = meta.node_fields;
+          const fieldCount = nodeFields.length;
+          const nameIdx = nodeFields.indexOf('name');
+          const selfSizeIdx = nodeFields.indexOf('self_size');
+          const byCtor = new Map<string, { count: number; selfSize: number }>();
+          for (let i = 0; i < nodes.length; i += fieldCount) {
+            const selfSize = nodes[i + selfSizeIdx];
+            if (selfSize > 1024) { // skip tiny objects
+              const name = strings[nodes[i + nameIdx]] ?? '(unnamed)';
+              const e = byCtor.get(name) ?? { count: 0, selfSize: 0 };
+              e.count++;
+              e.selfSize += selfSize;
+              byCtor.set(name, e);
+            }
+          }
+          const top = [...byCtor.entries()]
+            .sort((a, b) => b[1].selfSize - a[1].selfSize)
+            .slice(0, 30)
+            .map(([name, { count, selfSize }]) => `${name}:${count}:${(selfSize / 1024 / 1024).toFixed(1)}MB`)
+            .join(' | ');
+          logger.info(`🔬 Heap top 30 at ${hours}h: ${top}`);
+        }
       } catch (err) {
         logger.warn(`🔬 Auto heap snapshot at ${hours}h failed: ${err instanceof Error ? err.message : String(err)}`);
       }
