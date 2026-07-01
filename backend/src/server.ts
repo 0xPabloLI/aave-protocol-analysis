@@ -317,6 +317,23 @@ if (process.env.MEMORY_DIAG === '1') {
       `| Δfrom1st: heap=${d(now.heapUsed, diagBaseline.heapUsed)} rss=${d(now.rss, diagBaseline.rss)} malloced=${d(now.malloced, diagBaseline.malloced)} external=${d(now.external, diagBaseline.external)}`
     );
   }, 10 * 60_000).unref();
+
+  // Auto heap snapshot at 4h and 8h uptime (MEMORY_DIAG=1 only).
+  // V8 heap snapshots are the definitive way to identify which JS objects
+  // are accumulating in old_space. File is written to /app/ and can be
+  // retrieved via `railway run` or similar.
+  // CAUTION: each snapshot is ~50-100MB, blocks main thread for ~2-5s.
+  const SNAPSHOT_HOURS = [4, 8];
+  for (const hours of SNAPSHOT_HOURS) {
+    setTimeout(() => {
+      try {
+        const filePath = v8.writeHeapSnapshot();
+        logger.info(`🔬 Auto heap snapshot at ${hours}h: ${filePath} (heap=${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB)`);
+      } catch (err) {
+        logger.warn(`🔬 Auto heap snapshot at ${hours}h failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }, hours * 3600_000).unref();
+  }
 }
   }
 } else {

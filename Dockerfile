@@ -68,5 +68,8 @@ ENV MALLOC_ARENA_MAX=2
 # (768MB was too permissive — V8 didn't GC until approaching limit, allowing old_space
 # to grow unchecked. 384MB ≈ 2× steady-state heap ~95MB, gives enough headroom while
 # forcing GC before RSS reaches ~600MB where OOM risk is high on 1GB Railway container.)
+# --heapsnapshot-near-heap-limit=1: write heap snapshot when heap approaches the
+# --max-old-space-size limit, so we can identify which objects caused the OOM.
+# The snapshot file is written to /app/ and can be retrieved via `railway run`.
 # --expose-gc: expose globalThis.gc() for manual GC triggering in diagnostics
-CMD ["node", "--max-old-space-size=384", "--expose-gc", "backend/dist/server.js"]
+CMD ["node", "--max-old-space-size=384", "--heapsnapshot-near-heap-limit=1", "--expose-gc", "backend/dist/server.js"]
