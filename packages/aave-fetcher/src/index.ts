@@ -2,6 +2,12 @@ import { writeFile, mkdir } from 'fs/promises';
 import { chainId, AaveClient, ChainsFilter } from "@aave/client";
 import { markets, chains } from "@aave/client/actions";
 import * as addressBook from "@aave-dao/aave-address-book";
+import {
+  createAaveV3RateLimitedFetch,
+  createSlidingWindowRateLimiter,
+  resetV3RateLimitState,
+  readNumberEnv,
+} from '@internal/aave-shared-config';
 
 const client = AaveClient.create();
 import { join, dirname } from 'path';
@@ -711,9 +717,8 @@ function generateCSV(data: RuntimeReserveData[]): string {
 async function fetchRawMarketData(): Promise<MarketData> {
   logger.info('🔄 Fetching Aave markets data from all networks...');
   
-  // 获取所有 AaveV3 网络信息
   const networkInfo = await getAllAaveV3Networks();
-  const chainIds = [...new Set(networkInfo.map(info => info.chainId))]; // 去重
+  const chainIds = [...new Set(networkInfo.map(info => info.chainId))];
   
   logger.info(`🌐 Found ${networkInfo.length} AaveV3 networks across ${chainIds.length} unique chains`);
   logger.info('📋 Networks:');
@@ -721,98 +726,111 @@ async function fetchRawMarketData(): Promise<MarketData> {
     logger.info(`   • ${info.name} (Chain ID: ${info.chainId})`);
   });
   
-  logger.info('\n🚀 Fetching markets data...');
+  logger.info('\n🚀 Fetching markets data (concurrent with rate limiting)...');
   
-  let marketList: any[] = [];
-  let supportedChainIds: number[] = [];
-  let errors: string[] = [];
-  
-  // 逐个尝试每个链ID，获取marketList和supportedChainIds
-  for (const chainIdValue of chainIds) {
-    let retries = 3;
-    let lastError: any = null;
-    
-    while (retries > 0) {
-      try {
-        logger.debug(`   Trying Chain ID: ${chainIdValue} (${4 - retries}/3 attempts)`);
-        const result = await markets(client, {
-          chainIds: [chainId(chainIdValue)],
-        });
-      
-      // @aave/client 使用 Result<T, E> 模式，需要检查 isOk() 或 isErr()
-      if (result && typeof result === 'object' && 'isErr' in result && typeof result.isErr === 'function') {
-        if (result.isErr()) {
-          const errorInfo = result.error;
-          const errorMsg = `Chain ${chainIdValue}: ${errorInfo.name || 'UnknownError'}${errorInfo.message ? ` - ${errorInfo.message}` : ''}`;
-          lastError = new Error(errorMsg);
-          retries--;
+  const maxConcurrency = readNumberEnv('V3_FETCH_MAX_CONCURRENCY', { defaultValue: 5, min: 1 });
+  const maxRetries = readNumberEnv('V3_FETCH_MAX_RETRIES', { defaultValue: 3, min: 0 });
+  const baseDelayMs = readNumberEnv('V3_FETCH_BASE_DELAY_MS', { defaultValue: 1000, min: 0 });
+  const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 30000, min: 0 });
+  const limiter = createSlidingWindowRateLimiter(
+    readNumberEnv('V3_MAX_REQUESTS_PER_SECOND', { defaultValue: 3, min: 1 })
+  );
+
+  let activeCount = 0;
+  const waitQueue: (() => void)[] = [];
+  const acquireSlot = () => {
+    if (activeCount < maxConcurrency) {
+      activeCount++;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => waitQueue.push(resolve));
+  };
+  const releaseSlot = () => {
+    const next = waitQueue.shift();
+    if (next) { next(); } else { activeCount--; }
+  };
+
+  const fetchSingleChain = async (chainIdValue: number): Promise<{ markets: any[]; chainId: number; error?: string }> => {
+    await acquireSlot();
+    try {
+      let lastError: any = null;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        await limiter.wait();
+        try {
+          logger.debug(`   Trying Chain ID: ${chainIdValue} (${attempt + 1}/${maxRetries + 1} attempts)`);
+          const result = await markets(client, {
+            chainIds: [chainId(chainIdValue)],
+          });
           
-          if (retries > 0) {
-            const delayMs = 2000 * (4 - retries); // 递增延迟：2s, 4s, 6s
-            logger.warn(`   ⚠️ Chain ${chainIdValue}: API error, retrying in ${delayMs}ms... (${errorMsg})`);
-            if (errorInfo.stack) {
-              logger.debug(`   Chain ${chainIdValue} error stack: ${errorInfo.stack}`);
+          if (result && typeof result === 'object' && 'isErr' in result && typeof result.isErr === 'function') {
+            if (result.isErr()) {
+              const errorInfo = result.error;
+              const errorMsg = `${errorInfo.name || 'UnknownError'}${errorInfo.message ? ` - ${errorInfo.message}` : ''}`;
+              lastError = new Error(errorMsg);
+              if (attempt < maxRetries) {
+                const delayMs = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt)) + Math.random() * 500;
+                logger.warn(`   ⚠️ Chain ${chainIdValue}: API error, retrying in ${Math.round(delayMs)}ms... (${errorMsg})`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+                continue;
+              }
+              return { markets: [], chainId: chainIdValue, error: `Chain ${chainIdValue}: ${errorMsg}` };
             }
+            if (result.value && Array.isArray(result.value) && result.value.length > 0) {
+              logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
+              return { markets: result.value, chainId: chainIdValue };
+            }
+            logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty)`);
+            return { markets: [], chainId: chainIdValue };
+          } else if (result && typeof result === 'object' && 'value' in result) {
+            if (result.value && Array.isArray(result.value) && result.value.length > 0) {
+              logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
+              return { markets: result.value, chainId: chainIdValue };
+            }
+            logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty)`);
+            return { markets: [], chainId: chainIdValue };
+          } else if (result && Array.isArray(result) && result.length > 0) {
+            logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.length} markets`);
+            return { markets: result, chainId: chainIdValue };
+          }
+          logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (unexpected format)`);
+          return { markets: [], chainId: chainIdValue };
+        } catch (error) {
+          lastError = error;
+          if (attempt < maxRetries) {
+            const delayMs = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt)) + Math.random() * 500;
+            logger.warn(`   ⚠️ Chain ${chainIdValue}: Attempt failed, retrying in ${Math.round(delayMs)}ms... (${error instanceof Error ? error.message : String(error)})`);
             await new Promise(resolve => setTimeout(resolve, delayMs));
-            continue; // 继续重试
-          } else {
-            errors.push(errorMsg);
-            logger.error(`   ❌ ${errorMsg}`);
-            if (errorInfo.stack) {
-              logger.debug(`   Chain ${chainIdValue} error stack: ${errorInfo.stack}`);
-            }
-            break; // 重试次数用完，跳出循环
-          }
-        }
-        
-        // 成功的情况，使用 result.value
-        if (result.value && Array.isArray(result.value) && result.value.length > 0) {
-          marketList.push(...result.value);
-          supportedChainIds.push(chainIdValue);
-          logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
-          break; // 成功获取数据，跳出重试循环
-        } else {
-          logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty or undefined)`);
-          break; // 虽然没有数据，但不是错误，不需要重试
-        }
-      } else if (result && typeof result === 'object' && 'value' in result) {
-        // 兼容旧的返回格式
-        if (result.value && Array.isArray(result.value) && result.value.length > 0) {
-          marketList.push(...result.value);
-          supportedChainIds.push(chainIdValue);
-          logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
-          break; // 成功获取数据，跳出重试循环
-        } else {
-          logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty array or undefined)`);
-          break; // 虽然没有数据，但不是错误，不需要重试
-        }
-      } else if (result && Array.isArray(result) && result.length > 0) {
-        // 直接返回数组的情况
-        marketList.push(...result);
-        supportedChainIds.push(chainIdValue);
-        logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.length} markets`);
-        break; // 成功获取数据，跳出重试循环
-      } else {
-        logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (unexpected result format: ${JSON.stringify(result).substring(0, 200)})`);
-        break; // 虽然没有数据，但不是错误，不需要重试
-      }
-      } catch (error) {
-        lastError = error;
-        retries--;
-        
-        if (retries > 0) {
-          const delayMs = 2000 * (4 - retries); // 递增延迟：2s, 4s, 6s
-          logger.warn(`   ⚠️ Chain ${chainIdValue}: Attempt failed, retrying in ${delayMs}ms... (${error instanceof Error ? error.message : String(error)})`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        } else {
-          const errorMsg = `Chain ${chainIdValue}: ${error instanceof Error ? error.message : String(error)}`;
-          errors.push(errorMsg);
-          logger.error(`   ❌ Chain ${chainIdValue}: ${error instanceof Error ? error.message : String(error)}`);
-          if (error instanceof Error && error.stack) {
-            logger.debug(`   Chain ${chainIdValue} error stack: ${error.stack}`);
           }
         }
       }
+      const errorMsg = `Chain ${chainIdValue}: ${lastError instanceof Error ? lastError.message : String(lastError)}`;
+      logger.error(`   ❌ ${errorMsg}`);
+      return { markets: [], chainId: chainIdValue, error: errorMsg };
+    } finally {
+      releaseSlot();
+    }
+  };
+
+  const results = await Promise.allSettled(
+    chainIds.map(chainIdValue => fetchSingleChain(chainIdValue))
+  );
+
+  const marketList: any[] = [];
+  const supportedChainIds: number[] = [];
+  const errors: string[] = [];
+
+  for (const result of results) {
+    if (result.status === 'fulfilled') {
+      const { markets: chainMarkets, chainId: cid, error } = result.value;
+      if (chainMarkets.length > 0) {
+        marketList.push(...chainMarkets);
+        supportedChainIds.push(cid);
+      }
+      if (error) {
+        errors.push(error);
+      }
+    } else {
+      errors.push(`Unexpected rejection: ${result.reason}`);
     }
   }
   
@@ -832,10 +850,8 @@ async function fetchRawMarketData(): Promise<MarketData> {
     logger.warn(`⚠️ ${errors.length} chains had errors or no data`);
   }
 
-  // 确保 data 文件夹存在
   await mkdir(DEBUG_DATA_DIR, { recursive: true });
   
-  // 保存 V3 原始 SDK 响应数据
   const outputPath = join(DEBUG_DATA_DIR, 'v3-raw-sdk-response.json');
   await writeJsonAtomic(outputPath, marketData);
   

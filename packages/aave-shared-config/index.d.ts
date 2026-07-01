@@ -63,6 +63,26 @@ export declare function createMerklConcurrencyLimitedFetch(
   fetchImpl?: typeof globalThis.fetch
 ): typeof globalThis.fetch;
 
+export interface SlidingWindowRateLimiter {
+  wait(): Promise<void>;
+  getTimestamps(): number[];
+  reset(): void;
+}
+
+export declare function createSlidingWindowRateLimiter(maxRequestsPerSecond: number): SlidingWindowRateLimiter;
+
+export declare function createAaveV3RateLimitedFetch(
+  fetchImpl?: typeof globalThis.fetch
+): typeof globalThis.fetch;
+
+export interface V3RateLimitStats {
+  total429s: number;
+  activeConcurrent: number;
+}
+
+export declare function getV3RateLimitStats(): V3RateLimitStats;
+export declare function resetV3RateLimitState(): void;
+
 export declare const fetchMerklOpportunitiesShortPage: (
   options: FetchMerklOpportunitiesShortPageOptions
 ) => Promise<unknown[]>;

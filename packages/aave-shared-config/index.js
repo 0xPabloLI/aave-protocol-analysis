@@ -49,6 +49,167 @@ export function createMerklConcurrencyLimitedFetch(fetchImpl = fetch) {
   };
 }
 
+export function createSlidingWindowRateLimiter(maxRequestsPerSecond) {
+  const timestamps = [];
+  const windowMs = 1000;
+
+  function cleanup(now) {
+    const cutoff = now - windowMs;
+    while (timestamps.length > 0 && timestamps[0] < cutoff) {
+      timestamps.shift();
+    }
+  }
+
+  async function wait() {
+    const now = Date.now();
+    cleanup(now);
+    if (timestamps.length >= maxRequestsPerSecond) {
+      const waitMs = timestamps[0] + windowMs - now + 1;
+      if (waitMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+      cleanup(Date.now());
+    }
+    timestamps.push(Date.now());
+  }
+
+  function getTimestamps() {
+    cleanup(Date.now());
+    return [...timestamps];
+  }
+
+  function reset() {
+    timestamps.length = 0;
+  }
+
+  return { wait, getTimestamps, reset };
+}
+
+const readV3FetchMaxConcurrency = () => {
+  const raw = process.env.V3_FETCH_MAX_CONCURRENCY;
+  const defaultValue = 5;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 1 ? n : defaultValue;
+};
+
+const readV3MaxRequestsPerSecond = () => {
+  const raw = process.env.V3_MAX_REQUESTS_PER_SECOND;
+  const defaultValue = 3;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 1 ? n : defaultValue;
+};
+
+const readV3FetchMaxRetries = () => {
+  const raw = process.env.V3_FETCH_MAX_RETRIES;
+  const defaultValue = 3;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 0 ? n : defaultValue;
+};
+
+const readV3FetchBaseDelayMs = () => {
+  const raw = process.env.V3_FETCH_BASE_DELAY_MS;
+  const defaultValue = 1000;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 0 ? n : defaultValue;
+};
+
+const readV3FetchMaxDelayMs = () => {
+  const raw = process.env.V3_FETCH_MAX_DELAY_MS;
+  const defaultValue = 30000;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 0 ? n : defaultValue;
+};
+
+function parseRetryAfterMs(headerValue) {
+  if (!headerValue) return null;
+  const asNumber = Number(headerValue);
+  if (Number.isFinite(asNumber) && asNumber >= 0) return asNumber * 1000;
+  const asDate = new Date(headerValue);
+  if (!isNaN(asDate.getTime())) {
+    const diff = asDate.getTime() - Date.now();
+    return diff > 0 ? diff : null;
+  }
+  return null;
+}
+
+let v3FetchActiveCount = 0;
+const v3FetchWaitQueue = [];
+
+const acquireV3FetchSlot = () => {
+  const max = readV3FetchMaxConcurrency();
+  if (v3FetchActiveCount < max) {
+    v3FetchActiveCount++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => v3FetchWaitQueue.push(resolve));
+};
+
+const releaseV3FetchSlot = () => {
+  const next = v3FetchWaitQueue.shift();
+  if (next) {
+    next();
+  } else {
+    v3FetchActiveCount--;
+  }
+};
+
+let totalV3429s = 0;
+
+export function createAaveV3RateLimitedFetch(fetchImpl = fetch) {
+  const limiter = createSlidingWindowRateLimiter(readV3MaxRequestsPerSecond());
+  const maxRetries = readV3FetchMaxRetries();
+  const baseDelayMs = readV3FetchBaseDelayMs();
+  const maxDelayMs = readV3FetchMaxDelayMs();
+
+  return async (input, init) => {
+    await acquireV3FetchSlot();
+    try {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        await limiter.wait();
+        const response = await fetchImpl(input, init);
+
+        if (response.status === 429 && attempt < maxRetries) {
+          totalV3429s++;
+          const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
+          const delayMs = retryAfterMs != null
+            ? Math.min(retryAfterMs, maxDelayMs)
+            : Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt)) + Math.random() * 500;
+
+          if (typeof globalThis.console?.warn === 'function') {
+            console.warn(
+              `[V3-RateLimit] 429 received (attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
+              `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? ' (Retry-After)' : ' (exponential backoff)'}`
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        return response;
+      }
+      const finalResponse = await fetchImpl(input, init);
+      return finalResponse;
+    } finally {
+      releaseV3FetchSlot();
+    }
+  };
+}
+
+export function getV3RateLimitStats() {
+  return { total429s: totalV3429s, activeConcurrent: v3FetchActiveCount };
+}
+
+export function resetV3RateLimitState() {
+  totalV3429s = 0;
+  v3FetchActiveCount = 0;
+  v3FetchWaitQueue.length = 0;
+}
+
 const opportunitiesSnapshotCache = new Map();
 
 const {
