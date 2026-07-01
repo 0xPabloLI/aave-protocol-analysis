@@ -114,19 +114,69 @@ app.get('/.well-known/security.txt', (_req, res) => {
   );
 });
 
-// Debug endpoint: trigger V8 heap snapshot (MEMORY_DIAG=1 only)
-// Writes .heapsnapshot file to /app/ and returns the file path.
-// Use with Chrome DevTools → Memory → Load to identify leaking JS objects.
-// CAUTION: snapshot is ~50-100MB, blocks the main thread for ~2-5s.
-app.get('/api/debug/heap-snapshot', (_req, res) => {
+// Debug endpoint: trigger V8 heap snapshot (MEMORY_DIAG=1 only).
+// Returns top constructors by retained size as JSON — no need to download
+// the raw .heapsnapshot file. Lightweight enough for Railway proxy timeout.
+app.get('/api/debug/heap-snapshot', async (_req, res) => {
   if (process.env.MEMORY_DIAG !== '1') {
     res.status(404).json({ error: 'Not found' });
     return;
   }
   try {
-    const filePath = v8.writeHeapSnapshot();
-    logger.info(`🔬 Heap snapshot written: ${filePath}`);
-    res.json({ filePath, heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB` });
+    const memBefore = process.memoryUsage();
+    const snapshotStream = v8.getHeapSnapshot();
+    const chunks: Buffer[] = [];
+    for await (const chunk of snapshotStream) {
+      chunks.push(Buffer.from(chunk));
+    }
+    const raw = Buffer.concat(chunks).toString('utf-8');
+    const snapshot = JSON.parse(raw);
+
+    // Aggregate by constructor: count + retained size
+    const byCtor = new Map<string, { count: number; retained: number }>();
+    const nodes = snapshot.nodes;
+    const strings = snapshot.strings;
+    const nodeFields = snapshot.meta.node_fields;
+    const nodeTypes = snapshot.meta.node_types;
+    const edgeFields = snapshot.meta.edge_fields;
+
+    // Find field offsets
+    const typeIdx = nodeFields.indexOf('type');
+    const nameIdx = nodeFields.indexOf('name');
+    const selfSizeIdx = nodeFields.indexOf('self_size');
+    const fieldCount = nodeFields.length;
+    const nodeCount = nodes.length / fieldCount;
+
+    for (let i = 0; i < nodes.length; i += fieldCount) {
+      const type = nodes[i + typeIdx];
+      const name = strings[nodes[i + nameIdx]] ?? `(type:${type})`;
+      const selfSize = nodes[i + selfSizeIdx];
+      if (selfSize > 0) {
+        const entry = byCtor.get(name) ?? { count: 0, retained: 0 };
+        entry.count++;
+        entry.retained += selfSize;
+        byCtor.set(name, entry);
+      }
+    }
+
+    // Sort by retained size descending, return top 30
+    const top = [...byCtor.entries()]
+      .sort((a, b) => b[1].retained - a[1].retained)
+      .slice(0, 30)
+      .map(([name, { count, retained }]) => ({
+        constructor: name,
+        count,
+        retainedMB: +(retained / 1024 / 1024).toFixed(2),
+      }));
+
+    const memAfter = process.memoryUsage();
+    res.json({
+      nodeCount,
+      constructorCount: byCtor.size,
+      heapBefore: `${Math.round(memBefore.heapUsed / 1024 / 1024)}MB`,
+      heapAfter: `${Math.round(memAfter.heapUsed / 1024 / 1024)}MB`,
+      topByRetainedSize: top,
+    });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
