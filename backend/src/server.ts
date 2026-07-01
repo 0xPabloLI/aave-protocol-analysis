@@ -115,8 +115,7 @@ app.get('/.well-known/security.txt', (_req, res) => {
 });
 
 // Debug endpoint: trigger V8 heap snapshot (MEMORY_DIAG=1 only).
-// Returns top constructors by retained size as JSON — no need to download
-// the raw .heapsnapshot file. Lightweight enough for Railway proxy timeout.
+// Parses the snapshot in-process and returns top constructors by self size.
 app.get('/api/debug/heap-snapshot', async (_req, res) => {
   if (process.env.MEMORY_DIAG !== '1') {
     res.status(404).json({ error: 'Not found' });
@@ -132,41 +131,53 @@ app.get('/api/debug/heap-snapshot', async (_req, res) => {
     const raw = Buffer.concat(chunks).toString('utf-8');
     const snapshot = JSON.parse(raw);
 
-    // Aggregate by constructor: count + retained size
-    const byCtor = new Map<string, { count: number; retained: number }>();
-    const nodes = snapshot.nodes;
-    const strings = snapshot.strings;
-    const nodeFields = snapshot.meta.node_fields;
-    const nodeTypes = snapshot.meta.node_types;
-    const edgeFields = snapshot.meta.edge_fields;
+    // V8 heap snapshot format: { snapshot: { meta: { node_fields, node_types, edge_fields, edge_types } }, nodes: [...], edges: [...], strings: [...] }
+    const meta = snapshot.snapshot?.meta ?? snapshot.meta;
+    const nodes = snapshot.nodes ?? snapshot.snapshot?.nodes;
+    const strings = snapshot.strings ?? snapshot.snapshot?.strings;
+
+    if (!meta || !nodes || !strings) {
+      res.status(500).json({ error: 'Unexpected snapshot format', keys: Object.keys(snapshot), metaKeys: meta ? Object.keys(meta) : [] });
+      return;
+    }
+
+    const nodeFields: string[] = meta.node_fields;
+    const fieldCount = nodeFields.length;
 
     // Find field offsets
     const typeIdx = nodeFields.indexOf('type');
     const nameIdx = nodeFields.indexOf('name');
     const selfSizeIdx = nodeFields.indexOf('self_size');
-    const fieldCount = nodeFields.length;
+
+    if (typeIdx === -1 || nameIdx === -1 || selfSizeIdx === -1) {
+      res.status(500).json({ error: 'Missing expected node fields', nodeFields });
+      return;
+    }
+
+    // Aggregate by constructor name: count + self_size
+    const byCtor = new Map<string, { count: number; selfSize: number }>();
     const nodeCount = nodes.length / fieldCount;
 
     for (let i = 0; i < nodes.length; i += fieldCount) {
-      const type = nodes[i + typeIdx];
-      const name = strings[nodes[i + nameIdx]] ?? `(type:${type})`;
+      const nameIdx_val = nodes[i + nameIdx];
       const selfSize = nodes[i + selfSizeIdx];
+      const name = strings[nameIdx_val] ?? `(unnamed:${nodes[i + typeIdx]})`;
       if (selfSize > 0) {
-        const entry = byCtor.get(name) ?? { count: 0, retained: 0 };
+        const entry = byCtor.get(name) ?? { count: 0, selfSize: 0 };
         entry.count++;
-        entry.retained += selfSize;
+        entry.selfSize += selfSize;
         byCtor.set(name, entry);
       }
     }
 
-    // Sort by retained size descending, return top 30
+    // Sort by self_size descending, return top 40
     const top = [...byCtor.entries()]
-      .sort((a, b) => b[1].retained - a[1].retained)
-      .slice(0, 30)
-      .map(([name, { count, retained }]) => ({
+      .sort((a, b) => b[1].selfSize - a[1].selfSize)
+      .slice(0, 40)
+      .map(([name, { count, selfSize }]) => ({
         constructor: name,
         count,
-        retainedMB: +(retained / 1024 / 1024).toFixed(2),
+        selfSizeMB: +(selfSize / 1024 / 1024).toFixed(2),
       }));
 
     const memAfter = process.memoryUsage();
@@ -175,7 +186,7 @@ app.get('/api/debug/heap-snapshot', async (_req, res) => {
       constructorCount: byCtor.size,
       heapBefore: `${Math.round(memBefore.heapUsed / 1024 / 1024)}MB`,
       heapAfter: `${Math.round(memAfter.heapUsed / 1024 / 1024)}MB`,
-      topByRetainedSize: top,
+      topBySelfSize: top,
     });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
