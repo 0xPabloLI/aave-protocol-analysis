@@ -18,7 +18,7 @@ import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 const _MB = 1024 * 1024;
 const _heapDiagEnabled = process.env.MEMORY_DIAG === '1';
 const _startTime = Date.now();
-const _heapSnapshotDone = new Set<number>();
+const _heapSnapshotDone = new Set<string>();
 
 let _oldSpaceBaseline: number | null = null;
 let _lastOldSpace: number | null = null;
@@ -26,12 +26,60 @@ let _lastOldSpace: number | null = null;
 async function maybeHeapSnapshot(): Promise<void> {
   if (!_heapDiagEnabled) return;
   const uptimeMin = Math.floor((Date.now() - _startTime) / 60_000);
-  if (uptimeMin % 15 === 0 && !_heapSnapshotDone.has(uptimeMin)) {
-    _heapSnapshotDone.add(uptimeMin);
+  // Log heap spaces every 15 min
+  if (uptimeMin % 15 === 0 && !_heapSnapshotDone.has(`spaces-${uptimeMin}`)) {
+    _heapSnapshotDone.add(`spaces-${uptimeMin}`);
     const spaces = v8.getHeapSpaceStatistics();
     const summary = spaces.map(s => `${s.space_name}=${Math.round(s.space_used_size / _MB)}/${Math.round(s.space_size / _MB)}MB`).join(' ');
     const mem = process.memoryUsage();
     logger.info(`🔬 Heap spaces at ${uptimeMin}min: ${summary} | heap=${Math.round(mem.heapUsed / _MB)}MB rss=${Math.round(mem.rss / _MB)}MB external=${Math.round(mem.external / _MB)}MB`);
+  }
+  // Full heap snapshot + top constructors at 30min (requires ~2GB container)
+  if (uptimeMin >= 30 && !_heapSnapshotDone.has('snapshot-30')) {
+    _heapSnapshotDone.add('snapshot-30');
+    try {
+      const filePath = v8.writeHeapSnapshot();
+      const mem = process.memoryUsage();
+      logger.info(`🔬 Heap snapshot at ${uptimeMin}min: ${filePath} (heap=${Math.round(mem.heapUsed / _MB)}MB rss=${Math.round(mem.rss / _MB)}MB)`);
+
+      const { readFile, unlink, stat: statFn } = await import('fs/promises');
+      const fileStat = await statFn(filePath);
+      logger.info(`🔬 Snapshot file size: ${Math.round(fileStat.size / 1024 / 1024)}MB`);
+
+      const raw = await readFile(filePath, 'utf-8');
+      const snapshot = JSON.parse(raw);
+      const meta = snapshot.snapshot?.meta;
+      const nodes = snapshot.nodes;
+      const strings = snapshot.strings;
+      if (meta?.node_fields && nodes && strings) {
+        const nodeFields: string[] = meta.node_fields;
+        const fieldCount = nodeFields.length;
+        const nameIdx = nodeFields.indexOf('name');
+        const selfSizeIdx = nodeFields.indexOf('self_size');
+        const byCtor = new Map<string, { count: number; selfSize: number }>();
+        for (let i = 0; i < nodes.length; i += fieldCount) {
+          const selfSize = nodes[i + selfSizeIdx];
+          if (selfSize > 1024) {
+            const name = strings[nodes[i + nameIdx]] ?? '(unnamed)';
+            const e = byCtor.get(name) ?? { count: 0, selfSize: 0 };
+            e.count++;
+            e.selfSize += selfSize;
+            byCtor.set(name, e);
+          }
+        }
+        const top = [...byCtor.entries()]
+          .sort((a, b) => b[1].selfSize - a[1].selfSize)
+          .slice(0, 40)
+          .map(([name, { count, selfSize }]) => `${name}:${count}:${(selfSize / 1024 / 1024).toFixed(1)}MB`)
+          .join(' | ');
+        logger.info(`🔬 Heap top 40 at ${uptimeMin}min: ${top}`);
+      }
+
+      await unlink(filePath);
+      logger.info(`🔬 Cleaned up snapshot file: ${filePath}`);
+    } catch (err) {
+      logger.warn(`🔬 Heap snapshot failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
 
