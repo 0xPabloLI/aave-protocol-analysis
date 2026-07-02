@@ -225,13 +225,10 @@ describe('installV3RateLimitedFetch / restoreOriginalFetch', () => {
     }
   });
 
-  it('only patches api.v3.aave.com requests (non-V3 URLs pass through)', async () => {
-    let nonAaveCalled = false;
+  it('only patches api.v3.aave.com requests (non-V3 URLs pass through without limiter)', async () => {
+    const callTimestamps: number[] = [];
     const mockImpl = async (input) => {
-      const url = typeof input === 'string' ? input : (input as Request).url;
-      if (!url.includes('aave.com')) {
-        nonAaveCalled = true;
-      }
+      callTimestamps.push(Date.now());
       return new Response('ok', { status: 200 }) as Promise<Response>;
     };
     const original = globalThis.fetch;
@@ -240,7 +237,35 @@ describe('installV3RateLimitedFetch / restoreOriginalFetch', () => {
     installV3RateLimitedFetch();
     try {
       await globalThis.fetch('https://other-api.example.com/data');
-      assert.ok(nonAaveCalled, 'Non-Aave URL should still be handled');
+      await globalThis.fetch('https://api.coingecko.com/api/v3/simple/price');
+      assert.ok(callTimestamps.length === 2, `Non-Aave URLs should pass through directly`);
+      if (callTimestamps.length >= 2) {
+        const gap = callTimestamps[1] - callTimestamps[0];
+        assert.ok(gap < 50, `Non-Aave requests should not be rate-limited, got ${gap}ms gap`);
+      }
+    } finally {
+      restoreOriginalFetch();
+      globalThis.fetch = original;
+    }
+  });
+
+  it('Aave V3 URLs ARE rate-limited', async () => {
+    const callTimestamps: number[] = [];
+    const mockImpl = async () => {
+      callTimestamps.push(Date.now());
+      return new Response('ok', { status: 200 }) as Promise<Response>;
+    };
+    const original = globalThis.fetch;
+    globalThis.fetch = mockImpl;
+
+    installV3RateLimitedFetch();
+    try {
+      await globalThis.fetch('https://api.v3.aave.com/graphql?q=1');
+      await globalThis.fetch('https://api.aave.com/graphql?q=2');
+      if (callTimestamps.length >= 2) {
+        const gap = callTimestamps[1] - callTimestamps[0];
+        assert.ok(gap >= 50, `Aave V3 requests should be rate-limited (QPS=1), got ${gap}ms gap`);
+      }
     } finally {
       restoreOriginalFetch();
       globalThis.fetch = original;

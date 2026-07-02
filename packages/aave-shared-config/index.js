@@ -171,7 +171,20 @@ export function installV3RateLimitedFetch() {
   const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 3000, min: 1000 });
   const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
 
+  const V3_HOSTS = ['api.v3.aave.com', 'api.aave.com'];
+
+  const isV3Request = (input) => {
+    try {
+      const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+      return V3_HOSTS.some(host => url.includes(host));
+    } catch { return false; }
+  };
+
   const rateLimitedFetch = async (input, init) => {
+    if (!isV3Request(input)) {
+      return originalFetch(input, init);
+    }
+
     await acquireV3FetchSlot();
     try {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
