@@ -74,6 +74,9 @@ export declare function createAaveV3RateLimitedFetch(
   fetchImpl?: typeof globalThis.fetch
 ): typeof globalThis.fetch;
 
+export declare function installV3RateLimitedFetch(): void;
+export declare function restoreOriginalFetch(): void;
+
 export interface V3RateLimitStats {
   total429s: number;
   activeConcurrent: number;

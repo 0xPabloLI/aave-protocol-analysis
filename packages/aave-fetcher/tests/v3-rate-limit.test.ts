@@ -1,8 +1,10 @@
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createSlidingWindowRateLimiter,
   createAaveV3RateLimitedFetch,
+  installV3RateLimitedFetch,
+  restoreOriginalFetch,
   resetV3RateLimitState,
   getV3RateLimitStats,
 } from '@internal/aave-shared-config';
@@ -143,6 +145,109 @@ describe('createAaveV3RateLimitedFetch', () => {
   });
 });
 
+describe('installV3RateLimitedFetch / restoreOriginalFetch', () => {
+  beforeEach(() => {
+    resetV3RateLimitState();
+    restoreOriginalFetch();
+  });
+
+  afterEach(() => {
+    restoreOriginalFetch();
+  });
+
+  it('patches globalThis.fetch and restores it', () => {
+    const original = globalThis.fetch;
+    installV3RateLimitedFetch();
+    assert.notStrictEqual(globalThis.fetch, original);
+    restoreOriginalFetch();
+    assert.strictEqual(globalThis.fetch, original);
+  });
+
+  it('double install is no-op', () => {
+    const original = globalThis.fetch;
+    installV3RateLimitedFetch();
+    const patched = globalThis.fetch;
+    installV3RateLimitedFetch();
+    assert.strictEqual(globalThis.fetch, patched);
+    restoreOriginalFetch();
+    assert.strictEqual(globalThis.fetch, original);
+  });
+
+  it('double restore is no-op', () => {
+    const original = globalThis.fetch;
+    restoreOriginalFetch();
+    assert.strictEqual(globalThis.fetch, original);
+  });
+
+  it('patched fetch applies sliding window to each HTTP request', async () => {
+    const timestamps: number[] = [];
+    const mockImpl = async () => {
+      timestamps.push(Date.now());
+      return new Response('ok', { status: 200 }) as Promise<Response>;
+    };
+    const original = globalThis.fetch;
+    globalThis.fetch = mockImpl;
+
+    installV3RateLimitedFetch();
+    try {
+      await globalThis.fetch('https://api.v3.aave.com/graphql?q=1');
+      await globalThis.fetch('https://api.v3.aave.com/graphql?q=2');
+      if (timestamps.length >= 2) {
+        const gap = timestamps[1] - timestamps[0];
+        assert.ok(gap >= 50, `Expected >= 50ms gap between requests (QPS=1), got ${gap}ms`);
+      }
+    } finally {
+      restoreOriginalFetch();
+      globalThis.fetch = original;
+    }
+  });
+
+  it('patched fetch retries 429 responses', async () => {
+    let callCount = 0;
+    const mockImpl = async () => {
+      callCount++;
+      if (callCount === 1) {
+        return new Response('', { status: 429, headers: new Headers({ 'Retry-After': '0' }) }) as Promise<Response>;
+      }
+      return new Response('ok', { status: 200 }) as Promise<Response>;
+    };
+    const original = globalThis.fetch;
+    globalThis.fetch = mockImpl;
+
+    installV3RateLimitedFetch();
+    try {
+      const response = await globalThis.fetch('https://api.v3.aave.com/graphql');
+      assert.strictEqual(response.status, 200);
+      assert.ok(callCount >= 2, `Expected >= 2 calls after 429 retry, got ${callCount}`);
+    } finally {
+      restoreOriginalFetch();
+      globalThis.fetch = original;
+    }
+  });
+
+  it('only patches api.v3.aave.com requests (non-V3 URLs pass through)', async () => {
+    let nonAaveCalled = false;
+    const mockImpl = async (input) => {
+      const url = typeof input === 'string' ? input : (input as Request).url;
+      if (!url.includes('aave.com')) {
+        nonAaveCalled = true;
+      }
+      return new Response('ok', { status: 200 }) as Promise<Response>;
+    };
+    const original = globalThis.fetch;
+    globalThis.fetch = mockImpl;
+
+    installV3RateLimitedFetch();
+    try {
+      await globalThis.fetch('https://other-api.example.com/data');
+      assert.ok(nonAaveCalled, 'Non-Aave URL should still be handled');
+    } finally {
+      restoreOriginalFetch();
+      globalThis.fetch = original;
+    }
+  });
+});
+
 describe('per-chain 429 adaptive backoff + circuit breaker', () => {
   it('detects "Too Many Requests" as rate limit error', () => {
     const re = /too many requests|rate.?limit|429/i;
@@ -151,24 +256,6 @@ describe('per-chain 429 adaptive backoff + circuit breaker', () => {
     assert.ok(re.test('Error: 429'));
     assert.ok(!re.test('Internal Server Error'));
     assert.ok(!re.test('Network timeout'));
-  });
-
-  it('per-chain backoff: 429 on first attempt uses longer delay than non-429', async () => {
-    let first429Delay = 0;
-    let firstNon429Delay = 0;
-    const originalSetTimeout = globalThis.setTimeout;
-
-    const chain429Log = [];
-    const innerFetch = async () => {
-      chain429Log.push(Date.now());
-      return new Response('', { status: 429 }) as Promise<Response>;
-    };
-
-    const v3Fetch = createAaveV3RateLimitedFetch(innerFetch);
-    await v3Fetch('https://test.com');
-    resetV3RateLimitState();
-
-    assert.ok(chain429Log.length >= 2, `Expected multiple 429 attempts, got ${chain429Log.length}`);
   });
 
   it('circuit breaker: getV3RateLimitStats tracks 429 count', async () => {

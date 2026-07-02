@@ -3,9 +3,10 @@ import { chainId, AaveClient, ChainsFilter } from "@aave/client";
 import { markets, chains } from "@aave/client/actions";
 import * as addressBook from "@aave-dao/aave-address-book";
 import {
-  createAaveV3RateLimitedFetch,
-  createSlidingWindowRateLimiter,
+  installV3RateLimitedFetch,
+  restoreOriginalFetch,
   resetV3RateLimitState,
+  getV3RateLimitStats,
   readNumberEnv,
 } from '@internal/aave-shared-config';
 
@@ -726,22 +727,9 @@ async function fetchRawMarketData(): Promise<MarketData> {
     logger.info(`   • ${info.name} (Chain ID: ${info.chainId})`);
   });
   
-  logger.info('\n🚀 Fetching markets data (concurrent with rate limiting)...');
-  
-  const maxConcurrency = readNumberEnv('V3_FETCH_MAX_CONCURRENCY', { defaultValue: 2, min: 1 });
-  const maxRetries = readNumberEnv('V3_FETCH_MAX_RETRIES', { defaultValue: 2, min: 0 });
-  const baseDelayMs = readNumberEnv('V3_FETCH_BASE_DELAY_MS', { defaultValue: 2000, min: 0 });
-  const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
-  const limiter = createSlidingWindowRateLimiter(
-    readNumberEnv('V3_MAX_REQUESTS_PER_SECOND', { defaultValue: 1, min: 1 })
-  );
-  const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 3000, min: 1000 });
-  const circuitBreakerThreshold = readNumberEnv('V3_CIRCUIT_BREAKER_THRESHOLD', { defaultValue: 10, min: 3 });
-  const circuitBreakerCooldownMs = readNumberEnv('V3_CIRCUIT_BREAKER_COOLDOWN_MS', { defaultValue: 10000, min: 3000 });
+  logger.info('\n🚀 Fetching markets data (inner-layer rate limiting via globalThis.fetch patch)...');
 
-  const chain429Map = new Map<number, number>();
-  let global429Count = 0;
-  let circuitBreakerOpenUntil = 0;
+  const maxConcurrency = readNumberEnv('V3_FETCH_MAX_CONCURRENCY', { defaultValue: 2, min: 1 });
 
   let activeCount = 0;
   const waitQueue: (() => void)[] = [];
@@ -757,173 +745,108 @@ async function fetchRawMarketData(): Promise<MarketData> {
     if (next) { next(); } else { activeCount--; }
   };
 
-  const isRateLimitError = (error: any): boolean => {
-    const msg = error instanceof Error ? error.message : String(error);
-    return /too many requests|rate.?limit|429/i.test(msg);
-  };
-
   const fetchSingleChain = async (chainIdValue: number): Promise<{ markets: any[]; chainId: number; error?: string }> => {
     await acquireSlot();
     try {
       const staggerMs = Math.floor(Math.random() * 500);
       await new Promise(resolve => setTimeout(resolve, staggerMs));
 
-      let lastError: any = null;
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        if (circuitBreakerOpenUntil > Date.now() && attempt > 0) {
-          logger.warn(`   🔥 Chain ${chainIdValue}: circuit breaker open, skipping (will retry next cycle)`);
-          return { markets: [], chainId: chainIdValue, error: `Chain ${chainIdValue}: circuit breaker open` };
-        }
-
-        const chain429After = chain429Map.get(chainIdValue) ?? 0;
-        if (chain429After > Date.now()) {
-          const waitMs = chain429After - Date.now();
-          if (waitMs > 15000) {
-            logger.warn(`   ⏳ Chain ${chainIdValue}: per-chain 429 cooldown too long (${Math.round(waitMs / 1000)}s), skipping`);
-            return { markets: [], chainId: chainIdValue, error: `Chain ${chainIdValue}: rate limited, cooldown ${Math.round(waitMs / 1000)}s` };
+      try {
+        const result = await markets(client, {
+          chainIds: [chainId(chainIdValue)],
+        });
+        
+        if (result && typeof result === 'object' && 'isErr' in result && typeof result.isErr === 'function') {
+          if (result.isErr()) {
+            const errorInfo = result.error;
+            const errorMsg = `${errorInfo.name || 'UnknownError'}${errorInfo.message ? ` - ${errorInfo.message}` : ''}`;
+            return { markets: [], chainId: chainIdValue, error: `Chain ${chainIdValue}: ${errorMsg}` };
           }
-          logger.debug(`   ⏳ Chain ${chainIdValue}: per-chain 429 cooldown, waiting ${Math.round(waitMs / 1000)}s...`);
-          await new Promise(resolve => setTimeout(resolve, waitMs));
-        }
-
-        await limiter.wait();
-        try {
-          logger.debug(`   Trying Chain ID: ${chainIdValue} (${attempt + 1}/${maxRetries + 1} attempts)`);
-          const result = await markets(client, {
-            chainIds: [chainId(chainIdValue)],
-          });
-          
-          if (result && typeof result === 'object' && 'isErr' in result && typeof result.isErr === 'function') {
-            if (result.isErr()) {
-              const errorInfo = result.error;
-              const errorMsg = `${errorInfo.name || 'UnknownError'}${errorInfo.message ? ` - ${errorInfo.message}` : ''}`;
-              lastError = new Error(errorMsg);
-
-              if (isRateLimitError(lastError)) {
-                global429Count++;
-                const backoffMs = Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 1000);
-                chain429Map.set(chainIdValue, Date.now() + backoffMs);
-                logger.warn(`   ⚠️ Chain ${chainIdValue}: rate limited (429), backing off ${Math.round(backoffMs / 1000)}s (global 429s: ${global429Count})`);
-
-                if (global429Count >= circuitBreakerThreshold) {
-                  circuitBreakerOpenUntil = Date.now() + circuitBreakerCooldownMs;
-                  logger.warn(`   🔥 Circuit breaker OPEN: ${circuitBreakerThreshold} global 429s, pausing all requests for ${Math.round(circuitBreakerCooldownMs / 1000)}s`);
-                }
-
-                if (attempt < maxRetries) {
-                  await new Promise(resolve => setTimeout(resolve, backoffMs));
-                  continue;
-                }
-                return { markets: [], chainId: chainIdValue, error: `Chain ${chainIdValue}: ${errorMsg}` };
-              }
-
-              if (attempt < maxRetries) {
-                const delayMs = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt)) + Math.random() * 500;
-                logger.warn(`   ⚠️ Chain ${chainIdValue}: API error, retrying in ${Math.round(delayMs)}ms... (${errorMsg})`);
-                await new Promise(resolve => setTimeout(resolve, delayMs));
-                continue;
-              }
-              return { markets: [], chainId: chainIdValue, error: `Chain ${chainIdValue}: ${errorMsg}` };
-            }
-            if (result.value && Array.isArray(result.value) && result.value.length > 0) {
-              logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
-              return { markets: result.value, chainId: chainIdValue };
-            }
-            logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty)`);
-            return { markets: [], chainId: chainIdValue };
-          } else if (result && typeof result === 'object' && 'value' in result) {
-            if (result.value && Array.isArray(result.value) && result.value.length > 0) {
-              logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
-              return { markets: result.value, chainId: chainIdValue };
-            }
-            logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty)`);
-            return { markets: [], chainId: chainIdValue };
-          } else if (result && Array.isArray(result) && result.length > 0) {
-            logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.length} markets`);
-            return { markets: result, chainId: chainIdValue };
+          if (result.value && Array.isArray(result.value) && result.value.length > 0) {
+            logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
+            return { markets: result.value, chainId: chainIdValue };
           }
-          logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (unexpected format)`);
+          logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty)`);
           return { markets: [], chainId: chainIdValue };
-        } catch (error) {
-          lastError = error;
-
-          if (isRateLimitError(error)) {
-            global429Count++;
-            const backoffMs = Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 1000);
-            chain429Map.set(chainIdValue, Date.now() + backoffMs);
-            logger.warn(`   ⚠️ Chain ${chainIdValue}: rate limited (429), backing off ${Math.round(backoffMs / 1000)}s (global 429s: ${global429Count})`);
-
-            if (global429Count >= circuitBreakerThreshold) {
-              circuitBreakerOpenUntil = Date.now() + circuitBreakerCooldownMs;
-              logger.warn(`   🔥 Circuit breaker OPEN: ${circuitBreakerThreshold} global 429s, pausing all requests for ${Math.round(circuitBreakerCooldownMs / 1000)}s`);
-            }
-
-            if (attempt < maxRetries) {
-              await new Promise(resolve => setTimeout(resolve, backoffMs));
-              continue;
-            }
+        } else if (result && typeof result === 'object' && 'value' in result) {
+          if (result.value && Array.isArray(result.value) && result.value.length > 0) {
+            logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
+            return { markets: result.value, chainId: chainIdValue };
           }
-
-          if (attempt < maxRetries && !isRateLimitError(error)) {
-            const delayMs = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt)) + Math.random() * 500;
-            logger.warn(`   ⚠️ Chain ${chainIdValue}: Attempt failed, retrying in ${Math.round(delayMs)}ms... (${error instanceof Error ? error.message : String(error)})`);
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-          }
+          logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty)`);
+          return { markets: [], chainId: chainIdValue };
+        } else if (result && Array.isArray(result) && result.length > 0) {
+          logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.length} markets`);
+          return { markets: result, chainId: chainIdValue };
         }
+        logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (unexpected format)`);
+        return { markets: [], chainId: chainIdValue };
+      } catch (error) {
+        const errorMsg = `Chain ${chainIdValue}: ${error instanceof Error ? error.message : String(error)}`;
+        logger.error(`   ❌ ${errorMsg}`);
+        return { markets: [], chainId: chainIdValue, error: errorMsg };
       }
-      const errorMsg = `Chain ${chainIdValue}: ${lastError instanceof Error ? lastError.message : String(lastError)}`;
-      logger.error(`   ❌ ${errorMsg}`);
-      return { markets: [], chainId: chainIdValue, error: errorMsg };
     } finally {
       releaseSlot();
     }
   };
 
-  const results = await Promise.allSettled(
-    chainIds.map(chainIdValue => fetchSingleChain(chainIdValue))
-  );
+  resetV3RateLimitState();
+  installV3RateLimitedFetch();
+  try {
+    const results = await Promise.allSettled(
+      chainIds.map(chainIdValue => fetchSingleChain(chainIdValue))
+    );
 
-  const marketList: any[] = [];
-  const supportedChainIds: number[] = [];
-  const errors: string[] = [];
+    const marketList: any[] = [];
+    const supportedChainIds: number[] = [];
+    const errors: string[] = [];
 
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      const { markets: chainMarkets, chainId: cid, error } = result.value;
-      if (chainMarkets.length > 0) {
-        marketList.push(...chainMarkets);
-        supportedChainIds.push(cid);
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        const { markets: chainMarkets, chainId: cid, error } = result.value;
+        if (chainMarkets.length > 0) {
+          marketList.push(...chainMarkets);
+          supportedChainIds.push(cid);
+        }
+        if (error) {
+          errors.push(error);
+        }
+      } else {
+        errors.push(`Unexpected rejection: ${result.reason}`);
       }
-      if (error) {
-        errors.push(error);
-      }
-    } else {
-      errors.push(`Unexpected rejection: ${result.reason}`);
     }
-  }
-  
-  const marketData: MarketData = {
-    timestamp: new Date().toISOString(),
-    totalNetworks: networkInfo.length,
-    chainIds: supportedChainIds,
-    networkInfo: networkInfo.filter(info => supportedChainIds.includes(info.chainId)),
-    markets: marketList,
-    errors: errors,
-  };
+    
+    const rateLimitStats = getV3RateLimitStats();
+    
+    const marketData: MarketData = {
+      timestamp: new Date().toISOString(),
+      totalNetworks: networkInfo.length,
+      chainIds: supportedChainIds,
+      networkInfo: networkInfo.filter(info => supportedChainIds.includes(info.chainId)),
+      markets: marketList,
+      errors: errors,
+    };
 
-  logger.info(`\n✅ Successfully fetched markets data`);
-  logger.info(`📊 Found ${marketList.length} markets total from ${supportedChainIds.length} chains`);
-  
-  if (errors.length > 0) {
-    logger.warn(`⚠️ ${errors.length} chains had errors or no data`);
-  }
+    logger.info(`\n✅ Successfully fetched markets data`);
+    logger.info(`📊 Found ${marketList.length} markets total from ${supportedChainIds.length} chains`);
+    
+    if (errors.length > 0) {
+      logger.warn(`⚠️ ${errors.length} chains had errors or no data`);
+    }
+    if (rateLimitStats.total429s > 0) {
+      logger.warn(`📊 V3 rate limit: ${rateLimitStats.total429s} total 429s during this cycle`);
+    }
 
-  await mkdir(DEBUG_DATA_DIR, { recursive: true });
-  
-  const outputPath = join(DEBUG_DATA_DIR, 'v3-raw-sdk-response.json');
-  await writeJsonAtomic(outputPath, marketData);
-  
-  return marketData;
+    await mkdir(DEBUG_DATA_DIR, { recursive: true });
+    
+    const outputPath = join(DEBUG_DATA_DIR, 'v3-raw-sdk-response.json');
+    await writeJsonAtomic(outputPath, marketData);
+    
+    return marketData;
+  } finally {
+    restoreOriginalFetch();
+  }
 }
 
 const _MB = 1024 * 1024;

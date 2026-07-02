@@ -87,7 +87,7 @@ export function createSlidingWindowRateLimiter(maxRequestsPerSecond) {
 
 const readV3FetchMaxConcurrency = () => {
   const raw = process.env.V3_FETCH_MAX_CONCURRENCY;
-  const defaultValue = 3;
+  const defaultValue = 2;
   if (raw === undefined || raw === null || raw === '') return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 1 ? n : defaultValue;
@@ -95,7 +95,7 @@ const readV3FetchMaxConcurrency = () => {
 
 const readV3MaxRequestsPerSecond = () => {
   const raw = process.env.V3_MAX_REQUESTS_PER_SECOND;
-  const defaultValue = 2;
+  const defaultValue = 1;
   if (raw === undefined || raw === null || raw === '') return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 1 ? n : defaultValue;
@@ -103,7 +103,7 @@ const readV3MaxRequestsPerSecond = () => {
 
 const readV3FetchMaxRetries = () => {
   const raw = process.env.V3_FETCH_MAX_RETRIES;
-  const defaultValue = 3;
+  const defaultValue = 2;
   if (raw === undefined || raw === null || raw === '') return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 0 ? n : defaultValue;
@@ -160,11 +160,65 @@ const releaseV3FetchSlot = () => {
 
 let totalV3429s = 0;
 
+let originalFetch = null;
+
+export function installV3RateLimitedFetch() {
+  if (originalFetch !== null) return;
+  originalFetch = globalThis.fetch;
+
+  const limiter = createSlidingWindowRateLimiter(readV3MaxRequestsPerSecond());
+  const maxRetries = readV3FetchMaxRetries();
+  const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 3000, min: 1000 });
+  const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
+
+  const rateLimitedFetch = async (input, init) => {
+    await acquireV3FetchSlot();
+    try {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        await limiter.wait();
+        const response = await originalFetch(input, init);
+
+        if (response.status === 429 && attempt < maxRetries) {
+          totalV3429s++;
+          const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
+          const delayMs = retryAfterMs != null
+            ? Math.min(retryAfterMs, maxDelayMs)
+            : Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
+
+          if (typeof globalThis.console?.warn === 'function') {
+            console.warn(
+              `[V3-RateLimit] 429 on ${typeof input === 'string' ? input : input.url} ` +
+              `(attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
+              `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? ' (Retry-After)' : ' (backoff)'}`
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        return response;
+      }
+      return originalFetch(input, init);
+    } finally {
+      releaseV3FetchSlot();
+    }
+  };
+
+  globalThis.fetch = rateLimitedFetch;
+}
+
+export function restoreOriginalFetch() {
+  if (originalFetch !== null) {
+    globalThis.fetch = originalFetch;
+    originalFetch = null;
+  }
+}
+
 export function createAaveV3RateLimitedFetch(fetchImpl = fetch) {
   const limiter = createSlidingWindowRateLimiter(readV3MaxRequestsPerSecond());
   const maxRetries = readV3FetchMaxRetries();
-  const baseDelayMs = readV3FetchBaseDelayMs();
-  const maxDelayMs = readV3FetchMaxDelayMs();
+  const baseDelayMs = readNumberEnv('V3_FETCH_BASE_DELAY_MS', { defaultValue: 2000, min: 0 });
+  const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
 
   return async (input, init) => {
     await acquireV3FetchSlot();
