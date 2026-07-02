@@ -103,7 +103,7 @@ const readV3MaxRequestsPerSecond = () => {
 
 const readV3FetchMaxRetries = () => {
   const raw = process.env.V3_FETCH_MAX_RETRIES;
-  const defaultValue = 1;
+  const defaultValue = 2;
   if (raw === undefined || raw === null || raw === '') return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 0 ? n : defaultValue;
@@ -172,6 +172,9 @@ export function installV3RateLimitedFetch() {
   const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
   const retryAfterCapMs = 1000;
 
+  const innerQps = readNumberEnv('V3_INNER_QPS', { defaultValue: 1, min: 1, max: 10 });
+  const innerLimiter = createSlidingWindowRateLimiter(innerQps);
+
   const V3_HOSTS = ['api.v3.aave.com', 'api.aave.com'];
 
   const isV3Request = (input) => {
@@ -185,6 +188,8 @@ export function installV3RateLimitedFetch() {
     if (!isV3Request(input)) {
       return originalFetch(input, init);
     }
+
+    await innerLimiter.wait();
 
     const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
     const startTime = Date.now();
