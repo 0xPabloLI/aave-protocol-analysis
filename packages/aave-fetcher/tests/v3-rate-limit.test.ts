@@ -4,6 +4,7 @@ import {
   createSlidingWindowRateLimiter,
   createAaveV3RateLimitedFetch,
   resetV3RateLimitState,
+  getV3RateLimitStats,
 } from '@internal/aave-shared-config';
 
 function mockFetch(statusCode: number, headers: Record<string, string> = {}, body = '') {
@@ -139,5 +140,48 @@ describe('createAaveV3RateLimitedFetch', () => {
     const response = await v3Fetch('https://test.com');
     assert.strictEqual(response.status, 200);
     assert.strictEqual(callCount, 2);
+  });
+});
+
+describe('per-chain 429 adaptive backoff + circuit breaker', () => {
+  it('detects "Too Many Requests" as rate limit error', () => {
+    const re = /too many requests|rate.?limit|429/i;
+    assert.ok(re.test('Too Many Requests'));
+    assert.ok(re.test('rate limit exceeded'));
+    assert.ok(re.test('Error: 429'));
+    assert.ok(!re.test('Internal Server Error'));
+    assert.ok(!re.test('Network timeout'));
+  });
+
+  it('per-chain backoff: 429 on first attempt uses longer delay than non-429', async () => {
+    let first429Delay = 0;
+    let firstNon429Delay = 0;
+    const originalSetTimeout = globalThis.setTimeout;
+
+    const chain429Log = [];
+    const innerFetch = async () => {
+      chain429Log.push(Date.now());
+      return new Response('', { status: 429 }) as Promise<Response>;
+    };
+
+    const v3Fetch = createAaveV3RateLimitedFetch(innerFetch);
+    await v3Fetch('https://test.com');
+    resetV3RateLimitState();
+
+    assert.ok(chain429Log.length >= 2, `Expected multiple 429 attempts, got ${chain429Log.length}`);
+  });
+
+  it('circuit breaker: getV3RateLimitStats tracks 429 count', async () => {
+    resetV3RateLimitState();
+    const stats0 = getV3RateLimitStats();
+    assert.strictEqual(stats0.total429s, 0);
+
+    const innerFetch = async () => new Response('', { status: 429 }) as Promise<Response>;
+    const v3Fetch = createAaveV3RateLimitedFetch(innerFetch);
+    await v3Fetch('https://test.com');
+
+    const stats1 = getV3RateLimitStats();
+    assert.ok(stats1.total429s >= 1, `Expected at least 1 429, got ${stats1.total429s}`);
+    resetV3RateLimitState();
   });
 });

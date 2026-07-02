@@ -728,13 +728,20 @@ async function fetchRawMarketData(): Promise<MarketData> {
   
   logger.info('\n🚀 Fetching markets data (concurrent with rate limiting)...');
   
-  const maxConcurrency = readNumberEnv('V3_FETCH_MAX_CONCURRENCY', { defaultValue: 3, min: 1 });
+  const maxConcurrency = readNumberEnv('V3_FETCH_MAX_CONCURRENCY', { defaultValue: 4, min: 1 });
   const maxRetries = readNumberEnv('V3_FETCH_MAX_RETRIES', { defaultValue: 3, min: 0 });
   const baseDelayMs = readNumberEnv('V3_FETCH_BASE_DELAY_MS', { defaultValue: 2000, min: 0 });
   const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 30000, min: 0 });
   const limiter = createSlidingWindowRateLimiter(
     readNumberEnv('V3_MAX_REQUESTS_PER_SECOND', { defaultValue: 2, min: 1 })
   );
+  const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 5000, min: 1000 });
+  const circuitBreakerThreshold = readNumberEnv('V3_CIRCUIT_BREAKER_THRESHOLD', { defaultValue: 5, min: 1 });
+  const circuitBreakerCooldownMs = readNumberEnv('V3_CIRCUIT_BREAKER_COOLDOWN_MS', { defaultValue: 30000, min: 5000 });
+
+  const chain429Map = new Map<number, number>();
+  let global429Count = 0;
+  let circuitBreakerOpenUntil = 0;
 
   let activeCount = 0;
   const waitQueue: (() => void)[] = [];
@@ -750,11 +757,32 @@ async function fetchRawMarketData(): Promise<MarketData> {
     if (next) { next(); } else { activeCount--; }
   };
 
+  const isRateLimitError = (error: any): boolean => {
+    const msg = error instanceof Error ? error.message : String(error);
+    return /too many requests|rate.?limit|429/i.test(msg);
+  };
+
   const fetchSingleChain = async (chainIdValue: number): Promise<{ markets: any[]; chainId: number; error?: string }> => {
     await acquireSlot();
     try {
+      const staggerMs = Math.floor(Math.random() * 200);
+      await new Promise(resolve => setTimeout(resolve, staggerMs));
+
       let lastError: any = null;
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        if (circuitBreakerOpenUntil > Date.now()) {
+          const waitMs = circuitBreakerOpenUntil - Date.now();
+          logger.warn(`   🔥 Chain ${chainIdValue}: circuit breaker open, waiting ${Math.round(waitMs / 1000)}s...`);
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+        }
+
+        const chain429After = chain429Map.get(chainIdValue) ?? 0;
+        if (chain429After > Date.now()) {
+          const waitMs = chain429After - Date.now();
+          logger.debug(`   ⏳ Chain ${chainIdValue}: per-chain 429 cooldown, waiting ${Math.round(waitMs / 1000)}s...`);
+          await new Promise(resolve => setTimeout(resolve, waitMs));
+        }
+
         await limiter.wait();
         try {
           logger.debug(`   Trying Chain ID: ${chainIdValue} (${attempt + 1}/${maxRetries + 1} attempts)`);
@@ -767,6 +795,25 @@ async function fetchRawMarketData(): Promise<MarketData> {
               const errorInfo = result.error;
               const errorMsg = `${errorInfo.name || 'UnknownError'}${errorInfo.message ? ` - ${errorInfo.message}` : ''}`;
               lastError = new Error(errorMsg);
+
+              if (isRateLimitError(lastError)) {
+                global429Count++;
+                const backoffMs = Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 1000);
+                chain429Map.set(chainIdValue, Date.now() + backoffMs);
+                logger.warn(`   ⚠️ Chain ${chainIdValue}: rate limited (429), backing off ${Math.round(backoffMs / 1000)}s (global 429s: ${global429Count})`);
+
+                if (global429Count >= circuitBreakerThreshold) {
+                  circuitBreakerOpenUntil = Date.now() + circuitBreakerCooldownMs;
+                  logger.warn(`   🔥 Circuit breaker OPEN: ${circuitBreakerThreshold} global 429s, pausing all requests for ${Math.round(circuitBreakerCooldownMs / 1000)}s`);
+                }
+
+                if (attempt < maxRetries) {
+                  await new Promise(resolve => setTimeout(resolve, backoffMs));
+                  continue;
+                }
+                return { markets: [], chainId: chainIdValue, error: `Chain ${chainIdValue}: ${errorMsg}` };
+              }
+
               if (attempt < maxRetries) {
                 const delayMs = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt)) + Math.random() * 500;
                 logger.warn(`   ⚠️ Chain ${chainIdValue}: API error, retrying in ${Math.round(delayMs)}ms... (${errorMsg})`);
@@ -796,7 +843,25 @@ async function fetchRawMarketData(): Promise<MarketData> {
           return { markets: [], chainId: chainIdValue };
         } catch (error) {
           lastError = error;
-          if (attempt < maxRetries) {
+
+          if (isRateLimitError(error)) {
+            global429Count++;
+            const backoffMs = Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 1000);
+            chain429Map.set(chainIdValue, Date.now() + backoffMs);
+            logger.warn(`   ⚠️ Chain ${chainIdValue}: rate limited (429), backing off ${Math.round(backoffMs / 1000)}s (global 429s: ${global429Count})`);
+
+            if (global429Count >= circuitBreakerThreshold) {
+              circuitBreakerOpenUntil = Date.now() + circuitBreakerCooldownMs;
+              logger.warn(`   🔥 Circuit breaker OPEN: ${circuitBreakerThreshold} global 429s, pausing all requests for ${Math.round(circuitBreakerCooldownMs / 1000)}s`);
+            }
+
+            if (attempt < maxRetries) {
+              await new Promise(resolve => setTimeout(resolve, backoffMs));
+              continue;
+            }
+          }
+
+          if (attempt < maxRetries && !isRateLimitError(error)) {
             const delayMs = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt)) + Math.random() * 500;
             logger.warn(`   ⚠️ Chain ${chainIdValue}: Attempt failed, retrying in ${Math.round(delayMs)}ms... (${error instanceof Error ? error.message : String(error)})`);
             await new Promise(resolve => setTimeout(resolve, delayMs));
