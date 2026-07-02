@@ -50,9 +50,7 @@ function pruneMerklBreakdown(b: MerklCampaignBreakdown): MerklCampaignBreakdown 
       latestTvl: b.latestTvl,
       plannedDaily: b.plannedDaily,
     } : {}),
-    ...(b.recentlyEndedAt ? { recentlyEndedAt: b.recentlyEndedAt } : {}),
-    ...(b.recentlyStartedAt ? { recentlyStartedAt: b.recentlyStartedAt } : {}),
-    ...(b.recentlyEndedCampaignId ? { recentlyEndedCampaignId: b.recentlyEndedCampaignId } : {}),
+    ...(b.lastEndedCampaign ? { lastEndedCampaign: b.lastEndedCampaign } : {}),
   };
 }
 

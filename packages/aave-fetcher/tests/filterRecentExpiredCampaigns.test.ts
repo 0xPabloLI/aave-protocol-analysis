@@ -6,7 +6,7 @@ import { filterRecentExpiredBrevis } from '../src/brevis-api.js';
 import type { MerklCampaignBreakdown, MeritCampaignGroup } from '@internal/aave-shared-contracts';
 
 describe('filterRecentExpiredCampaigns (Merkl)', () => {
-  it('5条同rewardTokenSymbol的DUTCH_AUCTION过期 → 仅保留endDate最大的1条', () => {
+  it('5条同rewardTokenSymbol的DUTCH_AUCTION过期 → 全部过滤（ended info 已内嵌到 live breakdown）', () => {
     const now = new Date();
     const past = (days: number) => new Date(now.getTime() - days * 86400000).toISOString();
     const breakdowns: MerklCampaignBreakdown[] = Array.from({ length: 5 }, (_, i) => ({
@@ -18,11 +18,10 @@ describe('filterRecentExpiredCampaigns (Merkl)', () => {
       rewardTokenSymbol: 'WXPL',
     }));
     const result = filterRecentExpiredCampaigns(breakdowns);
-    assert.equal(result.length, 1);
-    assert.equal(result[0].campaignId, '0xexpired0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6');
+    assert.equal(result.length, 0);
   });
 
-  it('活跃+过期混合 → 活跃全保留+每组1条最近过期', () => {
+  it('活跃+过期混合 → 只保留活跃（ended info 已内嵌到 live breakdown）', () => {
     const now = new Date();
     const past = (days: number) => new Date(now.getTime() - days * 86400000).toISOString();
     const future = (days: number) => new Date(now.getTime() + days * 86400000).toISOString();
@@ -34,25 +33,8 @@ describe('filterRecentExpiredCampaigns (Merkl)', () => {
       { campaignApr: 0.004, campaignStartedAt: past(30), campaignEndedAt: past(3), campaignId: '0xexpired3a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE', rewardTokenSymbol: 'USDe' },
     ];
     const result = filterRecentExpiredCampaigns(breakdowns);
-    assert.equal(result.filter(b => b.campaignId!.startsWith('0xactive')).length, 2);
-    assert.equal(result.filter(b => b.campaignId!.startsWith('0xexpired')).length, 2);
-    assert.ok(result.find(b => b.campaignId === '0xexpired1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6'));
-    assert.ok(result.find(b => b.campaignId === '0xexpired3a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6'));
-  });
-
-  it('同campaignType不同rewardToken → 各保留1条', () => {
-    const now = new Date();
-    const past = (days: number) => new Date(now.getTime() - days * 86400000).toISOString();
-    const breakdowns: MerklCampaignBreakdown[] = [
-      { campaignApr: 0.01, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: '0xwxpl1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
-      { campaignApr: 0.02, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: '0xwxpl2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'WXPL' },
-      { campaignApr: 0.03, campaignStartedAt: past(30), campaignEndedAt: past(2), campaignId: '0xagho1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'aGHO' },
-      { campaignApr: 0.04, campaignStartedAt: past(30), campaignEndedAt: past(6), campaignId: '0xagho2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', campaignType: 'DUTCH_AUCTION', rewardTokenSymbol: 'aGHO' },
-    ];
-    const result = filterRecentExpiredCampaigns(breakdowns);
     assert.equal(result.length, 2);
-    assert.ok(result.find(b => b.campaignId === '0xwxpl1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6'));
-    assert.ok(result.find(b => b.campaignId === '0xagho1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6'));
+    assert.ok(result.every(b => b.campaignId!.startsWith('0xactive')));
   });
 
   it('无过期campaign → 原样返回', () => {
@@ -65,16 +47,23 @@ describe('filterRecentExpiredCampaigns (Merkl)', () => {
     assert.equal(result.length, 1);
   });
 
-  it('rewardTokenSymbol缺失 → fallback到campaignType分组', () => {
+  it('全部过期 → 返回空数组', () => {
     const now = new Date();
     const past = (days: number) => new Date(now.getTime() - days * 86400000).toISOString();
     const breakdowns: MerklCampaignBreakdown[] = [
-      { campaignApr: 0.005, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: '0xexpirednotype1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2' },
-      { campaignApr: 0.003, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: '0xexpirednotype2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2' },
+      { campaignApr: 0.005, campaignStartedAt: past(30), campaignEndedAt: past(1), campaignId: '0xexpired1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2' },
+      { campaignApr: 0.003, campaignStartedAt: past(30), campaignEndedAt: past(5), campaignId: '0xexpired2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2' },
+    ];
+    const result = filterRecentExpiredCampaigns(breakdowns);
+    assert.equal(result.length, 0);
+  });
+
+  it('无 campaignEndedAt → 视为活跃保留', () => {
+    const breakdowns: MerklCampaignBreakdown[] = [
+      { campaignApr: 0.02, campaignId: '0xnoend1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2' },
     ];
     const result = filterRecentExpiredCampaigns(breakdowns);
     assert.equal(result.length, 1);
-    assert.equal(result[0].campaignId, '0xexpirednotype1a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2');
   });
 });
 

@@ -105,9 +105,12 @@ export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   budgetBoundMode?: string;
   /** V4 Spoke campaign's parent Hub campaign ID (for Hub/Spoke deduplication; stripped from API payload). */
   parentCampaignId?: string;
-  recentlyEndedAt?: string;
-  recentlyStartedAt?: string;
-  recentlyEndedCampaignId?: string;
+  /** Most recently ended campaign embedded into this live breakdown (matched by rewardTokenSymbol). */
+  lastEndedCampaign?: {
+    startedAt: string;
+    endedAt: string;
+    campaignId: string;
+  };
 }
 
 export interface MerklOpportunityGroup extends CampaignGroup<MerklCampaignBreakdown> {

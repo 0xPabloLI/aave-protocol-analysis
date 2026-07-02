@@ -144,6 +144,18 @@ _Avoid_: reward, emission
 最小激励单元，由单一源（Merit/Merkl/Brevis）发放，包含 APR 值、目标条件、有效期。多个 Campaign 可归入同一 **CampaignGroup**。
 _Avoid_: campaignBreakdown（已归并）
 
+**Campaign Hash ID** (campaignId):
+Campaign 的全局唯一标识符，格式为 64 位 hex 哈希（如 `0x0cf07a3891...`）。在 Merkl API 响应中由 `campaign.campaignId` 字段提供，用作 breakdown 的主键、Map key、Merkl Web UI URL 路径段。R1 迁移后统一使用 Hash ID，不再暴露 DB ID。
+_Avoid_: campaignDatabaseId, dbId（已从 API 移除）
+
+**Campaign Database ID** (campaign.id):
+Merkl API 原始响应中 `campaign.id` 字段，数字型自增 ID，per-opportunity 局部唯一。仅在 fetcher 内部用于 Merit 动态信息查找（构建 Merit 页面 URL），不输出到 API。与 **Campaign Hash ID** 不同。
+_Avoid_: campaignId（Campaign Hash ID 才是 campaignId）
+
+**lastEndedCampaign**:
+嵌入在 live Campaign 上的嵌套对象，记录同 `rewardTokenSymbol` 的最近已结束 campaign 信息。仅存在于 `MerklCampaignBreakdown`。包含 `startedAt`/`endedAt`/`campaignId` 三个字段。每个 live breakdown 最多嵌入一个（7 天 lookback 窗口内最近结束的）。ended campaign 不再作为独立 stub breakdown 出现在 `breakdowns` 数组中。
+_Avoid_: recentlyEnded（旧命名，已废弃）, stubBreakdown（旧模式，已移除）
+
 **CampaignGroup**:
 按逻辑分组的一组 **Campaign** 容器。例如 Merkl 中同一 opportunity 下的多个 Campaign。每个 CampaignGroup 通过 **protocolVersion** (`'v3'` | `'v4'`) 绑定到对应协议版本的 Reserve，确保 V3/V4 激励来源不会交叉污染。Merit 和 Brevis 目前仅服务于 V3。
 _Avoid_: opportunity（Merkl 术语，与通用概念混淆）

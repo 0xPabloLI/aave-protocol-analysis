@@ -1324,6 +1324,25 @@
           },
           "plannedDaily": {
             "type": "number"
+          },
+          "lastEndedCampaign": {
+            "type": "object",
+            "properties": {
+              "startedAt": {
+                "type": "string"
+              },
+              "endedAt": {
+                "type": "string"
+              },
+              "campaignId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "startedAt",
+              "endedAt",
+              "campaignId"
+            ]
           }
         },
         "required": [

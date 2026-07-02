@@ -224,6 +224,7 @@ export function computeSchemaFingerprint(): string {
       breakdowns: [{
         campaignApr: 0.01, campaignId: '__fingerprint__',
         campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
+        lastEndedCampaign: { startedAt: '2025-01-01', endedAt: '2025-01-01', campaignId: '__fingerprint__' },
       }],
     }],
     merklBorrows: [{
@@ -231,6 +232,7 @@ export function computeSchemaFingerprint(): string {
       breakdowns: [{
         campaignApr: 0.01, campaignId: '__fingerprint__',
         campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
+        lastEndedCampaign: { startedAt: '2025-01-01', endedAt: '2025-01-01', campaignId: '__fingerprint__' },
       }],
     }],
     merklHolds: [{
@@ -238,6 +240,7 @@ export function computeSchemaFingerprint(): string {
       breakdowns: [{
         campaignApr: 0.01, campaignId: '__fingerprint__',
         campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
+        lastEndedCampaign: { startedAt: '2025-01-01', endedAt: '2025-01-01', campaignId: '__fingerprint__' },
       }],
     }],
     brevisSupplys: [{

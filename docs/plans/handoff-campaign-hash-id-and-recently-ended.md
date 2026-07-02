@@ -13,6 +13,7 @@
 | R3: Remove PAST Opportunities Fetch | ✅ Done | 90348a2 | — |
 | R4: Campaign URL + Remove campaignDatabaseId | ✅ Done | 84836ab | fbfe6474 |
 | R5: Merkl URL Simplification | ✅ Done | ed7c8f9 | c3f65224 |
+| AAV-1044: opportunityId type fix + CampaignGroup.opportunityType cleanup + inline embedding | ✅ Done | 52246d7 | b3dcd7c9 |
 
 ## R5 实现细节
 
@@ -37,7 +38,7 @@
 ### 注意事项
 
 - `CampaignGroup.link` 是基类必填字段 (`link: string`)，不能设为 undefined。Merkl group 在无 `opportunityId` 时输出 `link: ''`
-- `opportunityType` 仍在 `CampaignGroup` 基类和 `MerklOpportunityData` 内部类型中保留，用于 hub/spoke 分类、offsetLevel 判断、netPositionConstraint 检测。只是不再输出到 prune/API
+- `opportunityType` 已从 `CampaignGroup` 基类移除（AAV-1045），仅在 `MerklOpportunityGroup` 子接口和 `MerklOpportunityData` 内部类型中保留，用于 hub/spoke 分类、offsetLevel 判断、netPositionConstraint 检测
 - `identifier` 仍用于 `isBorrowBl` 检测（`opp.identifier?.includes('BORROW_BL')`），只是不再输出到 API
 
 ## 未提交的后端文件（非 R5）

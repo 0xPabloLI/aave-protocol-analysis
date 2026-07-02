@@ -1584,9 +1584,7 @@ export async function processMerklData(
         if (!symbol) continue;
         const ended = endedBySymbol.get(symbol);
         if (!ended) continue;
-        breakdown.recentlyEndedAt = ended.endedAt;
-        breakdown.recentlyStartedAt = ended.startedAt;
-        breakdown.recentlyEndedCampaignId = ended.campaignId;
+        breakdown.lastEndedCampaign = { startedAt: ended.startedAt, endedAt: ended.endedAt, campaignId: ended.campaignId };
         embedCount++;
       }
       if (embedCount > 0) {
@@ -1749,19 +1747,9 @@ function extractComposedCampaignInfo(opp: MerklOpportunity): {
 
 export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[]): MerklCampaignBreakdown[] {
   const nowMs = Date.now();
-  const active = breakdowns.filter(b =>
+  return breakdowns.filter(b =>
     !b.campaignEndedAt || new Date(b.campaignEndedAt).getTime() >= nowMs
   );
-  const byRewardToken = new Map<string, MerklCampaignBreakdown>();
-  for (const b of breakdowns) {
-    if (!isRecentlyEnded(b.campaignEndedAt, nowMs)) continue;
-    const key = b.rewardTokenId ?? b.rewardTokenSymbol ?? b.campaignType ?? 'UNKNOWN';
-    const existing = byRewardToken.get(key);
-    if (!existing || new Date(b.campaignEndedAt!).getTime() > new Date(existing.campaignEndedAt!).getTime()) {
-      byRewardToken.set(key, b);
-    }
-  }
-  return [...active, ...byRewardToken.values()];
 }
 
 export function hasHookType14(opp: MerklOpportunity): boolean {
