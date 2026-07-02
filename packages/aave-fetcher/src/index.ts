@@ -7,7 +7,6 @@ import {
   restoreOriginalFetch,
   resetV3RateLimitState,
   getV3RateLimitStats,
-  readNumberEnv,
 } from '@internal/aave-shared-config';
 
 // V3 AaveClient does not inherit GqlClient — no queryRegistry leak risk, safe as singleton
@@ -728,93 +727,44 @@ async function fetchRawMarketData(): Promise<MarketData> {
     logger.info(`   • ${info.name} (Chain ID: ${info.chainId})`);
   });
   
-  logger.info('\n🚀 Fetching markets data (inner-layer QPS control + 429 retry)...');
-
-  const maxChainConcurrency = readNumberEnv('V3_CHAIN_CONCURRENCY', { defaultValue: 2, min: 1 });
-
-  let activeCount = 0;
-  const waitQueue: (() => void)[] = [];
-  const acquireSlot = () => {
-    if (activeCount < maxChainConcurrency) {
-      activeCount++;
-      return Promise.resolve();
-    }
-    return new Promise<void>((resolve) => waitQueue.push(resolve));
-  };
-  const releaseSlot = () => {
-    const next = waitQueue.shift();
-    if (next) { next(); } else { activeCount--; }
-  };
-
-  const fetchSingleChain = async (chainIdValue: number): Promise<{ markets: any[]; chainId: number; error?: string }> => {
-    await acquireSlot();
-    try {
-      try {
-        const result = await markets(client, {
-          chainIds: [chainId(chainIdValue)],
-        });
-        
-        if (result && typeof result === 'object' && 'isErr' in result && typeof result.isErr === 'function') {
-          if (result.isErr()) {
-            const errorInfo = result.error;
-            const errorMsg = `${errorInfo.name || 'UnknownError'}${errorInfo.message ? ` - ${errorInfo.message}` : ''}`;
-            return { markets: [], chainId: chainIdValue, error: `Chain ${chainIdValue}: ${errorMsg}` };
-          }
-          if (result.value && Array.isArray(result.value) && result.value.length > 0) {
-            logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
-            return { markets: result.value, chainId: chainIdValue };
-          }
-          logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty)`);
-          return { markets: [], chainId: chainIdValue };
-        } else if (result && typeof result === 'object' && 'value' in result) {
-          if (result.value && Array.isArray(result.value) && result.value.length > 0) {
-            logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.value.length} markets`);
-            return { markets: result.value, chainId: chainIdValue };
-          }
-          logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (result.value is empty)`);
-          return { markets: [], chainId: chainIdValue };
-        } else if (result && Array.isArray(result) && result.length > 0) {
-          logger.info(`   ✅ Chain ${chainIdValue}: Found ${result.length} markets`);
-          return { markets: result, chainId: chainIdValue };
-        }
-        logger.warn(`   ⚠️ Chain ${chainIdValue}: No markets found (unexpected format)`);
-        return { markets: [], chainId: chainIdValue };
-      } catch (error) {
-        const errorMsg = `Chain ${chainIdValue}: ${error instanceof Error ? error.message : String(error)}`;
-        logger.error(`   ❌ ${errorMsg}`);
-        return { markets: [], chainId: chainIdValue, error: errorMsg };
-      }
-    } finally {
-      releaseSlot();
-    }
-  };
+  logger.info('\n🚀 Fetching markets data (single bulk query for all chains)...');
 
   resetV3RateLimitState();
   installV3RateLimitedFetch();
   try {
-    const results = await Promise.allSettled(
-      chainIds.map(chainIdValue => fetchSingleChain(chainIdValue))
-    );
-
-    const marketList: any[] = [];
-    const supportedChainIds: number[] = [];
+    const allChainIds = chainIds.map(id => chainId(id));
+    let marketList: any[] = [];
     const errors: string[] = [];
 
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        const { markets: chainMarkets, chainId: cid, error } = result.value;
-        if (chainMarkets.length > 0) {
-          marketList.push(...chainMarkets);
-          supportedChainIds.push(cid);
+    try {
+      const result: any = await markets(client, { chainIds: allChainIds });
+      
+      if (result && typeof result === 'object' && 'isErr' in result && typeof result.isErr === 'function') {
+        if (result.isErr()) {
+          const errorInfo = result.error;
+          const errorMsg = `${errorInfo.name || 'UnknownError'}${errorInfo.message ? ` - ${errorInfo.message}` : ''}`;
+          errors.push(`Bulk query failed: ${errorMsg}`);
+          logger.error(`   ❌ Bulk markets query failed: ${errorMsg}`);
+        } else if (result.value && Array.isArray(result.value)) {
+          marketList = result.value;
+          logger.info(`   ✅ Bulk query returned ${marketList.length} markets`);
         }
-        if (error) {
-          errors.push(error);
-        }
+      } else if (result && typeof result === 'object' && 'value' in result && Array.isArray(result.value)) {
+        marketList = result.value;
+        logger.info(`   ✅ Bulk query returned ${marketList.length} markets`);
+      } else if (Array.isArray(result)) {
+        marketList = result;
+        logger.info(`   ✅ Bulk query returned ${marketList.length} markets`);
       } else {
-        errors.push(`Unexpected rejection: ${result.reason}`);
+        logger.warn(`   ⚠️ Bulk query returned unexpected format`);
       }
+    } catch (error) {
+      const errorMsg = `Bulk query error: ${error instanceof Error ? error.message : String(error)}`;
+      logger.error(`   ❌ ${errorMsg}`);
+      errors.push(errorMsg);
     }
-    
+
+    const supportedChainIds = [...new Set(marketList.map((m: any) => Number(m.chainId)))];
     const rateLimitStats = getV3RateLimitStats();
     
     const marketData: MarketData = {
@@ -830,7 +780,7 @@ async function fetchRawMarketData(): Promise<MarketData> {
     logger.info(`📊 Found ${marketList.length} markets total from ${supportedChainIds.length} chains`);
     
     if (errors.length > 0) {
-      logger.warn(`⚠️ ${errors.length} chains had errors or no data`);
+      logger.warn(`⚠️ ${errors.length} errors during fetch`);
     }
     if (rateLimitStats.total429s > 0) {
       logger.warn(`📊 V3 rate limit: ${rateLimitStats.total429s} total 429s during this cycle`);
@@ -842,16 +792,6 @@ async function fetchRawMarketData(): Promise<MarketData> {
         `byAttempt=${JSON.stringify(rateLimitStats.byAttempt)} ` +
         `avgQPS=${rateLimitStats.qps}`
       );
-      if (rateLimitStats.status429 > 0 && rateLimitStats.requests) {
-        const req429 = rateLimitStats.requests.filter(r => r.status === 429);
-        const ts0 = rateLimitStats.requests[0]?.ts ?? 0;
-        const buckets: Record<string, number> = {};
-        for (const r of req429) {
-          const sec = Math.floor((r.ts - ts0) / 1000);
-          buckets[sec] = (buckets[sec] || 0) + 1;
-        }
-        logger.info(`📊 V3 429 timeline (seconds from start): ${JSON.stringify(buckets)}`);
-      }
     }
 
     await mkdir(DEBUG_DATA_DIR, { recursive: true });

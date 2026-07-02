@@ -229,59 +229,6 @@ export function installV3RateLimitedFetch() {
 
   globalThis.fetch = rateLimitedFetch;
 }
-    lastV3RequestTime = Date.now();
-  };
-
-  const rateLimitedFetch = async (input, init) => {
-    if (!isV3Request(input)) {
-      return originalFetch(input, init);
-    }
-
-    const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      await innerLimiter.wait();
-      await enforceMinInterval();
-
-      const startTime = Date.now();
-      const response = await originalFetch(input, init);
-      const elapsed = Date.now() - startTime;
-
-      v3RequestLog.push({
-        ts: startTime,
-        status: response.status,
-        elapsed,
-        attempt,
-        url: url.length > 80 ? url.slice(0, 77) + '...' : url,
-      });
-
-      if (response.status === 429 && attempt < maxRetries) {
-        totalV3429s++;
-        const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
-        const delayMs = retryAfterMs != null
-          ? Math.min(retryAfterMs, retryAfterCapMs)
-          : Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
-
-        if (typeof globalThis.console?.warn === 'function') {
-          console.warn(
-            `[V3-RateLimit] 429 on ${url.length > 60 ? url.slice(0, 57) + '...' : url} ` +
-            `(attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
-            `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? ' (Retry-After)' : ' (backoff)'}`
-          );
-        }
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        continue;
-      }
-
-      return response;
-    }
-    await innerLimiter.wait();
-    await enforceMinInterval();
-    return originalFetch(input, init);
-  };
-
-  globalThis.fetch = rateLimitedFetch;
-}
 
 export function restoreOriginalFetch() {
   if (originalFetch !== null) {
