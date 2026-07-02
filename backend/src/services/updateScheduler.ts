@@ -26,62 +26,12 @@ let _lastOldSpace: number | null = null;
 async function maybeHeapSnapshot(): Promise<void> {
   if (!_heapDiagEnabled) return;
   const uptimeMin = Math.floor((Date.now() - _startTime) / 60_000);
-  const snapshotTargets = [30, 60, 120];
-  if (uptimeMin >= 25) {
-    logger.info(`🔬 maybeHeapSnapshot check: uptime=${uptimeMin}min done=${[..._heapSnapshotDone].join(',')}`);
-  }
-  for (const target of snapshotTargets) {
-    if (uptimeMin >= target && !_heapSnapshotDone.has(target)) {
-      _heapSnapshotDone.add(target);
-      try {
-        const filePath = v8.writeHeapSnapshot();
-        const mem = process.memoryUsage();
-        logger.info(`🔬 Auto heap snapshot at ~${target}min (actual ${uptimeMin}min): ${filePath} (heap=${Math.round(mem.heapUsed / 1024 / 1024)}MB)`);
-
-        const { readFile, unlink, stat: statFn } = await import('fs/promises');
-        const fileStat = await statFn(filePath);
-        logger.info(`🔬 Snapshot file size: ${Math.round(fileStat.size / 1024 / 1024)}MB`);
-
-        const heapFree = mem.heapTotal - mem.heapUsed;
-        if (fileStat.size < 400 * 1024 * 1024 && heapFree > 150 * 1024 * 1024) {
-          const raw = await readFile(filePath, 'utf-8');
-          const snapshot = JSON.parse(raw);
-          const meta = snapshot.snapshot?.meta;
-          const nodes = snapshot.nodes;
-          const strings = snapshot.strings;
-          if (meta?.node_fields && nodes && strings) {
-            const nodeFields: string[] = meta.node_fields;
-            const fieldCount = nodeFields.length;
-            const nameIdx = nodeFields.indexOf('name');
-            const selfSizeIdx = nodeFields.indexOf('self_size');
-            const byCtor = new Map<string, { count: number; selfSize: number }>();
-            for (let i = 0; i < nodes.length; i += fieldCount) {
-              const selfSize = nodes[i + selfSizeIdx];
-              if (selfSize > 1024) {
-                const name = strings[nodes[i + nameIdx]] ?? '(unnamed)';
-                const e = byCtor.get(name) ?? { count: 0, selfSize: 0 };
-                e.count++;
-                e.selfSize += selfSize;
-                byCtor.set(name, e);
-              }
-            }
-            const top = [...byCtor.entries()]
-              .sort((a, b) => b[1].selfSize - a[1].selfSize)
-              .slice(0, 30)
-              .map(([name, { count, selfSize }]) => `${name}:${count}:${(selfSize / 1024 / 1024).toFixed(1)}MB`)
-              .join(' | ');
-            logger.info(`🔬 Heap top 30 at ~${target}min: ${top}`);
-          }
-        } else {
-          logger.info(`🔬 Skipping in-process parse: file=${Math.round(fileStat.size / 1024 / 1024)}MB heapFree=${Math.round(heapFree / 1024 / 1024)}MB`);
-        }
-
-        await unlink(filePath);
-        logger.info(`🔬 Cleaned up snapshot file: ${filePath}`);
-      } catch (err) {
-        logger.warn(`🔬 Auto heap snapshot at ~${target}min failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
+  if (uptimeMin % 15 === 0 && !_heapSnapshotDone.has(uptimeMin)) {
+    _heapSnapshotDone.add(uptimeMin);
+    const spaces = v8.getHeapSpaceStatistics();
+    const summary = spaces.map(s => `${s.space_name}=${Math.round(s.space_used_size / _MB)}/${Math.round(s.space_size / _MB)}MB`).join(' ');
+    const mem = process.memoryUsage();
+    logger.info(`🔬 Heap spaces at ${uptimeMin}min: ${summary} | heap=${Math.round(mem.heapUsed / _MB)}MB rss=${Math.round(mem.rss / _MB)}MB external=${Math.round(mem.external / _MB)}MB`);
   }
 }
 
