@@ -87,7 +87,7 @@ export function createSlidingWindowRateLimiter(maxRequestsPerSecond) {
 
 const readV3FetchMaxConcurrency = () => {
   const raw = process.env.V3_FETCH_MAX_CONCURRENCY;
-  const defaultValue = 6;
+  const defaultValue = 3;
   if (raw === undefined || raw === null || raw === '') return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 1 ? n : defaultValue;
@@ -170,6 +170,7 @@ export function installV3RateLimitedFetch() {
   const maxRetries = readV3FetchMaxRetries();
   const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 3000, min: 1000 });
   const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
+  const retryAfterCapMs = 3000;
 
   const V3_HOSTS = ['api.v3.aave.com', 'api.aave.com'];
 
@@ -195,7 +196,7 @@ export function installV3RateLimitedFetch() {
           totalV3429s++;
           const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
           const delayMs = retryAfterMs != null
-            ? Math.min(retryAfterMs, maxDelayMs)
+            ? Math.min(retryAfterMs, retryAfterCapMs)
             : Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
 
           if (typeof globalThis.console?.warn === 'function') {
