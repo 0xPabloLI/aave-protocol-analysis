@@ -192,12 +192,12 @@ export function installV3RateLimitedFetch() {
       return originalFetch(input, init);
     }
 
-    await innerLimiter.wait();
-
     const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
-    const startTime = Date.now();
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      await innerLimiter.wait();
+
+      const startTime = Date.now();
       const response = await originalFetch(input, init);
       const elapsed = Date.now() - startTime;
 
@@ -229,6 +229,7 @@ export function installV3RateLimitedFetch() {
 
       return response;
     }
+    await innerLimiter.wait();
     return originalFetch(input, init);
   };
 
