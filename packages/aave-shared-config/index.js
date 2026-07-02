@@ -166,7 +166,6 @@ export function installV3RateLimitedFetch() {
   if (originalFetch !== null) return;
   originalFetch = globalThis.fetch;
 
-  const limiter = createSlidingWindowRateLimiter(readV3MaxRequestsPerSecond());
   const maxRetries = readV3FetchMaxRetries();
   const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 3000, min: 1000 });
   const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
@@ -186,36 +185,30 @@ export function installV3RateLimitedFetch() {
       return originalFetch(input, init);
     }
 
-    await acquireV3FetchSlot();
-    try {
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        await limiter.wait();
-        const response = await originalFetch(input, init);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const response = await originalFetch(input, init);
 
-        if (response.status === 429 && attempt < maxRetries) {
-          totalV3429s++;
-          const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
-          const delayMs = retryAfterMs != null
-            ? Math.min(retryAfterMs, retryAfterCapMs)
-            : Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
+      if (response.status === 429 && attempt < maxRetries) {
+        totalV3429s++;
+        const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
+        const delayMs = retryAfterMs != null
+          ? Math.min(retryAfterMs, retryAfterCapMs)
+          : Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
 
-          if (typeof globalThis.console?.warn === 'function') {
-            console.warn(
-              `[V3-RateLimit] 429 on ${typeof input === 'string' ? input : input.url} ` +
-              `(attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
-              `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? ' (Retry-After)' : ' (backoff)'}`
-            );
-          }
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
-          continue;
+        if (typeof globalThis.console?.warn === 'function') {
+          console.warn(
+            `[V3-RateLimit] 429 on ${typeof input === 'string' ? input : input.url} ` +
+            `(attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
+            `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? ' (Retry-After)' : ' (backoff)'}`
+          );
         }
-
-        return response;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
       }
-      return originalFetch(input, init);
-    } finally {
-      releaseV3FetchSlot();
+
+      return response;
     }
+    return originalFetch(input, init);
   };
 
   globalThis.fetch = rateLimitedFetch;

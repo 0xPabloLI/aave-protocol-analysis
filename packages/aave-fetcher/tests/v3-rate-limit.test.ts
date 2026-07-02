@@ -179,30 +179,7 @@ describe('installV3RateLimitedFetch / restoreOriginalFetch', () => {
     assert.strictEqual(globalThis.fetch, original);
   });
 
-  it('patched fetch applies sliding window to each HTTP request', async () => {
-    const timestamps: number[] = [];
-    const mockImpl = async () => {
-      timestamps.push(Date.now());
-      return new Response('ok', { status: 200 }) as Promise<Response>;
-    };
-    const original = globalThis.fetch;
-    globalThis.fetch = mockImpl;
-
-    installV3RateLimitedFetch();
-    try {
-      await globalThis.fetch('https://api.v3.aave.com/graphql?q=1');
-      await globalThis.fetch('https://api.v3.aave.com/graphql?q=2');
-      if (timestamps.length >= 2) {
-        const gap = timestamps[1] - timestamps[0];
-        assert.ok(gap >= 50, `Expected >= 50ms gap between requests (QPS=1), got ${gap}ms`);
-      }
-    } finally {
-      restoreOriginalFetch();
-      globalThis.fetch = original;
-    }
-  });
-
-  it('patched fetch retries 429 responses', async () => {
+  it('patched fetch retries 429 responses on Aave V3 URLs', async () => {
     let callCount = 0;
     const mockImpl = async () => {
       callCount++;
@@ -225,47 +202,20 @@ describe('installV3RateLimitedFetch / restoreOriginalFetch', () => {
     }
   });
 
-  it('only patches api.v3.aave.com requests (non-V3 URLs pass through without limiter)', async () => {
-    const callTimestamps: number[] = [];
-    const mockImpl = async (input) => {
-      callTimestamps.push(Date.now());
-      return new Response('ok', { status: 200 }) as Promise<Response>;
-    };
-    const original = globalThis.fetch;
-    globalThis.fetch = mockImpl;
-
-    installV3RateLimitedFetch();
-    try {
-      await globalThis.fetch('https://other-api.example.com/data');
-      await globalThis.fetch('https://api.coingecko.com/api/v3/simple/price');
-      assert.ok(callTimestamps.length === 2, `Non-Aave URLs should pass through directly`);
-      if (callTimestamps.length >= 2) {
-        const gap = callTimestamps[1] - callTimestamps[0];
-        assert.ok(gap < 50, `Non-Aave requests should not be rate-limited, got ${gap}ms gap`);
-      }
-    } finally {
-      restoreOriginalFetch();
-      globalThis.fetch = original;
-    }
-  });
-
-  it('Aave V3 URLs ARE rate-limited', async () => {
-    const callTimestamps: number[] = [];
+  it('non-Aave URLs are not retried on 429 by inner-layer', async () => {
+    let callCount = 0;
     const mockImpl = async () => {
-      callTimestamps.push(Date.now());
-      return new Response('ok', { status: 200 }) as Promise<Response>;
+      callCount++;
+      return new Response('', { status: 429 }) as Promise<Response>;
     };
     const original = globalThis.fetch;
     globalThis.fetch = mockImpl;
 
     installV3RateLimitedFetch();
     try {
-      await globalThis.fetch('https://api.v3.aave.com/graphql?q=1');
-      await globalThis.fetch('https://api.aave.com/graphql?q=2');
-      if (callTimestamps.length >= 2) {
-        const gap = callTimestamps[1] - callTimestamps[0];
-        assert.ok(gap >= 50, `Aave V3 requests should be rate-limited (QPS=1), got ${gap}ms gap`);
-      }
+      const response = await globalThis.fetch('https://api.coingecko.com/api/v3/price');
+      assert.strictEqual(response.status, 429);
+      assert.strictEqual(callCount, 1, `Non-Aave URLs should not be retried by inner-layer`);
     } finally {
       restoreOriginalFetch();
       globalThis.fetch = original;
