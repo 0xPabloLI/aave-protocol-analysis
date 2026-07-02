@@ -174,11 +174,11 @@ export function installV3RateLimitedFetch() {
   const maxRetries = readV3FetchMaxRetries();
   const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 3000, min: 1000 });
   const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
-  const retryAfterCapMs = 1000;
+  const retryAfterCapMs = 2000;
 
   const innerQps = readNumberEnv('V3_INNER_QPS', { defaultValue: 1, min: 1, max: 10 });
   const innerLimiter = createSlidingWindowRateLimiter(innerQps);
-  const innerMinIntervalMs = readNumberEnv('V3_INNER_MIN_INTERVAL_MS', { defaultValue: 1500, min: 500, max: 10000 });
+  const innerMinIntervalMs = readNumberEnv('V3_INNER_MIN_INTERVAL_MS', { defaultValue: 1000, min: 500, max: 10000 });
 
   let lastRequestTime = 0;
 
