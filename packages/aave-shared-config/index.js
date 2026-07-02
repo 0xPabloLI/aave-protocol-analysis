@@ -87,7 +87,7 @@ export function createSlidingWindowRateLimiter(maxRequestsPerSecond) {
 
 const readV3FetchMaxConcurrency = () => {
   const raw = process.env.V3_FETCH_MAX_CONCURRENCY;
-  const defaultValue = 5;
+  const defaultValue = 3;
   if (raw === undefined || raw === null || raw === '') return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 1 ? n : defaultValue;
@@ -95,7 +95,7 @@ const readV3FetchMaxConcurrency = () => {
 
 const readV3MaxRequestsPerSecond = () => {
   const raw = process.env.V3_MAX_REQUESTS_PER_SECOND;
-  const defaultValue = 3;
+  const defaultValue = 2;
   if (raw === undefined || raw === null || raw === '') return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 1 ? n : defaultValue;
@@ -111,7 +111,7 @@ const readV3FetchMaxRetries = () => {
 
 const readV3FetchBaseDelayMs = () => {
   const raw = process.env.V3_FETCH_BASE_DELAY_MS;
-  const defaultValue = 1000;
+  const defaultValue = 2000;
   if (raw === undefined || raw === null || raw === '') return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 0 ? n : defaultValue;

@@ -728,12 +728,12 @@ async function fetchRawMarketData(): Promise<MarketData> {
   
   logger.info('\n🚀 Fetching markets data (concurrent with rate limiting)...');
   
-  const maxConcurrency = readNumberEnv('V3_FETCH_MAX_CONCURRENCY', { defaultValue: 5, min: 1 });
+  const maxConcurrency = readNumberEnv('V3_FETCH_MAX_CONCURRENCY', { defaultValue: 3, min: 1 });
   const maxRetries = readNumberEnv('V3_FETCH_MAX_RETRIES', { defaultValue: 3, min: 0 });
-  const baseDelayMs = readNumberEnv('V3_FETCH_BASE_DELAY_MS', { defaultValue: 1000, min: 0 });
+  const baseDelayMs = readNumberEnv('V3_FETCH_BASE_DELAY_MS', { defaultValue: 2000, min: 0 });
   const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 30000, min: 0 });
   const limiter = createSlidingWindowRateLimiter(
-    readNumberEnv('V3_MAX_REQUESTS_PER_SECOND', { defaultValue: 3, min: 1 })
+    readNumberEnv('V3_MAX_REQUESTS_PER_SECOND', { defaultValue: 2, min: 1 })
   );
 
   let activeCount = 0;
