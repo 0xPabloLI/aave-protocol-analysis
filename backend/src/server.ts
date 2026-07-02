@@ -381,6 +381,11 @@ if (isPersistenceEnabled()) {
         logger.warn(`⚠️  Background migration retry #${retryCount} failed (will retry in 60s):`, error);
       }
 }, 60_000).unref();
+  }
+} else {
+  logger.info('💾 Persistence disabled — skipping auto-migration');
+  migrationReady = true;
+}
 
 // Detailed heap diagnostics every 10 min (MEMORY_DIAG=1 only).
 // Tracks V8 malloced_memory, external_memory, and heap space breakdown
@@ -401,8 +406,7 @@ if (process.env.MEMORY_DIAG === '1') {
     );
   }, 10 * 60_000).unref();
 
-  // Auto heap snapshot + streaming analysis at 30min, 1h, 2h uptime (MEMORY_DIAG=1 only).
-  // Uses streaming JSON parse to avoid OOM from JSON.parse on large snapshots.
+  // Auto heap snapshot + analysis at 30min, 1h, 2h uptime (MEMORY_DIAG=1 only).
   const SNAPSHOT_MINUTES = [30, 60, 120];
   for (const minutes of SNAPSHOT_MINUTES) {
     setTimeout(async () => {
@@ -411,21 +415,12 @@ if (process.env.MEMORY_DIAG === '1') {
         const mem = process.memoryUsage();
         logger.info(`🔬 Auto heap snapshot at ${minutes}min: ${filePath} (heap=${Math.round(mem.heapUsed / 1024 / 1024)}MB)`);
 
-        // Stream-parse the snapshot to extract node types without full JSON.parse
-        const { createReadStream } = await import('fs');
-        const { Writable } = await import('stream');
+        const { readFile, unlink, stat } = await import('fs/promises');
+        const fileStat = await stat(filePath);
+        logger.info(`🔬 Snapshot file size: ${Math.round(fileStat.size / 1024 / 1024)}MB`);
         
-        // Simple streaming approach: read the file in chunks and extract 
-        // the "nodes" and "strings" arrays using regex on raw text.
-        // This avoids the 2x memory cost of JSON.parse.
-        const { readFile } = await import('fs/promises');
-        const stat = await import('fs/promises').then(fs => fs.stat(filePath));
-        logger.info(`🔬 Snapshot file size: ${Math.round(stat.size / 1024 / 1024)}MB`);
-        
-        // For safety: only attempt in-process parse if snapshot < 400MB
-        // and heap has enough headroom (>150MB free)
         const heapFree = mem.heapTotal - mem.heapUsed;
-        if (stat.size < 400 * 1024 * 1024 && heapFree > 150 * 1024 * 1024) {
+        if (fileStat.size < 400 * 1024 * 1024 && heapFree > 150 * 1024 * 1024) {
           const raw = await readFile(filePath, 'utf-8');
           const snapshot = JSON.parse(raw);
           const meta = snapshot.snapshot?.meta;
@@ -455,11 +450,9 @@ if (process.env.MEMORY_DIAG === '1') {
             logger.info(`🔬 Heap top 30 at ${minutes}min: ${top}`);
           }
         } else {
-          logger.info(`🔬 Skipping in-process parse: file=${Math.round(stat.size / 1024 / 1024)}MB heapFree=${Math.round(heapFree / 1024 / 1024)}MB`);
+          logger.info(`🔬 Skipping in-process parse: file=${Math.round(fileStat.size / 1024 / 1024)}MB heapFree=${Math.round(heapFree / 1024 / 1024)}MB`);
         }
 
-        // Clean up snapshot file to save disk space
-        const { unlink } = await import('fs/promises');
         await unlink(filePath);
         logger.info(`🔬 Cleaned up snapshot file: ${filePath}`);
       } catch (err) {
@@ -467,11 +460,6 @@ if (process.env.MEMORY_DIAG === '1') {
       }
     }, minutes * 60_000).unref();
   }
-}
-  }
-} else {
-  logger.info('💾 Persistence disabled — skipping auto-migration');
-  migrationReady = true;
 }
 
 // Start HTTP server immediately — healthcheck returns 503 until caches are warm.
