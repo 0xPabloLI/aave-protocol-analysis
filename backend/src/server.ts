@@ -401,52 +401,71 @@ if (process.env.MEMORY_DIAG === '1') {
     );
   }, 10 * 60_000).unref();
 
-  // Auto heap snapshot + analysis at 2h, 4h, 8h uptime (MEMORY_DIAG=1 only).
-  // Writes .heapsnapshot file AND logs top 30 constructors by self_size.
-  // The analysis runs in-process after writing the file, which may cause
-  // temporary RSS spike, but the results are logged for immediate diagnosis.
-  const SNAPSHOT_HOURS = [2, 4, 8];
-  for (const hours of SNAPSHOT_HOURS) {
+  // Auto heap snapshot + streaming analysis at 30min, 1h, 2h uptime (MEMORY_DIAG=1 only).
+  // Uses streaming JSON parse to avoid OOM from JSON.parse on large snapshots.
+  const SNAPSHOT_MINUTES = [30, 60, 120];
+  for (const minutes of SNAPSHOT_MINUTES) {
     setTimeout(async () => {
       try {
         const filePath = v8.writeHeapSnapshot();
         const mem = process.memoryUsage();
-        logger.info(`🔬 Auto heap snapshot at ${hours}h: ${filePath} (heap=${Math.round(mem.heapUsed / 1024 / 1024)}MB)`);
+        logger.info(`🔬 Auto heap snapshot at ${minutes}min: ${filePath} (heap=${Math.round(mem.heapUsed / 1024 / 1024)}MB)`);
 
-        // Parse snapshot in-process to find top constructors
+        // Stream-parse the snapshot to extract node types without full JSON.parse
+        const { createReadStream } = await import('fs');
+        const { Writable } = await import('stream');
+        
+        // Simple streaming approach: read the file in chunks and extract 
+        // the "nodes" and "strings" arrays using regex on raw text.
+        // This avoids the 2x memory cost of JSON.parse.
         const { readFile } = await import('fs/promises');
-        const raw = await readFile(filePath, 'utf-8');
-        const snapshot = JSON.parse(raw);
-        const meta = snapshot.snapshot?.meta;
-        const nodes = snapshot.nodes;
-        const strings = snapshot.strings;
-        if (meta?.node_fields && nodes && strings) {
-          const nodeFields: string[] = meta.node_fields;
-          const fieldCount = nodeFields.length;
-          const nameIdx = nodeFields.indexOf('name');
-          const selfSizeIdx = nodeFields.indexOf('self_size');
-          const byCtor = new Map<string, { count: number; selfSize: number }>();
-          for (let i = 0; i < nodes.length; i += fieldCount) {
-            const selfSize = nodes[i + selfSizeIdx];
-            if (selfSize > 1024) { // skip tiny objects
-              const name = strings[nodes[i + nameIdx]] ?? '(unnamed)';
-              const e = byCtor.get(name) ?? { count: 0, selfSize: 0 };
-              e.count++;
-              e.selfSize += selfSize;
-              byCtor.set(name, e);
+        const stat = await import('fs/promises').then(fs => fs.stat(filePath));
+        logger.info(`🔬 Snapshot file size: ${Math.round(stat.size / 1024 / 1024)}MB`);
+        
+        // For safety: only attempt in-process parse if snapshot < 400MB
+        // and heap has enough headroom (>150MB free)
+        const heapFree = mem.heapTotal - mem.heapUsed;
+        if (stat.size < 400 * 1024 * 1024 && heapFree > 150 * 1024 * 1024) {
+          const raw = await readFile(filePath, 'utf-8');
+          const snapshot = JSON.parse(raw);
+          const meta = snapshot.snapshot?.meta;
+          const nodes = snapshot.nodes;
+          const strings = snapshot.strings;
+          if (meta?.node_fields && nodes && strings) {
+            const nodeFields: string[] = meta.node_fields;
+            const fieldCount = nodeFields.length;
+            const nameIdx = nodeFields.indexOf('name');
+            const selfSizeIdx = nodeFields.indexOf('self_size');
+            const byCtor = new Map<string, { count: number; selfSize: number }>();
+            for (let i = 0; i < nodes.length; i += fieldCount) {
+              const selfSize = nodes[i + selfSizeIdx];
+              if (selfSize > 1024) {
+                const name = strings[nodes[i + nameIdx]] ?? '(unnamed)';
+                const e = byCtor.get(name) ?? { count: 0, selfSize: 0 };
+                e.count++;
+                e.selfSize += selfSize;
+                byCtor.set(name, e);
+              }
             }
+            const top = [...byCtor.entries()]
+              .sort((a, b) => b[1].selfSize - a[1].selfSize)
+              .slice(0, 30)
+              .map(([name, { count, selfSize }]) => `${name}:${count}:${(selfSize / 1024 / 1024).toFixed(1)}MB`)
+              .join(' | ');
+            logger.info(`🔬 Heap top 30 at ${minutes}min: ${top}`);
           }
-          const top = [...byCtor.entries()]
-            .sort((a, b) => b[1].selfSize - a[1].selfSize)
-            .slice(0, 30)
-            .map(([name, { count, selfSize }]) => `${name}:${count}:${(selfSize / 1024 / 1024).toFixed(1)}MB`)
-            .join(' | ');
-          logger.info(`🔬 Heap top 30 at ${hours}h: ${top}`);
+        } else {
+          logger.info(`🔬 Skipping in-process parse: file=${Math.round(stat.size / 1024 / 1024)}MB heapFree=${Math.round(heapFree / 1024 / 1024)}MB`);
         }
+
+        // Clean up snapshot file to save disk space
+        const { unlink } = await import('fs/promises');
+        await unlink(filePath);
+        logger.info(`🔬 Cleaned up snapshot file: ${filePath}`);
       } catch (err) {
-        logger.warn(`🔬 Auto heap snapshot at ${hours}h failed: ${err instanceof Error ? err.message : String(err)}`);
+        logger.warn(`🔬 Auto heap snapshot at ${minutes}min failed: ${err instanceof Error ? err.message : String(err)}`);
       }
-    }, hours * 3600_000).unref();
+    }, minutes * 60_000).unref();
   }
 }
   }

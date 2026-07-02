@@ -1,3 +1,4 @@
+import v8 from 'v8';
 import { schedule } from 'node-cron';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from '../controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from '../controllers/merklForecastController.js';
@@ -16,6 +17,25 @@ import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
 const _MB = 1024 * 1024;
 const _heapDiagEnabled = process.env.MEMORY_DIAG === '1';
+
+let _oldSpaceBaseline: number | null = null;
+let _lastOldSpace: number | null = null;
+
+function logOldSpaceDiff(label: string): void {
+  if (!_heapDiagEnabled) return;
+  const spaces = v8.getHeapSpaceStatistics();
+  const oldSpace = spaces.find(s => s.space_name === 'old_space');
+  if (!oldSpace) return;
+  const sizeMB = Math.round(oldSpace.space_size / _MB);
+  const usedMB = Math.round(oldSpace.space_used_size / _MB);
+  if (!_oldSpaceBaseline) _oldSpaceBaseline = sizeMB;
+  const deltaFromBase = sizeMB - _oldSpaceBaseline;
+  const deltaFromLast = _lastOldSpace !== null ? sizeMB - _lastOldSpace : 0;
+  _lastOldSpace = sizeMB;
+  logger.info(
+    `🔬 old_space [${label}] used=${usedMB}MB size=${sizeMB}MB Δbase=${deltaFromBase >= 0 ? '+' : ''}${deltaFromBase}MB Δlast=${deltaFromLast >= 0 ? '+' : ''}${deltaFromLast}MB`
+  );
+}
 
 function tryGc(): void {
   if (globalThis.gc) {
@@ -84,8 +104,10 @@ export function startUpdateScheduler(): void {
 
   schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
     try {
+      logOldSpaceDiff('pre-markets');
       await withHeapTrace('markets', refreshMarketsSnapshot);
       tryGc();
+      logOldSpaceDiff('post-markets');
     } catch (error) {
       logger.warn(
         `Markets refresh scheduler failed: ${error instanceof Error ? error.message : String(error)}`
@@ -95,8 +117,10 @@ export function startUpdateScheduler(): void {
 
   schedule(BACKEND_SCHEDULE_CRON.onchainDataWarmEveryMinuteAtSecond10, async () => {
     try {
+      logOldSpaceDiff('pre-onchain');
       await withHeapTrace('onchain', refreshOnchainCache);
       tryGc();
+      logOldSpaceDiff('post-onchain');
     } catch (error) {
       logger.warn(
         `On-chain cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
@@ -124,8 +148,10 @@ export function startUpdateScheduler(): void {
 
   schedule(BACKEND_SCHEDULE_CRON.oraclePriceWarmEveryMinuteAtSecond0, async () => {
     try {
+      logOldSpaceDiff('pre-oracle');
       await withHeapTrace('oracle', refreshOracleCache);
       tryGc();
+      logOldSpaceDiff('post-oracle');
     } catch (error) {
       logger.warn(
         `Oracle cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
