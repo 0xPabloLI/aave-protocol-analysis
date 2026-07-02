@@ -34,8 +34,14 @@ const v4RetryLogFn: import('./v4-retry.js').LogFn = (level, msg, meta) => {
   else logger.info(msg, meta);
 };
 
-// V4 uses its own client instance (points to the same api.aave.com/graphql)
-const v4Client = AaveClient.create();
+// V4 client is created per-fetch (not module-level singleton) to prevent GqlClient.queryRegistry
+// from growing unboundedly in long-running server processes. GqlClient.addQueryReference() is called
+// on every query but releaseQueryReference() only fires on teardown — and .toPromise() never
+// triggers teardown. Creating a fresh client each cycle lets the old one (and its registry) be GC'd.
+// cache: false — disable graphcache to prevent cache growth; batch: false — no benefit for cron calls.
+function createV4Client() {
+  return AaveClient.create({ cache: false, batch: false });
+}
 
 export function bigintReplacer(_key: string, value: unknown): unknown {
   return typeof value === 'bigint' ? value.toString() : value;
@@ -54,6 +60,8 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
   logger.info('🔄 [V4] Fetching Aave V4 reserves data...');
 
   // 1. Discover supported chains
+  const v4Client = createV4Client();
+
   const chainsResult = await chains(v4Client, { query: { filter: 'ALL' as any } });
   if (chainsResult.isErr()) {
     throw new V4ChainsFetchError(`[V4] Failed to fetch chains: ${chainsResult.error.message}`);
