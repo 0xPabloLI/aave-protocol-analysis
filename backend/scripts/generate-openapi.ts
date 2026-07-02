@@ -130,11 +130,22 @@ const merklBreakdown = {
     pointsPerThousandUsd: { type: 'number' },
     rewardTokenSymbol:   { type: 'string' },
     rewardTokenIconUrl:  { type: 'string' },
+    rewardTokenId:       { type: 'string' },
     campaignType:        { type: 'string' },
     totalBudget:         { type: 'number' },
+    budgetBoundMode:     { type: 'string' },
     aprCap:              { type: 'number', nullable: true },
     latestTvl:           { type: 'number' },
     plannedDaily:        { type: 'number' },
+    lastEndedCampaign: {
+      type: 'object',
+      properties: {
+        startedAt:  { type: 'string' },
+        endedAt:    { type: 'string' },
+        campaignId: { type: 'string' },
+      },
+      required: ['startedAt', 'endedAt', 'campaignId'],
+    },
   },
   required: ['campaignApr', 'campaignStartedAt', 'campaignEndedAt', 'campaignId'],
 };

@@ -1309,11 +1309,17 @@
           "rewardTokenIconUrl": {
             "type": "string"
           },
+          "rewardTokenId": {
+            "type": "string"
+          },
           "campaignType": {
             "type": "string"
           },
           "totalBudget": {
             "type": "number"
+          },
+          "budgetBoundMode": {
+            "type": "string"
           },
           "aprCap": {
             "type": "number",
@@ -1393,11 +1399,17 @@
                 "rewardTokenIconUrl": {
                   "type": "string"
                 },
+                "rewardTokenId": {
+                  "type": "string"
+                },
                 "campaignType": {
                   "type": "string"
                 },
                 "totalBudget": {
                   "type": "number"
+                },
+                "budgetBoundMode": {
+                  "type": "string"
                 },
                 "aprCap": {
                   "type": "number",
@@ -1408,6 +1420,25 @@
                 },
                 "plannedDaily": {
                   "type": "number"
+                },
+                "lastEndedCampaign": {
+                  "type": "object",
+                  "properties": {
+                    "startedAt": {
+                      "type": "string"
+                    },
+                    "endedAt": {
+                      "type": "string"
+                    },
+                    "campaignId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "startedAt",
+                    "endedAt",
+                    "campaignId"
+                  ]
                 }
               },
               "required": [

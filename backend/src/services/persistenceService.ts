@@ -795,6 +795,8 @@ function buildMerklGroups(
     message: group.message ?? null,
     opportunityType: group.opportunityType,
     netPositionConstraint: constraint,
+    // Intentionally excludes lastEndedCampaign — DB is pure archive (0 SELECT);
+    // ended-campaign info is only needed at runtime via the API serialization layer.
     breakdowns: (group.breakdowns ?? []).map((bd) => ({
       key: bd.campaignId ?? '',
       apr: bd.campaignApr,
