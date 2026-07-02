@@ -730,7 +730,7 @@ async function fetchRawMarketData(): Promise<MarketData> {
   
   logger.info('\n🚀 Fetching markets data (inner-layer QPS control + 429 retry)...');
 
-  const maxChainConcurrency = readNumberEnv('V3_CHAIN_CONCURRENCY', { defaultValue: 4, min: 1 });
+  const maxChainConcurrency = readNumberEnv('V3_CHAIN_CONCURRENCY', { defaultValue: 2, min: 1 });
 
   let activeCount = 0;
   const waitQueue: (() => void)[] = [];

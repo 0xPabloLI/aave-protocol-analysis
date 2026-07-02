@@ -106,7 +106,7 @@ const readV3MaxRequestsPerSecond = () => {
 
 const readV3FetchMaxRetries = () => {
   const raw = process.env.V3_FETCH_MAX_RETRIES;
-  const defaultValue = 2;
+  const defaultValue = 3;
   if (raw === undefined || raw === null || raw === '') return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 0 ? n : defaultValue;
@@ -163,7 +163,6 @@ const releaseV3FetchSlot = () => {
 
 let totalV3429s = 0;
 let v3RequestLog = [];
-let lastV3RequestTime = 0;
 
 let originalFetch = null;
 
@@ -174,9 +173,7 @@ export function installV3RateLimitedFetch() {
   const maxRetries = readV3FetchMaxRetries();
   const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 3000, min: 1000 });
   const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
-  const retryAfterCapMs = readNumberEnv('V3_RETRY_AFTER_CAP_MS', { defaultValue: 5000, min: 1000, max: 30000 });
-
-  const innerMinIntervalMs = readNumberEnv('V3_INNER_MIN_INTERVAL_MS', { defaultValue: 1100, min: 500, max: 10000 });
+  const retryAfterCapMs = readNumberEnv('V3_RETRY_AFTER_CAP_MS', { defaultValue: 3000, min: 1000, max: 30000 });
 
   const V3_HOSTS = ['api.v3.aave.com', 'api.aave.com'];
 
@@ -187,16 +184,6 @@ export function installV3RateLimitedFetch() {
     } catch { return false; }
   };
 
-  const enforceMinInterval = async () => {
-    const now = Date.now();
-    const elapsed = now - lastV3RequestTime;
-    if (lastV3RequestTime > 0 && elapsed < innerMinIntervalMs) {
-      const waitMs = innerMinIntervalMs - elapsed;
-      await new Promise((resolve) => setTimeout(resolve, waitMs));
-    }
-    lastV3RequestTime = Date.now();
-  };
-
   const rateLimitedFetch = async (input, init) => {
     if (!isV3Request(input)) {
       return originalFetch(input, init);
@@ -205,8 +192,6 @@ export function installV3RateLimitedFetch() {
     const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      await enforceMinInterval();
-
       const startTime = Date.now();
       const response = await originalFetch(input, init);
       const elapsed = Date.now() - startTime;
@@ -234,13 +219,11 @@ export function installV3RateLimitedFetch() {
           );
         }
         await new Promise((resolve) => setTimeout(resolve, delayMs));
-        lastV3RequestTime = Date.now();
         continue;
       }
 
       return response;
     }
-    await enforceMinInterval();
     return originalFetch(input, init);
   };
 
@@ -379,7 +362,6 @@ export function resetV3RateLimitState() {
   v3FetchActiveCount = 0;
   v3FetchWaitQueue.length = 0;
   v3RequestLog = [];
-  lastV3RequestTime = 0;
 }
 
 const opportunitiesSnapshotCache = new Map();
