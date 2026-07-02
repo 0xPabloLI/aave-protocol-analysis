@@ -87,7 +87,7 @@ export function createSlidingWindowRateLimiter(maxRequestsPerSecond) {
 
 const readV3FetchMaxConcurrency = () => {
   const raw = process.env.V3_FETCH_MAX_CONCURRENCY;
-  const defaultValue = 3;
+  const defaultValue = 2;
   if (raw === undefined || raw === null || raw === '') return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 1 ? n : defaultValue;
@@ -186,15 +186,11 @@ export function installV3RateLimitedFetch() {
       return originalFetch(input, init);
     }
 
-    let slotHeld = false;
+    await acquireV3FetchSlot();
     try {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         await limiter.wait();
-        await acquireV3FetchSlot();
-        slotHeld = true;
         const response = await originalFetch(input, init);
-        releaseV3FetchSlot();
-        slotHeld = false;
 
         if (response.status === 429 && attempt < maxRetries) {
           totalV3429s++;
@@ -216,11 +212,9 @@ export function installV3RateLimitedFetch() {
 
         return response;
       }
-      await acquireV3FetchSlot();
-      slotHeld = true;
       return originalFetch(input, init);
     } finally {
-      if (slotHeld) releaseV3FetchSlot();
+      releaseV3FetchSlot();
     }
   };
 
