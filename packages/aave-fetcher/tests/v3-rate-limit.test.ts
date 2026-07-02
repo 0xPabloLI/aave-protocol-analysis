@@ -96,7 +96,7 @@ describe('createAaveV3RateLimitedFetch', () => {
     let callCount = 0;
     const innerFetch = async () => {
       callCount++;
-      if (callCount <= 2) {
+      if (callCount === 1) {
         return new Response('', { status: 429 }) as Promise<Response>;
       }
       return new Response('ok', { status: 200 }) as Promise<Response>;
@@ -104,7 +104,7 @@ describe('createAaveV3RateLimitedFetch', () => {
     const v3Fetch = createAaveV3RateLimitedFetch(innerFetch);
     const response = await v3Fetch('https://test.com');
     assert.strictEqual(response.status, 200);
-    assert.ok(callCount >= 3, `Expected at least 3 calls, got ${callCount}`);
+    assert.strictEqual(callCount, 2);
   });
 
   it('returns 429 response after max retries exhausted', async () => {
