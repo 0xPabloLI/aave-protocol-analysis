@@ -729,12 +729,12 @@ async function fetchRawMarketData(): Promise<MarketData> {
   
   logger.info('\n🚀 Fetching markets data (inner-layer rate limiting via globalThis.fetch patch)...');
 
-  const maxConcurrency = readNumberEnv('V3_FETCH_MAX_CONCURRENCY', { defaultValue: 2, min: 1 });
+  const maxChainConcurrency = readNumberEnv('V3_CHAIN_CONCURRENCY', { defaultValue: 2, min: 1 });
 
   let activeCount = 0;
   const waitQueue: (() => void)[] = [];
   const acquireSlot = () => {
-    if (activeCount < maxConcurrency) {
+    if (activeCount < maxChainConcurrency) {
       activeCount++;
       return Promise.resolve();
     }
