@@ -423,6 +423,18 @@ Issues filed:
 - AAV-959: Hub/Spoke double-counting fix (Done — filter-Spoke approach, superseded)
 - AAV-1004: Spoke-priority dedup via parentCampaignId (this revision)
 
+### parentCampaignId ID Format Bug Fix (2026-07-02)
+
+**Problem**: `deduplicateHubSpokeBreakdowns()` never matched any Hub/Spoke pairs. Merkl API returns `parentCampaignId` as the parent Hub's **database ID** (decimal, e.g. `"11526583104559356735"`), but Hub breakdown `campaignId` is stored as the **hash ID** (hex, e.g. `"0x3861c1877f..."`). The dedup function compared these two different ID formats directly — they never matched.
+
+**Fix**: `dbIdToHashId` mapping construction moved **before** `campaignDetailsCache` population. At assignment time, `parentCampaignId` is resolved to hash ID via `dbIdToHashId.get(rawParentId) || rawParentId`. This ensures `parentCampaignId` is always in hash ID format from the source, so `deduplicateHubSpokeBreakdowns()` can compare directly without any downstream conversion.
+
+**Fallback**: If `rawParentId` has no mapping in `dbIdToHashId` (parent campaign not in live opportunities), the raw value is kept as-is. This means dedup won't fire for that pair — equivalent to the pre-fix behavior, not a regression.
+
+**Code changes**:
+1. `packages/aave-fetcher/src/merkl-api.ts` — `dbIdToHashId` construction moved before cache population; `parentCampaignId` resolved at assignment time in both main path and fallback path
+2. `packages/aave-fetcher/tests/deduplicateHubSpokeBreakdowns.test.ts` — added scenario 10 (hash ID format matching) and scenario 11 (unresolved db ID fallback)
+
 Open items:
 - ~~Composed multiplier decay formula still unknown (engine is proprietary)~~ RESOLVED: Merkl API returns final APR, no client-side multiplier calculation needed
 - ~~Need to verify if Merkl's returned `apr` at opportunity level already accounts for composed compute/multiplier~~ RESOLVED: Verified `opp.apr === campaign.apr`, Merkl engine handles compute+multiplier internally

@@ -1372,6 +1372,20 @@ export async function processMerklData(
     amountVariantPriceMap.set(entry.campaignId, { rewardTokenPrice, targetTokenPrice });
   }
 
+  // Build Database ID → Hash ID mapping from opp.campaigns FIRST,
+  // so that parentCampaignId can be resolved to hash ID during cache population.
+  const dbIdToHashId = new Map<string, string>();
+  for (const opp of liveOpportunities) {
+    if (!Array.isArray(opp.campaigns)) continue;
+    for (const campaign of opp.campaigns) {
+      const dbId = String(campaign.id || '').trim();
+      const hashId = String(campaign.campaignId || '').trim();
+      if (dbId && hashId) {
+        dbIdToHashId.set(dbId, hashId);
+      }
+    }
+  }
+
   const oppCampaignPromises: Promise<void>[] = [];
   for (const opp of liveOpportunities) {
     if (!Array.isArray(opp.campaigns)) continue;
@@ -1393,9 +1407,10 @@ export async function processMerklData(
           targetTokenPrice = undefined;
         }
         const resolved = resolveCampaignApr(campaign, campaign.distributionType, rewardTokenPrice, targetTokenPrice);
-        const embeddedParentId = typeof campaign.parentCampaignId === 'string' && campaign.parentCampaignId
+        const rawParentId = typeof campaign.parentCampaignId === 'string' && campaign.parentCampaignId
           ? campaign.parentCampaignId
           : undefined;
+        const parentCampaignId = rawParentId ? (dbIdToHashId.get(rawParentId) || rawParentId) : undefined;
         campaignDetailsCache.set(hashId, {
           startedAt: toIsoFromUnixLike(campaign.startTimestamp),
           endedAt: toIsoFromUnixLike(campaign.endTimestamp),
@@ -1403,7 +1418,7 @@ export async function processMerklData(
           ...(databaseId && { databaseId }),
           apr: resolved.apr,
           whitelistOnly: isCampaignWhitelistOnly(campaign),
-          ...(embeddedParentId && { parentCampaignId: embeddedParentId }),
+          ...(parentCampaignId && { parentCampaignId }),
         });
         const params = campaign.params ?? {};
         const wl = Array.isArray(params.whitelist) ? (params.whitelist as string[]).filter(Boolean) : [];
@@ -1422,19 +1437,6 @@ export async function processMerklData(
     }
   }
   await Promise.all(oppCampaignPromises);
-
-  // Build Database ID → Hash ID mapping from opp.campaigns
-  const dbIdToHashId = new Map<string, string>();
-  for (const opp of liveOpportunities) {
-    if (!Array.isArray(opp.campaigns)) continue;
-    for (const campaign of opp.campaigns) {
-      const dbId = String(campaign.id || '').trim();
-      const hashId = String(campaign.campaignId || '').trim();
-      if (dbId && hashId) {
-        dbIdToHashId.set(dbId, hashId);
-      }
-    }
-  }
 
   // 补拉少量未在 opportunities.campaigns 出现的 campaign（兼容上游数据缺口）
   // breakdown.campaignId is Database ID; lookup via dbIdToHashId or direct fetch
@@ -1457,10 +1459,13 @@ export async function processMerklData(
       const details = await fetchMerklCampaignDetails(dbId);
       if (details) {
         const hashId = details.id;
-        campaignDetailsCache.set(hashId, details);
         if (hashId !== dbId) {
           dbIdToHashId.set(dbId, hashId);
         }
+        if (details.parentCampaignId) {
+          details.parentCampaignId = dbIdToHashId.get(details.parentCampaignId) || details.parentCampaignId;
+        }
+        campaignDetailsCache.set(hashId, details);
       }
       return { dbId, details };
     });

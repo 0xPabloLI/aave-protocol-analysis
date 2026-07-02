@@ -164,7 +164,36 @@ describe('deduplicateHubSpokeBreakdowns — V4 Hub/Spoke breakdown-level dedup',
     });
   });
 
-  describe('scenario 10: BORROW side opportunityType variants', () => {
+  describe('scenario 10: parentCampaignId matches Hub campaignId after hash ID normalization', () => {
+    it('deduplicates when Spoke parentCampaignId (hash) matches Hub campaignId (hash)', () => {
+      const HUB_HASH_ID = '0x3861c1877fede62974c637a1de652d7f364f41fb8251ffcfd434f1a261d1d8c0';
+      const SPOKE_HASH_ID = '0xabcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234';
+      const groups = [
+        mkGroup('AAVE_V4_HUB_SUPPLY', [mkBreakdown(HUB_HASH_ID, 0.0677)]),
+        mkGroup('AAVE_V4_SPOKE_SUPPLY', [mkBreakdown(SPOKE_HASH_ID, 0.0648, HUB_HASH_ID)]),
+      ];
+      const result = deduplicateHubSpokeBreakdowns(groups);
+      assert.equal(result.length, 1);
+      assert.equal(result[0].opportunityType, 'AAVE_V4_SPOKE_SUPPLY');
+      assert.equal(result[0].breakdowns[0].campaignId, SPOKE_HASH_ID);
+    });
+  });
+
+  describe('scenario 11: parentCampaignId is unresolved db ID → no dedup (fallback)', () => {
+    it('keeps both groups when parentCampaignId does not match any Hub campaignId', () => {
+      const HUB_HASH_ID = '0x3861c1877fede62974c637a1de652d7f364f41fb8251ffcfd434f1a261d1d8c0';
+      const SPOKE_HASH_ID = '0xabcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234';
+      const UNRESOLVED_DB_ID = '11526583104559356735';
+      const groups = [
+        mkGroup('AAVE_V4_HUB_SUPPLY', [mkBreakdown(HUB_HASH_ID, 0.0677)]),
+        mkGroup('AAVE_V4_SPOKE_SUPPLY', [mkBreakdown(SPOKE_HASH_ID, 0.0648, UNRESOLVED_DB_ID)]),
+      ];
+      const result = deduplicateHubSpokeBreakdowns(groups);
+      assert.equal(result.length, 2);
+    });
+  });
+
+  describe('scenario 12: BORROW side opportunityType variants', () => {
     it('deduplicates AAVE_V4_HUB_BORROW + AAVE_V4_SPOKE_BORROW correctly', () => {
       const HUB_ID = 'hub-borrow-100';
       const SPOKE_ID = 'spoke-borrow-200';
