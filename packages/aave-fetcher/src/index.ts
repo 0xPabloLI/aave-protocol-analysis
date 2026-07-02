@@ -736,8 +736,8 @@ async function fetchRawMarketData(): Promise<MarketData> {
     readNumberEnv('V3_MAX_REQUESTS_PER_SECOND', { defaultValue: 2, min: 1 })
   );
   const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 5000, min: 1000 });
-  const circuitBreakerThreshold = readNumberEnv('V3_CIRCUIT_BREAKER_THRESHOLD', { defaultValue: 5, min: 1 });
-  const circuitBreakerCooldownMs = readNumberEnv('V3_CIRCUIT_BREAKER_COOLDOWN_MS', { defaultValue: 30000, min: 5000 });
+  const circuitBreakerThreshold = readNumberEnv('V3_CIRCUIT_BREAKER_THRESHOLD', { defaultValue: 10, min: 3 });
+  const circuitBreakerCooldownMs = readNumberEnv('V3_CIRCUIT_BREAKER_COOLDOWN_MS', { defaultValue: 10000, min: 3000 });
 
   const chain429Map = new Map<number, number>();
   let global429Count = 0;
@@ -770,15 +770,18 @@ async function fetchRawMarketData(): Promise<MarketData> {
 
       let lastError: any = null;
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        if (circuitBreakerOpenUntil > Date.now()) {
-          const waitMs = circuitBreakerOpenUntil - Date.now();
-          logger.warn(`   🔥 Chain ${chainIdValue}: circuit breaker open, waiting ${Math.round(waitMs / 1000)}s...`);
-          await new Promise(resolve => setTimeout(resolve, waitMs));
+        if (circuitBreakerOpenUntil > Date.now() && attempt > 0) {
+          logger.warn(`   🔥 Chain ${chainIdValue}: circuit breaker open, skipping (will retry next cycle)`);
+          return { markets: [], chainId: chainIdValue, error: `Chain ${chainIdValue}: circuit breaker open` };
         }
 
         const chain429After = chain429Map.get(chainIdValue) ?? 0;
         if (chain429After > Date.now()) {
           const waitMs = chain429After - Date.now();
+          if (waitMs > 15000) {
+            logger.warn(`   ⏳ Chain ${chainIdValue}: per-chain 429 cooldown too long (${Math.round(waitMs / 1000)}s), skipping`);
+            return { markets: [], chainId: chainIdValue, error: `Chain ${chainIdValue}: rate limited, cooldown ${Math.round(waitMs / 1000)}s` };
+          }
           logger.debug(`   ⏳ Chain ${chainIdValue}: per-chain 429 cooldown, waiting ${Math.round(waitMs / 1000)}s...`);
           await new Promise(resolve => setTimeout(resolve, waitMs));
         }
