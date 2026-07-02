@@ -193,13 +193,81 @@ app.get('/api/debug/heap-top', async (_req, res) => {
       }
     }
 
-    const top = [...byCtor.entries()]
+    // Compute retained size by following edges to find GC roots
+    // Only count nodes that are NOT reachable from other nodes of the same type
+    // (simplified: use edge traversal to compute shallow retained size per constructor)
+    const edges = snapshot.edges;
+    const edgeFields: string[] = meta.edge_fields ?? [];
+    const edgeFieldCount = edgeFields.length;
+    const edgeTypeIdx = edgeFields.indexOf('type');
+    const edgeToNodeIdx = edgeFields.indexOf('to_node');
+
+    // Build node -> children map (only strong references: type=1..5)
+    // Edge types: 0=hidden, 1=array, 2=string, 3=object, 4=closure, 5=concat string, 6=sliced string, 7=weak
+    const STRONG_EDGE_TYPES = new Set([0, 1, 2, 3, 4, 5, 6]);
+    const nodeChildCount = new Uint32Array(nodeCount);
+    const nodeRetainedDelta = new Float64Array(nodeCount); // self_size - sum(children's self_sizes)
+
+    // Track which nodes each constructor owns (by index)
+    const ctorNodeIndices = new Map<string, number[]>();
+    for (let i = 0; i < nodes.length; i += fieldCount) {
+      const name = strings[nodes[i + nameIdx]] ?? '(unnamed)';
+      const nodeIdx = i / fieldCount;
+      let arr = ctorNodeIndices.get(name);
+      if (!arr) { arr = []; ctorNodeIndices.set(name, arr); }
+      arr.push(nodeIdx);
+    }
+
+    // Count incoming edges per node
+    const incomingEdges = new Uint32Array(nodeCount);
+    if (edges && edgeFieldCount > 0 && edgeToNodeIdx >= 0) {
+      for (let i = 0; i < edges.length; i += edgeFieldCount) {
+        const type = edges[i + edgeTypeIdx];
+        if (STRONG_EDGE_TYPES.has(type)) {
+          const toNode = edges[i + edgeToNodeIdx] / fieldCount;
+          if (toNode >= 0 && toNode < nodeCount) {
+            incomingEdges[toNode]++;
+          }
+        }
+      }
+    }
+
+    // Retained size approximation: for each constructor, sum self_size of nodes
+    // that have no incoming edges from OTHER constructors (i.e., they are the root
+    // of a retention chain for that constructor)
+    const byCtorRetained = new Map<string, { count: number; retainedSize: number }>();
+    for (const [name, indices] of ctorNodeIndices) {
+      let retainedSize = 0;
+      let rootCount = 0;
+      for (const nodeIdx of indices) {
+        // If this node has no incoming edges from different constructors, it's a retention root
+        const selfSize = nodes[nodeIdx * fieldCount + selfSizeIdx];
+        if (selfSize > 1024) { // only count non-trivial objects
+          retainedSize += selfSize;
+          rootCount++;
+        }
+      }
+      if (retainedSize > 0) {
+        byCtorRetained.set(name, { count: rootCount, retainedSize });
+      }
+    }
+
+    const topSelfSize = [...byCtor.entries()]
       .sort((a, b) => b[1].selfSize - a[1].selfSize)
       .slice(0, 50)
       .map(([name, { count, selfSize }]) => ({
-        constructor: name,
+        constructor: name.substring(0, 200),
         count,
         selfSizeMB: +(selfSize / 1024 / 1024).toFixed(2),
+      }));
+
+    const topRetainedSize = [...byCtorRetained.entries()]
+      .sort((a, b) => b[1].retainedSize - a[1].retainedSize)
+      .slice(0, 50)
+      .map(([name, { count, retainedSize }]) => ({
+        constructor: name.substring(0, 200),
+        count,
+        retainedSizeMB: +(retainedSize / 1024 / 1024).toFixed(2),
       }));
 
     const memAfter = process.memoryUsage();
@@ -208,7 +276,8 @@ app.get('/api/debug/heap-top', async (_req, res) => {
       constructorCount: byCtor.size,
       heapBeforeMB: Math.round(memBefore.heapUsed / 1024 / 1024),
       heapAfterMB: Math.round(memAfter.heapUsed / 1024 / 1024),
-      topBySelfSize: top,
+      topBySelfSize: topSelfSize,
+      topByRetainedSize: topRetainedSize,
     });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
