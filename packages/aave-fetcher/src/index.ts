@@ -843,6 +843,24 @@ async function fetchRawMarketData(): Promise<MarketData> {
     if (rateLimitStats.total429s > 0) {
       logger.warn(`📊 V3 rate limit: ${rateLimitStats.total429s} total 429s during this cycle`);
     }
+    if (rateLimitStats.requestCount > 0) {
+      logger.info(
+        `📊 V3 requests: ${rateLimitStats.requestCount} total ` +
+        `(${rateLimitStats.status200} ok, ${rateLimitStats.status429} 429) ` +
+        `byAttempt=${JSON.stringify(rateLimitStats.byAttempt)} ` +
+        `avgQPS=${rateLimitStats.qps}`
+      );
+      if (rateLimitStats.status429 > 0 && rateLimitStats.requests) {
+        const req429 = rateLimitStats.requests.filter(r => r.status === 429);
+        const ts0 = rateLimitStats.requests[0]?.ts ?? 0;
+        const buckets: Record<string, number> = {};
+        for (const r of req429) {
+          const sec = Math.floor((r.ts - ts0) / 1000);
+          buckets[sec] = (buckets[sec] || 0) + 1;
+        }
+        logger.info(`📊 V3 429 timeline (seconds from start): ${JSON.stringify(buckets)}`);
+      }
+    }
 
     await mkdir(DEBUG_DATA_DIR, { recursive: true });
     

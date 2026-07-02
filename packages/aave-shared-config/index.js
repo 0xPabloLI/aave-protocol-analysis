@@ -159,6 +159,7 @@ const releaseV3FetchSlot = () => {
 };
 
 let totalV3429s = 0;
+let v3RequestLog = [];
 
 let originalFetch = null;
 
@@ -185,8 +186,20 @@ export function installV3RateLimitedFetch() {
       return originalFetch(input, init);
     }
 
+    const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+    const startTime = Date.now();
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const response = await originalFetch(input, init);
+      const elapsed = Date.now() - startTime;
+
+      v3RequestLog.push({
+        ts: startTime,
+        status: response.status,
+        elapsed,
+        attempt,
+        url: url.length > 80 ? url.slice(0, 77) + '...' : url,
+      });
 
       if (response.status === 429 && attempt < maxRetries) {
         totalV3429s++;
@@ -197,7 +210,7 @@ export function installV3RateLimitedFetch() {
 
         if (typeof globalThis.console?.warn === 'function') {
           console.warn(
-            `[V3-RateLimit] 429 on ${typeof input === 'string' ? input : input.url} ` +
+            `[V3-RateLimit] 429 on ${url.length > 60 ? url.slice(0, 57) + '...' : url} ` +
             `(attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
             `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? ' (Retry-After)' : ' (backoff)'}`
           );
@@ -262,13 +275,37 @@ export function createAaveV3RateLimitedFetch(fetchImpl = fetch) {
 }
 
 export function getV3RateLimitStats() {
-  return { total429s: totalV3429s, activeConcurrent: v3FetchActiveCount };
+  const total = v3RequestLog.length;
+  const status429 = v3RequestLog.filter(r => r.status === 429).length;
+  const status200 = v3RequestLog.filter(r => r.status === 200).length;
+  const byAttempt = {};
+  for (const r of v3RequestLog) {
+    byAttempt[r.attempt] = (byAttempt[r.attempt] || 0) + 1;
+  }
+  let qps = 0;
+  if (total > 1) {
+    const minTs = v3RequestLog[0].ts;
+    const maxTs = v3RequestLog[v3RequestLog.length - 1].ts;
+    const spanSec = (maxTs - minTs) / 1000;
+    if (spanSec > 0) qps = Math.round(total / spanSec * 100) / 100;
+  }
+  return {
+    total429s: totalV3429s,
+    activeConcurrent: v3FetchActiveCount,
+    requestCount: total,
+    status200,
+    status429,
+    byAttempt,
+    qps,
+    requests: v3RequestLog,
+  };
 }
 
 export function resetV3RateLimitState() {
   totalV3429s = 0;
   v3FetchActiveCount = 0;
   v3FetchWaitQueue.length = 0;
+  v3RequestLog = [];
 }
 
 const opportunitiesSnapshotCache = new Map();

@@ -77,9 +77,23 @@ export declare function createAaveV3RateLimitedFetch(
 export declare function installV3RateLimitedFetch(): void;
 export declare function restoreOriginalFetch(): void;
 
+export interface V3RequestLogEntry {
+  ts: number;
+  status: number;
+  elapsed: number;
+  attempt: number;
+  url: string;
+}
+
 export interface V3RateLimitStats {
   total429s: number;
   activeConcurrent: number;
+  requestCount: number;
+  status200: number;
+  status429: number;
+  byAttempt: Record<number, number>;
+  qps: number;
+  requests: V3RequestLogEntry[];
 }
 
 export declare function getV3RateLimitStats(): V3RateLimitStats;
