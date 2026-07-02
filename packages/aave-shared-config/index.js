@@ -174,13 +174,9 @@ export function installV3RateLimitedFetch() {
   const maxRetries = readV3FetchMaxRetries();
   const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 3000, min: 1000 });
   const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
-  const retryAfterCapMs = 2000;
+  const retryAfterCapMs = readNumberEnv('V3_RETRY_AFTER_CAP_MS', { defaultValue: 5000, min: 1000, max: 30000 });
 
-  const innerQps = readNumberEnv('V3_INNER_QPS', { defaultValue: 1, min: 1, max: 10 });
-  const innerLimiter = createSlidingWindowRateLimiter(innerQps);
-  const innerMinIntervalMs = readNumberEnv('V3_INNER_MIN_INTERVAL_MS', { defaultValue: 1000, min: 500, max: 10000 });
-
-  let lastRequestTime = 0;
+  const innerMinIntervalMs = readNumberEnv('V3_INNER_MIN_INTERVAL_MS', { defaultValue: 1100, min: 500, max: 10000 });
 
   const V3_HOSTS = ['api.v3.aave.com', 'api.aave.com'];
 
@@ -198,6 +194,58 @@ export function installV3RateLimitedFetch() {
       const waitMs = innerMinIntervalMs - elapsed;
       await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
+    lastV3RequestTime = Date.now();
+  };
+
+  const rateLimitedFetch = async (input, init) => {
+    if (!isV3Request(input)) {
+      return originalFetch(input, init);
+    }
+
+    const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      await enforceMinInterval();
+
+      const startTime = Date.now();
+      const response = await originalFetch(input, init);
+      const elapsed = Date.now() - startTime;
+
+      v3RequestLog.push({
+        ts: startTime,
+        status: response.status,
+        elapsed,
+        attempt,
+        url: url.length > 80 ? url.slice(0, 77) + '...' : url,
+      });
+
+      if (response.status === 429 && attempt < maxRetries) {
+        totalV3429s++;
+        const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
+        const delayMs = retryAfterMs != null
+          ? Math.min(retryAfterMs, retryAfterCapMs)
+          : Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
+
+        if (typeof globalThis.console?.warn === 'function') {
+          console.warn(
+            `[V3-RateLimit] 429 on ${url.length > 60 ? url.slice(0, 57) + '...' : url} ` +
+            `(attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
+            `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? ' (Retry-After)' : ' (backoff)'}`
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        lastV3RequestTime = Date.now();
+        continue;
+      }
+
+      return response;
+    }
+    await enforceMinInterval();
+    return originalFetch(input, init);
+  };
+
+  globalThis.fetch = rateLimitedFetch;
+}
     lastV3RequestTime = Date.now();
   };
 
