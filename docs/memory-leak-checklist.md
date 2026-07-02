@@ -70,6 +70,7 @@
 | 35 | merkl-api | `_merklState` | 单例对象 | ✅ | ➖(cron替换) | ➖(单条) | ✅(替换) | 🟢 | 内含 lastSuccessfulSnapshot + lastFetchError,fetch后整体替换 |
 | 36 | cloudflare-browser | `workerDisabledResolvers` | Set | ✅ | ➖(Promise自删) | ➖(并发有限) | ✅(resolve后自删除) | 🟢 | 已从Array改为Set，resolve后自删除 |
 | 37 | brevis-distributed-so-far | `chainCallCache` | Map | ✅ | ✅(1h TTL+2h惰性删) | ✅(100) | ✅(pruneCache+FIFO) | 🟢 | tokenCumulativeRewards约4h变一次，1h TTL足够 |
+| 37b | v4-fetcher | `v4Client` (GqlClient.queryRegistry) | Map(内嵌) | ✅ | ➖(per-fetch短生命周期) | ➖(client GC即释放) | ➖(per-fetch重建) | 🟢 | per-fetch创建,非singleton;queryRegistry随client实例GC;cache:false+batch:false禁用graphcache和batchFetchExchange;V3 AaveClient不继承GqlClient无此问题 |
 
 ### packages/aave-rpc-infra/src/
 

@@ -7,9 +7,11 @@ import {
   restoreOriginalFetch,
   resetV3RateLimitState,
   getV3RateLimitStats,
+  createSlidingWindowRateLimiter,
   readNumberEnv,
 } from '@internal/aave-shared-config';
 
+// V3 AaveClient does not inherit GqlClient — no queryRegistry leak risk, safe as singleton
 const client = AaveClient.create();
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -727,9 +729,12 @@ async function fetchRawMarketData(): Promise<MarketData> {
     logger.info(`   • ${info.name} (Chain ID: ${info.chainId})`);
   });
   
-  logger.info('\n🚀 Fetching markets data (inner-layer rate limiting via globalThis.fetch patch)...');
+  logger.info('\n🚀 Fetching markets data (outer-layer concurrency + inner-layer 429 retry)...');
 
   const maxChainConcurrency = readNumberEnv('V3_CHAIN_CONCURRENCY', { defaultValue: 2, min: 1 });
+  const limiter = createSlidingWindowRateLimiter(
+    readNumberEnv('V3_MAX_REQUESTS_PER_SECOND', { defaultValue: 1, min: 1 })
+  );
 
   let activeCount = 0;
   const waitQueue: (() => void)[] = [];
@@ -750,6 +755,7 @@ async function fetchRawMarketData(): Promise<MarketData> {
     try {
       const staggerMs = Math.floor(Math.random() * 500);
       await new Promise(resolve => setTimeout(resolve, staggerMs));
+      await limiter.wait();
 
       try {
         const result = await markets(client, {
