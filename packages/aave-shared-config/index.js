@@ -186,11 +186,15 @@ export function installV3RateLimitedFetch() {
       return originalFetch(input, init);
     }
 
-    await acquireV3FetchSlot();
+    let slotHeld = false;
     try {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         await limiter.wait();
+        await acquireV3FetchSlot();
+        slotHeld = true;
         const response = await originalFetch(input, init);
+        releaseV3FetchSlot();
+        slotHeld = false;
 
         if (response.status === 429 && attempt < maxRetries) {
           totalV3429s++;
@@ -212,9 +216,11 @@ export function installV3RateLimitedFetch() {
 
         return response;
       }
+      await acquireV3FetchSlot();
+      slotHeld = true;
       return originalFetch(input, init);
     } finally {
-      releaseV3FetchSlot();
+      if (slotHeld) releaseV3FetchSlot();
     }
   };
 
