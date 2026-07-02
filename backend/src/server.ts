@@ -405,61 +405,6 @@ if (process.env.MEMORY_DIAG === '1') {
       `| Δfrom1st: heap=${d(now.heapUsed, diagBaseline.heapUsed)} rss=${d(now.rss, diagBaseline.rss)} malloced=${d(now.malloced, diagBaseline.malloced)} external=${d(now.external, diagBaseline.external)}`
     );
   }, 10 * 60_000).unref();
-
-  // Auto heap snapshot + analysis at 30min, 1h, 2h uptime (MEMORY_DIAG=1 only).
-  const SNAPSHOT_MINUTES = [30, 60, 120];
-  for (const minutes of SNAPSHOT_MINUTES) {
-    setTimeout(async () => {
-      try {
-        const filePath = v8.writeHeapSnapshot();
-        const mem = process.memoryUsage();
-        logger.info(`🔬 Auto heap snapshot at ${minutes}min: ${filePath} (heap=${Math.round(mem.heapUsed / 1024 / 1024)}MB)`);
-
-        const { readFile, unlink, stat } = await import('fs/promises');
-        const fileStat = await stat(filePath);
-        logger.info(`🔬 Snapshot file size: ${Math.round(fileStat.size / 1024 / 1024)}MB`);
-        
-        const heapFree = mem.heapTotal - mem.heapUsed;
-        if (fileStat.size < 400 * 1024 * 1024 && heapFree > 150 * 1024 * 1024) {
-          const raw = await readFile(filePath, 'utf-8');
-          const snapshot = JSON.parse(raw);
-          const meta = snapshot.snapshot?.meta;
-          const nodes = snapshot.nodes;
-          const strings = snapshot.strings;
-          if (meta?.node_fields && nodes && strings) {
-            const nodeFields: string[] = meta.node_fields;
-            const fieldCount = nodeFields.length;
-            const nameIdx = nodeFields.indexOf('name');
-            const selfSizeIdx = nodeFields.indexOf('self_size');
-            const byCtor = new Map<string, { count: number; selfSize: number }>();
-            for (let i = 0; i < nodes.length; i += fieldCount) {
-              const selfSize = nodes[i + selfSizeIdx];
-              if (selfSize > 1024) {
-                const name = strings[nodes[i + nameIdx]] ?? '(unnamed)';
-                const e = byCtor.get(name) ?? { count: 0, selfSize: 0 };
-                e.count++;
-                e.selfSize += selfSize;
-                byCtor.set(name, e);
-              }
-            }
-            const top = [...byCtor.entries()]
-              .sort((a, b) => b[1].selfSize - a[1].selfSize)
-              .slice(0, 30)
-              .map(([name, { count, selfSize }]) => `${name}:${count}:${(selfSize / 1024 / 1024).toFixed(1)}MB`)
-              .join(' | ');
-            logger.info(`🔬 Heap top 30 at ${minutes}min: ${top}`);
-          }
-        } else {
-          logger.info(`🔬 Skipping in-process parse: file=${Math.round(fileStat.size / 1024 / 1024)}MB heapFree=${Math.round(heapFree / 1024 / 1024)}MB`);
-        }
-
-        await unlink(filePath);
-        logger.info(`🔬 Cleaned up snapshot file: ${filePath}`);
-      } catch (err) {
-        logger.warn(`🔬 Auto heap snapshot at ${minutes}min failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }, minutes * 60_000).unref();
-  }
 }
 
 // Start HTTP server immediately — healthcheck returns 503 until caches are warm.

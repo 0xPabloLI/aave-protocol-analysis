@@ -17,9 +17,70 @@ import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
 
 const _MB = 1024 * 1024;
 const _heapDiagEnabled = process.env.MEMORY_DIAG === '1';
+const _startTime = Date.now();
+const _heapSnapshotDone = new Set<number>();
 
 let _oldSpaceBaseline: number | null = null;
 let _lastOldSpace: number | null = null;
+
+async function maybeHeapSnapshot(): Promise<void> {
+  if (!_heapDiagEnabled) return;
+  const uptimeMin = Math.floor((Date.now() - _startTime) / 60_000);
+  const snapshotTargets = [30, 60, 120];
+  for (const target of snapshotTargets) {
+    if (uptimeMin >= target && !_heapSnapshotDone.has(target)) {
+      _heapSnapshotDone.add(target);
+      try {
+        const filePath = v8.writeHeapSnapshot();
+        const mem = process.memoryUsage();
+        logger.info(`🔬 Auto heap snapshot at ~${target}min (actual ${uptimeMin}min): ${filePath} (heap=${Math.round(mem.heapUsed / 1024 / 1024)}MB)`);
+
+        const { readFile, unlink, stat: statFn } = await import('fs/promises');
+        const fileStat = await statFn(filePath);
+        logger.info(`🔬 Snapshot file size: ${Math.round(fileStat.size / 1024 / 1024)}MB`);
+
+        const heapFree = mem.heapTotal - mem.heapUsed;
+        if (fileStat.size < 400 * 1024 * 1024 && heapFree > 150 * 1024 * 1024) {
+          const raw = await readFile(filePath, 'utf-8');
+          const snapshot = JSON.parse(raw);
+          const meta = snapshot.snapshot?.meta;
+          const nodes = snapshot.nodes;
+          const strings = snapshot.strings;
+          if (meta?.node_fields && nodes && strings) {
+            const nodeFields: string[] = meta.node_fields;
+            const fieldCount = nodeFields.length;
+            const nameIdx = nodeFields.indexOf('name');
+            const selfSizeIdx = nodeFields.indexOf('self_size');
+            const byCtor = new Map<string, { count: number; selfSize: number }>();
+            for (let i = 0; i < nodes.length; i += fieldCount) {
+              const selfSize = nodes[i + selfSizeIdx];
+              if (selfSize > 1024) {
+                const name = strings[nodes[i + nameIdx]] ?? '(unnamed)';
+                const e = byCtor.get(name) ?? { count: 0, selfSize: 0 };
+                e.count++;
+                e.selfSize += selfSize;
+                byCtor.set(name, e);
+              }
+            }
+            const top = [...byCtor.entries()]
+              .sort((a, b) => b[1].selfSize - a[1].selfSize)
+              .slice(0, 30)
+              .map(([name, { count, selfSize }]) => `${name}:${count}:${(selfSize / 1024 / 1024).toFixed(1)}MB`)
+              .join(' | ');
+            logger.info(`🔬 Heap top 30 at ~${target}min: ${top}`);
+          }
+        } else {
+          logger.info(`🔬 Skipping in-process parse: file=${Math.round(fileStat.size / 1024 / 1024)}MB heapFree=${Math.round(heapFree / 1024 / 1024)}MB`);
+        }
+
+        await unlink(filePath);
+        logger.info(`🔬 Cleaned up snapshot file: ${filePath}`);
+      } catch (err) {
+        logger.warn(`🔬 Auto heap snapshot at ~${target}min failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+}
 
 function logOldSpaceDiff(label: string): void {
   if (!_heapDiagEnabled) return;
@@ -108,6 +169,7 @@ export function startUpdateScheduler(): void {
       await withHeapTrace('markets', refreshMarketsSnapshot);
       tryGc();
       logOldSpaceDiff('post-markets');
+      await maybeHeapSnapshot();
     } catch (error) {
       logger.warn(
         `Markets refresh scheduler failed: ${error instanceof Error ? error.message : String(error)}`
