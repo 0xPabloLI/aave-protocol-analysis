@@ -105,10 +105,14 @@ export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   budgetBoundMode?: string;
   /** V4 Spoke campaign's parent Hub campaign ID (for Hub/Spoke deduplication; stripped from API payload). */
   parentCampaignId?: string;
+  recentlyEndedAt?: string;
+  recentlyStartedAt?: string;
+  recentlyEndedCampaignId?: string;
 }
 
 export interface MerklOpportunityGroup extends CampaignGroup<MerklCampaignBreakdown> {
   opportunityId?: string;
+  opportunityType?: string;
 }
 
 export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
@@ -205,7 +209,7 @@ export type ApiMeritCampaignGroup = CampaignGroup<ApiMeritCampaignBreakdown>;
 
 export type ApiMerklBreakdown = MerklCampaignBreakdown;
 
-export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown>;
+export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown> & { opportunityId?: string };
 
 export type ApiBrevisBreakdown = Pick<
   BrevisCampaignBreakdown,

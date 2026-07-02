@@ -8,7 +8,7 @@
 | R2: Recently Ended Embedding (Frontend) | ✅ Done | fbfe6474 |
 | R3: Remove PAST Opportunities Fetch | ✅ Done | 90348a2 |
 | R4: Campaign URL + Remove campaignDatabaseId | ✅ Done | 84836ab (backend), fbfe6474 (frontend) |
-| R5: Merkl URL Simplification | 🔲 Pending | — |
+| R5: Merkl URL Simplification | ✅ Done | ed7c8f9 (backend), c3f65224 (frontend) |
 
 ## Summary
 
@@ -176,7 +176,7 @@ After PAST fetch removal, campaigns without Hash ID are extremely rare (only whe
 
 Merkl has simplified their URL format from `https://app.merkl.xyz/opportunities/{chain}/{type}/{identifier}` to `https://app.merkl.xyz/opportunities/{oppId}`. Campaign URLs follow the pattern `https://app.merkl.xyz/opportunities/{oppId}/campaigns/{hash}`. This allows the backend to stop generating full Merkl opportunity links and instead expose only the numeric `opportunityId`, letting the frontend construct all URLs.
 
-**R5.1** Backend: Add `opportunityId?: string` to `MerklOpportunityGroup` (populated from `opp.id`). Remove Merkl `link` output — `generateMerklOpportunityLink()` no longer called for Merkl; Merkl groups output `link: undefined` (CampaignGroup base type link is optional). `identifier` and `opportunityType` remain in internal types but are not output to API.
+**R5.1** Backend: Add `opportunityId?: string` to `MerklOpportunityGroup` (populated from `opp.id`). `generateMerklOpportunityLink()` no longer called for Merkl; Merkl groups output `link` generated from `opportunityId` (format: `https://app.merkl.xyz/opportunities/{opportunityId}`, or `''` when absent — `CampaignGroup.link` is a required string field). `identifier` and `opportunityType` remain in internal types but are not output to API.
 
 **R5.2** Backend: Remove `opportunityType` from prune/API output. It's only used internally for hub/spoke classification, offsetLevel determination, and netPositionConstraint detection.
 

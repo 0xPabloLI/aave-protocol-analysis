@@ -32,7 +32,6 @@ export interface CampaignGroup<TBreakdown extends BaseCampaignBreakdown = BaseCa
   name?: string;
   message?: string;
   breakdowns: TBreakdown[];
-  opportunityType?: string;
   netPositionConstraint?: {
     sourceSide: 'supply' | 'borrow';
     offsetReserveIds: string[];

@@ -1560,8 +1560,9 @@ export async function processMerklData(
 
     const coveredCampaignIds = new Set(breakdowns.map(b => b.campaignId));
     if (Array.isArray(opp.campaigns)) {
-      let stubCount = 0;
+      let embedCount = 0;
       let checkedCount = 0;
+      const endedBySymbol = new Map<string, { endedAt: string; startedAt: string; campaignId: string }>();
       for (const campaign of opp.campaigns) {
         const cDbId = String(campaign.id || '').trim();
         const cHashId = String(campaign.campaignId || '').trim();
@@ -1570,26 +1571,26 @@ export async function processMerklData(
         checkedCount++;
         if (!details) continue;
         if (!isRecentlyEnded(details.endedAt)) continue;
-        const type = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
         const rtSymbol = typeof campaign.rewardToken?.symbol === 'string' && campaign.rewardToken.symbol
-          ? campaign.rewardToken.symbol : undefined;
-        const rtId = typeof campaign.rewardToken?.id === 'string' && campaign.rewardToken.id
-          ? campaign.rewardToken.id : undefined;
-        breakdowns.push({
-          campaignApr: 0,
-          campaignStartedAt: details.startedAt,
-          campaignEndedAt: details.endedAt,
-          campaignId: cHashId,
-          ...(type && { campaignType: type }),
-          ...(rtSymbol && { rewardTokenSymbol: rtSymbol }),
-          ...(rtId && { rewardTokenId: rtId }),
-          ...(details.parentCampaignId && { parentCampaignId: details.parentCampaignId }),
-        });
-        coveredCampaignIds.add(cHashId);
-        stubCount++;
+          ? campaign.rewardToken.symbol.trim().toLowerCase() : '';
+        if (!rtSymbol) continue;
+        const existing = endedBySymbol.get(rtSymbol);
+        if (!existing || details.endedAt > existing.endedAt) {
+          endedBySymbol.set(rtSymbol, { endedAt: details.endedAt, startedAt: details.startedAt, campaignId: cHashId });
+        }
       }
-      if (stubCount > 0) {
-        logger.debug(`   Opp ${opp.id}: ${stubCount} recently-ended stub(s) added from ${checkedCount} uncovered`);
+      for (const breakdown of breakdowns) {
+        const symbol = breakdown.rewardTokenSymbol?.trim().toLowerCase() || '';
+        if (!symbol) continue;
+        const ended = endedBySymbol.get(symbol);
+        if (!ended) continue;
+        breakdown.recentlyEndedAt = ended.endedAt;
+        breakdown.recentlyStartedAt = ended.startedAt;
+        breakdown.recentlyEndedCampaignId = ended.campaignId;
+        embedCount++;
+      }
+      if (embedCount > 0) {
+        logger.debug(`   Opp ${opp.id}: ${embedCount} recently-ended embedded into live breakdowns from ${checkedCount} uncovered`);
       }
     }
 
