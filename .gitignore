@@ -131,3 +131,6 @@ SESSION-BOARD.md
 
 # Research/debug scripts (not part of build or runtime)
 packages/aave-fetcher/scripts/
+
+# Playwright CLI cache
+.playwright-cli/

@@ -733,7 +733,7 @@ async function fetchRawMarketData(): Promise<MarketData> {
   const baseDelayMs = readNumberEnv('V3_FETCH_BASE_DELAY_MS', { defaultValue: 2000, min: 0 });
   const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 30000, min: 0 });
   const limiter = createSlidingWindowRateLimiter(
-    readNumberEnv('V3_MAX_REQUESTS_PER_SECOND', { defaultValue: 2, min: 1 })
+    readNumberEnv('V3_MAX_REQUESTS_PER_SECOND', { defaultValue: 1, min: 1 })
   );
   const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 5000, min: 1000 });
   const circuitBreakerThreshold = readNumberEnv('V3_CIRCUIT_BREAKER_THRESHOLD', { defaultValue: 10, min: 3 });
