@@ -100,34 +100,34 @@ merkl-api.ts::formatMerklBreakdown()
   → 返回 filteredBreakdowns
 
 incentive-prune.ts::pruneMerklGroup()
-  → 透传 recentlyEndedAt/recentlyStartedAt/recentlyEndedCampaignId (L53-55)
+  → 透传 lastEndedCampaign 嵌套对象 (L53)
 
 marketsApiSerialize.ts::scaleGroupedCampaigns()
-  → spread 透传所有字段，包括 recentlyEnded*
-  → ⚠️ computeSchemaFingerprint 缺少新字段 (见 P1 问题)
+  → spread 透传所有字段，包括 lastEndedCampaign ✅
+  → computeSchemaFingerprint 已补 lastEndedCampaign (P2 已修复) ✅
 
 API response
-  → MerklCampaignBreakdown 包含 recentlyEnded* 字段 ✅
+  → MerklCampaignBreakdown 包含 lastEndedCampaign 字段 ✅
 ```
 
 ### 2.2 前端数据流
 
 ```
 API response → Zod schema 验证 (schemas.ts)
-  → recentlyEndedAt/recentlyStartedAt/recentlyEndedCampaignId z.string().optional() ✅
+  → lastEndedCampaign z.object({ startedAt, endedAt, campaignId }).optional() ✅
 
 IncentiveTooltip.tsx::buildIncentiveSources()
-  → Merkl breakdown 遍历 → 读取 campaignId, recentlyEnded* → 构建 IncentiveCampaign ✅
+  → Merkl breakdown 遍历 → 读取 campaignId, lastEndedCampaign → 构建 IncentiveCampaign ✅
   → 无 partition/re-join 逻辑 ✅
 
 IncentiveCampaign 类型
-  → recentlyEndedAt/recentlyStartedAt/recentlyEndedCampaignId 标量字段 ✅
+  → lastEndedCampaign?: { startedAt, endedAt, campaignId } 嵌套对象 ✅
   → 旧的 endedCampaigns 数组已删除 ✅
 
 RecentlyEndedSection (L148-339)
-  → 遍历 incentiveSources → 检查 campaign.recentlyEndedAt && recentlyEndedCampaignId ✅
-  → 日期范围：recentlyStartedAt – recentlyEndedAt ✅
-  → URL 构造：sourceLink + /campaigns/ + recentlyEndedCampaignId ✅
+  → 遍历 incentiveSources → 检查 campaign.lastEndedCampaign ✅
+  → 日期范围：lastEndedCampaign.startedAt – lastEndedCampaign.endedAt ✅
+  → URL 构造：sourceLink + /campaigns/ + lastEndedCampaign.campaignId ✅
 ```
 
 ---
@@ -193,18 +193,18 @@ RecentlyEndedSection (L148-339)
 |---|---|
 | `merklForecastService.ts` / `merklForecastController.ts` | forecast 按 campaignId 逐条处理，不关心 breakdown 是否为 stub。只处理 live campaign（从 markets snapshot 的 campaignIds 收集），不涉及 recentlyEnded |
 | `collectCampaignIdsFromMarkets` | 遍历 breakdowns 取 campaignId，ended campaign 的 campaignId 不会被取到（前端 `isCampaignActive` 过滤 + 后端 `filterRecentExpiredCampaigns` 拆分） |
-| `scaleGroupedCampaigns` / `scaleGroupedCampaignsWithContext` | 泛型缩放，只改 `campaignApr`，其他字段 spread 透传，包括 `recentlyEnded*` |
+| `scaleGroupedCampaigns` / `scaleGroupedCampaignsWithContext` | 泛型缩放，只改 `campaignApr`，其他字段 spread 透传，包括 `lastEndedCampaign` |
 | `deduplicateHubSpokeBreakdowns` | 按 campaignId 做 Hub/Spoke dedup，与 ended embedding 无关 |
 | `persistenceService.ts` Merkl breakdown 哈希 | 仅用 `bd.campaignId` 作为 key，用于变更检测和 SUM 聚合，不直接影响 API payload |
 | 前端 `isCampaignActive` 过滤 | 所有 breakdown 遍历都用 `isCampaignActive` 过滤，ended breakdown（`campaignEndedAt < now`）被正确排除 |
 | 前端 campaign URL 构造 | Live 和 ended 都用前端拼接模式，已统一 |
-| 前端 `IncentiveCampaign` 类型 | 已迁移为三个标量字段，无旧数组模式残留 |
+| 前端 `IncentiveCampaign` 类型 | 已迁移为 `lastEndedCampaign` 嵌套对象，无旧数组/标量模式残留 |
 
 ---
 
 ## 5. Merit / Brevis recentlyEnded 扩展（可选）
 
-当前 `recentlyEnded*` 字段仅存在于 `MerklCampaignBreakdown`。如果 Merit / Brevis 也需要 recently ended 展示：
+当前 `lastEndedCampaign` 字段仅存在于 `MerklCampaignBreakdown`。如果 Merit / Brevis 也需要 recently ended 展示：
 
 **后端改动**:
 1. 在 `@internal/aave-shared-contracts` 的 `MeritCampaignBreakdown` 上添加 `lastEndedCampaign?` 嵌套对象
@@ -227,3 +227,4 @@ RecentlyEndedSection (L148-339)
 |---|---|---|
 | R1-R5 主 PRD | 90348a2, 84836ab, ed7c8f9, c3f65224 | fbfe6474, c3f65224 |
 | AAV-1044 修正 PRD | 52246d7 | b3dcd7c9 |
+| lastEndedCampaign 重命名 + P0/P1/P2 修复 | 8cc10b2 | 0e1edfb2 |
