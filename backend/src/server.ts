@@ -404,12 +404,6 @@ if (process.env.MEMORY_DIAG === '1') {
       `totalPhysical=${fmt(heapStats.total_physical_size)} totalAvailable=${fmt(heapStats.total_available_size)} ` +
       `| Δfrom1st: heap=${d(now.heapUsed, diagBaseline.heapUsed)} rss=${d(now.rss, diagBaseline.rss)} malloced=${d(now.malloced, diagBaseline.malloced)} external=${d(now.external, diagBaseline.external)}`
     );
-
-    // RSS-based auto-restart: prevent OOM by graceful shutdown when RSS > 800MB
-    if (mem.rss > 800 * 1024 * 1024) {
-      logger.error(`🔴 RSS=${fmt(mem.rss)} exceeds 800MB threshold — initiating graceful shutdown to prevent OOM`);
-      process.kill(process.pid, 'SIGTERM');
-    }
   }, 10 * 60_000).unref();
 }
 
@@ -500,9 +494,10 @@ setInterval(() => {
   );
 
   if (RSS_RESTART_THRESHOLD_MB > 0 && mem.rss > RSS_RESTART_THRESHOLD_MB * 1024 * 1024) {
-    logger.warn(
-      `⚠️ RSS ${fmt(mem.rss)} exceeds threshold ${RSS_RESTART_THRESHOLD_MB}MB — no auto-restart (warn-only, investigate memory growth with cache stats above)`
+    logger.error(
+      `🔴 RSS ${fmt(mem.rss)} exceeds threshold ${RSS_RESTART_THRESHOLD_MB}MB — initiating graceful shutdown to prevent OOM`
     );
+    shutdown('RSS_THRESHOLD');
   }
 }, 60_000).unref();
 

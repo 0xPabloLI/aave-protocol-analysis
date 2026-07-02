@@ -32,12 +32,6 @@ async function maybeHeapSnapshot(): Promise<void> {
     const summary = spaces.map(s => `${s.space_name}=${Math.round(s.space_used_size / _MB)}/${Math.round(s.space_size / _MB)}MB`).join(' ');
     const mem = process.memoryUsage();
     logger.info(`🔬 Heap spaces at ${uptimeMin}min: ${summary} | heap=${Math.round(mem.heapUsed / _MB)}MB rss=${Math.round(mem.rss / _MB)}MB external=${Math.round(mem.external / _MB)}MB`);
-
-    // RSS guard: graceful restart before OOM kill
-    if (mem.rss > 800 * _MB) {
-      logger.error(`🔴 RSS=${Math.round(mem.rss / _MB)}MB exceeds 800MB — initiating graceful shutdown`);
-      process.kill(process.pid, 'SIGTERM');
-    }
   }
 }
 
