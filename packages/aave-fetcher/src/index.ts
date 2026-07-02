@@ -728,7 +728,7 @@ async function fetchRawMarketData(): Promise<MarketData> {
   
   logger.info('\n🚀 Fetching markets data (concurrent with rate limiting)...');
   
-  const maxConcurrency = readNumberEnv('V3_FETCH_MAX_CONCURRENCY', { defaultValue: 4, min: 1 });
+  const maxConcurrency = readNumberEnv('V3_FETCH_MAX_CONCURRENCY', { defaultValue: 2, min: 1 });
   const maxRetries = readNumberEnv('V3_FETCH_MAX_RETRIES', { defaultValue: 3, min: 0 });
   const baseDelayMs = readNumberEnv('V3_FETCH_BASE_DELAY_MS', { defaultValue: 2000, min: 0 });
   const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 30000, min: 0 });
@@ -765,7 +765,7 @@ async function fetchRawMarketData(): Promise<MarketData> {
   const fetchSingleChain = async (chainIdValue: number): Promise<{ markets: any[]; chainId: number; error?: string }> => {
     await acquireSlot();
     try {
-      const staggerMs = Math.floor(Math.random() * 200);
+      const staggerMs = Math.floor(Math.random() * 500);
       await new Promise(resolve => setTimeout(resolve, staggerMs));
 
       let lastError: any = null;
