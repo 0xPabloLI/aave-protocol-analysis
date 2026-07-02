@@ -27,6 +27,9 @@ async function maybeHeapSnapshot(): Promise<void> {
   if (!_heapDiagEnabled) return;
   const uptimeMin = Math.floor((Date.now() - _startTime) / 60_000);
   const snapshotTargets = [30, 60, 120];
+  if (uptimeMin >= 25) {
+    logger.info(`🔬 maybeHeapSnapshot check: uptime=${uptimeMin}min done=${[..._heapSnapshotDone].join(',')}`);
+  }
   for (const target of snapshotTargets) {
     if (uptimeMin >= target && !_heapSnapshotDone.has(target)) {
       _heapSnapshotDone.add(target);
