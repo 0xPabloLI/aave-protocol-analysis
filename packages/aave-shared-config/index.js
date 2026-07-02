@@ -52,6 +52,7 @@ export function createMerklConcurrencyLimitedFetch(fetchImpl = fetch) {
 export function createSlidingWindowRateLimiter(maxRequestsPerSecond) {
   const timestamps = [];
   const windowMs = 1000;
+  let chain = Promise.resolve();
 
   function cleanup(now) {
     const cutoff = now - windowMs;
@@ -61,16 +62,18 @@ export function createSlidingWindowRateLimiter(maxRequestsPerSecond) {
   }
 
   async function wait() {
-    const now = Date.now();
-    cleanup(now);
-    if (timestamps.length >= maxRequestsPerSecond) {
-      const waitMs = timestamps[0] + windowMs - now + 1;
-      if (waitMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, waitMs));
+    return chain = chain.then(async () => {
+      const now = Date.now();
+      cleanup(now);
+      if (timestamps.length >= maxRequestsPerSecond) {
+        const waitMs = timestamps[0] + windowMs - now + 1;
+        if (waitMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+        cleanup(Date.now());
       }
-      cleanup(Date.now());
-    }
-    timestamps.push(Date.now());
+      timestamps.push(Date.now());
+    });
   }
 
   function getTimestamps() {
