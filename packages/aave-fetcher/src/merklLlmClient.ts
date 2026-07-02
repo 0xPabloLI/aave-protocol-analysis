@@ -11,19 +11,48 @@ export type LlmOutcome =
 
 import { logger } from './logger.js';
 
-export const LLM_FALLBACK_MODELS = [
-  'claude-haiku-4.5',
-  'claude-sonnet-4.6',
-  'grok-4.20-fast',
-  'gpt-5.4',
-  'qwen3.5-397b',
-  'deepseek-v4-flash',
-  'kimi-k2.6',
-  'deepseek-v4-pro',
-  'gpt-5.2',
-  'qwen3.5-397b-a17b',
-  'nematron-3-super-120b',
+/**
+ * Default best-first chat-model allow-list (SiliconFlow-oriented).
+ *
+ * ⚠️ IMPORTANT — this is a BEST-GUESS default, NOT a verified free list.
+ * SiliconFlow's `GET /v1/models` returns only model `id`s (no pricing/free
+ * flag) and there is no pricing endpoint, so free-vs-paid CANNOT be determined
+ * programmatically. These ids are the models that have *historically* sat in
+ * SiliconFlow's free tier (small ≤9B Qwen/GLM), but that can change and the
+ * only authoritative source is your billing dashboard.
+ *
+ * To use models you have confirmed are free, set the `LLM_MODELS` env var
+ * (comma-separated, best-first) — it overrides this list entirely. See
+ * `resolveModelAllowList`.
+ *
+ * The chain stays "real-time": `buildModelChain` intersects the allow-list with
+ * the live `/models` response, so retired ids drop out and only currently
+ * served models are called, in priority order. Reasoning-only distills (e.g.
+ * DeepSeek-R1) are excluded — their long <think> output can overflow max_tokens
+ * before the JSON answer.
+ */
+export const LLM_FREE_MODELS = [
+  'Qwen/Qwen3.5-9B',
+  'Qwen/Qwen3-8B',
+  'THUDM/GLM-4-9B-0414',
+  'Qwen/Qwen3.5-4B',
+  'Qwen/Qwen2.5-7B-Instruct',
 ] as const;
+
+/**
+ * Resolve the model allow-list, letting `LLM_MODELS` env override the default.
+ * Format: comma-separated ids in best-first priority order, e.g.
+ *   LLM_MODELS="Qwen/Qwen2.5-7B-Instruct,THUDM/GLM-4-9B-0414"
+ * Set this to the models your SiliconFlow billing dashboard confirms are free.
+ */
+export function resolveModelAllowList(): string[] {
+  const raw = process.env.LLM_MODELS;
+  if (raw) {
+    const parsed = raw.split(',').map(s => s.trim()).filter(Boolean);
+    if (parsed.length > 0) return parsed;
+  }
+  return [...LLM_FREE_MODELS];
+}
 
 let primaryModelsCache: string[] | null = null;
 
@@ -39,7 +68,9 @@ export async function fetchAvailableModels(
   if (primaryModelsCache !== null) return primaryModelsCache;
 
   try {
-    const url = baseUrl.endsWith('/') ? `${baseUrl}models` : `${baseUrl}/models`;
+    // SiliconFlow supports ?sub_type=chat to return only chat-capable models.
+    const base = baseUrl.endsWith('/') ? `${baseUrl}models` : `${baseUrl}/models`;
+    const url = `${base}?sub_type=chat`;
     const res = await fetchFn(url, {
       headers: {
         'Accept': 'application/json',
@@ -56,7 +87,7 @@ export async function fetchAvailableModels(
     primaryModelsCache = models;
     return models;
   } catch {
-    primaryModelsCache = [...LLM_FALLBACK_MODELS];
+    primaryModelsCache = resolveModelAllowList();
     return primaryModelsCache;
   }
 }
@@ -65,27 +96,19 @@ export async function buildModelChain(
   primaryConfig?: LlmClientConfig,
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<Array<{ model: string; config: LlmClientConfig }>> {
-  const hardcoded: Array<{ model: string; config: LlmClientConfig }> = [];
-  const seen = new Set<string>();
-  if (primaryConfig) {
-    for (const model of LLM_FALLBACK_MODELS) {
-      hardcoded.push({ model, config: primaryConfig });
-      seen.add(model);
-    }
-  }
+  if (!primaryConfig) return [];
 
-  const dynamic: Array<{ model: string; config: LlmClientConfig }> = [];
-  if (primaryConfig) {
-    const models = await fetchAvailableModels(primaryConfig.baseUrl, primaryConfig.apiKey, fetchFn);
-    for (const model of models) {
-      if (!seen.has(model)) {
-        dynamic.push({ model, config: primaryConfig });
-        seen.add(model);
-      }
-    }
-  }
+  // Real-time + allow-listed: take the live model list and keep only the
+  // allow-list entries the provider is actually serving, in best-first order.
+  const allowList = resolveModelAllowList();
+  const live = await fetchAvailableModels(primaryConfig.baseUrl, primaryConfig.apiKey, fetchFn);
+  const liveSet = new Set(live);
+  const available = allowList.filter(model => liveSet.has(model));
 
-  return [...hardcoded, ...dynamic];
+  // If the live fetch failed (returns the allow-list as fallback) or nothing
+  // intersects, fall back to the full allow-list as a best effort.
+  const chosen = available.length > 0 ? available : allowList;
+  return chosen.map(model => ({ model, config: primaryConfig }));
 }
 
 export function parseSseStream(raw: string): string {
@@ -242,6 +265,10 @@ export async function callLlmWithFallback(
               messages: [{ role: 'user', content: prompt }],
               temperature: 0,
               max_tokens: 256,
+              // SiliconFlow extension: disable Qwen3 "thinking" so the model
+              // returns the JSON answer directly instead of long <think> output.
+              // Ignored by non-Qwen3 models.
+              enable_thinking: false,
             }),
           }),
           new Promise<never>((_, reject) =>

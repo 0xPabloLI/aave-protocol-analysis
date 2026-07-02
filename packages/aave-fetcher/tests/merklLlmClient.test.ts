@@ -1,7 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  LLM_FALLBACK_MODELS,
+  LLM_FREE_MODELS,
+  resolveModelAllowList,
   buildModelChain,
   fetchAvailableModels,
   resetPrimaryModelsCache,
@@ -23,8 +24,26 @@ function mockFetch(responseBody: unknown, ok = true, contentType = 'application/
 }
 
 describe('B3: LLM client — model list + response parsing', () => {
-  it('LLM_FALLBACK_MODELS has 11 entries for primary config', () => {
-    assert.equal(LLM_FALLBACK_MODELS.length, 11);
+  it('LLM_FREE_MODELS lists the SiliconFlow free-tier chat models', () => {
+    assert.ok(LLM_FREE_MODELS.length > 0);
+    assert.equal(LLM_FREE_MODELS[0], 'Qwen/Qwen3.5-9B');
+  });
+
+  it('resolveModelAllowList defaults to LLM_FREE_MODELS', () => {
+    delete process.env.LLM_MODELS;
+    assert.deepEqual(resolveModelAllowList(), [...LLM_FREE_MODELS]);
+  });
+
+  it('resolveModelAllowList uses LLM_MODELS override (comma-separated, trimmed)', () => {
+    process.env.LLM_MODELS = ' Qwen/Qwen2.5-7B-Instruct , THUDM/GLM-4-9B-0414 ';
+    assert.deepEqual(resolveModelAllowList(), ['Qwen/Qwen2.5-7B-Instruct', 'THUDM/GLM-4-9B-0414']);
+    delete process.env.LLM_MODELS;
+  });
+
+  it('resolveModelAllowList ignores empty LLM_MODELS', () => {
+    process.env.LLM_MODELS = '  ,  ';
+    assert.deepEqual(resolveModelAllowList(), [...LLM_FREE_MODELS]);
+    delete process.env.LLM_MODELS;
   });
 
   it('parseSseStream extracts content from SSE lines', () => {
@@ -205,20 +224,21 @@ describe('B3: callLlmWithFallback — API call + fallback', () => {
 });
 
 describe('fetchAvailableModels — generic /models endpoint', () => {
-  it('fetches model list from baseUrl/models', async () => {
+  it('fetches chat model list from baseUrl/models', async () => {
     resetPrimaryModelsCache();
     const fakeModels = [
-      { id: 'claude-haiku-4.5' },
-      { id: 'gpt-5.4' },
+      { id: 'Qwen/Qwen3.5-9B' },
+      { id: 'deepseek-ai/DeepSeek-V4-Pro' },
     ];
     const fetch = async (url: string) => {
-      assert.ok(url.endsWith('/models'), `expected /models URL, got ${url}`);
+      assert.ok(url.includes('/models'), `expected /models URL, got ${url}`);
+      assert.ok(url.includes('sub_type=chat'), `expected sub_type=chat filter, got ${url}`);
       return new Response(JSON.stringify({ data: fakeModels }), {
         status: 200, headers: { 'content-type': 'application/json' },
       }) as Response;
     };
     const result = await fetchAvailableModels('https://api.example.com/v1', 'test-key', fetch);
-    assert.deepEqual(result, ['claude-haiku-4.5', 'gpt-5.4']);
+    assert.deepEqual(result, ['Qwen/Qwen3.5-9B', 'deepseek-ai/DeepSeek-V4-Pro']);
     resetPrimaryModelsCache();
   });
 
@@ -236,20 +256,20 @@ describe('fetchAvailableModels — generic /models endpoint', () => {
     resetPrimaryModelsCache();
   });
 
-  it('falls back to LLM_FALLBACK_MODELS on fetch error', async () => {
+  it('falls back to LLM_FREE_MODELS on fetch error', async () => {
     resetPrimaryModelsCache();
     const fetch = async () => new Response('error', { status: 500 }) as Response;
     const result = await fetchAvailableModels('https://api.example.com/v1', 'key', fetch);
-    assert.equal(result.length, LLM_FALLBACK_MODELS.length);
-    assert.equal(result[0], LLM_FALLBACK_MODELS[0]);
+    assert.equal(result.length, LLM_FREE_MODELS.length);
+    assert.equal(result[0], LLM_FREE_MODELS[0]);
     resetPrimaryModelsCache();
   });
 
-  it('falls back to LLM_FALLBACK_MODELS on network error', async () => {
+  it('falls back to LLM_FREE_MODELS on network error', async () => {
     resetPrimaryModelsCache();
     const fetch = async () => { throw new Error('network error'); };
     const result = await fetchAvailableModels('https://api.example.com/v1', 'key', fetch);
-    assert.equal(result.length, LLM_FALLBACK_MODELS.length);
+    assert.equal(result.length, LLM_FREE_MODELS.length);
     resetPrimaryModelsCache();
   });
 
@@ -292,7 +312,7 @@ describe('fetchAvailableModels — generic /models endpoint', () => {
       status: 200, headers: { 'content-type': 'application/json' },
     }) as Response;
     const result = await fetchAvailableModels('https://api.example.com/v1', 'key', fetch);
-    assert.equal(result.length, LLM_FALLBACK_MODELS.length);
+    assert.equal(result.length, LLM_FREE_MODELS.length);
     resetPrimaryModelsCache();
   });
 
@@ -310,34 +330,54 @@ describe('fetchAvailableModels — generic /models endpoint', () => {
 });
 
 describe('buildModelChain — with dynamic primary models', () => {
-  it('places hardcoded models before dynamically fetched models', async () => {
+  it('keeps only free allow-list models that the provider serves, best-first', async () => {
     resetPrimaryModelsCache();
     const primary = { apiKey: 'p', baseUrl: 'https://primary.com/v1' };
+    // Live list: two free models (out of order) + one paid model that must be dropped.
     const fetch = async (url: string) => {
       if (url.includes('/models')) {
-        return new Response(JSON.stringify({ data: [{ id: 'dynamic-model-a' }, { id: 'dynamic-model-b' }] }), {
+        return new Response(JSON.stringify({ data: [
+          { id: 'Qwen/Qwen3-8B' },          // free, lower priority
+          { id: 'deepseek-ai/DeepSeek-V4-Pro' }, // paid → must be excluded
+          { id: 'Qwen/Qwen3.5-9B' },        // free, top priority
+        ] }), {
           status: 200, headers: { 'content-type': 'application/json' },
         }) as Response;
       }
       return new Response('not found', { status: 404 }) as Response;
     };
     const chain = await buildModelChain(primary, fetch);
-    assert.ok(chain.length >= LLM_FALLBACK_MODELS.length + 2);
-    assert.equal(chain[0].model, LLM_FALLBACK_MODELS[0]);
-    const dynamicStart = chain.findIndex(c => c.model === 'dynamic-model-a');
-    assert.ok(dynamicStart > 0, 'dynamic models should come after hardcoded');
-    assert.equal(chain[dynamicStart].model, 'dynamic-model-a');
-    assert.equal(chain[dynamicStart + 1].model, 'dynamic-model-b');
+    const models = chain.map(c => c.model);
+    // Only free models, ordered by LLM_FREE_MODELS priority (3.5-9B before 3-8B).
+    assert.deepEqual(models, ['Qwen/Qwen3.5-9B', 'Qwen/Qwen3-8B']);
+    assert.ok(!models.includes('deepseek-ai/DeepSeek-V4-Pro'), 'paid models must be excluded');
     resetPrimaryModelsCache();
   });
 
-  it('falls back to LLM_FALLBACK_MODELS when primary /models fails', async () => {
+  it('falls back to full free list when no live model intersects the allow-list', async () => {
+    resetPrimaryModelsCache();
+    const primary = { apiKey: 'p', baseUrl: 'https://primary.com/v1' };
+    const fetch = async (url: string) => {
+      if (url.includes('/models')) {
+        return new Response(JSON.stringify({ data: [{ id: 'some-unknown-paid-model' }] }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        }) as Response;
+      }
+      return new Response('not found', { status: 404 }) as Response;
+    };
+    const chain = await buildModelChain(primary, fetch);
+    assert.equal(chain.length, LLM_FREE_MODELS.length);
+    assert.equal(chain[0].model, LLM_FREE_MODELS[0]);
+    resetPrimaryModelsCache();
+  });
+
+  it('falls back to LLM_FREE_MODELS when primary /models fails', async () => {
     resetPrimaryModelsCache();
     const primary = { apiKey: 'p', baseUrl: 'https://primary.com/v1' };
     const fetch = async (_url: string) => new Response('error', { status: 500 }) as Response;
     const chain = await buildModelChain(primary, fetch);
-    assert.equal(chain.length, LLM_FALLBACK_MODELS.length);
-    assert.equal(chain[0].model, LLM_FALLBACK_MODELS[0]);
+    assert.equal(chain.length, LLM_FREE_MODELS.length);
+    assert.equal(chain[0].model, LLM_FREE_MODELS[0]);
     resetPrimaryModelsCache();
   });
 });
