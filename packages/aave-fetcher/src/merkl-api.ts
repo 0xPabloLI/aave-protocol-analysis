@@ -676,16 +676,18 @@ export const buildForecastCampaignMetaLiteMap = (
     if (!Array.isArray(breakdowns) || breakdowns.length === 0) continue;
 
     const campaignSnapshotById = new Map<string, CampaignSnapshotLiteForForecastFile>();
-    const localDbIdToHashId = new Map<string, string>();
+    const localDbIdToCacheKey = new Map<string, string>();
     if (Array.isArray(opp.campaigns)) {
       for (const campaign of opp.campaigns) {
         const snapshot = buildCampaignSnapshotLiteForForecastFile(campaign);
         if (snapshot) {
-          const hashId = String(campaign.campaignId || '').trim();
+          const rawCampaignId = String(campaign.campaignId || '').trim();
+          const campaignHashId = (rawCampaignId && rawCampaignId.startsWith('0x')) ? rawCampaignId : '';
           const dbId = String(campaign.id || '').trim();
-          if (hashId) {
-            campaignSnapshotById.set(hashId, snapshot);
-            if (dbId) localDbIdToHashId.set(dbId, hashId);
+          const cacheKey = campaignHashId || dbId;
+          if (cacheKey) {
+            campaignSnapshotById.set(cacheKey, snapshot);
+            if (dbId) localDbIdToCacheKey.set(dbId, cacheKey);
           }
         }
       }
@@ -695,7 +697,7 @@ export const buildForecastCampaignMetaLiteMap = (
       const breakdownDbId = String(breakdown?.campaignId || '').trim();
       if (!breakdownDbId) continue;
 
-      const hashId = localDbIdToHashId.get(breakdownDbId) || breakdownDbId;
+      const cacheKey = localDbIdToCacheKey.get(breakdownDbId) || breakdownDbId;
 
       const breakdownDistributionType =
         (typeof breakdown?.distributionType === 'string' && breakdown.distributionType) ||
@@ -717,8 +719,8 @@ export const buildForecastCampaignMetaLiteMap = (
       });
       if (!campaignTypeHint) continue;
 
-      const existing = result[hashId];
-      const campaignSnapshot = campaignSnapshotById.get(hashId) ?? null;
+      const existing = result[cacheKey];
+      const campaignSnapshot = campaignSnapshotById.get(cacheKey) ?? null;
       const useTokenRateInMetrics = !(
         typeof breakdown?.token?.price === 'number' &&
         Number.isFinite(breakdown.token.price) &&
@@ -726,7 +728,7 @@ export const buildForecastCampaignMetaLiteMap = (
       );
 
       if (!existing) {
-        result[hashId] = {
+        result[cacheKey] = {
           chainId: opp.chainId,
           tvl,
           campaignTypeHint,
@@ -738,7 +740,7 @@ export const buildForecastCampaignMetaLiteMap = (
         continue;
       }
 
-      result[hashId] = {
+      result[cacheKey] = {
         chainId: existing.chainId > 0 ? existing.chainId : opp.chainId,
         tvl: existing.tvl > 0 ? existing.tvl : tvl,
         campaignTypeHint: existing.campaignTypeHint,
@@ -978,8 +980,17 @@ export const resolveCampaignApr = (
 
 /**
  * 获取 Merkl campaign 详情
- * In https://api.merkl.xyz/v4/opportunities?mainProtocolId=aave api, onChainCampaignId = Campaign ID in webpage, campaignId = Database ID in web page. 
- * https://api.merkl.xyz/v4/campaigns/${databaseId} use the Database ID as input parameter, but in response, their campaignId equals to the Hash ID (onChainCampaignId)
+ *
+ * ID system (verified against Merkl V4 API):
+ * - `campaign.id` = Database ID (always numeric, e.g. "15232182461795483137"). Used as /v4/campaigns/{id} input.
+ * - `campaign.campaignId` in /v4/opportunities response = Hash ID when 0x-prefixed,
+ *   or Merkl internal numeric ID (e.g. "10768955319320541400") when no on-chain hash exists.
+ * - `campaign.campaignId` in /v4/campaigns/{id} response = same as above (0x hash or numeric).
+ * - `breakdown.campaignId` = always Database ID (matches campaign.id).
+ *
+ * Hash ID determination uses field POSITION, not format:
+ * - campaign.id → always DB ID
+ * - campaign.campaignId → hash ID if 0x-prefixed, otherwise internal ID (not usable as hash)
  */
 export async function fetchMerklCampaignDetails(databaseId: string): Promise<MerklCampaignDetails | null> {
   try {
@@ -1041,11 +1052,11 @@ export async function fetchMerklCampaignDetails(databaseId: string): Promise<Mer
       : undefined;
     const rawCampaignId = typeof campaign.campaignId === 'string' && campaign.campaignId
       ? campaign.campaignId : undefined;
-    const hashId = rawCampaignId?.startsWith('0x') ? rawCampaignId : '';
+    const hashId = (rawCampaignId && rawCampaignId.startsWith('0x')) ? rawCampaignId : '';
     return {
       startedAt,
       endedAt,
-      id: hashId,
+      id: hashId || databaseId,
       databaseId,
       apr: resolved.apr,
       whitelistOnly: isCampaignWhitelistOnly(campaign),
@@ -1371,8 +1382,9 @@ export async function processMerklData(
 
   // Build Database ID → Hash ID mapping from opp.campaigns FIRST,
   // so that parentCampaignId can be resolved to hash ID during cache population.
+  // campaign.id = DB ID (always). campaign.campaignId = 0x hash ID or internal numeric ID.
   // Only store mappings where campaignId is a 0x hash ID — non-0x campaignId values
-  // are Merkl internal IDs that don't match any API endpoint.
+  // are Merkl internal IDs that don't correspond to on-chain campaign hashes.
   const dbIdToHashId = new Map<string, string>();
   for (const opp of liveOpportunities) {
     if (!Array.isArray(opp.campaigns)) continue;
@@ -1391,16 +1403,17 @@ export async function processMerklData(
     if (!Array.isArray(opp.campaigns)) continue;
     for (const campaign of opp.campaigns) {
       const rawCampaignId = String(campaign.campaignId || '').trim();
-      const hashId = rawCampaignId.startsWith('0x') ? rawCampaignId : '';
+      const hashId = (rawCampaignId && rawCampaignId.startsWith('0x')) ? rawCampaignId : '';
       const databaseId = String(campaign.id || '').trim();
       if (!rawCampaignId) continue;
-      if (hashId && campaignDetailsCache.has(hashId)) continue;
+      const cacheKey = hashId || databaseId;
+      if (campaignDetailsCache.has(cacheKey)) continue;
       oppCampaignPromises.push((async () => {
         const campaignType = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
         let rewardTokenPrice: number | undefined;
         let targetTokenPrice: number | undefined;
         if (isAmountVariant(campaignType)) {
-          const preResolved = amountVariantPriceMap.get(hashId);
+          const preResolved = amountVariantPriceMap.get(hashId) || amountVariantPriceMap.get(databaseId);
           rewardTokenPrice = preResolved?.rewardTokenPrice;
           targetTokenPrice = preResolved?.targetTokenPrice;
         } else {
@@ -1416,7 +1429,7 @@ export async function processMerklData(
         campaignDetailsCache.set(cacheKey, {
           startedAt: toIsoFromUnixLike(campaign.startTimestamp),
           endedAt: toIsoFromUnixLike(campaign.endTimestamp),
-          id: hashId,
+          id: hashId || databaseId,
           ...(databaseId && { databaseId }),
           apr: resolved.apr,
           whitelistOnly: isCampaignWhitelistOnly(campaign),
@@ -1427,8 +1440,8 @@ export async function processMerklData(
         const bl = Array.isArray(params.blacklist) ? (params.blacklist as string[]).filter(Boolean) : [];
         const borrowHookProtocols = extractBorrowHookProtocols(params.hooks);
         if (wl.length > 0 || bl.length > 0 || borrowHookProtocols.length > 0) {
-          campaignAccessMap.set(hashId, {
-            campaignId: hashId,
+          campaignAccessMap.set(cacheKey, {
+            campaignId: cacheKey,
             chainId: opp.chainId ?? 0,
             whitelist: wl,
             blacklist: bl,
@@ -1569,9 +1582,11 @@ export async function processMerklData(
       const endedBySymbol = new Map<string, { endedAt: string; startedAt: string; campaignId: string }>();
       for (const campaign of opp.campaigns) {
         const cDbId = String(campaign.id || '').trim();
-        const cHashId = String(campaign.campaignId || '').trim();
-        if (!cHashId || coveredCampaignIds.has(cHashId)) continue;
-        const details = campaignDetailsCache.get(cHashId);
+        const cRawCampaignId = String(campaign.campaignId || '').trim();
+        const cHashId = (cRawCampaignId && cRawCampaignId.startsWith('0x')) ? cRawCampaignId : '';
+        const cCacheKey = cHashId || cDbId;
+        if (!cRawCampaignId || coveredCampaignIds.has(cCacheKey)) continue;
+        const details = campaignDetailsCache.get(cCacheKey);
         checkedCount++;
         if (!details) continue;
         if (!isRecentlyEnded(details.endedAt)) continue;
@@ -1580,7 +1595,7 @@ export async function processMerklData(
         if (!rtSymbol) continue;
         const existing = endedBySymbol.get(rtSymbol);
         if (!existing || details.endedAt > existing.endedAt) {
-          endedBySymbol.set(rtSymbol, { endedAt: details.endedAt, startedAt: details.startedAt, campaignId: cHashId });
+          endedBySymbol.set(rtSymbol, { endedAt: details.endedAt, startedAt: details.startedAt, campaignId: cCacheKey });
         }
       }
       for (const breakdown of breakdowns) {
