@@ -92,6 +92,8 @@ export type ForecastCampaignTypeLite =
 export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   /** Merkl Campaign Hash ID (hex, e.g. 0x0cf07a3891...). Used as Map key and in Merkl web UI URLs. */
   campaignId: string;
+  /** Merkl Campaign Database ID (numeric). Used as input to /v4/campaigns/{databaseId} API endpoints (metrics, details). */
+  databaseId?: string;
   whitelistOnly?: boolean;
   pointsPerThousandUsd?: number;
   rewardTokenSymbol?: string;

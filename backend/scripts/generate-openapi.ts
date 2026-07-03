@@ -126,6 +126,7 @@ const merklBreakdown = {
     campaignStartedAt:  { type: 'string' },
     campaignEndedAt:    { type: 'string' },
     campaignId:         { type: 'string' },
+    databaseId:         { type: 'string', description: 'Merkl Campaign Database ID — used as input to /v4/campaigns/{databaseId} API endpoints (metrics, details)' },
     whitelistOnly:       { type: 'boolean' },
     pointsPerThousandUsd: { type: 'number' },
     rewardTokenSymbol:   { type: 'string' },

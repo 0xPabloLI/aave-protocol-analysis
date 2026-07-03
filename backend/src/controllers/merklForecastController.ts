@@ -44,9 +44,9 @@ const collectCampaignIdsFromMarkets = (markets: RuntimeReserveData[]): string[] 
   const ids = new Set<string>();
   for (const market of markets) {
     for (const group of [...(market.merklSupplys ?? []), ...(market.merklBorrows ?? []), ...(market.merklHolds ?? [])]) {
-      const breakdowns = (group as { breakdowns?: Array<{ campaignId?: string }> }).breakdowns ?? [];
+      const breakdowns = (group as { breakdowns?: Array<{ databaseId?: string; campaignId?: string }> }).breakdowns ?? [];
       for (const breakdown of breakdowns) {
-        const id = String(breakdown.campaignId || '').trim();
+        const id = String(breakdown.databaseId || '').trim();
         if (id) ids.add(id);
       }
     }

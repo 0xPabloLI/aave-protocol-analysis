@@ -222,7 +222,7 @@ export function computeSchemaFingerprint(): string {
     merklSupplys: [{
       link: '__fingerprint__',
       breakdowns: [{
-        campaignApr: 0.01, campaignId: '__fingerprint__',
+        campaignApr: 0.01, campaignId: '__fingerprint__', databaseId: '__fp_db__',
         campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
         lastEndedCampaign: { startedAt: '2025-01-01', endedAt: '2025-01-01', campaignId: '__fingerprint__' },
       }],
@@ -230,7 +230,7 @@ export function computeSchemaFingerprint(): string {
     merklBorrows: [{
       link: '__fingerprint__',
       breakdowns: [{
-        campaignApr: 0.01, campaignId: '__fingerprint__',
+        campaignApr: 0.01, campaignId: '__fingerprint__', databaseId: '__fp_db__',
         campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
         lastEndedCampaign: { startedAt: '2025-01-01', endedAt: '2025-01-01', campaignId: '__fingerprint__' },
       }],
@@ -238,7 +238,7 @@ export function computeSchemaFingerprint(): string {
     merklHolds: [{
       link: '__fingerprint__',
       breakdowns: [{
-        campaignApr: 0.01, campaignId: '__fingerprint__',
+        campaignApr: 0.01, campaignId: '__fingerprint__', databaseId: '__fp_db__',
         campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
         lastEndedCampaign: { startedAt: '2025-01-01', endedAt: '2025-01-01', campaignId: '__fingerprint__' },
       }],

@@ -1041,8 +1041,9 @@ export async function fetchMerklCampaignDetails(databaseId: string): Promise<Mer
     const parentCampaignId = typeof campaign.parentCampaignId === 'string' && campaign.parentCampaignId
       ? campaign.parentCampaignId
       : undefined;
-    const hashId = typeof campaign.campaignId === 'string' && campaign.campaignId
-      ? campaign.campaignId : databaseId;
+    const rawCampaignId = typeof campaign.campaignId === 'string' && campaign.campaignId
+      ? campaign.campaignId : undefined;
+    const hashId = rawCampaignId?.startsWith('0x') ? rawCampaignId : '';
     return {
       startedAt,
       endedAt,
@@ -1374,12 +1375,15 @@ export async function processMerklData(
 
   // Build Database ID → Hash ID mapping from opp.campaigns FIRST,
   // so that parentCampaignId can be resolved to hash ID during cache population.
+  // Only store mappings where campaignId is a 0x hash ID — non-0x campaignId values
+  // are Merkl internal IDs that don't match any API endpoint.
   const dbIdToHashId = new Map<string, string>();
   for (const opp of liveOpportunities) {
     if (!Array.isArray(opp.campaigns)) continue;
     for (const campaign of opp.campaigns) {
       const dbId = String(campaign.id || '').trim();
-      const hashId = String(campaign.campaignId || '').trim();
+      const rawCampaignId = String(campaign.campaignId || '').trim();
+      const hashId = rawCampaignId.startsWith('0x') ? rawCampaignId : '';
       if (dbId && hashId) {
         dbIdToHashId.set(dbId, hashId);
       }
@@ -1387,13 +1391,14 @@ export async function processMerklData(
   }
 
   const oppCampaignPromises: Promise<void>[] = [];
-  for (const opp of liveOpportunities) {
+   for (const opp of liveOpportunities) {
     if (!Array.isArray(opp.campaigns)) continue;
     for (const campaign of opp.campaigns) {
-      const hashId = String(campaign.campaignId || '').trim();
+      const rawCampaignId = String(campaign.campaignId || '').trim();
+      const hashId = rawCampaignId.startsWith('0x') ? rawCampaignId : '';
       const databaseId = String(campaign.id || '').trim();
-      if (!hashId) continue;
-      if (campaignDetailsCache.has(hashId)) continue;
+      if (!rawCampaignId) continue;
+      if (hashId && campaignDetailsCache.has(hashId)) continue;
       oppCampaignPromises.push((async () => {
         const campaignType = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
         let rewardTokenPrice: number | undefined;
@@ -1411,7 +1416,8 @@ export async function processMerklData(
           ? campaign.parentCampaignId
           : undefined;
         const parentCampaignId = rawParentId ? (dbIdToHashId.get(rawParentId) || rawParentId) : undefined;
-        campaignDetailsCache.set(hashId, {
+        const cacheKey = hashId || databaseId;
+        campaignDetailsCache.set(cacheKey, {
           startedAt: toIsoFromUnixLike(campaign.startTimestamp),
           endedAt: toIsoFromUnixLike(campaign.endTimestamp),
           id: hashId,
@@ -1458,14 +1464,14 @@ export async function processMerklData(
     const campaignPromises = Array.from(missingCampaignDbIds).map(async (dbId) => {
       const details = await fetchMerklCampaignDetails(dbId);
       if (details) {
-        const hashId = details.id;
-        if (hashId !== dbId) {
-          dbIdToHashId.set(dbId, hashId);
+        const cacheKey = details.id || dbId;
+        if (details.id && details.id !== dbId) {
+          dbIdToHashId.set(dbId, details.id);
         }
         if (details.parentCampaignId) {
           details.parentCampaignId = dbIdToHashId.get(details.parentCampaignId) || details.parentCampaignId;
         }
-        campaignDetailsCache.set(hashId, details);
+        campaignDetailsCache.set(cacheKey, details);
       }
       return { dbId, details };
     });
@@ -1526,8 +1532,9 @@ export async function processMerklData(
         continue;
       }
 
-      const hashId = dbIdToHashId.get(breakdownDbId) || breakdownDbId;
-      const campaignDetails = campaignDetailsCache.get(hashId);
+      const resolvedHashId = dbIdToHashId.get(breakdownDbId) || '';
+      const cacheKey = resolvedHashId || breakdownDbId;
+      const campaignDetails = campaignDetailsCache.get(cacheKey);
       if (!campaignDetails) {
         continue;
       }
@@ -1537,7 +1544,7 @@ export async function processMerklData(
       }
 
       const useIntensity = merklBreakdownUsesPointsIntensityFields(rewardBreakdown);
-      const amountVariantPrices = amountVariantPriceMap.get(hashId);
+      const amountVariantPrices = amountVariantPriceMap.get(resolvedHashId || breakdownDbId);
       const pointsFields = useIntensity
         ? merklPointsFieldsFromBreakdownValue(opp, rewardBreakdown, {
             distributionType: rewardBreakdown.distributionType,
@@ -1550,7 +1557,8 @@ export async function processMerklData(
         campaignApr: campaignDetails.apr,
         campaignStartedAt: campaignDetails.startedAt,
         campaignEndedAt: campaignDetails.endedAt,
-        campaignId: hashId,
+        campaignId: campaignDetails.id || breakdownDbId,
+        ...(campaignDetails.databaseId && { databaseId: campaignDetails.databaseId }),
         whitelistOnly: campaignDetails.whitelistOnly,
         ...extractRewardTokenFields(rewardBreakdown.token),
         ...(pointsFields ?? {}),

@@ -51,6 +51,7 @@ function pruneMerklBreakdown(b: MerklCampaignBreakdown): MerklCampaignBreakdown 
       plannedDaily: b.plannedDaily,
     } : {}),
     ...(b.lastEndedCampaign ? { lastEndedCampaign: b.lastEndedCampaign } : {}),
+    ...(b.databaseId ? { databaseId: b.databaseId } : {}),
   };
 }
 
