@@ -67,7 +67,7 @@
 | 32 | token-price-resolver | `tokenPriceResolveInFlight` | Map | ✅ | ➖(Promise完成即删) | ➖(并发有限) | ➖(Promise自删) | 🟢 | 短生命周期，同#3 |
 | 33 | token-price-resolver | `coingeckoPlatformCache` | 单条+Map | ✅ | ✅(24h) | ➖(Map=chainId数) | ✅(整量替换) | 🟢 | 内含Map按chainId，数量=链数(~20) |
 | 34 | merklLlmClient | `primaryModelsCache` | 单条 | ✅ | ➖(fetch后永久缓存) | ➖(单条) | ➖(有resetPrimaryModelsCache hook) | 🟢 | 模型列表，数量有限且稳定 |
-| 35 | merkl-api | `_merklState` | 单例对象 | ✅ | ➖(cron替换) | ➖(单条) | ✅(替换) | 🟢 | 内含 lastSuccessfulSnapshot + lastFetchError,fetch后整体替换 |
+| 35 | merkl-api | `_merklState` | 单例对象 | ✅ | ➖(cron替换) | ➖(单条) | ✅(替换) | 🟢 | lastSuccessfulSnapshot 仅保留 index+processedData+forecastMeta+liveOpportunityCount;rawOpportunities 已移除(见泄漏记录#20) |
 | 36 | cloudflare-browser | `workerDisabledResolvers` | Set | ✅ | ➖(Promise自删) | ➖(并发有限) | ✅(resolve后自删除) | 🟢 | 已从Array改为Set，resolve后自删除 |
 | 37 | brevis-distributed-so-far | `chainCallCache` | Map | ✅ | ✅(1h TTL+2h惰性删) | ✅(100) | ✅(pruneCache+FIFO) | 🟢 | tokenCumulativeRewards约4h变一次，1h TTL足够 |
 | 37b | v4-fetcher | `v4Client` (GqlClient.queryRegistry) | Map(内嵌) | ✅ | ➖(per-fetch短生命周期) | ➖(client GC即释放) | ➖(per-fetch重建) | 🟢 | per-fetch创建,非singleton;queryRegistry随client实例GC;cache:false+batch:false禁用graphcache和batchFetchExchange;V3 AaveClient不继承GqlClient无此问题 |
@@ -203,12 +203,16 @@ map.set(oraclePriceKey(r.chainId, r.tokenAddress, r.configId), hash);
 | `marketRowHashes` 无上限 | 有 shrink 但无 max entries | max 500 条兜底 | `8cd18d5` |
 | `marketConfigHashes` 无上限 | 有 shrink 但无 max entries | max 500 条兜底 | `8cd18d5` |
 | `oraclePriceHashes` 无上限 | 有 shrink 但无 max entries | max 2000 条兜底 | `8cd18d5` |
+| V4 `AaveClient.queryRegistry` 无界增长 | GqlClient.resultFrom 用 .toPromise() 不触发 teardown，queryRegistry Map 只增不减；graphcache 缓存全量查询结果 | per-fetch 创建 client + cache:false + batch:false | `59d8746` |
+| `_merklState.lastSuccessfulSnapshot` 保留 rawOpportunities | fallback snapshot 保留完整 raw API 数组(~5-8MB 解析对象)，仅需 index+processedData+forecastMeta | 替换为 liveOpportunityCount(number)，内存 fallback 返回空数组 | `fb2e8c3` |
+| undici TLS 连接池 native memory | 默认 undici 无连接数限制，OpenSSL 缓冲区 ~14MB/h 持续累积 | setGlobalDispatcher 限制 connections=10/host + keepAliveTimeout=30s | `4faa554` |
+| glibc malloc arena 碎片 | 默认 glibc 并行 arena 导致 RSS 远大于 heap（多线程各自缓存） | MALLOC_ARENA_MAX=2 | Dockerfile |
 
 ## 监控与验证
 
 ### 线上内存监控（已部署）
 - 60s 间隔 `📊 Memory:` 日志：heap/rss/external + merkl cache sizes
-- RSS restart guard：`RSS_RESTART_THRESHOLD_MB` 可配置，当前设为 0（warn-only，不自动 SIGTERM），避免掩盖内存增长过程
+- RSS restart guard：`RSS_RESTART_THRESHOLD_MB=800`，超限触发 graceful shutdown 替代硬 OOM kill
 - Playwright RSS guard：本地 Playwright 启动前检查 `process.memoryUsage().rss`，超过 700MB 跳过启动 + warn log
 - Playwright 动态 import：`import { chromium }` 改为 `await import("playwright")`，减少启动时内存占用
 - `MERIT_ALLOW_LOCAL_PLAYWRIGHT=true`（默认），RSS guard 自动守卫而非硬禁用
@@ -222,3 +226,154 @@ map.set(oraclePriceKey(r.chainId, r.tokenAddress, r.configId), hash);
 - `/health` 端点返回内存指标 → 外部监控告警
 - `--inspect` + heap snapshot → 按需获取 heap profile
 - Node.js `v8.writeHeapSnapshot()` → 事后分析 OOM 原因
+
+---
+
+## 泄漏追踪时间线
+
+> 按时间顺序记录每次内存泄漏诊断 session 的发现、修复和验证结果。新 session 接手时先读此节获取上下文。
+
+### 泄漏演化总览
+
+```
+时间线（从早到晚）：
+
+Phase 1: 初始 OOM
+  ├── undici TLS 连接池 native memory ~14MB/h → commit 4faa554
+  ├── metricsCache raw 保留 11-47MB/条 → commit 0437905
+  ├── metricsCache 无界增长 → commit bf88358
+  ├── workerDisabledResolvers 累积 → commit bf88358
+  └── 多个 cache 无 max entries → commit 8cd18d5
+
+Phase 2: 修复后仍 OOM（~23MB/h RSS 增长）
+  ├── --max-old-space-size=384 → 降至 ~12MB/h
+  ├── MALLOC_ARENA_MAX=2 + tryGc() → 降至 ~6.3MB/h
+  └── 34h 后仍 OOM → V8 old_space 泄漏未消除
+
+Phase 3: Heap snapshot 定位 V4 queryRegistry
+  ├── 对比 3 个 heap snapshot（0h/2h/3.5h）
+  ├── `query Markets` 从 0→510 instances/2.67MB
+  ├── JSArrayBufferData 从 0.59MB→1.14MB
+  └── commit 59d8746: V4 per-fetch client + cache:false → query Markets 稳定在 ~331/1.73MB
+
+Phase 4: JSArrayBufferData 增长（当前）
+  ├── 1GB 容器: ~1.4MB/h（237/1.36MB → 408/2.06MB over 30min）
+  ├── 2GB 容器: 1725 instances/8.75MB overnight + 4336 undici stream handlers
+  ├── _merklState.lastSuccessfulSnapshot rawOpportunities → commit fb2e8c3
+  └── 待验证: undici stream handlers 累积原因
+```
+
+### Session 详细记录
+
+#### Session 1: 2026-06-09 — 初始 OOM 排查
+- **现象**: 后端在 Railway 上持续 OOM crash（2GB 容器）
+- **发现**: Merit 缓存完整性判断 bug 导致无限重试 Worker/Puppeteer
+- **修复**: truthy-gate fix（commit d9cad34→fcbf02d→aa62283）
+- **遗留**: OOM 根因未确认，猜测是 metricsCache 无界增长
+- **Handoff**: `docs/plans/executed/handoff-memory-leak.md`
+
+#### Session 2: 2026-06-xx — Cache 全量审计 + 补强
+- **发现**: 多个 cache 缺少 max entries / shrink / TTL
+- **修复**: 全量补强（commit bf88358, 8cd18d5, 1b3368f）
+- **结果**: 仍有 OOM，RSS ~6.3MB/h 增长
+- **Handoff**: `docs/plans/executed/handoff-memory-leak-v2.md`
+
+#### Session 3: 2026-06-xx — undici + glibc 修复
+- **发现**: undici 默认无连接限制 → native memory ~14MB/h
+- **修复**: setGlobalDispatcher（commit 4faa554）+ MALLOC_ARENA_MAX=2
+- **结果**: 仍有 ~6.3MB/h V8 old_space 增长
+
+#### Session 4: 2026-07-03 — Heap snapshot 诊断 V4 + JSArrayBufferData
+- **现象**: 1GB 容器 old_space 稳定但 JSArrayBufferData ~1.4MB/h
+- **方法**:
+  1. MEMORY_DIAG=1 + heap space breakdown 日志
+  2. Cron-based heap snapshot + top-40 constructor 分析
+  3. 3 个 snapshot 对比（0h/2h/3.5h）
+- **发现**:
+  1. `query Markets` 构造器从 0→510 instances — V4 GqlClient.queryRegistry 泄漏
+  2. JSArrayBufferData 从 62→114 instances — 持续增长
+  3. 4336 undici stream event handlers 累积（2GB 容器）
+- **修复**:
+  1. V4 AaveClient per-fetch + cache:false + batch:false（commit 59d8746）
+  2. MerklSuccessfulSnapshot 移除 rawOpportunities/liveOpportunities，改为 liveOpportunityCount（commit fb2e8c3）
+  3. Brevis Buffer 从 buffer.slice() 改为 Buffer.from(subarray())（commit fb2e8c3）
+  4. Brevis response.err 从 Buffer 改为 .toString('utf-8')（commit fb2e8c3）
+- **验证中**: JSArrayBufferData 增长趋势待 2-3h 确认
+- **待排除**:
+  1. undici stream event handlers 累积原因（2GB 容器 4336 个，1GB 未复现）
+  2. large_object_space 从 6MB→25MB 的趋势（之前 2GB 容器观察到）
+  3. (code deopt data) 缓慢增长 0.67MB/1369→0.67MB/1475
+
+---
+
+## 诊断方法论
+
+> 排查内存泄漏时参考此节选择正确的方法。
+
+### 方法 1: `📊 Memory` 日志趋势分析（首选）
+
+60s 间隔的日志已经能发现大部分问题。观察以下指标的单调增长趋势：
+
+| 指标 | 正常范围 | 泄漏信号 |
+|------|---------|---------|
+| heap | 44-52MB (1GB container) | 持续 >55MB 且 GC 不回落 |
+| old_space | 35-40MB | Δbase 持续 >+5MB |
+| arrayBuffers | 0-3MB | 持续 >5MB |
+| large_object | 6-8MB | 持续 >15MB |
+| rss | 130-180MB | 持续 >250MB |
+
+**关键**: 单个数据点不能判断泄漏，必须看 2h+ 的趋势。
+
+### 方法 2: Cron-based old_space Δbase 追踪
+
+`logOldSpaceDiff()` 在每个 cron 周期前后记录 old_space 变化。
+
+- `Δbase` = 相对于进程启动时的增长（反映累积泄漏）
+- `Δlast` = 相对于上一次测量的变化（反映单次 cron 的影响）
+
+正常模式: Δbase 在 +2~+9MB 波动，不单调递增。
+泄漏模式: Δbase 每轮 cron 增加，如 +5→+10→+15→+20→...
+
+### 方法 3: Heap snapshot 对比分析
+
+当方法 1/2 确认了泄漏但无法定位源头时使用。
+
+1. 触发 snapshot: cron 周期中 `v8.writeHeapSnapshot()`
+2. 对比不同时间点的 snapshot，关注 `retained_size` 增长最大的构造器
+3. 追踪 retaining path 找到 GC root
+
+**工具**: `/api/debug/heap-top` 端点返回 top-40 构造器 + retained_size
+
+### 方法 4: 构造器级别分析
+
+从 `📊 Memory` 日志中 `spaces=[old=XX/YY code=X/Y large_object=X/Y]` 提取：
+
+- `old_space used` 持续增长 → V8 堆泄漏（JS 对象未释放）
+- `large_object_space` 增长 → 大对象（>256KB）累积
+- `arrayBuffers` 增长 → ArrayBuffer/TypedArray 未释放
+
+### 常见泄漏模式速查
+
+| 模式 | 典型构造器 | 典型根因 | 诊断线索 |
+|------|-----------|---------|---------|
+| Cache 无界增长 | `(string)` / `(object)` | Map 只写不删 | heap snapshot 中 retained_size 大的 Map |
+| 闭包泄漏 | `(closure)` / `(context)` | resolver/callback 未释放 | workerDisabledResolvers 模式 |
+| 原生内存泄漏 | RSS >> heap | undici/ OpenSSL/glibc | external/malloced 远大于 heap |
+| queryRegistry | `query Markets` | GqlClient .toPromise() 不触发 teardown | 构造器名称含 GraphQL 相关 |
+| Buffer 共享 | `JSArrayBufferData` | buffer.slice() 共享底层 ArrayBuffer | ArrayBuffer 数量持续增长 |
+| Stream handler | `onend`/`onerror` | HTTP response stream 未完全释放 | undici/fetch 相关 handler 累积 |
+
+### 环境配置
+
+诊断相关环境变量和启动参数：
+
+| 配置 | 当前值 | 用途 | 何时移除 |
+|------|--------|------|---------|
+| `MEMORY_DIAG=1` | 已设置 | 门控 heap 详细日志 + snapshot + debug 端点 | 泄漏确认修复后 |
+| `--expose-gc` | 已设置 | 允许 `globalThis.gc()` 手动触发 GC | 同上 |
+| `--max-old-space-size=512` | 已设置 | 限制 V8 堆，强制更激进的 GC | 可保留，有防御价值 |
+| `MALLOC_ARENA_MAX=2` | 已设置 | 限制 glibc 并行 arena，减少 RSS 碎片 | 可保留 |
+| `RSS_RESTART_THRESHOLD_MB=800` | 已设置 | RSS 超限 graceful shutdown | 可保留 |
+| `--heapsnapshot-near-heap-limit=1` | 已设置 | OOM 前自动写 heap snapshot | 泄漏确认修复后可移除 |
+| `/api/debug/heap-top` | 已部署 | 返回 top-40 构造器 | 泄漏确认修复后移除 |
+| `/api/debug/heap-snapshot` | 已部署 | 触发 heap snapshot 写磁盘 | 泄漏确认修复后移除 |
