@@ -445,8 +445,6 @@ interface MerklFallbackSnapshot {
 }
 
 interface MerklSuccessfulSnapshot {
-  rawOpportunities: MerklOpportunity[];
-  liveOpportunities: MerklOpportunity[];
   processedData: MerklOpportunityData[];
   index: Record<string, MerklOpportunityData[]>;
   forecastCampaignMetaLite: Record<string, ForecastCampaignMetaLite>;
@@ -523,8 +521,8 @@ const resolveMerklFallbackSnapshot = async (): Promise<MerklFallbackSnapshot | n
   if (memorySnapshot !== null && Object.keys(memorySnapshot.index).length > 0) {
     return {
       source: 'memory',
-      rawOpportunities: memorySnapshot.rawOpportunities,
-      liveOpportunities: memorySnapshot.liveOpportunities,
+      rawOpportunities: [],
+      liveOpportunities: [],
       processedData: memorySnapshot.processedData,
       index: memorySnapshot.index,
       forecastCampaignMetaLite: memorySnapshot.forecastCampaignMetaLite,
@@ -1244,8 +1242,6 @@ export async function processMerklData(
       });
 
       _merklState.lastSuccessfulSnapshot = {
-        rawOpportunities: fallback.rawOpportunities,
-        liveOpportunities: fallback.liveOpportunities,
         processedData: fallback.processedData,
         index: fallback.index,
         forecastCampaignMetaLite: fallback.forecastCampaignMetaLite,
@@ -1709,8 +1705,6 @@ export async function processMerklData(
 
   if (!staleStatus.stale && Object.keys(merklData).length > 0) {
     _merklState.lastSuccessfulSnapshot = {
-      rawOpportunities: opportunities,
-      liveOpportunities,
       processedData,
       index: merklData,
       forecastCampaignMetaLite,

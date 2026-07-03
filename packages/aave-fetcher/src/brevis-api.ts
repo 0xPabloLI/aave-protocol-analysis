@@ -162,7 +162,8 @@ export class BrevisApiClient {
       throw new Error(`gRPC 请求失败: ${response.status}`);
     }
 
-    const buffer = Buffer.from(await response.arrayBuffer());
+    const ab = await response.arrayBuffer();
+    const buffer = Buffer.from(ab);
     if (buffer.length < 5) {
       throw new Error('gRPC 响应为空');
     }
@@ -173,7 +174,7 @@ export class BrevisApiClient {
       const flag = buffer.readUInt8(offset);
       const length = buffer.readUInt32BE(offset + 1);
       offset += 5;
-      const chunk = buffer.slice(offset, offset + length);
+      const chunk = Buffer.from(buffer.subarray(offset, offset + length));
       offset += length;
       if (flag === 0x00) {
         frames.push(chunk);
@@ -226,7 +227,7 @@ export class BrevisApiClient {
         const lengthInfo = this.readVarint(buffer, offset);
         const length = lengthInfo.value;
         offset = lengthInfo.offset;
-        const value = buffer.slice(offset, offset + length);
+        const value = Buffer.from(buffer.subarray(offset, offset + length));
         offset += length;
         fields.push({ field: fieldNumber, wireType, value });
         continue;
@@ -350,7 +351,7 @@ export class BrevisApiClient {
   private parseGetAllProtocolDetailResponse(payload: Buffer): any {
     const response: any = { campaignDetailsList: [] };
     for (const field of this.parseMessage(payload)) {
-      if (field.field === 1 && Buffer.isBuffer(field.value)) response.err = field.value;
+      if (field.field === 1 && Buffer.isBuffer(field.value)) response.err = field.value.toString('utf-8');
       if (field.field === 2 && Buffer.isBuffer(field.value)) response.protocol = this.parseProtocol(field.value);
       if (field.field === 3 && Buffer.isBuffer(field.value)) response.campaignDetailsList.push(this.parseCampaignDetail(field.value));
     }
@@ -360,7 +361,7 @@ export class BrevisApiClient {
   private parseGetAllProtocolsResponse(payload: Buffer): any {
     const response: any = { protocolsList: [] };
     for (const field of this.parseMessage(payload)) {
-      if (field.field === 1 && Buffer.isBuffer(field.value)) response.err = field.value;
+      if (field.field === 1 && Buffer.isBuffer(field.value)) response.err = field.value.toString('utf-8');
       if (field.field === 2 && Buffer.isBuffer(field.value)) response.protocolsList.push(this.parseProtocol(field.value));
     }
     return response;

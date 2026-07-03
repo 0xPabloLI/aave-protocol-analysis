@@ -18,7 +18,7 @@ import { computeSchemaFingerprint } from '../src/services/marketsApiSerialize.js
 // ⚠️  UPDATE this value when you intentionally change the API response shape.
 // Also run: npm run gen:schema-fp -w aave-dashboard-backend
 // and sync the value to aaveapy/src/shared/schema-fingerprint.ts
-const EXPECTED_FINGERPRINT = '8d85b6641f2c';
+const EXPECTED_FINGERPRINT = '633ceb1dbd24';
 
 test('API schema fingerprint matches expected value', () => {
   const current = computeSchemaFingerprint();
