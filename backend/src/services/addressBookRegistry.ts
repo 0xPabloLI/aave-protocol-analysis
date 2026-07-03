@@ -3,9 +3,10 @@
  * @aave-dao/aave-address-book.
  *
  * Design decisions (do not regress):
- * - V3 whitelist source = AAVE_CHAIN_ID_TO_RPC_KEY. New chains only need
- *   a RPC entry in aave-shared-config to appear here — no double-write.
- * - V4 also filters by AAVE_CHAIN_ID_TO_RPC_KEY (same whitelist as V3).
+ * - All mainnet chains present in address-book are included. RPC availability
+ *   is handled by ProviderPool.executeWithAutoRpc which auto-discovers RPCs
+ *   from viem/chains + chainlist.org when no hardcoded URL exists.
+ * - Testnet chains (name contains 'Sepolia' or 'Fuji') are excluded.
  * - spokeKey IS spokeName (raw key, no _SPOKE suffix stripping).
  * - V4 spoke→hub is topology-driven: buildAll(topology) is a pure function
  *   that joins address-book SPOKES with SpokeHubTopology. Many-to-many
@@ -17,12 +18,20 @@
  */
 
 import * as AaveAddressBook from '@aave-dao/aave-address-book';
-import { AAVE_CHAIN_ID_TO_RPC_KEY, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
+import { DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { SpokeHubTopology } from '@internal/aave-shared-contracts';
 import { spokeKey, topologySortKey } from '@internal/aave-shared-contracts';
 
 // ============================================================
 // V3 Types
+// ============================================================
+
+// ============================================================
+// Testnet filter: exclude known testnet chains by name
+// ============================================================
+
+const isTestnetKey = (key: string): boolean =>
+  key.includes('Sepolia') || key.includes('Fuji');
 // ============================================================
 
 export interface V3PoolEntry {
@@ -33,13 +42,6 @@ export interface V3PoolEntry {
   uiPoolDataProviderAddress?: string;
   poolAddressesProvider?: string;
 }
-
-// ============================================================
-// V3 Whitelist: chains with configured RPC URLs
-// ============================================================
-
-const isSupportedChain = (chainId: number): boolean =>
-  Object.prototype.hasOwnProperty.call(AAVE_CHAIN_ID_TO_RPC_KEY, chainId);
 
 // ============================================================
 // V4 Types
@@ -80,7 +82,7 @@ export function buildAll(topology: SpokeHubTopology): { v3: V3PoolEntry[]; v4Spo
       if (!Number.isFinite(chainId) || chainId <= 0) continue;
 
       if (key.startsWith('AaveV3')) {
-        if (!isSupportedChain(chainId)) continue;
+        if (isTestnetKey(key)) continue;
 
         const poolAddress = typeof v.POOL === 'string' ? v.POOL.toLowerCase().trim() : '';
         if (!poolAddress) continue;
@@ -94,7 +96,7 @@ export function buildAll(topology: SpokeHubTopology): { v3: V3PoolEntry[]; v4Spo
           poolAddressesProvider: typeof v.POOL_ADDRESSES_PROVIDER === 'string' ? v.POOL_ADDRESSES_PROVIDER : undefined,
         });
       } else if (key.startsWith('AaveV4')) {
-        if (!isSupportedChain(chainId)) continue;
+        if (isTestnetKey(key)) continue;
 
         const spokes = v.SPOKES as Record<string, string> | undefined;
         if (!spokes) continue;

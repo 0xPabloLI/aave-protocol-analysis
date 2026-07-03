@@ -87,3 +87,7 @@ oracleService、onchainDataService、fetchV4ReservesViaRpc 从 `getAaveRpcUrlsBy
 - **viem 依赖升级**：aave-rpc-infra 直接依赖 viem，升级需关注 breaking change
 - **调用方简化**：不再需要手动获取 RPC URL 列表 + 空值检查，executeWithAutoRpc 一行搞定
 - **后续优化**：Prometheus counter（AAV-586）、主动通知（AAV-587）、ProviderPool↔DynamicRpcCache 清理同步（AAV-823）
+
+### 补充（2026-07-03）
+
+原先 `addressBookRegistry.ts` 的 `isSupportedChain` 白名单阻止了 `executeWithAutoRpc` 对新链的调用——链不在 `POOL_CONFIGS` 中，auto-discovery 永远不会触发。ADR-0034 用 `isTestnetKey` 替代 `isSupportedChain`，移除了这个障碍，使本 ADR 的三层 RPC 发现对新链真正生效。

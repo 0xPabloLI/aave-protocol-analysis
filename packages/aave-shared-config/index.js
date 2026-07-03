@@ -530,6 +530,10 @@ export const AAVE_RPC_URLS_BY_CHAIN_KEY = Object.freeze({
     'https://1rpc.io/one',
     `https://rpc.ankr.com/harmony/${ANKR_API_KEY}`,
   ]),
+  monad: Object.freeze([
+    'https://rpc.monad.xyz',
+    'https://rpc1.monad.xyz',
+  ]),
 });
 
 export const AAVE_CHAIN_KEY_ALIASES = Object.freeze({
@@ -589,6 +593,7 @@ export const AAVE_CHAIN_ID_TO_RPC_KEY = Object.freeze({
   80094: 'berachain',
   2741: 'abstract',
   14: 'flare',
+  143: 'monad',
 });
 
 const normalizeHttpUrls = (urls) =>

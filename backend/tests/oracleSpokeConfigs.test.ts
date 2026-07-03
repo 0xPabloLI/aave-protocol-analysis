@@ -39,7 +39,7 @@ test('V3 Horizon pool is present in registry V3 entries', () => {
 });
 
 test('registry header documents design decisions', () => {
-  assert.match(registrySource, /whitelist.*AAVE_CHAIN_ID_TO_RPC_KEY/i);
+  assert.match(registrySource, /testnet.*filter|isTestnetKey/i);
   assert.match(registrySource, /spokeKey.*spokeName/i);
   assert.match(registrySource, /BLUECHIP_SPOKE.*CORE_HUB.*PRIME_HUB/i);
   assert.match(registrySource, /topology-driven/i);

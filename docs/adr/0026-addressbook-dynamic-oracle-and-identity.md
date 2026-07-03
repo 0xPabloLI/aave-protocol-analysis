@@ -2,7 +2,19 @@
 
 ## 状态
 
-Proposed
+Partially Implemented
+
+### 已实现
+
+- 白名单移除：`isSupportedChain`（AAVE_CHAIN_ID_TO_RPC_KEY 白名单）已替换为 `isTestnetKey`（testnet 名称过滤），见 ADR-0034
+- 新链自动纳入：address-book 新增的 mainnet 链不再需要 shared-config 先行更新
+
+### 未实现
+
+- spokeKey/spokeName 语义分离（仍使用 raw key 如 `MAIN_SPOKE`）
+- oracleAddress 链上读取（仍从 address-book 获取）
+- poolAddress 链上读取（仍从 address-book 获取）
+- 根 barrel import 消除（仍使用 `import * as AaveAddressBook`）
 
 ## 上下文
 
