@@ -713,7 +713,7 @@ export const extractNormalizedTotalBudget = (campaign: unknown, campaignId: stri
   return totalBudget;
 };
 
-export const getMerklForecastState = async (campaignId: string): Promise<MerklForecastState> => {
+export const getMerklForecastState = async (campaignId: string, databaseId?: string): Promise<MerklForecastState> => {
   // Use inFlight map to deduplicate concurrent requests for the same campaign
   const existingRequest = inFlight.get(campaignId);
   if (existingRequest) {
@@ -741,8 +741,8 @@ export const getMerklForecastState = async (campaignId: string): Promise<MerklFo
         campaignOpportunityMeta.campaignSnapshot &&
         canComputeForecastFromSnapshot(campaignOpportunityMeta.campaignSnapshot)
         ? Promise.resolve(campaignOpportunityMeta.campaignSnapshot)
-        : fetchJson(`${MERKL_BASE_URL}/campaigns/${campaignId}`);
-      const metricsPromise = getCachedOrFetchMetrics(campaignId);
+        : fetchJson(`${MERKL_BASE_URL}/campaigns/${databaseId || campaignId}`);
+      const metricsPromise = getCachedOrFetchMetrics(databaseId || campaignId);
       const [campaign, metricsResult] = await Promise.all([campaignPromise, metricsPromise]);
       const metrics = metricsResult.data;
 

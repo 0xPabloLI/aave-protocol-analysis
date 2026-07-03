@@ -40,18 +40,24 @@ export interface ForecastSnapshot {
 }
 
 /** In-memory/cron snapshot reserves (`RuntimeReserveData`); yield fields are ratios, not GET /api/markets percents. */
-const collectCampaignIdsFromMarkets = (markets: RuntimeReserveData[]): string[] => {
-  const ids = new Set<string>();
+const collectCampaignIdsFromMarkets = (markets: RuntimeReserveData[]): Array<{ campaignId: string; databaseId?: string }> => {
+  const seen = new Set<string>();
+  const ids: Array<{ campaignId: string; databaseId?: string }> = [];
   for (const market of markets) {
     for (const group of [...(market.merklSupplys ?? []), ...(market.merklBorrows ?? []), ...(market.merklHolds ?? [])]) {
       const breakdowns = (group as { breakdowns?: Array<{ databaseId?: string; campaignId?: string }> }).breakdowns ?? [];
       for (const breakdown of breakdowns) {
-        const id = String(breakdown.databaseId || '').trim();
-        if (id) ids.add(id);
+        const campaignId = String(breakdown.campaignId || '').trim();
+        const databaseId = String(breakdown.databaseId || '').trim();
+        if (!campaignId) continue;
+        const key = `${campaignId}:${databaseId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        ids.push({ campaignId, databaseId: databaseId || undefined });
       }
     }
   }
-  return Array.from(ids);
+  return ids;
 };
 
 // Global snapshot cache (cron-write, API-read-only pattern).
@@ -81,8 +87,8 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
     }
     throw new Error('Forecast snapshot not ready: markets snapshot is unavailable');
   }
-  const campaignIds = [...new Set(collectCampaignIdsFromMarkets(marketsSnapshot.payload.data))];
-  if (campaignIds.length === 0) {
+  const campaignEntries = collectCampaignIdsFromMarkets(marketsSnapshot.payload.data);
+  if (campaignEntries.length === 0) {
     if (canUsePrevious() && previous!.snapshot.items.length > 0) {
       logger.warn('No campaign IDs found; keeping previous forecast snapshot fallback');
       snapshotCache = {
@@ -94,7 +100,7 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
     throw new Error('Forecast snapshot not ready: no campaign IDs available');
   }
 
-  const results = await Promise.allSettled(campaignIds.map((id) => getMerklForecastState(id)));
+  const results = await Promise.allSettled(campaignEntries.map((entry) => getMerklForecastState(entry.campaignId, entry.databaseId)));
   const items: ForecastResponseItem[] = [];
   const errors: ForecastSnapshot['errors'] = [];
 
@@ -105,13 +111,13 @@ export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> 
         if (item) items.push(item);
       } catch (err) {
         errors.push({
-          campaignId: campaignIds[i],
+          campaignId: campaignEntries[i].campaignId,
           message: err instanceof Error ? err.message : String(err),
         });
       }
     } else {
       errors.push({
-        campaignId: campaignIds[i],
+        campaignId: campaignEntries[i].campaignId,
         message: result.reason instanceof Error ? result.reason.message : String(result.reason),
       });
     }
