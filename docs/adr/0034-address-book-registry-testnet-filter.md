@@ -27,9 +27,15 @@ const isTestnetKey = (key: string): boolean =>
 - **新链自动纳入**：address-book 新增的任何 mainnet 链自动进入 registry，无需手动更新 shared-config
 - **RPC 可用性由下游保证**：`executeWithAutoRpc` 的三层发现确保即使 shared-config 没有硬编码 RPC，链仍可被查询
 
-### 2. Snapshot 测试改为最低计数断言
+### 2. Snapshot 测试改为动态 snapshot
 
-`addressBookRegistry.test.ts` 中的精确计数断言（`assert.strictEqual(V3_ORACLE_ENTRIES.length, 24)`）改为最低计数断言（`assert.ok(V3_ORACLE_ENTRIES.length >= SYNCED_V3_POOL_CONFIGS.length)`）。这样 address-book 升级新增链时 CI 不会 break，Dependabot auto-merge 可以正常工作。
+`addressBookRegistry.test.ts` 中的手写 `SYNCED_V3_POOL_CONFIGS` / `SYNCED_V4_SPOKE_CONFIGS` fixture 数组彻底移除。改为从 address-book 运行时数据动态提取期望值：
+
+- **V3**: 从 `AaveAddressBook` 的 keys 过滤 `AaveV3*` + 非 testnet + 有 `POOL` + `ORACLE`，直接与 registry 断言一致性
+- **V4**: 从 `AaveAddressBook` 的 `SPOKES` 提取有 oracle 且在 `DEFAULT_SPOKE_HUB_TOPOLOGY` 中的 spoke，与 registry 断言一致性
+- **SDK topology**: 从 `DEFAULT_SPOKE_HUB_TOPOLOGY` 动态生成，不再手写 `SDK_SPOKE_HUB_TOPOLOGY`
+
+这样 address-book 升级后测试自动适应，不需要手动同步 fixture。
 
 ### 3. Dependabot address-book 升级频率从 weekly 改为 daily
 
