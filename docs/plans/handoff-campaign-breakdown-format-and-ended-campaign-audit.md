@@ -228,3 +228,20 @@ RecentlyEndedSection (L148-339)
 | R1-R5 主 PRD | 90348a2, 84836ab, ed7c8f9, c3f65224 | fbfe6474, c3f65224 |
 | AAV-1044 修正 PRD | 52246d7 | b3dcd7c9 |
 | lastEndedCampaign 重命名 + P0/P1/P2 修复 | 8cc10b2 | 0e1edfb2 |
+| Forecast 404 根因修复（numeric campaignId 泄漏） | d68d4db | — |
+
+---
+
+## 7. Forecast 404 根因修复
+
+**问题**: `collectCampaignIdsFromMarkets` 收集到数字型 campaignId（如 `6680697098953960383`），Merkl `/v4/campaigns/{id}/metrics` 端点返回 404。
+
+**根因**: Merkl V4 API 的 `campaign.campaignId` 字段并非总是 `0x` hash ID。DUTCH_AUCTION 等类型的 `campaignId` 是数字型内部 ID（如 `10768955319320541400`），而 Merkl 的 metrics 端点需要原始 DB ID（如 `7587760385108365908`）。
+
+**数据流**:
+1. `rewardsRecord.breakdowns[].campaignId` = DB ID (`7587760385108365908`)
+2. `fetchMerklCampaignDetails(dbId)` → Merkl 返回 `campaignId: "10768955319320541400"`（数字型，非 0x）
+3. 旧代码：`hashId = campaign.campaignId` → `"10768955319320541400"` 写入 `breakdown.campaignId`
+4. Forecast 用 `10768955319320541400` 请求 `/metrics` → 404
+
+**修复**: `fetchMerklCampaignDetails` 中，只有 `campaign.campaignId` 以 `0x` 开头时才用作 hashId，否则 fallback 到 `databaseId`（DB ID 与 Merkl campaigns + metrics 端点兼容）。

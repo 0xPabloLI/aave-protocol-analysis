@@ -14,6 +14,8 @@ RUN HUSKY=0 npm ci
 # Copy root source and build
 COPY src/ ./src/
 COPY tsconfig.json ./
+# Validate non-TS packages (aave-shared-config ships raw .js, not compiled)
+RUN node --check packages/aave-shared-config/index.js
 RUN npm run build
 
 # Copy backend source and build
