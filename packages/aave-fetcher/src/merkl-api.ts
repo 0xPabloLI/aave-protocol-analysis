@@ -13,7 +13,7 @@ import {
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
 import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol, RuntimeReserveData, NetPositionConstraint } from '@internal/aave-shared-contracts';
-import { chainTokenKey, chainSymbolKey, getErrorCode, spokeKey, v4ReserveId, v4HubScopeKey, isRecentlyEnded, RECENTLY_ENDED_LOOKBACK_DAYS } from '@internal/aave-shared-contracts';
+import { chainTokenKey, chainSymbolKey, getErrorCode, spokeKey, v4ReserveId, v4HubScopeKey, isWithinLookbackWindow } from '@internal/aave-shared-contracts';
 export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol } from '@internal/aave-shared-contracts';
 import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
@@ -1595,7 +1595,7 @@ export async function processMerklData(
         const details = campaignDetailsCache.get(cCacheKey);
         checkedCount++;
         if (!details) continue;
-        if (!isRecentlyEnded(details.endedAt)) continue;
+        if (!isWithinLookbackWindow(details.endedAt)) continue;
         const rtSymbol = typeof campaign.rewardToken?.symbol === 'string' && campaign.rewardToken.symbol
           ? campaign.rewardToken.symbol.trim().toLowerCase() : '';
         if (!rtSymbol) continue;

@@ -46,15 +46,15 @@ export function getErrorCode(error: unknown): string | undefined {
 }
 
 // ============================================================
-// Recently ended campaign constants
+// Lookback window for ended campaigns
 // ============================================================
 
-export const RECENTLY_ENDED_LOOKBACK_DAYS = 7;
+export const ENDED_CAMPAIGN_LOOKBACK_DAYS = 90;
 
-export function isRecentlyEnded(
+export function isWithinLookbackWindow(
   campaignEndedAt: string | undefined,
   nowMs: number = Date.now(),
-  lookbackDays: number = RECENTLY_ENDED_LOOKBACK_DAYS,
+  lookbackDays: number = ENDED_CAMPAIGN_LOOKBACK_DAYS,
 ): boolean {
   if (!campaignEndedAt) return false;
   const endMs = new Date(campaignEndedAt).getTime();

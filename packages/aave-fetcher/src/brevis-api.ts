@@ -2,7 +2,9 @@ import fetch from 'node-fetch';
 import { logger } from './logger.js';
 import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
 import type { ForecastCampaignTypeLite } from '@internal/aave-shared-contracts';
-import { RECENTLY_ENDED_LOOKBACK_DAYS, isRecentlyEnded } from '@internal/aave-shared-contracts';
+import { isWithinLookbackWindow } from '@internal/aave-shared-contracts';
+
+const BREVIS_ENDED_LOOKBACK_DAYS = 7;
 
 /**
  * Brevis Incentra API 客户端
@@ -59,7 +61,7 @@ export function filterRecentExpiredBrevis<T extends { breakdowns?: Array<{ campa
     const bd = item.breakdowns ?? [];
     if (bd.length === 0) continue;
     if (!bd.every(b => b.campaignEndedAt && new Date(b.campaignEndedAt).getTime() < nowMs)) continue;
-    const allRecent = bd.every(b => isRecentlyEnded(b.campaignEndedAt, nowMs));
+    const allRecent = bd.every(b => isWithinLookbackWindow(b.campaignEndedAt, nowMs, BREVIS_ENDED_LOOKBACK_DAYS));
     if (!allRecent) continue;
     const type = bd[0]?.campaignType ?? 'UNKNOWN';
     const existing = byType.get(type);
@@ -651,10 +653,8 @@ export class BrevisApiClient {
 
             const isEnded = campaignStatus === 5;
             if (isEnded) {
-              const endTimeMs = endTime > 0 ? endTime * 1000 : 0;
-              const nowMs = Date.now();
-              const lookbackMs = RECENTLY_ENDED_LOOKBACK_DAYS * 24 * 60 * 60 * 1000;
-              if (endTimeMs <= 0 || endTimeMs < nowMs - lookbackMs || endTimeMs >= nowMs) {
+              const endTimeIso = endTime > 0 ? new Date(endTime * 1000).toISOString() : undefined;
+              if (!isWithinLookbackWindow(endTimeIso, Date.now(), BREVIS_ENDED_LOOKBACK_DAYS)) {
                 continue;
               }
             }

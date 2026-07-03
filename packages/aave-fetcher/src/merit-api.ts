@@ -13,7 +13,9 @@ import {
   type MeritDynamicInfo,
 } from "./cloudflare-browser.js";
 import { meritKeyAliases } from "./config.js";
-import { fifoEvict, type MeritCampaignGroup, isRecentlyEnded } from "@internal/aave-shared-contracts";
+import { fifoEvict, type MeritCampaignGroup, isWithinLookbackWindow } from "@internal/aave-shared-contracts";
+
+const MERIT_ENDED_LOOKBACK_DAYS = 7;
 import {
   createMerklConcurrencyLimitedFetch,
   getAaveRpcUrlsByChainName,
@@ -949,7 +951,7 @@ export function filterRecentExpiredMeritCampaigns(groups: MeritCampaignGroup[]):
     const bd = g.breakdowns ?? [];
     if (bd.length === 0) return false;
     if (!bd.every(b => b.campaignEndedAt && new Date(b.campaignEndedAt).getTime() < nowMs)) return false;
-    return bd.some(b => isRecentlyEnded(b.campaignEndedAt, nowMs));
+    return bd.some(b => isWithinLookbackWindow(b.campaignEndedAt, nowMs, MERIT_ENDED_LOOKBACK_DAYS));
   });
   if (recentlyEnded.length === 0) return active;
   const latest = recentlyEnded.reduce((a, b) => {
