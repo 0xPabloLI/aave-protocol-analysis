@@ -448,6 +448,7 @@ interface MerklSuccessfulSnapshot {
   processedData: MerklOpportunityData[];
   index: Record<string, MerklOpportunityData[]>;
   forecastCampaignMetaLite: Record<string, ForecastCampaignMetaLite>;
+  liveOpportunityCount: number;
   lastSuccessfulAt?: string;
 }
 
@@ -520,9 +521,9 @@ const resolveMerklFallbackSnapshot = async (): Promise<MerklFallbackSnapshot | n
   const memorySnapshot = _merklState.lastSuccessfulSnapshot;
   if (memorySnapshot !== null && Object.keys(memorySnapshot.index).length > 0) {
     return {
-      source: 'memory',
+      source: 'memory' as const,
       rawOpportunities: [],
-      liveOpportunities: [],
+      liveOpportunities: [],  // empty: memory fallback skips raw debug rewrite; count preserved via liveOpportunityCount
       processedData: memorySnapshot.processedData,
       index: memorySnapshot.index,
       forecastCampaignMetaLite: memorySnapshot.forecastCampaignMetaLite,
@@ -1248,7 +1249,9 @@ export async function processMerklData(
           lastSuccessfulAt: fallback.lastSuccessfulAt,
           ...(_merklState.lastFetchError ? { lastFetchError: _merklState.lastFetchError } : {}),
           fetchedOpportunities: fetchedOpportunities.length,
-          usedOpportunities: fallback.liveOpportunities.length,
+          usedOpportunities: fallback.source === 'memory'
+            ? (_merklState.lastSuccessfulSnapshot?.liveOpportunityCount ?? 0)
+            : fallback.liveOpportunities.length,
         },
       });
 
@@ -1256,6 +1259,9 @@ export async function processMerklData(
         processedData: fallback.processedData,
         index: fallback.index,
         forecastCampaignMetaLite: fallback.forecastCampaignMetaLite,
+        liveOpportunityCount: fallback.source === 'memory'
+          ? (_merklState.lastSuccessfulSnapshot?.liveOpportunityCount ?? fallback.liveOpportunities.length)
+          : fallback.liveOpportunities.length,
         lastSuccessfulAt: fallback.lastSuccessfulAt,
       };
 
@@ -1723,6 +1729,7 @@ export async function processMerklData(
       processedData,
       index: merklData,
       forecastCampaignMetaLite,
+      liveOpportunityCount: liveOpportunities.length,
       lastSuccessfulAt: freshTimestamp,
     };
   }
