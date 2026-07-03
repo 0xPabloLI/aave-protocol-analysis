@@ -4,7 +4,7 @@
 
 **Date**: 2026-06-17
 
-**Updated**: 2026-06-26
+**Updated**: 2026-07-03
 
 ## Context
 
@@ -433,7 +433,18 @@ Issues filed:
 
 **Code changes**:
 1. `packages/aave-fetcher/src/merkl-api.ts` — `dbIdToHashId` construction moved before cache population; `parentCampaignId` resolved at assignment time in both main path and fallback path
-2. `packages/aave-fetcher/tests/deduplicateHubSpokeBreakdowns.test.ts` — added scenario 10 (hash ID format matching) and scenario 11 (unresolved db ID fallback)
+2. `packages/aave-fetcher/tests/deduplicateHubSpokeBreakdowns.test.ts` — added scenario 10 (hash ID format matching) and scenario 11 (unresolved db ID fallback, later revised to databaseId match)
+
+### opportunityType Missing in MerklOpportunityGroup Bug Fix (2026-07-03)
+
+**Problem**: Despite the ID format fix above, `deduplicateHubSpokeBreakdowns()` still never removed any Hub breakdowns. The function relies on `group.opportunityType` to identify which groups are Spoke (collect `parentCampaignId`) and which are Hub (remove matched breakdowns). But `index.ts:446-453` built `oppBase` without `opportunityType`, so every `MerklOpportunityGroup` had `opportunityType = undefined`. The dedup function's `isV4SpokeOpportunity(group.opportunityType)` always returned `false`, and `group.opportunityType?.startsWith('AAVE_V4_HUB_')` always skipped — dedup was completely dead.
+
+**Fix**: Added `...(opp.opportunityType && { opportunityType: opp.opportunityType })` to `oppBase` in `index.ts:449`. Also added `bd.databaseId` as a secondary match key in `deduplicateHubSpokeBreakdowns` filter (line 2131), so Hub breakdowns can be matched by either `campaignId` (hash ID) or `databaseId` (db ID).
+
+**Code changes**:
+1. `packages/aave-fetcher/src/index.ts` — `oppBase` now includes `opportunityType`
+2. `packages/aave-fetcher/src/merkl-api.ts` — `deduplicateHubSpokeBreakdowns` filter checks both `bd.campaignId` and `bd.databaseId` against `replacedHubIds`
+3. `packages/aave-fetcher/tests/deduplicateHubSpokeBreakdowns.test.ts` — scenario 11 revised from "no dedup fallback" to "dedup via databaseId match"
 
 Open items:
 - ~~Composed multiplier decay formula still unknown (engine is proprietary)~~ RESOLVED: Merkl API returns final APR, no client-side multiplier calculation needed

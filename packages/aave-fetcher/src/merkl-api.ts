@@ -2121,7 +2121,7 @@ export function deduplicateHubSpokeBreakdowns(
       continue;
     }
     const filtered = group.breakdowns.filter((bd) => {
-      if (replacedHubIds.has(bd.campaignId)) {
+      if (replacedHubIds.has(bd.campaignId) || (bd.databaseId && replacedHubIds.has(bd.databaseId))) {
         removedCount++;
         return false;
       }

@@ -179,17 +179,33 @@ describe('deduplicateHubSpokeBreakdowns — V4 Hub/Spoke breakdown-level dedup',
     });
   });
 
-  describe('scenario 11: parentCampaignId is unresolved db ID → no dedup (fallback)', () => {
-    it('keeps both groups when parentCampaignId does not match any Hub campaignId', () => {
+  describe('scenario 11: parentCampaignId is db ID, Hub has databaseId → dedup via databaseId match', () => {
+    it('deduplicates when Spoke parentCampaignId (db ID) matches Hub breakdown databaseId', () => {
       const HUB_HASH_ID = '0x3861c1877fede62974c637a1de652d7f364f41fb8251ffcfd434f1a261d1d8c0';
-      const SPOKE_HASH_ID = '0xabcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234';
-      const UNRESOLVED_DB_ID = '11526583104559356735';
+      const HUB_DB_ID = '12470476217108074584';
+      const SPOKE_DB_ID = '11770912810709724370';
+      const hubBd: MerklCampaignBreakdown = {
+        campaignApr: 0.0677,
+        campaignStartedAt: '2026-01-01T00:00:00.000Z',
+        campaignEndedAt: '2026-12-31T00:00:00.000Z',
+        campaignId: HUB_HASH_ID,
+        databaseId: HUB_DB_ID,
+      };
+      const spokeBd: MerklCampaignBreakdown = {
+        campaignApr: 0.0648,
+        campaignStartedAt: '2026-01-01T00:00:00.000Z',
+        campaignEndedAt: '2026-12-31T00:00:00.000Z',
+        campaignId: SPOKE_DB_ID,
+        parentCampaignId: HUB_DB_ID,
+      };
       const groups = [
-        mkGroup('AAVE_V4_HUB_SUPPLY', [mkBreakdown(HUB_HASH_ID, 0.0677)]),
-        mkGroup('AAVE_V4_SPOKE_SUPPLY', [mkBreakdown(SPOKE_HASH_ID, 0.0648, UNRESOLVED_DB_ID)]),
+        mkGroup('AAVE_V4_HUB_SUPPLY', [hubBd]),
+        mkGroup('AAVE_V4_SPOKE_SUPPLY', [spokeBd]),
       ];
       const result = deduplicateHubSpokeBreakdowns(groups);
-      assert.equal(result.length, 2);
+      assert.equal(result.length, 1);
+      assert.equal(result[0].opportunityType, 'AAVE_V4_SPOKE_SUPPLY');
+      assert.equal(result[0].breakdowns[0].campaignId, SPOKE_DB_ID);
     });
   });
 

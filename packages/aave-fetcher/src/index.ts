@@ -446,6 +446,7 @@ async function enrichDatasetWithIncentiveData(
         const oppBase = {
           link: opp.opportunityId ? `https://app.merkl.xyz/opportunities/${opp.opportunityId}` : '',
           ...(opp.opportunityId && { opportunityId: opp.opportunityId }),
+          ...(opp.opportunityType && { opportunityType: opp.opportunityType }),
           ...(opp.name && { name: opp.name }),
           ...(opp.description && { message: opp.description }),
           ...(opp.opportunityId && netPositionConstraint !== undefined ? { netPositionConstraint } : {}),
