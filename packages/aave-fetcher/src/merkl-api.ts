@@ -63,6 +63,7 @@ async function fetchWithRetry(
       }
       // Only retry on 5xx / gateway errors
       if (response.status >= 500 && response.status < 600 && attempt < merklFetchConfig.maxRetries) {
+        await response.text().catch(() => {});
         const delay = Math.min(
           merklFetchConfig.maxDelayMs,
           merklFetchConfig.baseDelayMs * Math.pow(2, attempt)
@@ -72,7 +73,8 @@ async function fetchWithRetry(
         attempt++;
         continue;
       }
-      // Non-retryable HTTP error
+      // Non-retryable HTTP error — drain body so keep-alive socket can return to pool
+      await response.text().catch(() => {});
       return response;
     } catch (error) {
       lastError = error;

@@ -304,6 +304,24 @@ Phase 4: JSArrayBufferData 增长（当前）
   2. large_object_space 从 6MB→25MB 的趋势（之前 2GB 容器观察到）
   3. (code deopt data) 缓慢增长 0.67MB/1369→0.67MB/1475
 
+#### Session 5: 2026-07-03 — node-fetch 连接池 + body 未消费修复
+- **发现**:
+  1. `node-fetch` 使用 Node.js 内置 `http`/`https` 模块，**不走 undici globalDispatcher**
+  2. `https.globalAgent.maxSockets` 默认 `Infinity`，允许对同一 host 无限并发 TLS 连接
+  3. 每条 TLS 连接持有 native memory（OpenSSL buffer + glibc malloc），不在 V8 heap 内
+  4. 6 处 `node-fetch` 错误路径未消费 response body，keep-alive 连接无法回池
+  5. arrayBuffers idle growth (0→18MB) 审计结论：无 JS 层长期持有，可能来自 native 层 Buffer
+- **修复**:
+  1. `https.globalAgent.maxSockets = 10` + `http.globalAgent.maxSockets = 10`（限制 node-fetch 连接池）
+  2. 6 处 `node-fetch` 错误路径添加 `await response.text().catch(() => {})` drain body
+  3. Memory log 添加 `nodeAgent=https:N/Nact http:N/Nact` 统计
+- **文件**:
+  - `backend/src/server.ts` — http/https globalAgent maxSockets 限制 + nodeAgent 统计
+  - `packages/aave-fetcher/src/merkl-api.ts` — fetchWithRetry 5xx + 非 5xx drain body
+  - `packages/aave-fetcher/src/merit-api.ts` — 3 处 RPC/page fetch drain body
+  - `packages/aave-fetcher/src/brevis-api.ts` — gRPC 错误 drain body
+  - `backend/src/services/merklForecastService.ts` — fetchJson 429/5xx/4xx drain body
+
 ---
 
 ## 诊断方法论
@@ -362,6 +380,8 @@ Phase 4: JSArrayBufferData 增长（当前）
 | queryRegistry | `query Markets` | GqlClient .toPromise() 不触发 teardown | 构造器名称含 GraphQL 相关 |
 | Buffer 共享 | `JSArrayBufferData` | buffer.slice() 共享底层 ArrayBuffer | ArrayBuffer 数量持续增长 |
 | Stream handler | `onend`/`onerror` | HTTP response stream 未完全释放 | undici/fetch 相关 handler 累积 |
+| node-fetch 连接池 | RSS >> heap | https.globalAgent.maxSockets=Infinity | node-fetch 不走 undici dispatcher，需单独限制 |
+| Body 未消费 | keep-alive 不回池 | node-fetch !ok 路径未 drain body | await response.text().catch(() => {}) |
 
 ### 环境配置
 

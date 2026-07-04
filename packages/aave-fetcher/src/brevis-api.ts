@@ -161,6 +161,7 @@ export class BrevisApiClient {
     });
 
     if (!response.ok) {
+      await response.text().catch(() => {});
       throw new Error(`gRPC 请求失败: ${response.status}`);
     }
 

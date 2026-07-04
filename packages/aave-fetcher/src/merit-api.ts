@@ -854,6 +854,7 @@ async function getCurrentBlockNumber(
         });
 
         if (!response.ok) {
+          await response.text().catch(() => {});
           continue;
         }
 
@@ -2162,6 +2163,7 @@ async function fetchMeritPageHtmlStatic(
     });
 
     if (!response.ok) {
+      await response.text().catch(() => {});
       logger.warn(
         `⚠️ Failed to fetch Merit page ${url}: HTTP ${response.status}`
       );
@@ -2656,7 +2658,10 @@ async function getEthereumBlockTimestamp(
           }),
         });
 
-        if (!response.ok) continue;
+        if (!response.ok) {
+          await response.text().catch(() => {});
+          continue;
+        }
 
         const data = (await response.json()) as {
           result?: { timestamp?: string };

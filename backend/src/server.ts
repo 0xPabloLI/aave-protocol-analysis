@@ -2,6 +2,8 @@ import './env.js';
 import express from 'express';
 import compression from 'compression';
 import { Agent, setGlobalDispatcher } from 'undici';
+import https from 'node:https';
+import http from 'node:http';
 import v8 from 'v8';
 import { corsMiddleware } from './middleware/cors.js';
 import { apiCacheHeadersMiddleware } from './middleware/cacheHeaders.js';
@@ -42,6 +44,13 @@ try {
 } catch (e) {
   logger.warn('Failed to set undici globalDispatcher (non-fatal, using defaults):', e instanceof Error ? e.message : String(e));
 }
+
+// Cap node-fetch (http/https globalAgent) connection pool — node-fetch uses
+// Node.js built-in http/https modules, NOT undici. Default maxSockets=Infinity
+// allows unbounded TLS connections per host, each holding native memory outside
+// V8 heap. Limiting to 10 + short keepAlive caps native memory from this path.
+(https.globalAgent as any).maxSockets = 10;
+(http.globalAgent as any).maxSockets = 10;
 
 // Wire ProviderPool logFn to winston logger
 providerPool.configure({
@@ -559,7 +568,8 @@ setInterval(() => {
     `hashes=${hashSizes.marketRow}+${hashSizes.marketConfig}+${hashSizes.oraclePrice} ` +
     `rpc=${providerStats.providers}p+${providerStats.endpoints}e+${providerStats.rpcUrls}u ` +
     `browser=${meritStats.browserActive} ` +
-    `undici=[${undiciSummary}]`
+    `undici=[${undiciSummary}] ` +
+    `nodeAgent=https:${(https.globalAgent as any).totalSocketCount ?? '?'}/${Object.keys((https.globalAgent as any).sockets ?? {}).length}act http:${(http.globalAgent as any).totalSocketCount ?? '?'}/${Object.keys((http.globalAgent as any).sockets ?? {}).length}act`
   );
 
   if (RSS_RESTART_THRESHOLD_MB > 0 && mem.rss > RSS_RESTART_THRESHOLD_MB * 1024 * 1024) {

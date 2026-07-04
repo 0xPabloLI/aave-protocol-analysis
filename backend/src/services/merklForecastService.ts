@@ -435,9 +435,11 @@ const fetchJson = async (url: string): Promise<unknown> => {
         headers: { accept: 'application/json' },
       });
       if (response.status === 429 || response.status >= 500) {
+        await response.text().catch(() => {});
         throw new Error(`Merkl API ${response.status} for ${url}`);
       }
       if (!response.ok) {
+        await response.text().catch(() => {});
         throw new Error(`Merkl API ${response.status} for ${url}`);
       }
       return response.json() as Promise<unknown>;
