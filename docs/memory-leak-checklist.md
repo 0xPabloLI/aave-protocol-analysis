@@ -372,10 +372,9 @@ Phase 4: JSArrayBufferData 增长（当前）
 1. `curl https://staging-api.aaveapy.com/api/debug/heap-snapshot` → 写 snapshot 到磁盘（临时 ~100-200MB RSS，写完释放），返回 `fileName`
 2. `curl -o snapshot1.heapsnapshot https://staging-api.aaveapy.com/api/debug/heap-snapshot/{fileName}` → 下载到本地
 3. 等一段时间后再执行步骤 1-2，得到 `snapshot2.heapsnapshot`
-4. 用 Chrome DevTools → Memory → Load 分别加载两个 snapshot，对比 retained_size 增长最大的构造器
-5. 追踪 retaining path 找到 GC root
+4. 用 Coding Agent 直接读取 JSON 文件分析 top 构造器和引用关系，或用 Chrome DevTools → Memory → Load 可视化对比
 
-**为什么不在容器内解析**：`readFile` + `JSON.parse` 临时分配 ~500MB（等于 snapshot 文件大小 × 2），1GB 容器会 OOM。只写磁盘不读回，RSS 只临时增加 ~100-200MB。
+**为什么不在容器内解析**：`readFile` + `JSON.parse` 临时分配 ~500MB（等于 snapshot 文件大小 × 2），1GB 容器会 OOM。只写磁盘不读回，RSS 只临时增加 ~100-200MB。下载到本地后，本地机器内存充足，解析无压力。
 
 **端点**（均需要 `MEMORY_DIAG=1` 环境变量）：
 - `GET /api/debug/heap-snapshot` — 写 snapshot 到磁盘，返回文件名
