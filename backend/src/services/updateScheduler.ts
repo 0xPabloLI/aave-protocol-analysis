@@ -1,5 +1,4 @@
 import v8 from 'v8';
-import os from 'node:os';
 import { schedule } from 'node-cron';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from '../controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from '../controllers/merklForecastController.js';
@@ -35,18 +34,13 @@ async function maybeHeapSnapshot(): Promise<void> {
     const mem = process.memoryUsage();
     logger.info(`🔬 Heap spaces at ${uptimeMin}min: ${summary} | heap=${Math.round(mem.heapUsed / _MB)}MB rss=${Math.round(mem.rss / _MB)}MB external=${Math.round(mem.external / _MB)}MB`);
   }
-  // Full heap snapshot + top constructors at 30min (requires ~2GB container)
-  // DANGER: writeHeapSnapshot() serializes entire heap, then readFile + JSON.parse
-  // doubles memory again. In 1GB containers this causes instant OOM (RSS vertical spike).
-  // Must NOT execute unless container has >= 1.5GB available.
+  // Full heap snapshot + top constructors at 30min.
+  // WARNING: writeHeapSnapshot() + readFile + JSON.parse temporarily allocates
+  // ~2x heap memory. In 1GB containers this may cause OOM (RSS vertical spike).
+  // For production monitoring, set MEMORY_DIAG=0 or remove this block.
+  // For debugging, temporarily increase container to ≥2GB.
   if (uptimeMin >= 30 && !_heapSnapshotDone.has('snapshot-30')) {
     _heapSnapshotDone.add('snapshot-30');
-    const mem = process.memoryUsage();
-    const availMb = Math.round((os.totalmem() - mem.rss) / _MB);
-    if (availMb < 800) {
-      logger.warn(`🔬 Heap snapshot SKIPPED: only ${availMb}MB free (need 800MB). Reduce container size or remove MEMORY_DIAG.`);
-      return;
-    }
     try {
       const filePath = v8.writeHeapSnapshot();
       const mem = process.memoryUsage();
