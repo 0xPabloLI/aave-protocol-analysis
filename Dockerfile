@@ -70,8 +70,9 @@ ENV MALLOC_ARENA_MAX=2
 # Was 768MB (too permissive — old_space grew 22MB/h unchecked), then 384MB
 # (caused OOM when heap reached 307MB + heap snapshot overhead pushed past 384MB).
 # 512MB ≈ 3× steady-state heap (~95MB), forces GC well before 1GB RSS limit
-# while leaving headroom for heap snapshot writes (~50-100MB temp allocation).
-# --heapsnapshot-near-heap-limit=1: write heap snapshot when heap approaches
-# the limit, so we can identify which objects caused OOM. File written to /app/.
+# while leaving headroom for temporary allocations.
+# --heapsnapshot-near-heap-limit: REMOVED — in 1GB containers, V8's auto-snapshot
+# on OOM allocates ~2x heap memory instantly, causing a vertical RSS spike that
+# guarantees OOM rather than preventing it. Only safe in ≥2GB containers.
 # --expose-gc: expose globalThis.gc() for manual GC triggering in diagnostics
-CMD ["node", "--max-old-space-size=512", "--heapsnapshot-near-heap-limit=1", "--expose-gc", "backend/dist/server.js"]
+CMD ["node", "--max-old-space-size=512", "--expose-gc", "backend/dist/server.js"]

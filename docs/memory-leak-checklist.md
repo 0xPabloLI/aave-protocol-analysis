@@ -304,17 +304,28 @@ Phase 4: JSArrayBufferData 增长（当前）
   2. large_object_space 从 6MB→25MB 的趋势（之前 2GB 容器观察到）
   3. (code deopt data) 缓慢增长 0.67MB/1369→0.67MB/1475
 
-#### Session 5: 2026-07-03 — node-fetch 连接池 + body 未消费修复
+#### Session 5: 2026-07-04 — node-fetch 连接池 + body 未消费修复 + 诊断代码 OOM
 - **发现**:
   1. `node-fetch` 使用 Node.js 内置 `http`/`https` 模块，**不走 undici globalDispatcher**
   2. `https.globalAgent.maxSockets` 默认 `Infinity`，允许对同一 host 无限并发 TLS 连接
   3. 每条 TLS 连接持有 native memory（OpenSSL buffer + glibc malloc），不在 V8 heap 内
-  4. 6 处 `node-fetch` 错误路径未消费 response body，keep-alive 连接无法回池
-  5. arrayBuffers idle growth (0→18MB) 审计结论：无 JS 层长期持有，可能来自 native 层 Buffer
+  4. 7 处 `node-fetch` 错误路径未消费 response body，keep-alive 连接无法回池
+  5. arrayBuffers idle growth (0→18MB) 审计结论：无 JS 层长期持有，来自 native 层 Buffer
+  6. **诊断代码导致 OOM**：`maybeHeapSnapshot()` 在 30min 时调用 `v8.writeHeapSnapshot()` + `readFile` + `JSON.parse`，在 1GB 容器中瞬间分配 ~500MB 内存，导致 RSS 垂直飙升到 1GB
+  7. `--heapsnapshot-near-heap-limit=1` 在 OOM 前也会触发写 snapshot，同样瞬间分配大量内存
 - **修复**:
   1. `https.globalAgent.maxSockets = 10` + `http.globalAgent.maxSockets = 10`（限制 node-fetch 连接池）
-  2. 6 处 `node-fetch` 错误路径添加 `await response.text().catch(() => {})` drain body
+  2. 7 处 `node-fetch` 错误路径添加 `await response.text().catch(() => {})` drain body
   3. Memory log 添加 `nodeAgent=https:N/Nact http:N/Nact` 统计
+- **修复效果**（部署验证）:
+  - RSS 基线：320-367MB → 149-159MB（**-57%**）
+  - arrayBuffers：16-17MB → 1MB（**-94%**）
+  - external：19-20MB → 4-5MB（**-75%**）
+  - old_space：67-68MB → 37-39MB（**-44%**）
+- **根因分析**:
+  - "两次飙升到 1G"是 **诊断代码（heap snapshot）** 在 1GB 容器中触发 OOM，不是渐进泄漏
+  - node-fetch 连接池泄漏是**持续累积型**（~14MB/h），不是垂直飙升
+  - 之前的修复（Session 1-4）覆盖了 V8 heap 泄漏和 undici 通道，但**遗漏了 node-fetch 这条独立 HTTP 通道**
 - **文件**:
   - `backend/src/server.ts` — http/https globalAgent maxSockets 限制 + nodeAgent 统计
   - `packages/aave-fetcher/src/merkl-api.ts` — fetchWithRetry 5xx + 非 5xx drain body
@@ -382,6 +393,8 @@ Phase 4: JSArrayBufferData 增长（当前）
 | Stream handler | `onend`/`onerror` | HTTP response stream 未完全释放 | undici/fetch 相关 handler 累积 |
 | node-fetch 连接池 | RSS >> heap | https.globalAgent.maxSockets=Infinity | node-fetch 不走 undici dispatcher，需单独限制 |
 | Body 未消费 | keep-alive 不回池 | node-fetch !ok 路径未 drain body | await response.text().catch(() => {}) |
+| 诊断代码 OOM | RSS 垂直飙升 | heap snapshot 序列化 + readFile + JSON.parse | 容器容量 < snapshot 大小的 2 倍时必 OOM |
+| heapsnapshot-near-heap-limit | RSS 垂直飙升 | V8 OOM 前自动写 snapshot | 同上，1GB 容器中必须移除此参数 |
 
 ### 环境配置
 
