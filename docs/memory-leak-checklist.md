@@ -367,11 +367,20 @@ Phase 4: JSArrayBufferData 增长（当前）
 
 当方法 1/2 确认了泄漏但无法定位源头时使用。
 
-1. 触发 snapshot: cron 周期中 `v8.writeHeapSnapshot()`
-2. 对比不同时间点的 snapshot，关注 `retained_size` 增长最大的构造器
-3. 追踪 retaining path 找到 GC root
+**流程**（1GB 容器安全，不需要调大容器）：
 
-**工具**: `/api/debug/heap-top` 端点返回 top-40 构造器 + retained_size
+1. `curl https://staging-api.aaveapy.com/api/debug/heap-snapshot` → 写 snapshot 到磁盘（临时 ~100-200MB RSS，写完释放），返回 `fileName`
+2. `curl -o snapshot1.heapsnapshot https://staging-api.aaveapy.com/api/debug/heap-snapshot/{fileName}` → 下载到本地
+3. 等一段时间后再执行步骤 1-2，得到 `snapshot2.heapsnapshot`
+4. 用 Chrome DevTools → Memory → Load 分别加载两个 snapshot，对比 retained_size 增长最大的构造器
+5. 追踪 retaining path 找到 GC root
+
+**为什么不在容器内解析**：`readFile` + `JSON.parse` 临时分配 ~500MB（等于 snapshot 文件大小 × 2），1GB 容器会 OOM。只写磁盘不读回，RSS 只临时增加 ~100-200MB。
+
+**端点**（均需要 `MEMORY_DIAG=1` 环境变量）：
+- `GET /api/debug/heap-snapshot` — 写 snapshot 到磁盘，返回文件名
+- `GET /api/debug/heap-snapshot/:filename` — 下载已写入的 snapshot 文件
+- `GET /api/debug/heap-stats` — 轻量级，只读 V8 统计数字（heap/空间/rss），零开销
 
 ### 方法 4: 构造器级别分析
 
@@ -407,6 +416,8 @@ Phase 4: JSArrayBufferData 增长（当前）
 | `--max-old-space-size=512` | 已设置 | 限制 V8 堆，强制更激进的 GC | 可保留，有防御价值 |
 | `MALLOC_ARENA_MAX=2` | 已设置 | 限制 glibc 并行 arena，减少 RSS 碎片 | 可保留 |
 | `RSS_RESTART_THRESHOLD_MB=800` | 已设置 | RSS 超限 graceful shutdown | 可保留 |
-| `--heapsnapshot-near-heap-limit=1` | 已设置 | OOM 前自动写 heap snapshot | 泄漏确认修复后可移除 |
-| `/api/debug/heap-top` | 已部署 | 返回 top-40 构造器 | 泄漏确认修复后移除 |
-| `/api/debug/heap-snapshot` | 已部署 | 触发 heap snapshot 写磁盘 | 泄漏确认修复后移除 |
+| `--heapsnapshot-near-heap-limit=1` | **已移除** | OOM 前自动写 heap snapshot → 1GB 容器中反而加速 OOM | 已移除 |
+| `/api/debug/heap-snapshot` | 已部署 | 写 snapshot 到磁盘（只写不读，1GB 容器安全） | 泄漏确认修复后移除 |
+| `/api/debug/heap-snapshot/:filename` | 已部署 | 下载已写入的 snapshot 文件 | 泄漏确认修复后移除 |
+| `/api/debug/heap-stats` | 已部署 | 轻量级 V8 统计（零开销） | 泄漏确认修复后移除 |
+| `/api/debug/heap-top` | **已移除** | getHeapSnapshot + JSON.parse → 1GB 容器 OOM | 已移除 |
