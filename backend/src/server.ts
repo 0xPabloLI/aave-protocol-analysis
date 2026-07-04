@@ -123,9 +123,10 @@ app.get('/.well-known/security.txt', (_req, res) => {
   );
 });
 
-// Debug endpoint: write V8 heap snapshot to disk and return stats (MEMORY_DIAG=1 only).
-// The snapshot file can be downloaded via `railway run` or analyzed in Chrome DevTools.
-// Returns immediately after triggering the write — check logs for completion.
+// Debug endpoint: write V8 heap snapshot to disk only (MEMORY_DIAG=1 only).
+// Does NOT read or parse the snapshot — avoids the ~500MB memory spike from
+// readFile + JSON.parse. After writing, download via /api/debug/heap-snapshot/:filename
+// and analyze locally with Chrome DevTools.
 app.get('/api/debug/heap-snapshot', (_req, res) => {
   if (process.env.MEMORY_DIAG !== '1') {
     res.status(404).json({ error: 'Not found' });
@@ -140,162 +141,41 @@ app.get('/api/debug/heap-snapshot', (_req, res) => {
     return;
   }
   const memAfter = process.memoryUsage();
+  const fileName = filePath.split('/').pop() ?? filePath;
   logger.info(`🔬 Heap snapshot written: ${filePath} (heap ${Math.round(memBefore.heapUsed/1024/1024)}MB → ${Math.round(memAfter.heapUsed/1024/1024)}MB)`);
   res.json({
-    filePath,
+    fileName,
     heapBeforeMB: Math.round(memBefore.heapUsed / 1024 / 1024),
     heapAfterMB: Math.round(memAfter.heapUsed / 1024 / 1024),
-    message: 'Snapshot written. Use `railway run --service aave-protocol-analysis "cat /app/<filename>" > snapshot.heapsnapshot` to retrieve.',
+    message: `Snapshot written. Download via GET /api/debug/heap-snapshot/${fileName} then open in Chrome DevTools (Memory tab → Load).`,
   });
 });
 
-// Debug endpoint: lightweight heap object analysis (MEMORY_DIAG=1 only).
-// Streams v8.getHeapSnapshot(), parses incrementally, returns top constructors.
-// Uses streaming JSON parse to avoid loading entire snapshot into memory.
-app.get('/api/debug/heap-top', async (_req, res) => {
+// Debug endpoint: download a previously written heap snapshot file (MEMORY_DIAG=1 only).
+app.get('/api/debug/heap-snapshot/:filename', (req, res) => {
   if (process.env.MEMORY_DIAG !== '1') {
     res.status(404).json({ error: 'Not found' });
     return;
   }
-  try {
-    const memBefore = process.memoryUsage();
-    const snapshotStream = v8.getHeapSnapshot();
-
-    // Accumulate raw bytes, then parse
-    const chunks: Buffer[] = [];
-    for await (const chunk of snapshotStream) {
-      chunks.push(chunk);
-      // Safety: abort if we've accumulated > 500MB
-      if (chunks.reduce((s, c) => s + c.length, 0) > 500 * 1024 * 1024) {
-        res.status(500).json({ error: 'Snapshot too large (>500MB), aborting' });
-        return;
-      }
-    }
-    const raw = Buffer.concat(chunks).toString('utf-8');
-    const snapshot = JSON.parse(raw);
-
-    const meta = snapshot.snapshot?.meta;
-    const nodes = snapshot.nodes;
-    const strings = snapshot.strings;
-
-    if (!meta?.node_fields || !nodes || !strings) {
-      res.status(500).json({ error: 'Unexpected snapshot format' });
+  const fileName = req.params.filename;
+  if (!fileName.endsWith('.heapsnapshot') || fileName.includes('..')) {
+    res.status(400).json({ error: 'Invalid filename' });
+    return;
+  }
+  const filePath = `/app/${fileName}`;
+  import('node:fs').then(fs => {
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: 'File not found', hint: 'Create one first via GET /api/debug/heap-snapshot' });
       return;
     }
-
-    const nodeFields: string[] = meta.node_fields;
-    const fieldCount = nodeFields.length;
-    const nameIdx = nodeFields.indexOf('name');
-    const selfSizeIdx = nodeFields.indexOf('self_size');
-
-    const byCtor = new Map<string, { count: number; selfSize: number }>();
-    const nodeCount = nodes.length / fieldCount;
-
-    for (let i = 0; i < nodes.length; i += fieldCount) {
-      const selfSize = nodes[i + selfSizeIdx];
-      if (selfSize > 0) {
-        const name = strings[nodes[i + nameIdx]] ?? '(unnamed)';
-        const entry = byCtor.get(name) ?? { count: 0, selfSize: 0 };
-        entry.count++;
-        entry.selfSize += selfSize;
-        byCtor.set(name, entry);
-      }
-    }
-
-    // Compute retained size by following edges to find GC roots
-    // Only count nodes that are NOT reachable from other nodes of the same type
-    // (simplified: use edge traversal to compute shallow retained size per constructor)
-    const edges = snapshot.edges;
-    const edgeFields: string[] = meta.edge_fields ?? [];
-    const edgeFieldCount = edgeFields.length;
-    const edgeTypeIdx = edgeFields.indexOf('type');
-    const edgeToNodeIdx = edgeFields.indexOf('to_node');
-
-    // Build node -> children map (only strong references: type=1..5)
-    // Edge types: 0=hidden, 1=array, 2=string, 3=object, 4=closure, 5=concat string, 6=sliced string, 7=weak
-    const STRONG_EDGE_TYPES = new Set([0, 1, 2, 3, 4, 5, 6]);
-    const nodeChildCount = new Uint32Array(nodeCount);
-    const nodeRetainedDelta = new Float64Array(nodeCount); // self_size - sum(children's self_sizes)
-
-    // Track which nodes each constructor owns (by index)
-    const ctorNodeIndices = new Map<string, number[]>();
-    for (let i = 0; i < nodes.length; i += fieldCount) {
-      const name = strings[nodes[i + nameIdx]] ?? '(unnamed)';
-      const nodeIdx = i / fieldCount;
-      let arr = ctorNodeIndices.get(name);
-      if (!arr) { arr = []; ctorNodeIndices.set(name, arr); }
-      arr.push(nodeIdx);
-    }
-
-    // Count incoming edges per node
-    const incomingEdges = new Uint32Array(nodeCount);
-    if (edges && edgeFieldCount > 0 && edgeToNodeIdx >= 0) {
-      for (let i = 0; i < edges.length; i += edgeFieldCount) {
-        const type = edges[i + edgeTypeIdx];
-        if (STRONG_EDGE_TYPES.has(type)) {
-          const toNode = edges[i + edgeToNodeIdx] / fieldCount;
-          if (toNode >= 0 && toNode < nodeCount) {
-            incomingEdges[toNode]++;
-          }
-        }
-      }
-    }
-
-    // Retained size approximation: for each constructor, sum self_size of nodes
-    // that have no incoming edges from OTHER constructors (i.e., they are the root
-    // of a retention chain for that constructor)
-    const byCtorRetained = new Map<string, { count: number; retainedSize: number }>();
-    for (const [name, indices] of ctorNodeIndices) {
-      let retainedSize = 0;
-      let rootCount = 0;
-      for (const nodeIdx of indices) {
-        // If this node has no incoming edges from different constructors, it's a retention root
-        const selfSize = nodes[nodeIdx * fieldCount + selfSizeIdx];
-        if (selfSize > 1024) { // only count non-trivial objects
-          retainedSize += selfSize;
-          rootCount++;
-        }
-      }
-      if (retainedSize > 0) {
-        byCtorRetained.set(name, { count: rootCount, retainedSize });
-      }
-    }
-
-    const topSelfSize = [...byCtor.entries()]
-      .sort((a, b) => b[1].selfSize - a[1].selfSize)
-      .slice(0, 50)
-      .map(([name, { count, selfSize }]) => ({
-        constructor: name.substring(0, 200),
-        count,
-        selfSizeMB: +(selfSize / 1024 / 1024).toFixed(2),
-      }));
-
-    const topRetainedSize = [...byCtorRetained.entries()]
-      .sort((a, b) => b[1].retainedSize - a[1].retainedSize)
-      .slice(0, 50)
-      .map(([name, { count, retainedSize }]) => ({
-        constructor: name.substring(0, 200),
-        count,
-        retainedSizeMB: +(retainedSize / 1024 / 1024).toFixed(2),
-      }));
-
-    const memAfter = process.memoryUsage();
-    res.json({
-      nodeCount,
-      constructorCount: byCtor.size,
-      heapBeforeMB: Math.round(memBefore.heapUsed / 1024 / 1024),
-      heapAfterMB: Math.round(memAfter.heapUsed / 1024 / 1024),
-      topBySelfSize: topSelfSize,
-      topByRetainedSize: topRetainedSize,
+    res.download(filePath, fileName, (err) => {
+      if (err) logger.warn(`🔬 Error sending snapshot: ${err instanceof Error ? err.message : String(err)}`);
     });
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
+  });
 });
 
-// Debug endpoint: V8 heap object statistics by constructor (MEMORY_DIAG=1 only)
+// Debug endpoint: V8 heap object statistics by constructor (MEMORY_DIAG=1 only).
 // Lightweight — no file I/O, just walks the heap in-process.
-// Returns top N constructors by retained size, useful for identifying leaking objects.
 app.get('/api/debug/heap-stats', (_req, res) => {
   if (process.env.MEMORY_DIAG !== '1') {
     res.status(404).json({ error: 'Not found' });
