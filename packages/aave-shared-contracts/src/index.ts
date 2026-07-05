@@ -70,7 +70,6 @@ export function isWithinLookbackWindow(
 export interface MeritCampaignBreakdown extends BaseCampaignBreakdown {
   campaignId: string;
   campaignType?: ForecastCampaignTypeLite;
-  positionCap?: number;
   message?: string;
   aprCap?: number;
   rewardTokenSymbol?: string;
@@ -126,7 +125,6 @@ export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
   aprCap?: number;
   totalBudget?: number;
   latestTvl?: number;
-  positionCap?: number;
   rewardTokenSymbol?: string;
 }
 
@@ -137,6 +135,18 @@ export interface MerklBorrowHookProtocol {
   borrowBytesLike: string[];
 }
 
+/** Health factor exclusion hook (hookType=17) extracted from Merkl campaign params. */
+export interface MerklHealthFactorHook {
+  /** Protocol identifier. Currently only 0 (Aave) per Merkl schema. */
+  protocol: number;
+  /** Health factor threshold (string, e.g. "0.9" means 90%). Users above this are excluded. */
+  healthFactorThreshold: string;
+  /** Pool address (targetBytesLike) that this health factor check applies to. */
+  targetBytesLike: string;
+  /** Chain ID where the pool resides. */
+  chainId: number;
+}
+
 export interface MerklCampaignAccess {
   /** Merkl Campaign Hash ID. */
   campaignId: string;
@@ -144,6 +154,8 @@ export interface MerklCampaignAccess {
   whitelist: string[];
   blacklist: string[];
   borrowHookProtocols?: MerklBorrowHookProtocol[];
+  /** Health factor exclusion hooks (hookType=17). Users with health factor above threshold are excluded. */
+  healthFactorHooks?: MerklHealthFactorHook[];
 }
 
 // ============================================================

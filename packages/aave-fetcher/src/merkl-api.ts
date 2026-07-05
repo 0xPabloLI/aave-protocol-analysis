@@ -10,9 +10,9 @@ import {
   normalizeMerklCampaignTotalBudget,
   resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
-import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol, RuntimeReserveData, NetPositionConstraint } from '@internal/aave-shared-contracts';
+import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol, MerklHealthFactorHook, RuntimeReserveData, NetPositionConstraint } from '@internal/aave-shared-contracts';
 import { chainTokenKey, chainSymbolKey, getErrorCode, spokeKey, v4ReserveId, v4HubScopeKey, isWithinLookbackWindow } from '@internal/aave-shared-contracts';
-export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol } from '@internal/aave-shared-contracts';
+export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol, MerklHealthFactorHook } from '@internal/aave-shared-contracts';
 import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
 const merklLimitedFetch = createMerklConcurrencyLimitedFetch(fetch);
@@ -1494,13 +1494,15 @@ export async function processMerklData(
         const wl = Array.isArray(params.whitelist) ? (params.whitelist as string[]).filter(Boolean) : [];
         const bl = Array.isArray(params.blacklist) ? (params.blacklist as string[]).filter(Boolean) : [];
         const borrowHookProtocols = extractBorrowHookProtocols(params.hooks);
-        if (wl.length > 0 || bl.length > 0 || borrowHookProtocols.length > 0) {
+        const healthFactorHooks = extractHealthFactorHooks(params.hooks);
+        if (wl.length > 0 || bl.length > 0 || borrowHookProtocols.length > 0 || healthFactorHooks.length > 0) {
           campaignAccessMap.set(cacheKey, {
             campaignId: cacheKey,
             chainId: opp.chainId ?? 0,
             whitelist: wl,
             blacklist: bl,
             ...(borrowHookProtocols.length > 0 && { borrowHookProtocols }),
+            ...(healthFactorHooks.length > 0 && { healthFactorHooks }),
           });
         }
       })());
@@ -1830,9 +1832,18 @@ export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[
 /**
  * Merkl HookType constants from official schema (https://api.merkl.xyz/v4/schemas/hookType).
  *
- * hookType=14 (BORROW_BL): "Exclude addresses that have borrowed from the specified lending protocol markets from rewards."
- * hookType=17 (HEALTH_FACTOR): "Blacklist users whose health factor is above a threshold."
- * Both indicate borrow-side exclusion semantics relevant to borrowBlacklist detection.
+ * hookType=14 (BORROW_BL): Unconditional borrow exclusion —
+ *   "Exclude addresses that have borrowed from the specified lending protocol markets from rewards."
+ *   Fields: protocol (0-3), borrowBytesLike (market addresses), computeChainId.
+ *
+ * hookType=17 (HEALTH_FACTOR): Conditional borrow exclusion —
+ *   "Blacklist users whose health factor is above a threshold."
+ *   Fields: protocol (0=Aave only), healthFactorThreshold (string, e.g. "0.9"),
+ *   targetBytesLike (pool address), chainId.
+ *   Unlike hookType=14, this does NOT unconditionally exclude all borrowers —
+ *   only those whose health factor exceeds the threshold. However, in practice
+ *   any user with a borrow position may be affected, so we mark borrowBlacklist=true
+ *   and store the threshold details for frontend fine-grained display.
  */
 const HOOK_TYPE_BORROW_BL = 14 as const;
 const HOOK_TYPE_HEALTH_FACTOR = 17 as const;
@@ -1848,10 +1859,25 @@ function isBorrowExclusionHookType(hookType: number): boolean {
 
 /** @deprecated Use hasBorrowExclusionHook instead. Kept for backward-compatible test imports. */
 export function hasHookType14(opp: MerklOpportunity): boolean {
-  return hasBorrowExclusionHook(opp);
+  if (!Array.isArray(opp.campaigns)) return false;
+  for (const c of opp.campaigns) {
+    const hooks: unknown = c?.params?.hooks;
+    if (Array.isArray(hooks)) {
+      for (const h of hooks) {
+        if (typeof h === 'object' && h !== null && (h as any).hookType === HOOK_TYPE_BORROW_BL) return true;
+      }
+    }
+  }
+  return false;
 }
 
-/** Returns true if any campaign in the opportunity contains a borrow-exclusion hook (hookType=14 or 17). */
+/**
+ * Returns true if any campaign in the opportunity contains a borrow-exclusion hook.
+ * - hookType=14 (BORROW_BL): unconditional — any borrower is excluded.
+ * - hookType=17 (HEALTH_FACTOR): conditional — borrowers with health factor > threshold are excluded.
+ * Both justify marking the opportunity as borrowBlacklist=true, since any borrow position
+ * risks exclusion. Detailed conditions are stored in MerklCampaignAccess for fine-grained display.
+ */
 export function hasBorrowExclusionHook(opp: MerklOpportunity): boolean {
   if (!Array.isArray(opp.campaigns)) return false;
   for (const c of opp.campaigns) {
@@ -1888,6 +1914,32 @@ export function extractBorrowHookProtocols(hooks: unknown): MerklBorrowHookProto
     }
   }
   return protocols;
+}
+
+export function extractHealthFactorHooks(hooks: unknown): MerklHealthFactorHook[] {
+  if (!Array.isArray(hooks)) return [];
+  const result: MerklHealthFactorHook[] = [];
+  for (const h of hooks) {
+    if (typeof h === 'object' && h !== null && (h as any).hookType === HOOK_TYPE_HEALTH_FACTOR) {
+      const hook = h as { protocol?: number; healthFactorThreshold?: unknown; targetBytesLike?: unknown; chainId?: unknown };
+      const threshold = typeof hook.healthFactorThreshold === 'string' && hook.healthFactorThreshold.trim()
+        ? hook.healthFactorThreshold.trim()
+        : undefined;
+      const target = typeof hook.targetBytesLike === 'string' && hook.targetBytesLike.trim()
+        ? hook.targetBytesLike.trim()
+        : undefined;
+      const cid = typeof hook.chainId === 'number' ? hook.chainId : undefined;
+      if (threshold && target && cid) {
+        result.push({
+          protocol: hook.protocol ?? 0,
+          healthFactorThreshold: threshold,
+          targetBytesLike: target,
+          chainId: cid,
+        });
+      }
+    }
+  }
+  return result;
 }
 
 /**

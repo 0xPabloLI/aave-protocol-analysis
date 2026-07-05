@@ -131,11 +131,20 @@ For reference; not directly related to hookType but often appears alongside.
 Backend code in `merkl-api.ts`:
 
 - **`hasBorrowExclusionHook(opp)`**: checks for hookType=14 (BORROW_BL) or hookType=17 (HEALTH_FACTOR). Replaces the older `hasBlacklistWithBorrowHook` which required `params.blacklist` co-occurrence — a requirement that was overly conservative now that the official schema confirms hookType=14's BORROW_BL semantics are self-contained.
-- **`extractBorrowHookProtocols(hooks)`**: extracts `protocol` and `borrowBytesLike` from hookType=14 entries only (hookType=17 does not carry borrowBytesLike).
+- **`extractBorrowHookProtocols(hooks)`**: extracts `protocol` and `borrowBytesLike` from hookType=14 entries only. hookType=17 does not carry `borrowBytesLike`.
+- **`extractHealthFactorHooks(hooks)`**: extracts `protocol`, `healthFactorThreshold`, `targetBytesLike`, and `chainId` from hookType=17 entries. Stored in `MerklCampaignAccess.healthFactorHooks` for frontend fine-grained display ("excluded if health factor > X").
 - **`hasBlacklistWithBorrowHook(opp)`**: kept as backward-compatible alias, now delegates to `hasBorrowExclusionHook`.
-- **`hasHookType14(opp)`**: kept as deprecated alias, now delegates to `hasBorrowExclusionHook`.
+- **`hasHookType14(opp)`**: kept as deprecated alias — only checks hookType=14 (not 17).
 - **`isBorrowBl` detection**: `(identifier?.includes('BORROW_BL') ?? false) || hasBorrowExclusionHook(opp)` — identifier match kept as fallback, hookType detection as primary signal.
 - **HookType constants**: `HOOK_TYPE_BORROW_BL = 14`, `HOOK_TYPE_HEALTH_FACTOR = 17`, `BORROW_EXCLUSION_HOOK_TYPES` set — replaces magic number `14`.
+
+#### hookType=17 conditional semantics
+
+hookType=14 (BORROW_BL) is **unconditional** — any borrower is excluded.
+hookType=17 (HEALTH_FACTOR) is **conditional** — only borrowers with health factor above the threshold are excluded.
+In practice, any user with a borrow position may be affected by either hook, so `borrowBlacklist=true` is set for both.
+The difference is that hookType=17 carries a threshold (`healthFactorThreshold`) stored in `MerklCampaignAccess.healthFactorHooks`,
+enabling the frontend to display the exact exclusion condition (e.g., "excluded if HF > 0.9").
 
 ### hookType=4 (SANCTIONED) — no code impact, documentation corrected
 
