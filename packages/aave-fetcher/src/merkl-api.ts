@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-import type { RequestInit, Response } from 'node-fetch';
 import { mkdir, readFile } from 'fs/promises';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -17,9 +15,7 @@ import { chainTokenKey, chainSymbolKey, getErrorCode, spokeKey, v4ReserveId, v4H
 export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol } from '@internal/aave-shared-contracts';
 import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
 
-const merklLimitedFetch = createMerklConcurrencyLimitedFetch(
-  fetch as unknown as typeof globalThis.fetch
-) as unknown as typeof fetch;
+const merklLimitedFetch = createMerklConcurrencyLimitedFetch(fetch);
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
 const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');

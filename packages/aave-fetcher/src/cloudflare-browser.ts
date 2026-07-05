@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 import { logger } from './logger.js';
 import { cloudflareWorkerConfig } from './config.js';
 import type { MeritCampaignInfo } from './merit-api.js';

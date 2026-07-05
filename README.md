@@ -297,7 +297,7 @@ The backend API server automatically checks data freshness (1-minute window). If
 - **@aave/client**: Official Aave SDK
 - **@bgd-labs/aave-address-book**: Aave address book containing all network configurations
 - **winston**: Logging management library
-- **node-fetch**: HTTP request library
+- **Node.js built-in fetch (undici)**: HTTP request library
 - **Node.js**: JavaScript runtime environment
 
 ### Backend API

@@ -45,17 +45,17 @@ try {
   logger.warn('Failed to set undici globalDispatcher (non-fatal, using defaults):', e instanceof Error ? e.message : String(e));
 }
 
-// Cap node-fetch (http/https globalAgent) connection pool — node-fetch uses
-// Node.js built-in http/https modules, NOT undici. Default maxSockets=Infinity
-// allows unbounded TLS connections per host, each holding native memory outside
+// Cap http/https globalAgent connection pool — DEFENSIVE: node-fetch has been
+// removed (AAV-1064); all outbound HTTP now uses undici (single channel above).
+// These caps remain as a safety net for any transitive dependency that might use
+// Node.js built-in http/https modules. Default maxSockets=Infinity allows
+// unbounded TLS connections per host, each holding native memory outside
 // V8 heap. Default maxFreeSockets=256 caches idle keep-alive sockets per host,
 // each holding TLSSocket/ClientRequest/ReadableState/stream closures (~10-15KB
 // native + ~5KB V8 per socket). With low request frequency, sockets are rarely
-// reused, so the free pool grows indefinitely — confirmed as the primary
-// remaining leak source via heap snapshot diff (24min: +23 ClientRequest,
-// +299 stream closures, +116 JSArrayBufferData, all from idle keep-alive pool).
+// reused, so the free pool grows indefinitely.
 // Fix: maxFreeSockets=2 caps the idle pool to 2 per host (enough for reuse
-// on high-frequency hosts like Merkl API, but prevents unbounded accumulation).
+// on high-frequency hosts, but prevents unbounded accumulation).
 (https.globalAgent as any).maxSockets = 10;
 (https.globalAgent as any).maxFreeSockets = 2;
 (http.globalAgent as any).maxSockets = 10;

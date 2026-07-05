@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 import { logger } from './logger.js';
 import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
 import type { ForecastCampaignTypeLite } from '@internal/aave-shared-contracts';
@@ -153,7 +152,7 @@ export class BrevisApiClient {
   }
 
   private async grpcUnaryCall(endpoint: string, payload: Buffer): Promise<Buffer> {
-    const body = this.buildGrpcWebFrame(payload);
+    const body = new Uint8Array(this.buildGrpcWebFrame(payload));
     const response = await fetch(`${this.grpcBaseUrl}${endpoint}`, {
       method: 'POST',
       headers: this.getGrpcHeaders(),

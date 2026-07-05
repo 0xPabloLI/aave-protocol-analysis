@@ -54,9 +54,8 @@ export declare const resolveCacheTtlMs: (raw: unknown, fallbackMs?: number) => n
 export declare const normalizeMerklCampaignTotalBudget: (campaign: unknown) => number | null;
 
 /**
- * Wraps any fetch-like function (global `fetch`, node-fetch, etc.) with a shared
- * process-wide concurrency pool. Callers that use node-fetch should cast:
- * `createMerklConcurrencyLimitedFetch(fetch as typeof globalThis.fetch) as typeof fetch`.
+ * Wraps any fetch-like function with a shared process-wide concurrency pool.
+ * Defaults to the global `fetch` (Node.js built-in / undici).
  */
 export declare function createMerklConcurrencyLimitedFetch(
   fetchImpl?: typeof globalThis.fetch

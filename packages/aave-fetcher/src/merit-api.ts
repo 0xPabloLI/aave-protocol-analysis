@@ -1,4 +1,3 @@
-import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 import type { Browser, BrowserContext } from "playwright";
 import { mkdir, readFile } from "fs/promises";
@@ -21,9 +20,7 @@ import {
   getAaveRpcUrlsByChainName,
 } from "@internal/aave-shared-config";
 
-const merklLimitedFetch = createMerklConcurrencyLimitedFetch(
-  fetch as unknown as typeof globalThis.fetch
-) as unknown as typeof fetch;
+const merklLimitedFetch = createMerklConcurrencyLimitedFetch(fetch);
 
 const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "data");
 const RUNTIME_DATA_DIR = join(DATA_DIR, "runtime");
@@ -2171,7 +2168,7 @@ async function fetchMeritPageHtmlStatic(
       return null;
     }
 
-    // node-fetch follows redirects; capture final URL to detect canonical key
+    // native fetch follows redirects; capture final URL to detect canonical key
     const finalUrl = response.url || url;
     const match = finalUrl.match(/\/merit\/([^/?#]+)/);
     const finalKey = match?.[1] ? decodeURIComponent(match[1]) : key;
