@@ -54,6 +54,7 @@
 | 25 | dbPool | `pool` | 单例PG Pool | ✅ | ➖(进程生命周期,pg自带连接复用) | ✅(max=3) | ➖(单例,进程退出释放) | 🟢 | 长连接池;max=3(每SSL conn ~5-10MB),已从5优化到3;POOL_BACKOFF_MS 60s防DB挂掉时socket堆积 |
 | 26 | gscService | `cachedClient` | 单例 | ✅ | ➖(懒加载后永久) | ➖(单条) | ➖(单例) | 🟢 | googleapis JWT+Webmasters client,单实例从不累积 |
 | 26b | server.ts (undici) | `globalDispatcher` | 全局单例 | ✅ | ✅(keepAliveTimeout=30s) | ✅(connections=10/host) | ✅(连接超时自动关闭) | 🟢 | 限制undici TLS连接池;之前默认无限制导致native memory(OpenSSL缓冲区)持续累积~14MB/h |
+| 26c | server.ts (node-fetch) | `https.globalAgent` / `http.globalAgent` | 全局Agent | ✅ | ✅(keepAlive自动) | ✅(maxSockets=10, maxFreeSockets=2) | ✅(free池≤2/host,自动淘汰) | 🟢 | 限制node-fetch连接池;maxFreeSockets默认256导致空闲keep-alive socket无限累积(TLSSocket/ClientRequest/ReadableState/stream闭包);设为2后每host最多缓存2个空闲socket |
 
 ### packages/aave-fetcher/src/
 
@@ -206,6 +207,8 @@ map.set(oraclePriceKey(r.chainId, r.tokenAddress, r.configId), hash);
 | V4 `AaveClient.queryRegistry` 无界增长 | GqlClient.resultFrom 用 .toPromise() 不触发 teardown，queryRegistry Map 只增不减；graphcache 缓存全量查询结果 | per-fetch 创建 client + cache:false + batch:false | `59d8746` |
 | `_merklState.lastSuccessfulSnapshot` 保留 rawOpportunities | fallback snapshot 保留完整 raw API 数组(~5-8MB 解析对象)，仅需 index+processedData+forecastMeta | 替换为 liveOpportunityCount(number)，内存 fallback 返回空数组 | `fb2e8c3` |
 | undici TLS 连接池 native memory | 默认 undici 无连接数限制，OpenSSL 缓冲区 ~14MB/h 持续累积 | setGlobalDispatcher 限制 connections=10/host + keepAliveTimeout=30s | `4faa554` |
+| node-fetch 连接池 native memory | https.globalAgent.maxSockets=Infinity → 无限并发 TLS 连接 | maxSockets=10 + 7 处错误路径 drain body | `5e18193` |
+| node-fetch keep-alike free socket 池 | maxFreeSockets 默认 256 → 空闲 keep-alive socket 无限累积（每个持有 TLSSocket/ClientRequest/ReadableState/7 个 stream 闭包） | maxFreeSockets=2 + Merkl fallback drain body | Session 6 |
 | glibc malloc arena 碎片 | 默认 glibc 并行 arena 导致 RSS 远大于 heap（多线程各自缓存） | MALLOC_ARENA_MAX=2 | Dockerfile |
 
 ## 监控与验证
@@ -257,10 +260,23 @@ Phase 3: Heap snapshot 定位 V4 queryRegistry
   └── commit 59d8746: V4 per-fetch client + cache:false → query Markets 稳定在 ~331/1.73MB
 
 Phase 4: JSArrayBufferData 增长（当前）
-  ├── 1GB 容器: ~1.4MB/h（237/1.36MB → 408/2.06MB over 30min）
-  ├── 2GB 容器: 1725 instances/8.75MB overnight + 4336 undici stream handlers
-  ├── _merklState.lastSuccessfulSnapshot rawOpportunities → commit fb2e8c3
-  └── 待验证: undici stream handlers 累积原因
+   ├── 1GB 容器: ~1.4MB/h（237/1.36MB → 408/2.06MB over 30min）
+   ├── 2GB 容器: 1725 instances/8.75MB overnight + 4336 undici stream handlers
+   ├── _merklState.lastSuccessfulSnapshot rawOpportunities → commit fb2e8c3
+   └── 待验证: undici stream handlers 累积原因
+
+Phase 5: node-fetch 修复后仍增长 (~4.4MB/h RSS)
+   ├── node-fetch body drain + maxSockets=10 → RSS 基线 149-159MB (-57%)
+   ├── 23h 数据显示仍增长 (4.4MB/h RSS, 2.9MB/h old, 1.4MB/h arrayBuffers)
+   ├── 诊断代码 (heap snapshot) 导致临时 OOM → 已移除自动触发
+   └── heap snapshot diff 确认 ClientRequest/TLSSocket 持续累积
+
+Phase 6: maxFreeSockets 修复
+   ├── 根因: https.globalAgent.maxFreeSockets=256 → 空闲 keep-alive socket 无限累积
+   ├── 每个 socket 持有: TLSSocket + ClientRequest + ReadableState + 7 个 stream 闭包 + JSArrayBufferData
+   ├── 24min diff: +23 ClientRequest, +299 stream closures, +116 JSArrayBufferData
+   ├── 修复: maxFreeSockets=2 + Merkl fallback drain body
+   └── 待验证: 4-6h 观察确认增长停止
 ```
 
 ### Session 详细记录
@@ -330,8 +346,41 @@ Phase 4: JSArrayBufferData 增长（当前）
   - `backend/src/server.ts` — http/https globalAgent maxSockets 限制 + nodeAgent 统计
   - `packages/aave-fetcher/src/merkl-api.ts` — fetchWithRetry 5xx + 非 5xx drain body
   - `packages/aave-fetcher/src/merit-api.ts` — 3 处 RPC/page fetch drain body
-  - `packages/aave-fetcher/src/brevis-api.ts` — gRPC 错误 drain body
-  - `backend/src/services/merklForecastService.ts` — fetchJson 429/5xx/4xx drain body
+   - `packages/aave-fetcher/src/brevis-api.ts` — gRPC 错误 drain body
+   - `backend/src/services/merklForecastService.ts` — fetchJson 429/5xx/4xx drain body
+
+#### Session 6: 2026-07-05 — maxFreeSockets 修复 (node-fetch keep-alive 空闲 socket 累积)
+- **现象**:
+  - Session 5 修复后 RSS 基线从 320-367MB 降至 149-159MB，但 23h 后仍增长至 265MB
+  - 增长率: RSS ~4.4MB/h, old_space ~2.9MB/h, arrayBuffers ~1.4MB/h, external ~1.4MB/h
+  - 所有指标减速（heap 4.0→2.6 MB/h, RSS 4.9→4.4 MB/h），但 23h 未收敛
+- **方法**:
+  1. `curl /api/debug/heap-snapshot` 写入 + 下载到本地
+  2. Python 脚本解析 .heapsnapshot JSON，分析 top 构造器和实例数
+  3. 两个快照（间隔 24min）对比增量
+- **发现**:
+  1. **6786 个 ReadableState, 1357 个 ClientRequest/TLSSocket** — 远超活跃连接数
+  2. **17622 个 stream 事件闭包** (onend/onerror/cleanup/onclose/onfinish/onlegacyfinish/onrequest)
+  3. **JSArrayBufferData**: 6841 instances, 34MB — 最大内存消费者
+  4. **1354 个 GraphQL Markets 查询字符串** — 每个 5.4KB，共 7.09MB
+  5. 24min diff: **+23 ClientRequest, +299 stream closures, +116 JSArrayBufferData** — 持续增长
+  6. `nodeAgent=https:0/0act` — 0 活跃连接，所有 ClientRequest 是空闲的
+  7. `https.globalAgent.maxFreeSockets` 默认 **256** — 空闲 keep-alive 池可缓存 256 个 socket/host
+- **根因**:
+  - node-fetch 请求完成后，keep-alive socket 被放入 `https.globalAgent.freeSockets` 缓存
+  - `maxFreeSockets=256` 允许每 host 缓存最多 256 个空闲 socket
+  - 每个 socket 持有: TLSSocket (~0.4KB V8) + ClientRequest (~0.4KB) + ReadableState (~5 个) + 7 个 stream 闭包 + JSArrayBufferData (16-128KB)
+  - 请求频率低（~1次/min），keep-alive 连接很少被复用，空闲 socket 在池中无限累积
+  - Session 5 只设了 `maxSockets=10`（限制并发连接），但**没有设 `maxFreeSockets`**（空闲缓存）
+  - `maxFreeSockets` 和 `maxSockets` 是独立的: `maxSockets` 限制同时活跃连接，`maxFreeSockets` 限制 keep-alive 池中空闲连接
+- **修复**:
+  1. `https.globalAgent.maxFreeSockets = 2` + `http.globalAgent.maxFreeSockets = 2`
+  2. merit-api Merkl opportunities fallback 路径 drain body (第一次 !ok 时 drain 后再发第二次)
+  3. Memory log 添加 `freeSockets` 统计: `nodeAgent=https:N/Nact/Nfree http:N/Nact/Nfree`
+- **验证中**: 需要 4-6h 观察确认增长趋势停止
+- **文件**:
+  - `backend/src/server.ts` — maxFreeSockets=2 + free socket 统计
+  - `packages/aave-fetcher/src/merit-api.ts` — Merkl fallback drain body
 
 ---
 
@@ -400,6 +449,7 @@ Phase 4: JSArrayBufferData 增长（当前）
 | Buffer 共享 | `JSArrayBufferData` | buffer.slice() 共享底层 ArrayBuffer | ArrayBuffer 数量持续增长 |
 | Stream handler | `onend`/`onerror` | HTTP response stream 未完全释放 | undici/fetch 相关 handler 累积 |
 | node-fetch 连接池 | RSS >> heap | https.globalAgent.maxSockets=Infinity | node-fetch 不走 undici dispatcher，需单独限制 |
+| node-fetch keep-alive 池 | ClientRequest/TLSSocket/ReadableState 持续增长 | https.globalAgent.maxFreeSockets=256 默认值 | 设 maxFreeSockets=2 限制空闲 socket 缓存 |
 | Body 未消费 | keep-alive 不回池 | node-fetch !ok 路径未 drain body | await response.text().catch(() => {}) |
 | 诊断代码 OOM | RSS 垂直飙升 | heap snapshot 序列化 + readFile + JSON.parse | 容器容量 < snapshot 大小的 2 倍时必 OOM |
 | heapsnapshot-near-heap-limit | RSS 垂直飙升 | V8 OOM 前自动写 snapshot | 同上，1GB 容器中必须移除此参数 |

@@ -48,9 +48,18 @@ try {
 // Cap node-fetch (http/https globalAgent) connection pool — node-fetch uses
 // Node.js built-in http/https modules, NOT undici. Default maxSockets=Infinity
 // allows unbounded TLS connections per host, each holding native memory outside
-// V8 heap. Limiting to 10 + short keepAlive caps native memory from this path.
+// V8 heap. Default maxFreeSockets=256 caches idle keep-alive sockets per host,
+// each holding TLSSocket/ClientRequest/ReadableState/stream closures (~10-15KB
+// native + ~5KB V8 per socket). With low request frequency, sockets are rarely
+// reused, so the free pool grows indefinitely — confirmed as the primary
+// remaining leak source via heap snapshot diff (24min: +23 ClientRequest,
+// +299 stream closures, +116 JSArrayBufferData, all from idle keep-alive pool).
+// Fix: maxFreeSockets=2 caps the idle pool to 2 per host (enough for reuse
+// on high-frequency hosts like Merkl API, but prevents unbounded accumulation).
 (https.globalAgent as any).maxSockets = 10;
+(https.globalAgent as any).maxFreeSockets = 2;
 (http.globalAgent as any).maxSockets = 10;
+(http.globalAgent as any).maxFreeSockets = 2;
 
 // Wire ProviderPool logFn to winston logger
 providerPool.configure({
@@ -449,7 +458,7 @@ setInterval(() => {
     `rpc=${providerStats.providers}p+${providerStats.endpoints}e+${providerStats.rpcUrls}u ` +
     `browser=${meritStats.browserActive} ` +
     `undici=[${undiciSummary}] ` +
-    `nodeAgent=https:${(https.globalAgent as any).totalSocketCount ?? '?'}/${Object.keys((https.globalAgent as any).sockets ?? {}).length}act http:${(http.globalAgent as any).totalSocketCount ?? '?'}/${Object.keys((http.globalAgent as any).sockets ?? {}).length}act`
+    `nodeAgent=https:${(https.globalAgent as any).totalSocketCount ?? '?'}/${Object.keys((https.globalAgent as any).sockets ?? {}).length}act/${Object.keys((https.globalAgent as any).freeSockets ?? {}).length}free http:${(http.globalAgent as any).totalSocketCount ?? '?'}/${Object.keys((http.globalAgent as any).sockets ?? {}).length}act/${Object.keys((http.globalAgent as any).freeSockets ?? {}).length}free`
   );
 
   if (RSS_RESTART_THRESHOLD_MB > 0 && mem.rss > RSS_RESTART_THRESHOLD_MB * 1024 * 1024) {

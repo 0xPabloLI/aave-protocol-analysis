@@ -455,6 +455,7 @@ const fetchMeritRoundEstimates = async (
         `${MERKL_BASE_URL}/opportunities?${params.toString()}`
       );
       if (!response.ok) {
+        await response.text().catch(() => {});
         params.delete("creatorSlug");
         response = await merklLimitedFetch(
           `${MERKL_BASE_URL}/opportunities?${params.toString()}`
