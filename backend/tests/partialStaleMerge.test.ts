@@ -108,6 +108,7 @@ function baseInput(overrides: Partial<PartialStaleMergeInput>): PartialStaleMerg
     freshData: [],
     v3Succeeded: true,
     v4Succeeded: true,
+    v4Source: 'sdk',
     staleV3Data: [],
     staleV4Data: [],
     v3FetchedAt: null,
@@ -540,4 +541,139 @@ test('correctFetchResult: both sides failed + no stale → both source=none', ()
   );
   assert.deepEqual(result.v3, { success: false, source: 'none' });
   assert.deepEqual(result.v4, { success: false, source: 'none' });
+});
+
+// ── RPC fallback stale cache protection (AAV-1063) ────────────────
+
+test('V4 RPC fallback → does NOT update stale cache (prevents "Unknown" poisoning)', () => {
+  const now = Date.now();
+  const goodStaleV4 = makeV4({ tokenSymbol: 'WETH', tokenName: 'Wrapped Ether', chainName: 'Ethereum' });
+  const rpcV4 = makeV4({ tokenSymbol: 'Unknown', tokenName: 'Unknown', chainName: 'Chain 42161' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [rpcV4],
+    v3Succeeded: true,
+    v4Succeeded: true,
+    v4Source: 'rpc',
+    staleV3Data: [],
+    staleV4Data: [goodStaleV4],
+    v3FetchedAt: null,
+    v4FetchedAt: now - 60_000,
+    now,
+  }));
+
+  // Stale cache should NOT be updated with RPC "Unknown" data
+  assert.equal(result.newStaleV4Data.length, 1);
+  assert.equal(result.newStaleV4Data[0].tokenSymbol, 'WETH');
+  assert.equal(result.newStaleV4Data[0].tokenName, 'Wrapped Ether');
+  // v4FetchedAt should NOT be updated for RPC source
+  assert.equal(result.newV4FetchedAt, now - 60_000);
+  assert.equal(result.v4Fresh, true);
+});
+
+test('V4 RPC fallback → enriches "Unknown" fields from stale cache', () => {
+  const now = Date.now();
+  const goodStaleV4 = makeV4({ tokenSymbol: 'USDT', tokenName: 'Tether USD', chainName: 'Arbitrum' });
+  const rpcV4 = makeV4({ tokenSymbol: 'Unknown', tokenName: 'Unknown', chainName: 'Chain 42161' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [rpcV4],
+    v3Succeeded: true,
+    v4Succeeded: true,
+    v4Source: 'rpc',
+    staleV3Data: [],
+    staleV4Data: [goodStaleV4],
+    v3FetchedAt: null,
+    v4FetchedAt: now - 60_000,
+    now,
+  }));
+
+  // Merged data should have enriched fields from stale cache
+  assert.equal(result.mergedData.length, 1);
+  const merged = result.mergedData[0];
+  assert.equal(merged.tokenName, 'Tether USD');
+  assert.equal(merged.tokenSymbol, 'USDT');
+  assert.equal(merged.chainName, 'Arbitrum');
+});
+
+test('V4 RPC fallback with no stale → keeps "Unknown" as-is', () => {
+  const now = Date.now();
+  const rpcV4 = makeV4({ tokenSymbol: 'Unknown', tokenName: 'Unknown', chainName: 'Chain 42161' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [rpcV4],
+    v3Succeeded: true,
+    v4Succeeded: true,
+    v4Source: 'rpc',
+    staleV3Data: [],
+    staleV4Data: [],
+    v3FetchedAt: null,
+    v4FetchedAt: null,
+    now,
+  }));
+
+  // No stale data to enrich from, "Unknown" stays
+  assert.equal(result.mergedData.length, 1);
+  assert.equal(result.mergedData[0].tokenName, 'Unknown');
+  assert.equal(result.mergedData[0].chainName, 'Chain 42161');
+  // Stale cache remains empty (not polluted by RPC data)
+  assert.equal(result.newStaleV4Data.length, 0);
+});
+
+test('V4 SDK success → updates stale cache normally (v4Source=sdk)', () => {
+  const now = Date.now();
+  const freshV4 = makeV4({ tokenSymbol: 'USDT', tokenName: 'Tether USD' });
+
+  const result = mergeWithPartialStale(baseInput({
+    freshData: [freshV4],
+    v3Succeeded: true,
+    v4Succeeded: true,
+    v4Source: 'sdk',
+    staleV3Data: [],
+    staleV4Data: [],
+    now,
+  }));
+
+  assert.equal(result.newStaleV4Data.length, 1);
+  assert.equal(result.newStaleV4Data[0].tokenSymbol, 'USDT');
+  assert.equal(result.newV4FetchedAt, now);
+});
+
+test('V4 RPC fallback → stale cache survives multiple cycles', () => {
+  const now = Date.now();
+  const goodStaleV4 = makeV4({ tokenSymbol: 'WETH', tokenName: 'Wrapped Ether', chainName: 'Ethereum' });
+  const rpcV4 = makeV4({ tokenSymbol: 'Unknown', tokenName: 'Unknown', chainName: 'Chain 1' });
+
+  // Cycle 1: RPC fallback
+  const result1 = mergeWithPartialStale(baseInput({
+    freshData: [rpcV4],
+    v3Succeeded: true,
+    v4Succeeded: true,
+    v4Source: 'rpc',
+    staleV3Data: [],
+    staleV4Data: [goodStaleV4],
+    v3FetchedAt: null,
+    v4FetchedAt: now - 60_000,
+    now,
+  }));
+
+  // Cycle 2: another RPC fallback, using stale from cycle 1
+  const result2 = mergeWithPartialStale(baseInput({
+    freshData: [rpcV4],
+    v3Succeeded: true,
+    v4Succeeded: true,
+    v4Source: 'rpc',
+    staleV3Data: [],
+    staleV4Data: result1.newStaleV4Data,
+    v3FetchedAt: null,
+    v4FetchedAt: result1.newV4FetchedAt,
+    now: now + 60_000,
+  }));
+
+  // Stale cache should still have good data after 2 cycles
+  assert.equal(result2.newStaleV4Data[0].tokenSymbol, 'WETH');
+  assert.equal(result2.newStaleV4Data[0].tokenName, 'Wrapped Ether');
+  // Enriched merged data from stale
+  assert.equal(result2.mergedData[0].tokenSymbol, 'WETH');
+  assert.equal(result2.mergedData[0].chainName, 'Ethereum');
 });
