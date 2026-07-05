@@ -99,6 +99,7 @@ const meritCampaignBreakdown = {
     campaignId:         { type: 'string' },
     campaignType:       { type: 'string' },
     positionCap:        { type: 'number' },
+    isCombineCap:       { type: 'boolean', description: 'Whether the position cap is shared across supply+borrow sides' },
     message:            { type: 'string' },
     aprCap:             { type: 'number' },
     rewardTokenSymbol:  { type: 'string' },
@@ -138,6 +139,8 @@ const merklBreakdown = {
     aprCap:              { type: 'number', nullable: true },
     latestTvl:           { type: 'number' },
     plannedDaily:        { type: 'number' },
+    positionCap:         { type: 'number', description: 'Per-user position cap in USD (from computeMethod=maxDeposit campaigns)' },
+    isCombineCap:        { type: 'boolean', description: 'Whether the position cap is shared across supply+borrow sides' },
     lastEndedCampaign: {
       type: 'object',
       properties: {
@@ -182,6 +185,7 @@ const brevisBreakdown = {
     totalBudget:        { type: 'number' },
     latestTvl:          { type: 'number' },
     positionCap:        { type: 'number' },
+    isCombineCap:       { type: 'boolean', description: 'Whether the position cap is shared across supply+borrow sides' },
   },
   required: ['campaignApr', 'campaignStartedAt', 'campaignEndedAt'],
 };

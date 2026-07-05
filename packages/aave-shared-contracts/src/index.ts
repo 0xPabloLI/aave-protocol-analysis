@@ -219,7 +219,7 @@ export interface RuntimeReserveData {
 export type ApiMeritCampaignBreakdown = Pick<
   MeritCampaignBreakdown,
   'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
-  | 'campaignType' | 'positionCap' | 'message' | 'aprCap' | 'rewardTokenSymbol' | 'totalBudget' | 'latestTvl'
+  | 'campaignType' | 'positionCap' | 'isCombineCap' | 'message' | 'aprCap' | 'rewardTokenSymbol' | 'totalBudget' | 'latestTvl'
 >;
 
 export type ApiMeritCampaignGroup = CampaignGroup<ApiMeritCampaignBreakdown>;
@@ -231,7 +231,7 @@ export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown> & { oppo
 export type ApiBrevisBreakdown = Pick<
   BrevisCampaignBreakdown,
   'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
-  | 'campaignType' | 'aprCap' | 'totalBudget' | 'latestTvl' | 'positionCap' | 'rewardTokenSymbol'
+  | 'campaignType' | 'aprCap' | 'totalBudget' | 'latestTvl' | 'positionCap' | 'isCombineCap' | 'rewardTokenSymbol'
 >;
 
 export type ApiBrevisCampaignItem = CampaignGroup<ApiBrevisBreakdown>;

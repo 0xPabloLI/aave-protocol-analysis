@@ -25,6 +25,10 @@ export interface BaseCampaignBreakdown {
   campaignStartedAt: string;
   campaignEndedAt: string;
   campaignId?: string;
+  /** Per-user position cap in USD. When set, the campaign's APR only applies up to this deposit amount. */
+  positionCap?: number;
+  /** Whether the position cap is shared across supply+borrow sides (true) or per-side (false/default). */
+  isCombineCap?: boolean;
 }
 
 export interface CampaignGroup<TBreakdown extends BaseCampaignBreakdown = BaseCampaignBreakdown> {
