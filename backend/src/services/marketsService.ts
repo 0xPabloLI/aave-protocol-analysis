@@ -122,6 +122,8 @@ export interface PartialStaleMergeInput {
   freshData: RuntimeReserveData[];
   v3Succeeded: boolean;
   v4Succeeded: boolean;
+  /** V4 data source — 'rpc' means fallback with hardcoded Unknown tokenName/chainName; must not pollute stale cache. */
+  v4Source: 'sdk' | 'rpc' | 'none';
   staleV3Data: RuntimeReserveData[];
   staleV4Data: RuntimeReserveData[];
   v3FetchedAt: number | null;
@@ -143,12 +145,15 @@ export interface PartialStaleMergeResult {
 }
 
 export function mergeWithPartialStale(input: PartialStaleMergeInput): PartialStaleMergeResult {
-  const { freshData, v3Succeeded, v4Succeeded, staleV3Data, staleV4Data, v3FetchedAt, v4FetchedAt, hardTtlMs, now } = input;
+  const { freshData, v3Succeeded, v4Succeeded, v4Source, staleV3Data, staleV4Data, v3FetchedAt, v4FetchedAt, hardTtlMs, now } = input;
 
   const freshV3 = freshData.filter(r => !r.hubId);
   const freshV4 = freshData.filter(r => !!r.hubId);
 
-  // Update stale caches for successful sides
+  // Update stale caches for successful sides.
+  // CRITICAL: RPC fallback data (tokenName="Unknown", chainName="Chain {id}") must NOT
+  // update the stale cache — it would poison the cache and prevent recovery on the next
+  // cycle. Only SDK-sourced data (with real tokenName/chainName) updates the stale cache.
   let newStaleV3Data = staleV3Data;
   let newStaleV4Data = staleV4Data;
   let newV3FetchedAt = v3FetchedAt;
@@ -158,13 +163,30 @@ export function mergeWithPartialStale(input: PartialStaleMergeInput): PartialSta
     newStaleV3Data = freshV3;
     newV3FetchedAt = now;
   }
-  if (v4Succeeded && freshV4.length > 0) {
+  if (v4Succeeded && v4Source === 'sdk' && freshV4.length > 0) {
     newStaleV4Data = freshV4;
     newV4FetchedAt = now;
   }
 
+  // When V4 came from RPC fallback, enrich "Unknown" fields from stale cache
+  // so the API response has correct tokenName/chainName even during SDK outages.
+  let enrichedV4 = freshV4;
+  if (v4Succeeded && v4Source === 'rpc' && staleV4Data.length > 0) {
+    const staleByReserveId = new Map(staleV4Data.map(r => [r.reserveId, r]));
+    enrichedV4 = freshV4.map(r => {
+      const stale = staleByReserveId.get(r.reserveId);
+      if (!stale) return r;
+      return {
+        ...r,
+        tokenName: stale.tokenName !== 'Unknown' ? stale.tokenName : r.tokenName,
+        tokenSymbol: stale.tokenSymbol !== 'Unknown' ? stale.tokenSymbol : r.tokenSymbol,
+        chainName: !stale.chainName.startsWith('Chain ') ? stale.chainName : r.chainName,
+      };
+    });
+  }
+
   // Build merged dataset: start with fresh data, add stale fallbacks
-  let mergedData: RuntimeReserveData[] = [...freshV3, ...freshV4];
+  let mergedData: RuntimeReserveData[] = [...freshV3, ...enrichedV4];
 
   if (!v3Succeeded) {
     if (newV3FetchedAt !== null && (now - newV3FetchedAt) <= hardTtlMs) {
@@ -270,6 +292,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
         freshData: payload.data,
         v3Succeeded,
         v4Succeeded,
+        v4Source: fetchResult.v4.source as 'sdk' | 'rpc' | 'none',
         staleV3Data,
         staleV4Data,
         v3FetchedAt,
