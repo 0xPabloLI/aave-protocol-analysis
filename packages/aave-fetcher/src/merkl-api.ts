@@ -164,6 +164,10 @@ export interface MerklCampaignDetails {
   whitelistOnly: boolean;
   /** V4 Spoke campaign's parent Hub campaign ID (top-level field on Merkl API response). */
   parentCampaignId?: string;
+  /** Per-user position cap in USD, extracted from computeMethod=maxDeposit campaigns. */
+  positionCap?: number;
+  /** Whether the position cap is shared across supply+borrow sides. Merkl maxDeposit is always per-side (false). */
+  isCombineCap?: boolean;
 }
 
 const hasEntries = (value: unknown): boolean => {
@@ -934,6 +938,44 @@ function isAmountVariant(type?: ForecastCampaignTypeLite | null): boolean {
   return type ? AMOUNT_VARIANT_TYPES.has(type) : false;
 }
 
+export interface PositionCapExtraction {
+  positionCap?: number;
+  isCombineCap?: boolean;
+}
+
+export function extractPositionCapFromCampaign(
+  campaign: any,
+  targetTokenPrice?: number,
+): PositionCapExtraction {
+  const computeMethod = campaign?.params?.computeScoreParameters?.computeMethod;
+  if (computeMethod !== 'maxDeposit') return {};
+
+  const rawMaxDeposit = campaign?.params?.computeScoreParameters?.computeSettings?.maxDeposit;
+  if (rawMaxDeposit == null) return {};
+
+  const decimals = typeof campaign?.targetToken?.decimals === 'number'
+    ? campaign.targetToken.decimals
+    : typeof campaign?.params?.decimalsTargetToken === 'number'
+      ? campaign.params.decimalsTargetToken
+      : 18;
+
+  const nativeAmount = Number(rawMaxDeposit) / (10 ** decimals);
+  if (!Number.isFinite(nativeAmount) || nativeAmount <= 0) return {};
+
+  const effectivePrice = targetTokenPrice
+    ?? (typeof campaign?.targetToken?.price === 'number' && Number.isFinite(campaign.targetToken.price) && campaign.targetToken.price > 0
+      ? campaign.targetToken.price
+      : undefined);
+
+  const positionCapUsd = effectivePrice
+    ? nativeAmount * effectivePrice
+    : undefined;
+
+  if (positionCapUsd !== undefined && (!Number.isFinite(positionCapUsd) || positionCapUsd <= 0)) return {};
+
+  return { positionCap: positionCapUsd, isCombineCap: false };
+}
+
 function extractDistributionSettingsApr(campaign: any): number {
   const dsApr =
     campaign?.params?.distributionMethodParameters?.distributionSettings?.apr
@@ -1052,6 +1094,7 @@ export async function fetchMerklCampaignDetails(databaseId: string): Promise<Mer
     const rawCampaignId = typeof campaign.campaignId === 'string' && campaign.campaignId
       ? campaign.campaignId : undefined;
     const hashId = (rawCampaignId && rawCampaignId.startsWith('0x')) ? rawCampaignId : '';
+    const positionCapExtraction = extractPositionCapFromCampaign(campaign, targetTokenPrice);
     return {
       startedAt,
       endedAt,
@@ -1060,6 +1103,8 @@ export async function fetchMerklCampaignDetails(databaseId: string): Promise<Mer
       apr: resolved.apr,
       whitelistOnly: isCampaignWhitelistOnly(campaign),
       ...(parentCampaignId && { parentCampaignId }),
+      ...(positionCapExtraction.positionCap !== undefined && { positionCap: positionCapExtraction.positionCap }),
+      ...(positionCapExtraction.isCombineCap !== undefined && { isCombineCap: positionCapExtraction.isCombineCap }),
     };
   } catch (error) {
     logger.error(`❌ Error fetching campaign ${databaseId}:`, error);
@@ -1430,6 +1475,7 @@ export async function processMerklData(
           : undefined;
         const parentCampaignId = rawParentId ? (dbIdToHashId.get(rawParentId) || rawParentId) : undefined;
         const cacheKey = hashId || databaseId;
+        const positionCapExtraction = extractPositionCapFromCampaign(campaign, targetTokenPrice);
         campaignDetailsCache.set(cacheKey, {
           startedAt: toIsoFromUnixLike(campaign.startTimestamp),
           endedAt: toIsoFromUnixLike(campaign.endTimestamp),
@@ -1438,8 +1484,13 @@ export async function processMerklData(
           apr: resolved.apr,
           whitelistOnly: isCampaignWhitelistOnly(campaign),
           ...(parentCampaignId && { parentCampaignId }),
+          ...(positionCapExtraction.positionCap !== undefined && { positionCap: positionCapExtraction.positionCap }),
+          ...(positionCapExtraction.isCombineCap !== undefined && { isCombineCap: positionCapExtraction.isCombineCap }),
         });
         const params = campaign.params ?? {};
+        // params.whitelist/blacklist are top-level Merkl API fields populated by various hookTypes:
+        //   whitelist: hookType=22 (WHITELIST_ADDRESSES), hookType=26 (WHITELIST_KEY_VALUE_STORE), etc.
+        //   blacklist: hookType=4 (SANCTIONED/OFAC), hookType=27 (BLACKLIST_KEY_VALUE_STORE), hookType=28 (BLACKLIST_PER_PROTOCOL), etc.
         const wl = Array.isArray(params.whitelist) ? (params.whitelist as string[]).filter(Boolean) : [];
         const bl = Array.isArray(params.blacklist) ? (params.blacklist as string[]).filter(Boolean) : [];
         const borrowHookProtocols = extractBorrowHookProtocols(params.hooks);
@@ -1576,6 +1627,8 @@ export async function processMerklData(
         ...extractRewardTokenFields(rewardBreakdown.token),
         ...(pointsFields ?? {}),
         ...(campaignDetails.parentCampaignId && { parentCampaignId: campaignDetails.parentCampaignId }),
+        ...(campaignDetails.positionCap !== undefined && { positionCap: campaignDetails.positionCap }),
+        ...(campaignDetails.isCombineCap !== undefined && { isCombineCap: campaignDetails.isCombineCap }),
       });
     }
 
@@ -1651,7 +1704,7 @@ export async function processMerklData(
     }
 
     const offsetTokenAddresses = extractOffsetTokenAddresses(opp);
-    const isBorrowBl = (opp.identifier?.includes('BORROW_BL') ?? false) || hasBlacklistWithBorrowHook(opp);
+    const isBorrowBl = (opp.identifier?.includes('BORROW_BL') ?? false) || hasBorrowExclusionHook(opp);
 
     const { composedCampaignsCompute, composedSubCampaigns } = extractComposedCampaignInfo(opp);
 
@@ -1774,13 +1827,38 @@ export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[
   );
 }
 
+/**
+ * Merkl HookType constants from official schema (https://api.merkl.xyz/v4/schemas/hookType).
+ *
+ * hookType=14 (BORROW_BL): "Exclude addresses that have borrowed from the specified lending protocol markets from rewards."
+ * hookType=17 (HEALTH_FACTOR): "Blacklist users whose health factor is above a threshold."
+ * Both indicate borrow-side exclusion semantics relevant to borrowBlacklist detection.
+ */
+const HOOK_TYPE_BORROW_BL = 14 as const;
+const HOOK_TYPE_HEALTH_FACTOR = 17 as const;
+
+const BORROW_EXCLUSION_HOOK_TYPES = new Set([
+  HOOK_TYPE_BORROW_BL,
+  HOOK_TYPE_HEALTH_FACTOR,
+]);
+
+function isBorrowExclusionHookType(hookType: number): boolean {
+  return BORROW_EXCLUSION_HOOK_TYPES.has(hookType);
+}
+
+/** @deprecated Use hasBorrowExclusionHook instead. Kept for backward-compatible test imports. */
 export function hasHookType14(opp: MerklOpportunity): boolean {
+  return hasBorrowExclusionHook(opp);
+}
+
+/** Returns true if any campaign in the opportunity contains a borrow-exclusion hook (hookType=14 or 17). */
+export function hasBorrowExclusionHook(opp: MerklOpportunity): boolean {
   if (!Array.isArray(opp.campaigns)) return false;
   for (const c of opp.campaigns) {
     const hooks: unknown = c?.params?.hooks;
     if (Array.isArray(hooks)) {
       for (const h of hooks) {
-        if (typeof h === 'object' && h !== null && (h as any).hookType === 14) return true;
+        if (typeof h === 'object' && h !== null && isBorrowExclusionHookType((h as any).hookType)) return true;
       }
     }
   }
@@ -1791,7 +1869,7 @@ export function extractBorrowHookProtocols(hooks: unknown): MerklBorrowHookProto
   if (!Array.isArray(hooks)) return [];
   const protocols: MerklBorrowHookProtocol[] = [];
   for (const h of hooks) {
-    if (typeof h === 'object' && h !== null && (h as any).hookType === 14) {
+    if (typeof h === 'object' && h !== null && (h as any).hookType === HOOK_TYPE_BORROW_BL) {
       const hook = h as { protocol?: number; borrowBytesLike?: unknown };
       const borrowBytesLike: string[] = [];
       if (Array.isArray(hook.borrowBytesLike)) {
@@ -1812,22 +1890,18 @@ export function extractBorrowHookProtocols(hooks: unknown): MerklBorrowHookProto
   return protocols;
 }
 
+/**
+ * Returns true if any campaign has a borrow-exclusion hook (hookType=14 or 17).
+ *
+ * Previously required `params.blacklist` co-occurrence as a confirmation signal.
+ * After cross-referencing the official Merkl schema, hookType=14 (BORROW_BL) itself
+ * is sufficient: "Exclude addresses that have borrowed from the specified lending
+ * protocol markets from rewards." The `params.blacklist` field (populated by
+ * hookType=4 SANCTIONED, hookType=27 BLACKLIST_KEY_VALUE_STORE, etc.) is an
+ * independent mechanism — its presence is not required to confirm borrow exclusion.
+ */
 export function hasBlacklistWithBorrowHook(opp: MerklOpportunity): boolean {
-  if (!Array.isArray(opp.campaigns)) return false;
-  for (const c of opp.campaigns) {
-    const params = c?.params;
-    if (!params || typeof params !== 'object') continue;
-    const bl = (params as any).blacklist;
-    const hasBlacklist = Array.isArray(bl) && bl.filter(Boolean).length > 0;
-    if (!hasBlacklist) continue;
-    const hooks: unknown = (params as any).hooks;
-    if (Array.isArray(hooks)) {
-      for (const h of hooks) {
-        if (typeof h === 'object' && h !== null && (h as any).hookType === 14) return true;
-      }
-    }
-  }
-  return false;
+  return hasBorrowExclusionHook(opp);
 }
 
 function extractOffsetTokenAddresses(

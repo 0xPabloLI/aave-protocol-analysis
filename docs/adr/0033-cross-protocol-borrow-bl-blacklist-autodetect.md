@@ -34,12 +34,17 @@ Merkl opportunity 9623615825108171573（Lend USDtb on Aave, Ethereum）的 campa
 扩展 borrowBlacklist 检测规则：
 
 ```typescript
-const isBorrowBl = (opp.identifier?.includes('BORROW_BL') ?? false) || hasBlacklistWithBorrowHook(opp);
+const isBorrowBl = (opp.identifier?.includes('BORROW_BL') ?? false) || hasBorrowExclusionHook(opp);
 ```
 
-`hasBlacklistWithBorrowHook` 逻辑：遍历 opportunity 的所有 campaign，当某个 campaign 的 `params.blacklist` 非空且 `params.hooks` 包含 `hookType=14` 时返回 true。
+`hasBorrowExclusionHook` 逻辑：遍历 opportunity 的所有 campaign，当任何 campaign 的 `params.hooks` 包含 hookType=14 (BORROW_BL) 或 hookType=17 (HEALTH_FACTOR) 时返回 true。
 
-这确保了即使 identifier 不含 BORROW_BL 后缀，只要有跨协议 borrow 排除规则（blacklist + hookType=14），borrowBlacklist 也能被自动识别。
+> **Update 2026-07-06**: 原实现 `hasBlacklistWithBorrowHook` 要求 `params.blacklist` 非空 + hookType=14 共存。
+> 交叉验证官方 Merkl schema (`https://api.merkl.xyz/v4/schemas/hookType`) 后确认：
+> hookType=14 (BORROW_BL) 语义自包含——"Exclude addresses that have borrowed from the specified lending protocol markets from rewards"。
+> `params.blacklist` 是独立机制（来源 hookType=4 SANCTIONED、hookType=27 BLACKLIST_KEY_VALUE_STORE 等），
+> 不需要作为 hookType=14 的确认信号。改造为 `hasBorrowExclusionHook`，直接按 hookType 判定，
+> 同时覆盖 hookType=17 (HEALTH_FACTOR)。
 
 ### D3: borrowBytesLike 信息存储到 MerklCampaignAccess
 

@@ -3,11 +3,73 @@ import assert from 'node:assert/strict';
 
 import {
   hasHookType14,
+  hasBorrowExclusionHook,
   extractBorrowHookProtocols,
   hasBlacklistWithBorrowHook,
 } from '../src/merkl-api.js';
 
-test('hasHookType14 returns true when campaign has hookType=14', () => {
+// ── hasBorrowExclusionHook ──
+
+test('hasBorrowExclusionHook returns true when campaign has hookType=14 (BORROW_BL)', () => {
+  const opp = {
+    campaigns: [
+      {
+        params: {
+          hooks: [{ hookType: 14, protocol: 2, borrowBytesLike: ['0xabc'] }],
+        },
+      },
+    ],
+  } as any;
+  assert.equal(hasBorrowExclusionHook(opp), true);
+});
+
+test('hasBorrowExclusionHook returns true when campaign has hookType=17 (HEALTH_FACTOR)', () => {
+  const opp = {
+    campaigns: [
+      {
+        params: {
+          hooks: [{ hookType: 17, healthFactorThreshold: 2.0 }],
+        },
+      },
+    ],
+  } as any;
+  assert.equal(hasBorrowExclusionHook(opp), true);
+});
+
+test('hasBorrowExclusionHook returns true with hookType=14 even without params.blacklist', () => {
+  const opp = {
+    campaigns: [
+      {
+        params: {
+          hooks: [{ hookType: 14, protocol: 2, borrowBytesLike: ['0xaaa'] }],
+        },
+      },
+    ],
+  } as any;
+  assert.equal(hasBorrowExclusionHook(opp), true);
+});
+
+test('hasBorrowExclusionHook returns false when no borrow-exclusion hookType', () => {
+  const opp = {
+    campaigns: [
+      {
+        params: {
+          hooks: [{ hookType: 1, protocol: 0 }],
+        },
+      },
+    ],
+  } as any;
+  assert.equal(hasBorrowExclusionHook(opp), false);
+});
+
+test('hasBorrowExclusionHook returns false when no campaigns', () => {
+  assert.equal(hasBorrowExclusionHook({ campaigns: [] } as any), false);
+  assert.equal(hasBorrowExclusionHook({} as any), false);
+});
+
+// ── hasHookType14 (deprecated alias) ──
+
+test('hasHookType14 delegates to hasBorrowExclusionHook', () => {
   const opp = {
     campaigns: [
       {
@@ -20,23 +82,7 @@ test('hasHookType14 returns true when campaign has hookType=14', () => {
   assert.equal(hasHookType14(opp), true);
 });
 
-test('hasHookType14 returns false when no hookType=14', () => {
-  const opp = {
-    campaigns: [
-      {
-        params: {
-          hooks: [{ hookType: 1, protocol: 0 }],
-        },
-      },
-    ],
-  } as any;
-  assert.equal(hasHookType14(opp), false);
-});
-
-test('hasHookType14 returns false when no campaigns', () => {
-  assert.equal(hasHookType14({ campaigns: [] } as any), false);
-  assert.equal(hasHookType14({} as any), false);
-});
+// ── extractBorrowHookProtocols ──
 
 test('extractBorrowHookProtocols extracts protocols from hookType=14', () => {
   const hooks = [
@@ -60,18 +106,29 @@ test('extractBorrowHookProtocols filters out empty borrowBytesLike', () => {
   assert.equal(result[0].protocol, 1);
 });
 
+test('extractBorrowHookProtocols does not extract from hookType=17', () => {
+  const hooks = [
+    { hookType: 17, healthFactorThreshold: 2.0 },
+    { hookType: 14, protocol: 1, borrowBytesLike: ['0xAAA'] },
+  ];
+  const result = extractBorrowHookProtocols(hooks);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].protocol, 1);
+});
+
 test('extractBorrowHookProtocols returns empty for non-array input', () => {
   assert.deepEqual(extractBorrowHookProtocols(null), []);
   assert.deepEqual(extractBorrowHookProtocols(undefined), []);
   assert.deepEqual(extractBorrowHookProtocols('not-array'), []);
 });
 
-test('hasBlacklistWithBorrowHook returns true when blacklist + hookType=14 coexist', () => {
+// ── hasBlacklistWithBorrowHook (now delegates to hasBorrowExclusionHook) ──
+
+test('hasBlacklistWithBorrowHook returns true when hookType=14 exists (no params.blacklist required)', () => {
   const opp = {
     campaigns: [
       {
         params: {
-          blacklist: ['0x123', '0x456'],
           hooks: [{ hookType: 14, protocol: 2, borrowBytesLike: ['0xaaa'] }],
         },
       },
@@ -80,7 +137,20 @@ test('hasBlacklistWithBorrowHook returns true when blacklist + hookType=14 coexi
   assert.equal(hasBlacklistWithBorrowHook(opp), true);
 });
 
-test('hasBlacklistWithBorrowHook returns false when blacklist but no hookType=14', () => {
+test('hasBlacklistWithBorrowHook returns true when hookType=17 exists', () => {
+  const opp = {
+    campaigns: [
+      {
+        params: {
+          hooks: [{ hookType: 17, healthFactorThreshold: 2.0 }],
+        },
+      },
+    ],
+  } as any;
+  assert.equal(hasBlacklistWithBorrowHook(opp), true);
+});
+
+test('hasBlacklistWithBorrowHook returns false when no borrow-exclusion hookType', () => {
   const opp = {
     campaigns: [
       {
@@ -94,55 +164,7 @@ test('hasBlacklistWithBorrowHook returns false when blacklist but no hookType=14
   assert.equal(hasBlacklistWithBorrowHook(opp), false);
 });
 
-test('hasBlacklistWithBorrowHook returns false when hookType=14 but no blacklist', () => {
-  const opp = {
-    campaigns: [
-      {
-        params: {
-          blacklist: [],
-          hooks: [{ hookType: 14, protocol: 2, borrowBytesLike: ['0xaaa'] }],
-        },
-      },
-    ],
-  } as any;
-  assert.equal(hasBlacklistWithBorrowHook(opp), false);
-});
-
 test('hasBlacklistWithBorrowHook returns false when no campaigns', () => {
   assert.equal(hasBlacklistWithBorrowHook({ campaigns: [] } as any), false);
   assert.equal(hasBlacklistWithBorrowHook({} as any), false);
-});
-
-test('hasBlacklistWithBorrowHook checks across multiple campaigns', () => {
-  const opp = {
-    campaigns: [
-      {
-        params: {
-          blacklist: ['0x123'],
-          hooks: [],
-        },
-      },
-      {
-        params: {
-          blacklist: [],
-          hooks: [{ hookType: 14, protocol: 1, borrowBytesLike: ['0xaaa'] }],
-        },
-      },
-    ],
-  } as any;
-  assert.equal(hasBlacklistWithBorrowHook(opp), false);
-});
-
-test('hasBlacklistWithBorrowHook: blacklist in one campaign + hookType14 in same campaign = true', () => {
-  const opp = {
-    campaigns: [
-      {
-        params: {
-          blacklist: ['0x123'],
-          hooks: [{ hookType: 14, protocol: 2, borrowBytesLike: ['0xaaa'] }],
-        },
-      },
-    ],
-  } as any;
-  assert.equal(hasBlacklistWithBorrowHook(opp), true);
 });

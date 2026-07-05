@@ -126,18 +126,20 @@ For reference; not directly related to hookType but often appears alongside.
 
 ## Impact on Backend Code
 
-### hookType=14 (BORROW_BL) — correctly handled
+### hookType=14 (BORROW_BL) + hookType=17 (HEALTH_FACTOR) — unified borrow-exclusion detection
 
 Backend code in `merkl-api.ts`:
-- `hasHookType14()`: correctly identifies hookType=14 as BORROW_BL
-- `extractBorrowHookProtocols()`: correctly extracts `protocol` and `borrowBytesLike`
-- `hasBlacklistWithBorrowHook()`: correctly requires `params.blacklist` + hookType=14 coexistence
 
-The official schema confirms: hookType=14 = BORROW_BL, description "Exclude addresses that have borrowed from the specified lending protocol markets from rewards." This matches the backend's semantic interpretation exactly.
+- **`hasBorrowExclusionHook(opp)`**: checks for hookType=14 (BORROW_BL) or hookType=17 (HEALTH_FACTOR). Replaces the older `hasBlacklistWithBorrowHook` which required `params.blacklist` co-occurrence — a requirement that was overly conservative now that the official schema confirms hookType=14's BORROW_BL semantics are self-contained.
+- **`extractBorrowHookProtocols(hooks)`**: extracts `protocol` and `borrowBytesLike` from hookType=14 entries only (hookType=17 does not carry borrowBytesLike).
+- **`hasBlacklistWithBorrowHook(opp)`**: kept as backward-compatible alias, now delegates to `hasBorrowExclusionHook`.
+- **`hasHookType14(opp)`**: kept as deprecated alias, now delegates to `hasBorrowExclusionHook`.
+- **`isBorrowBl` detection**: `(identifier?.includes('BORROW_BL') ?? false) || hasBorrowExclusionHook(opp)` — identifier match kept as fallback, hookType detection as primary signal.
+- **HookType constants**: `HOOK_TYPE_BORROW_BL = 14`, `HOOK_TYPE_HEALTH_FACTOR = 17`, `BORROW_EXCLUSION_HOOK_TYPES` set — replaces magic number `14`.
 
-### hookType=4 (SANCTIONED) — no code impact, but documentation correction needed
+### hookType=4 (SANCTIONED) — no code impact, documentation corrected
 
-The handoff doc labeled hookType=4 as "Registry（链上注册表验证）" but it is actually SANCTIONED (OFAC sanctions filter). No backend code handles hookType=4, so **no code change is needed**. The `params.blacklist` field consumed by `hasBlacklistWithBorrowHook` is a top-level Merkl API field separate from any specific hookType.
+The handoff doc labeled hookType=4 as "Registry（链上注册表验证）" but it is actually SANCTIONED (OFAC sanctions filter). No backend code handles hookType=4 directly. The `params.blacklist` field (populated by hookType=4/27/28) is read as a top-level Merkl API field and stored in `MerklCampaignAccess.blacklist`.
 
 ### hookType=16 (COINBASE_ATTESTATION) — no code impact
 
@@ -147,14 +149,12 @@ Not handled in backend. Previously misidentified as "Attestation (EAS)" — actu
 
 Not handled in backend. Previously misidentified as "Protocol Position" — actually a campaign-based whitelist.
 
-### `params.blacklist` / `params.whitelist` — these are top-level campaign fields, NOT hook-specific
+### `params.blacklist` / `params.whitelist` — top-level campaign fields, source annotated
 
-The backend reads `campaign.params.blacklist` and `campaign.params.whitelist` as top-level fields. Per the Merkl API, these may be populated by hookType=27 (BLACKLIST_KEY_VALUE_STORE) or hookType=22 (WHITELIST_ADDRESSES) etc., but they appear as flat arrays on `params`, not nested inside the hook object. The backend's current approach of reading them from `params` level is correct.
+The backend reads `campaign.params.blacklist` and `campaign.params.whitelist` as top-level fields. Code comments now document which hookTypes populate each:
+- **whitelist**: hookType=22 (WHITELIST_ADDRESSES), hookType=26 (WHITELIST_KEY_VALUE_STORE), etc.
+- **blacklist**: hookType=4 (SANCTIONED/OFAC), hookType=27 (BLACKLIST_KEY_VALUE_STORE), hookType=28 (BLACKLIST_PER_PROTOCOL), etc.
 
 ### `computeScoreMethod=maxDeposit` — correctly handled
 
 Backend `extractPositionCapFromCampaign()` correctly reads `computeScoreParameters.computeMethod === 'maxDeposit'` and extracts `computeSettings.maxDeposit`. The official schema confirms: maxDeposit = "Caps the rewarded balance at a specified maximum deposit threshold."
-
-### Potential optimization: hookType=17 (HEALTH_FACTOR)
-
-HEALTH_FACTOR "Blacklist users whose health factor is above a threshold" — this is related to borrow-side risk management on Aave. Currently not handled by backend, but could be relevant for future `borrowBlacklist` enhancement (similar to hookType=14). Not actionable now.
