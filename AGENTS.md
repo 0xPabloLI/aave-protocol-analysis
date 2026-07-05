@@ -182,9 +182,9 @@ Canonical source for knowledge spanning frontend AND backend, or Aave protocol f
 - **Map key 必须用 shared 工具函数生成**：跨模块通过 Map 传递数据时，key 的生成方式必须统一。禁止在消费方重新实现 key 构造函数（即使逻辑"看起来一样"），必须 import 生产方的同一个函数。例：`brevis-distributed-so-far.ts` 本地 `chainTokenKey` 用 `-` 分隔，而 shared-contracts 用 `:` 分隔，导致 tokenPrice 查找永远 miss，distributedSoFar 全部 undefined，forecast 无 Brevis items。
 - **Handoff 文档必须在代码完成后反向验证**：handoff 文档记录了"要做什么"和"待修复项"，完成代码改动后必须回过头逐一检查文档中每个"待修复/需修正/错误"描述，将已完成的标记为"已完成"并删除过时内容。禁止只更新 ADR 而忽略 handoff 文档。例：TARGET_TOTAL_APR P1 完成后只更新了 ADR-0024，handoff 文档仍写着"TARGET_TOTAL_APR 当前硬编码为 mode: 'max'"和"5 个断路点待修复"，导致前端误以为未完成。
 - **诊断代码本身可能成为 OOM 源**：`v8.writeHeapSnapshot()` 在 1GB 容器中瞬间分配 ~2x heap 大小的内存（序列化堆），加上 `readFile` + `JSON.parse` 又分配等量内存。诊断代码必须标注**最低容器要求**（如"需 2GB 容器"），且在容器降配时必须同步禁用。`--heapsnapshot-near-heap-limit=1` 同理——V8 OOM 前自动写 snapshot 也会瞬间分配大量内存。1GB 容器中必须移除此参数。
-- **项目有两条独立 HTTP 通道，必须分别限制**：内置 `fetch()` 走 undici globalDispatcher，`node-fetch` 走 Node.js `http`/`https` globalAgent。修了 undici 的连接池不代表 node-fetch 也被限制了。任何涉及 HTTP 连接池的修改，必须**两条通道都检查**。`https.globalAgent.maxSockets` 默认 `Infinity`，每条 TLS 连接 ~10-15MB native memory，不在 V8 heap 内，heap snapshot 看不到。
+- **http/https globalAgent 是防御性安全网**：node-fetch 已移除 (AAV-1064)，所有出站 HTTP 走 undici 单通道。`server.ts` 中的 `maxSockets=10`/`maxFreeSockets=2` 保留为防御性代码——任何 transitive dependency 可能仍通过 `http`/`https` 模块发出请求。
 - **maxSockets ≠ maxFreeSockets，必须都设**：`maxSockets` 限制**同时活跃**连接数，`maxFreeSockets` 限制**keep-alive 池中空闲**连接数。设了 `maxSockets=10` 只保证不会同时有 10 个以上并发请求，但 `maxFreeSockets` 默认 256，允许每 host 缓存 256 个空闲 socket。请求频率低时这些 socket 永远不被复用，持有 TLSSocket/ClientRequest/ReadableState/stream 闭包等全部关联对象，永远不被 GC。**修连接池时必须同时设 maxFreeSockets**。
-- **"修了大的，露出小的" ≠ "修出新问题"**：node-fetch 连接池无限制从一开始就存在。之前因为 V4 queryRegistry 等更大的泄漏占主导，node-fetch 的贡献被淹没。修掉大泄漏后，小泄漏才变得可见。这不意味着修复引入了新问题，而是暴露了被掩盖的旧问题。
+- **"修了大的，露出小的" ≠ "修出新问题"**：连接池问题从一开始就存在。之前因为更大的泄漏占主导，小泄漏的贡献被淹没。修掉大泄漏后，小泄漏才变得可见。这不意味着修复引入了新问题，而是暴露了被掩盖的旧问题。
 - **RSS 垂直飙升 ≠ 渐进泄漏**：RSS 从正常值瞬间飙到 1GB 是一次性大量分配的特征（如 heap snapshot 序列化），不是渐进泄漏（如连接池累积）。两者诊断方向完全不同。渐进泄漏看趋势斜率，垂直飙升看飙升时刻点的代码路径。
 
 ## Agent skills
