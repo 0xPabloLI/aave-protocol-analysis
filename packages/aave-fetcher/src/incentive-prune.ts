@@ -80,6 +80,7 @@ function pruneBrevisBreakdown(b: BrevisCampaignBreakdown): BrevisCampaignBreakdo
     ...(b.latestTvl !== undefined ? { latestTvl: b.latestTvl } : {}),
     ...(b.totalBudget !== undefined ? { totalBudget: b.totalBudget } : {}),
     ...(b.positionCap !== undefined ? { positionCap: b.positionCap } : {}),
+    ...(b.isCombineCap !== undefined ? { isCombineCap: b.isCombineCap } : {}),
     ...(b.rewardTokenSymbol ? { rewardTokenSymbol: b.rewardTokenSymbol } : {}),
   };
 }
