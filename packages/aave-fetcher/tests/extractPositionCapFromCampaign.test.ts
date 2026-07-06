@@ -142,13 +142,15 @@ test('buildReserveUnderlyingLookup maps aTokenAddress and tokenAddress to reserv
   assert.equal(lookup.get(aTokenKey)!.decimals, 6);
 });
 
-test('buildReserveUnderlyingLookup skips reserves with missing price or decimals', () => {
+test('buildReserveUnderlyingLookup skips reserves with missing price but defaults decimals to 18', () => {
   const lookup = buildReserveUnderlyingLookup([
     { chainId: 1, tokenAddress: '0xa', aTokenAddress: '0xb', tokenPrice: undefined, decimals: 6 } as any,
     { chainId: 1, tokenAddress: '0xc', aTokenAddress: '0xd', tokenPrice: 1, decimals: undefined } as any,
     { chainId: 1, tokenAddress: '0xe', aTokenAddress: '0xf', tokenPrice: -1, decimals: 6 } as any,
   ]);
-  assert.equal(lookup.size, 0);
+  assert.equal(lookup.size, 2);
+  assert.equal(lookup.get('1:0xd')!.decimals, 18);
+  assert.equal(lookup.get('1:0xc')!.decimals, 18);
 });
 
 test('buildReserveUnderlyingLookup handles V4 reserve without aTokenAddress', () => {

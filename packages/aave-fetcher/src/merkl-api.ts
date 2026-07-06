@@ -344,7 +344,7 @@ export function buildReserveUnderlyingLookup(
     const price = typeof r.tokenPrice === 'number' && Number.isFinite(r.tokenPrice) && r.tokenPrice > 0
       ? r.tokenPrice : undefined;
     const decimals = typeof r.decimals === 'number' && Number.isFinite(r.decimals) && r.decimals >= 0
-      ? r.decimals : undefined;
+      ? r.decimals : 18;
     if (price === undefined || decimals === undefined) continue;
 
     const info: ReserveUnderlyingInfo = { price, decimals };
@@ -1283,7 +1283,6 @@ export async function processMerklData(
   const reserveUnderlyingLookup = options?.baseDataset
     ? buildReserveUnderlyingLookup(options.baseDataset)
     : new Map<string, ReserveUnderlyingInfo>();
-  logger.info(`🔍 Reserve underlying lookup: ${reserveUnderlyingLookup.size} entries`);
   const mergedOptionsWithLookup: ProcessMerklDataOptions = {
     ...mergedOptions,
     reserveUnderlyingLookup,
@@ -1509,16 +1508,9 @@ export async function processMerklData(
         const reserveInfo = explorerAddr && mergedOptionsWithLookup.reserveUnderlyingLookup
           ? mergedOptionsWithLookup.reserveUnderlyingLookup.get(chainTokenKey(opp.chainId ?? 0, explorerAddr))
           : undefined;
-        const computeMethod = campaign?.params?.computeScoreParameters?.computeMethod;
-        if (computeMethod === 'maxDeposit') {
-          logger.info(`🔍 maxDeposit campaign: opp=${opp.name} ea=${explorerAddr} reserveInfo=${reserveInfo ? `price=${reserveInfo.price} decimals=${reserveInfo.decimals}` : 'NOT_FOUND'}`);
-        }
         const positionCapExtraction = reserveInfo
           ? extractPositionCapFromCampaign(campaign, reserveInfo.price, reserveInfo.decimals)
           : {};
-        if (positionCapExtraction.positionCap !== undefined) {
-          logger.info(`✅ positionCap extracted: ${positionCapExtraction.positionCap} USD for ${opp.name}`);
-        }
         campaignDetailsCache.set(cacheKey, {
           startedAt: toIsoFromUnixLike(campaign.startTimestamp),
           endedAt: toIsoFromUnixLike(campaign.endTimestamp),
