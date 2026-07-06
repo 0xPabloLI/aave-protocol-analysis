@@ -164,8 +164,8 @@ export interface MerklCampaignDetails {
   whitelistOnly: boolean;
   /** V4 Spoke campaign's parent Hub campaign ID (top-level field on Merkl API response). */
   parentCampaignId?: string;
-  /** Per-user position cap in USD, extracted from computeMethod=maxDeposit campaigns. */
-  positionCap?: number;
+  /** Per-user position cap as native raw amount string, extracted from computeMethod=maxDeposit campaigns. */
+  positionCapNative?: string;
   /** Whether the position cap is shared across supply+borrow sides. Merkl maxDeposit is always per-side (false). */
   isCombineCap?: boolean;
 }
@@ -338,25 +338,17 @@ export function buildProtocolVersionLookup(
 
 export function buildReserveUnderlyingLookup(
   baseDataset: RuntimeReserveData[]
-): Map<string, ReserveUnderlyingInfo> {
-  const map = new Map<string, ReserveUnderlyingInfo>();
+): Set<string> {
+  const set = new Set<string>();
   for (const r of baseDataset) {
-    const price = typeof r.tokenPrice === 'number' && Number.isFinite(r.tokenPrice) && r.tokenPrice > 0
-      ? r.tokenPrice : undefined;
-    const decimals = typeof r.decimals === 'number' && Number.isFinite(r.decimals) && r.decimals >= 0
-      ? r.decimals : 18;
-    if (price === undefined || decimals === undefined) continue;
-
-    const info: ReserveUnderlyingInfo = { price, decimals };
-
     if (r.aTokenAddress) {
-      map.set(chainTokenKey(r.chainId, r.aTokenAddress.toLowerCase()), info);
+      set.add(chainTokenKey(r.chainId, r.aTokenAddress.toLowerCase()));
     }
     if (r.tokenAddress) {
-      map.set(chainTokenKey(r.chainId, r.tokenAddress.toLowerCase()), info);
+      set.add(chainTokenKey(r.chainId, r.tokenAddress.toLowerCase()));
     }
   }
-  return map;
+  return set;
 }
 
 /**
@@ -433,14 +425,9 @@ interface ForecastCampaignMetaLite {
   rawMode?: string;
 }
 
-interface ReserveUnderlyingInfo {
-  price: number;
-  decimals: number;
-}
-
 interface ProcessMerklDataOptions {
   reserveTokenPriceByChainAndAddress?: Map<string, number>;
-  reserveUnderlyingLookup?: Map<string, ReserveUnderlyingInfo>;
+  reserveUnderlyingLookup?: Set<string>;
   priceSourceStats?: Record<UsdPriceSource, number>;
   reserveIdSet?: Set<string>;
   baseDataset?: RuntimeReserveData[];
@@ -968,14 +955,12 @@ function isAmountVariant(type?: ForecastCampaignTypeLite | null): boolean {
 }
 
 export interface PositionCapExtraction {
-  positionCap?: number;
+  positionCapNative?: string;
   isCombineCap?: boolean;
 }
 
 export function extractPositionCapFromCampaign(
   campaign: any,
-  targetTokenPrice: number,
-  targetTokenDecimals: number,
 ): PositionCapExtraction {
   const computeMethod = campaign?.params?.computeScoreParameters?.computeMethod;
   if (computeMethod !== 'maxDeposit') return {};
@@ -983,14 +968,11 @@ export function extractPositionCapFromCampaign(
   const rawMaxDeposit = campaign?.params?.computeScoreParameters?.computeSettings?.maxDeposit;
   if (rawMaxDeposit == null) return {};
 
-  const nativeAmount = Number(rawMaxDeposit) / (10 ** targetTokenDecimals);
+  const rawString = String(rawMaxDeposit);
+  const nativeAmount = Number(rawString);
   if (!Number.isFinite(nativeAmount) || nativeAmount <= 0) return {};
 
-  const positionCapUsd = nativeAmount * targetTokenPrice;
-
-  if (!Number.isFinite(positionCapUsd) || positionCapUsd <= 0) return {};
-
-  return { positionCap: positionCapUsd, isCombineCap: false };
+  return { positionCapNative: rawString, isCombineCap: false };
 }
 
 function extractDistributionSettingsApr(campaign: any): number {
@@ -1111,12 +1093,10 @@ export async function fetchMerklCampaignDetails(databaseId: string): Promise<Mer
     const rawCampaignId = typeof campaign.campaignId === 'string' && campaign.campaignId
       ? campaign.campaignId : undefined;
     const hashId = (rawCampaignId && rawCampaignId.startsWith('0x')) ? rawCampaignId : '';
-    // positionCap extraction requires reserve data (price + decimals) which is only available
-    // via the opportunities-driven path (buildReserveUnderlyingLookup). This single-campaign
-    // fetch path lacks reserve context, so positionCap is not extracted here.
-    // The opportunities-driven path in processMerklData pre-populates campaignDetailsCache
-    // for all live campaigns, making this fallback path rarely used.
-    const positionCapExtraction: PositionCapExtraction = {};
+    // positionCapNative extraction: since we no longer need reserve context (price/decimals),
+    // we can extract directly from the campaign's computeMethod/maxDeposit.
+    // Non-Aave maxDeposit campaigns may also be extracted; the frontend filters by reserve match.
+    const positionCapExtraction = extractPositionCapFromCampaign(campaign);
     return {
       startedAt,
       endedAt,
@@ -1125,7 +1105,7 @@ export async function fetchMerklCampaignDetails(databaseId: string): Promise<Mer
       apr: resolved.apr,
       whitelistOnly: isCampaignWhitelistOnly(campaign),
       ...(parentCampaignId && { parentCampaignId }),
-      ...(positionCapExtraction.positionCap !== undefined && { positionCap: positionCapExtraction.positionCap }),
+      ...(positionCapExtraction.positionCapNative !== undefined && { positionCapNative: positionCapExtraction.positionCapNative }),
       ...(positionCapExtraction.isCombineCap !== undefined && { isCombineCap: positionCapExtraction.isCombineCap }),
     };
   } catch (error) {
@@ -1282,7 +1262,7 @@ export async function processMerklData(
     : { unambiguous: new Map<string, 'v3' | 'v4'>(), v4Underlying: new Map<string, true>() };
   const reserveUnderlyingLookup = options?.baseDataset
     ? buildReserveUnderlyingLookup(options.baseDataset)
-    : new Map<string, ReserveUnderlyingInfo>();
+    : new Set<string>();
   const mergedOptionsWithLookup: ProcessMerklDataOptions = {
     ...mergedOptions,
     reserveUnderlyingLookup,
@@ -1505,11 +1485,11 @@ export async function processMerklData(
         const parentCampaignId = rawParentId ? (dbIdToHashId.get(rawParentId) || rawParentId) : undefined;
         const cacheKey = hashId || databaseId;
         const explorerAddr = typeof opp.explorerAddress === 'string' ? opp.explorerAddress.toLowerCase() : '';
-        const reserveInfo = explorerAddr && mergedOptionsWithLookup.reserveUnderlyingLookup
-          ? mergedOptionsWithLookup.reserveUnderlyingLookup.get(chainTokenKey(opp.chainId ?? 0, explorerAddr))
-          : undefined;
-        const positionCapExtraction = reserveInfo
-          ? extractPositionCapFromCampaign(campaign, reserveInfo.price, reserveInfo.decimals)
+        const isKnownReserve = explorerAddr && mergedOptionsWithLookup.reserveUnderlyingLookup
+          ? mergedOptionsWithLookup.reserveUnderlyingLookup.has(chainTokenKey(opp.chainId ?? 0, explorerAddr))
+          : false;
+        const positionCapExtraction = isKnownReserve
+          ? extractPositionCapFromCampaign(campaign)
           : {};
         campaignDetailsCache.set(cacheKey, {
           startedAt: toIsoFromUnixLike(campaign.startTimestamp),
@@ -1519,7 +1499,7 @@ export async function processMerklData(
           apr: resolved.apr,
           whitelistOnly: isCampaignWhitelistOnly(campaign),
           ...(parentCampaignId && { parentCampaignId }),
-          ...(positionCapExtraction.positionCap !== undefined && { positionCap: positionCapExtraction.positionCap }),
+          ...(positionCapExtraction.positionCapNative !== undefined && { positionCapNative: positionCapExtraction.positionCapNative }),
           ...(positionCapExtraction.isCombineCap !== undefined && { isCombineCap: positionCapExtraction.isCombineCap }),
         });
         const params = campaign.params ?? {};
@@ -1664,7 +1644,7 @@ export async function processMerklData(
         ...extractRewardTokenFields(rewardBreakdown.token),
         ...(pointsFields ?? {}),
         ...(campaignDetails.parentCampaignId && { parentCampaignId: campaignDetails.parentCampaignId }),
-        ...(campaignDetails.positionCap !== undefined && { positionCap: campaignDetails.positionCap }),
+        ...(campaignDetails.positionCapNative !== undefined && { positionCapNative: campaignDetails.positionCapNative }),
         ...(campaignDetails.isCombineCap !== undefined && { isCombineCap: campaignDetails.isCombineCap }),
       });
     }

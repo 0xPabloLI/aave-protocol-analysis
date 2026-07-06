@@ -59,11 +59,11 @@ describe('AAV-960: Merit format unification', () => {
       assert.equal(breakdowns[0].campaignApr, 0.05);
       assert.equal(breakdowns[0].campaignType, 'DUTCH_AUCTION');
       assert.equal(breakdowns[0].campaignId, 'ethereum-supply-weth-base');
-      assert.equal('positionCap' in breakdowns[0], false);
+      assert.equal('positionCapUsd' in breakdowns[0], false);
       assert.equal(breakdowns[1].campaignApr, 0.03);
       assert.equal(breakdowns[1].campaignType, 'DUTCH_AUCTION');
       assert.equal(breakdowns[1].campaignId, 'ethereum-supply-weth-self');
-      assert.equal(breakdowns[1].positionCap, 1000);
+      assert.equal(breakdowns[1].positionCapUsd, 1000);
     });
 
     it('returns only base breakdown when selfApr is 0', () => {
@@ -104,7 +104,7 @@ describe('AAV-960: Merit format unification', () => {
         selfPositionCap: null,
       });
       assert.equal(breakdowns.length, 1);
-      assert.equal('positionCap' in breakdowns[0], false);
+      assert.equal('positionCapUsd' in breakdowns[0], false);
     });
   });
 
@@ -132,7 +132,7 @@ describe('AAV-960: Merit format unification', () => {
       assert.ok(group.breakdowns[0].message);
       assert.equal(group.breakdowns[1].campaignApr, 0.03);
       assert.equal(group.breakdowns[1].campaignId, 'ethereum-supply-weth-self');
-      assert.equal(group.breakdowns[1].positionCap, 1000);
+      assert.equal(group.breakdowns[1].positionCapUsd, 1000);
       assert.ok(group.breakdowns[1].message);
     });
 
@@ -146,7 +146,7 @@ describe('AAV-960: Merit format unification', () => {
       const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
       assert.equal(group.breakdowns.length, 1);
       assert.equal(group.breakdowns[0].campaignApr, 0.05);
-      assert.equal('positionCap' in group.breakdowns[0], false);
+      assert.equal('positionCapUsd' in group.breakdowns[0], false);
     });
 
     it('builds CampaignGroup from entry with empty message', () => {
@@ -160,7 +160,7 @@ describe('AAV-960: Merit format unification', () => {
       };
       const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
       assert.equal(group.breakdowns.length, 2);
-      assert.equal('positionCap' in group.breakdowns[1], false);
+      assert.equal('positionCapUsd' in group.breakdowns[1], false);
     });
 
     it('does not set breakdown message when entry has no message', () => {
@@ -241,7 +241,7 @@ describe('AAV-960: Merit format unification', () => {
       };
       const group = buildCampaignGroupFromMeritEntry(entry, 'ethereum-supply-weth');
       assert.equal(group.breakdowns.length, 2);
-      assert.equal('positionCap' in group.breakdowns[1], false);
+      assert.equal('positionCapUsd' in group.breakdowns[1], false);
       assert.ok(group.breakdowns[1].message);
     });
   });

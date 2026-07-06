@@ -3206,7 +3206,7 @@ export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput)
     campaignEndedAt: string;
     campaignId: string;
     campaignType: 'DUTCH_AUCTION';
-    positionCap?: number;
+    positionCapUsd?: number;
     message?: string;
   }> = [];
 
@@ -3228,7 +3228,7 @@ export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput)
       campaignEndedAt: endDate,
       campaignId: `${meritKey}-self`,
       campaignType: 'DUTCH_AUCTION',
-      ...(selfPositionCap != null && selfPositionCap > 0 ? { positionCap: selfPositionCap } : {}),
+      ...(selfPositionCap != null && selfPositionCap > 0 ? { positionCapUsd: selfPositionCap } : {}),
       ...(selfBreakdownMessage ? { message: selfBreakdownMessage } : {}),
     });
   }

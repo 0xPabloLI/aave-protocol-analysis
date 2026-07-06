@@ -27,7 +27,7 @@ export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
   aprCap?: number;
   totalBudget?: number;
   latestTvl?: number;
-  positionCap?: number;
+  positionCapUsd?: number;
   budgetNormalizedAmount?: number;
   rewardTokenSymbol?: string;
 }
@@ -691,7 +691,7 @@ export class BrevisApiClient {
                     ? { latestTvl: protocol.tvl }
                     : {}),
                   ...(metaMaskDesc?.positionCap != null
-                    ? { positionCap: metaMaskDesc.positionCap, isCombineCap: true }
+                    ? { positionCapUsd: metaMaskDesc.positionCap, isCombineCap: true }
                     : {}),
                   ...(normalizedTotalRewardNumber !== undefined && Number.isFinite(normalizedTotalRewardNumber)
                     ? { budgetNormalizedAmount: normalizedTotalRewardNumber }

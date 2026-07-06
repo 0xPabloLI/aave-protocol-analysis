@@ -1192,8 +1192,13 @@
           "campaignType": {
             "type": "string"
           },
-          "positionCap": {
-            "type": "number"
+          "positionCapNative": {
+            "type": "string",
+            "description": "Per-user position cap as native raw amount string (Merkl/Brevis). Mutually exclusive with positionCapUsd."
+          },
+          "positionCapUsd": {
+            "type": "number",
+            "description": "Per-user position cap in USD (Merit). Mutually exclusive with positionCapNative."
           },
           "isCombineCap": {
             "type": "boolean",
@@ -1254,8 +1259,13 @@
                 "campaignType": {
                   "type": "string"
                 },
-                "positionCap": {
-                  "type": "number"
+                "positionCapNative": {
+                  "type": "string",
+                  "description": "Per-user position cap as native raw amount string (Merkl/Brevis). Mutually exclusive with positionCapUsd."
+                },
+                "positionCapUsd": {
+                  "type": "number",
+                  "description": "Per-user position cap in USD (Merit). Mutually exclusive with positionCapNative."
                 },
                 "isCombineCap": {
                   "type": "boolean",
@@ -1343,9 +1353,13 @@
           "plannedDaily": {
             "type": "number"
           },
-          "positionCap": {
+          "positionCapNative": {
+            "type": "string",
+            "description": "Per-user position cap as native raw amount string (from computeMethod=maxDeposit campaigns). Mutually exclusive with positionCapUsd."
+          },
+          "positionCapUsd": {
             "type": "number",
-            "description": "Per-user position cap in USD (from computeMethod=maxDeposit campaigns)"
+            "description": "Per-user position cap in USD (Merit). Mutually exclusive with positionCapNative."
           },
           "isCombineCap": {
             "type": "boolean",
@@ -1445,9 +1459,13 @@
                 "plannedDaily": {
                   "type": "number"
                 },
-                "positionCap": {
+                "positionCapNative": {
+                  "type": "string",
+                  "description": "Per-user position cap as native raw amount string (from computeMethod=maxDeposit campaigns). Mutually exclusive with positionCapUsd."
+                },
+                "positionCapUsd": {
                   "type": "number",
-                  "description": "Per-user position cap in USD (from computeMethod=maxDeposit campaigns)"
+                  "description": "Per-user position cap in USD (Merit). Mutually exclusive with positionCapNative."
                 },
                 "isCombineCap": {
                   "type": "boolean",
@@ -1533,8 +1551,9 @@
           "latestTvl": {
             "type": "number"
           },
-          "positionCap": {
-            "type": "number"
+          "positionCapUsd": {
+            "type": "number",
+            "description": "Per-user position cap in USD (from MetaMask description text). Mutually exclusive with positionCapNative."
           },
           "isCombineCap": {
             "type": "boolean",
@@ -1582,8 +1601,9 @@
                 "latestTvl": {
                   "type": "number"
                 },
-                "positionCap": {
-                  "type": "number"
+                "positionCapUsd": {
+                  "type": "number",
+                  "description": "Per-user position cap in USD (from MetaMask description text). Mutually exclusive with positionCapNative."
                 },
                 "isCombineCap": {
                   "type": "boolean",
@@ -1615,7 +1635,7 @@
           "latestTvl": {
             "type": "number"
           },
-          "positionCap": {
+          "positionCapUsd": {
             "type": "number"
           }
         },

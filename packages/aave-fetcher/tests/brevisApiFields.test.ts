@@ -17,7 +17,7 @@ test('BrevisCampaignItem API-facing shape omits legacy raw reward field names', 
         campaignId: '1754995104',
         totalBudget: 9_998_600,
         latestTvl: 4_151_203.07,
-        positionCap: 5000,
+        positionCapUsd: 5000,
       },
     ],
   };
