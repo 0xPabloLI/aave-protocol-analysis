@@ -64,7 +64,7 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
 
 ## Session Workflow
 1. **Bootstrap when needed**: For substantial implementation, debugging, or design sessions, load `using-superpowers` via skill tool. Load `brainstorming` only for feature design, behavior changes, or solution exploration — skip for lightweight inspection, explanation, and routine work.
-2. **Hook policy**: Husky enforces Prettier on `git commit` + `ci:remote` on `git push`. Do not bypass with `--no-verify`.
+2. **Hook policy**: Husky enforces `npm run build` (root + backend) + Prettier on `git commit`, and `ci:remote` on `git push`. Do not bypass with `--no-verify` unless the user explicitly confirms.
 3. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
 4. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`.
 5. **Branch discipline**: all development commits go directly on `railway` branch. Do NOT create feature branches or worktrees unless explicitly asked by the user. If a stray branch exists, merge it into `railway` and delete it promptly.

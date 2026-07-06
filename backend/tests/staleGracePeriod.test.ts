@@ -31,6 +31,7 @@ test('Fix 2: stale snapshot still returns payload (not null) — mergeWithPartia
     freshData: [],
     v3Succeeded: false,
     v4Succeeded: false,
+    v4Source: 'none',
     staleV3Data: [staleReserve],
     staleV4Data: [],
     v3FetchedAt: now - hardTtl + 60_000,
@@ -66,6 +67,7 @@ test('Fix 2: stale snapshot beyond hardTtl returns empty (no phantom data)', () 
     freshData: [],
     v3Succeeded: false,
     v4Succeeded: false,
+    v4Source: 'none',
     staleV3Data: [staleReserve],
     staleV4Data: [],
     v3FetchedAt: now - hardTtl - 60_000,
@@ -100,3 +102,4 @@ test('Fix 3: fetchResultOrDefault handles explicit failure envelope from stale f
   assert.equal(result.v3.source, 'sdk');
   assert.equal(result.v4.source, 'sdk');
 });
+
