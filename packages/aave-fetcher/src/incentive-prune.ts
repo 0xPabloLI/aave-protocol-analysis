@@ -50,6 +50,8 @@ function pruneMerklBreakdown(b: MerklCampaignBreakdown): MerklCampaignBreakdown 
       latestTvl: b.latestTvl,
       plannedDaily: b.plannedDaily,
     } : {}),
+    ...(b.positionCap !== undefined ? { positionCap: b.positionCap } : {}),
+    ...(b.isCombineCap !== undefined ? { isCombineCap: b.isCombineCap } : {}),
     ...(b.lastEndedCampaign ? { lastEndedCampaign: b.lastEndedCampaign } : {}),
     ...(b.databaseId ? { databaseId: b.databaseId } : {}),
   };
