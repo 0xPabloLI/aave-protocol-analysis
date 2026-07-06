@@ -1854,7 +1854,7 @@ const BORROW_EXCLUSION_HOOK_TYPES = new Set([
 ]);
 
 function isBorrowExclusionHookType(hookType: number): boolean {
-  return BORROW_EXCLUSION_HOOK_TYPES.has(hookType);
+  return BORROW_EXCLUSION_HOOK_TYPES.has(hookType as 14 | 17);
 }
 
 /** @deprecated Use hasBorrowExclusionHook instead. Kept for backward-compatible test imports. */
