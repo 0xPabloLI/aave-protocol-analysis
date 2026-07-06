@@ -1,5 +1,7 @@
 # Handoff: Merkl V4 Hub/Spoke 过滤策略修正实施
 
+> **Status: Executed** (2026-07-06) — spoke-priority dedup via parentCampaignId 已实施。
+
 > **目的**：将 "过滤 Spoke 保留 Hub" 改为 "parent-child 重叠时保留 Spoke" 的实施方案移交给执行 session。
 > **相关 Issue**：AAV-1004 (spoke-priority dedup), AAV-959 (原 filter-Spoke, superseded)
 > **相关 ADR**：ADR-0030（已修正 2026-06-25）

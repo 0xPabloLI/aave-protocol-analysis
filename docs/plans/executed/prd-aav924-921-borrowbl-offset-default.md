@@ -1,5 +1,7 @@
 # PRD: AAV-924 + AAV-921 — BORROW_BL 检测 & NPC Offset 默认值修正
 
+> **Status: Executed** (2026-07-06) — ADR-0032+0033 均 Implemented。
+
 ## 问题陈述
 
 ### AAV-924: Merkl BORROW_BL incentive 未处理

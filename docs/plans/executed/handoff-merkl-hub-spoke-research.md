@@ -1,5 +1,7 @@
 # Handoff: Merkl V4 Hub/Spoke 历史分发对比研究
 
+> **Status: Executed** (2026-07-06) — 研究完成，假说 C 已验证，ADR-0030 确认正确。
+
 > **目的**：将 Hub vs Spoke opportunity 的历史 reward 对比研究移交给新 session，避免上下文污染。
 > **相关 Issue**：AAV-959 (Hub/Spoke double-counting fix)
 > **当前代码状态**：commit `4138e59` — 过滤 Spoke 保留 Hub（结论待本研究的最终验证）

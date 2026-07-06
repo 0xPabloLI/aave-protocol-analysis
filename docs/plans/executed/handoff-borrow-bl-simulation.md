@@ -1,5 +1,7 @@
 # Handoff: BORROW_BL 前端 Simulation 归零逻辑
 
+> **Status: Executed** (2026-07-06) — 后端 `borrowBlacklist` 字段已实现（13 处代码引用）；前端 simulation 归零待前端实现。
+
 ## Linear Issue
 
 AAV-962

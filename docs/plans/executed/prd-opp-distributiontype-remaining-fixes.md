@@ -1,5 +1,7 @@
 # PRD: opp.distributionType 残留修复 + ADR 更新 + .env 清理
 
+> **Status: Executed** (2026-07-06) — 3 处 opp.distributionType → campaign.distributionType 均已修复。
+
 ## 背景
 
 commit `165fade` 修复了 `processMerklData` 中 `MerklOpportunityData.distributionType` 的数据源（从 breakdown 级别提取），但以下位置仍使用 `opp.distributionType`（Merkl API opp 顶层此字段始终为空），导致功能失效。

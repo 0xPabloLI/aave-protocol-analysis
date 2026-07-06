@@ -1,5 +1,7 @@
 # Handoff: Railway OOM 诊断与修复
 
+> **Status: Executed** (2026-07-06) — Fix A/B/C/D/E 全部完成验证，Heap -45%，RSS -36%。
+
 **日期**: 2026-06-15（最后更新 2026-06-21）
 **来源 Session**: Railway OOM/SIGTERM 根因诊断 → Fix A/B/D/E 实施 + 部署验证
 **状态**: Fix A/B/D/E 已完成并验证；Fix C（Puppeteer→Playwright 迁移）已完成

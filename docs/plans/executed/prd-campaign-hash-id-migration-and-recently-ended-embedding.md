@@ -1,5 +1,7 @@
 # PRD: Campaign Hash ID Migration + Recently Ended Embedding
 
+> **Status: Executed** (2026-07-06) — R1-R5 全部完成。
+
 ## Implementation Status
 
 | Requirement | Status | Commit |

@@ -1,5 +1,7 @@
 # PRD: AAV-959 — Merkl V4 Hub/Spoke: Spoke-Priority Dedup
 
+> **Status: Executed** (2026-07-06) — 已实施，ADR-0030 修订确认。
+
 ## 问题陈述
 
 当前代码（ADR-0030）过滤 Spoke、保留 Hub，然后后端通过 `computeTargetTotalAprIncentiveApr(targetAPR, nativeAPY, side)` 将 Hub 的 targetAPR 转换为 incentiveAPR。

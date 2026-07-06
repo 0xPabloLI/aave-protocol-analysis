@@ -1,5 +1,7 @@
 # Issue: FIX/MAX Reward distributionType AMOUNT 变体语义映射不精确
 
+> **Status: Executed** (2026-07-06) — 采用 Option A（新增枚举值），3 个 AMOUNT 变体现在精确映射到自身，不再丢失语义。
+
 ## Priority
 Medium（不阻塞 P0，但语义正确性应尽快修复）
 

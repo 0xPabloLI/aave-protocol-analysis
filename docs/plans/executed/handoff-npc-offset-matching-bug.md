@@ -1,5 +1,7 @@
 # Handoff: Merkl NPC Offset Matching Bug（2026-06-25 最终更新）
 
+> **Status: Executed** (2026-07-06) — 全部完成，commit 7109281。
+
 ## 最终 Commit
 
 `7109281` (railway branch)

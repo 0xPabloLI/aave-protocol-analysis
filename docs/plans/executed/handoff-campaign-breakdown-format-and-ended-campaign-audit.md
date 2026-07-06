@@ -1,5 +1,7 @@
 # Handoff: Campaign Breakdown 格式 + Ended Campaign 位置变化 + 全链路审计
 
+> **Status: Executed** (2026-07-06) — `lastEndedCampaign` 内嵌已实现（8 处代码引用），P0/P1/P2 已修复。P3/P5 测试补充未做。
+
 ## 1. Campaign Breakdown 当前格式
 
 ### 1.1 旧格式（AAV-1044 之前）

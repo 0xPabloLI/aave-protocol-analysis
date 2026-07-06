@@ -1,5 +1,7 @@
 # Handoff: Campaign Hash ID Migration + Recently Ended + Merkl URL Simplification
 
+> **Status: Executed** (2026-07-06) — R1-R5 全部完成。
+
 ## PRD
 
 `docs/plans/prd-campaign-hash-id-migration-and-recently-ended-embedding.md`

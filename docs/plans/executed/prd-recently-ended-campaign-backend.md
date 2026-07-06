@@ -1,5 +1,14 @@
 # PRD: Recently Ended Campaign — 后端数据源修复
 
+> **Status: Executed** (2026-07-06) — 实现路径与 PRD 不同。AAV-967/AAV-951 均 Done。
+>
+> **实际实现 vs PRD 设计差异**：
+> - Merkl: 未请求 PAST opportunity，改用 `lastEndedCampaign` 内嵌方式（AAV-1044/AAV-1046），90 天 lookback 窗口（`ENDED_CAMPAIGN_LOOKBACK_DAYS = 90`）
+> - Brevis: `campaignStatus === 4 || campaignStatus === 5` + 7 天窗口 + per-type 去重 ✅（AAV-1028）
+> - Merit: 7 天窗口 + per-type 去重 ✅（AAV-1029）
+> - `filterRecentExpiredCampaigns` 改为仅过滤已过期 breakdown（AAV-1026 Done）
+> - `RECENTLY_ENDED_LOOKBACK_DAYS = 7` 未创建，实际用 `ENDED_CAMPAIGN_LOOKBACK_DAYS = 90`（更宽的窗口用于 `lastEndedCampaign` 内嵌）
+
 ## 需求背景
 
 前端已完成 "Recently Ended Campaigns" 功能的全部开发（AAV-463 核心逻辑 + AAV-464 UI 集成），但功能完全不生效。根因是后端 API 返回的数据中不包含已结束的 campaign，导致前端 `collectRecentlyEndedCampaigns` 始终返回空数组。

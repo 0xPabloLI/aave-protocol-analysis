@@ -1,5 +1,7 @@
 # PRD: Merkl Position Cap 后端部署 (AAV-1070)
 
+> **Status: Executed** (2026-07-06) — 代码已合入，`extractPositionCapFromCampaign` + 测试 + OpenAPI schema 已完成。
+
 ## 背景
 
 Merkl `maxDeposit` campaign 有 per-user position cap，限制用户可获得 incentive 的最大仓位金额。前端已实现 position cap 显示逻辑（commit b551d3f3），但后端改动尚未部署到 staging。

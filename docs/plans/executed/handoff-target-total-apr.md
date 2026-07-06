@@ -1,5 +1,7 @@
 # Handoff: TARGET_TOTAL_APR Campaign Type 实现
 
+> **Status: Executed** (2026-07-06) — TARGET_TOTAL_APR 已实施，ADR-0024 已更新，96 处代码引用确认。
+
 **日期**: 2026-06-12  
 **来源 Session**: Grill with Docs — Merkl Target Total APR 研究与设计决策  
 **下一步**: 写 PRD → Issues → TDD → 实现

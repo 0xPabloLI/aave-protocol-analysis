@@ -1,5 +1,7 @@
 # AAV-827 Spec: Campaign APR Fallback for AMOUNT Variants
 
+> **Status: Executed** (2026-07-06) — `resolveCampaignApr` 已实现，含 AMOUNT 变体 fallback + price 换算逻辑，测试文件存在。
+
 ## Problem
 
 When Merkl `distributionType` contains `_AMOUNT_` (e.g. `FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE`, `FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT`), the `campaign.apr` field is `0` because Merkl cannot compute a USD APR when `rewardTokenPricing=false`. However, `distributionSettings.apr` still contains the intended APR value (in decimal format).

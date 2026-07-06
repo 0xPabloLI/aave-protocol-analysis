@@ -1,5 +1,7 @@
 # Diagnosis: Railway OOM / SIGTERM (2026-06)
 
+> **Status: Executed** (2026-07-06) — 根因确定（googleapis 31.26MB），Fix A/B/D 已实施，OOM 已解决。
+
 **日期**: 2026-06-15
 **状态**: 根因已通过 heap snapshot 精确归因；Fix A + Fix B + Fix D 已实施
 
