@@ -336,6 +336,29 @@ export function buildProtocolVersionLookup(
   return { unambiguous, v4Underlying };
 }
 
+export function buildReserveUnderlyingLookup(
+  baseDataset: RuntimeReserveData[]
+): Map<string, ReserveUnderlyingInfo> {
+  const map = new Map<string, ReserveUnderlyingInfo>();
+  for (const r of baseDataset) {
+    const price = typeof r.tokenPrice === 'number' && Number.isFinite(r.tokenPrice) && r.tokenPrice > 0
+      ? r.tokenPrice : undefined;
+    const decimals = typeof r.decimals === 'number' && Number.isFinite(r.decimals) && r.decimals >= 0
+      ? r.decimals : undefined;
+    if (price === undefined || decimals === undefined) continue;
+
+    const info: ReserveUnderlyingInfo = { price, decimals };
+
+    if (r.aTokenAddress) {
+      map.set(chainTokenKey(r.chainId, r.aTokenAddress.toLowerCase()), info);
+    }
+    if (r.tokenAddress) {
+      map.set(chainTokenKey(r.chainId, r.tokenAddress.toLowerCase()), info);
+    }
+  }
+  return map;
+}
+
 /**
  * Derive protocol version from Merkl opportunity data.
  * 
@@ -410,8 +433,14 @@ interface ForecastCampaignMetaLite {
   rawMode?: string;
 }
 
+interface ReserveUnderlyingInfo {
+  price: number;
+  decimals: number;
+}
+
 interface ProcessMerklDataOptions {
   reserveTokenPriceByChainAndAddress?: Map<string, number>;
+  reserveUnderlyingLookup?: Map<string, ReserveUnderlyingInfo>;
   priceSourceStats?: Record<UsdPriceSource, number>;
   reserveIdSet?: Set<string>;
   baseDataset?: RuntimeReserveData[];
@@ -945,7 +974,8 @@ export interface PositionCapExtraction {
 
 export function extractPositionCapFromCampaign(
   campaign: any,
-  targetTokenPrice?: number,
+  targetTokenPrice: number,
+  targetTokenDecimals: number,
 ): PositionCapExtraction {
   const computeMethod = campaign?.params?.computeScoreParameters?.computeMethod;
   if (computeMethod !== 'maxDeposit') return {};
@@ -953,25 +983,12 @@ export function extractPositionCapFromCampaign(
   const rawMaxDeposit = campaign?.params?.computeScoreParameters?.computeSettings?.maxDeposit;
   if (rawMaxDeposit == null) return {};
 
-  const decimals = typeof campaign?.targetToken?.decimals === 'number'
-    ? campaign.targetToken.decimals
-    : typeof campaign?.params?.decimalsTargetToken === 'number'
-      ? campaign.params.decimalsTargetToken
-      : 18;
-
-  const nativeAmount = Number(rawMaxDeposit) / (10 ** decimals);
+  const nativeAmount = Number(rawMaxDeposit) / (10 ** targetTokenDecimals);
   if (!Number.isFinite(nativeAmount) || nativeAmount <= 0) return {};
 
-  const effectivePrice = targetTokenPrice
-    ?? (typeof campaign?.targetToken?.price === 'number' && Number.isFinite(campaign.targetToken.price) && campaign.targetToken.price > 0
-      ? campaign.targetToken.price
-      : undefined);
+  const positionCapUsd = nativeAmount * targetTokenPrice;
 
-  const positionCapUsd = effectivePrice
-    ? nativeAmount * effectivePrice
-    : undefined;
-
-  if (positionCapUsd !== undefined && (!Number.isFinite(positionCapUsd) || positionCapUsd <= 0)) return {};
+  if (!Number.isFinite(positionCapUsd) || positionCapUsd <= 0) return {};
 
   return { positionCap: positionCapUsd, isCombineCap: false };
 }
@@ -1094,7 +1111,12 @@ export async function fetchMerklCampaignDetails(databaseId: string): Promise<Mer
     const rawCampaignId = typeof campaign.campaignId === 'string' && campaign.campaignId
       ? campaign.campaignId : undefined;
     const hashId = (rawCampaignId && rawCampaignId.startsWith('0x')) ? rawCampaignId : '';
-    const positionCapExtraction = extractPositionCapFromCampaign(campaign, targetTokenPrice);
+    // positionCap extraction requires reserve data (price + decimals) which is only available
+    // via the opportunities-driven path (buildReserveUnderlyingLookup). This single-campaign
+    // fetch path lacks reserve context, so positionCap is not extracted here.
+    // The opportunities-driven path in processMerklData pre-populates campaignDetailsCache
+    // for all live campaigns, making this fallback path rarely used.
+    const positionCapExtraction: PositionCapExtraction = {};
     return {
       startedAt,
       endedAt,
@@ -1258,6 +1280,13 @@ export async function processMerklData(
   const protocolLookup = options?.baseDataset
     ? buildProtocolVersionLookup(options.baseDataset)
     : { unambiguous: new Map<string, 'v3' | 'v4'>(), v4Underlying: new Map<string, true>() };
+  const reserveUnderlyingLookup = options?.baseDataset
+    ? buildReserveUnderlyingLookup(options.baseDataset)
+    : new Map<string, ReserveUnderlyingInfo>();
+  const mergedOptionsWithLookup: ProcessMerklDataOptions = {
+    ...mergedOptions,
+    reserveUnderlyingLookup,
+  };
   let opportunities = fetchedOpportunities;
   let staleStatus: MerklStaleStatus = {
     stale: false,
@@ -1475,7 +1504,13 @@ export async function processMerklData(
           : undefined;
         const parentCampaignId = rawParentId ? (dbIdToHashId.get(rawParentId) || rawParentId) : undefined;
         const cacheKey = hashId || databaseId;
-        const positionCapExtraction = extractPositionCapFromCampaign(campaign, targetTokenPrice);
+        const explorerAddr = typeof opp.explorerAddress === 'string' ? opp.explorerAddress.toLowerCase() : '';
+        const reserveInfo = explorerAddr && mergedOptionsWithLookup.reserveUnderlyingLookup
+          ? mergedOptionsWithLookup.reserveUnderlyingLookup.get(chainTokenKey(opp.chainId ?? 0, explorerAddr))
+          : undefined;
+        const positionCapExtraction = reserveInfo
+          ? extractPositionCapFromCampaign(campaign, reserveInfo.price, reserveInfo.decimals)
+          : {};
         campaignDetailsCache.set(cacheKey, {
           startedAt: toIsoFromUnixLike(campaign.startTimestamp),
           endedAt: toIsoFromUnixLike(campaign.endTimestamp),
@@ -1682,7 +1717,7 @@ export async function processMerklData(
     for (const bd of breakdowns) {
       const meta = forecastCampaignMetaLite[bd.campaignId];
       if (meta) {
-        const fields = await buildForecastFieldsFromOpportunity(meta, mergedOptions);
+        const fields = await buildForecastFieldsFromOpportunity(meta, mergedOptionsWithLookup);
         if (fields) Object.assign(bd, fields);
         if (meta.rawMode && meta.campaignTypeHint === 'TARGET_TOTAL_APR') {
           bd.budgetBoundMode = meta.rawMode;

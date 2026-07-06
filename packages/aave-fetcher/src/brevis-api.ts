@@ -691,7 +691,7 @@ export class BrevisApiClient {
                     ? { latestTvl: protocol.tvl }
                     : {}),
                   ...(metaMaskDesc?.positionCap != null
-                    ? { positionCap: metaMaskDesc.positionCap }
+                    ? { positionCap: metaMaskDesc.positionCap, isCombineCap: true }
                     : {}),
                   ...(normalizedTotalRewardNumber !== undefined && Number.isFinite(normalizedTotalRewardNumber)
                     ? { budgetNormalizedAmount: normalizedTotalRewardNumber }
