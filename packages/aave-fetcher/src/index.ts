@@ -9,8 +9,16 @@ import {
   getV3RateLimitStats,
 } from '@internal/aave-shared-config';
 
-// V3 AaveClient does not inherit GqlClient — no queryRegistry leak risk, safe as singleton
-const client = AaveClient.create();
+// V3 AaveClient created per-fetch (not module-level singleton) to prevent urql internal
+// state accumulation in long-running server processes. Previously assumed safe as singleton
+// (V3 does not inherit GqlClient / no queryRegistry), but heap snapshots confirmed urql's
+// fetchExchange and Client retain Operation objects + Response references after each
+// .query().toPromise() call. ~1K uncollected Markets/Chains query instances per day observed.
+// Must return a fresh independent instance per call — no shared state between invocations.
+// Matches V4 pattern (see v4-fetcher.ts:createV4Client).
+function createV3Client() {
+  return AaveClient.create();
+}
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
@@ -154,7 +162,7 @@ async function getAllAaveV3Networks(): Promise<NetworkInfo[]> {
   });
 
   try {
-    const result = await chains(client, ChainsFilter.MAINNET_ONLY);
+    const result = await chains(createV3Client(), ChainsFilter.MAINNET_ONLY);
     const apiChains = extractChainsResult(result);
 
     const networkInfo: NetworkInfo[] = apiChains
@@ -738,7 +746,7 @@ async function fetchRawMarketData(): Promise<MarketData> {
     const errors: string[] = [];
 
     try {
-      const result: any = await markets(client, { chainIds: allChainIds });
+      const result: any = await markets(createV3Client(), { chainIds: allChainIds });
       
       if (result && typeof result === 'object' && 'isErr' in result && typeof result.isErr === 'function') {
         if (result.isErr()) {
