@@ -74,5 +74,4 @@ ENV MALLOC_ARENA_MAX=2
 # --heapsnapshot-near-heap-limit: REMOVED — in 1GB containers, V8's auto-snapshot
 # on OOM allocates ~2x heap memory instantly, causing a vertical RSS spike that
 # guarantees OOM rather than preventing it. Only safe in ≥2GB containers.
-# --expose-gc: expose globalThis.gc() for manual GC triggering in diagnostics
-CMD ["node", "--max-old-space-size=512", "--expose-gc", "backend/dist/server.js"]
+CMD ["node", "--max-old-space-size=512", "backend/dist/server.js"]

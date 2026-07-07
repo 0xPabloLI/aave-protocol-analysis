@@ -186,6 +186,8 @@ Canonical source for knowledge spanning frontend AND backend, or Aave protocol f
 - **maxSockets ≠ maxFreeSockets，必须都设**：`maxSockets` 限制**同时活跃**连接数，`maxFreeSockets` 限制**keep-alive 池中空闲**连接数。设了 `maxSockets=10` 只保证不会同时有 10 个以上并发请求，但 `maxFreeSockets` 默认 256，允许每 host 缓存 256 个空闲 socket。请求频率低时这些 socket 永远不被复用，持有 TLSSocket/ClientRequest/ReadableState/stream 闭包等全部关联对象，永远不被 GC。**修连接池时必须同时设 maxFreeSockets**。
 - **"修了大的，露出小的" ≠ "修出新问题"**：连接池问题从一开始就存在。之前因为更大的泄漏占主导，小泄漏的贡献被淹没。修掉大泄漏后，小泄漏才变得可见。这不意味着修复引入了新问题，而是暴露了被掩盖的旧问题。
 - **RSS 垂直飙升 ≠ 渐进泄漏**：RSS 从正常值瞬间飙到 1GB 是一次性大量分配的特征（如 heap snapshot 序列化），不是渐进泄漏（如连接池累积）。两者诊断方向完全不同。渐进泄漏看趋势斜率，垂直飙升看飙升时刻点的代码路径。
+- **SDK 内部状态泄漏不只看 queryRegistry**：V3 AaveClient 不继承 GqlClient（无 queryRegistry），之前注释说"safe as singleton"。但 urql 的 fetchExchange 和 Client 内部也保留 Operation/Response 引用。`.toPromise()` 不触发 urql teardown，导致 Response 对象链无法 GC。**任何使用 urql 的 SDK 在长期运行进程中都应 per-fetch 创建 client**，而非依赖"不继承 GqlClient"的假设。
+- **V3/V4 SDK 修复必须同步**：V4 AaveClient 已在 Session 4 修复为 per-fetch 创建，但 V3 AaveClient 的单例泄漏被 V4 的更大泄漏掩盖。修完 V4 后，V3 的泄漏才变得可见。**修复 SDK 类泄漏时，必须检查同一依赖的所有入口**。
 
 ## Agent skills
 

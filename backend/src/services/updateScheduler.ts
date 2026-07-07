@@ -1,4 +1,3 @@
-import v8 from 'v8';
 import { schedule } from 'node-cron';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from '../controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from '../controllers/merklForecastController.js';
@@ -14,92 +13,6 @@ import { setGscFetchSuccess, setGscFetchFailure } from './gscFetchState.js';
 import { runArchiveCheck } from './archiveService.js';
 import { logger } from '../logger.js';
 import { BACKEND_SCHEDULE_CRON } from '../cacheTtl.js';
-
-const _MB = 1024 * 1024;
-const _heapDiagEnabled = process.env.MEMORY_DIAG === '1';
-const _startTime = Date.now();
-const _heapSnapshotDone = new Set<string>();
-
-let _oldSpaceBaseline: number | null = null;
-let _lastOldSpace: number | null = null;
-
-async function maybeHeapSnapshot(): Promise<void> {
-  if (!_heapDiagEnabled) return;
-  const uptimeMin = Math.floor((Date.now() - _startTime) / 60_000);
-  // Log heap spaces every 15 min (lightweight, no snapshot)
-  if (uptimeMin % 15 === 0 && !_heapSnapshotDone.has(`spaces-${uptimeMin}`)) {
-    _heapSnapshotDone.add(`spaces-${uptimeMin}`);
-    const spaces = v8.getHeapSpaceStatistics();
-    const summary = spaces.map(s => `${s.space_name}=${Math.round(s.space_used_size / _MB)}/${Math.round(s.space_size / _MB)}MB`).join(' ');
-    const mem = process.memoryUsage();
-    logger.info(`🔬 Heap spaces at ${uptimeMin}min: ${summary} | heap=${Math.round(mem.heapUsed / _MB)}MB rss=${Math.round(mem.rss / _MB)}MB external=${Math.round(mem.external / _MB)}MB`);
-  }
-  // Heap snapshot is available on-demand via /api/debug/heap-top only.
-  // Auto-snapshot removed: writeHeapSnapshot() + readFile + JSON.parse
-  // temporarily allocates ~2x heap memory, causing OOM in 1GB containers.
-  // To use: curl /api/debug/heap-top with container ≥2GB.
-}
-
-function logOldSpaceDiff(label: string): void {
-  if (!_heapDiagEnabled) return;
-  const spaces = v8.getHeapSpaceStatistics();
-  const oldSpace = spaces.find(s => s.space_name === 'old_space');
-  if (!oldSpace) return;
-  const sizeMB = Math.round(oldSpace.space_size / _MB);
-  const usedMB = Math.round(oldSpace.space_used_size / _MB);
-  if (!_oldSpaceBaseline) _oldSpaceBaseline = sizeMB;
-  const deltaFromBase = sizeMB - _oldSpaceBaseline;
-  const deltaFromLast = _lastOldSpace !== null ? sizeMB - _lastOldSpace : 0;
-  _lastOldSpace = sizeMB;
-  logger.info(
-    `🔬 old_space [${label}] used=${usedMB}MB size=${sizeMB}MB Δbase=${deltaFromBase >= 0 ? '+' : ''}${deltaFromBase}MB Δlast=${deltaFromLast >= 0 ? '+' : ''}${deltaFromLast}MB`
-  );
-}
-
-function tryGc(): void {
-  if (globalThis.gc) {
-    globalThis.gc();
-  }
-}
-
-function snapshotMem(): { heapUsed: number; heapTotal: number; rss: number; arrayBuffers: number } {
-  const m = process.memoryUsage();
-  return { heapUsed: m.heapUsed, heapTotal: m.heapTotal, rss: m.rss, arrayBuffers: m.arrayBuffers ?? 0 };
-}
-
-function logHeapDiff(label: string, before: ReturnType<typeof snapshotMem>): void {
-  if (!_heapDiagEnabled) return;
-  const after = snapshotMem();
-  const dHeap = (after.heapUsed - before.heapUsed) / _MB;
-  const dRss = (after.rss - before.rss) / _MB;
-  const dAb = (after.arrayBuffers - before.arrayBuffers) / _MB;
-  const absHeap = after.heapUsed / _MB;
-  if (Math.abs(dHeap) > 0.5 || Math.abs(dRss) > 0.5) {
-    logger.info(
-      `🔍 heap-diff [${label}] heap=${dHeap >= 0 ? '+' : ''}${dHeap.toFixed(1)}MB rss=${dRss >= 0 ? '+' : ''}${dRss.toFixed(1)}MB ab=${dAb >= 0 ? '+' : ''}${dAb.toFixed(1)}MB → absHeap=${absHeap.toFixed(0)}MB`
-    );
-  }
-}
-
-async function withHeapTrace<T>(label: string, fn: () => Promise<T>): Promise<T> {
-  const before = snapshotMem();
-  try {
-    return await fn();
-  } finally {
-    if (_heapDiagEnabled) {
-      logHeapDiff(label + ':pre-gc', before);
-      if (globalThis.gc) {
-        globalThis.gc();
-        const afterGc = snapshotMem();
-        const dHeap = (afterGc.heapUsed - before.heapUsed) / _MB;
-        const dRss = (afterGc.rss - before.rss) / _MB;
-        logger.info(
-          `🔍 heap-diff [${label}:post-gc] heap=${dHeap >= 0 ? '+' : ''}${dHeap.toFixed(1)}MB rss=${dRss >= 0 ? '+' : ''}${dRss.toFixed(1)}MB → absHeap=${(afterGc.heapUsed / _MB).toFixed(0)}MB absRss=${(afterGc.rss / _MB).toFixed(0)}MB`
-        );
-      }
-    }
-  }
-}
 
 /**
  * 启动定时更新任务
@@ -123,11 +36,7 @@ export function startUpdateScheduler(): void {
 
   schedule(BACKEND_SCHEDULE_CRON.marketsBackupEveryMinuteAtSecond0, async () => {
     try {
-      logOldSpaceDiff('pre-markets');
-      await withHeapTrace('markets', refreshMarketsSnapshot);
-      tryGc();
-      logOldSpaceDiff('post-markets');
-      await maybeHeapSnapshot();
+      await refreshMarketsSnapshot();
     } catch (error) {
       logger.warn(
         `Markets refresh scheduler failed: ${error instanceof Error ? error.message : String(error)}`
@@ -137,10 +46,7 @@ export function startUpdateScheduler(): void {
 
   schedule(BACKEND_SCHEDULE_CRON.onchainDataWarmEveryMinuteAtSecond10, async () => {
     try {
-      logOldSpaceDiff('pre-onchain');
-      await withHeapTrace('onchain', refreshOnchainCache);
-      tryGc();
-      logOldSpaceDiff('post-onchain');
+      await refreshOnchainCache();
     } catch (error) {
       logger.warn(
         `On-chain cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
@@ -168,10 +74,7 @@ export function startUpdateScheduler(): void {
 
   schedule(BACKEND_SCHEDULE_CRON.oraclePriceWarmEveryMinuteAtSecond0, async () => {
     try {
-      logOldSpaceDiff('pre-oracle');
-      await withHeapTrace('oracle', refreshOracleCache);
-      tryGc();
-      logOldSpaceDiff('post-oracle');
+      await refreshOracleCache();
     } catch (error) {
       logger.warn(
         `Oracle cache refresh failed: ${error instanceof Error ? error.message : String(error)}`
@@ -181,7 +84,7 @@ export function startUpdateScheduler(): void {
 
   schedule(BACKEND_SCHEDULE_CRON.coingeckoFdvWarmEveryFifteenMinutesAtSecond5, async () => {
     try {
-      await withHeapTrace('fdv', warmCoingeckoFdvCache);
+      await warmCoingeckoFdvCache();
     } catch (error) {
       logger.warn(
         `FDV warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`
@@ -191,7 +94,7 @@ export function startUpdateScheduler(): void {
 
   schedule(BACKEND_SCHEDULE_CRON.campaignForecastWarmEveryTenMinutesAtSecond30, async () => {
     try {
-      const summary = await withHeapTrace('forecast', warmCampaignForecastStatesCache);
+      const summary = await warmCampaignForecastStatesCache();
       logger.info(
         `✅ Campaign forecast warm scheduler finished: requested=${summary.requested}, fulfilled=${summary.fulfilled}, failed=${summary.failed}`
       );
@@ -204,7 +107,7 @@ export function startUpdateScheduler(): void {
 
   schedule(BACKEND_SCHEDULE_CRON.coingeckoCategoriesWarmEverySixHoursAtSecond10, async () => {
     try {
-      await withHeapTrace('categories', warmCoingeckoCategoriesCache);
+      await warmCoingeckoCategoriesCache();
     } catch (error) {
       logger.warn(
         `Categories warm scheduler failed: ${error instanceof Error ? error.message : String(error)}`

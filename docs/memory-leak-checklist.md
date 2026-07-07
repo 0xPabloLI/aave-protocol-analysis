@@ -71,7 +71,8 @@
 | 35 | merkl-api | `_merklState` | 单例对象 | ✅ | ➖(cron替换) | ➖(单条) | ✅(替换) | 🟢 | lastSuccessfulSnapshot 仅保留 index+processedData+forecastMeta+liveOpportunityCount;rawOpportunities 已移除(见泄漏记录#20) |
 | 36 | cloudflare-browser | `workerDisabledResolvers` | Set | ✅ | ➖(Promise自删) | ➖(并发有限) | ✅(resolve后自删除) | 🟢 | 已从Array改为Set，resolve后自删除 |
 | 37 | brevis-distributed-so-far | `chainCallCache` | Map | ✅ | ✅(1h TTL+2h惰性删) | ✅(100) | ✅(pruneCache+FIFO) | 🟢 | tokenCumulativeRewards约4h变一次，1h TTL足够 |
-| 37b | v4-fetcher | `v4Client` (GqlClient.queryRegistry) | Map(内嵌) | ✅ | ➖(per-fetch短生命周期) | ➖(client GC即释放) | ➖(per-fetch重建) | 🟢 | per-fetch创建,非singleton;queryRegistry随client实例GC;cache:false+batch:false禁用graphcache和batchFetchExchange;V3 AaveClient不继承GqlClient无此问题 |
+| 37b | v4-fetcher | `v4Client` (GqlClient.queryRegistry) | Map(内嵌) | ✅ | ➖(per-fetch短生命周期) | ➖(client GC即释放) | ➖(per-fetch重建) | 🟢 | per-fetch创建,非singleton;queryRegistry随client实例GC;cache:false+batch:false禁用graphcache和batchFetchExchange |
+| 37c | index (V3 AaveClient) | `urql Client + fetchExchange` | 内嵌 | ✅ | ➖(per-fetch短生命周期) | ➖(client GC即释放) | ➖(per-fetch重建) | 🟢 | per-fetch创建(与V4一致);urql fetchExchange+Client retain Operation/Response after .toPromise();singleton模式下~1K query instances/day累积;heap:68→47MB(-31%) old_space:57→36.5MB(-36%) RSS:430→143MB(-67%) |
 
 ### packages/aave-rpc-infra/src/
 
@@ -209,6 +210,8 @@ map.set(oraclePriceKey(r.chainId, r.tokenAddress, r.configId), hash);
 | undici TLS 连接池 native memory | 默认 undici 无连接数限制，OpenSSL 缓冲区 ~14MB/h 持续累积 | setGlobalDispatcher 限制 connections=10/host + keepAliveTimeout=30s | `4faa554` |
 | node-fetch 连接池 native memory | https.globalAgent.maxSockets=Infinity → 无限并发 TLS 连接 | maxSockets=10 + 7 处错误路径 drain body | `5e18193` |
 | node-fetch keep-alike free socket 池 | maxFreeSockets 默认 256 → 空闲 keep-alive socket 无限累积（每个持有 TLSSocket/ClientRequest/ReadableState/7 个 stream 闭包） | maxFreeSockets=2 + Merkl fallback drain body | Session 6 |
+| node-fetch 依赖 | 整个 node-fetch 包使用 https.globalAgent 独立通道，不走 undici globalDispatcher | 移除 node-fetch 依赖，4 个文件改用内置 fetch() | `c7d6fe5` |
+| V3 AaveClient urql 状态累积 | 模块级单例 AaveClient → urql fetchExchange+Client retain Operation/Response after .toPromise() → ~1K Markets/Chains query instances/day 累积 (5.2MB) | per-fetch 创建 client (createV3Client())，与 V4 模式一致 | `790cb01` |
 | glibc malloc arena 碎片 | 默认 glibc 并行 arena 导致 RSS 远大于 heap（多线程各自缓存） | MALLOC_ARENA_MAX=2 | Dockerfile |
 
 ## 监控与验证
@@ -382,6 +385,40 @@ Phase 6: maxFreeSockets 修复
   - `backend/src/server.ts` — maxFreeSockets=2 + free socket 统计
   - `packages/aave-fetcher/src/merit-api.ts` — Merkl fallback drain body
 
+#### Session 7: 2026-07-07 — node-fetch 移除 + V3 AaveClient per-fetch 修复
+- **现象**:
+  - Session 6 修复后仍 ~0.9 MB/h heap / 1.1 MB/h RSS 增长率（14h 过夜数据）
+  - `nodeAgent=https:0/0act/2free` — node-fetch 空闲 socket 已清除，但仍有增长
+- **方法**:
+  1. 14h 过夜内存数据对比确认增长率
+  2. Heap snapshot diff 分析（16min + 12min 间隔）
+  3. Python 解析 .heapsnapshot，统计字符串实例和对象类型
+  4. V3/V4 AaveClient SDK 源码分析
+- **发现**:
+  1. **node-fetch 仍有独立 HTTP 通道**：即使设了 maxSockets/maxFreeSockets，node-fetch 走 https.globalAgent，不走 undici globalDispatcher
+  2. **959 个 Markets/Chains 查询字符串实例**（5.2 MB）累积在 heap 中，每个 cron 周期 +12 实例
+  3. **959 个 undici Response 关联对象**（_Response, _Headers, _HeadersList, Listener, ReadableStream, AbortController, onAbort closure）
+  4. **V3 AaveClient 单例是根因**：虽然不继承 GqlClient（无 queryRegistry），但 urql fetchExchange 和 Client 在 `.query().toPromise()` 后保留 Operation + Response 引用
+  5. **V4 AaveClient 已有 per-fetch 修复**（Session 4, commit 59d8746），但 V3 漏了
+  6. 所有缓存在 5-30 分钟内完全填满，14h 增长不是缓存暖机
+- **修复**:
+  1. 移除 node-fetch 依赖，4 个文件改用内置 `fetch()` (undici) — commit `c7d6fe5`
+  2. V3 AaveClient 从模块级单例改为 per-fetch 创建 — commit `790cb01`
+- **修复效果**（3 个 cron 周期验证，settled 状态）:
+  - heap: 68MB → 47MB (**-31%**)
+  - old_space: 57MB → 36.5MB (**-36%**)
+  - RSS: 430-450MB → 143MB (**-67%**)
+  - 3 个周期后 heap 稳定在 ~47MB（无单调增长）
+- **待验证**: ~~需要 4-6h 确认 ~0.9 MB/h 增长率已消除~~ → **已确认稳定**（4h 数据，heap 50-52MB 无增长，old_space 39-40MB 波动，https free sockets 无累积）
+- **诊断代码清理**: Session 7 后移除所有 MEMORY_DIAG 门控代码、debug 端点、rss-diff/heap-diff 诊断日志、--expose-gc 标志。保留 📊 Memory 60s 日志、maxSockets/maxFreeSockets、undici stats、RSS_RESTART_THRESHOLD_MB。
+- **文件**:
+  - `packages/aave-fetcher/src/merkl-api.ts` — 移除 `import fetch from 'node-fetch'`
+  - `packages/aave-fetcher/src/merit-api.ts` — 移除 `import fetch from 'node-fetch'`
+  - `packages/aave-fetcher/src/brevis-api.ts` — 移除 `import fetch from 'node-fetch'`
+  - `packages/aave-fetcher/src/cloudflare-browser.ts` — 移除 `import fetch from 'node-fetch'`
+  - `packages/aave-fetcher/package.json` — 移除 node-fetch 依赖
+  - `packages/aave-fetcher/src/index.ts` — V3 AaveClient per-fetch 创建
+
 ---
 
 ## 诊断方法论
@@ -404,10 +441,7 @@ Phase 6: maxFreeSockets 修复
 
 ### 方法 2: Cron-based old_space Δbase 追踪
 
-`logOldSpaceDiff()` 在每个 cron 周期前后记录 old_space 变化。
-
-- `Δbase` = 相对于进程启动时的增长（反映累积泄漏）
-- `Δlast` = 相对于上一次测量的变化（反映单次 cron 的影响）
+> ⚠️ `logOldSpaceDiff()` 已在诊断代码清理中移除。如需恢复，从 git history 中找回 updateScheduler.ts 的旧版本。
 
 正常模式: Δbase 在 +2~+9MB 波动，不单调递增。
 泄漏模式: Δbase 每轮 cron 增加，如 +5→+10→+15→+20→...
@@ -415,6 +449,8 @@ Phase 6: maxFreeSockets 修复
 ### 方法 3: Heap snapshot 对比分析
 
 当方法 1/2 确认了泄漏但无法定位源头时使用。
+
+> ⚠️ Debug 端点已在诊断代码清理中移除。如需使用，临时部署含 debug 端点的版本（或从 git history 中找回 server.ts 的旧版本），设置 `MEMORY_DIAG=1` 和 `--expose-gc`。
 
 **流程**（1GB 容器安全，不需要调大容器）：
 
@@ -424,11 +460,6 @@ Phase 6: maxFreeSockets 修复
 4. 用 Coding Agent 直接读取 JSON 文件分析 top 构造器和引用关系，或用 Chrome DevTools → Memory → Load 可视化对比
 
 **为什么不在容器内解析**：`readFile` + `JSON.parse` 临时分配 ~500MB（等于 snapshot 文件大小 × 2），1GB 容器会 OOM。只写磁盘不读回，RSS 只临时增加 ~100-200MB。下载到本地后，本地机器内存充足，解析无压力。
-
-**端点**（均需要 `MEMORY_DIAG=1` 环境变量）：
-- `GET /api/debug/heap-snapshot` — 写 snapshot 到磁盘，返回文件名
-- `GET /api/debug/heap-snapshot/:filename` — 下载已写入的 snapshot 文件
-- `GET /api/debug/heap-stats` — 轻量级，只读 V8 统计数字（heap/空间/rss），零开销
 
 ### 方法 4: 构造器级别分析
 
@@ -458,15 +489,16 @@ Phase 6: maxFreeSockets 修复
 
 诊断相关环境变量和启动参数：
 
-| 配置 | 当前值 | 用途 | 何时移除 |
-|------|--------|------|---------|
-| `MEMORY_DIAG=1` | 已设置 | 门控 heap 详细日志 + snapshot + debug 端点 | 泄漏确认修复后 |
-| `--expose-gc` | 已设置 | 允许 `globalThis.gc()` 手动触发 GC | 同上 |
-| `--max-old-space-size=512` | 已设置 | 限制 V8 堆，强制更激进的 GC | 可保留，有防御价值 |
-| `MALLOC_ARENA_MAX=2` | 已设置 | 限制 glibc 并行 arena，减少 RSS 碎片 | 可保留 |
-| `RSS_RESTART_THRESHOLD_MB=800` | 已设置 | RSS 超限 graceful shutdown | 可保留 |
-| `--heapsnapshot-near-heap-limit=1` | **已移除** | OOM 前自动写 heap snapshot → 1GB 容器中反而加速 OOM | 已移除 |
-| `/api/debug/heap-snapshot` | 已部署 | 写 snapshot 到磁盘（只写不读，1GB 容器安全） | 泄漏确认修复后移除 |
-| `/api/debug/heap-snapshot/:filename` | 已部署 | 下载已写入的 snapshot 文件 | 泄漏确认修复后移除 |
-| `/api/debug/heap-stats` | 已部署 | 轻量级 V8 统计（零开销） | 泄漏确认修复后移除 |
-| `/api/debug/heap-top` | **已移除** | getHeapSnapshot + JSON.parse → 1GB 容器 OOM | 已移除 |
+| 配置 | 当前值 | 用途 | 状态 |
+|------|--------|------|------|
+| `MEMORY_DIAG=1` | **已移除** | 门控 heap 详细日志 + snapshot + debug 端点 | 已清理 — 泄漏确认修复 |
+| `--expose-gc` | **已移除** | 允许 `globalThis.gc()` 手动触发 GC | 已清理 — 诊断代码已移除 |
+| `--max-old-space-size=512` | 已设置 | 限制 V8 堆，强制更激进的 GC | **保留**，有防御价值 |
+| `MALLOC_ARENA_MAX=2` | 已设置 | 限制 glibc 并行 arena，减少 RSS 碎片 | **保留** |
+| `RSS_RESTART_THRESHOLD_MB=800` | 已设置 | RSS 超限 graceful shutdown | **保留** |
+| `--heapsnapshot-near-heap-limit=1` | **已移除** | OOM 前自动写 heap snapshot → 1GB 容器中反而加速 OOM | Session 6 移除 |
+| `/api/debug/heap-snapshot` | **已移除** | 写 snapshot 到磁盘 | 已清理 — 泄漏确认修复 |
+| `/api/debug/heap-snapshot/:filename` | **已移除** | 下载已写入的 snapshot 文件 | 已清理 — 泄漏确认修复 |
+| `/api/debug/heap-stats` | **已移除** | 轻量级 V8 统计 | 已清理 — 泄漏确认修复 |
+| `/api/debug/heap-top` | **已移除** | getHeapSnapshot + JSON.parse → 1GB 容器 OOM | Session 4 移除 |
+| `rssDelta()` / `logOldSpaceDiff()` / `withHeapTrace()` | **已移除** | rss-diff / heap-diff / old_space 追踪 | 已清理 — 泄漏确认修复 |

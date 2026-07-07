@@ -425,8 +425,6 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       }
       logger.info(`Oracle override done (${oracleOverrideCount} overrides) ${_phase()}`);
 
-      const memBeforeSnapshot = process.env.MEMORY_DIAG === '1' ? process.memoryUsage() : null;
-
       const newSnapshot: MarketsSnapshot = {
         payload,
         fetchedAt: now,
@@ -461,14 +459,6 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       const v3FreshLabel = mergeResult.v3Fresh ? 'fresh' : 'stale';
       const v4FreshLabel = mergeResult.v4Fresh ? 'fresh' : 'stale';
       const elapsed = now - startTime;
-
-      if (memBeforeSnapshot) {
-        const memAfterSnapshot = process.memoryUsage();
-        const snapshotHeapDelta = (memAfterSnapshot.heapUsed - memBeforeSnapshot.heapUsed) / (1024 * 1024);
-        if (Math.abs(snapshotHeapDelta) > 0.5) {
-          logger.info(`🔍 heap-diff [snapshot-assign] heap=${snapshotHeapDelta >= 0 ? '+' : ''}${snapshotHeapDelta.toFixed(1)}MB`);
-        }
-      }
 
       logger.info(
         `✅ Markets refresh: ${mergeResult.mergedData.length} reserves ` +

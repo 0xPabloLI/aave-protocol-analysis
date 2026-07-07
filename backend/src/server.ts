@@ -132,93 +132,6 @@ app.get('/.well-known/security.txt', (_req, res) => {
   );
 });
 
-// Debug endpoint: write V8 heap snapshot to disk only (MEMORY_DIAG=1 only).
-// Does NOT read or parse the snapshot — avoids the ~500MB memory spike from
-// readFile + JSON.parse. After writing, download via /api/debug/heap-snapshot/:filename
-// and analyze locally with Chrome DevTools.
-app.get('/api/debug/heap-snapshot', (_req, res) => {
-  if (process.env.MEMORY_DIAG !== '1') {
-    res.status(404).json({ error: 'Not found' });
-    return;
-  }
-  const memBefore = process.memoryUsage();
-  let filePath = '';
-  try {
-    filePath = v8.writeHeapSnapshot();
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-    return;
-  }
-  const memAfter = process.memoryUsage();
-  const fileName = filePath.split('/').pop() ?? filePath;
-  logger.info(`🔬 Heap snapshot written: ${filePath} (heap ${Math.round(memBefore.heapUsed/1024/1024)}MB → ${Math.round(memAfter.heapUsed/1024/1024)}MB)`);
-  res.json({
-    fileName,
-    heapBeforeMB: Math.round(memBefore.heapUsed / 1024 / 1024),
-    heapAfterMB: Math.round(memAfter.heapUsed / 1024 / 1024),
-    message: `Snapshot written. Download via GET /api/debug/heap-snapshot/${fileName} then open in Chrome DevTools (Memory tab → Load).`,
-  });
-});
-
-// Debug endpoint: download a previously written heap snapshot file (MEMORY_DIAG=1 only).
-app.get('/api/debug/heap-snapshot/:filename', (req, res) => {
-  if (process.env.MEMORY_DIAG !== '1') {
-    res.status(404).json({ error: 'Not found' });
-    return;
-  }
-  const fileName = req.params.filename;
-  if (!fileName.endsWith('.heapsnapshot') || fileName.includes('..')) {
-    res.status(400).json({ error: 'Invalid filename' });
-    return;
-  }
-  const filePath = `/app/${fileName}`;
-  import('node:fs').then(fs => {
-    if (!fs.existsSync(filePath)) {
-      res.status(404).json({ error: 'File not found', hint: 'Create one first via GET /api/debug/heap-snapshot' });
-      return;
-    }
-    res.download(filePath, fileName, (err) => {
-      if (err) logger.warn(`🔬 Error sending snapshot: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  });
-});
-
-// Debug endpoint: V8 heap object statistics by constructor (MEMORY_DIAG=1 only).
-// Lightweight — no file I/O, just walks the heap in-process.
-app.get('/api/debug/heap-stats', (_req, res) => {
-  if (process.env.MEMORY_DIAG !== '1') {
-    res.status(404).json({ error: 'Not found' });
-    return;
-  }
-  try {
-    const mem = process.memoryUsage();
-    const heapStats = v8.getHeapStatistics();
-    const spaces = v8.getHeapSpaceStatistics();
-    res.json({
-      memory: {
-        heapUsed: mem.heapUsed,
-        heapTotal: mem.heapTotal,
-        rss: mem.rss,
-        external: mem.external,
-        arrayBuffers: mem.arrayBuffers ?? 0,
-      },
-      heapStatistics: {
-        totalAvailable: heapStats.total_available_size,
-        totalPhysical: heapStats.total_physical_size,
-        malloced: heapStats.malloced_memory,
-      },
-      spaces: spaces.map(s => ({
-        name: s.space_name,
-        used: s.space_used_size,
-        size: s.space_size,
-        available: s.space_available_size,
-      })),
-    });
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  }
-});
-
 // Routes
 app.use('/api/markets', marketsRouter);
 app.use('/api/meta', metaRouter);
@@ -352,26 +265,6 @@ if (isPersistenceEnabled()) {
 } else {
   logger.info('💾 Persistence disabled — skipping auto-migration');
   migrationReady = true;
-}
-
-// Detailed heap diagnostics every 10 min (MEMORY_DIAG=1 only).
-// Tracks V8 malloced_memory, external_memory, and heap space breakdown
-// to distinguish V8 heap growth from native/C++ binding leaks.
-if (process.env.MEMORY_DIAG === '1') {
-  let diagBaseline: { heapUsed: number; rss: number; malloced: number; external: number } | null = null;
-  setInterval(() => {
-    const mem = process.memoryUsage();
-    const heapStats = v8.getHeapStatistics();
-    const fmt = (bytes: number) => `${Math.round(bytes / 1024 / 1024)}MB`;
-    const now = { heapUsed: mem.heapUsed, rss: mem.rss, malloced: heapStats.malloced_memory, external: heapStats.external_memory };
-    if (!diagBaseline) diagBaseline = { ...now };
-    const d = (cur: number, base: number) => `${cur >= base ? '+' : ''}${((cur - base) / 1024 / 1024).toFixed(0)}MB`;
-    logger.info(
-      `🔬 Heap detail: heap=${fmt(mem.heapUsed)} rss=${fmt(mem.rss)} external=${fmt(heapStats.external_memory)} malloced=${fmt(heapStats.malloced_memory)} ` +
-      `totalPhysical=${fmt(heapStats.total_physical_size)} totalAvailable=${fmt(heapStats.total_available_size)} ` +
-      `| Δfrom1st: heap=${d(now.heapUsed, diagBaseline.heapUsed)} rss=${d(now.rss, diagBaseline.rss)} malloced=${d(now.malloced, diagBaseline.malloced)} external=${d(now.external, diagBaseline.external)}`
-    );
-  }, 10 * 60_000).unref();
 }
 
 // Start HTTP server immediately — healthcheck returns 503 until caches are warm.
