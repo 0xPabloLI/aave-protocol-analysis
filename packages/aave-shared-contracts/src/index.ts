@@ -16,6 +16,18 @@ export {
   aaveProReserveId,
 } from './keys.js';
 
+export {
+  rayToRatio,
+  rayToPercent,
+  ratioToPercent,
+  percentToRatio,
+  FIELD_UNITS,
+  SERIALIZER_RULES,
+  RATIO_FIELDS,
+  PERCENT_FIELDS,
+} from './units.js';
+export type { FieldUnit } from './units.js';
+
 export function fifoEvict<K>(map: Map<K, unknown>, maxEntries: number): void {
   while (map.size > maxEntries) {
     const { value: oldestKey, done } = map.keys().next();

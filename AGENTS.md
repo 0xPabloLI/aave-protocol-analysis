@@ -101,6 +101,38 @@ Adding/modifying in-memory caches, Maps, Sets, long-lived closures, or external 
 
 3. **If you're unsure about decimal semantics, read the actual debug data first.**
 
+### Unit & Precision Safety Rule (Critical)
+
+**All numeric unit conversions MUST go through `packages/aave-shared-contracts/src/units.ts`.** Never define local `rayToPercent` / `rayToRatio` / etc. functions in other packages.
+
+#### Single Source of Truth
+- **`FIELD_UNITS`** (`units.ts`): declares the in-memory unit of every field in `RuntimeReserveData` (`'ratio'` | `'percent'` | `'number'` | `'string'` | `'boolean'` | `'campaignArray'`).
+- **`SERIALIZER_RULES`** (derived from `FIELD_UNITS`): `'multiply100'` for ratio fields, `'passthrough'` for everything else.
+- **`RATIO_FIELDS` / `PERCENT_FIELDS`**: convenience sets for testing.
+
+#### Unit Conventions
+| Layer | `supplyApy`/`borrowApy`/`campaignApr` | `utilizationPct`/`slopes`/`baseBorrowRate`/`protocolFee` |
+|---|---|---|
+| **In-memory** (`RuntimeReserveData`) | ratio (0.04) | percent (4.0) |
+| **API output** (`MarketWithSpread`) | percent (4.0) | percent (4.0) |
+| **Serializer action** | ×100 | passthrough |
+
+#### Conversion Functions (from `units.ts`)
+| Function | Input → Output | When to use |
+|---|---|---|
+| `rayToRatio(rayStr)` | RAY string → ratio (0.04) | On-chain RAY → ratio field (e.g. `borrowApy` in V4 RPC fallback) |
+| `rayToPercent(rayStr)` | RAY string → percent (4.0) | On-chain RAY → percent field (e.g. `baseBorrowRate` in on-chain service) |
+| `ratioToPercent(ratio)` | 0.04 → 4.0 | Manual conversion |
+| `percentToRatio(percent)` | 4.0 → 0.04 | Manual conversion |
+
+#### Adding a New Numeric Field
+1. Add to `RuntimeReserveData` in `shared-contracts/src/index.ts`.
+2. Add to `EXPECTED_RUNTIME_FIELDS` in the same file.
+3. Add to `FIELD_UNITS` in `shared-contracts/src/units.ts` with the correct unit.
+4. Update `marketsApiSerialize.ts` — check `SERIALIZER_RULES` matches actual serializer behavior.
+5. The invariant test (`tests/units.test.ts`) will fail if you forget step 3.
+6. The backend consistency test (`backend/tests/unitsConsistency.test.ts`) will fail if serializer behavior doesn't match `SERIALIZER_RULES`.
+
 ## Automated Checks (No Manual Checklist Needed)
 
 ### Reserve Field Addition
@@ -118,6 +150,7 @@ When touching one area, check its pair:
 - `backend/src/cacheTtl.ts` ↔ `backend/src/services/updateScheduler.ts`
 - Chain/platform mapping ↔ `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts`
 - `scripts/sync-oracle-pool-configs.ts` ↔ `backend/src/generated/oracle-pool-configs.ts`
+- `packages/aave-shared-contracts/src/units.ts` (FIELD_UNITS) ↔ `backend/src/services/marketsApiSerialize.ts` (serializer behavior)
 
 ### Shared Package Boundaries (Non-Negotiable)
 | Package | Contains | Must NOT contain |
@@ -154,6 +187,7 @@ When touching one area, check its pair:
 - Token pricing + chain mapping: `packages/aave-fetcher/src/token-price-resolver.ts`, `generated/coingecko-platform-by-chain-id.ts`
 - Backend freshness/caching: `backend/src/services/marketsService.ts`, `onchainDataService.ts`, `merklForecastService.ts`, `cacheTtl.ts`
 - Shared contracts: `packages/aave-shared-contracts/src/index.ts` (source of truth for `RuntimeReserveData` and `EXPECTED_RUNTIME_FIELDS`)
+- Unit conversions: `packages/aave-shared-contracts/src/units.ts` (source of truth for `FIELD_UNITS`, `rayToRatio`, `rayToPercent`)
 
 ## Documentation Placement Rule
 
@@ -190,6 +224,7 @@ Canonical source for knowledge spanning frontend AND backend, or Aave protocol f
 - **RSS 垂直飙升 ≠ 渐进泄漏**：RSS 从正常值瞬间飙到 1GB 是一次性大量分配的特征（如 heap snapshot 序列化），不是渐进泄漏（如连接池累积）。两者诊断方向完全不同。渐进泄漏看趋势斜率，垂直飙升看飙升时刻点的代码路径。
 - **SDK 内部状态泄漏不只看 queryRegistry**：V3 AaveClient 不继承 GqlClient（无 queryRegistry），之前注释说"safe as singleton"。但 urql 的 fetchExchange 和 Client 内部也保留 Operation/Response 引用。`.toPromise()` 不触发 urql teardown，导致 Response 对象链无法 GC。**任何使用 urql 的 SDK 在长期运行进程中都应 per-fetch 创建 client**，而非依赖"不继承 GqlClient"的假设。
 - **V3/V4 SDK 修复必须同步**：V4 AaveClient 已在 Session 4 修复为 per-fetch 创建，但 V3 AaveClient 的单例泄漏被 V4 的更大泄漏掩盖。修完 V4 后，V3 的泄漏才变得可见。**修复 SDK 类泄漏时，必须检查同一依赖的所有入口**。
+- **单位转换必须走统一入口**：`rayToPercent`/`rayToRatio` 等转换函数散落在多个包中（onchainDataService 本地定义、aave-rpc-infra 本地定义），导致 V4 RPC fallback 用 `rayToPercent` 给 ratio 字段 `borrowApy` 赋值，序列化器再 ×100 → 400%。**所有转换函数必须 import 自 `@internal/aave-shared-contracts/units.ts`**，新增字段必须注册到 `FIELD_UNITS`，invariant 测试会自动验证注册表完整性。
 
 ## Agent skills
 

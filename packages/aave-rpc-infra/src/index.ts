@@ -4,7 +4,7 @@ import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
 import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
-import { getErrorCode, normalizeAddress, spokeKey, topologySortKey, v4ReserveId, aaveProReserveId } from '@internal/aave-shared-contracts';
+import { getErrorCode, normalizeAddress, spokeKey, topologySortKey, v4ReserveId, aaveProReserveId, rayToRatio } from '@internal/aave-shared-contracts';
 import { DynamicRpcCache } from './dynamicRpcCache.js';
 
 // ============================================================
@@ -654,13 +654,11 @@ function bigintToString(value: unknown): string | undefined {
   }
 }
 
+/** @deprecated Use `rayToRatio` from @internal/aave-shared-contracts for ratio fields, or `rayToPercent` for percent fields. */
 export function rayToPercent(value: unknown): number | undefined {
   if (value === undefined || value === null) return undefined;
   try {
     const ray = BigInt(String(value));
-    // RAY = 10^27. Percent = RAY_decimal × 100 = RAY / 10^25.
-    // Using integer division by 10^19 gives micro-percent (percent × 10^6),
-    // then dividing by 1e6 gives percent with 6 decimal places of precision.
     return Number(ray / 10n ** 19n) / 1e6;
   } catch {
     return undefined;
@@ -693,7 +691,10 @@ function buildReserveData(
   const liquidity = bigintToString(hubAsset.liquidity ?? hubAsset[0]);
   const borrowed = bigintToString(hubAsset.drawnShares ?? hubAsset[6]);
   const supplied = bigintToString(hubAsset.addedShares ?? hubAsset[3]);
-  const borrowApy = rayToPercent(hubAsset.drawnRate ?? hubAsset[10]);
+  // borrowApy is a 'ratio' field (0.04 = 4%) per FIELD_UNITS.
+  // Use rayToRatio (÷10^27) — NOT rayToPercent — to match SDK path convention.
+  // Serializer applies ×100 to ratio fields for API output.
+  const borrowApy = rayToRatio(String(hubAsset.drawnRate ?? hubAsset[10] ?? ''));
   const protocolFeeRaw = hubAsset.liquidityFee ?? hubAsset[8];
   const protocolFee = protocolFeeRaw !== undefined ? Number(protocolFeeRaw) / 100 : undefined;
 

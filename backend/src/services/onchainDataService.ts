@@ -32,7 +32,7 @@ import { logger } from '../logger.js';
 import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
 import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
 import { V4_HUB_FULL_ABI } from '@internal/aave-rpc-infra';
-import { normalizeAddress, v4SpokeCacheKey, v3OnchainKey, v4OnchainKey, fifoEvict } from '@internal/aave-shared-contracts';
+import { normalizeAddress, v4SpokeCacheKey, v3OnchainKey, v4OnchainKey, fifoEvict, rayToPercent } from '@internal/aave-shared-contracts';
 
 const ONCHAIN_PER_RPC_TIMEOUT_MS = 15_000;
 const HUB_MAPPING_TTL_MS = 10 * 60_000;
@@ -42,19 +42,12 @@ export interface OnchainReserveData {
   baseVariableBorrowRate?: number;
 }
 
-export function rayStringToPercent(rayStr: string): number | undefined {
-  if (!rayStr) return undefined;
-  try {
-    const big = BigInt(rayStr);
-    // RAY = 10^27. Percent = RAY_decimal × 100 = RAY / 10^25.
-    // Using integer division by 10^19 gives micro-percent (percent × 10^6),
-    // then dividing by 1e6 gives percent with 6 decimal places of precision.
-    const microPct = big / 10n ** 19n;
-    return Number(microPct) / 1e6;
-  } catch {
-    return undefined;
-  }
-}
+/**
+ * Re-exported from @internal/aave-shared-contracts for backward compatibility.
+ * baseVariableBorrowRate is a 'percent' field per FIELD_UNITS — use rayToPercent.
+ * @see {@link packages/aave-shared-contracts/src/units.ts}
+ */
+export { rayToPercent as rayStringToPercent };
 
 interface ChainCacheEntry {
   data: Map<string, OnchainReserveData>;
@@ -201,7 +194,7 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
 
             if (reserve.baseVariableBorrowRate !== undefined && reserve.baseVariableBorrowRate !== null) {
               const rayStr = reserve.baseVariableBorrowRate?.toString?.() ?? String(reserve.baseVariableBorrowRate);
-              const pct = rayStringToPercent(rayStr);
+              const pct = rayToPercent(rayStr);
               if (pct !== undefined) data.baseVariableBorrowRate = pct;
             }
 
