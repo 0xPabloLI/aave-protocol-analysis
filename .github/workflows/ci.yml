@@ -82,11 +82,12 @@ jobs:
       contents: write
       issues: write
     steps:
-      - name: Checkout target branch
+      - name: Checkout target branch (full history for git revert)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ github.ref_name }}
           token: ${{ secrets.CODEX_BOT_TOKEN != '' && secrets.CODEX_BOT_TOKEN || github.token }}
+          fetch-depth: 0
 
       - name: Revert the failing commit
         run: |
