@@ -654,17 +654,6 @@ function bigintToString(value: unknown): string | undefined {
   }
 }
 
-/** @deprecated Use `rayToRatio` from @internal/aave-shared-contracts for ratio fields, or `rayToPercent` for percent fields. */
-export function rayToPercent(value: unknown): number | undefined {
-  if (value === undefined || value === null) return undefined;
-  try {
-    const ray = BigInt(String(value));
-    return Number(ray / 10n ** 19n) / 1e6;
-  } catch {
-    return undefined;
-  }
-}
-
 async function callContract(
   provider: providers.Provider,
   iface: utils.Interface,

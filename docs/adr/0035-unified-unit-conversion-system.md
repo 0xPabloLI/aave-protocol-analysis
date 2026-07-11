@@ -40,8 +40,8 @@ AAV-1106 暴露了 `baseBorrowRate` 单位错误（RAY 小数误当作百分数�
 
 ### 4. 消除重复定义
 
-- `onchainDataService.ts`：本地 `rayStringToPercent` → re-export 共享 `rayToPercent`
-- `aave-rpc-infra/src/index.ts`：本地 `rayToPercent` 标记 `@deprecated`，`borrowApy` 改用共享 `rayToRatio`
+- `onchainDataService.ts`：删除本地 `rayStringToPercent`，直接 import 共享 `rayToPercent`
+- `aave-rpc-infra/src/index.ts`：删除本地 `rayToPercent`，`borrowApy` 改用共享 `rayToRatio`
 
 ## 关键代码点
 

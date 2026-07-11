@@ -12,7 +12,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { RuntimeReserveData } from '../src/index.js';
 import {
   rayToRatio,
   rayToPercent,
@@ -30,9 +29,6 @@ import {
 // ============================================================
 
 test('FIELD_UNITS covers every field in RuntimeReserveData', () => {
-  const typeKeys = Object.keys({} as RuntimeReserveData) as string[];
-  // RuntimeReserveData has optional fields, so Object.keys on an empty cast gives nothing.
-  // Instead, use EXPECTED_RUNTIME_FIELDS which is the canonical field list.
   const expectedFields = EXPECTED_RUNTIME_FIELDS as readonly string[];
   const registryFields = Object.keys(FIELD_UNITS);
 
@@ -119,6 +115,12 @@ test('rayToPercent: known on-chain RAY values', () => {
   assert.equal(rayToPercent('0'), 0);
   // 2.5% = 2.5
   assert.equal(rayToPercent('25000000000000000000000000'), 2.5);
+  // 5.5% = 5.5 (USDS baseBorrowRate example from AAV-1106)
+  assert.equal(rayToPercent(String(BigInt(55) * 10n ** 24n)), 5.5);
+  // 35% = 35 (slopeAboveOptimal example)
+  assert.equal(rayToPercent(String(BigInt(35) * 10n ** 25n)), 35);
+  // 0.001% = 0.001 (small fractional percent)
+  assert.equal(rayToPercent(String(10n ** 22n)), 0.001);
 });
 
 test('rayToPercent: edge cases', () => {
