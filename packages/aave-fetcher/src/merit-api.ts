@@ -12,7 +12,7 @@ import {
   type MeritDynamicInfo,
 } from "./cloudflare-browser.js";
 import { meritKeyAliases } from "./config.js";
-import { fifoEvict, type MeritCampaignGroup, isWithinLookbackWindow } from "@internal/aave-shared-contracts";
+import { fifoEvict, type MeritCampaignGroup, isWithinLookbackWindow, percentToRatio } from "@internal/aave-shared-contracts";
 
 const MERIT_ENDED_LOOKBACK_DAYS = 7;
 import {
@@ -71,11 +71,6 @@ export interface MeritDataItem {
   meritBorrows: MeritCampaignGroup[];
   /** Protocol version. Currently only V3. */
   protocolVersion: "v3" | "v4";
-}
-
-/** Merit `actionsAPR` is percent; pipeline / snapshot use annual yield ratio. */
-function meritAprPercentToRatio(percent: number): number {
-  return percent / 100;
 }
 
 type MeritAction = "supply" | "borrow";
@@ -1488,9 +1483,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               bt
             );
             const entry: MeritAprEntry = {
-              apr: meritAprPercentToRatio(aprValue!),
+              apr: percentToRatio(aprValue!),
               ...(selfAprValue != null && Number.isFinite(selfAprValue)
-                ? { selfApr: meritAprPercentToRatio(selfAprValue) }
+                ? { selfApr: percentToRatio(selfAprValue) }
                 : {}),
               requiredSupplyTokens: supplyTokens,
               link,
@@ -1511,9 +1506,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               bt
             );
             const entry: MeritAprEntry = {
-              apr: meritAprPercentToRatio(aprValue!),
+              apr: percentToRatio(aprValue!),
               ...(selfAprValue != null && Number.isFinite(selfAprValue)
-                ? { selfApr: meritAprPercentToRatio(selfAprValue) }
+                ? { selfApr: percentToRatio(selfAprValue) }
                 : {}),
               link,
               startDate,
@@ -1540,9 +1535,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               st
             );
             const entry: MeritAprEntry = {
-              apr: meritAprPercentToRatio(aprValue!),
+              apr: percentToRatio(aprValue!),
               ...(selfAprValue != null && Number.isFinite(selfAprValue)
-                ? { selfApr: meritAprPercentToRatio(selfAprValue) }
+                ? { selfApr: percentToRatio(selfAprValue) }
                 : {}),
               requiredBorrowTokens: borrowTokens,
               link,
@@ -1572,9 +1567,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             st
           );
           const entry: MeritAprEntry = {
-            apr: meritAprPercentToRatio(aprValue!),
+            apr: percentToRatio(aprValue!),
             ...(selfAprValue != null && Number.isFinite(selfAprValue)
-              ? { selfApr: meritAprPercentToRatio(selfAprValue) }
+              ? { selfApr: percentToRatio(selfAprValue) }
               : {}),
             requiredBorrowTokens: ["multiple"],
             link,
@@ -1603,9 +1598,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             st
           );
           const entry: MeritAprEntry = {
-            apr: meritAprPercentToRatio(aprValue!),
+            apr: percentToRatio(aprValue!),
             ...(selfAprValue != null && Number.isFinite(selfAprValue)
-              ? { selfApr: meritAprPercentToRatio(selfAprValue) }
+              ? { selfApr: percentToRatio(selfAprValue) }
               : {}),
             link,
             startDate,
