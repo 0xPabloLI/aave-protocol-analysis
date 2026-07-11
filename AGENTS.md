@@ -64,7 +64,7 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
 
 ## Session Workflow
 1. **Bootstrap when needed**: For substantial implementation, debugging, or design sessions, load `using-superpowers` via skill tool. Load `brainstorming` only for feature design, behavior changes, or solution exploration — skip for lightweight inspection, explanation, and routine work.
-2. **Hook policy**: Husky enforces `npm run build` (root + backend) + Prettier on `git commit`, and `ci:remote` on `git push`. Do not bypass with `--no-verify` unless the user explicitly confirms.
+2. **Hook policy**: Husky enforces `npm run build` (root + backend) + `test:typecheck` + Prettier on `git commit`, and `ci:remote` on `git push`. Do not bypass with `--no-verify` unless the user explicitly confirms. CI auto-reverts direct pushes that fail CI.
 3. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
 4. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`.
 5. **Branch discipline**: all development commits go directly on `railway` branch. Do NOT create feature branches or worktrees unless explicitly asked by the user. If a stray branch exists, merge it into `railway` and delete it promptly.
@@ -127,7 +127,7 @@ When touching one area, check its pair:
 | `backend` | API server, serialization (`marketsApiSerialize.ts`) | `fetchMarketsData` definition (imports it) |
 
 ## Validation Gate
-- Quality is enforced by Husky hooks: `pre-commit` → Prettier, `pre-push` → `npm run ci:remote` (build + test + bin-paths + workspace-coverage + no-globstar + audit).
+- Quality is enforced by Husky hooks: `pre-commit` → build + `test:typecheck` + Prettier, `pre-push` → `npm run ci:remote` (build + test + bin-paths + workspace-coverage + no-globstar + audit). CI auto-reverts direct pushes that fail.
 - **Dist import check** (debug-only, also covered by `ci:remote`):
   ```bash
   rg "dist/index\.js|\.\.\/\.\.\/\.\.\/dist" backend/src tests

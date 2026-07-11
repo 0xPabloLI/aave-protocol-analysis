@@ -1,2 +1,3 @@
 npm run build && npm run build -w aave-dashboard-backend || { echo "❌ pre-commit: build failed — fix TS errors before committing"; exit 1; }
+npm run test:typecheck -w aave-dashboard-backend || { echo "❌ pre-commit: test typecheck failed — fix TS errors in test files before committing"; exit 1; }
 npx lint-staged

@@ -33,7 +33,7 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
             campaignStartedAt: '2025-01-01',
             campaignEndedAt: '2025-12-31',
             campaignType: 'DUTCH_AUCTION',
-            positionCap: 10000,
+            positionCapUsd: 10000,
           },
         ],
       },
@@ -65,7 +65,7 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
             campaignId: '1754995104',
             latestTvl: 4_151_203.07,
             totalBudget: 9_998_600,
-            positionCap: 5000,
+            positionCapUsd: 5000,
           },
         ],
       },
@@ -78,14 +78,14 @@ test('serializeReserveForApi scales ratio yield fields to HTTP percents', () => 
   assert.equal(api.borrowApy, 4);
   assert.equal(api.meritSupplys?.[0]?.breakdowns?.[0]?.campaignApr, 3);
   assert.equal(api.meritSupplys?.[0]?.breakdowns?.[1]?.campaignApr, 1);
-  assert.equal(api.meritSupplys?.[0]?.breakdowns?.[1]?.positionCap, 10000);
+  assert.equal(api.meritSupplys?.[0]?.breakdowns?.[1]?.positionCapUsd, 10000);
   const bd = api.merklSupplys?.[0]?.breakdowns?.[0];
   assert.equal(bd?.campaignApr, 4);
   assert.equal(bd?.aprCap, 6);
   assert.equal(api.brevisSupplys?.[0]?.name, 'MetaMask Card');
   assert.equal(api.brevisSupplys?.[0]?.message, 'Eligible MetaMask Card users');
   assert.equal(api.brevisSupplys?.[0]?.breakdowns?.[0]?.campaignApr, 2.4);
-  assert.equal(api.brevisSupplys?.[0]?.breakdowns?.[0]?.positionCap, 5000);
+  assert.equal(api.brevisSupplys?.[0]?.breakdowns?.[0]?.positionCapUsd, 5000);
 });
 
 test('serializeReserveForApi scales Brevis aprCap to percent', () => {

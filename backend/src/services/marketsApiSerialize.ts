@@ -15,7 +15,7 @@ export function roundTo6(n: number): number {
   return Number(n.toFixed(6));
 }
 
-function scaleMeritCampaignBreakdown<T extends { campaignApr: number; positionCap?: number; aprCap?: number }>(b: T): T {
+function scaleMeritCampaignBreakdown<T extends { campaignApr: number; positionCapUsd?: number; aprCap?: number }>(b: T): T {
   const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
   if (Object.prototype.hasOwnProperty.call(b, 'aprCap') && b.aprCap !== undefined) {
     (next as { aprCap?: number }).aprCap = roundTo6(b.aprCap * 100);
