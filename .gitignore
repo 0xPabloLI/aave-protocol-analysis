@@ -102,6 +102,7 @@ scripts/*
 !scripts/check-workspace-coverage.sh
 !scripts/check-no-omit-dev-in-ci-autofix.sh
 !scripts/check-no-globstar-in-test.sh
+!scripts/hook-autofix.sh
 !scripts/verification/
 
 data/
@@ -134,3 +135,6 @@ packages/aave-fetcher/scripts/
 
 # Playwright CLI cache
 .playwright-cli/
+
+# Codex IDE local config
+.codex/

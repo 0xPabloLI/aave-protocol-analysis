@@ -1,1 +1,1 @@
-npm run ci:remote
+bash scripts/hook-autofix.sh pre-push
