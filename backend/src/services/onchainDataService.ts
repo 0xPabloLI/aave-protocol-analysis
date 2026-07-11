@@ -42,13 +42,6 @@ export interface OnchainReserveData {
   baseVariableBorrowRate?: number;
 }
 
-/**
- * Re-exported from @internal/aave-shared-contracts for backward compatibility.
- * baseVariableBorrowRate is a 'percent' field per FIELD_UNITS — use rayToPercent.
- * @see {@link packages/aave-shared-contracts/src/units.ts}
- */
-export { rayToPercent as rayStringToPercent };
-
 interface ChainCacheEntry {
   data: Map<string, OnchainReserveData>;
   updatedAt: number;

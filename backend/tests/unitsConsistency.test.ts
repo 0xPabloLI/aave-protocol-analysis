@@ -65,8 +65,8 @@ test('Serializer applies ×100 to all ratio fields', () => {
   const api = serializeReserveForApi(reserve);
 
   for (const field of RATIO_FIELDS) {
-    const inputValue = (reserve as Record<string, unknown>)[field];
-    const outputValue = (api as Record<string, unknown>)[field];
+    const inputValue = (reserve as unknown as Record<string, unknown>)[field];
+    const outputValue = (api as unknown as Record<string, unknown>)[field];
     if (inputValue !== undefined) {
       assert.equal(
         outputValue,
@@ -82,8 +82,8 @@ test('Serializer passes through all percent fields unchanged', () => {
   const api = serializeReserveForApi(reserve);
 
   for (const field of PERCENT_FIELDS) {
-    const inputValue = (reserve as Record<string, unknown>)[field];
-    const outputValue = (api as Record<string, unknown>)[field];
+    const inputValue = (reserve as unknown as Record<string, unknown>)[field];
+    const outputValue = (api as unknown as Record<string, unknown>)[field];
     if (inputValue !== undefined) {
       assert.equal(
         outputValue,
@@ -106,9 +106,9 @@ test('SERIALIZER_RULES from shared-contracts matches actual serializer behavior 
 
   for (const field of multiply100Fields) {
     // Only test fields that exist on our canonical reserve
-    const inputValue = (reserve as Record<string, unknown>)[field];
+    const inputValue = (reserve as unknown as Record<string, unknown>)[field];
     if (inputValue === undefined) continue;
-    const outputValue = (api as Record<string, unknown>)[field];
+    const outputValue = (api as unknown as Record<string, unknown>)[field];
     assert.notEqual(
       outputValue,
       inputValue,

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { utils, providers } from 'ethers';
 
-import { calculateBaseRateFallback, rayStringToPercent, POOL_CONFIGS, V4_HUB_INTERFACE, processDeficitBatchResults, processDeficitSerialResult } from '../src/services/onchainDataService.js';
+import { calculateBaseRateFallback, POOL_CONFIGS, V4_HUB_INTERFACE, processDeficitBatchResults, processDeficitSerialResult } from '../src/services/onchainDataService.js';
+import { rayToPercent as rayStringToPercent } from '@internal/aave-shared-contracts';
 import { executeMulticall3 } from '@internal/aave-rpc-infra';
 import { V4_HUB_FULL_ABI } from '@internal/aave-rpc-infra';
 import { MULTICALL3_ADDRESS } from '@internal/aave-rpc-infra';
