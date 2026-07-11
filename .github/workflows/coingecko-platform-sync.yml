@@ -1,0 +1,58 @@
+# Regenerate `src/generated/coingecko-platform-by-chain-id.ts` from CoinGecko + address book; open PR if changed.
+name: CoinGecko platform map sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: coingecko-platform-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync platform map
+        run: npm run sync:coingecko-platform-map
+
+      - name: Verify build
+        run: npm run build
+
+      - name: Detect changes
+        id: diff
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8
+        with:
+          commit-message: "chore: sync CoinGecko platform map"
+          branch: bot/sync-coingecko-platform-map-${{ github.run_id }}
+          delete-branch: true
+          title: "chore: sync CoinGecko platform map"
+          body: |
+            Automated update of `src/generated/coingecko-platform-by-chain-id.ts` from CoinGecko `asset_platforms` for Aave V3 mainnet chains in `@bgd-labs/aave-address-book`.
+
+            Merge after CI passes.

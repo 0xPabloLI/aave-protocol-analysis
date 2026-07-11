@@ -1,0 +1,73 @@
+{
+  "name": "aave-markets-data",
+  "version": "1.0.0",
+  "description": "Fetch Aave market data using TypeScript SDK",
+  "keywords": [
+    "aave",
+    "defi",
+    "typescript",
+    "markets"
+  ],
+  "license": "MIT",
+  "author": "",
+  "type": "module",
+  "main": "dist/index.js",
+  "workspaces": [
+    "packages/*",
+    "backend"
+  ],
+  "scripts": {
+    "build": "npm run build -w @internal/aave-shared-contracts -w @internal/aave-rpc-infra -w @internal/aave-fetcher && tsc",
+    "dev": "tsx src/cli.ts",
+    "dev:watch": "tsx watch src/cli.ts",
+    "start": "node dist/cli.js",
+    "postinstall": "node scripts/patch-ethers-exports.js",
+    "audit": "npm audit --omit=dev --audit-level=high >/tmp/_audit1 2>/dev/null; head -1 /tmp/_audit1 | grep -qE '^found|^# npm audit report' || { cat /tmp/_audit1 >&2; exit 1; }; grep -oE 'GHSA-[a-z0-9-]+' /tmp/_audit1 | sort -u | grep -vE 'GHSA-848j-6mx2-7j84|GHSA-58qx-3vcg-4xpx' | grep -q . && exit 1; npm audit --omit=dev --audit-level=moderate >/tmp/_audit2 2>/dev/null; head -1 /tmp/_audit2 | grep -qE '^found|^# npm audit report' || { cat /tmp/_audit2 >&2; exit 1; }; grep -oE 'GHSA-[a-z0-9-]+' /tmp/_audit2 | sort -u | grep -vE 'GHSA-848j-6mx2-7j84|GHSA-58qx-3vcg-4xpx' | grep -q . && exit 1; exit 0",
+    "check:shared-config-syntax": "node --check packages/aave-shared-config/index.js",
+    "ci": "npm ci && npm run check:shared-config-syntax && npm run build && npm run prune && npm run build -w aave-dashboard-backend && npm run prune -w aave-dashboard-backend && npm run test -w @internal/aave-shared-contracts && npm run test:typecheck -w aave-dashboard-backend && npm run test -w aave-dashboard-backend",
+    "ci:remote": "npm run ci && npm run check:bin-paths && npm run check:workspace-coverage && npm run check:no-globstar && npm run audit",
+    "ci:auto-fix": "npm audit fix --omit=dev",
+    "deploy": "./deploy.sh",
+    "mcp:context7": "node .cursor/context7-server.js",
+    "check:bin-paths": "bash scripts/check-no-hardcoded-bin-paths.sh",
+    "check:workspace-coverage": "bash scripts/check-workspace-coverage.sh",
+    "check:no-globstar": "bash scripts/check-no-globstar-in-test.sh",
+    "prune": "ts-prune -i '\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v '^src/' | (grep -q . && exit 1 || exit 0)",
+    "test": "tsx --test tests/*.test.ts",
+    "sync:coingecko-platform-map": "tsx scripts/sync-coingecko-platform-map.ts",
+    "prepare": "husky || true"
+  },
+  "dependencies": {
+    "@aave-dao/aave-address-book": "^4.57.1",
+    "@aave/client": "^0.6.1",
+    "@aave/client-v4": "npm:@aave/client@^4.2.0",
+    "@internal/aave-fetcher": "*",
+    "@internal/aave-shared-config": "*",
+    "@internal/aave-shared-contracts": "*",
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "cheerio": "^1.1.2",
+    "dotenv": "^17.4.2",
+    "get-tsconfig": "^4.14.0",
+    "winston": "^3.19.0",
+    "zod": "^4.3.6"
+  },
+  "overrides": {
+    "axios": "^1.13.5",
+    "ethers": "5.8.0",
+    "h3": "^1.15.5",
+    "hono": "^4.12.25",
+    "preact": "^10.28.3",
+    "undici": "^7.28.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/cheerio": "^0.22.35",
+    "@types/node": "^25.4.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
+    "prettier": "^3.8.3",
+    "ts-prune": "^0.10.3",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

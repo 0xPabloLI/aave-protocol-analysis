@@ -1,0 +1,12 @@
+# Phase 1: Build (source code TS compilation)
+npm run build && npm run build -w aave-dashboard-backend || { echo "❌ pre-commit: build failed — fix TS errors before committing"; exit 1; }
+
+# Phase 2: Test file type checking
+npm run test:typecheck -w aave-dashboard-backend || { echo "❌ pre-commit: test typecheck failed — fix TS errors in test files before committing"; exit 1; }
+
+# Phase 3: Auto-fixable config checks (bin-paths, globstar)
+# Fixes are applied to working tree — lint-staged will stage them into the commit.
+bash scripts/hook-autofix.sh pre-commit || { echo "❌ pre-commit: auto-fix failed — see errors above"; exit 1; }
+
+# Phase 4: Prettier formatting (lint-staged auto-fixes and stages)
+npx lint-staged

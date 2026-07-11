@@ -1,0 +1,1 @@
+bash scripts/hook-autofix.sh pre-push

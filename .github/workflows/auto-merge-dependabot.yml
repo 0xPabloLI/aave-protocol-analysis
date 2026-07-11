@@ -1,0 +1,46 @@
+name: Auto-merge Dependabot PRs
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2.5.0
+
+      - name: Check if address-book upgrade
+        id: check
+        run: |
+          if [ "${{ steps.metadata.outputs.dependency-names }}" = "@aave-dao/aave-address-book" ]; then
+            echo "is_target=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_target=false" >> "$GITHUB_OUTPUT"
+            echo "Not an address-book upgrade (got: ${{ steps.metadata.outputs.dependency-names }}), skipping"
+          fi
+
+      - name: Wait for CI to pass
+        if: steps.check.outputs.is_target == 'true'
+        uses: lewagon/wait-on-check-action@5a03e4b4c3c07d4d1f6d34e17a6a0f4baebd6848 # v1.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          repo: ${{ github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 30
+
+      - name: Squash merge
+        if: steps.check.outputs.is_target == 'true'
+        run: gh pr merge --squash --delete-branch "${{ github.event.pull_request.number }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

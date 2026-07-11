@@ -1,0 +1,154 @@
+# RPC Endpoints Configuration
+
+On-chain data (deficit, borrow rate, Oracle prices) is fetched via RPC endpoints shared across all services.
+
+## Shared RPC Dependency Chain
+
+RPC access is abstracted into **two shared layers**, consumed by all on-chain services:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ packages/aave-shared-config/index.js  (静态层)                │
+│   AAVE_RPC_URLS_BY_CHAIN_KEY  ← 17 链 RPC URL 注册表          │
+│   getAaveRpcUrlsByChainId()    ← chainId → URL[]             │
+└────────────────────────┬────────────────────────────────────┘
+                         │ import
+┌────────────────────────▼────────────────────────────────────┐
+│ backend/src/services/ethProviderService.ts  (运行时层)        │
+│   getProvidersForChain()       ← 健康排序 (成功→优先, 压制→兜底) │
+│   reportProviderSuccess/ Failure ← 健康追踪 (2次失败压制5分钟)  │
+└────┬──────────────┬──────────────┬──────────────┬───────────┘
+     │              │              │              │
+     ▼              ▼              ▼              ▼
+┌─────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
+│V3 defi- │  │V4 defi-  │  │V3 Oracle │  │V4 Oracle │
+│cit/rate │  │cit       │  │prices    │  │prices    │
+│         │  │(Multi-   │  │          │  │          │
+│         │  │ call3→   │  │          │  │          │
+│         │  │ serial)  │  │          │  │          │
+└─────────┘  └──────────┘  └──────────┘  └──────────┘
+ onchainDataService.ts     oracleService.ts
+```
+
+每个消费者都复用了同一套 retry/fallback 模板：
+```
+candidates = ethProviderService.getProvidersForChain(chainId, rpcUrls)
+for (candidate of candidates):
+  try:
+    result = await doWork(candidate.provider)
+    ethProviderService.reportProviderSuccess(...)
+    return result
+  catch:
+    ethProviderService.reportProviderFailure(...)
+    // 继续下一个 RPC
+```
+
+**待优化**：V4 deficit 路径有 Multicall3 → serial 两种调用方式，当前 Multicall3 失败后先降级到 serial（仍在同一 RPC），如果是网络错误（ECONNRESET）应直接换 RPC。计划在 `ethProviderService` 抽象层统一做错误分类 → 智能 fallback，避免各消费者重复实现。
+
+| 消费者 | 文件 | 调用方式 | 降级路径 |
+|---|---|---|---|
+| V3 deficit/rate | `onchainDataService.ts:193` | `UiPoolDataProvider` 单次 | 换 RPC |
+| V4 deficit | `onchainDataService.ts:262` | Multicall3 batch → serial | 先降级再换 RPC ⚠️ |
+| V3 Oracle | `oracleService.ts:321` | `Pool/Oracle` 串行 | 换 RPC |
+| V4 Oracle | `oracleService.ts:348` | `Spoke/Oracle` 串行 | 换 RPC |
+
+## Configuration Location
+
+```
+packages/aave-shared-config/index.js
+├── AAVE_RPC_URLS_BY_CHAIN_KEY         // RPC URLs by chain name (private + public)
+├── AAVE_CHAIN_ID_TO_RPC_KEY           // chainId → chain name mapping
+└── getAaveRpcUrlsByChainId()          // Helper function
+```
+
+## RPC Endpoints by Chain (Public Only)
+
+| Chain | chainId | Public RPC Endpoints |
+|-------|---------|----------------------|
+| Ethereum | 1 | `ethereum-rpc.publicnode.com`, `eth-mainnet.public.blastapi.io`, `eth.drpc.org`, `1rpc.io/eth` |
+| Polygon | 137 | `gateway.tenderly.co/public/polygon`, `polygon-pokt.nodies.app`, `polygon-bor-rpc.publicnode.com`, `rpc-mainnet.matic.quiknode.pro`, `polygon.drpc.org`, `1rpc.io/matic` |
+| Avalanche | 43114 | `api.avax.network/ext/bc/C/rpc`, `avalanche.drpc.org`, `1rpc.io/avax/c`, `avalanche-c-chain-rpc.publicnode.com` |
+| Arbitrum | 42161 | `arb1.arbitrum.io/rpc`, `1rpc.io/arb`, `arbitrum.drpc.org`, `arbitrum-one-rpc.publicnode.com` |
+| Base | 8453 | `1rpc.io/base`, `base.llamarpc.com`, `base.publicnode.com`, `base-mainnet.public.blastapi.io`, `base.drpc.org` |
+| Optimism | 10 | `public-op-mainnet.fastnode.io`, `optimism-rpc.publicnode.com`, `optimism.drpc.org`, `1rpc.io/op` |
+| Metis | 1088 | `andromeda.metis.io/?owner=1088`, `metis-rpc.publicnode.com`, `metis.drpc.org`, `metis-andromeda.gateway.tenderly.co` |
+| Gnosis | 100 | `gnosis-rpc.publicnode.com`, `rpc.gnosischain.com`, `1rpc.io/gnosis`, `gnosis.drpc.org`, `gnosis.api.onfinality.io/public` |
+| BNB | 56 | `bsc.publicnode.com`, `bsc-mainnet.public.blastapi.io`, `1rpc.io/bnb`, `bsc.drpc.org` |
+| Scroll | 534352 | `rpc.scroll.io`, `scroll-rpc.publicnode.com`, `scroll.drpc.org`, `1rpc.io/scroll` |
+| zkSync | 324 | `mainnet.era.zksync.io`, `zksync.drpc.org`, `1rpc.io/zksync2-era`, `rpc.ankr.com/zksync_era`, `zksync-era.public-rpc.com` |
+| Linea | 59144 | `1rpc.io/linea`, `linea.drpc.org`, `linea-rpc.publicnode.com`, `rpc.linea.build` |
+| Sonic | 146 | `rpc.soniclabs.com`, `sonic.drpc.org`, `sonic-rpc.publicnode.com` |
+| Celo | 42220 | `rpc.ankr.com/celo`, `celo.drpc.org`, `forno.celo.org`, `celo-mainnet.gateway.tatum.io` |
+| Soneium | 1868 | `soneium.drpc.org`, `rpc.soneium.org`, `soneium-rpc.publicnode.com`, `soneium.gateway.tenderly.co` |
+| Mantle | 5000 | `rpc.mantle.xyz`, `mantle.publicnode.com`, `mantle.drpc.org`, `mantle.gateway.tenderly.co` |
+| MegaETH | 4326 | `mainnet.megaeth.com/rpc` |
+| Plasma | 9745 | `rpc.plasma.to` |
+| Ink | 57073 | `ink.drpc.org` |
+| Blast | 81457 | `rpc.blast.io`, `blast.drpc.org`, `blast-rpc.publicnode.com` |
+| opBNB | 204 | `opbnb-mainnet-rpc.bnbchain.org`, `opbnb.drpc.org`, `opbnb-rpc.publicnode.com` |
+| zkLink Nova | 810180 | `rpc.zklink.io` |
+| Manta | 169 | `pacific-rpc.manta.network/http`, `manta-pacific.drpc.org`, `1rpc.io/manta` |
+| Berachain | 80094 | `rpc.berachain.com`, `berachain.drpc.org`, `berachain-rpc.publicnode.com` |
+| Flare | 14 | `flare-api.flare.network/ext/C/rpc`, `rpc.ankr.com/flare` |
+| Palm | 11297108109 | _(private only - requires Infura API key)_ |
+| Abstract | 2741 | _(private only - requires Alchemy API key)_ |
+
+> **Note**: Palm and Abstract chains have no working public RPC endpoints. They require private API keys (Infura/Alchemy) to function.
+
+## Architecture
+
+On-chain data is fetched **concurrently per-pool** (one config per address-book market)
+
+- **Cron schedule**: Every 1 minute at second :10 (markets at :00)
+- **Per-RPC timeout**: 15 seconds
+- **Cache TTL**: 30 minutes
+
+### Fetch Flow (onchainDataService)
+
+```
+Cron :10 → 所有 pool 并发 (Promise.allSettled)
+  → 每个 pool 通过 ethProviderService 获取健康 RPC 列表
+    → RPC → 成功 → reportProviderSuccess → 更新 cache
+    → RPC → 失败 → reportProviderFailure → 换下一个 RPC
+```
+
+### Failover Strategy
+
+1. `ethProviderService.getProvidersForChain()` 返回健康→压制的优先级列表
+2. 2 次连续失败压制 5 分钟，避免反复打挂掉的节点
+3. 每次成功重置失败计数
+4. 所有 RPC 都失败：使用 30 分钟 TTL 内的缓存数据
+5. 无有效缓存：deficit 默认 `"0"`，baseVariableBorrowRate 通过反向公式计算
+
+## Per-pool Cache 内存
+
+| 项目 | 估算 |
+|------|------|
+| Pool 数 | ~22（所有 address-book 市场，含同链多市场） |
+| 每 pool reserve 数 | 约 5–20，平均 ~12 |
+| 单条缓存 | `poolAddress` + `updatedAt` + `Map<tokenAddress, { deficit?, baseVariableBorrowRate? }>` |
+| 合并键 | reserveId = `chainId:poolAddress:tokenAddress`（与 SDK payload 一致） |
+
+**粗算**：22 × (1 个 Map + 12 × (42 字符地址 + 约 60 字符两个字段)) ≈ **30–60 KB**。**结论：per-pool cache 对内存负担可忽略。**
+
+---
+
+## On-chain 数据来源对比
+
+| 对比项 | 原设计/文档描述 | 当前实现 |
+|--------|-----------------|----------|
+| **deficit** | `pool.getReserveDeficit(asset)`，按资产单独调，每链 N 次 RPC | `UiPoolDataProvider.getReservesHumanized()` 一次调用，humanized 响应里含 `deficit`（Aave v3.3.0+） |
+| **baseVariableBorrowRate** | 来自 `getReservesHumanized()` 的 ReserveData | 同上，同一次 humanized 响应 |
+| **每链 RPC 次数** | 1（humanized）+ N（每个 reserve 一次 getReserveDeficit） | **1**（仅 getReservesHumanized） |
+| **合约/接口** | Pool + UiPoolDataProvider | 仅 **UiPoolDataProvider**（`@aave/contract-helpers`） |
+| **数据内容** | deficit（raw）、baseVariableBorrowRate（RAY） | 相同：deficit（raw）、baseVariableBorrowRate（RAY） |
+
+**结论**：来源都是链上只读调用，数据含义与精度一致；当前实现用 **单次 getReservesHumanized() 替代「humanized + 每资产 getReserveDeficit」**，RPC 次数从 1+N 降为 1，逻辑更简单、延迟更低。
+
+---
+
+## Adding New RPC Endpoints
+
+1. Edit `packages/aave-shared-config/index.js`
+2. Add URLs to `AAVE_RPC_URLS_BY_CHAIN_KEY[chainName]`
+3. Ensure `AAVE_CHAIN_ID_TO_RPC_KEY` has the chainId → chainName mapping
