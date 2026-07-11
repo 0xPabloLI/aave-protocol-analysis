@@ -654,11 +654,14 @@ function bigintToString(value: unknown): string | undefined {
   }
 }
 
-function rayToPercent(value: unknown): number | undefined {
+export function rayToPercent(value: unknown): number | undefined {
   if (value === undefined || value === null) return undefined;
   try {
     const ray = BigInt(String(value));
-    return Number(ray / 10n ** 21n) / 1e6;
+    // RAY = 10^27. Percent = RAY_decimal × 100 = RAY / 10^25.
+    // Using integer division by 10^19 gives micro-percent (percent × 10^6),
+    // then dividing by 1e6 gives percent with 6 decimal places of precision.
+    return Number(ray / 10n ** 19n) / 1e6;
   } catch {
     return undefined;
   }

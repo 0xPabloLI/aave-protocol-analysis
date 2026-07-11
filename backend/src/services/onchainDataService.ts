@@ -42,11 +42,14 @@ export interface OnchainReserveData {
   baseVariableBorrowRate?: number;
 }
 
-function rayStringToPercent(rayStr: string): number | undefined {
+export function rayStringToPercent(rayStr: string): number | undefined {
   if (!rayStr) return undefined;
   try {
     const big = BigInt(rayStr);
-    const microPct = big / 10n ** 21n;
+    // RAY = 10^27. Percent = RAY_decimal × 100 = RAY / 10^25.
+    // Using integer division by 10^19 gives micro-percent (percent × 10^6),
+    // then dividing by 1e6 gives percent with 6 decimal places of precision.
+    const microPct = big / 10n ** 19n;
     return Number(microPct) / 1e6;
   } catch {
     return undefined;

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { utils, providers } from 'ethers';
 
-import { calculateBaseRateFallback, POOL_CONFIGS, V4_HUB_INTERFACE, processDeficitBatchResults, processDeficitSerialResult } from '../src/services/onchainDataService.js';
+import { calculateBaseRateFallback, rayStringToPercent, POOL_CONFIGS, V4_HUB_INTERFACE, processDeficitBatchResults, processDeficitSerialResult } from '../src/services/onchainDataService.js';
 import { executeMulticall3 } from '@internal/aave-rpc-infra';
 import { V4_HUB_FULL_ABI } from '@internal/aave-rpc-infra';
 import { MULTICALL3_ADDRESS } from '@internal/aave-rpc-infra';
@@ -622,4 +622,58 @@ test('processDeficitBatchResults: mixed results - first ok second fail keeps par
   const spokeData = processDeficitBatchResults(results, underlyings);
   assert.strictEqual(spokeData.size, 1);
   assert.strictEqual(spokeData.get('0xTokenA')!.deficit, '100');
+});
+
+// ============================================================
+// AAV-1106: rayStringToPercent RAY → percent conversion tests
+// Bug: was dividing by 10^27 (returning RAY decimal) instead of
+// 10^25 (returning percent = RAY decimal × 100)
+// ============================================================
+
+test('rayStringToPercent converts 5.5% RAY to 5.5 percent (USDS example)', () => {
+  // 5.5% = 0.055 decimal = 0.055 × 10^27 RAY = 55000000000000000000000000
+  const rayStr = (BigInt(55) * 10n ** 24n).toString(); // 5.5 × 10^25
+  const result = rayStringToPercent(rayStr);
+  assert.strictEqual(result, 5.5);
+});
+
+test('rayStringToPercent converts 0% RAY to 0 percent', () => {
+  assert.strictEqual(rayStringToPercent('0'), 0);
+});
+
+test('rayStringToPercent converts 100% RAY to 100 percent', () => {
+  // 100% = 1.0 × 10^27
+  const rayStr = (10n ** 27n).toString();
+  const result = rayStringToPercent(rayStr);
+  assert.strictEqual(result, 100);
+});
+
+test('rayStringToPercent converts 0.75% RAY to 0.75 percent (slopeBelowOptimal example)', () => {
+  // 0.75% = 0.0075 × 10^27 = 7.5 × 10^24
+  const rayStr = (BigInt(75) * 10n ** 23n).toString(); // 7.5 × 10^24
+  const result = rayStringToPercent(rayStr);
+  assert.strictEqual(result, 0.75);
+});
+
+test('rayStringToPercent returns undefined for empty string', () => {
+  assert.strictEqual(rayStringToPercent(''), undefined);
+});
+
+test('rayStringToPercent returns undefined for non-numeric string', () => {
+  assert.strictEqual(rayStringToPercent('not-a-number'), undefined);
+});
+
+test('rayStringToPercent converts small fractional percent correctly', () => {
+  // 0.001% = 0.00001 × 10^27 = 1 × 10^22
+  const rayStr = (10n ** 22n).toString();
+  const result = rayStringToPercent(rayStr);
+  assert.strictEqual(result, 0.001);
+});
+
+test('rayStringToPercent does NOT return RAY decimal (regression: AAV-1106)', () => {
+  // Before fix: 5.5% RAY would incorrectly return 0.055 instead of 5.5
+  const rayStr = (BigInt(55) * 10n ** 24n).toString();
+  const result = rayStringToPercent(rayStr);
+  assert.ok(result !== 0.055, `Expected 5.5, got ${result} — RAY decimal bug regression`);
+  assert.strictEqual(result, 5.5);
 });
