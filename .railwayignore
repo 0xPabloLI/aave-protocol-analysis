@@ -1,6 +1,0 @@
-.agents/
-docs/plans/
-aaveapy-doc/
-*.test.ts
-*.spec.ts
-tests/
