@@ -948,7 +948,7 @@ Brevis 条目字段：
    | `slopeBelowOptimal`  | `number` percent   | 利率曲线斜率 1。例如 `4` = 4%                                                                             |
    | `slopeAboveOptimal`  | `number` percent   | 利率曲线斜率 2。例如 `60` = 60%                                                                           |
    | `optimalUtilization` | `number` percent   | 最优利用率。例如 `92` = 92%                                                                               |
-   | `baseBorrowRate`     | `number` percent   | 基础借款利率。例如 `0` = 0%                                                                               |
+   | `baseBorrowRate`     | `number` percent   | 基础借款利率。例如 `5.5` = 5.5%                                                                          |
 
    **On-chain 字段说明**：`baseBorrowRate` 和 `deficit` 仅从 RPC 获取（UiPoolDataProvider.getReservesHumanized）。如 RPC 失败，使用 5 分钟内的缓存数据；超过缓存期或无缓存时字段缺失。
 
