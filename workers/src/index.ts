@@ -1,4 +1,4 @@
-import type { BrowserWorker } from '@cloudflare/puppeteer';
+import puppeteer, { type BrowserWorker } from '@cloudflare/puppeteer';
 import { BrowserPool } from './browser-pool.js';
 
 export interface Env {
@@ -8,6 +8,20 @@ export interface Env {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === '/limits') {
+      try {
+        const limits = await (puppeteer as any).limits(env.MY_BROWSER);
+        return new Response(JSON.stringify({ success: true, limits }, null, 2), {
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Failed to fetch browser limits',
+        }), { headers: { 'Content-Type': 'application/json' } });
+      }
+    }
     const id = env.BROWSER_POOL.idFromName('global-browser-pool');
     const stub = env.BROWSER_POOL.get(id);
     return await stub.fetch(request);

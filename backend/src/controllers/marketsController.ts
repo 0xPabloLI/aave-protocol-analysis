@@ -8,9 +8,12 @@
 
 import { Request, Response } from 'express';
 import { getMarketsData, type RuntimeReserveData } from '../services/marketsService.js';
-import { serializeMarketsReservesForApi } from '../services/marketsApiSerialize.js';
+import { serializeMarketsReservesForApi, computeSchemaFingerprint } from '../services/marketsApiSerialize.js';
 import { MarketsResponse, MarketWithSpread } from '../types/index.js';
 import { logger } from '../logger.js';
+
+/** API version — bumped when breaking changes (field renames) are introduced. */
+export const MARKETS_API_VERSION = 'snapshot-v3';
 
 /**
  * GET /api/markets
@@ -20,11 +23,11 @@ import { logger } from '../logger.js';
  */
 export async function getMarkets(req: Request, res: Response): Promise<void> {
   try {
-    const { payload, staleTimeMs } = getMarketsData();
+    const { payload, staleTimeMs, hardTtlMs, ageMs, isTooStale, deficitFallbackReserveIds, v4FallbackReserveIds } = getMarketsData();
 
-    // If no snapshot yet (cold start before warmup completes)
     if (!payload) {
       logger.warn('Markets snapshot not yet available');
+      res.set('Retry-After', '10');
       res.status(503).json({
         errorCode: 'MARKETS_SNAPSHOT_NOT_READY',
         error: 'Service unavailable',
@@ -33,7 +36,6 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Filter invalid entries (deficit already merged at write time)
     const filtered = payload.data.filter((item) => {
       return (
         item.marketName &&
@@ -50,11 +52,19 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
     const response: MarketsResponse = {
       snapshot: {
         lastUpdated: payload._metadata.timestamp,
-        version: 'markets-v2',
+        version: MARKETS_API_VERSION,
         staleTimeMs,
+        schemaFingerprint: computeSchemaFingerprint(),
+        deficitFallbackReserveIds,
+        ...(v4FallbackReserveIds.length ? { v4FallbackReserveIds } : {}),
+        ...(isTooStale && { stale: true, staleAgeMs: ageMs }),
       },
       reserves,
     };
+
+    if (isTooStale) {
+      res.set('Warning', '110 - "Markets snapshot is stale"');
+    }
 
     res.json(response);
   } catch (error) {

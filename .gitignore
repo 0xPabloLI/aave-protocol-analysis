@@ -96,6 +96,14 @@ node_modules
 scripts/*
 !scripts/sync-aave-subgraph-deployments.mjs
 !scripts/sync-coingecko-platform-map.ts
+!scripts/sync-oracle-pool-configs.ts
+!scripts/patch-ethers-exports.js
+!scripts/check-no-hardcoded-bin-paths.sh
+!scripts/check-workspace-coverage.sh
+!scripts/check-no-omit-dev-in-ci-autofix.sh
+!scripts/check-no-globstar-in-test.sh
+!scripts/hook-autofix.sh
+!scripts/verification/
 
 data/
 
@@ -103,3 +111,30 @@ data/
 workers/.wrangler/
 workers/node_modules/
 workers/dist/
+
+# Railway CLI local config
+.railway
+
+SESSION-BOARD.md
+
+.arts/
+
+# MCP config (contains sensitive tokens)
+.trae/mcp.json
+
+# Agent config directories (local tools, not part of the project)
+.claude/
+.trae/skills
+.cursor/skills
+
+# Git worktrees
+.worktrees/
+
+# Research/debug scripts (not part of build or runtime)
+packages/aave-fetcher/scripts/
+
+# Playwright CLI cache
+.playwright-cli/
+
+# Codex IDE local config
+.codex/

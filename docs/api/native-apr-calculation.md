@@ -76,7 +76,7 @@ reserve.size.raw  = availableLiquidity + totalVariableDebt
 
 **结论**：
 - `deficit` 必须通过 on-chain RPC 获取
-- `baseVariableBorrowRate` 优先从 on-chain 获取；**缺失时**后端用 fallback 反推：链上按秒复利，APR = SECONDS_PER_YEAR×((1+APY)^(1/SECONDS_PER_YEAR)−1)，再用该 reserve 的 `utilizationPct`、slopes、optimal 反算 base。计算中**不使用** reserve size。
+- `baseVariableBorrowRate` 优先从 on-chain 获取；**缺失时**后端用 fallback 反推：链上按秒复利，APR = SECONDS_PER_YEAR×((1+APY)^(1/SECONDS_PER_YEAR)−1)，再用该 reserve 的 `utilizationPct`、slopes、optimal 反算 base。计算中**不使用** reserve size。Fallback 返回 `null` 表示无法计算（输入缺失或参数不匹配），`0` 表示计算结果确实为零。调用者仅在返回非 `null` 时设置 `baseBorrowRate`。
 - 其他字段均可从 Aave API 获取
 
 ---
@@ -111,7 +111,7 @@ Frontend (aaveapy)
 ## 1.1 Backend: Data Sources
 
 **Implementation:**
-- `src/index.ts` - Markets data fetcher (Aave SDK)
+- `packages/aave-fetcher/src/index.ts` - Markets data fetcher (Aave SDK)
 - `backend/src/services/onchainDataService.ts` - On-chain data fetcher (RPC)
 
 ### Data Source Architecture
@@ -166,8 +166,8 @@ Fields available in each reserve object:
 
 ### Reliability
 
-- Markets refresh (`fetchMarketsPayload`) merges on-chain fields from `onchainDataService` cache at write time (not a parallel `Promise.allSettled` to the HTTP client path).
-- On-chain data uses **30-minute** per-pool cache TTL (`BACKEND_CACHE_TTL_MS.onchainCacheTtl`); RPC failure within TTL reuses cached values.
+- Markets refresh (`fetchMarketsData`) merges on-chain fields from `onchainDataService` cache at write time (not a parallel `Promise.allSettled` to the HTTP client path).
+- On-chain data uses **30-minute** per-pool cache TTL (`BACKEND_CACHE_TTL_MS.onchainTtlMs`); RPC failure within TTL reuses cached values.
 - If on-chain data is missing and cache expired, reserves still get fallbacks (`deficit` default `"0"`, `baseVariableBorrowRate` calculated when possible).
 - Markets payload is required for a successful refresh; on-chain fields are best-effort.
 
@@ -181,8 +181,8 @@ Fields available in each reserve object:
 
 ### Cache
 
-- 内存快照 + `staleTimeMs` 60s（`marketsDataStaleThreshold` / `realtimeFamily`）；cron 每分钟刷新
-- On-chain：独立 cron + **30 分钟** per-pool 缓存（`onchainCacheTtl`），RPC 失败时在 TTL 内复用
+- 内存快照 + `staleTimeMs` 60s（对应 `softTTL = marketsSoftTtlMs`）；cron 每分钟刷新
+- On-chain：独立 cron + **30 分钟** per-pool 缓存（`onchainTtlMs`），RPC 失败时在 TTL / hardTTL 窗口内复用
 
 ---
 
@@ -350,7 +350,7 @@ This keeps first paint fast and bounds failure blast radius.
 
 | 文件 | 说明 |
 |------|------|
-| `src/index.ts` | Markets data fetcher (Aave SDK) |
+| `packages/aave-fetcher/src/index.ts` | Markets data fetcher (Aave SDK) |
 | `backend/src/services/onchainDataService.ts` | On-chain data fetcher (deficit, baseVariableBorrowRate) |
 | `backend/src/services/marketsService.ts` | Unified markets + on-chain data service |
 

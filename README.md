@@ -114,6 +114,11 @@ The server uses environment variables for configuration (see [AGENTS.md](AGENTS.
 - `PORT` - Server port (default: 3001)
 - `NODE_ENV` - Environment (development/production)
 - `FRONTEND_URL` - CORS allowed origins for production (comma-separated)
+- `MERKL_HARD_TTL_MS` - Max age for Merkl fallback snapshots before refusing stale reuse (default: 10m)
+- `MERKL_FORECAST_OPPORTUNITY_META_HARD_TTL_MS` - Max age for forecast opportunity-meta cache fallback (default: max(3x TTL, 30m))
+- `MERKL_FORECAST_SNAPSHOT_HARD_TTL_MS` - Max age for forecast snapshot fallback when refresh returns empty/error (default: max(3x TTL, 30m))
+- `COINGECKO_CATEGORIES_HARD_TTL_MS` - Max age for categories empty-result fallback (default: max(3x TTL, 30m))
+- `COINGECKO_FDV_HARD_TTL_MS` - Max age for FDV empty-result fallback (default: max(3x TTL, 30m))
 - Configure in repo root `.env`; production may use Doppler or Railway for secrets.
 
 ### API Endpoints
@@ -124,10 +129,10 @@ The backend API server runs on `http://localhost:3001` by default. Public client
 |--------------|-------------|
 | `GET /health` | Health check with environment info |
 | `GET /api/health` | Same as `/health` (API namespace) |
-| `GET /api/markets` | `markets-v2`: root `snapshot` + `reserves` (prices on `reserves[].tokenPrice`); cron-warmed memory snapshot, request does not trigger fetches |
+| `GET /api/markets` | `markets-v2`: root `snapshot` + `reserves` (prices on `reserves[].tokenPrice`); cron-warmed memory snapshot, request does not trigger fetches; hard stale boundary enforced by `marketsHardTtlMs` |
 | `GET /api/meta/side-data` | Aggregated side-data payload (`categories` + `fdv` + `forecast`) |
 
-**Data freshness**: Public data endpoints use **cron-write / API-read-only**. `meta/side-data` still reads the same internal category/FDV/forecast caches, but the standalone public routes for those caches are no longer exposed. See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
+**Data freshness**: Public data endpoints use **cron-write / API-read-only**. `meta/side-data` still reads the same internal category/FDV/forecast caches, but the standalone public routes for those caches are no longer exposed. `markets` uses `staleTimeMs` (`marketsSoftTtlMs`) plus a hard stale cap (`marketsHardTtlMs`, over which API returns `503`). See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
 
 **Filter market derivation**: Clients should derive unique `{ marketName, chainName }` filter options from `GET /api/markets` response data. The backend no longer exposes a separate market-list endpoint for that UI concern.
 
@@ -139,9 +144,9 @@ Merkl opportunities are paginated upstream (default 20, max 100 per page). The s
 
 ## Output Files
 
-When you run the **root** data fetcher (`npm run dev` / `npm start` at repo root), files are generated under `data/` subfolders. The **backend API** does not read `aave-formatted-data.json`; it builds the same pipeline in memory via `fetchMarketsPayload()`.
+When you run the **root** data fetcher (`npm run dev` / `npm start` at repo root), files are generated under `data/` subfolders. The **backend API** does not read `data/debug/aave-formatted-data.full.json`; it builds the same pipeline in memory via `fetchMarketsData()`.
 
-- `data/runtime/aave-formatted-data.json` - Pruned runtime JSON (optional on-disk mirror of the pipeline; not the API backing store)
+- `data/debug/aave-formatted-data.full.json` - Full formatted output (debug artifact; not the API backing store)
 - `data/runtime/merkl-opportunity-meta-lite.json` - Forecast runtime-lite snapshot (campaign meta; **read by backend** forecast path when present/fresh)
 - `data/runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
 - `data/debug/aave-all-markets-data.json` - Complete raw market data for all supported networks
@@ -194,6 +199,21 @@ The formatted output data contains the following fields. For the full current sc
 - `totalSupplyApy` - Total supply APY (native supplyApy + totalIncentiveSupplyApy)
 - `totalIncentiveBorrowApy` - Total incentive borrow APY (all incentives converted to APY)
 - `totalBorrowApy` - Total borrow APY (native borrowApy + totalIncentiveBorrowApy)
+
+## Data Persistence (✅ Implemented)
+
+Historical market data is persisted to Railway PostgreSQL every 5 minutes for trend analysis, with Cloudflare R2 offline backup.
+
+**Architecture**: cron-write → `persistenceService.ts` → batch INSERT (`market_snapshots` + `market_configs` + `oracle_prices`) → Railway PG; daily `pg_dump` → R2 backup.
+
+**Key tables**:
+- `market_snapshots` — 高频数据（价格/APY/利用率/流动性），每 5 分钟写入，内容哈希去重
+- `market_configs` — 低频数据（利率策略/额度/状态标志），仅内容变化时写入
+- `oracle_prices` — 预言机价格快照
+
+**Cost**: ~$5/月 (Railway Hobby); R2 backup $0/月.
+
+**Design doc**: `docs/plans/2026-05-07-database-persistence-design.md` (Status: Implemented, branch `feat/db-persistence-r2-backup`)
 
 ## Logging System
 
@@ -277,7 +297,7 @@ The backend API server automatically checks data freshness (1-minute window). If
 - **@aave/client**: Official Aave SDK
 - **@bgd-labs/aave-address-book**: Aave address book containing all network configurations
 - **winston**: Logging management library
-- **node-fetch**: HTTP request library
+- **Node.js built-in fetch (undici)**: HTTP request library
 - **Node.js**: JavaScript runtime environment
 
 ### Backend API
@@ -313,7 +333,7 @@ All log files are saved in the `logs/` directory:
 ### Data File Descriptions
 
 When the root fetcher runs, data files are written under `data/` (paths relative to repo root). **`GET /api/markets` is served from the backend in-memory snapshot**, not from these files.
-- `data/runtime/aave-formatted-data.json` - Pruned formatted output from the root fetcher (optional artifact; not read by the API)
+- `data/debug/aave-formatted-data.full.json` - Full formatted output from the root fetcher (optional artifact; not read by the API)
 - `data/runtime/merkl-opportunity-meta-lite.json` - Forecast campaign meta (runtime-lite)
 - `data/runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
 - `data/debug/aave-all-markets-data.json` - Raw Aave SDK market data

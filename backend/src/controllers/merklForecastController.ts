@@ -1,18 +1,37 @@
-import { FORECAST_CACHE_TTL_MS, getMerklForecastState } from '../services/merklForecastService.js';
+import { FORECAST_SOFT_TTL_MS, getMerklForecastState } from '../services/merklForecastService.js';
 import { getMarketsSnapshot, type RuntimeReserveData } from '../services/marketsService.js';
+import { getBrevisForecastItems } from '../services/brevisForecastService.js';
 import { logger } from '../logger.js';
+import { MERKL_TTL } from '../cacheTtl.js';
+import {
+  getForecastFieldRule,
+  shouldIncludeForecastItem,
+  type CampaignForecastType,
+} from '../lib/merklApiContract.js';
+
+const FORECAST_SNAPSHOT_HARD_TTL_MS = MERKL_TTL.forecastSnapshotHardTtlMs;
 
 // Only metrics-dependent fields (require Merkl metrics API / dailyRewardsRecords).
 // Opportunity-only fields (campaignType, totalBudget, aprCap, latestTvl, plannedDaily)
 // are served from the markets endpoint breakdowns for 1-min freshness.
-export const toForecastResponseItem = (state: Awaited<ReturnType<typeof getMerklForecastState>>) => ({
-  campaignId: state.campaignId,
-  requiredDaily: state.requiredDaily,
-  distributedSoFar: state.distributedSoFar,
-  endTimestamp: state.endTimestamp,
-});
+// DUTCH_AUCTION omits requiredDaily (always === plannedDaily; frontend falls back).
+export const toForecastResponseItem = (
+  state: Awaited<ReturnType<typeof getMerklForecastState>>,
+) => {
+  const type = state.campaignType as CampaignForecastType;
+  if (!shouldIncludeForecastItem(type, state.budgetBoundMode)) return null;
 
-export type ForecastResponseItem = ReturnType<typeof toForecastResponseItem>;
+  const rule = getForecastFieldRule(type, state.budgetBoundMode);
+  const item: { campaignId: string; requiredDaily?: number; distributedSoFar: number; endTimestamp: number } = {
+    campaignId: state.campaignId,
+    ...(rule.includeRequiredDaily && { requiredDaily: state.requiredDaily }),
+    distributedSoFar: state.distributedSoFar,
+    endTimestamp: state.endTimestamp,
+  };
+  return item;
+};
+
+export type ForecastResponseItem = { campaignId: string; requiredDaily?: number; distributedSoFar: number; endTimestamp: number };
 
 export interface ForecastSnapshot {
   items: ForecastResponseItem[];
@@ -21,17 +40,24 @@ export interface ForecastSnapshot {
 }
 
 /** In-memory/cron snapshot reserves (`RuntimeReserveData`); yield fields are ratios, not GET /api/markets percents. */
-const collectCampaignIdsFromMarkets = (markets: RuntimeReserveData[]): string[] => {
-  const ids = new Set<string>();
+const collectCampaignIdsFromMarkets = (markets: RuntimeReserveData[]): Array<{ campaignId: string; databaseId?: string }> => {
+  const seen = new Set<string>();
+  const ids: Array<{ campaignId: string; databaseId?: string }> = [];
   for (const market of markets) {
     for (const group of [...(market.merklSupplys ?? []), ...(market.merklBorrows ?? []), ...(market.merklHolds ?? [])]) {
-      for (const breakdown of group.breakdowns ?? []) {
-        const id = String(breakdown.campaignId || '').trim();
-        if (id) ids.add(id);
+      const breakdowns = (group as { breakdowns?: Array<{ databaseId?: string; campaignId?: string }> }).breakdowns ?? [];
+      for (const breakdown of breakdowns) {
+        const campaignId = String(breakdown.campaignId || '').trim();
+        const databaseId = String(breakdown.databaseId || '').trim();
+        if (!campaignId) continue;
+        const key = `${campaignId}:${databaseId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        ids.push({ campaignId, databaseId: databaseId || undefined });
       }
     }
   }
-  return Array.from(ids);
+  return ids;
 };
 
 // Global snapshot cache (cron-write, API-read-only pattern).
@@ -46,34 +72,75 @@ let snapshotCache: SnapshotCacheEntry | null = null;
  * Called by cron scheduler only.
  */
 export const refreshForecastSnapshotCache = async (): Promise<ForecastSnapshot> => {
+  const previous = snapshotCache;
+  const canUsePrevious = (): boolean => {
+    if (!previous) return false;
+    const ageMs = Math.max(0, Date.now() - previous.generatedAt);
+    return ageMs <= FORECAST_SNAPSHOT_HARD_TTL_MS;
+  };
+
   const marketsSnapshot = getMarketsSnapshot();
   if (!marketsSnapshot) {
-    logger.warn('Markets snapshot not available for forecast refresh; returning empty snapshot');
-    return { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
+    if (canUsePrevious()) {
+      logger.warn('Using previous forecast snapshot fallback because markets snapshot is unavailable');
+      return previous!.snapshot;
+    }
+    throw new Error('Forecast snapshot not ready: markets snapshot is unavailable');
   }
-  const campaignIds = [...new Set(collectCampaignIdsFromMarkets(marketsSnapshot.payload.data))];
-  if (campaignIds.length === 0) {
-    const emptySnapshot: ForecastSnapshot = { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
-    snapshotCache = { snapshot: emptySnapshot, generatedAt: Date.now() };
-    return emptySnapshot;
+  const campaignEntries = collectCampaignIdsFromMarkets(marketsSnapshot.payload.data);
+  if (campaignEntries.length === 0) {
+    if (canUsePrevious() && previous!.snapshot.items.length > 0) {
+      logger.warn('No campaign IDs found; keeping previous forecast snapshot fallback');
+      snapshotCache = {
+        snapshot: previous!.snapshot,
+        generatedAt: previous!.generatedAt,
+      };
+      return previous!.snapshot;
+    }
+    throw new Error('Forecast snapshot not ready: no campaign IDs available');
   }
 
-  const results = await Promise.allSettled(campaignIds.map((id) => getMerklForecastState(id)));
+  const results = await Promise.allSettled(campaignEntries.map((entry) => getMerklForecastState(entry.campaignId, entry.databaseId)));
   const items: ForecastResponseItem[] = [];
   const errors: ForecastSnapshot['errors'] = [];
 
   results.forEach((result, i) => {
     if (result.status === 'fulfilled') {
-      items.push(toForecastResponseItem(result.value));
+      try {
+        const item = toForecastResponseItem(result.value);
+        if (item) items.push(item);
+      } catch (err) {
+        errors.push({
+          campaignId: campaignEntries[i].campaignId,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
     } else {
       errors.push({
-        campaignId: campaignIds[i],
+        campaignId: campaignEntries[i].campaignId,
         message: result.reason instanceof Error ? result.reason.message : String(result.reason),
       });
     }
   });
 
-  const snapshot: ForecastSnapshot = { items, errors, staleTimeMs: FORECAST_CACHE_TTL_MS };
+  const brevisItems = getBrevisForecastItems(marketsSnapshot.payload.data);
+  const allItems = [...items, ...brevisItems];
+
+  const snapshot: ForecastSnapshot = { items: allItems, errors, staleTimeMs: FORECAST_SOFT_TTL_MS };
+
+  if (allItems.length === 0 && canUsePrevious() && previous!.snapshot.items.length > 0) {
+    logger.warn('Forecast refresh produced empty items; keeping previous forecast snapshot fallback');
+    snapshotCache = {
+      snapshot: previous!.snapshot,
+      generatedAt: previous!.generatedAt,
+    };
+    return previous!.snapshot;
+  }
+
+  if (allItems.length === 0) {
+    throw new Error('Forecast snapshot not ready: refresh produced no items');
+  }
+
   snapshotCache = { snapshot, generatedAt: Date.now() };
   return snapshot;
 };
@@ -86,10 +153,7 @@ export const getForecastSnapshot = async (): Promise<ForecastSnapshot> => {
   if (snapshotCache) {
     return snapshotCache.snapshot;
   }
-  // Cache not yet populated (server just started, cron hasn't run yet).
-  // Return empty snapshot instead of triggering fetch.
-  logger.warn('Forecast snapshot cache not yet populated; returning empty snapshot');
-  return { items: [], errors: [], staleTimeMs: FORECAST_CACHE_TTL_MS };
+  throw new Error('Forecast snapshot not ready: cache not yet populated');
 };
 
 /**

@@ -7,7 +7,7 @@
 | On-chain addresses | `@bgd-labs/aave-address-book` | `backend/src/services/onchainDataService.ts` |
 | On-chain reserve reader | `@aave/contract-helpers` (`UiPoolDataProvider`) | `backend/src/services/onchainDataService.ts` |
 | Shared RPC registry | `@internal/aave-shared-config` | `backend/src/services/ethProviderService.ts` |
-| Markets data | `@aave/client` (GraphQL API) | `src/index.ts` (root fetcher) |
+| Markets data | `@aave/client` (GraphQL API) | `packages/aave-fetcher/src/index.ts` (root fetcher) |
 
 ## 2. 当前策略（On-chain Data）
 
@@ -15,6 +15,29 @@
 - **On-chain only**：`deficit` + `baseVariableBorrowRate` 从 RPC 获取
 - **发现机制**：动态解析 `@bgd-labs/aave-address-book` 的 `AaveV3*` 导出
 - **缓存**：RPC 失败时使用 5 分钟内的缓存数据
+
+## 2.1 ABI 来源策略
+
+所有合约 ABI 遵循 **upstream + local 二层架构**。业务文件**禁止**本地硬编码 ABI。
+
+### 二层结构
+
+| 层 | 含义 | 来源 | 细分 |
+|---|---|---|---|
+| Upstream | 上游包原生导出 | `@aave-dao/aave-address-book/abis/*` | upstream |
+| Upstream | 共享包导出 | `@internal/aave-rpc-infra` | shared |
+| Local | 后端本地补充（仅 `V4_ORACLE_PRICES_ABI`） | `backend/src/abis/` | local |
+
+`abis/index.ts` 只 re-export 本地定义。上游 ABI 由消费侧直接从上游包 import。
+
+### 约束
+
+- `backend/src/services/**` 内**禁止** inline ABI 数组字面量
+- services **禁止** `from '@aave-dao/aave-address-book'` 根 barrel import（用 `/abis/*` 深路径）
+- `addressBookRegistry.ts` 例外（它导入地址数据，非 ABI）
+- CI 测试：`no-inline-abi.test.ts` + `abi-drift.test.ts`
+
+详见 [abi-bridge-layer-review.md](./abi-bridge-layer-review.md)
 
 ## 3. 环境变量
 
@@ -28,6 +51,14 @@
 | 地址簿未覆盖链 | 上游 SDK 无 fallback metadata | 等待上游更新 |
 | RPC 质量 | 运行时基础设施问题 | 监控告警 + 更新 shared RPC 列表 |
 | 新链支持 | 需要 RPC 端点 | 更新 `packages/aave-shared-config/index.js` |
+| V4 TREASURY_SPOKE | `ITreasurySpoke` 无 oracle，不在 topology | topology 匹配排除 + oracleService warn 日志 |
+
+### V4 Spoke Oracle 同步规则
+
+`addressBookRegistry` 在运行时从 `@aave-dao/aave-address-book` 遍历 `AaveV4*.SPOKES` 提取 spoke+oracle 对。规则：
+- 有 `_SPOKE_ORACLE` / `_ESPOKE_ORACLE` 的 spoke → 进入 `V4_SPOKE_ENTRIES`
+- 无 oracle 的 spoke（如 `TREASURY_SPOKE`）→ topology 匹配排除（无 topology entry）+ oracleService 跳过并 warn
+- Spoke→Hub 映射从 SDK `spoke.connectedHubs` 动态提取（`extractSpokeHubTopology()`），存入 `baseDataset.spokeHubTopology`；`DEFAULT_SPOKE_HUB_TOPOLOGY` 快照在 `@internal/aave-shared-config` 作为 fallback；multi-hub spokes（如 `BLUECHIP_SPOKE`）生成多个 entry
 
 ## 6. Aave V3 合约地址参考
 
@@ -81,3 +112,4 @@ node -e "const a = require('@bgd-labs/aave-address-book'); Object.keys(a).filter
 | `POOL` | 核心借贷池合约 |
 | `ORACLE` | 价格预言机 |
 | `AAVE_PROTOCOL_DATA_PROVIDER` | 协议数据读取（备用） |
+| `MULTICALL3_ADDRESS` | Multicall3 聚合合约（CREATE2 确定性地址 `0xcA11bde05977b3631167028862bE2a173976CA11`，来源 [mds1/multicall](https://github.com/mds1/multicall)）；来源：`@internal/aave-rpc-infra` |

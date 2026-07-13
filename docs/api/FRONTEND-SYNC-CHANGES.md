@@ -132,4 +132,122 @@ function getRateInputsFromReserve(reserve: ReserveForRateCalc) {
 - 利率/公式与数据来源：`docs/api/native-apr-calculation.md`
 - 精度与单位对比：`docs/backend/data-precision-comparison.md`
 
+---
+
+## 8. 如何向后端 API 添加新的 Reserve 字段
+
+当需要添加新的 reserve 字段到 API 响应时，根据字段类型在不同位置进行修改。序列化层已重构为**透传区/变换区/覆写区**三段结构，并有序列化覆盖测试作为安全网。
+
+### 8.1 字段分类与修改位置
+
+新增字段首先需要判断它属于哪一类：
+
+| 分类 | 判断标准 | 序列化处理 | 修改位置 |
+|------|---------|-----------|---------|
+| **透传字段** | 值不变，只需 `!== undefined` 过滤 | 自动由 `pickDefined` + `PASSTHROUGH_FIELDS` 处理 | 1, 2, 3, 5(透传区) |
+| **变换字段** | 需 roundTo6 / ×100 等数值变换 | 需在序列化变换区手动添加 | 1, 2, 3, 5(变换区), 6(fingerprint) |
+| **覆写字段** | 激励数组等类型不同的字段 | 需在序列化覆写区手动添加 | 1, 2, 3, 5(覆写区), 6(fingerprint) |
+
+### 8.2 必须修改的位置
+
+| 顺序 | 文件 | 修改内容 | 说明 |
+|------|------|----------|------|
+| 1 | `packages/aave-shared-contracts/src/index.ts` | `RuntimeReserveData` 接口 + `EXPECTED_RUNTIME_FIELDS` 数组 | 共享类型定义 + 字段注册表（编译期双向绑定自动验证） |
+| 2 | Fetcher 文件 (`v4-fetcher.ts` / `index.ts`) | V4 数据填充 / V3 默认值 | 从 SDK 读取并赋值 |
+| 3 | `backend/src/services/marketsApiSerialize.ts` | 根据字段分类添加到对应区 | 见 8.1 分类表 |
+| 4 | `backend/tests/marketsApiSerialize.test.ts` | `makeFullReserve()` mock | 覆盖测试自动验证序列化输出包含所有字段 |
+
+**不再需要修改的文件**：
+- ~~`packages/aave-fetcher/src/index.ts` 的 `pruneReserveForRuntime()`~~ — 该函数已不存在
+- ~~`backend/src/types/index.ts` 的 `MarketWithSpread`~~ — 通过 `Omit<RuntimeReserveData, ...> & {...}` 自动继承非覆写字段
+
+### 8.3 序列化层结构（参考）
+
+```typescript
+// marketsApiSerialize.ts 中 serializeReserveForApi 的结构：
+
+export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithSpread {
+  return {
+    // 1. 必填字段（reserveId, marketName, ...）
+    // 2. pickDefined 透传区 — PASSTHROUGH_FIELDS 数组中的字段
+    // 3. 布尔开关手动区 — isFrozen, isPaused, isActive, supplyDisabled, borrowDisabled
+    // 4. 特殊条件区 — decimals, aaveProReserveId
+    // 5. 变换区 — supplyApy/borrowApy (×100), protocolFee/slopes (roundTo6)
+    // 6. 覆写区 — 激励数组 (scaleMeritEntry/scaleMerklBreakdown/scaleBrevisBreakdown)
+  };
+}
+```
+
+**新增透传字段**：只需在 `PASSTHROUGH_FIELDS` 数组加一行 + 步骤1/2修改。
+**新增变换字段**：需在变换区手动添加 roundTo6 处理 + 步骤1/2/3修改 + fingerprint canonical 更新。
+
+### 8.4 安全网：序列化覆盖测试
+
+`marketsApiSerialize.test.ts` 中的覆盖测试会自动验证：给定全字段 `RuntimeReserveData`，序列化输出的 key 集合包含所有 `EXPECTED_RUNTIME_FIELDS` 中的字段。**漏加字段会测试失败**。
+
+### 8.5 构建验证顺序
+
+```bash
+# 1. 先构建 root (生成 dist/ 供 backend 导入)
+npm run build
+
+# 2. 再构建 backend
+npm run build -w aave-dashboard-backend
+
+# 3. 运行 backend 测试
+npm run test -w aave-dashboard-backend
+```
+
+### 8.4 V4 Hub/Spoke 字段示例
+
+本次添加的 V4 专属字段（用于 pro.aave.com 链接和合约交互）：
+
+```typescript
+// GET /api/markets 响应中的 V4 reserve
+{
+  "hubId": "MTo6MHhDY2E4NTJCYzQwZTU2MGFkQzNi...",
+  "hubName": "Core",
+  "hubAddress": "0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9",
+  "spokeId": "MTo6MHg5NGU3QTVkQ2JFODE2ZTQ5OGI4...",
+  "spokeName": "Main",
+  "spokeAddress": "0x94e7A5dCbE816e498b89aB752661904E2F56c485"
+}
+```
+
+前端可拼接的链接：
+- Hub 页面: `https://pro.aave.com/explore/hub/${hubId}`
+- Reserve 页面: `https://pro.aave.com/explore/reserve/${aaveProReserveId}`
+
+### 8.5 架构说明
+
+为什么有这么多层？
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   Root Fetcher  │────▶│   prune function   │────▶│  Backend API    │
+│   (packages/aave-fetcher/src/index.ts)│     │ (pruneReserveFor  │     │ (backend/src/)   │
+│                 │     │   Runtime)         │     │                 │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+       │                                               │
+       │ Aggregates data from Aave, Merit, Merkl,      │ Serves HTTP
+       │ Brevis, V4 SDK...                              │ API
+       ▼                                               ▼
+   RuntimeReserveData                          MarketWithSpread
+```
+
+- `RuntimeReserveData`: 数据聚合阶段的完整结构
+- `RuntimeReserveData`: 经过 prune 后写入磁盘的精简结构
+- `MarketWithSpread`: HTTP API 返回的最终结构
+
+### 8.6 相关文件速查
+
+| 层级 | 文件 | 作用 |
+|------|------|------|
+| Root 类型 | `packages/aave-shared-contracts/src/index.ts` | `RuntimeReserveData` 接口定义 |
+| Root 获取/裁剪 | `packages/aave-fetcher/src/index.ts` | `pruneReserveForRuntime()` |
+| Root 获取 | `packages/aave-fetcher/src/v4-fetcher.ts` | V4 数据获取，填充字段 |
+| Backend 类型 | `backend/src/types/index.ts` | `MarketWithSpread` API 响应接口 |
+| Backend 序列化 | `backend/src/services/marketsApiSerialize.ts` | `serializeReserveForApi()` |
+| Backend 数据模型 | `backend/src/services/marketsService.ts` | 使用 `RuntimeReserveData` |
+
 如有疑问可联系后端或对照上述文档。

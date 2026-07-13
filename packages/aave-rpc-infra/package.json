@@ -1,0 +1,34 @@
+{
+  "name": "@internal/aave-rpc-infra",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "src/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "npx --no-install tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@aave-dao/aave-address-book": "^4.52.3",
+    "@internal/aave-shared-config": "*",
+    "@internal/aave-shared-contracts": "*",
+    "ethers": "^5.8.0",
+    "viem": "^2.50.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

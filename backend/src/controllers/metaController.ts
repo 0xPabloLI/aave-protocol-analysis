@@ -2,13 +2,19 @@ import type { Request, Response } from 'express';
 import { logger } from '../logger.js';
 import { getCoingeckoCategoriesSnapshot, getCoingeckoFdvSnapshot } from './coingeckoController.js';
 import { getForecastSnapshot, type ForecastSnapshot } from './merklForecastController.js';
+import type { MerklBorrowHookProtocol } from '@internal/aave-shared-contracts';
+import { getCampaignAccessSnapshot } from '../services/merklCampaignAccessService.js';
 
 type SideDataPayload = {
   generatedAt: string;
   partial: boolean;
   categories?: { uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[]; fetchedAt: string; staleTimeMs: number };
-  fdv?: { items: Array<{ id: string; symbol: string | null; name: string | null; fdvUsd: number | null; source: string }>; fetchedAt: string; staleTimeMs: number };
+  fdv?: { items: Array<{ symbol: string | null; fdvUsd: number | null }>; fetchedAt: string; staleTimeMs: number };
   forecast?: ForecastSnapshot;
+  campaignAccess?: {
+    campaigns: Record<string, { chainId: number; whitelist: string[]; blacklist: string[]; borrowHookProtocols?: MerklBorrowHookProtocol[] }>;
+    updatedAt: string;
+  };
   errors?: Record<string, string>;
 };
 
@@ -42,8 +48,13 @@ export const getSideDataMeta = async (_req: Request, res: Response) => {
     errors.forecast = String(forecastResult.reason instanceof Error ? forecastResult.reason.message : forecastResult.reason);
   }
 
-  const successCount = [payload.categories, payload.fdv, payload.forecast].filter(Boolean).length;
-  payload.partial = successCount < 3;
+  const campaignAccessSnapshot = getCampaignAccessSnapshot();
+  if (campaignAccessSnapshot) {
+    payload.campaignAccess = campaignAccessSnapshot;
+  }
+
+  const successCount = [payload.categories, payload.fdv, payload.forecast, payload.campaignAccess].filter(Boolean).length;
+  payload.partial = successCount < 4;
   if (Object.keys(errors).length > 0) payload.errors = errors;
 
   if (successCount === 0) {

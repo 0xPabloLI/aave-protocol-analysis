@@ -1,8 +1,7 @@
 import {
   fetchMerklOpportunitiesSnapshot,
-  resolveCacheTtlMs,
 } from '@internal/aave-shared-config';
-import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
+import { MERKL_TTL } from '../cacheTtl.js';
 
 export interface FetchMerklOpportunitiesOptions {
   mainProtocolId?: string;
@@ -13,10 +12,7 @@ export interface FetchMerklOpportunitiesOptions {
   forceRefresh?: boolean;
 }
 
-const OPPORTUNITIES_CACHE_TTL_MS = resolveCacheTtlMs(
-  process.env.MERKL_OPPORTUNITIES_CACHE_TTL_MS,
-  BACKEND_CACHE_TTL_MS.merklOpportunitiesDefault
-);
+const OPPORTUNITIES_SOFT_TTL_MS = MERKL_TTL.opportunitiesSoftTtlMs;
 
 export const fetchMerklOpportunities = async (
   options: FetchMerklOpportunitiesOptions = {}
@@ -28,7 +24,7 @@ export const fetchMerklOpportunities = async (
     campaigns: options.campaigns,
     distributionTypes: options.distributionTypes,
     itemsPerPage: options.itemsPerPage,
-    ttlMs: OPPORTUNITIES_CACHE_TTL_MS,
+    ttlMs: OPPORTUNITIES_SOFT_TTL_MS,
     forceRefresh: options.forceRefresh,
     fetchImpl: fetch,
   });

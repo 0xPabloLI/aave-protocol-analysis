@@ -43,10 +43,10 @@ fi
 # 添加超时保护（15分钟），避免卡住导致部署失败
 # 使用 timeout 命令（如果可用），否则使用后台进程 + sleep + kill
 if command -v timeout &> /dev/null; then
-    timeout 900 node dist/index.js || echo "⚠️  数据获取失败或超时（15分钟），但继续部署..."
+    timeout 900 node dist/cli.js || echo "⚠️  数据获取失败或超时（15分钟），但继续部署..."
 else
     # 如果没有 timeout 命令，使用后台进程方式
-    node dist/index.js &
+    node dist/cli.js &
     PID=$!
     EXIT_CODE=0
     TIMED_OUT=false

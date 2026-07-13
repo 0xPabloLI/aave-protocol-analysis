@@ -76,14 +76,14 @@ flowchart LR
 
 ### 1. 更新服务（写 Redis）
 
-**文件**：`src/index.ts`（或新建 `scripts/fetch-and-push-redis.ts`）
+**文件**：`packages/aave-fetcher/src/cli.ts`（或新建 `scripts/fetch-and-push-redis.ts`）
 
-**改动**：在 `fetchAaveMarketsData()` 完成后，若存在 `REDIS_URL`，将数据写入 Redis：
+**改动**：在 `runMarketsFetcher()` 完成后，若存在 `REDIS_URL`，将数据写入 Redis：
 
 ```typescript
 import Redis from 'ioredis';
 
-// 在 fetchAaveMarketsData() 最后
+// 在 runMarketsFetcher() 最后
 const redisUrl = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL;
 if (redisUrl) {
   const redis = new Redis(redisUrl);
@@ -130,7 +130,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
   }
   
   // 回退到内部 fetcher（本地开发或 Redis 不可用）
-  const payload = await fetchMarketsPayload();
+  const payload = await fetchMarketsData();
   snapshot = { payload, fetchedAt: Date.now() };
   return snapshot;
 }
@@ -166,7 +166,7 @@ API 侧 `coingeckoController` 和 `merklForecastService` 改为优先从 Redis �
 2. 配置：
    - **Root Directory**：留空（即 `/`，使用仓库根目录）
    - **Build Command**：`npm install && npm run build`
-   - **Start Command**：`node dist/index.js`
+   - **Start Command**：`node dist/cli.js`
 3. 添加 Variables：
    - 引用 Redis 的 `REDIS_PRIVATE_URL`
    - 其他需要的环境变量（如 `COINMARKETCAP_API_KEY` 等）
@@ -242,7 +242,7 @@ const redisUrl = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL;
 
 1. **代码改动**（可先在本地测试）
    - 根目录添加 `ioredis` 依赖
-   - `src/index.ts` 添加写 Redis 逻辑（有 `REDIS_URL` 才写）
+   - `packages/aave-fetcher/src/index.ts` 添加写 Redis 逻辑（有 `REDIS_URL` 才写）
    - `backend` 添加 `ioredis` 依赖
    - `marketsService.ts` 添加从 Redis 读的逻辑（优先 Redis，回退 fetcher）
 

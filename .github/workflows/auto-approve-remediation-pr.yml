@@ -43,7 +43,6 @@ jobs:
                 'package.json',
                 'package-lock.json',
                 'backend/package.json',
-                'backend/package-lock.json',
               ]);
               policyLabel = 'CI auto-remediation';
             } else if (branch.startsWith('bot/subgraph-sync-')) {
@@ -144,6 +143,38 @@ jobs:
               event: 'APPROVE',
               body: `${label}: auto-approved.`,
             });
+
+      - name: Enable auto-merge for patch/minor security updates
+        if: >
+          steps.metadata.outputs.is-security-update == 'true' &&
+          steps.metadata.outputs.update-type != 'version-update:semver-major'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const maxAttempts = 5;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              try {
+                await github.graphql(
+                  `
+                  mutation EnableAutoMerge($pullRequestId: ID!) {
+                    enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
+                      pullRequest { number }
+                    }
+                  }
+                  `,
+                  { pullRequestId: context.payload.pull_request.node_id }
+                );
+                core.info(`Auto-merge enabled on attempt ${attempt}`);
+                break;
+              } catch (error) {
+                if (attempt === maxAttempts) {
+                  core.warning(`Enable auto-merge failed after ${maxAttempts} attempts: ${error.message}`);
+                } else {
+                  core.info(`Attempt ${attempt} failed (${error.message}), retrying in 30s...`);
+                  await new Promise(r => setTimeout(r, 30000));
+                }
+              }
+            }
 
       - name: Comment on major npm updates
         if: >

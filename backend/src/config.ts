@@ -1,4 +1,10 @@
 import { BACKEND_FETCH_TIMING_MS, BACKEND_TIME_MS, BACKEND_TIME_SECONDS } from './cacheTtl.js';
+import { readNumberEnv } from '@internal/aave-shared-config';
+
+// ============================================================
+// V3/V4 Equality Configuration
+// ============================================================
+
 
 // Merkl API 重试/退避（forecast `/campaigns/{id}`、`/metrics`）
 // 出站并发：`MERKL_FETCH_MAX_CONCURRENCY`（默认 5）由 `@internal/aave-shared-config`
@@ -26,19 +32,15 @@ export const merklFetchConfig = {
   }),
 };
 
-type NumberEnvOptions = {
-  defaultValue: number;
-  min?: number;
+// Oracle 价格异常阈值：当 oracle 价格与 SDK 价格差异超过此比例时，
+// 覆盖为 oracle 价格并输出 logger.warn('oracle price anomaly', ...)
+// 默认 1%（0.01），可通过 ORACLE_DIFF_THRESHOLD 环境变量覆盖
+export const oracleDiffConfig = {
+  threshold: readNumberEnv('ORACLE_DIFF_THRESHOLD', {
+    defaultValue: 0.01,
+    min: 0,
+  }),
 };
-
-function readNumberEnv(key: string, options: NumberEnvOptions): number {
-  const raw = process.env[key];
-  if (raw === undefined) return options.defaultValue;
-  const value = Number(raw);
-  if (!Number.isFinite(value)) return options.defaultValue;
-  if (options.min !== undefined && value < options.min) return options.defaultValue;
-  return value;
-}
 
 // CoinGecko API 请求的重试/退避配置
 // Rate Limit 参考：https://docs.coingecko.com/docs/common-errors-rate-limit
@@ -49,6 +51,7 @@ function readNumberEnv(key: string, options: NumberEnvOptions): number {
 // 当前配置针对 Free tier（30 次/分钟）：
 // - 请求间隔：2.5 秒（略大于 2 秒，留有余量）
 // - 串行请求：避免并发导致短时间内消耗过多配额
+
 export const coingeckoFetchConfig = {
   maxRetries: readNumberEnv('COINGECKO_FETCH_MAX_RETRIES', {
     defaultValue: 3,

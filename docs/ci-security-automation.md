@@ -12,7 +12,7 @@ This repo uses `pre-commit` and `pre-push` hooks that run `npm run ci:remote`. O
 
 | Hook | Behavior |
 |------|----------|
-| `pre-commit` | Auto-stages uncommitted `package-lock.json` / `backend/package-lock.json` |
+| `pre-commit` | Auto-stages uncommitted `package-lock.json` |
 | `pre-push` | Blocks push if lock files have uncommitted changes |
 
 This ensures lock file changes are always included in commits, preventing local/CI audit result drift.
@@ -24,7 +24,7 @@ This repository has five related workflows:
 1. `CI` (`.github/workflows/ci.yml`)
    - Triggered by `push` and `pull_request`
    - Runs build + prune checks
-   - Audit: root `npm audit --omit=dev --audit-level=high`; backend `npm --prefix backend audit --omit=dev --audit-level=moderate` (see `ci:remote` in root `package.json`)
+   - Audit: root `npm audit --omit=dev --audit-level=high`; backend `npm audit --omit=dev --audit-level=moderate` (see `ci:remote` in root `package.json`)
    - Result: root blocks on High/Critical; backend blocks on Moderate and above (low-only vulns allowed for transitive deps with no fix, e.g. elliptic)
 
 2. `Security Moderate Report` (`.github/workflows/security-moderate-report.yml`)
@@ -38,10 +38,9 @@ This repository has five related workflows:
    - Triggered when `CI` fails on `push` (or manually)
   - Attempts automatic dependency remediation:
     - `npm audit fix --omit=dev`
-    - `npm --prefix backend audit fix --omit=dev`
   - Validates by running:
     - `npm run build`
-    - `npm --prefix backend run build`
+    - `npm run build && npm run build -w aave-dashboard-backend`
   - If changes exist and validation passes, opens a bot PR to the same branch
 
 4. `Auto Approve Remediation PR` (`.github/workflows/auto-approve-remediation-pr.yml`)

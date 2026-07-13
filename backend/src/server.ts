@@ -1,20 +1,81 @@
 import './env.js';
 import express from 'express';
 import compression from 'compression';
+import { Agent, setGlobalDispatcher } from 'undici';
+import https from 'node:https';
+import http from 'node:http';
+import v8 from 'v8';
 import { corsMiddleware } from './middleware/cors.js';
 import { apiCacheHeadersMiddleware } from './middleware/cacheHeaders.js';
+import { rateLimitMiddleware } from './middleware/rateLimit.js';
 import marketsRouter from './routes/markets.js';
 import metaRouter from './routes/meta.js';
+import { seoRouter } from './routes/seo.js';
+import { swaggerRouter } from './routes/swagger.js';
 import { startUpdateScheduler } from './services/updateScheduler.js';
 import { warmCoingeckoCategoriesCache, warmCoingeckoFdvCache } from './controllers/coingeckoController.js';
 import { warmCampaignForecastStatesCache } from './controllers/merklForecastController.js';
-import { warmMarketsCache } from './services/marketsService.js';
-import { refreshOnchainCache } from './services/onchainDataService.js';
+import { getMerklForecastCacheStats } from './services/merklForecastService.js';
+import { warmMarketsCache, getMarketsData } from './services/marketsService.js';
+import { refreshOnchainCache, getOnchainCacheStatus } from './services/onchainDataService.js';
+import { refreshOracleCache, getOracleCacheStats } from './services/oracleService.js';
 import { logger } from './logger.js';
+import { providerPool } from '@internal/aave-rpc-infra';
+import { getMeritCacheStats, getTokenPriceCacheStats, getBrevisCacheStats } from '@internal/aave-fetcher';
 import { explainServerListenError } from './startup.js';
+import { closePool, getPool, isPersistenceEnabled } from './services/dbPool.js';
+import { getPersistenceStatus, getHashMapSizes, warmConfigHashes } from './services/persistenceService.js';
+import { runMigrations } from './services/autoMigrate.js';
+
+// Limit undici globalDispatcher connection pool to cap native memory (TLS buffers)
+// consumed by Node.js built-in fetch. Without this, each fetchMarketsData call
+// creates ~20 GraphQL requests whose TLS connections allocate native memory
+// outside V8 heap, causing steady RSS growth (~14 MB/h). Capping connections
+// per host + short keep-alive prevents unbounded accumulation.
+let globalAgent: Agent | undefined;
+try {
+  globalAgent = new Agent({
+    connections: 10,
+    pipelining: 1,
+    keepAliveTimeout: 30_000,
+    keepAliveMaxTimeout: 60_000,
+  });
+  setGlobalDispatcher(globalAgent);
+} catch (e) {
+  logger.warn('Failed to set undici globalDispatcher (non-fatal, using defaults):', e instanceof Error ? e.message : String(e));
+}
+
+// Cap http/https globalAgent connection pool — DEFENSIVE: node-fetch has been
+// removed (AAV-1064); all outbound HTTP now uses undici (single channel above).
+// These caps remain as a safety net for any transitive dependency that might use
+// Node.js built-in http/https modules. Default maxSockets=Infinity allows
+// unbounded TLS connections per host, each holding native memory outside
+// V8 heap. Default maxFreeSockets=256 caches idle keep-alive sockets per host,
+// each holding TLSSocket/ClientRequest/ReadableState/stream closures (~10-15KB
+// native + ~5KB V8 per socket). With low request frequency, sockets are rarely
+// reused, so the free pool grows indefinitely.
+// Fix: maxFreeSockets=2 caps the idle pool to 2 per host (enough for reuse
+// on high-frequency hosts, but prevents unbounded accumulation).
+(https.globalAgent as any).maxSockets = 10;
+(https.globalAgent as any).maxFreeSockets = 2;
+(http.globalAgent as any).maxSockets = 10;
+(http.globalAgent as any).maxFreeSockets = 2;
+
+// Wire ProviderPool logFn to winston logger
+providerPool.configure({
+  logFn: (level, msg, meta) => logger.log(level, msg, meta),
+});
+// Start periodic 30-min provider TTL cleanup so idle/low-traffic periods still
+// reclaim stale viem providers (each holds a connection pool). Without this,
+// cleanup only runs on the request path, and TTL eviction never fires when idle.
+const stopProviderCleanup = providerPool.startCleanupTimer();
 
 const app = express();
 app.set('etag', 'weak');
+// Trust Railway's single proxy layer so req.ip reflects the real client IP
+// (not the load-balancer's IP). This also makes rate limiter per-IP instead of
+// per-proxy (previously all users shared one bucket via the LB IP).
+app.set('trust proxy', 1);
 // 端口配置：优先读取环境变量，默认 3001
 // 环境变量读取优先级（使用 dotenv 后）：
 // 1. 系统环境变量 PORT（最高优先级，会覆盖 .env 文件）
@@ -40,7 +101,7 @@ const PORT: number = (() => {
 
 // Middleware
 app.use(corsMiddleware);
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));
 app.use(
   compression({
     // Keep tiny payloads uncompressed to avoid needless CPU overhead.
@@ -49,6 +110,11 @@ app.use(
 );
 app.use(apiCacheHeadersMiddleware);
 
+const apiRateLimit = rateLimitMiddleware(60_000, 120);
+app.use('/api/markets', apiRateLimit);
+app.use('/api/meta', apiRateLimit);
+app.use('/api/seo/semrush/batch', express.json({ limit: '5mb' }));
+
 // Avoid noisy 404s for automatic browser favicon requests.
 // We intentionally return 204 No Content with a cache header instead of serving an icon file.
 app.get('/favicon.ico', (req, res) => {
@@ -56,29 +122,71 @@ app.get('/favicon.ico', (req, res) => {
   res.end();
 });
 
+// Security.txt — RFC 9116 vulnerability disclosure policy
+app.get('/.well-known/security.txt', (_req, res) => {
+  res.type('text/plain').send(
+    'Contact: mailto:0xpablo.li@proton.me\n' +
+    'Expires: 2027-05-08T00:00:00.000Z\n' +
+    'Preferred-Languages: en, zh\n' +
+    'Canonical: https://aaveapy.com/.well-known/security.txt\n'
+  );
+});
+
 // Routes
 app.use('/api/markets', marketsRouter);
 app.use('/api/meta', metaRouter);
-// Note: /api/rate-inputs endpoint removed - rate-inputs are now merged into /api/markets
+app.use('/api/seo', seoRouter);
+app.use('/api/docs', swaggerRouter);
 
-const healthHandler = (req: express.Request, res: express.Response) => {
-  res.json({ 
-    status: 'ok', 
+const healthHandler = (_req: express.Request, res: express.Response) => {
+  const markets = getMarketsData();
+  const marketsReady = markets.payload !== null;
+  const marketsStale = markets.isTooStale;
+
+  const rpcHealth = providerPool.getHealthStatus();
+  const chainsWithAllSuppressed = findChainsWithAllSuppressed(rpcHealth);
+
+  if (!marketsReady || marketsStale) {
+    res.status(503).json({
+      status: 'degraded',
+      timestamp: new Date().toISOString(),
+      markets: { ready: marketsReady, stale: marketsStale, ageMs: markets.ageMs },
+      rpc: { summary: rpcHealth.summary, ...(chainsWithAllSuppressed.length > 0 ? { chainsWithAllSuppressed } : {}) },
+      ...(process.env.RAILWAY_GIT_COMMIT_SHA && { commitSha: process.env.RAILWAY_GIT_COMMIT_SHA }),
+    });
+    return;
+  }
+
+  const status = chainsWithAllSuppressed.length > 0 ? 'suppressed' : 'ok';
+
+  res.json({
+    status,
     timestamp: new Date().toISOString(),
-    // Railway injects RAILWAY_GIT_COMMIT_SHA at runtime; smoke tests poll this
-    // to confirm the new deployment is live before running checks.
     ...(process.env.RAILWAY_GIT_COMMIT_SHA && { commitSha: process.env.RAILWAY_GIT_COMMIT_SHA }),
     environment: {
       nodeEnv: process.env.NODE_ENV || 'development',
       port: PORT,
-      corsMode: ['production', 'staging'].includes(process.env.NODE_ENV || '') && process.env.FRONTEND_URL 
-        ? 'whitelist' 
-        : 'allow-all',
-      frontendUrl: process.env.FRONTEND_URL || 'not set',
-      allowedDevOrigins: process.env.ALLOWED_DEV_ORIGINS || 'not set'
-    }
+    },
+    rpc: { summary: rpcHealth.summary, ...(chainsWithAllSuppressed.length > 0 ? { chainsWithAllSuppressed } : {}) },
   });
 };
+
+function findChainsWithAllSuppressed(rpcHealth: { endpoints: Array<{ chainId: number; status: string }> }): number[] {
+  const byChain = new Map<number, { total: number; suppressed: number }>();
+  for (const ep of rpcHealth.endpoints) {
+    const entry = byChain.get(ep.chainId) ?? { total: 0, suppressed: 0 };
+    entry.total++;
+    if (ep.status === 'suppressed') entry.suppressed++;
+    byChain.set(ep.chainId, entry);
+  }
+  const result: number[] = [];
+  for (const [chainId, counts] of byChain) {
+    if (counts.suppressed > 0 && counts.suppressed === counts.total) {
+      result.push(chainId);
+    }
+  }
+  return result.sort((a, b) => a - b);
+}
 
 // Health check endpoints:
 // - /health for load balancer probes
@@ -86,16 +194,186 @@ const healthHandler = (req: express.Request, res: express.Response) => {
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
-// 启动时预热所有缓存，避免首个请求冷启动
-// 注意：cron 不会在启动时立即执行，所以需要显式 warmup
-// 所有 API 数据现在使用 cron-write/API-read-only 模式
-logger.info('🔄 Starting cache warmup (all data will be fetched before server accepts requests)...');
+// Catch-all 404 handler — logs unmapped requests for bot/crawler monitoring.
+// Must be registered AFTER all valid routes so Express only reaches it on miss.
+const MAX_UA_LEN = 120;
+const sanitizeForLog = (s: string) => s.replace(/[\r\n]/g, '_');
+app.use((req, res) => {
+  const { method, path: rawPath } = req;
+  const path = sanitizeForLog(rawPath);
+  const ip = req.ip ?? req.socket.remoteAddress ?? '-';
+  const ua = sanitizeForLog((req.headers['user-agent'] ?? '-')).slice(0, MAX_UA_LEN);
+  (logger.info as (meta: object, msg: string) => void)({ method, path, ip, ua }, '404');
+  res.status(404).json({ error: 'Not found', message: `No route for ${method} ${rawPath}`, path: rawPath, method });
+});
+
+// Persistence diagnostics — exposes whether DB writes are happening on schedule.
+// Useful for catching silent persistence failures (the cron writer never throws
+// up the call stack, so without this endpoint a failed DB connection could go
+// unnoticed for days).
+// Moved under /api/seo/ to reuse SEO admin auth middleware.
+
+// Auto-run pending DB migrations before any cron cycles start.
+// Non-blocking: if DB is unreachable, the server still starts and serves
+// from memory cache. A background retry attempts migration every 60s.
+// Note: migrationReady only controls the retry timer — persistence cron
+// uses isPoolHealthy() to guard DB writes, not this flag.
+let migrationReady = false;
+
+async function runMigrationWithWarmup(): Promise<void> {
+  const migrationPool = getPool();
+  await runMigrations(migrationPool);
+  // Mark ready before warmConfigHashes so a warmConfigHashes failure
+  // doesn't trigger unnecessary re-migration on the next retry.
+  migrationReady = true;
+  await warmConfigHashes();
+}
+
+if (isPersistenceEnabled()) {
+  logger.info('🔄 Starting auto-migration — acquiring DB pool...');
+  try {
+    logger.info('🔄 DB pool acquired — running migrations...');
+    await runMigrationWithWarmup();
+    logger.info('🔄 Migrations complete — persistence ready');
+  } catch (error) {
+    logger.error('❌ Auto-migration failed — starting server anyway (DB may be unreachable). Background retry every 60s:', error);
+    // Background retry: attempt migration every 60s until it succeeds.
+    // Server stays up and serves from memory cache; persistence cron skips
+    // via isPoolHealthy() check until DB recovers.
+    let retryCount = 0;
+    const MAX_RETRIES = 60; // 1h at 60s intervals — DB outages rarely exceed 5min
+    const migrationRetryTimer = setInterval(async () => {
+      if (migrationReady) {
+        clearInterval(migrationRetryTimer);
+        return;
+      }
+      if (++retryCount > MAX_RETRIES) {
+        logger.error('🔄 Migration retry exhausted after 1h — giving up. Restart the server to retry.');
+        clearInterval(migrationRetryTimer);
+        return;
+      }
+      try {
+        logger.info(`🔄 Background migration retry #${retryCount} — acquiring DB pool...`);
+        await runMigrationWithWarmup();
+        logger.info('🔄 Background migration succeeded — persistence ready');
+        clearInterval(migrationRetryTimer);
+      } catch (error) {
+        logger.warn(`⚠️  Background migration retry #${retryCount} failed (will retry in 60s):`, error);
+      }
+}, 60_000).unref();
+  }
+} else {
+  logger.info('💾 Persistence disabled — skipping auto-migration');
+  migrationReady = true;
+}
+
+// Start HTTP server immediately — healthcheck returns 503 until caches are warm.
+// This avoids Railway deploy failures caused by connection-refused during cold start.
+const server = app.listen(PORT, () => {
+  logger.info(`🚀 Server ready on http://localhost:${PORT}`);
+});
+
+server.on('error', (error: NodeJS.ErrnoException) => {
+  const explanation = explainServerListenError(error, PORT);
+  if (explanation) {
+    logger.error(explanation);
+  } else {
+    logger.error('❌ Failed to start HTTP server:', error);
+  }
+  process.exit(1);
+});
+
+// Graceful shutdown — stop accepting new requests, drain in-flight ones,
+// then close the DB pool so any open connections to Railway PG are released
+// cleanly during deploy/restart.
+let shuttingDown = false;
+const shutdown = (signal: string) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info(`📴 Received ${signal}, shutting down gracefully…`);
+  server.close((err) => {
+    if (err) logger.warn('Error closing HTTP server:', err);
+    stopProviderCleanup();
+    globalAgent?.close().catch(() => {});
+    closePool()
+      .catch((e) => logger.warn('Error closing DB pool:', e))
+      .finally(() => process.exit(0));
+  });
+  // Hard timeout: force-exit if shutdown stalls (>10s).
+  setTimeout(() => {
+    logger.warn('⏱️  Graceful shutdown timed out, forcing exit');
+    process.exit(1);
+  }, 10_000).unref();
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Start cron scheduler immediately — independent of warmup.
+// If warmup fails, cron retries on its own schedule, so the server can self-heal.
+startUpdateScheduler();
+
+const RSS_RESTART_THRESHOLD_MB = Number.parseInt(process.env.RSS_RESTART_THRESHOLD_MB ?? '', 10) || 0;
+
+setInterval(() => {
+  const mem = process.memoryUsage();
+  const fmt = (bytes: number) => `${Math.round(bytes / 1024 / 1024)}MB`;
+  const merklStats = getMerklForecastCacheStats();
+  const onchainStats = getOnchainCacheStatus();
+  const oracleStats = getOracleCacheStats();
+  const meritStats = getMeritCacheStats();
+  const tokenPriceStats = getTokenPriceCacheStats();
+  const brevisStats = getBrevisCacheStats();
+  const hashSizes = getHashMapSizes();
+  const providerStats = providerPool.getCacheStats();
+  const snapshots = getMarketsData();
+  // Log undici connection pool stats (connected/free/running per origin)
+  const undiciStats = globalAgent?.stats ?? {};
+  const undiciSummary = Object.entries(undiciStats as Record<string, { connected?: number; free?: number; running?: number; queued?: number }>)
+    .map(([origin, s]) => `${new URL(origin).hostname}=${s.connected ?? 0}/${s.free ?? 0}/${s.running ?? 0}`)
+    .join(' ') || 'none';
+  // V8 heap space breakdown (old_space is where long-lived objects accumulate)
+  const heapSpaces = v8.getHeapSpaceStatistics();
+  const spaceSummary = heapSpaces
+    .filter(s => s.space_used_size > 1024 * 1024)
+    .map(s => `${s.space_name.replace(/_space$/, '')}=${Math.round(s.space_used_size / 1024 / 1024)}/${Math.round(s.space_size / 1024 / 1024)}`)
+    .join(' ');
+  logger.info(
+    `📊 Memory: heap=${fmt(mem.heapUsed)}/${fmt(mem.heapTotal)} rss=${fmt(mem.rss)} arrayBuffers=${fmt(mem.arrayBuffers ?? 0)} external=${fmt(v8.getHeapStatistics().external_memory)} malloced=${fmt(v8.getHeapStatistics().malloced_memory)} | ` +
+    `spaces=[${spaceSummary}] ` +
+    `reserves=${snapshots?.payload?.data?.length ?? 0} ` +
+    `onchain=${onchainStats.poolCount}pools/${onchainStats.reserveCount}res ` +
+    `oracle=${oracleStats.leanPrice}+${oracleStats.v4ReserveToken} ` +
+    `merkl=${merklStats.metricsCacheSize}+${merklStats.zeroBaselineCacheSize}z+${merklStats.inFlightSize}f ` +
+    `merit=${meritStats.roundEstimateCache}r+${meritStats.campaignMetadataCache}m+${meritStats.blockNumberCache}b+${meritStats.redirectAliases}a ` +
+    `tokenPrice=${tokenPriceStats.priceCache}+${tokenPriceStats.inFlight}f ` +
+    `brevis=${brevisStats.chainCallCache} ` +
+    `hashes=${hashSizes.marketRow}+${hashSizes.marketConfig}+${hashSizes.oraclePrice} ` +
+    `rpc=${providerStats.providers}p+${providerStats.endpoints}e+${providerStats.rpcUrls}u ` +
+    `browser=${meritStats.browserActive} ` +
+    `undici=[${undiciSummary}] ` +
+    `nodeAgent=https:${(https.globalAgent as any).totalSocketCount ?? '?'}/${Object.keys((https.globalAgent as any).sockets ?? {}).length}act/${Object.keys((https.globalAgent as any).freeSockets ?? {}).length}free http:${(http.globalAgent as any).totalSocketCount ?? '?'}/${Object.keys((http.globalAgent as any).sockets ?? {}).length}act/${Object.keys((http.globalAgent as any).freeSockets ?? {}).length}free`
+  );
+
+  if (RSS_RESTART_THRESHOLD_MB > 0 && mem.rss > RSS_RESTART_THRESHOLD_MB * 1024 * 1024) {
+    logger.error(
+      `🔴 RSS ${fmt(mem.rss)} exceeds threshold ${RSS_RESTART_THRESHOLD_MB}MB — initiating graceful shutdown to prevent OOM`
+    );
+    shutdown('RSS_THRESHOLD');
+  }
+}, 60_000).unref();
+
+// Warm caches in background — server is already listening.
+// /health returns 503 until warmup completes, then 200.
+logger.info('🔄 Starting cache warmup (server already listening, health returns 503 until warm)...');
 
 // Phase 1: independent caches (can run in parallel)
 Promise.allSettled([
   refreshOnchainCache()
     .then(() => logger.info('✅ On-chain cache (deficit, baseRate) warmed on startup'))
     .catch((error) => logger.warn('⚠️  Failed to warm on-chain cache on startup:', error)),
+  refreshOracleCache()
+    .then(() => logger.info('✅ Oracle price cache warmed on startup'))
+    .catch((error) => logger.warn('⚠️  Failed to warm oracle cache on startup:', error)),
   warmMarketsCache()
     .then(() => logger.info('✅ Markets cache warmed on startup'))
     .catch((error) => logger.warn('⚠️  Failed to warm markets on startup:', error)),
@@ -116,28 +394,10 @@ Promise.allSettled([
     }
 
     logger.info('✅ All caches warmed');
-    
-    // 启动定时更新任务
-    startUpdateScheduler();
-    
-    // 启动服务器
-    const server = app.listen(PORT, () => {
-      logger.info(`🚀 Server ready on http://localhost:${PORT}`);
-    });
-
-    server.on('error', (error: NodeJS.ErrnoException) => {
-      const explanation = explainServerListenError(error, PORT);
-      if (explanation) {
-        logger.error(explanation);
-      } else {
-        logger.error('❌ Failed to start HTTP server:', error);
-      }
-      process.exit(1);
-    });
   })
   .catch((error) => {
     logger.error('❌ Startup warmup failed:', error);
-    process.exit(1);
+    // Don't exit — server stays up, /health will keep returning 503
   });
 
 // ts-prune-ignore-next

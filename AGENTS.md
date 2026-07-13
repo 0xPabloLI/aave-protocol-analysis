@@ -1,319 +1,241 @@
-# AGENTS.md
+# AGENTS.md (Slim)
 
-This file provides guidance to WARP (warp.dev) when working with code in this repository.
+## Project Snapshot
+- Monorepo (npm workspaces) with four packages + backend:
+  - `packages/aave-shared-contracts` — shared type definitions (`RuntimeReserveData`, `MarketsPayload`, `NetPositionConstraint`), field registry, validation
+  - `packages/aave-fetcher` — data aggregation (`fetchMarketsData`): Aave SDK + Merit + Merkl + Brevis
+  - `packages/aave-shared-config` — static config constants
+  - `packages/aave-rpc-infra` — RPC infrastructure (ProviderPool, Multicall3, V4 reserve fetch)
+  - `backend/` — API server, in-memory snapshots (cron-write / API-read-only), DB is pure archive (0 SELECT)
+- Dependency direction: shared-config ← shared-contracts ← aave-fetcher ← root/backend; shared-contracts ← aave-rpc-infra ← backend (one-way)
+- Root `src/` = CLI entry (`cli.ts`) + package re-export (`index.ts`); backend imports from `@internal/*` packages, NOT from root dist.
 
-## Project Overview
+## Core Commands
+### Root (workspace-aware)
+- `npm run dev` — run fetcher CLI
+- `npm run build` — build shared-contracts → fetcher → root (ordered)
+- `npm run ci:remote` — full CI-equivalent local gate
 
-Two-service TypeScript codebase that fetches and serves Aave V3 market data across 17+ chains, 20+ markets, and 229+ token reserves. Integrates incentive data from Merit, Merkl, and Brevis protocols.
+### Packages
+- `npm run build -w @internal/aave-shared-contracts` — build shared types
+- `npm run build -w @internal/aave-fetcher` — build fetcher
+- `npm run test -w @internal/aave-shared-contracts` — shared contracts tests
+- `npm run test -w @internal/aave-fetcher` — fetcher tests
 
-**Architecture**: Backend API (`backend/`) runs `fetchMarketsPayload()` (from packaged root `dist/index.js`) on a cron + startup warmup and keeps markets in **memory**; `GET /api/markets` reads that snapshot only. The optional root Data Fetcher (`npm run dev` at repo root) **writes** `data/runtime` / `data/debug` files for exports and debugging; the backend does **not** read `data/runtime/aave-formatted-data.json` to serve the API.
+### Backend
+- `npm run dev -w aave-dashboard-backend` — run backend
+- `npm run build -w aave-dashboard-backend` — compile backend
+- `npm run test -w aave-dashboard-backend` — backend tests
+- Log files: `backend/logs/error.log` (errors only), `backend/logs/combined.log` (all levels), rotated with suffixes (`error1.log`, `combined1.log`, etc.)
 
-## Development Commands
+## Deployment (Hard Safety Gate)
 
-### Root Directory (Data Fetcher)
+### ⛔ Before ANY deploy command, you MUST run `railway status` and verify:
+- The **linked service** is the one you intend to deploy to
+- If deploying the app → linked service MUST be `aave-protocol-analysis`
+- If the linked service is `Postgres-mDWG` → **STOP. Do NOT deploy.**
+
+### Two-service topology
+
+| Service | Type | Builder | Deploy method |
+|---|---|---|---|
+| `aave-protocol-analysis` | App (Node.js) | Dockerfile | `railway up` |
+| `Postgres-mDWG` | Database (PostgreSQL) | Template image | `railway redeploy --from-source` |
+
+### App deploy
 ```bash
-npm install              # Install dependencies
-npm run dev              # Run data fetcher with tsx (writes to data/)
-npm run build            # Compile TypeScript to dist/
-npm start                # Run compiled fetcher (node dist/index.js)
+railway up --detach --service aave-protocol-analysis -m "commit message"
 ```
 
-### Backend API (`backend/`)
+### DB redeploy (only when needed, e.g., after config change)
 ```bash
-cd backend
-npm install              # Install backend dependencies
-npm run dev              # Start dev server with tsx on http://localhost:3001
-npm run build            # Compile backend TypeScript to dist/
-npm start                # Run compiled server (production mode)
-./deploy.sh pm2          # Deploy with PM2 (local testing)
-./deploy.sh local        # Run directly without PM2
+railway redeploy --service Postgres-mDWG --from-source -y
 ```
+Do NOT use `railway up` for the database — it will push the app's Dockerfile build
+to the DB service, replacing PostgreSQL with a Node.js container.
 
-### Deployment
-```bash
-# Local PM2 deployment (from backend/)
-cd backend && ./deploy.sh pm2
+### ⚠️ Consequences of deploying app code to Postgres-mDWG
+Service outage (DB replaced by Node.js container), recoverable via `railway redeploy --service Postgres-mDWG --from-source -y`. Data persists on the volume.
 
-# Remote production deployment (from root)
-./deploy.sh [host]       # SSH-based deployment to remote server
+### Post-deploy verification
+- App healthcheck needs ~3min to warm up (oracle prices + market data fetch)
+- Verify: `railway status` → app should show `● Online`, DB should show `● Online`
+- Verify: `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}`
 
-# PM2 management
-pm2 status               # Check status
-pm2 logs aave-backend    # View logs
-pm2 restart aave-backend # Restart service
-pm2 stop aave-backend    # Stop service
-```
+## Session Workflow
+1. **Bootstrap when needed**: For substantial implementation, debugging, or design sessions, load `using-superpowers` via skill tool. Load `brainstorming` only for feature design, behavior changes, or solution exploration — skip for lightweight inspection, explanation, and routine work.
+2. **Hook policy**: Husky hooks have auto-fix capability. `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged). `pre-push` → `scripts/hook-autofix.sh pre-push` which runs `ci` (build+test, non-fixable) then auto-fixable checks (bin-paths, globstar, audit). If auto-fix changes files in pre-push, the commit is amended and you must push again. Do not bypass with `--no-verify` unless the user explicitly confirms. CI auto-reverts direct pushes that fail CI.
+3. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
+4. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`.
+5. **Branch discipline**: all development commits go directly on `railway` branch. Do NOT create feature branches or worktrees unless explicitly asked by the user. If a stray branch exists, merge it into `railway` and delete it promptly.
+6. **Cross-session boundary**: before committing, inspect `git diff` and `git diff --staged` for changes not made in the current session. If unrelated unstaged/unstaged changes exist (from another session or prior work), **STOP** and confirm with the user whether to include, exclude, or stash them. Never silently bundle foreign changes into your commit.
 
-### Data Workflow (Backend)
-Serving `/api/markets` does **not** depend on any pre-generated `data/runtime/*.json` file. Start the backend and wait for startup warmup (`refreshMarketsSnapshot()` + other caches). Optional: run the root fetcher (`npm run dev` at repo root) only when you need on-disk exports (`aave-formatted-data.json`, CSV, debug snapshots).
+## Architecture Rules
+- ES modules only: local TS imports must use `.js` extension in source imports.
+- API fields should omit `undefined` / empty arrays (keep payload lean).
+- Keep cron-write/API-read-only pattern: request handlers should not trigger external fetches.
+- **Workspace boundary**: `packages/aave-shared-contracts` (types only) ← `packages/aave-fetcher` (runtime) ← root/backend.
+- **No root dist imports**: backend MUST NOT import from `../../../dist/index.js`. Use `@internal/aave-shared-contracts` for types, `@internal/aave-fetcher` for runtime.
+- **No hardcoded bin paths in sub-project scripts**: workspace sub-projects (`backend/scripts/`, `packages/*/scripts/`) MUST NOT hardcode `./node_modules/.bin/<tool>` paths. npm workspaces hoist all deps to root `node_modules/`. Use `npx --no-install <tool>` instead — it resolves the hoisted binary correctly.
+- **No `**/` glob in test scripts**: `tests/**/*.test.ts` won't expand in CI's `sh -c` (bash without globstar). Use `tests/*.test.ts` instead. Enforced by `npm run check:no-globstar` in `ci:remote`.
+- **Serialization stays in backend**: `marketsApiSerialize.ts` produces `MarketWithSpread` in backend only.
+- When adding reserve fields, update `RuntimeReserveData` in `@internal/aave-shared-contracts`, then backend types/serialization.
 
-### Architecture Notes (Read Before Cache/Data-Flow Changes)
-- `docs/merkl-merit-cache-architecture.md` — Merkl/Merit cache layers, file roles, fallback chains; includes **which `GET /v4/opportunities` fields `merkl-api.ts` reads** (tables + Mermaid diagrams)
-- `docs/backend/data-freshness-mechanism.md` — TTL configuration, freshness thresholds, staleness handling
-- `docs/development-best-practices.md` — general implementation patterns (naming, API design, change management, **`prune*` runtime payload shaping**)
-- `docs/deploy/cloudflare-complete-guide.md` — Cloudflare Workers, API caching, concurrency control
-- `docs/api/brevis-supplement.md` — Brevis/Incentra non-core reference (removed pool-level client helpers, type/status tables, REST notes); core Brevis fields and gRPC vs REST summary stay in `docs/api/api-documentation.md`
-- If you change cache layers, file paths/layout, data-flow boundaries, or fallback chains, update relevant docs in the same PR/commit set.
-- When adding/changing a TTL, first verify the upstream data update cadence (docs or observed timestamps) and document the reasoning if non-obvious.
+### Memory Safety Rule
+Adding/modifying in-memory caches, Maps, Sets, long-lived closures, or external resource handles — consult `docs/memory-leak-checklist.md`.
+- **Cache audit must use the exhaustive inventory** in that doc (38 entries). When asked to "review all caches" or "check memory safety", you MUST cross-reference the inventory table, not scan ad-hoc. New caches must be added to the table with full 3-layer defense assessment (Domain/TTL/Max/Shrink).
 
-### Local Git Hook Policy (Mandatory)
-- This repo uses local `pre-commit` and `pre-push` hooks to run `npm run ci:remote`.
-- If `ci:remote` fails, hooks must automatically attempt `npm run ci:auto-fix`, then rerun `ci:remote`.
-- If checks still fail after auto-fix, stop the commit/push and fix the root cause before retrying.
-- Do not bypass hooks as a normal workflow.
-- If local checks fail repeatedly, rely on CI remediation PR flow as a fallback path, then merge validated fixes back to the working branch.
-- Do not merge topic or dependency branches into `main` locally. Use remote merge via GitHub PR only (merge button / auto-merge / `gh pr merge`).
-- Preferred flow: push branch → open PR against target branch → wait CI green → remote merge.
+### Data Validity Rule (Critical)
+**When proposing ANY code change involving blockchain numerical values, you MUST cross-check against actual data files before making the recommendation.**
 
-**Lock File Drift Prevention**:
-- `pre-commit` auto-stages any unstaged `package-lock.json` / `backend/package-lock.json` changes to prevent local/CI audit drift.
-- `pre-push` blocks push if lock files have uncommitted changes, since CI uses committed versions.
+1. **`raw` vs `value` are NOT interchangeable**:
+   - `amount.raw` = on-chain base units (includes decimals, e.g. `"7000000000000000000000000"` for 7M tokens with 18dp)
+   - `amount.value` = human-readable units (decimal-applied, e.g. `"7000000"`)
+   - Checking `raw === "1"` means "1 wei" (10^-18), NOT "1 token"
+   - Checking `value === 1` means "1 whole token"
 
-## Code Architecture
+2. **Always verify assumptions against `data/debug/` files** before suggesting:
+   - Unit conversions between raw/value/usd
+   - Arithmetic operations (subtraction, comparison, clamping)
+   - Condition checks on token amounts (e.g. "is supplyCap disabled?")
 
-### Data Flow Pipeline
+3. **If you're unsure about decimal semantics, read the actual debug data first.**
 
-```
-External APIs → Backend Cron Jobs → In-Memory Snapshots → REST Clients
-     ↓                    ↓                   ↓
-[Aave SDK, Merit,    [cron-write every      [API-read-only:
- Merkl, Brevis,       1-10 minutes]          never triggers
- CoinGecko APIs]                             external fetches]
-```
+### Unit & Precision Safety Rule (Critical)
 
-**Key Architectural Concepts**:
+**All numeric unit conversions MUST go through `packages/aave-shared-contracts/src/units.ts`.** Never define local `rayToPercent` / `rayToRatio` / etc. functions in other packages.
 
-1. **Cron-Write/API-Read-Only**: All data endpoints use this pattern. Cron jobs periodically fetch fresh data; API requests only read from in-memory snapshots, never triggering external API calls.
+#### Single Source of Truth
+- **`FIELD_UNITS`** (`units.ts`): declares the in-memory unit of every field in `RuntimeReserveData` (`'ratio'` | `'percent'` | `'number'` | `'string'` | `'boolean'` | `'campaignArray'`).
+- **`SERIALIZER_RULES`** (derived from `FIELD_UNITS`): `'multiply100'` for ratio fields, `'passthrough'` for everything else.
+- **`RATIO_FIELDS` / `PERCENT_FIELDS`**: convenience sets for testing.
 
-2. **Startup Warmup**: All caches are pre-populated in `server.ts` before `app.listen()` because cron doesn't run immediately. Server only accepts requests after all data is ready.
+#### Unit Conventions
+| Layer | `supplyApy`/`borrowApy`/`campaignApr` | `utilizationPct`/`slopes`/`baseBorrowRate`/`protocolFee` |
+|---|---|---|
+| **In-memory** (`RuntimeReserveData`) | ratio (0.04) | percent (4.0) |
+| **API output** (`MarketWithSpread`) | percent (4.0) | percent (4.0) |
+| **Serializer action** | ×100 | passthrough |
 
-3. **Internalized Fetcher**: The data fetcher logic (`src/index.ts`) is imported directly into backend and executed via cron, eliminating file-based communication. Data lives entirely in memory.
+#### Conversion Functions (from `units.ts`)
+| Function | Input → Output | When to use |
+|---|---|---|
+| `rayToRatio(rayStr)` | RAY string → ratio (0.04) | On-chain RAY → ratio field (e.g. `borrowApy` in V4 RPC fallback) |
+| `rayToPercent(rayStr)` | RAY string → percent (4.0) | On-chain RAY → percent field (e.g. `baseBorrowRate` in on-chain service) |
+| `ratioToPercent(ratio)` | 0.04 → 4.0 | Manual conversion |
+| `percentToRatio(percent)` | 4.0 → 0.04 | Manual conversion |
 
-### Module Responsibilities
+#### Adding a New Numeric Field
+1. Add to `RuntimeReserveData` in `shared-contracts/src/index.ts`.
+2. Add to `EXPECTED_RUNTIME_FIELDS` in the same file.
+3. Add to `FIELD_UNITS` in `shared-contracts/src/units.ts` with the correct unit.
+4. Update `marketsApiSerialize.ts` — check `SERIALIZER_RULES` matches actual serializer behavior.
+5. The invariant test (`tests/units.test.ts`) will fail if you forget step 3.
+6. The backend consistency test (`backend/tests/unitsConsistency.test.ts`) will fail if serializer behavior doesn't match `SERIALIZER_RULES`.
 
-#### Data Fetcher (`src/`)
-- `index.ts` - Main orchestrator: fetches from all APIs, builds chain-token indices, merges incentive data, writes output with metadata
-- `merit-api.ts` - Merit APR fetcher; groups by supply/borrow requirements and self-supply/borrow patterns
-- `merkl-api.ts` - Merkl opportunities fetcher; processes campaign breakdowns and calculates aggregate APRs
-- `brevis-api.ts` - Brevis Linea Surge fetcher; builds `chainId-tokenAddress` index for matching
-- `token-price-resolver.ts` - CoinGecko USD fallback for reward tokens; chain→platform ids live in generated `src/generated/coingecko-platform-by-chain-id.ts`. Regenerate: `npm run sync:coingecko-platform-map`. Before merging map changes, verify locally: `npm run sync:coingecko-platform-map -- --check`. The main **`CI` workflow does not run `--check`**—live CoinGecko drift or outages would fail unrelated PRs. Use `.github/workflows/coingecko-platform-sync.yml` (weekly cron + `workflow_dispatch`): it runs the sync, then `npm run build`, and opens a PR when the generated file changes.
-- `logger.ts` - Winston logger (console + rotating file logs to `logs/`)
+## Automated Checks (No Manual Checklist Needed)
 
-**Matching Strategy**: Each API uses different identifiers:
-- Merit: `chainId-tokenAddress` keys (direct match)
-- Merkl: Chain name + token symbol (case-insensitive)
-- Brevis: `chainId-tokenAddress` index (direct match)
+### Reserve Field Addition
+Adding new reserve fields to the single `RuntimeReserveData` type requires:
 
-#### Backend API (`backend/src/`)
+1. **Type Sync**: Update `RuntimeReserveData` → `MarketWithSpread` (backend) → `marketsApiSerialize.ts` serialization
+2. **Runtime Test**: `tests/field-coverage.test.ts` validates all expected fields are present
+3. **Field Registry**: `packages/aave-shared-contracts/src/index.ts` maintains `EXPECTED_RUNTIME_FIELDS` as source of truth
 
-**Core Services**:
-- `services/marketsService.ts` - Unified data fetcher (markets + on-chain data); parallel fetch from Aave API + RPC; single `fetchedAt` for consistent staleness
-- `services/onchainDataService.ts` - On-chain data fetcher (`deficit`, `baseVariableBorrowRate`) via `UiPoolDataProvider.getReservesHumanized()`; per-chain cache with 30-min TTL; cron every 1 min at :10
-- `services/updateScheduler.ts` - Cron scheduler (markets 1m unified, forecast 10m, FDV 5m, categories 6h)
-- `services/merklForecastService.ts` - Merkl forecast data processor; metricsCache (dynamic TTL 10m-6h) + campaignOpportunityCache (5m)
+## Required Coupled Changes
+When touching one area, check its pair:
+- `packages/aave-shared-contracts/src/index.ts` (types) ↔ `backend/src/types/index.ts` (backend types)
+- `packages/aave-fetcher/src/index.ts` (pruneReserveForRuntime) ↔ `backend/src/types/index.ts`
+- Root output schema ↔ `backend/src/services/marketsApiSerialize.ts`
+- `backend/src/cacheTtl.ts` ↔ `backend/src/services/updateScheduler.ts`
+- Chain/platform mapping ↔ `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts`
+- `scripts/sync-oracle-pool-configs.ts` ↔ `backend/src/generated/oracle-pool-configs.ts`
+- `packages/aave-shared-contracts/src/units.ts` (FIELD_UNITS) ↔ `backend/src/services/marketsApiSerialize.ts` (serializer behavior)
 
-**Request Handlers**:
-- `controllers/marketsController.ts` - `GET /api/markets` reads in-memory snapshot only (cron-write/API-read-only)
-- `controllers/coingeckoController.ts` - CoinGecko categories data handler
-- `controllers/merklForecastController.ts` - Merkl forecast endpoints
+### Shared Package Boundaries (Non-Negotiable)
+| Package | Contains | Must NOT contain |
+|---|---|---|
+| `@internal/aave-shared-contracts` | Types, field registry, validation | Runtime fetch logic, serialization |
+| `@internal/aave-fetcher` | `fetchMarketsData`, SDK clients, adapters | Backend API types (`MarketWithSpread`) |
+| `backend` | API server, serialization (`marketsApiSerialize.ts`) | `fetchMarketsData` definition (imports it) |
 
-**Infrastructure**:
-- `server.ts` - Express app setup; loads initial cache, starts scheduler, registers routes
-- `routes/` - Route definitions (`markets.ts`, `coingecko.ts`, `campaigns.ts`, etc.)
-- `middleware/cors.ts` - CORS config (allow-all in dev, whitelist in production via `FRONTEND_URL`)
-- `types/index.ts` - TypeScript interfaces
-- `env.ts` - Environment variable validation and loading
-- `logger.ts` - Winston logger (backend logs to `backend/logs/`)
+## Validation Gate
+- Quality is enforced by Husky hooks with auto-fix: `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged); `pre-push` → `scripts/hook-autofix.sh pre-push` (ci build+test + auto-fix bin-paths/globstar/audit). CI auto-reverts direct pushes that fail.
+- Auto-fixable checks: bin-paths (`./node_modules/.bin/X` → `npx --no-install X`), globstar (`tests/**/*.test.ts` → `tests/*.test.ts`), audit (`npm audit fix --omit=dev`), Prettier (lint-staged).
+- Non-auto-fixable checks: build, test:typecheck, test, prune, workspace-coverage — these require manual fixes.
+- **Dist import check** (debug-only, also covered by `ci:remote`):
+  ```bash
+  rg "dist/index\.js|\.\.\/\.\.\/\.\.\/dist" backend/src tests
+  ```
+- **Bin path check** (debug-only, also covered by `ci:remote`):
+  ```bash
+  npm run check:bin-paths
+  ```
+- **Globstar check** (debug-only, also covered by `ci:remote`):
+  ```bash
+  npm run check:no-globstar
+  ```
 
-### Critical Architectural Patterns
+## High-Risk Areas (Coordinate Carefully)
+- Fetch orchestration: `packages/aave-fetcher/src/index.ts`
+- Incentive adapters: `packages/aave-fetcher/src/merit-api.ts`, `merkl-api.ts`, `brevis-api.ts`, `brevis-distributed-so-far.ts`
+- Merit dynamic info fallback chain: Render (CDP) → Worker → Playwright (local) → null
+  - `RENDER_SERVICE_URL` env var enables Render browserless fallback (free tier: ~90s cold start, 750h/month)
+  - `MERIT_ALLOW_LOCAL_PLAYWRIGHT` — default `true`; set to `"false"` in production to prevent Chromium OOM on Railway
+  - Shared helpers: `extractCampaignInfoFromPage()`, `extractSelfAuthFromPage()`, `createMeritPage()`
+  - Source type: `'worker' | 'render' | 'playwright'`
+- Token pricing + chain mapping: `packages/aave-fetcher/src/token-price-resolver.ts`, `generated/coingecko-platform-by-chain-id.ts`
+- Backend freshness/caching: `backend/src/services/marketsService.ts`, `onchainDataService.ts`, `merklForecastService.ts`, `cacheTtl.ts`
+- Shared contracts: `packages/aave-shared-contracts/src/index.ts` (source of truth for `RuntimeReserveData` and `EXPECTED_RUNTIME_FIELDS`)
+- Unit conversions: `packages/aave-shared-contracts/src/units.ts` (source of truth for `FIELD_UNITS`, `rayToRatio`, `rayToPercent`)
 
-#### 1. ES Modules with .js Extensions
-Both services use `"type": "module"`. **ALWAYS** use `.js` extensions in imports, even for `.ts` files:
-```typescript
-import { logger } from './logger.js';  // ✅ Correct
-import { logger } from './logger';     // ❌ Wrong
-```
+## Documentation Placement Rule
 
-#### 2. Optional Field Omission in JSON
-Backend uses custom JSON serialization to omit `undefined` values and empty arrays (not `null`). Fields like `supplyApy`, `meritSupplys`, `merklSupplyAprBreakdowns` only appear if they have data.
+### `aaveapy-doc/` (symlink → `../aaveapy-doc`) — 跨前后端 + 协议知识
+Canonical source for knowledge spanning frontend AND backend, or Aave protocol fundamentals. Not a git submodule; changes committed directly in the symlinked repo.
 
-#### 3. APR to APY Conversion
-`convertAprToApy()` uses monthly compounding: `(1 + APR/12)^12 - 1`
+### `docs/` — 本项目工程文档
+- API docs, backend architecture, deployment guides, development best practices.
+- `docs/plans/` — 活跃在 `plans/`，完成后移入 `plans/executed/`。
 
-#### 4. Refresh concurrency (markets snapshot)
-`marketsService.refreshMarketsSnapshot()` uses a single `refreshInProgress` promise so concurrent cron/handlers await the same in-flight refresh instead of stacking fetches.
+### Agent 查询优先级
+当被问到跨前后端或协议相关问题时，Agent 必须**优先搜索 `aaveapy-doc/` 子模块**寻找答案，`docs/` 仅作为本项目工程实现细节的补充。
 
-#### 5. Metadata-Based Timestamps
-Data files include `_metadata.timestamp` (written by fetcher). Backend prioritizes this over file mtime, ensuring accurate staleness detection even if file is copied/touched.
+## Learned Preferences (Condensed)
+- Keep docs concise and remove superseded content.
+- Prefer runtime verification/log evidence over speculative explanations.
+- Keep schema convergence across incentive sources; avoid unused fields in public payload.
+- Use exact-origin CORS settings; treat freshness TTL changes as explicit, documented decisions.
 
-### API Endpoints
+## Lessons Learned
+- **中间态产物在使命完成后必须立即清理**：迁移安全路径中的临时中间态，一旦最终步骤执行完成且验证通过，必须立即删除，不要留到"下次清理"。
+- **设计选项 ≠ 必经步骤**：文档中提出的可选方案需先验证是否有实际消费者，无消费者则直接跳过，不要机械写入任务清单并执行。
+- **"组件存在" ≠ "数据流接通"**：验证实现完成度时，不能只 grep 类名/函数名/字段名是否存在。必须按 issue acceptance criteria 逐条验证 import 链路和运行时可达性。例：`fetchV4ReservesViaRpc` 函数存在 + 有测试，但 fetcher 从未 import 它，Layer 2 fallback 是死代码。
+- **不信 Linear sub_issues 聚合状态**：`get_issue(sub_issues: true)` 返回的状态可能是缓存/快照，与单条 `get_issue(id)` 结果不一致。必须逐条单查确认。
+- **ADR 状态必须与代码实际对标**：不能因为"子 issue 全 Done"就标 ADR 为 Implemented。必须跑一遍 ADR Decision 中每个关键代码点的 import 链路 + 运行时可达性验证。存在 Partial 状态时应标注哪层已实现、哪层未接通。
+- **本地 CI ≠ Docker 构建环境**：`ci:remote` 不跑 Docker build，本地残留目录会掩盖 ENOENT。build script 中 `writeFileSync` 的目标目录必须在 script 自身（`mkdirSync`）和 Dockerfile（`RUN mkdir -p`）至少一方保证存在。`buildScriptWriteSafety.test.ts` 做静态检查防回归。
+- **涉及外部依赖的测试必须用真实数据**：调用链上合约、第三方 API（Merkl/Brevis/CoinGecko）的测试不能用 mock，必须用真实 URL/合约地址验证。单元测试可覆盖内部逻辑，但集成测试必须对真实外部端点执行，确保数据格式、字段存在性、数值范围与实际一致。改了 API contract 后必须在 dev/staging 验证实际返回。
+- **Map key 必须用 shared 工具函数生成**：跨模块通过 Map 传递数据时，key 的生成方式必须统一。禁止在消费方重新实现 key 构造函数（即使逻辑"看起来一样"），必须 import 生产方的同一个函数。例：`brevis-distributed-so-far.ts` 本地 `chainTokenKey` 用 `-` 分隔，而 shared-contracts 用 `:` 分隔，导致 tokenPrice 查找永远 miss，distributedSoFar 全部 undefined，forecast 无 Brevis items。
+- **Handoff 文档必须在代码完成后反向验证**：handoff 文档记录了"要做什么"和"待修复项"，完成代码改动后必须回过头逐一检查文档中每个"待修复/需修正/错误"描述，将已完成的标记为"已完成"并删除过时内容。禁止只更新 ADR 而忽略 handoff 文档。例：TARGET_TOTAL_APR P1 完成后只更新了 ADR-0024，handoff 文档仍写着"TARGET_TOTAL_APR 当前硬编码为 mode: 'max'"和"5 个断路点待修复"，导致前端误以为未完成。
+- **诊断代码本身可能成为 OOM 源**：`v8.writeHeapSnapshot()` 在 1GB 容器中瞬间分配 ~2x heap 大小的内存（序列化堆），加上 `readFile` + `JSON.parse` 又分配等量内存。诊断代码必须标注**最低容器要求**（如"需 2GB 容器"），且在容器降配时必须同步禁用。`--heapsnapshot-near-heap-limit=1` 同理——V8 OOM 前自动写 snapshot 也会瞬间分配大量内存。1GB 容器中必须移除此参数。
+- **http/https globalAgent 是防御性安全网**：node-fetch 已移除 (AAV-1064)，所有出站 HTTP 走 undici 单通道。`server.ts` 中的 `maxSockets=10`/`maxFreeSockets=2` 保留为防御性代码——任何 transitive dependency 可能仍通过 `http`/`https` 模块发出请求。
+- **maxSockets ≠ maxFreeSockets，必须都设**：`maxSockets` 限制**同时活跃**连接数，`maxFreeSockets` 限制**keep-alive 池中空闲**连接数。设了 `maxSockets=10` 只保证不会同时有 10 个以上并发请求，但 `maxFreeSockets` 默认 256，允许每 host 缓存 256 个空闲 socket。请求频率低时这些 socket 永远不被复用，持有 TLSSocket/ClientRequest/ReadableState/stream 闭包等全部关联对象，永远不被 GC。**修连接池时必须同时设 maxFreeSockets**。
+- **"修了大的，露出小的" ≠ "修出新问题"**：连接池问题从一开始就存在。之前因为更大的泄漏占主导，小泄漏的贡献被淹没。修掉大泄漏后，小泄漏才变得可见。这不意味着修复引入了新问题，而是暴露了被掩盖的旧问题。
+- **RSS 垂直飙升 ≠ 渐进泄漏**：RSS 从正常值瞬间飙到 1GB 是一次性大量分配的特征（如 heap snapshot 序列化），不是渐进泄漏（如连接池累积）。两者诊断方向完全不同。渐进泄漏看趋势斜率，垂直飙升看飙升时刻点的代码路径。
+- **SDK 内部状态泄漏不只看 queryRegistry**：V3 AaveClient 不继承 GqlClient（无 queryRegistry），之前注释说"safe as singleton"。但 urql 的 fetchExchange 和 Client 内部也保留 Operation/Response 引用。`.toPromise()` 不触发 urql teardown，导致 Response 对象链无法 GC。**任何使用 urql 的 SDK 在长期运行进程中都应 per-fetch 创建 client**，而非依赖"不继承 GqlClient"的假设。
+- **V3/V4 SDK 修复必须同步**：V4 AaveClient 已在 Session 4 修复为 per-fetch 创建，但 V3 AaveClient 的单例泄漏被 V4 的更大泄漏掩盖。修完 V4 后，V3 的泄漏才变得可见。**修复 SDK 类泄漏时，必须检查同一依赖的所有入口**。
+- **单位转换必须走统一入口**：`rayToPercent`/`rayToRatio` 等转换函数散落在多个包中（onchainDataService 本地定义、aave-rpc-infra 本地定义），导致 V4 RPC fallback 用 `rayToPercent` 给 ratio 字段 `borrowApy` 赋值，序列化器再 ×100 → 400%。**所有转换函数必须 import 自 `@internal/aave-shared-contracts/units.ts`**，新增字段必须注册到 `FIELD_UNITS`，invariant 测试会自动验证注册表完整性。
 
-**公开 API 共 4 条 URL / 3 个逻辑端点**（完整列表与详细说明见 `docs/api/api-documentation.md`）。`GET /api/markets` 使用 `markets-v2` 结构：根级 `snapshot + reserves`；价格主字段在 `reserves[].tokenPrice`。
+## Agent skills
 
-```
-GET /health                        # Health check with environment info
-GET /api/health                    # Same handler as /health (API namespace)
-GET /api/markets                   # markets-v2 snapshot + full reserves (no query params)
-GET /api/meta/side-data            # Aggregated side data (categories + fdv + forecast)
-```
+### Issue tracker
 
-**Markets 数据新鲜度**（cron-write/API-read-only）:
-- `GET /api/markets` — 响应含 `{ snapshot, reserves }`；`staleTimeMs` 提示前端缓存窗口；服务端由 cron 每分钟刷新，**请求不触发拉取**
-  - 每个 reserve 含可选 `deficit` / `baseVariableBorrowRate`（来自 on-chain 缓存合并或回退）
-  - Deficit 获取失败时优雅降级：仍可有 `deficit: "0"` 等回退行为（见 `marketsService`）
-- `GET /api/meta/side-data` 聚合 categories / fdv / forecast 三类内部缓存快照；这些子缓存仍各自按独立 cadence 预热，但不再单独对外暴露。
+Issues tracked in **Linear** via MCP tools. See `docs/agents/issue-tracker.md`.
 
-## Configuration
+### Triage labels
 
-### Environment Variables
-Configure in **repo root `.env`** (single source of truth):
-```bash
-PORT=3001                          # Server port
-NODE_ENV=development               # Environment mode
-FRONTEND_URL=https://example.com   # CORS whitelist (production only, comma-separated)
-ALLOWED_DEV_ORIGINS=...            # Dev CORS whitelist
-DOPPLER_TOKEN=...                  # Doppler secrets (production)
-MERKL_FORECAST_RESULT_CACHE_TTL_MS=600000             # Forecast result cache TTL (default 10m, aligned with metricsMin)
-MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS=300000   # Opportunity meta cache TTL (default 5m)
-MERKL_METRICS_CACHE_TTL_MS=1800000                    # Metrics cache default TTL (default 30m, dynamic cadence-based)
-```
+Five canonical roles with default label strings. See `docs/agents/triage-labels.md`.
 
-**Priority**: System env vars > `.env` file > defaults
+### Domain docs
 
-### TypeScript Configuration
-- **Root** `tsconfig.json` - Compiles `src/` → `dist/` (excludes backend)
-- **Backend** `backend/tsconfig.json` - Compiles `backend/src/` → `backend/dist/`
-
-Both use `"module": "ESNext"` with `"target": "ES2022"`.
-
-### Data Files (`data/`, gitignored)
-```
-runtime/aave-formatted-data.json          # Written by root fetcher; same pipeline shape as API payload, but API uses memory (not this file)
-runtime/merkl-opportunity-meta-lite.json  # Merkl forecast runtime-lite snapshot (backend reads for forecast)
-runtime/merit-campaign-metadata-cache.json # Merit campaign metadata cache (time/message/link)
-exports/aave-formatted-data.csv           # CSV export
-debug/aave-all-markets-data.json          # Raw Aave SDK response
-debug/aave-all-markets-error.json         # Error snapshot
-debug/brevis-raw-data.json                # Brevis raw data with API responses
-debug/merkl-raw-data.json                 # Merkl raw data (debug)
-debug/merit-raw-data.json                 # Merit raw data (debug)
-debug/merit-merkl-raw-data.json           # Merit↔Merkl round estimation debug
-```
-
-### Logging
-- **Data Fetcher**: Winston logs to `logs/combined.log` + `logs/error.log` (root)
-- **Backend API**: Winston logs to `backend/logs/` (PM2 errors to `backend/logs/pm2-error.log`)
-- Both: 5MB rotation, keep 5 files
-
-## Common Patterns & Gotchas
-
-### Data Matching Strategy
-Each incentive API uses different identifiers:
-- **Merit**: `chainId-tokenAddress` (e.g., `"1-0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"`)
-- **Merkl**: Chain name + symbol case-insensitive (e.g., `ethereum` + `USDC`)
-- **Brevis**: `chainId-tokenAddress` index
-- **Token price delivery**: keep full reserve rows in `reserves` and attach `tokenPrice` inline.
-- **Reward token rule**: Merkl reward token prices are not output in `/api/markets` for now; if a reward token is an Aave `aToken`, do not emit a separate price entry.
-
-### Reserve Size Definitions
-- `reserves[].reserveSizeUsd` = **total supply in USD** (not supply − borrowed). This matches the Aave reserve `size.usd` surface.
-- `reserve.size.raw` composition: `availableLiquidity + totalVariableDebt`, where `totalVariableDebt = totalScaledVariableDebt × variableBorrowIndex ÷ 10²⁷`. See `docs/api/native-apr-calculation.md` for derivation.
-- `reserves[].deficit` = **raw token units** from `UiPoolDataProvider.getReservesHumanized()` (Aave v3.3.0+); for simulation utilization denominator adjustment. Absent if RPC failed. **Not included** in `reserve.size`.
-- `reserves[].baseVariableBorrowRate` = **RAY (1e27)** from same RPC call; for simulated borrow rate calculation. Absent if RPC failed.
-- `borrowInfo.availableLiquidity` remains the right field for "how much can still be borrowed now".
-
-### Frozen/Paused Reserves
-Reserves with `isFrozen === true` or `isPaused === true` are still included in output but marked with `supplyDisabled: true`.
-
-### Capacity Limits & Disabled State Handling
-- `supplyApy` → `undefined` (omitted) when `supplyCap === 1`
-- `supplyDisabled` → `true` (present only when disabled) when `isFrozen`, `isPaused`, or `supplyCap === 1`
-- `supplyCapUsd` → always returns USD value of supply cap (if available)
-- `borrowApy` → always returns real value (even when borrowing is disabled)
-- `borrowDisabled` → `true` (present only when disabled) when `borrowCap === 1` or `borrowingState === "DISABLED"`
-- `borrowCapUsd` → always returns USD value of borrow cap (if available), symmetric with `supplyCapUsd`
-
-### Network Discovery
-Uses `@bgd-labs/aave-address-book` to auto-discover AaveV3 networks. Excludes test networks (Sepolia, Fuji).
-
-### Backend Cache Architecture
-- **All endpoints use cron-write/API-read-only** pattern (API requests never trigger external fetches):
-  - Markets (unified): cron every 1m refreshes `marketsSnapshot` with parallel Aave API + RPC deficit fetch
-  - Merkl forecast: cron every 10m refreshes `snapshotCache`
-  - CoinGecko categories/FDV: cron every 6h/5m refreshes cache
-- **Startup warmup**: All caches are explicitly warmed in `server.ts` before `app.listen()`. Server only accepts requests after all data is ready.
-- **Cache structure choice**: Use `Map<key, entry>` when items have different TTLs (e.g., `metricsCache` per-campaign with dynamic TTL 10m-6h); use single snapshot object when API returns all data together
-- **metricsCache optimization**: Stores raw Merkl metrics with dynamic TTL (10m-6h based on data cadence). This is the key optimization - metrics API calls are expensive, forecast computation is fast. `forecastCache` was removed as redundant with cron-write pattern.
-- See `docs/backend/data-freshness-mechanism.md` for detailed TTL tables and staleness thresholds
-- See `docs/deploy/cloudflare-complete-guide.md` for API cache headers and Cloudflare rules
-
-### PM2 Production Config
-`ecosystem.config.cjs` at root defines PM2 settings:
-- Memory limit: 500MB
-- Auto-restart with max 10 restarts
-- Logs: `backend/logs/pm2-*.log`
-- Environment variables (production defaults)
-
-## Testing & Validation
-
-No formal test framework. Manual validation:
-1. Start backend: `cd backend && npm run dev`
-2. Test endpoints (API serves from memory after warmup):
-   ```bash
-   curl http://localhost:3001/health
-   curl http://localhost:3001/api/markets | jq '.reserves | length'
-   ```
-3. Optional root fetcher: `npm run dev` at repo root → inspect `data/runtime/` if you need on-disk artifacts; check `tail -f logs/combined.log`
-
-## Important Implementation Notes
-
-### When Adding New Endpoints
-Follow the same cache pattern as sibling endpoints: cron-warmed snapshot + read-only handler, or document explicit TTL if adding a new external source.
-
-### When Modifying Update Logic
-For markets, respect `refreshInProgress` in `marketsService` and avoid triggering `fetchMarketsPayload()` from request paths.
-
-### When Changing Data Schema
-Update both:
-1. Root fetcher output format in `src/index.ts`
-2. Backend type definitions in `backend/src/types/index.ts`
-3. Keep existing reserve-level incentive fields unless explicitly removed by product/API contract decision.
-
-### Environment Variable Priority
-In production with Doppler:
-1. System environment variables (highest)
-2. `ecosystem.config.cjs` defaults
-3. Doppler-fetched secrets (lowest, only if not already set)
-
-Don't set secrets in `ecosystem.config.cjs`—they'll override Doppler.
-
-## Learned User Preferences
-
-- Keep documentation concise; remove outdated/superseded content rather than accumulating
-- Prefer direct runtime/script verification over speculative root-cause explanations when debugging production behavior
-- Question redundant boolean flags when data comes from the same source (e.g., if all rate-input fields exist, a separate flag adds no value)
-- Prefer merging API endpoints when data is pre-fetched together with the same TTL/staleness; flatten nested objects when possible
-- Verify changes appear in API response after implementation; rebuild `dist/` if backend imports from it
-- When adding new reserve fields to fetcher output, also add them to `pruneReserveForRuntime()` or they will not appear in runtime/API; then rebuild root so backend sees updates
-- For small pure helpers that shape API output (e.g. Merkl breakdown derivations), add focused `backend` unit tests when the module can be imported without live network calls
-- Organize reusable patterns into `docs/reusable/` for cross-project portability
-- When describing refresh cadence or cache freshness, name the subsystem (markets vs Merkl forecast vs Merkl metrics) and align statements with `backend/src/cacheTtl.ts` and `updateScheduler.ts` so labels like `realtimeFamily` are not applied to Merkl forecast paths
-- When realigning a local branch to `origin/*` after a remote squash-merge or a force-aligned integration branch, uncommitted work must be preserved exactly: `git stash push -u` before `git reset --hard`, then restore (e.g. `stash pop`); do not treat WIP as optional or discard it silently
-- Prefer schema convergence across incentive sources (especially Brevis↔Merkl field naming/types) and ask frontend cleanup to remove newly added fields that are not actually used
-- Prefer keeping transient budget-parse fields off the shipped Brevis campaign shape: gRPC can attach `budgetNormalizedAmount` / `budgetTokenSymbol` on each `BrevisCampaignItem` until `fetchBrevisAprs` computes `totalBudget`, then `pruneBrevisCampaignForRuntime` removes them so runtime/API/CSV stay slim
-
-## Learned Workspace Facts
-
-- Markets in-memory snapshot and root fetcher output store yield-related fields (`supplyApy`, `borrowApy`, protocol incentives, Merit/Merkl/Brevis APR fields, Merkl `aprCap`) as **annual ratios**; `GET /api/markets` multiplies those fields by 100 in `backend/src/services/marketsApiSerialize.ts` so HTTP JSON remains **percent** values. Merkl `campaign.apr` is ingested as upstream percent (÷100 to ratio); `aprCap` comes from `distributionSettings.apr` as ratio; `onchainDataService` treats merged `borrowApy`/`supplyApy` as ratio for APY→RAY. Root `data/runtime/*.json` follows ratio semantics, not the HTTP response
-- Backend imports from `dist/index.js` — rebuild root (`npm run build`) after `src/index.ts` changes; new reserve-level fields must be listed in `pruneReserveForRuntime()` or they are dropped from runtime/API. On-chain `deficit` / `baseVariableBorrowRate` from `UiPoolDataProvider.getReservesHumanized()`; per-chain cache 30m TTL; each chain tries RPCs with 15s per attempt; only `deficit` needs on-chain RPC; other rate-input fields from Aave API. Markets cron :00, on-chain cron :10 each minute; markets merge reads on-chain cache at merge time. CI scripts under `scripts/` must be tracked: `.gitignore` ignores `scripts/*` with selective `!scripts/...` un-ignore lines—if a workflow runs a file that is still ignored or missing from the merge tree, Node reports `ERR_MODULE_NOT_FOUND` (e.g. `sync-coingecko-platform-map`)
-- Merit campaign metadata `endBlock` from upstream can diverge from chain-local block-height expectations (for example Celo campaigns carrying Ethereum-like block ranges); treat `endDate` as primary expiry signal and refresh stale metadata rounds instead of relying on `endBlock` priority
-- `/api/rate-inputs` removed; all rate-input fields live in `/api/markets` reserves; frontend must fallback when `deficit` or `baseVariableBorrowRate` are absent
-- RPC order in `packages/aave-shared-config`: public RPC first, private (Infura/Ankr/Alchemy) last. `totalVariableDebt` from Aave SDK replaces `totalScaledVariableDebt` + `variableBorrowIndex`; precision (raw token units, BPS, RAY) aligned with former on-chain source
-- CORS `FRONTEND_URL` uses exact-origin matching only (no subdomains or wildcards); list each allowed origin comma-separated with full URL including protocol (e.g. `https://aaveapy.com,https://www.aaveapy.com`)
-- Merkl forecast budget fields for non-PRETGE campaigns must be USD-only (no token-unit fallback): resolve price from snapshot/local sources first, then CoinGecko fallback; if price is still missing, warn and omit those budget fields from API output
-- `merkl-opportunity-meta-lite.json` is written by the root fetcher from Merkl opportunities; forecast keys campaigns by `rewardsRecord.breakdowns[].campaignId`, and the forecast cron uses IDs from markets merkl breakdowns, not Merkl's full live catalog—keep markets runtime and lite snapshots refreshed together to avoid stale campaign ID mismatches. `BACKEND_CACHE_TTL_MS.realtimeFamily` and markets cron cadence apply to `/api/markets` staleness only; Merkl forecast uses separate defaults (for example `merklForecastResultDefault` 10m, `merklForecastOpportunityMetaDefault` and `merklOpportunitiesDefault` 5m, plus dynamic metrics TTL)—do not conflate them when comparing intervals
-- Raw Merkl payloads may include non-empty `params.whitelist` (`whitelistOnly` on breakdowns); observed distribution types may omit `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` even though normalization and forecast code support it. `rewardsRecord.breakdowns[].value` is the same upstream daily-scalar across Aave and Tydro; `pointsPerThousandUsd` only when `token.type === 'PRETGE'` (`merklBreakdownUsesPointsIntensityFields` in `src/merkl-api.ts`), using `value` and `tvl`. Optional overlap check: `scripts/merkl-pretge-points-overlap.mjs`; field mapping: `docs/merkl-merit-cache-architecture.md`
-- Startup warmup in `backend/src/server.ts` runs Phase 1 `Promise.allSettled` (on-chain, markets, CoinGecko categories, FDV) then Phase 2 `warmCampaignForecastStatesCache()` so forecast can use the markets snapshot
-- Brevis ingestion uses grpc-web (`GetAllProtocols`, `GetAllProtocolDetail`); official REST `/sdk/v1/aaveCampaigns` can return empty while gRPC still returns Aave campaigns—do not assume REST can replace gRPC without live checks. `campaignStartedAt`/`campaignEndedAt` on `brevisSupplys`/`brevisBorrows` map from gRPC `campaign.config.start`/`end` (epoch seconds). Treat protocol `tvl` as USD (docs and samples align). Public Brevis campaign rows stay slim; only campaigns with reward token `addr` are indexed under `chainId-tokenAddress` (no pool-id key fallback). Transient `budgetNormalizedAmount` / `budgetTokenSymbol` on each `BrevisCampaignItem` feed `fetchBrevisAprs` until `totalBudget` is computed, then `pruneBrevisCampaignForRuntime` removes them; reward USD resolution should prefer reserve snapshot prices for that chain–token key, then CoinGecko (`/asset_platforms` → `/simple/token_price/{platform}` → `/simple/price`) only when price is missing, and only pass contract address when it is a token address (not a pool address). Removed unused client surface (`getCampaignDetailByPool`, `parseCampaignsFromGrpcResponse`, `BrevisCampaignInfo`); archived in `docs/api/brevis-supplement.md` (with type/status tables and REST notes)
-- **GitHub Actions (`uses:`)**: Choose the action **version** you need for CI (Node support, inputs, runner compatibility)—that is separate from pinning. In this repo, **third-party actions use a full 40-character commit SHA** plus a trailing `# vN` (or similar) comment, not a floating tag alone: release tags can move without any change in your YAML, which hurts reproducibility and supply-chain review; jobs with `contents: write` or `pull-requests: write` are higher impact if an action reference silently changes. To upgrade, set the SHA to the commit the desired tag resolves to (e.g. GitHub API `GET /repos/{owner}/{repo}/commits/{tag}`). Dependabot `github-actions` may still propose bumps per `dependabot.yml`.
-- Deployment smoke tests that poll **`/health` JSON** must use the **backend API origin** (not a static/marketing site that can 404 or return non-JSON). **`commitSha`** in `/health` only appears when the runtime sets **`RAILWAY_GIT_COMMIT_SHA`**. Railway GraphQL **`deploymentRollback`** is **`Boolean!`**—do not select subfields on the mutation; assert the boolean (e.g. with `jq`) in CI. The smoke test workflow uses **`deployment_status`** (not `push`) to avoid deadlock with Railway's "Wait for CI" which blocks deploy until all push-triggered check suites pass; context fields (`sha`, `branch`) come from `github.event.deployment.sha` / `.ref`, not `github.sha` / `github.ref_name`. See `docs/ci-security-automation.md` §"Railway Wait for CI and Smoke Test Trigger Design".
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.

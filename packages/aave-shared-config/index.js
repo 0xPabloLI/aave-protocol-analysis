@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process';
+
 const DEFAULT_ITEMS_PER_PAGE = 100;
 const MAX_ITEMS_PER_PAGE = 100;
 const DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS = 60 * 1000;
@@ -45,6 +47,268 @@ export function createMerklConcurrencyLimitedFetch(fetchImpl = fetch) {
       releaseMerklFetchSlot();
     }
   };
+}
+
+export function createSlidingWindowRateLimiter(maxRequestsPerSecond) {
+  const timestamps = [];
+  const windowMs = 1000;
+  let chain = Promise.resolve();
+
+  function cleanup(now) {
+    const cutoff = now - windowMs;
+    while (timestamps.length > 0 && timestamps[0] < cutoff) {
+      timestamps.shift();
+    }
+  }
+
+  async function wait() {
+    return chain = chain.then(async () => {
+      const now = Date.now();
+      cleanup(now);
+      if (timestamps.length >= maxRequestsPerSecond) {
+        const waitMs = timestamps[0] + windowMs - now + 1;
+        if (waitMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+        cleanup(Date.now());
+      }
+      timestamps.push(Date.now());
+    });
+  }
+
+  function getTimestamps() {
+    cleanup(Date.now());
+    return [...timestamps];
+  }
+
+  function reset() {
+    timestamps.length = 0;
+  }
+
+  return { wait, getTimestamps, reset };
+}
+
+const readV3FetchMaxConcurrency = () => {
+  const raw = process.env.V3_FETCH_MAX_CONCURRENCY;
+  const defaultValue = 2;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 1 ? n : defaultValue;
+};
+
+const readV3MaxRequestsPerSecond = () => {
+  const raw = process.env.V3_MAX_REQUESTS_PER_SECOND;
+  const defaultValue = 1;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 1 ? n : defaultValue;
+};
+
+const readV3FetchMaxRetries = () => {
+  const raw = process.env.V3_FETCH_MAX_RETRIES;
+  const defaultValue = 3;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 0 ? n : defaultValue;
+};
+
+const readV3FetchBaseDelayMs = () => {
+  const raw = process.env.V3_FETCH_BASE_DELAY_MS;
+  const defaultValue = 2000;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 0 ? n : defaultValue;
+};
+
+const readV3FetchMaxDelayMs = () => {
+  const raw = process.env.V3_FETCH_MAX_DELAY_MS;
+  const defaultValue = 30000;
+  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isFinite(n) && n >= 0 ? n : defaultValue;
+};
+
+function parseRetryAfterMs(headerValue) {
+  if (!headerValue) return null;
+  const asNumber = Number(headerValue);
+  if (Number.isFinite(asNumber) && asNumber >= 0) return asNumber * 1000;
+  const asDate = new Date(headerValue);
+  if (!isNaN(asDate.getTime())) {
+    const diff = asDate.getTime() - Date.now();
+    return diff > 0 ? diff : null;
+  }
+  return null;
+}
+
+let v3FetchActiveCount = 0;
+const v3FetchWaitQueue = [];
+
+const acquireV3FetchSlot = () => {
+  const max = readV3FetchMaxConcurrency();
+  if (v3FetchActiveCount < max) {
+    v3FetchActiveCount++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => v3FetchWaitQueue.push(resolve));
+};
+
+const releaseV3FetchSlot = () => {
+  const next = v3FetchWaitQueue.shift();
+  if (next) {
+    next();
+  } else {
+    v3FetchActiveCount--;
+  }
+};
+
+let totalV3429s = 0;
+let v3RequestLog = [];
+
+let originalFetch = null;
+
+export function installV3RateLimitedFetch() {
+  if (originalFetch !== null) return;
+  originalFetch = globalThis.fetch;
+
+  const maxRetries = readV3FetchMaxRetries();
+  const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 3000, min: 1000 });
+  const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
+  const retryAfterCapMs = readNumberEnv('V3_RETRY_AFTER_CAP_MS', { defaultValue: 3000, min: 1000, max: 30000 });
+
+  const V3_HOSTS = ['api.v3.aave.com', 'api.aave.com'];
+
+  const isV3Request = (input) => {
+    try {
+      const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+      return V3_HOSTS.some(host => url.includes(host));
+    } catch { return false; }
+  };
+
+  const rateLimitedFetch = async (input, init) => {
+    if (!isV3Request(input)) {
+      return originalFetch(input, init);
+    }
+
+    const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const startTime = Date.now();
+      const response = await originalFetch(input, init);
+      const elapsed = Date.now() - startTime;
+
+      v3RequestLog.push({
+        ts: startTime,
+        status: response.status,
+        elapsed,
+        attempt,
+        url: url.length > 80 ? url.slice(0, 77) + '...' : url,
+      });
+
+      if (response.status === 429 && attempt < maxRetries) {
+        totalV3429s++;
+        const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
+        const delayMs = retryAfterMs != null
+          ? Math.min(retryAfterMs, retryAfterCapMs)
+          : Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
+
+        if (typeof globalThis.console?.warn === 'function') {
+          console.warn(
+            `[V3-RateLimit] 429 on ${url.length > 60 ? url.slice(0, 57) + '...' : url} ` +
+            `(attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
+            `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? ' (Retry-After)' : ' (backoff)'}`
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+
+      return response;
+    }
+    return originalFetch(input, init);
+  };
+
+  globalThis.fetch = rateLimitedFetch;
+}
+
+export function restoreOriginalFetch() {
+  if (originalFetch !== null) {
+    globalThis.fetch = originalFetch;
+    originalFetch = null;
+  }
+}
+
+export function createAaveV3RateLimitedFetch(fetchImpl = fetch) {
+  const limiter = createSlidingWindowRateLimiter(readV3MaxRequestsPerSecond());
+  const maxRetries = readV3FetchMaxRetries();
+  const baseDelayMs = readNumberEnv('V3_FETCH_BASE_DELAY_MS', { defaultValue: 2000, min: 0 });
+  const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
+
+  return async (input, init) => {
+    await acquireV3FetchSlot();
+    try {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        await limiter.wait();
+        const response = await fetchImpl(input, init);
+
+        if (response.status === 429 && attempt < maxRetries) {
+          totalV3429s++;
+          const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
+          const delayMs = retryAfterMs != null
+            ? Math.min(retryAfterMs, maxDelayMs)
+            : Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt)) + Math.random() * 500;
+
+          if (typeof globalThis.console?.warn === 'function') {
+            console.warn(
+              `[V3-RateLimit] 429 received (attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
+              `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? ' (Retry-After)' : ' (exponential backoff)'}`
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+
+        return response;
+      }
+      const finalResponse = await fetchImpl(input, init);
+      return finalResponse;
+    } finally {
+      releaseV3FetchSlot();
+    }
+  };
+}
+
+export function getV3RateLimitStats() {
+  const total = v3RequestLog.length;
+  const status429 = v3RequestLog.filter(r => r.status === 429).length;
+  const status200 = v3RequestLog.filter(r => r.status === 200).length;
+  const byAttempt = {};
+  for (const r of v3RequestLog) {
+    byAttempt[r.attempt] = (byAttempt[r.attempt] || 0) + 1;
+  }
+  let qps = 0;
+  if (total > 1) {
+    const minTs = v3RequestLog[0].ts;
+    const maxTs = v3RequestLog[v3RequestLog.length - 1].ts;
+    const spanSec = (maxTs - minTs) / 1000;
+    if (spanSec > 0) qps = Math.round(total / spanSec * 100) / 100;
+  }
+  return {
+    total429s: totalV3429s,
+    activeConcurrent: v3FetchActiveCount,
+    requestCount: total,
+    status200,
+    status429,
+    byAttempt,
+    qps,
+    requests: v3RequestLog,
+  };
+}
+
+export function resetV3RateLimitState() {
+  totalV3429s = 0;
+  v3FetchActiveCount = 0;
+  v3FetchWaitQueue.length = 0;
+  v3RequestLog = [];
 }
 
 const opportunitiesSnapshotCache = new Map();
@@ -253,6 +517,23 @@ export const AAVE_RPC_URLS_BY_CHAIN_KEY = Object.freeze({
     'https://rpc.ankr.com/flare',
     `https://rpc.ankr.com/flare/${ANKR_API_KEY}`,
   ]),
+  xlayer: Object.freeze([
+    'https://rpc.xlayer.tech',
+    'https://xlayerrpc.okx.com',
+    'https://xlayer.drpc.org',
+    'https://1rpc.io/xlayer',
+  ]),
+  harmony: Object.freeze([
+    'https://api.harmony.one',
+    'https://rpc.ankr.com/harmony',
+    'https://harmony-0-rpc.gateway.pokt.network',
+    'https://1rpc.io/one',
+    `https://rpc.ankr.com/harmony/${ANKR_API_KEY}`,
+  ]),
+  monad: Object.freeze([
+    'https://rpc.monad.xyz',
+    'https://rpc1.monad.xyz',
+  ]),
 });
 
 export const AAVE_CHAIN_KEY_ALIASES = Object.freeze({
@@ -267,6 +548,21 @@ export const AAVE_CHAIN_KEY_ALIASES = Object.freeze({
   binance: 'bnb',
 });
 
+export const DEFAULT_SPOKE_HUB_TOPOLOGY = [
+  { chainId: 1, spokeAddress: '0x94e7a5dcbe816e498b89ab752661904e2f56c485', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x973a023a77420ba610f06b3858ad991df6d85a08', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x973a023a77420ba610f06b3858ad991df6d85a08', hubAddress: '0x943827dca022d0f354a8a8c332da1e5eb9f9f931' },
+  { chainId: 1, spokeAddress: '0xe1900480ac69f0b296841cd01cc37546d92f35cd', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0xbf10bdfe177de0336afd7fccf80a904e15386219', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x3131fe68c4722e726fe6b2819ed68e514395b9a4', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x58131e79531cab1d52301228d1f7b842f26b9649', hubAddress: '0x06002e9c4412cb7814a791ea3666d905871e536a' },
+  { chainId: 1, spokeAddress: '0xba1b3d55d249692b669a164024a838309b7508af', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0xba1b3d55d249692b669a164024a838309b7508af', hubAddress: '0x06002e9c4412cb7814a791ea3666d905871e536a' },
+  { chainId: 1, spokeAddress: '0xd8b93635b8c6d0ff98cbe90b5988e3f2d1cd9da1', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x65407b940966954b23dfa3caa5c0702bb42984dc', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  { chainId: 1, spokeAddress: '0x7ec68b5695e803e98a21a9a05d744f28b0a7753d', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+];
+
 export const AAVE_CHAIN_ID_TO_RPC_KEY = Object.freeze({
   1: 'ethereum',
   10: 'optimism',
@@ -274,6 +570,7 @@ export const AAVE_CHAIN_ID_TO_RPC_KEY = Object.freeze({
   100: 'gnosis',
   137: 'polygon',
   146: 'sonic',
+  196: 'xlayer',
   324: 'zksync',
   1868: 'soneium',
   42220: 'celo',
@@ -296,6 +593,7 @@ export const AAVE_CHAIN_ID_TO_RPC_KEY = Object.freeze({
   80094: 'berachain',
   2741: 'abstract',
   14: 'flare',
+  143: 'monad',
 });
 
 const normalizeHttpUrls = (urls) =>
@@ -564,4 +862,134 @@ export const fetchMerklOpportunitiesSnapshot = async ({
 
 export const __resetMerklOpportunitiesSnapshotCacheForTests = () => {
   opportunitiesSnapshotCache.clear();
+};
+
+// ============================================================
+// Shared env-var helpers
+// ============================================================
+
+/**
+ * Read a numeric environment variable with validation.
+ * Returns `defaultValue` if the var is missing, non-finite, or below `min`.
+ */
+export const readNumberEnv = (key, { defaultValue, min }) => {
+  const raw = process.env[key];
+  if (raw === undefined) return defaultValue;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return defaultValue;
+  if (min !== undefined && value < min) return defaultValue;
+  return value;
+};
+
+// ============================================================
+// Shared env-file / Doppler helpers
+// ============================================================
+
+/**
+ * Parse dotenv-style text (KEY=VALUE lines) into an object.
+ * Skips comments (#) and empty lines. Strips surrounding quotes.
+ */
+export const parseEnvLinesToObject = (envText) => {
+  const out = {};
+  for (const rawLine of envText.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const idx = line.indexOf('=');
+    if (idx <= 0) continue;
+    const key = line.slice(0, idx).trim();
+    let value = line.slice(idx + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    out[key] = value;
+  }
+  return out;
+};
+
+/**
+ * Inject env vars into process.env, respecting existing values.
+ */
+export const injectEnv = (envVars) => {
+  for (const [key, value] of Object.entries(envVars)) {
+    if (process.env[key] !== undefined) continue;
+    process.env[key] = value;
+  }
+};
+
+/**
+ * Try to load secrets from Doppler CLI.
+ * Returns true if secrets were loaded successfully.
+ */
+export const tryLoadFromDoppler = () => {
+  const dopplerToken = process.env.DOPPLER_TOKEN;
+
+  if (!dopplerToken) {
+    console.log('ℹ️  DOPPLER_TOKEN not set in process environment');
+    console.log('   💡 Checking if Doppler CLI is configured...');
+
+    try {
+      execSync('doppler configure get token --plain', {
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      console.log('   ✅ Doppler CLI is configured (using config file token)');
+    } catch {
+      console.log('   ⚠️  Doppler CLI is not configured');
+      console.log('   💡 To configure: doppler setup');
+      console.log('   💡 Or set DOPPLER_TOKEN environment variable');
+      return false;
+    }
+  } else {
+    const tokenPrefix = dopplerToken.substring(0, 10);
+    console.log(`✅ DOPPLER_TOKEN found in environment (prefix: ${tokenPrefix}...)`);
+  }
+
+  try {
+    console.log('🔍 Attempting to fetch secrets from Doppler...');
+
+    const env = dopplerToken ? { ...process.env, DOPPLER_TOKEN: dopplerToken } : process.env;
+
+    const envText = execSync('doppler secrets download --no-file --format env', {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: env,
+    });
+    const envVars = parseEnvLinesToObject(envText);
+    const envVarKeys = Object.keys(envVars);
+
+    if (envVarKeys.length === 0) {
+      console.log('⚠️  Doppler returned no environment variables');
+      console.log('   💡 Check your Doppler project configuration');
+      return false;
+    }
+
+    injectEnv(envVars);
+    console.log(`✅ Successfully loaded ${envVarKeys.length} environment variable(s) from Doppler`);
+    console.log(`   Variables loaded: ${envVarKeys.join(', ')}`);
+
+    const criticalVars = ['CLOUDFLARE_WORKER_URL'];
+    const missingCritical = criticalVars.filter(v => !process.env[v]);
+    if (missingCritical.length > 0) {
+      console.log(`⚠️  Warning: Critical environment variables not found in Doppler: ${missingCritical.join(', ')}`);
+      console.log(`   💡 Please add these variables to your Doppler project`);
+    }
+
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.log(`❌ Failed to fetch secrets from Doppler: ${errorMessage}`);
+
+    if (errorMessage.includes('token') || errorMessage.includes('authentication')) {
+      console.log('   💡 This might be a token authentication issue');
+      console.log('   💡 Verify DOPPLER_TOKEN is correct and has proper permissions');
+    } else if (errorMessage.includes('project') || errorMessage.includes('config')) {
+      console.log('   💡 This might be a Doppler project configuration issue');
+      console.log('   💡 Run: doppler setup');
+    }
+
+    return false;
+  }
 };

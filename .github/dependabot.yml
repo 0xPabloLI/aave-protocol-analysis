@@ -1,73 +1,136 @@
 version: 2
 updates:
+  # ── Targeted: @aave-dao/aave-address-book version upgrades ──
+  # Regular version-update PRs for address-book only; CI-green auto-merges.
   - package-ecosystem: npm
     directory: "/"
+    target-branch: railway
+    schedule:
+      interval: daily
+      time: "02:00"
+      timezone: UTC
+    open-pull-requests-limit: 5
+    allow:
+      - dependency-name: "@aave-dao/aave-address-book"
+        dependency-type: direct
+    labels:
+      - dependencies
+      - address-book-upgrade
+    commit-message:
+      prefix: "chore"
+      include: scope
+
+  # ── Security-only: root ───────────────────────────────────
+  - package-ecosystem: npm
+    directory: "/"
+    target-branch: railway
     schedule:
       interval: weekly
       day: monday
       time: "03:00"
       timezone: UTC
-    # Disable regular version-update PRs; keep security updates enabled.
     open-pull-requests-limit: 0
     labels:
       - dependencies
     commit-message:
       prefix: "chore"
       include: scope
+    ignore:
+      - dependency-name: "ethers"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "undici"
+        versions: [">=7.0.0"]
+      - dependency-name: "ws"
+        versions: [">=8.0.0"]
+      - dependency-name: "js-yaml"
+        versions: [">=4.0.0"]
     groups:
       security-all:
         applies-to: security-updates
         patterns:
           - "*"
+        exclude-patterns:
+          - "ethers"
+          - "undici"
+          - "ws"
+          - "js-yaml"
 
+  # ── Security-only: backend ────────────────────────────────
   - package-ecosystem: npm
     directory: "/backend"
+    target-branch: railway
     schedule:
       interval: weekly
       day: monday
       time: "03:10"
       timezone: UTC
-    # Disable regular version-update PRs; keep security updates enabled.
     open-pull-requests-limit: 0
     labels:
       - dependencies
     commit-message:
       prefix: "chore"
       include: scope
+    ignore:
+      - dependency-name: "ethers"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "undici"
+        versions: [">=7.0.0"]
+      - dependency-name: "ws"
+        versions: [">=8.0.0"]
+      - dependency-name: "js-yaml"
+        versions: [">=4.0.0"]
     groups:
       security-all:
         applies-to: security-updates
         patterns:
           - "*"
+        exclude-patterns:
+          - "ethers"
+          - "undici"
+          - "ws"
+          - "js-yaml"
 
+  # ── Security-only: workers ────────────────────────────────
   - package-ecosystem: npm
     directory: "/workers"
+    target-branch: railway
     schedule:
       interval: weekly
       day: monday
       time: "03:15"
       timezone: UTC
-    # Disable regular version-update PRs; keep security updates enabled.
     open-pull-requests-limit: 0
     labels:
       - dependencies
     commit-message:
       prefix: "chore"
       include: scope
+    ignore:
+      - dependency-name: "undici"
+        versions: [">=7.0.0"]
+      - dependency-name: "ws"
+        versions: [">=8.0.0"]
+      - dependency-name: "js-yaml"
+        versions: [">=4.0.0"]
     groups:
       security-all:
         applies-to: security-updates
         patterns:
           - "*"
+        exclude-patterns:
+          - "undici"
+          - "ws"
+          - "js-yaml"
 
+  # ── Security-only: GitHub Actions ─────────────────────────
   - package-ecosystem: github-actions
     directory: "/"
+    target-branch: railway
     schedule:
       interval: weekly
       day: monday
       time: "03:20"
       timezone: UTC
-    # Disable regular version-update PRs; keep security updates enabled.
     open-pull-requests-limit: 0
     labels:
       - dependencies

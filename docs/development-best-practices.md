@@ -13,19 +13,14 @@ General implementation and architecture practices. For detailed caching/TTL conf
 - Normalize upstream naming only at boundaries (parsers/adapters), keep core domain names consistent.
 - When Merkl and Brevis share the same response skeleton, reuse **shared structural types** (`BaseCampaignBreakdown`, `CampaignGroup<T>`) and generic traversal/serialization helpers; keep domain math and ingest-specific logic separate.
 
-### Runtime payload shaping (`prune*`)
+### Runtime payload shaping (lean output)
 
-Use **`prune`** for functions that **drop or whitelist fields** so objects match the **runtime / API / CSV** contract (not generic refactors).
-
-- **Pattern**: `prune<Thing>ForRuntime` when the output is the shipped reserve payload or a nested fragment of it (examples in `src/index.ts`: `pruneReserveForRuntime`, `pruneMeritEntryForRuntime`, `pruneMerklGroupForRuntime`, `pruneMerklBreakdownForRuntime`).
-- **Brevis**: `pruneBrevisCampaignForRuntime` in `src/brevis-api.ts` — removes transient `budget*` fields after `fetchBrevisAprs` enriches `totalBudget` (same “slim public shape” idea; may run before the final `pruneReserveForRuntime` pass).
-- **Do not** introduce parallel verbs (`strip`, `omitForApi`, etc.) for the same role unless there is a clearly different semantic (e.g. security redaction); prefer extending the `prune*` family and documenting the call order in code comments.
-- For grouped incentive payloads, prefer one generic serializer pass (for example `scaleGroupedCampaigns`) over parallel Merkl/Brevis loops that only differ in per-breakdown field scaling.
+Data is built and enriched in `enrichDatasetWithIncentiveData()` which also handles nested field pruning inline (strips transient SDK fields from Merit/Merkl/Brevis sub-objects before writing to disk). There is no separate pruning pass — the single `RuntimeReserveData` type is the source of truth for both fetch output and API payload.
 
 ## 2) API Design
 
 - Keep APIs separated by data granularity:
-  - campaign-level forecast state (`/api/campaigns/forecast-states`)
+  - campaign-level forecast state（通过 `GET /api/meta/side-data` 的 `forecast.items` 暴露）
   - reserve/incentive-level market data (`/api/markets`)
 - Put only fields needed for frontend into responses.
 - Remove derivable fields from backend payloads when frontend can compute them cheaply.
@@ -39,13 +34,44 @@ Use **`prune`** for functions that **drop or whitelist fields** so objects match
 - Scope empirical API-behavior notes to the exact endpoint + filter set tested.
 - When testing upstream query/filter behavior, **bypass or clear local caches first**.
 
-## 4) Frontend Data Loading
+## 4) Frontend Data Loading & Cache Invalidation
 
 - Use two layers:
   - in-memory query cache for current session UX
   - persistent local cache for refresh/reload resilience
 - Expect two-phase UI updates (cached data first, fresh network data second).
 - Do not duplicate heavy computation if UI can derive values from stable backend inputs.
+
+### Cache Invalidation: Dual-Fingerprint Mechanism
+
+The frontend cache (`aaveapy/src/lib/cache.ts`) uses two complementary fingerprints:
+
+| Mechanism | Where | Trigger | Latency |
+|---|---|---|---|
+| `SCHEMA_FP` | `aaveapy/src/shared/schema-fingerprint.ts` (baked into bundle) | Frontend deploy | **Instant** (page load) |
+| `snapshot.schemaFingerprint` | Backend API response → `fetchMarkets()` drift detection | Backend deploy | Lazy (next cache access) |
+| `CACHE_VERSION` | `aaveapy/src/lib/cache.ts` | Manual bump | Next deploy |
+
+`SCHEMA_FP` is a hash of all API response field names, computed by the backend build script (`backend/scripts/generate-schema-fp.ts`) and written to `packages/aave-shared-config/schema-fingerprint.ts`. When the API shape changes, the hash changes.
+
+### How to Make a Schema Change Take Effect Immediately
+
+When you change the backend API response shape and want frontend cache to invalidate on deploy:
+
+```
+1. Backend repo: npm run build (regenerates SCHEMA_FP)
+2. Copy the new SCHEMA_FP value from:
+     packages/aave-shared-config/schema-fingerprint.ts
+   to:
+     aaveapy/src/shared/schema-fingerprint.ts
+3. Deploy both repos (order doesn't matter)
+   - Backend: railway up
+   - Frontend: vercel deploy
+```
+
+**Why manual copy?** Backend and frontend are independent deploy pipelines with no automatic cross-repo channel. The `snapshot.schemaFingerprint` field in the API response provides a safety net for users who haven't refreshed after a backend-only deploy, but the primary invalidation comes from the baked-in `SCHEMA_FP` in the frontend bundle.
+
+**When to bump `CACHE_VERSION` instead:** Only for non-schema reasons that require a cache purge (value format change, data fix). Schema shape changes are handled by `SCHEMA_FP` automatically.
 
 ## 5) Change Management
 

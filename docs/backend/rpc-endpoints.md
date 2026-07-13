@@ -1,6 +1,56 @@
 # RPC Endpoints Configuration
 
-On-chain data (`deficit`, `baseVariableBorrowRate`) is fetched via `UiPoolDataProvider.getReservesHumanized()` using RPC endpoints.
+On-chain data (deficit, borrow rate, Oracle prices) is fetched via RPC endpoints shared across all services.
+
+## Shared RPC Dependency Chain
+
+RPC access is abstracted into **two shared layers**, consumed by all on-chain services:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ packages/aave-shared-config/index.js  (静态层)                │
+│   AAVE_RPC_URLS_BY_CHAIN_KEY  ← 17 链 RPC URL 注册表          │
+│   getAaveRpcUrlsByChainId()    ← chainId → URL[]             │
+└────────────────────────┬────────────────────────────────────┘
+                         │ import
+┌────────────────────────▼────────────────────────────────────┐
+│ backend/src/services/ethProviderService.ts  (运行时层)        │
+│   getProvidersForChain()       ← 健康排序 (成功→优先, 压制→兜底) │
+│   reportProviderSuccess/ Failure ← 健康追踪 (2次失败压制5分钟)  │
+└────┬──────────────┬──────────────┬──────────────┬───────────┘
+     │              │              │              │
+     ▼              ▼              ▼              ▼
+┌─────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
+│V3 defi- │  │V4 defi-  │  │V3 Oracle │  │V4 Oracle │
+│cit/rate │  │cit       │  │prices    │  │prices    │
+│         │  │(Multi-   │  │          │  │          │
+│         │  │ call3→   │  │          │  │          │
+│         │  │ serial)  │  │          │  │          │
+└─────────┘  └──────────┘  └──────────┘  └──────────┘
+ onchainDataService.ts     oracleService.ts
+```
+
+每个消费者都复用了同一套 retry/fallback 模板：
+```
+candidates = ethProviderService.getProvidersForChain(chainId, rpcUrls)
+for (candidate of candidates):
+  try:
+    result = await doWork(candidate.provider)
+    ethProviderService.reportProviderSuccess(...)
+    return result
+  catch:
+    ethProviderService.reportProviderFailure(...)
+    // 继续下一个 RPC
+```
+
+**待优化**：V4 deficit 路径有 Multicall3 → serial 两种调用方式，当前 Multicall3 失败后先降级到 serial（仍在同一 RPC），如果是网络错误（ECONNRESET）应直接换 RPC。计划在 `ethProviderService` 抽象层统一做错误分类 → 智能 fallback，避免各消费者重复实现。
+
+| 消费者 | 文件 | 调用方式 | 降级路径 |
+|---|---|---|---|
+| V3 deficit/rate | `onchainDataService.ts:193` | `UiPoolDataProvider` 单次 | 换 RPC |
+| V4 deficit | `onchainDataService.ts:262` | Multicall3 batch → serial | 先降级再换 RPC ⚠️ |
+| V3 Oracle | `oracleService.ts:321` | `Pool/Oracle` 串行 | 换 RPC |
+| V4 Oracle | `oracleService.ts:348` | `Spoke/Oracle` 串行 | 换 RPC |
 
 ## Configuration Location
 
@@ -47,37 +97,28 @@ packages/aave-shared-config/index.js
 
 ## Architecture
 
-On-chain data is fetched **concurrently per-pool** (one config per address-book market, including same-chain variants e.g. Ethereum main, Lido, EtherFi, Horizon):
+On-chain data is fetched **concurrently per-pool** (one config per address-book market)
 
 - **Cron schedule**: Every 1 minute at second :10 (markets at :00)
 - **Per-RPC timeout**: 15 seconds
-- **No overall timeout**: All pools run concurrently, each tries all RPC endpoints for that chain
-- **Per-pool cache**: Each pool (address-book entry) has its own `updatedAt`; merge key = **reserveId** (`marketName:chainId:tokenAddress`)
-- **Cache TTL**: 30 minutes (on-chain data changes infrequently)
+- **Cache TTL**: 30 minutes
 
-## Fetch Flow
+### Fetch Flow (onchainDataService)
 
 ```
-Cron :10 每分钟
-   ↓
-启动所有 pool 并发 (Promise.allSettled，每个 address-book 市场一个)
-   ↓
-Pool AaveV3Ethereum: RPC → 成功 → 更新 pool cache
-Pool AaveV3EthereumLido: RPC → 成功 → 更新 pool cache
-...
-   ↓
-Markets 读取时 (每分钟 :00)
-   ↓
-遍历 per-pool cache，按 reserveId (marketName:chainId:tokenAddress) 合并到 payload
+Cron :10 → 所有 pool 并发 (Promise.allSettled)
+  → 每个 pool 通过 ethProviderService 获取健康 RPC 列表
+    → RPC → 成功 → reportProviderSuccess → 更新 cache
+    → RPC → 失败 → reportProviderFailure → 换下一个 RPC
 ```
 
-## Failover Strategy
+### Failover Strategy
 
-1. RPC endpoints are tried in order for each pool’s chain (first success wins)
-2. Each pool updates its own cache entry independently
-3. On RPC failure: cached data within 30-min TTL is preserved
-4. If no valid cache: `deficit` defaults to `"0"`, `baseVariableBorrowRate` calculated via reverse formula
-5. Provider health tracking via `ethProviderService.ts`
+1. `ethProviderService.getProvidersForChain()` 返回健康→压制的优先级列表
+2. 2 次连续失败压制 5 分钟，避免反复打挂掉的节点
+3. 每次成功重置失败计数
+4. 所有 RPC 都失败：使用 30 分钟 TTL 内的缓存数据
+5. 无有效缓存：deficit 默认 `"0"`，baseVariableBorrowRate 通过反向公式计算
 
 ## Per-pool Cache 内存
 
@@ -85,8 +126,8 @@ Markets 读取时 (每分钟 :00)
 |------|------|
 | Pool 数 | ~22（所有 address-book 市场，含同链多市场） |
 | 每 pool reserve 数 | 约 5–20，平均 ~12 |
-| 单条缓存 | `poolKey` + `updatedAt` + `Map<tokenAddress, { deficit?, baseVariableBorrowRate? }>` |
-| 合并键 | reserveId = `marketName:chainId:tokenAddress`（与 SDK payload 一致） |
+| 单条缓存 | `poolAddress` + `updatedAt` + `Map<tokenAddress, { deficit?, baseVariableBorrowRate? }>` |
+| 合并键 | reserveId = `chainId:poolAddress:tokenAddress`（与 SDK payload 一致） |
 
 **粗算**：22 × (1 个 Map + 12 × (42 字符地址 + 约 60 字符两个字段)) ≈ **30–60 KB**。**结论：per-pool cache 对内存负担可忽略。**
 

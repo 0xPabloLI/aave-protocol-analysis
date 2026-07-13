@@ -1,90 +1,40 @@
-// 复用现有的 FormattedReserveData 类型定义
-// 注意：这个文件需要从主项目的 src/index.ts 中导出类型
-import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
+import type {
+  RuntimeReserveData,
+  ApiMeritCampaignGroup,
+  ApiMerklOpportunityGroup,
+  ApiBrevisCampaignItem,
+} from '@internal/aave-shared-contracts';
 
-type MerklMarketBreakdown = BaseCampaignBreakdown & {
-  campaignId: string;
-  whitelistOnly?: boolean;
-  pointsPerThousandUsd?: number;
-  campaignType?: string;
-  totalBudget?: number;
-  aprCap?: number | null;
-  latestTvl?: number;
-  plannedDaily?: number;
-};
-
-type BrevisMarketBreakdown = BaseCampaignBreakdown & {
-  totalBudget?: number;
-  latestTvl?: number;
-  perUserRewardCapUsd?: number;
-};
-
-/** GET /api/markets 响应形状；收益率类数字为百分数（序列化层由比例 ×100）。 */
-export interface MarketWithSpread {
-  reserveId: string;
-  marketName: string;
-  chainName: string;
-  chainId: number;
-  tokenName: string;
-  tokenSymbol: string;
-  tokenAddress: string;
-  tokenPrice?: number;
-  reserveSizeUsd?: number;
-  utilizationPct?: number;
-  aTokenAddress?: string | null;
-  vTokenAddress?: string | null;
+/** GET /api/markets 响应形状；收益率类数字为百分数（序列化层由比例 ×100）。
+ *  从 RuntimeReserveData 派生：覆写 nullable 漂移字段 + 激励子类型截断。 */
+export type MarketWithSpread = Omit<
+  RuntimeReserveData,
+  | 'supplyApy' | 'borrowApy'
+  | 'meritSupplys' | 'meritBorrows'
+  | 'merklSupplys' | 'merklBorrows' | 'merklHolds'
+  | 'brevisSupplys' | 'brevisBorrows'
+> & {
   supplyApy?: number | null;
-  supplyDisabled?: boolean;
-  supplyCapUsd?: number;
   borrowApy?: number | null;
-  borrowDisabled?: boolean;
-  borrowCapUsd?: number;
-  // Rate-input fields for manual APR calculation (from Aave SDK)
-  decimals?: number;
-  availableLiquidity?: string;
-  totalVariableDebt?: string; // raw token units - total borrowed
-  reserveFactor?: string;
-  variableRateSlope1?: string;
-  variableRateSlope2?: string;
-  optimalUsageRate?: string;
-  // On-chain only fields (from UiPoolDataProvider.getReservesHumanized())
-  // Absent if RPC fetch failed; cached for 30 min on failure
-  baseVariableBorrowRate?: string; // RAY (1e27) - for simulated borrow rate calculation
-  deficit?: string; // raw token units - for accurate supply APY calculation
-  supplyIncentives?: number[];
-  borrowIncentives?: number[];
-  meritSupplys?: Array<{
-    apr: number;
-    selfApr?: number;
-    link: string;
-    name?: string;
-    message?: unknown;
-    startDate: string;
-    endDate: string;
-    lastRoundRewardUsd?: number;
-  }>;
-  meritBorrows?: Array<{
-    apr: number;
-    selfApr?: number;
-    link: string;
-    name?: string;
-    message?: unknown;
-    startDate: string;
-    endDate: string;
-    lastRoundRewardUsd?: number;
-  }>;
-  merklSupplys?: CampaignGroup<MerklMarketBreakdown>[];
-  merklBorrows?: CampaignGroup<MerklMarketBreakdown>[];
-  merklHolds?: CampaignGroup<MerklMarketBreakdown>[];
-  brevisSupplys?: CampaignGroup<BrevisMarketBreakdown>[];
-  brevisBorrows?: CampaignGroup<BrevisMarketBreakdown>[];
-}
+  meritSupplys?: ApiMeritCampaignGroup[];
+  meritBorrows?: ApiMeritCampaignGroup[];
+  merklSupplys?: ApiMerklOpportunityGroup[];
+  merklBorrows?: ApiMerklOpportunityGroup[];
+  merklHolds?: ApiMerklOpportunityGroup[];
+  brevisSupplys?: ApiBrevisCampaignItem[];
+  brevisBorrows?: ApiBrevisCampaignItem[];
+};
 
 export interface MarketsResponse {
   snapshot: {
     lastUpdated: string; // ISO timestamp
-    version: 'markets-v2';
+    version: 'snapshot-v3';
     staleTimeMs: number;
+    schemaFingerprint?: string; // Hash of API response field names; changes when shape changes
+    deficitFallbackReserveIds: string[]; // ReserveIds where deficit fell back to '0' (no onchain data)
+    v4FallbackReserveIds?: string[]; // ReserveIds whose V4 data came from RPC fallback
+    stale?: boolean; // true when snapshot exceeds hardTtl (data still served but marked stale)
+    staleAgeMs?: number | null; // age in ms when stale=true
   };
   reserves: MarketWithSpread[];
 }

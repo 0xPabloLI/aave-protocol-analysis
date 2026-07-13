@@ -22,16 +22,15 @@
 对于本地测试，可以直接使用 npm 命令，无需部署脚本：
 
 ```bash
-# 1. 安装依赖
+# 1. 安装依赖（workspace 统一安装）
 npm install
-cd backend && npm install && cd ..
 
 # 2. 构建
 npm run build
-cd backend && npm run build && cd ..
+npm run build -w aave-dashboard-backend
 
 # 3. 运行（需要先获取数据）
-node dist/index.js  # 首次运行获取数据
+node dist/cli.js  # 首次运行获取数据
 cd backend && npm start  # 启动后端服务
 ```
 
@@ -59,20 +58,18 @@ npm install
 npm run build
 
 # 3. 首次运行数据获取（生成初始数据）
-node dist/index.js
+node dist/cli.js
 
-# 4. 安装后端依赖
-cd backend
+# 4. 安装依赖（workspace 统一安装）
 npm install
 
 # 5. 构建后端代码
-npm run build
+npm run build -w aave-dashboard-backend
 
 # 6. 安装 PM2（如果未安装）
 npm install -g pm2
 
 # 7. 启动服务
-cd ..
 pm2 start ecosystem.config.cjs
 
 # 查看状态
@@ -95,21 +92,20 @@ pm2 save
 #### 2.2 本地运行（开发测试）
 
 ```bash
-# 1. 安装根目录依赖
+# 1. 安装依赖（workspace 统一安装）
 npm install
 
 # 2. 构建根目录代码
 npm run build
 
 # 3. 首次运行数据获取
-node dist/index.js
+node dist/cli.js
 
-# 4. 安装后端依赖
-cd backend
+# 4. 安装后端依赖（已由步骤1覆盖，可选）
 npm install
 
 # 5. 构建后端代码
-npm run build
+npm run build -w aave-dashboard-backend
 
 # 6. 启动服务器
 npm start
@@ -129,7 +125,19 @@ npm start
 - `COINGECKO_API_KEY` - CoinGecko 认证（可选，可提高配额）
 - `DOPPLER_TOKEN` - 生产环境从 Doppler 拉取密钥时使用
 
-Merkl 预测相关（可选，有默认值）：`MERKL_FORECAST_RESULT_CACHE_TTL_MS`、`MERKL_FORECAST_OPPORTUNITY_META_CACHE_TTL_MS`、`MERKL_METRICS_CACHE_TTL_MS`。详见 [AGENTS.md](../../AGENTS.md#configuration)。
+Merkl 预测相关（可选，有默认值）：
+
+- TTL（softTTL）：`MERKL_FORECAST_RESULT_SOFT_TTL_MS`、`MERKL_FORECAST_OPPORTUNITY_META_SOFT_TTL_MS`、`MERKL_METRICS_SOFT_TTL_MS`、`MERKL_OPPORTUNITIES_SOFT_TTL_MS`
+- fallback 最大陈旧时间（hardTTL）：
+  - `MERKL_HARD_TTL_MS`（root Merkl 空结果时复用快照的上限，默认 10m）
+  - `MERKL_FORECAST_OPPORTUNITY_META_HARD_TTL_MS`（forecast opportunity-meta 旧缓存兜底上限，默认 `max(3x TTL, 30m)`）
+  - `MERKL_FORECAST_SNAPSHOT_HARD_TTL_MS`（forecast 快照兜底上限，默认 `max(3x TTL, 30m)`）
+  - `COINGECKO_CATEGORIES_HARD_TTL_MS`（categories 空结果兜底上限，默认 `max(3x TTL, 30m)`）
+  - `COINGECKO_FDV_HARD_TTL_MS`（fdv 空结果兜底上限，默认 `max(3x TTL, 30m)`）
+
+这些上限在代码内部已统一收敛为 `*_HARD_TTL_MS` 命名。
+
+详见 [AGENTS.md](../../AGENTS.md#configuration)。
 
 ## 数据更新
 
@@ -145,7 +153,9 @@ Merkl 预测相关（可选，有默认值）：`MERKL_FORECAST_RESULT_CACHE_TTL
 curl http://localhost:3001/health
 ```
 
-应该返回（示例）：
+**冷启动期间**：服务器先监听端口再后台预热缓存，/health 返回 503（`{"status":"degraded"}`），预热完成后返回 200（`{"status":"ok"}`）。这避免了 Railway 等平台在预热期间探活时遇到 connection refused。
+
+预热完成后返回（示例）：
 
 ```json
 {
@@ -160,6 +170,16 @@ curl http://localhost:3001/health
   }
 }
 ```
+
+### Railway healthcheck 防超时
+
+`railway.json` 中 `healthcheckTimeout` 设为 360s（覆盖约 4 分钟冷启动）。关键设计：
+
+| 组件 | 角色 |
+|------|------|
+| `app.listen()` 在预热之前 | 确保 healtcheck 拿到 HTTP 响应而非 connection refused |
+| `startUpdateScheduler()` 独立启动 | 即使预热失败，cron 也会自愈重试，避免僵尸服务 |
+| `/health` 返回 503 → 200 | 预热期间返回 degraded，完成后返回 ok |
 
 ## API 端点
 
@@ -187,13 +207,24 @@ curl http://localhost:3001/health
 从仓库根目录用根目录的 `Dockerfile` 部署时，**必须使用仓库根作为构建上下文**。
 
 - 在 Railway 项目里，该服务的 **Root Directory** 必须为**空**或 **`.`**（仓库根）。
-- 若 Root Directory 设为 `backend`，构建上下文只有 `backend/` 目录，会出现 `"/backend/tsconfig.json": not found` 等错误，因为 Dockerfile 里使用了 `COPY package*.json`、`COPY packages/`、`COPY backend/...`，这些都相对于**仓库根**。
+- 若 Root Directory 设为 `backend`，构建上下文只有 `backend/` 目录，会出现 `"/backend/tsconfig.json": not found` 等错误，因为 Dockerfile 里使用了 `COPY package*.json`、`COPY packages/*/package*.json`、`COPY backend/...`，这些都相对于**仓库根**。
 
 **修改方式**：Railway 项目 → 选择该服务 → **Settings** → **Build** → 将 **Root Directory** 清空或设为 `.`，保存后重新部署。
 
 **若 Staging 能成功而 Production 失败**：多半是两边 **Root Directory** 不一致。Staging 若「指向 backend」仍能成功，通常是 Staging 的 Root Directory 实际为**仓库根**（空或 `.`），只是部署出来的*应用*是 backend；而失败的环境把 Root Directory 设成了 `backend`，导致构建上下文只有 `backend/`、根目录 `railway.json` 又指定了 DOCKERFILE，于是用根目录的 Dockerfile 配只有 backend 的上下文，报错。请在 Railway 里对比 **Staging** 与 **Production** 该服务的 **Settings → Build → Root Directory**，将失败环境改为与 Staging 一致（仓库根）。
 
 ## 故障排查
+
+### Railway Deploy 显示 "Failed" 但服务实际正常
+
+**症状**：`railway status` 显示 deploy failed，但 `curl https://staging-api.aaveapy.com/health` 返回 200。
+
+**原因**：冷启动约 4 分钟（onchain RPC + oracle + markets + coingecko + forecast），但 Railway healthcheck 重试窗口内服务器还没开始监听（`app.listen()` 在预热之后），导致 connection refused。
+
+**修复**（已实施）：
+1. `app.listen()` 移到预热之前 → healthcheck 立即拿到 HTTP 响应
+2. `healthcheckTimeout` 从 120s → 360s
+3. `startUpdateScheduler()` 独立于预热启动 → 预热失败也能自愈
 
 ### 服务无法启动
 
@@ -202,7 +233,7 @@ curl http://localhost:3001/health
    lsof -i :3001
    ```
 
-2. 后端不依赖 `data/runtime/aave-formatted-data.json` 启动；若需核对可选 fetcher 产物可 `ls data/runtime/`。确认根目录已 `npm run build`（backend 通过 `dist/index.js` 调用 `fetchMarketsPayload()`）。
+2. 后端不依赖 `data/debug/aave-formatted-data.full.json` 启动；若需核对可选 fetcher 产物可 `ls data/debug/`。确认根目录已 `npm run build`（backend 通过 `@internal/aave-fetcher` 调用 `fetchMarketsData()`）。
 
 3. 查看日志：
    ```bash
@@ -215,7 +246,7 @@ curl http://localhost:3001/health
 2. 查看应用日志中的错误信息
 3. 手动运行数据获取脚本：
    ```bash
-   node dist/index.js
+   node dist/cli.js
    ```
 
 ### PM2 相关问题
@@ -253,7 +284,7 @@ git pull
 
 # 2. 重新构建
 npm run build
-cd backend && npm run build && cd ..
+npm run build -w aave-dashboard-backend
 
 # 3. 重启服务
 pm2 restart aave-backend
