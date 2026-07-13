@@ -18,9 +18,10 @@ COPY tsconfig.json ./
 RUN node --check packages/aave-shared-config/index.js
 RUN npm run build
 
-# Copy backend source and build
+# Copy backend source, static assets, and build
 COPY backend/src/ ./backend/src/
 COPY backend/scripts/ ./backend/scripts/
+COPY backend/static/ ./backend/static/
 COPY backend/tsconfig.json ./backend/
 RUN mkdir -p backend/static
 RUN npm run build -w aave-dashboard-backend
@@ -59,19 +60,13 @@ RUN mkdir -p data logs backend/logs
 
 EXPOSE 3001
 
-# MALLOC_ARENA_MAX=2: limit glibc malloc arenas to reduce memory fragmentation.
-# Default is 8×CPU cores, each arena holds independent memory pools that can't be
-# returned to OS. On 1GB Railway container, this fragmentation causes RSS to grow
-# ~30MB/h even though V8 heap is stable. Limiting to 2 arenas trades some
-# throughput for much lower RSS growth.
-ENV MALLOC_ARENA_MAX=2
+# MALLOC_ARENA_MAX: limit glibc malloc arenas to reduce memory fragmentation.
+# Default 2 is optimised for 1 GB containers (staging). Override via Railway env
+# for larger containers (e.g. 4 for 2 GB production).
+ENV MALLOC_ARENA_MAX=${MALLOC_ARENA_MAX:-2}
 
-# --max-old-space-size=512: V8 GC trigger threshold.
-# Was 768MB (too permissive — old_space grew 22MB/h unchecked), then 384MB
-# (caused OOM when heap reached 307MB + heap snapshot overhead pushed past 384MB).
-# 512MB ≈ 3× steady-state heap (~95MB), forces GC well before 1GB RSS limit
-# while leaving headroom for temporary allocations.
-# --heapsnapshot-near-heap-limit: REMOVED — in 1GB containers, V8's auto-snapshot
-# on OOM allocates ~2x heap memory instantly, causing a vertical RSS spike that
-# guarantees OOM rather than preventing it. Only safe in ≥2GB containers.
-CMD ["node", "--max-old-space-size=512", "backend/dist/server.js"]
+# V8 and Node flags — defaults tuned for 1 GB staging container.
+# Override NODE_OPTIONS in Railway to customise per environment:
+#   staging (1 GB): leave unset → defaults apply (--max-old-space-size=512)
+#   production (2 GB): set NODE_OPTIONS="--max-old-space-size=1024"
+CMD exec node ${NODE_OPTIONS:---max-old-space-size=512} backend/dist/server.js
