@@ -15,10 +15,10 @@ export default {
         return new Response(JSON.stringify({ success: true, limits }, null, 2), {
           headers: { 'Content-Type': 'application/json' },
         });
-      } catch (error) {
+      } catch {
         return new Response(JSON.stringify({
           success: false,
-          error: error instanceof Error ? error.message : String(error),
+          error: 'Failed to fetch browser limits',
         }), { headers: { 'Content-Type': 'application/json' } });
       }
     }

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { seoAuthMiddleware } from '../middleware/seoAuth.js';
+import { rateLimitMiddleware } from '../middleware/rateLimit.js';
 import {
   getSeoStatus,
   getGscData,
@@ -15,6 +16,8 @@ import { getPersistenceStatus } from '../services/persistenceService.js';
 const router = Router();
 
 router.use(seoAuthMiddleware);
+router.use(rateLimitMiddleware(10 * 60_000, 100));
+
 router.get('/status', getSeoStatus);
 router.get('/gsc', getGscData);
 router.post('/gsc/trigger', triggerGscFetch);

@@ -8,6 +8,7 @@ import { logger } from '../logger.js';
 
 const VALID_GROUP_BY = ['date', 'country', 'page', 'query'] as const;
 type GroupBy = (typeof VALID_GROUP_BY)[number];
+const VALID_GROUP_BY_SET = new Set<string>(VALID_GROUP_BY);
 
 const METRIC_SELECT = `
   SUM(clicks)::int AS clicks,
@@ -20,6 +21,11 @@ export function parseCountryList(raw: string): string[] {
   return raw.split(',').map(c => c.trim()).filter(Boolean).slice(0, 20);
 }
 
+/** Sanitise a single group-by value; returns undefined if not in the whitelist. */
+function sanitiseGroupCol(raw: string): GroupBy | undefined {
+  return VALID_GROUP_BY_SET.has(raw) ? (raw as GroupBy) : undefined;
+}
+
 function buildGscQuery(groups: GroupBy[]): { sql: string; hasGroupBy: boolean } {
   if (groups.length === 0) {
     return {
@@ -27,7 +33,9 @@ function buildGscQuery(groups: GroupBy[]): { sql: string; hasGroupBy: boolean } 
       hasGroupBy: false,
     };
   }
-  const cols = groups.join(', ');
+  // Every element is guaranteed to be from VALID_GROUP_BY via sanitiseGroupCol
+  const safeCols = groups.map(sanitiseGroupCol).filter((c): c is GroupBy => c !== undefined);
+  const cols = safeCols.join(', ');
   return {
     sql: `SELECT ${cols}, ${METRIC_SELECT} FROM gsc_daily`,
     hasGroupBy: true,
@@ -115,8 +123,9 @@ export async function getGscData(req: Request, res: Response): Promise<void> {
     let fullSql = `${sql} ${where}`;
 
     if (hasGroupBy) {
-      fullSql += ` GROUP BY ${groups.join(', ')}`;
-      fullSql += ` ORDER BY ${groups[0]} DESC`;
+      const safeGroups = groups.map(sanitiseGroupCol).filter((c): c is GroupBy => c !== undefined);
+      fullSql += ` GROUP BY ${safeGroups.join(', ')}`;
+      fullSql += ` ORDER BY ${safeGroups[0]} DESC`;
     }
 
     fullSql += ` LIMIT 10000`;

@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 import { seoAuthMiddleware } from '../src/middleware/seoAuth.js';
+import { rateLimitMiddleware } from '../src/middleware/rateLimit.js';
 import { getSeoStatus } from '../src/controllers/seoController.js';
 import { Router } from 'express';
+
+const testRateLimit = rateLimitMiddleware(10 * 60_000, 100);
 
 function createStatusApp(token?: string) {
   const app = express();
@@ -12,6 +15,7 @@ function createStatusApp(token?: string) {
   if (token) process.env.SEO_ADMIN_TOKEN = token;
   const router = Router();
   router.use(seoAuthMiddleware);
+  router.use(testRateLimit);
   router.get('/status', getSeoStatus);
   app.use('/api/seo', router);
   return app;
@@ -46,6 +50,7 @@ test('SEO integration: SEO_ADMIN_TOKEN not configured returns 503', async () => 
   app.use(express.json());
   const router = Router();
   router.use(seoAuthMiddleware);
+  router.use(testRateLimit);
   router.get('/status', getSeoStatus);
   app.use('/api/seo', router);
   const res = await request(app).get('/api/seo/status');
@@ -61,6 +66,7 @@ test('SEO integration: GET /gsc without DB returns 503', async () => {
   process.env.SEO_ADMIN_TOKEN = token;
   const router = Router();
   router.use(seoAuthMiddleware);
+  router.use(testRateLimit);
   router.get('/gsc', getGscData);
   app.use('/api/seo', router);
   const res = await request(app).get('/api/seo/gsc?from=2026-05-10&to=2026-05-18').set('X-Admin-Token', token);
@@ -77,6 +83,7 @@ test('SEO integration: POST /semrush/batch without DB returns 503', async () => 
   process.env.SEO_ADMIN_TOKEN = token;
   const router = Router();
   router.use(seoAuthMiddleware);
+  router.use(testRateLimit);
   router.post('/semrush/batch', batchUpsertSemrushSnapshots);
   app.use('/api/seo', router);
   const res = await request(app).post('/api/seo/semrush/batch').set('X-Admin-Token', token).send({ snapshots: [] });
