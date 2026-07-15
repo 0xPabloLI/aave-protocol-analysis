@@ -12,31 +12,35 @@ export type LlmOutcome =
 import { logger } from './logger.js';
 
 /**
- * Default best-first chat-model allow-list (SiliconFlow-oriented).
+ * Default best-first chat-model allow-list (SiliconFlow free tier).
  *
- * ⚠️ IMPORTANT — this is a BEST-GUESS default, NOT a verified free list.
- * SiliconFlow's `GET /v1/models` returns only model `id`s (no pricing/free
- * flag) and there is no pricing endpoint, so free-vs-paid CANNOT be determined
- * programmatically. These ids are the models that have *historically* sat in
- * SiliconFlow's free tier (small ≤9B Qwen/GLM), but that can change and the
- * only authoritative source is your billing dashboard.
+ * ⚠️ HOW FREE-VS-PAID IS DETERMINED: SiliconFlow's `GET /v1/models` returns only
+ * model `id`s (no pricing/free flag) and there is no pricing API endpoint, so
+ * free-vs-paid CANNOT be determined programmatically. The authoritative source
+ * is the pricing page / model plaza (cloud.siliconflow.cn/models) and your
+ * billing dashboard. The ids below were verified "免费/free" against the pricing
+ * page + SiliconFlow's own free-tier announcements (checked 2026-07). Ordered
+ * best-first by a real net-position classification benchmark (accuracy, then
+ * latency):
+ *   - THUDM/GLM-4-9B-0414   free, 5/5 correct, ~0.5s  (instruct, no <think> → fast)
+ *   - THUDM/GLM-Z1-9B-0414  free, 5/5 correct, ~6.5s  (reasoning fallback)
+ *   - Qwen/Qwen3-8B         free, 5/5 correct, ~22s   (hybrid-thinking fallback)
+ * Excluded free-but-weak: Qwen2.5-7B-Instruct (2/5, malformed JSON),
+ * Hunyuan-MT-7B (1/5, translation model). Excluded paid: Qwen3.5-9B,
+ * DeepSeek-R1 (and its distill's free status is unconfirmed).
  *
- * To use models you have confirmed are free, set the `LLM_MODELS` env var
- * (comma-separated, best-first) — it overrides this list entirely. See
- * `resolveModelAllowList`.
+ * To pin the models your billing dashboard confirms are free, set the
+ * `LLM_MODELS` env var (comma-separated, best-first) — it overrides this list
+ * entirely. See `resolveModelAllowList`.
  *
  * The chain stays "real-time": `buildModelChain` intersects the allow-list with
  * the live `/models` response, so retired ids drop out and only currently
- * served models are called, in priority order. Reasoning-only distills (e.g.
- * DeepSeek-R1) are excluded — their long <think> output can overflow max_tokens
- * before the JSON answer.
+ * served models are called, in priority order.
  */
 export const LLM_FREE_MODELS = [
-  'Qwen/Qwen3.5-9B',
-  'Qwen/Qwen3-8B',
   'THUDM/GLM-4-9B-0414',
-  'Qwen/Qwen3.5-4B',
-  'Qwen/Qwen2.5-7B-Instruct',
+  'THUDM/GLM-Z1-9B-0414',
+  'Qwen/Qwen3-8B',
 ] as const;
 
 /**
@@ -264,11 +268,12 @@ export async function callLlmWithFallback(
               model,
               messages: [{ role: 'user', content: prompt }],
               temperature: 0,
-              max_tokens: 256,
-              // SiliconFlow extension: disable Qwen3 "thinking" so the model
-              // returns the JSON answer directly instead of long <think> output.
-              // Ignored by non-Qwen3 models.
-              enable_thinking: false,
+              // 2048 gives the reasoning fallbacks (GLM-Z1-9B, Qwen3-8B) room to
+              // finish <think> before the JSON answer. The primary GLM-4-9B is an
+              // instruct model that stops well short, so this adds no cost/latency
+              // for the common path. NOTE: do NOT send `enable_thinking: false` —
+              // GLM-Z1 rejects it, and GLM-4-9B doesn't need it.
+              max_tokens: 2048,
             }),
           }),
           new Promise<never>((_, reject) =>
