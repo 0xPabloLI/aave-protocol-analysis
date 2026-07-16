@@ -19,12 +19,13 @@ function makeReserve(overrides: Partial<RuntimeReserveData> = {}): RuntimeReserv
   } as RuntimeReserveData;
 }
 
-test('extractConstraintMap collects netPositionConstraint from supply groups', () => {
+test('extractConstraintMap collects netPositionConstraint from supply groups using opportunityId', () => {
   const reserves: RuntimeReserveData[] = [
     makeReserve({
       merklSupplys: [
         {
-          link: 'opp-1',
+          opportunityId: '9623615825108171573',
+          link: 'https://app.merkl.xyz/opportunities/9623615825108171573',
           netPositionConstraint: { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusdt'] },
         } as any,
       ],
@@ -32,7 +33,8 @@ test('extractConstraintMap collects netPositionConstraint from supply groups', (
   ];
   const map = extractConstraintMap(reserves);
   assert.equal(map.size, 1);
-  assert.deepEqual(map.get('opp-1'), { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusdt'] });
+  assert.deepEqual(map.get('9623615825108171573'), { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusdt'] });
+  assert.equal(map.get('https://app.merkl.xyz/opportunities/9623615825108171573'), undefined);
 });
 
 test('extractConstraintMap collects from borrow and hold groups too', () => {
@@ -40,13 +42,15 @@ test('extractConstraintMap collects from borrow and hold groups too', () => {
     makeReserve({
       merklBorrows: [
         {
-          link: 'opp-borrow',
+          opportunityId: 'opp-borrow-id',
+          link: 'https://app.merkl.xyz/opportunities/opp-borrow-id',
           netPositionConstraint: { sourceSide: 'borrow', offsetReserveIds: ['1:0xpool:0xgho'] },
         } as any,
       ],
       merklHolds: [
         {
-          link: 'opp-hold',
+          opportunityId: 'opp-hold-id',
+          link: 'https://app.merkl.xyz/opportunities/opp-hold-id',
           netPositionConstraint: { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusde'] },
         } as any,
       ],
@@ -54,16 +58,16 @@ test('extractConstraintMap collects from borrow and hold groups too', () => {
   ];
   const map = extractConstraintMap(reserves);
   assert.equal(map.size, 2);
-  assert.deepEqual(map.get('opp-borrow'), { sourceSide: 'borrow', offsetReserveIds: ['1:0xpool:0xgho'] });
-  assert.deepEqual(map.get('opp-hold'), { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusde'] });
+  assert.deepEqual(map.get('opp-borrow-id'), { sourceSide: 'borrow', offsetReserveIds: ['1:0xpool:0xgho'] });
+  assert.deepEqual(map.get('opp-hold-id'), { sourceSide: 'supply', offsetReserveIds: ['1:0xpool:0xusde'] });
 });
 
-test('extractConstraintMap skips groups without netPositionConstraint or link', () => {
+test('extractConstraintMap skips groups without netPositionConstraint or opportunityId', () => {
   const reserves: RuntimeReserveData[] = [
     makeReserve({
       merklSupplys: [
-        { link: 'opp-no-constraint' } as any,
-        { netPositionConstraint: { sourceSide: 'supply', offsetReserveIds: [] } } as any,
+        { opportunityId: 'opp-no-constraint', link: 'opp-no-constraint' } as any,
+        { link: 'opp-no-id', netPositionConstraint: { sourceSide: 'supply', offsetReserveIds: [] } } as any,
       ],
     }),
   ];
@@ -74,4 +78,22 @@ test('extractConstraintMap skips groups without netPositionConstraint or link', 
 test('extractConstraintMap returns empty map for empty reserves', () => {
   const map = extractConstraintMap([]);
   assert.equal(map.size, 0);
+});
+
+test('extractConstraintMap key matches fetcher key format (opportunityId, not link)', () => {
+  const opportunityId = '1234567890123456789';
+  const reserves: RuntimeReserveData[] = [
+    makeReserve({
+      merklSupplys: [
+        {
+          opportunityId,
+          link: `https://app.merkl.xyz/opportunities/${opportunityId}`,
+          netPositionConstraint: { sourceSide: 'supply', offsetReserveIds: [] },
+        } as any,
+      ],
+    }),
+  ];
+  const map = extractConstraintMap(reserves);
+  assert.equal(map.has(opportunityId), true, 'key should be opportunityId (plain ID), not link (URL)');
+  assert.equal(map.has(`https://app.merkl.xyz/opportunities/${opportunityId}`), false, 'link format should NOT be a key');
 });

@@ -24,9 +24,12 @@ function mockFetch(responseBody: unknown, ok = true, contentType = 'application/
 }
 
 describe('B3: LLM client — model list + response parsing', () => {
-  it('LLM_FREE_MODELS lists the SiliconFlow free-tier chat models', () => {
+  it('LLM_FREE_MODELS lists the SiliconFlow free-tier chat models, best-first', () => {
     assert.ok(LLM_FREE_MODELS.length > 0);
-    assert.equal(LLM_FREE_MODELS[0], 'Qwen/Qwen3.5-9B');
+    // GLM-4-9B-0414 is the benchmarked best free model (5/5 correct, ~0.5s).
+    assert.equal(LLM_FREE_MODELS[0], 'THUDM/GLM-4-9B-0414');
+    // Paid models must never appear in the free default list.
+    assert.ok(!LLM_FREE_MODELS.includes('Qwen/Qwen3.5-9B' as never));
   });
 
   it('resolveModelAllowList defaults to LLM_FREE_MODELS', () => {
@@ -337,9 +340,9 @@ describe('buildModelChain — with dynamic primary models', () => {
     const fetch = async (url: string) => {
       if (url.includes('/models')) {
         return new Response(JSON.stringify({ data: [
-          { id: 'Qwen/Qwen3-8B' },          // free, lower priority
-          { id: 'deepseek-ai/DeepSeek-V4-Pro' }, // paid → must be excluded
-          { id: 'Qwen/Qwen3.5-9B' },        // free, top priority
+          { id: 'Qwen/Qwen3-8B' },               // free, lower priority
+          { id: 'deepseek-ai/DeepSeek-V4-Pro' },  // paid → must be excluded
+          { id: 'THUDM/GLM-4-9B-0414' },          // free, top priority
         ] }), {
           status: 200, headers: { 'content-type': 'application/json' },
         }) as Response;
@@ -348,8 +351,8 @@ describe('buildModelChain — with dynamic primary models', () => {
     };
     const chain = await buildModelChain(primary, fetch);
     const models = chain.map(c => c.model);
-    // Only free models, ordered by LLM_FREE_MODELS priority (3.5-9B before 3-8B).
-    assert.deepEqual(models, ['Qwen/Qwen3.5-9B', 'Qwen/Qwen3-8B']);
+    // Only free models, ordered by LLM_FREE_MODELS priority (GLM-4-9B before Qwen3-8B).
+    assert.deepEqual(models, ['THUDM/GLM-4-9B-0414', 'Qwen/Qwen3-8B']);
     assert.ok(!models.includes('deepseek-ai/DeepSeek-V4-Pro'), 'paid models must be excluded');
     resetPrimaryModelsCache();
   });
