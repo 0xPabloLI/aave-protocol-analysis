@@ -547,8 +547,8 @@ export function extractConstraintMap(reserves: RuntimeReserveData[]): Map<string
   const map = new Map<string, NetPositionConstraint | null>();
   for (const r of reserves) {
     for (const group of [...(r.merklSupplys ?? []), ...(r.merklBorrows ?? []), ...(r.merklHolds ?? [])]) {
-      if (group.link && 'netPositionConstraint' in group) {
-        map.set(group.link, group.netPositionConstraint ?? null);
+      if (group.opportunityId && 'netPositionConstraint' in group) {
+        map.set(group.opportunityId, group.netPositionConstraint ?? null);
       }
     }
   }
