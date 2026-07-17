@@ -65,12 +65,4 @@ export function v4HubScopeKey(
   return `${chainId}:${normalizeAddress(tokenAddress)}:${normalizeAddress(hubAddress)}`;
 }
 
-export function aaveProReserveId(
-  chainId: number,
-  spokeAddress: string,
-  underlying: string,
-  hubAddress: string,
-  hubName: string,
-): string {
-  return `${chainId}:${normalizeAddress(spokeAddress)}:${normalizeAddress(underlying)}:${normalizeAddress(hubAddress)}:${hubName}`;
-}
+

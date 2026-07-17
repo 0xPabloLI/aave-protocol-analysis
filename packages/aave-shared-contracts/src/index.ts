@@ -13,7 +13,6 @@ export {
   topologySortKey,
   v4ReserveId,
   v4HubScopeKey,
-  aaveProReserveId,
 } from './keys.js';
 
 export {
