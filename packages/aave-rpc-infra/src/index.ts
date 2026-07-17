@@ -4,7 +4,7 @@ import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
 import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
-import { getErrorCode, normalizeAddress, spokeKey, topologySortKey, v4ReserveId, aaveProReserveId, rayToRatio } from '@internal/aave-shared-contracts';
+import { getErrorCode, normalizeAddress, spokeKey, topologySortKey, v4ReserveId, rayToRatio } from '@internal/aave-shared-contracts';
 import { DynamicRpcCache } from './dynamicRpcCache.js';
 
 // ============================================================
@@ -709,7 +709,7 @@ function buildReserveData(
     spokeId: normalizeAddress(entry.spokeAddress),
     spokeName: entry.spokeName,
     spokeAddress: normalizeAddress(entry.spokeAddress),
-    aaveProReserveId: aaveProReserveId(entry.chainId, entry.spokeAddress, underlying, entry.hubAddress, entry.hubName),
+    aaveProReserveId: undefined,
   };
 }
 
