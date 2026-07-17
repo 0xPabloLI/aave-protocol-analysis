@@ -65,4 +65,15 @@ export function v4HubScopeKey(
   return `${chainId}:${normalizeAddress(tokenAddress)}:${normalizeAddress(hubAddress)}`;
 }
 
+/** Aave Pro reserve ID (base64) — matches the `id` field from Aave V4 GraphQL API.
+ *  Format: base64(`${chainId}::${hubAddress}::${onChainId}`)
+ *  Used by SDK path (r.id) and RPC fallback path. */
+export function aaveProReserveIdBase64(
+  chainId: number,
+  hubAddress: string,
+  onChainId: number,
+): string {
+  return Buffer.from(`${chainId}::${normalizeAddress(hubAddress)}::${onChainId}`).toString('base64');
+}
+
 

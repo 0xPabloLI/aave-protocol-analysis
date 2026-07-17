@@ -4,7 +4,7 @@ import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
 import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
 import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
 import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
-import { getErrorCode, normalizeAddress, spokeKey, topologySortKey, v4ReserveId, rayToRatio } from '@internal/aave-shared-contracts';
+import { getErrorCode, normalizeAddress, spokeKey, topologySortKey, v4ReserveId, rayToRatio, aaveProReserveIdBase64 } from '@internal/aave-shared-contracts';
 import { DynamicRpcCache } from './dynamicRpcCache.js';
 
 // ============================================================
@@ -676,6 +676,7 @@ function buildReserveData(
   underlying: string,
   decimals: number,
   hubAsset: any,
+  onChainId: number,
 ): RuntimeReserveData {
   const liquidity = bigintToString(hubAsset.liquidity ?? hubAsset[0]);
   const borrowed = bigintToString(hubAsset.drawnShares ?? hubAsset[6]);
@@ -709,7 +710,7 @@ function buildReserveData(
     spokeId: normalizeAddress(entry.spokeAddress),
     spokeName: entry.spokeName,
     spokeAddress: normalizeAddress(entry.spokeAddress),
-    aaveProReserveId: undefined,
+    aaveProReserveId: aaveProReserveIdBase64(entry.chainId, entry.hubAddress, onChainId),
   };
 }
 
@@ -737,7 +738,7 @@ async function fetchEntryReservesMulticall(
   const reserveResults = await executeMulticall3(provider, reserveCalls, { timeoutMs, label: `getReserve batch for ${entry.spokeName}` });
 
   // Filter reserves matching our hub, collect asset IDs
-  const matchingReserves: Array<{ underlying: string; assetId: bigint; decimals: number }> = [];
+  const matchingReserves: Array<{ underlying: string; assetId: bigint; decimals: number; onChainId: number }> = [];
   for (let i = 0; i < reserveResults.length; i++) {
     const result = reserveResults[i];
     if (!result.success) continue;
@@ -748,7 +749,7 @@ async function fetchEntryReservesMulticall(
     if (!underlying) continue;
     const assetId = BigInt(String(decoded.assetId ?? decoded[2] ?? 0));
     const decimals = Number(decoded.decimals ?? decoded[3] ?? 18);
-    matchingReserves.push({ underlying, assetId, decimals });
+    matchingReserves.push({ underlying, assetId, decimals, onChainId: i });
   }
   if (matchingReserves.length === 0) return [];
 
@@ -763,11 +764,11 @@ async function fetchEntryReservesMulticall(
   // Build RuntimeReserveData from matching reserves + hub assets
   const reserves: RuntimeReserveData[] = [];
   for (let i = 0; i < matchingReserves.length; i++) {
-    const { underlying, decimals } = matchingReserves[i];
+    const { underlying, decimals, onChainId } = matchingReserves[i];
     const assetResult = assetResults[i];
     if (!assetResult.success) continue;
     const hubAsset = decodeTyped<HubAssetDecoded>(hubIface.decodeFunctionResult('getAsset', assetResult.returnData), 0);
-    reserves.push(buildReserveData(entry, underlying, decimals, hubAsset));
+    reserves.push(buildReserveData(entry, underlying, decimals, hubAsset, onChainId));
   }
 
   return reserves;
@@ -795,7 +796,7 @@ async function fetchEntryReservesSerial(
     const assetId = BigInt(String(spokeReserve.assetId ?? spokeReserve[2] ?? 0));
     const decimals = Number(spokeReserve.decimals ?? spokeReserve[3] ?? 18);
     const hubAsset = decodeTyped<HubAssetDecoded>((await callContract(provider, hubIface, entry.hubAddress, 'getAsset', [assetId], timeoutMs)), 0);
-    reserves.push(buildReserveData(entry, underlying, decimals, hubAsset));
+    reserves.push(buildReserveData(entry, underlying, decimals, hubAsset, reserveIndex));
   }
 
   return reserves;

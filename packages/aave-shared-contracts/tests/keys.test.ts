@@ -13,6 +13,7 @@ import {
   topologySortKey,
   v4ReserveId,
   v4HubScopeKey,
+  aaveProReserveIdBase64,
 } from '../src/keys.js';
 
 describe('normalizeAddress', () => {
@@ -231,5 +232,35 @@ describe('v4HubScopeKey', () => {
     assert.notEqual(k1, k2);
     assert.notEqual(k1, k3);
     assert.notEqual(k1, k4);
+  });
+});
+
+describe('aaveProReserveIdBase64', () => {
+  test('produces base64-encoded chainId::hubAddress::onChainId', () => {
+    const id = aaveProReserveIdBase64(43214, '0xCcA8ce6E6D9D79f82A38954693F7670b0Aa86c9E', 7);
+    const decoded = Buffer.from(id, 'base64').toString();
+    assert.equal(decoded, '43214::0xcca8ce6e6d9d79f82a38954693f7670b0aa86c9e::7');
+  });
+
+  test('normalizes hubAddress to lowercase', () => {
+    const upper = aaveProReserveIdBase64(1, '0xHUB', 3);
+    const lower = aaveProReserveIdBase64(1, '0xhub', 3);
+    assert.equal(upper, lower);
+  });
+
+  test('different parameters produce different keys', () => {
+    const k1 = aaveProReserveIdBase64(1, '0xHub', 1);
+    const k2 = aaveProReserveIdBase64(2, '0xHub', 1);
+    const k3 = aaveProReserveIdBase64(1, '0xAAA', 1);
+    const k4 = aaveProReserveIdBase64(1, '0xHub', 2);
+    assert.notEqual(k1, k2);
+    assert.notEqual(k1, k3);
+    assert.notEqual(k1, k4);
+  });
+
+  test('matches Aave Pro GraphQL id format', () => {
+    const id = aaveProReserveIdBase64(43214, '0x06009E20B7B3eCBeDaCfFDd48F98D1Ea06a06c536A', 4);
+    assert.ok(id.length > 0);
+    assert.equal(Buffer.from(id, 'base64').toString().split('::').length, 3);
   });
 });
