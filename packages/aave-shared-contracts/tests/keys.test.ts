@@ -13,7 +13,6 @@ import {
   topologySortKey,
   v4ReserveId,
   v4HubScopeKey,
-  aaveProReserveId,
 } from '../src/keys.js';
 
 describe('normalizeAddress', () => {
@@ -232,26 +231,5 @@ describe('v4HubScopeKey', () => {
     assert.notEqual(k1, k2);
     assert.notEqual(k1, k3);
     assert.notEqual(k1, k4);
-  });
-});
-
-describe('aaveProReserveId', () => {
-  test('produces chainId:normalizedSpoke:normalizedUnderlying:normalizedHub:hubName format', () => {
-    assert.equal(
-      aaveProReserveId(1, '0xSpoke', '0xUnderlying', '0xHub', 'Main'),
-      '1:0xspoke:0xunderlying:0xhub:Main',
-    );
-  });
-
-  test('spokeAddress, underlying, and hubAddress are normalized', () => {
-    const k1 = aaveProReserveId(1, '0xSPOKE', '0xUNDERLYING', '0xHUB', 'Main');
-    const k2 = aaveProReserveId(1, '0xspoke', '0xunderlying', '0xhub', 'Main');
-    assert.equal(k1, k2);
-  });
-
-  test('different hubNames produce different keys', () => {
-    const k1 = aaveProReserveId(1, '0xabc', '0xunder', '0xhub', 'Main');
-    const k2 = aaveProReserveId(1, '0xabc', '0xunder', '0xhub', 'Backup');
-    assert.notEqual(k1, k2);
   });
 });

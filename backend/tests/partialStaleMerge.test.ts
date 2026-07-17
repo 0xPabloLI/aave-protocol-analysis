@@ -81,7 +81,7 @@ function makeV4(overrides?: Partial<RuntimeReserveData>): RuntimeReserveData {
     aTokenAddress: '0xatokenv4',
     vTokenAddress: '0xvtokenv4',
     marketName: 'Aave V4',
-    aaveProReserveId: '42161:0xspoke:0xv4usdt:0xhub:CORE_HUB',
+    aaveProReserveId: undefined,
     hubId: '1',
     hubName: 'CORE_HUB',
     hubAddress: '0xhub',
