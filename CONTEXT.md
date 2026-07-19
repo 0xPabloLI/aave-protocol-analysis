@@ -68,6 +68,7 @@ _Avoid_: borrowApr, variableBorrowRate
 
 **IrModel** (利率模型):
 定义 borrowApy 随 utilizationPct 变化的分段线性函数。包含四个参数：
+
 - **baseBorrowRate** — utilization = 0 时的基础借贷利率
 - **slopeBelowOptimal** — 最优利用率以下的斜率
 - **slopeAboveOptimal** — 最优利用率以上的斜率
@@ -181,8 +182,12 @@ Merkl CampaignGroup 级约束标志。当 `borrowBlacklist=true` 时，用户有
 _Avoid_: borrowBl, blConstraint
 
 **offsetLevel**:
-Net position constraint 的 offset 匹配范围，由 opportunityType 决定性映射（无运行时推导，无 fallback）。`'reserve'` = 精确匹配（V3 同 pool、V4 SPOKE_SUPPLY 同 reserve）；`'hub-cross-spoke'` = 匹配同 hub 同 token 下所有 spoke（V4 HUB_SUPPLY、AAVE_V4_NET_APR，因缺少 spokeAddress）。
+Net position constraint 的 offset 匹配范围，由 opportunityType 决定性映射（无运行时推导，无 fallback）。`'reserve'` = 精确匹配（V3 同 pool、V4 `SPOKE_SUPPLY` 同 reserve）；`'hub-cross-spoke'` = 匹配同 hub 同 token 下所有 spoke（V4 `HUB_SUPPLY`、`AAVE_V4_NET_APR`，因缺少 spokeAddress）。
 _Avoid_: spoke-cross-hub, cross-market（已移除的死路径）
+
+**Symbol Equivalence Group**:
+LLM offset symbol 解析中，一组因 Unicode↔ASCII 差异而需要互相归一化的 token symbol。用于 `detectNetPositionConstraint` Layer 3（LLM fallback path）的 `resolveOffsetSymbolAddress`。与 case-insensitive matching（Strategy 2）互补：CI 处理 case 差异（`USDT`↔`USDt`），等价组处理 Unicode 差异（`USDT`↔`USD₮0`↔`USD₮`，₮ U+20AE 不受 `toLowerCase()` 影响）。组内成员必须**两两不共链**（同一 chain 上最多存在一个组内成员），否则会产生歧义。offset 解析是 chain-scoped 的，保证等价组归一化无歧义。详见 ADR-0036。
+_Avoid_: alias table（已废弃的单向映射设计）、fuzzy matching（明确排除的跨 token 启发式匹配）
 
 ### 价格
 
@@ -228,6 +233,7 @@ _Avoid_: \_v3Succeeded, \_v4Succeeded（已被结构化字段取代）
 
 **fallbackSource**:
 Reserve 数据兜底来源分类。优先级 `sdk > rpc > stale > none`：SDK 主路径失败时依次降级。
+
 - `sdk`：Aave SDK 聚合数据（正常路径）
 - `rpc`：fetcher 包内 inline 直读 Hub+Spoke（V4 SDK 空集时触发，详见 ADR-0021）
 - `stale`：backend 层 per-side staleData（RPC 也失败时兜底，详见 ADR-0020）
@@ -241,12 +247,12 @@ _Avoid_: cache（与 OnchainData cache 混淆），fallbackSnapshot（snapshot �
 
 ## Flagged Ambiguities
 
-| 术语 | 歧义源 | 本项目约定 |
-|------|--------|-----------|
-| Pool | V3 实现概念 vs 通用"资金池" | 仅指 V3 Pool.sol，V4 用 Hub/Spoke |
-| Market | 逻辑概念 vs V3 Pool vs V4 Spoke | 逻辑部署单元，V3=Pool, V4=Spoke |
-| Reserve | per-Market 资产状态 vs V4 Asset | per-Market per-token 的借贷状态单元 |
-| reserveId | 合约 uint256 局部 ID vs 项目 string 全局复合键 | 项目全局复合键 |
+| 术语         | 歧义源                                           | 本项目约定                            |
+| ------------ | ------------------------------------------------ | ------------------------------------- |
+| Pool         | V3 实现概念 vs 通用"资金池"                      | 仅指 V3 Pool.sol，V4 用 Hub/Spoke     |
+| Market       | 逻辑概念 vs V3 Pool vs V4 Spoke                  | 逻辑部署单元，V3=Pool, V4=Spoke       |
+| Reserve      | per-Market 资产状态 vs V4 Asset                  | per-Market per-token 的借贷状态单元   |
+| reserveId    | 合约 uint256 局部 ID vs 项目 string 全局复合键   | 项目全局复合键                        |
 | exchangeRate | V4 份额兑换率 vs V3 liquidityIndex vs tokenPrice | V4 份额兑换率，仅用作 tokenPrice 来源 |
 
 ---
