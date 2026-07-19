@@ -193,9 +193,7 @@ describe("merkl-symbol-resolver", () => {
         symbolLookupCI,
         equivLookup
       );
-      // equiv group: USD₮0 → try USDT (chain 1 has USDT) → resolves
-      // So this actually resolves via equiv group! Let me fix the test.
-      // USD₮0 on chain 1 → equiv group tries USDT → chain 1 has USDT → resolves to USDT_ADDR
+      // equiv group: USD₮0 → try USDT (chain 1 has USDT, no USD₮0) → resolves to USDT_ADDR
       assert.deepEqual(result, [USDT_ADDR]);
     });
 

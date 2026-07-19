@@ -182,8 +182,8 @@ Merkl CampaignGroup 级约束标志。当 `borrowBlacklist=true` 时，用户有
 _Avoid_: borrowBl, blConstraint
 
 **offsetLevel**:
-Net position constraint 的 offset 匹配范围，由 opportunityType 决定性映射（无运行时推导，无 fallback）。`'reserve'` = 精确匹配（V3 同 pool、V4 SPOKE*SUPPLY 同 reserve）；`'hub-cross-spoke'` = 匹配同 hub 同 token 下所有 spoke（V4 HUB_SUPPLY、AAVE_V4_NET_APR，因缺少 spokeAddress）。
-\_Avoid*: spoke-cross-hub, cross-market（已移除的死路径）
+Net position constraint 的 offset 匹配范围，由 opportunityType 决定性映射（无运行时推导，无 fallback）。`'reserve'` = 精确匹配（V3 同 pool、V4 `SPOKE_SUPPLY` 同 reserve）；`'hub-cross-spoke'` = 匹配同 hub 同 token 下所有 spoke（V4 `HUB_SUPPLY`、`AAVE_V4_NET_APR`，因缺少 spokeAddress）。
+_Avoid_: spoke-cross-hub, cross-market（已移除的死路径）
 
 **Symbol Equivalence Group**:
 LLM offset symbol 解析中，一组因 Unicode↔ASCII 差异而需要互相归一化的 token symbol。用于 `detectNetPositionConstraint` Layer 3（LLM fallback path）的 `resolveOffsetSymbolAddress`。与 case-insensitive matching（Strategy 2）互补：CI 处理 case 差异（`USDT`↔`USDt`），等价组处理 Unicode 差异（`USDT`↔`USD₮0`↔`USD₮`，₮ U+20AE 不受 `toLowerCase()` 影响）。组内成员必须**两两不共链**（同一 chain 上最多存在一个组内成员），否则会产生歧义。offset 解析是 chain-scoped 的，保证等价组归一化无歧义。详见 ADR-0036。
