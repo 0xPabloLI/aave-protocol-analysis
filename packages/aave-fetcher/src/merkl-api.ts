@@ -1,25 +1,53 @@
-import { mkdir, readFile } from 'fs/promises';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { logger } from './logger.js';
-import { writeJsonAtomic } from './file-utils.js';
-import { merklFetchConfig } from './config.js';
+import { mkdir, readFile } from "fs/promises";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import { logger } from "./logger.js";
+import { writeJsonAtomic } from "./file-utils.js";
+import { merklFetchConfig } from "./config.js";
 import {
   createMerklConcurrencyLimitedFetch,
   fetchMerklOpportunitiesSnapshot,
   normalizeMerklCampaignTotalBudget,
   resolveCacheTtlMs,
-} from '@internal/aave-shared-config';
-import type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol, MerklHealthFactorHook, RuntimeReserveData, NetPositionConstraint } from '@internal/aave-shared-contracts';
-import { chainTokenKey, chainSymbolKey, getErrorCode, spokeKey, v4ReserveId, v4HubScopeKey, isWithinLookbackWindow } from '@internal/aave-shared-contracts';
-export type { MerklCampaignBreakdown, MerklOpportunityGroup, ForecastCampaignTypeLite, MerklCampaignAccess, MerklBorrowHookProtocol, MerklHealthFactorHook } from '@internal/aave-shared-contracts';
-import { resolveUsdPriceWithPriority, type UsdPriceSource } from './token-price-resolver.js';
+} from "@internal/aave-shared-config";
+import type {
+  MerklCampaignBreakdown,
+  MerklOpportunityGroup,
+  ForecastCampaignTypeLite,
+  MerklCampaignAccess,
+  MerklBorrowHookProtocol,
+  MerklHealthFactorHook,
+  RuntimeReserveData,
+  NetPositionConstraint,
+} from "@internal/aave-shared-contracts";
+import {
+  chainTokenKey,
+  chainSymbolKey,
+  getErrorCode,
+  spokeKey,
+  v4ReserveId,
+  v4HubScopeKey,
+  isWithinLookbackWindow,
+} from "@internal/aave-shared-contracts";
+import { resolveOffsetSymbolAddress } from "./merkl-symbol-resolver.js";
+export type {
+  MerklCampaignBreakdown,
+  MerklOpportunityGroup,
+  ForecastCampaignTypeLite,
+  MerklCampaignAccess,
+  MerklBorrowHookProtocol,
+  MerklHealthFactorHook,
+} from "@internal/aave-shared-contracts";
+import {
+  resolveUsdPriceWithPriority,
+  type UsdPriceSource,
+} from "./token-price-resolver.js";
 
 const merklLimitedFetch = createMerklConcurrencyLimitedFetch(fetch);
 
-const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'data');
-const RUNTIME_DATA_DIR = join(DATA_DIR, 'runtime');
-const DEBUG_DATA_DIR = join(DATA_DIR, 'debug');
+const DATA_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "data");
+const RUNTIME_DATA_DIR = join(DATA_DIR, "runtime");
+const DEBUG_DATA_DIR = join(DATA_DIR, "debug");
 const MERKL_DEFAULT_OPPORTUNITIES_SOFT_TTL_MS = 1 * 60 * 1000;
 const MERKL_DEFAULT_HARD_TTL_MS = 10 * 60 * 1000;
 
@@ -36,9 +64,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-
 function isRetryableError(error: unknown): boolean {
-  const retryableCodes = new Set(['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETRESET', 'ECONNREFUSED']);
+  const retryableCodes = new Set([
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "EAI_AGAIN",
+    "ENETRESET",
+    "ECONNREFUSED",
+  ]);
   const code = getErrorCode(error);
   return Boolean(code && retryableCodes.has(code));
 }
@@ -58,13 +91,21 @@ async function fetchWithRetry(
         return response;
       }
       // Only retry on 5xx / gateway errors
-      if (response.status >= 500 && response.status < 600 && attempt < merklFetchConfig.maxRetries) {
+      if (
+        response.status >= 500 &&
+        response.status < 600 &&
+        attempt < merklFetchConfig.maxRetries
+      ) {
         await response.text().catch(() => {});
-        const delay = Math.min(
-          merklFetchConfig.maxDelayMs,
-          merklFetchConfig.baseDelayMs * Math.pow(2, attempt)
-        ) + Math.random() * 250;
-        logger.warn(`⚠️ ${label} HTTP ${response.status}, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${merklFetchConfig.maxRetries})`);
+        const delay =
+          Math.min(
+            merklFetchConfig.maxDelayMs,
+            merklFetchConfig.baseDelayMs * Math.pow(2, attempt)
+          ) +
+          Math.random() * 250;
+        logger.warn(
+          `⚠️ ${label} HTTP ${response.status}, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${merklFetchConfig.maxRetries})`
+        );
         await sleep(delay);
         attempt++;
         continue;
@@ -77,11 +118,15 @@ async function fetchWithRetry(
       if (!isRetryableError(error) || attempt >= merklFetchConfig.maxRetries) {
         throw error;
       }
-      const delay = Math.min(
-        merklFetchConfig.maxDelayMs,
-        merklFetchConfig.baseDelayMs * Math.pow(2, attempt)
-      ) + Math.random() * 250;
-      logger.warn(`⚠️ ${label} network error (${(error as Error).message}), retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${merklFetchConfig.maxRetries})`);
+      const delay =
+        Math.min(
+          merklFetchConfig.maxDelayMs,
+          merklFetchConfig.baseDelayMs * Math.pow(2, attempt)
+        ) +
+        Math.random() * 250;
+      logger.warn(
+        `⚠️ ${label} network error (${(error as Error).message}), retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${merklFetchConfig.maxRetries})`
+      );
       await sleep(delay);
       attempt++;
     }
@@ -172,7 +217,8 @@ export interface MerklCampaignDetails {
 
 const hasEntries = (value: unknown): boolean => {
   if (Array.isArray(value)) return value.length > 0;
-  if (value && typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0;
+  if (value && typeof value === "object")
+    return Object.keys(value as Record<string, unknown>).length > 0;
   return Boolean(value);
 };
 
@@ -183,46 +229,50 @@ export function isCampaignWhitelistOnly(campaign: any): boolean {
   const composedCampaigns = campaign?.params?.composedCampaigns;
   if (!Array.isArray(composedCampaigns)) return false;
 
-  return composedCampaigns.some((entry: any) => hasEntries(entry?.campaignParameters?.whitelist));
+  return composedCampaigns.some((entry: any) =>
+    hasEntries(entry?.campaignParameters?.whitelist)
+  );
 }
 
 const toIsoFromUnixLike = (value: unknown): string => {
-  if (value === null || value === undefined) return '';
+  if (value === null || value === undefined) return "";
   const numeric =
-    typeof value === 'bigint'
+    typeof value === "bigint"
       ? Number(value)
-      : typeof value === 'string'
+      : typeof value === "string"
         ? Number(value)
-        : typeof value === 'number'
+        : typeof value === "number"
           ? value
           : NaN;
-  if (!Number.isFinite(numeric) || numeric <= 0) return '';
+  if (!Number.isFinite(numeric) || numeric <= 0) return "";
   const ms = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
   return new Date(ms).toISOString();
 };
 
 // Merkl 数据结构：NetPositionConstraint 已迁移到 @internal/aave-shared-contracts
 
-export function inferVersionFromReserveId(reserveId: string): 'v3' | 'v4' | null {
-  const segments = reserveId.split(':').length;
-  if (segments === 3) return 'v3';
-  if (segments >= 4) return 'v4';
+export function inferVersionFromReserveId(
+  reserveId: string
+): "v3" | "v4" | null {
+  const segments = reserveId.split(":").length;
+  if (segments === 3) return "v3";
+  if (segments >= 4) return "v4";
   return null;
 }
 
 export function extractPoolSpokePrefix(reserveId: string): string | null {
-  const parts = reserveId.split(':');
+  const parts = reserveId.split(":");
   if (parts.length < 3) return null;
   return `${parts[0]}:${parts[1]}`;
 }
 
-export type OffsetLevel = 'reserve' | 'hub-cross-spoke';
+export type OffsetLevel = "reserve" | "hub-cross-spoke";
 
 export function resolveOffsetReserveIds(
   oppReserveId: string,
   offsetTokenAddress: string,
   reserveIdSet: Set<string>,
-  offsetLevel: OffsetLevel = 'reserve',
+  offsetLevel: OffsetLevel = "reserve"
 ): string[] {
   const version = inferVersionFromReserveId(oppReserveId);
   const prefix = extractPoolSpokePrefix(oppReserveId);
@@ -230,32 +280,36 @@ export function resolveOffsetReserveIds(
 
   const normalizedAddr = offsetTokenAddress.toLowerCase();
 
-  if (version === 'v3') {
-    if (offsetLevel === 'hub-cross-spoke') return [];
+  if (version === "v3") {
+    if (offsetLevel === "hub-cross-spoke") return [];
     const candidate = `${prefix}:${normalizedAddr}`;
     return reserveIdSet.has(candidate) ? [candidate] : [];
   }
 
-  const parts = oppReserveId.split(':');
+  const parts = oppReserveId.split(":");
   const chainId = parts[0];
-  const hubAddress = parts.length >= 4 ? parts[3] : '';
+  const hubAddress = parts.length >= 4 ? parts[3] : "";
 
-  if (offsetLevel === 'hub-cross-spoke') {
+  if (offsetLevel === "hub-cross-spoke") {
     if (!hubAddress) return [];
     const results: string[] = [];
     const target = `:${normalizedAddr}:${hubAddress}`;
     for (const rid of reserveIdSet) {
-      if (rid.startsWith(`${chainId}:`) && rid.endsWith(target) && rid.split(':').length >= 4) {
+      if (
+        rid.startsWith(`${chainId}:`) &&
+        rid.endsWith(target) &&
+        rid.split(":").length >= 4
+      ) {
         results.push(rid);
       }
     }
     return results;
   }
 
-  if (offsetLevel === 'reserve') {
+  if (offsetLevel === "reserve") {
     const spokePrefix = `${parts[0]}:${parts[1]}`;
     const base = `${spokePrefix}:${normalizedAddr}`;
-    const hubSuffix = parts.length >= 4 ? `:${parts[3]}` : '';
+    const hubSuffix = parts.length >= 4 ? `:${parts[3]}` : "";
     const exact = `${base}${hubSuffix}`;
     return reserveIdSet.has(exact) ? [exact] : [];
   }
@@ -276,7 +330,7 @@ export interface MerklOpportunityData {
   marketName: string;
   chainId: number;
   /** Protocol version derived from Merkl opportunity type (e.g. AAVE_V4_HUB_SUPPLY = v4). */
-  protocolVersion: 'v3' | 'v4';
+  protocolVersion: "v3" | "v4";
   opportunityId?: string;
   name?: string;
   description?: string;
@@ -294,27 +348,25 @@ export interface MerklOpportunityData {
 
 /**
  * Build protocol version lookup tables from baseDataset.
- * 
+ *
  * Unambiguous lookup: chainId + aToken/vToken/spoke address → version.
  *   - V3 reserves contribute aToken/vToken
  *   - V4 reserves contribute aToken/vToken + spokeAddress
- * 
+ *
  * V4 underlying lookup: chainId + underlying token → true (V4 only).
  *   - V3 reserves are excluded because V3 never uses underlying token as explorerAddress.
  *   - This handles V4 Hub Supply where explorerAddress = underlying token.
  */
-export function buildProtocolVersionLookup(
-  baseDataset: RuntimeReserveData[]
-): {
-  unambiguous: Map<string, 'v3' | 'v4'>;
+export function buildProtocolVersionLookup(baseDataset: RuntimeReserveData[]): {
+  unambiguous: Map<string, "v3" | "v4">;
   v4Underlying: Map<string, true>;
 } {
-  const unambiguous = new Map<string, 'v3' | 'v4'>();
+  const unambiguous = new Map<string, "v3" | "v4">();
   const v4Underlying = new Map<string, true>();
 
   for (const r of baseDataset) {
-    const isV4 = r.marketName.startsWith('AaveV4');
-    const version: 'v3' | 'v4' = isV4 ? 'v4' : 'v3';
+    const isV4 = r.marketName.startsWith("AaveV4");
+    const version: "v3" | "v4" = isV4 ? "v4" : "v3";
     const chainId = r.chainId;
 
     if (r.aTokenAddress) {
@@ -353,7 +405,7 @@ export function buildReserveUnderlyingLookup(
 
 /**
  * Derive protocol version from Merkl opportunity data.
- * 
+ *
  * Priority (ADR-0018):
  *   1. type starts with AAVE_V4_           → v4  (zero-cost: Merkl naming convention)
  *   2. Unambiguous address lookup (aToken/vToken/spoke) → v3/v4
@@ -361,23 +413,23 @@ export function buildReserveUnderlyingLookup(
  *   4. Default                               → v3  (conservative)
  */
 export function isV4SpokeOpportunity(type: string | undefined): boolean {
-  return !!type?.startsWith('AAVE_V4_SPOKE_');
+  return !!type?.startsWith("AAVE_V4_SPOKE_");
 }
 
 export function deriveProtocolVersion(
   opportunityType: string | undefined,
   explorerAddress: string | undefined,
   chainId: number,
-  unambiguousLookup: Map<string, 'v3' | 'v4'>,
-  v4UnderlyingLookup: Map<string, true>,
-): 'v3' | 'v4' {
+  unambiguousLookup: Map<string, "v3" | "v4">,
+  v4UnderlyingLookup: Map<string, true>
+): "v3" | "v4" {
   // Step 1: type prefix check (fastest, catches all current V4 types)
-  if (opportunityType && opportunityType.toUpperCase().startsWith('AAVE_V4_')) {
-    return 'v4';
+  if (opportunityType && opportunityType.toUpperCase().startsWith("AAVE_V4_")) {
+    return "v4";
   }
 
   if (!explorerAddress) {
-    return 'v3';
+    return "v3";
   }
 
   const key = chainTokenKey(chainId, explorerAddress);
@@ -387,10 +439,10 @@ export function deriveProtocolVersion(
   if (version) return version;
 
   // Step 3: V4 underlying token lookup
-  if (v4UnderlyingLookup.has(key)) return 'v4';
+  if (v4UnderlyingLookup.has(key)) return "v4";
 
   // Step 4: default
-  return 'v3';
+  return "v3";
 }
 
 interface CampaignSnapshotLiteForForecastFile {
@@ -436,7 +488,7 @@ interface ProcessMerklDataOptions {
 interface MerklStaleStatus {
   stale: boolean;
   reason?: string;
-  fallbackSource?: 'memory' | 'disk';
+  fallbackSource?: "memory" | "disk";
   lastSuccessfulAt?: string;
   lastFetchError?: string;
   fetchedOpportunities: number;
@@ -453,7 +505,7 @@ interface MerklArtifactsPayload {
 }
 
 interface MerklFallbackSnapshot {
-  source: 'memory' | 'disk';
+  source: "memory" | "disk";
   rawOpportunities: MerklOpportunity[];
   liveOpportunities: MerklOpportunity[];
   processedData: MerklOpportunityData[];
@@ -482,74 +534,94 @@ export function resetMerklState(): void {
 }
 
 const getRecord = (value: unknown): Record<string, unknown> | null => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
 };
 
-const isNonEmptyIndex = (value: unknown): value is Record<string, MerklOpportunityData[]> => {
+const isNonEmptyIndex = (
+  value: unknown
+): value is Record<string, MerklOpportunityData[]> => {
   const record = getRecord(value);
   return Boolean(record && Object.keys(record).length > 0);
 };
 
-const readDiskFallbackSnapshot = async (): Promise<MerklFallbackSnapshot | null> => {
-  try {
-    const merklRawDataPath = join(DEBUG_DATA_DIR, 'merkl-raw-data.json');
-    const rawJson = JSON.parse(await readFile(merklRawDataPath, 'utf-8')) as Record<string, unknown>;
-    const indexRaw = rawJson.index;
-    if (!isNonEmptyIndex(indexRaw)) return null;
-    const index = indexRaw as Record<string, MerklOpportunityData[]>;
-
-    const rawOpportunities = Array.isArray(rawJson.rawOpportunities)
-      ? (rawJson.rawOpportunities as MerklOpportunity[])
-      : [];
-    const liveOpportunities = Array.isArray(rawJson.liveOpportunities)
-      ? (rawJson.liveOpportunities as MerklOpportunity[])
-      : rawOpportunities;
-    const processedData = Array.isArray(rawJson.processedData)
-      ? (rawJson.processedData as MerklOpportunityData[])
-      : Object.values(index).flat();
-
-    let forecastCampaignMetaLite: Record<string, ForecastCampaignMetaLite> = {};
+const readDiskFallbackSnapshot =
+  async (): Promise<MerklFallbackSnapshot | null> => {
     try {
-      const merklForecastLitePath = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
-      const liteJson = JSON.parse(await readFile(merklForecastLitePath, 'utf-8')) as Record<string, unknown>;
-      const campaigns = getRecord(liteJson.campaigns);
-      if (campaigns) {
-        forecastCampaignMetaLite = campaigns as unknown as Record<string, ForecastCampaignMetaLite>;
+      const merklRawDataPath = join(DEBUG_DATA_DIR, "merkl-raw-data.json");
+      const rawJson = JSON.parse(
+        await readFile(merklRawDataPath, "utf-8")
+      ) as Record<string, unknown>;
+      const indexRaw = rawJson.index;
+      if (!isNonEmptyIndex(indexRaw)) return null;
+      const index = indexRaw as Record<string, MerklOpportunityData[]>;
+
+      const rawOpportunities = Array.isArray(rawJson.rawOpportunities)
+        ? (rawJson.rawOpportunities as MerklOpportunity[])
+        : [];
+      const liveOpportunities = Array.isArray(rawJson.liveOpportunities)
+        ? (rawJson.liveOpportunities as MerklOpportunity[])
+        : rawOpportunities;
+      const processedData = Array.isArray(rawJson.processedData)
+        ? (rawJson.processedData as MerklOpportunityData[])
+        : Object.values(index).flat();
+
+      let forecastCampaignMetaLite: Record<string, ForecastCampaignMetaLite> =
+        {};
+      try {
+        const merklForecastLitePath = join(
+          RUNTIME_DATA_DIR,
+          "merkl-opportunity-meta-lite.json"
+        );
+        const liteJson = JSON.parse(
+          await readFile(merklForecastLitePath, "utf-8")
+        ) as Record<string, unknown>;
+        const campaigns = getRecord(liteJson.campaigns);
+        if (campaigns) {
+          forecastCampaignMetaLite = campaigns as unknown as Record<
+            string,
+            ForecastCampaignMetaLite
+          >;
+        }
+      } catch {
+        forecastCampaignMetaLite =
+          buildForecastCampaignMetaLiteMap(liveOpportunities);
       }
+
+      return {
+        source: "disk",
+        rawOpportunities,
+        liveOpportunities,
+        processedData,
+        index,
+        forecastCampaignMetaLite,
+        lastSuccessfulAt:
+          typeof rawJson.timestamp === "string" ? rawJson.timestamp : undefined,
+      };
     } catch {
-      forecastCampaignMetaLite = buildForecastCampaignMetaLiteMap(liveOpportunities);
+      return null;
     }
+  };
 
-    return {
-      source: 'disk',
-      rawOpportunities,
-      liveOpportunities,
-      processedData,
-      index,
-      forecastCampaignMetaLite,
-      lastSuccessfulAt: typeof rawJson.timestamp === 'string' ? rawJson.timestamp : undefined,
-    };
-  } catch {
-    return null;
-  }
-};
-
-const resolveMerklFallbackSnapshot = async (): Promise<MerklFallbackSnapshot | null> => {
-  const memorySnapshot = _merklState.lastSuccessfulSnapshot;
-  if (memorySnapshot !== null && Object.keys(memorySnapshot.index).length > 0) {
-    return {
-      source: 'memory' as const,
-      rawOpportunities: [],
-      liveOpportunities: [],  // empty: memory fallback skips raw debug rewrite; count preserved via liveOpportunityCount
-      processedData: memorySnapshot.processedData,
-      index: memorySnapshot.index,
-      forecastCampaignMetaLite: memorySnapshot.forecastCampaignMetaLite,
-      lastSuccessfulAt: memorySnapshot.lastSuccessfulAt,
-    };
-  }
-  return readDiskFallbackSnapshot();
-};
+const resolveMerklFallbackSnapshot =
+  async (): Promise<MerklFallbackSnapshot | null> => {
+    const memorySnapshot = _merklState.lastSuccessfulSnapshot;
+    if (
+      memorySnapshot !== null &&
+      Object.keys(memorySnapshot.index).length > 0
+    ) {
+      return {
+        source: "memory" as const,
+        rawOpportunities: [],
+        liveOpportunities: [], // empty: memory fallback skips raw debug rewrite; count preserved via liveOpportunityCount
+        processedData: memorySnapshot.processedData,
+        index: memorySnapshot.index,
+        forecastCampaignMetaLite: memorySnapshot.forecastCampaignMetaLite,
+        lastSuccessfulAt: memorySnapshot.lastSuccessfulAt,
+      };
+    }
+    return readDiskFallbackSnapshot();
+  };
 
 const getSnapshotAgeMs = (iso?: string): number | null => {
   if (!iso) return null;
@@ -558,17 +630,21 @@ const getSnapshotAgeMs = (iso?: string): number | null => {
   return Math.max(0, Date.now() - ts);
 };
 
-const isFallbackSnapshotFreshEnough = (snapshot: MerklFallbackSnapshot): boolean => {
+const isFallbackSnapshotFreshEnough = (
+  snapshot: MerklFallbackSnapshot
+): boolean => {
   const ageMs = getSnapshotAgeMs(snapshot.lastSuccessfulAt);
   if (ageMs === null) return false;
   return ageMs <= MERKL_HARD_TTL_MS;
 };
 
-const persistMerklArtifacts = async (payload: MerklArtifactsPayload): Promise<void> => {
+const persistMerklArtifacts = async (
+  payload: MerklArtifactsPayload
+): Promise<void> => {
   await mkdir(DEBUG_DATA_DIR, { recursive: true });
   await mkdir(RUNTIME_DATA_DIR, { recursive: true });
 
-  const merklRawDataPath = join(DEBUG_DATA_DIR, 'merkl-raw-data.json');
+  const merklRawDataPath = join(DEBUG_DATA_DIR, "merkl-raw-data.json");
   await writeJsonAtomic(merklRawDataPath, {
     timestamp: new Date().toISOString(),
     stale: payload.staleStatus,
@@ -578,10 +654,13 @@ const persistMerklArtifacts = async (payload: MerklArtifactsPayload): Promise<vo
     index: payload.index,
   });
   logger.info(
-    `💾 Merkl raw data saved to ${merklRawDataPath}${payload.staleStatus.stale ? ' (stale fallback)' : ''}`
+    `💾 Merkl raw data saved to ${merklRawDataPath}${payload.staleStatus.stale ? " (stale fallback)" : ""}`
   );
 
-  const merklForecastLitePath = join(RUNTIME_DATA_DIR, 'merkl-opportunity-meta-lite.json');
+  const merklForecastLitePath = join(
+    RUNTIME_DATA_DIR,
+    "merkl-opportunity-meta-lite.json"
+  );
   await writeJsonAtomic(
     merklForecastLitePath,
     {
@@ -592,7 +671,7 @@ const persistMerklArtifacts = async (payload: MerklArtifactsPayload): Promise<vo
     { space: 0 }
   );
   logger.info(
-    `💾 Merkl forecast lite data saved to ${merklForecastLitePath}${payload.staleStatus.stale ? ' (stale fallback)' : ''}`
+    `💾 Merkl forecast lite data saved to ${merklForecastLitePath}${payload.staleStatus.stale ? " (stale fallback)" : ""}`
   );
 };
 
@@ -605,24 +684,40 @@ const FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS: Array<{
   pattern: string;
   result: ForecastCampaignTypeLite;
 }> = [
-  { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT', result: 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT' },
-  { pattern: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE' },
-  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE', result: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE' },
-  { pattern: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT', result: 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' },
-  { pattern: 'DUTCH_AUCTION', result: 'DUTCH_AUCTION' },
-  { pattern: 'AAVE_NET_APR', result: 'TARGET_TOTAL_APR' },
-  { pattern: 'AAVE_V4_NET_APR', result: 'TARGET_TOTAL_APR' },
-  { pattern: 'ERC4626_APR', result: 'TARGET_TOTAL_APR' },
-  { pattern: 'ERC4626_SPREAD_CAPPED', result: 'TARGET_TOTAL_APR' },
-  { pattern: 'ERC4626_TARGET_APR_WITH_MERKL', result: 'TARGET_TOTAL_APR' },
-  { pattern: 'SOFR_SPREAD_RATCHET', result: 'TARGET_TOTAL_APR' },
-  { pattern: 'DEEL_DISTRIBUTION', result: 'TARGET_TOTAL_APR' },
+  {
+    pattern: "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+    result: "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+  },
+  {
+    pattern: "MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT",
+    result: "MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT",
+  },
+  {
+    pattern: "FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+    result: "FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
+  },
+  {
+    pattern: "FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE",
+    result: "FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE",
+  },
+  {
+    pattern: "FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT",
+    result: "FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT",
+  },
+  { pattern: "DUTCH_AUCTION", result: "DUTCH_AUCTION" },
+  { pattern: "AAVE_NET_APR", result: "TARGET_TOTAL_APR" },
+  { pattern: "AAVE_V4_NET_APR", result: "TARGET_TOTAL_APR" },
+  { pattern: "ERC4626_APR", result: "TARGET_TOTAL_APR" },
+  { pattern: "ERC4626_SPREAD_CAPPED", result: "TARGET_TOTAL_APR" },
+  { pattern: "ERC4626_TARGET_APR_WITH_MERKL", result: "TARGET_TOTAL_APR" },
+  { pattern: "SOFR_SPREAD_RATCHET", result: "TARGET_TOTAL_APR" },
+  { pattern: "DEEL_DISTRIBUTION", result: "TARGET_TOTAL_APR" },
 ];
 
 const toFinitePositiveNumber = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
-  if (typeof value === 'string') {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0)
+    return value;
+  if (typeof value === "string") {
     const parsed = Number(value);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
@@ -632,50 +727,76 @@ const toFinitePositiveNumber = (value: unknown): number | null => {
 export const normalizeForecastCampaignTypeLite = (
   input: NormalizeForecastCampaignTypeLiteInput | unknown
 ): ForecastCampaignTypeLite | null => {
-  if (!input || typeof input !== 'object') return null;
-  const { distributionType, targetAPR } = input as NormalizeForecastCampaignTypeLiteInput;
+  if (!input || typeof input !== "object") return null;
+  const { distributionType, targetAPR } =
+    input as NormalizeForecastCampaignTypeLiteInput;
 
   if (distributionType) {
     const upper = distributionType.trim().toUpperCase();
-    for (const { pattern, result } of FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS) {
+    for (const {
+      pattern,
+      result,
+    } of FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS) {
       if (upper === pattern) return result;
     }
   }
 
   if (toFinitePositiveNumber(targetAPR) !== null) {
-    return 'TARGET_TOTAL_APR';
+    return "TARGET_TOTAL_APR";
   }
 
   return null;
 };
 
-const buildCampaignSnapshotLiteForForecastFile = (campaign: any): CampaignSnapshotLiteForForecastFile | null => {
-  const hashId = typeof campaign?.campaignId === 'string' ? campaign.campaignId : String(campaign?.campaignId || '').trim();
-  const dbId = typeof campaign?.id === 'string' ? campaign.id : String(campaign?.id || '').trim();
+const buildCampaignSnapshotLiteForForecastFile = (
+  campaign: any
+): CampaignSnapshotLiteForForecastFile | null => {
+  const hashId =
+    typeof campaign?.campaignId === "string"
+      ? campaign.campaignId
+      : String(campaign?.campaignId || "").trim();
+  const dbId =
+    typeof campaign?.id === "string"
+      ? campaign.id
+      : String(campaign?.id || "").trim();
   const id = hashId || dbId;
   if (!id) return null;
 
   const snapshot: CampaignSnapshotLiteForForecastFile = { id };
   if (campaign?.amount !== undefined) snapshot.amount = campaign.amount;
-  if (campaign?.startTimestamp !== undefined) snapshot.startTimestamp = campaign.startTimestamp;
-  if (campaign?.endTimestamp !== undefined) snapshot.endTimestamp = campaign.endTimestamp;
+  if (campaign?.startTimestamp !== undefined)
+    snapshot.startTimestamp = campaign.startTimestamp;
+  if (campaign?.endTimestamp !== undefined)
+    snapshot.endTimestamp = campaign.endTimestamp;
   if (campaign?.rewardToken) {
-    const rewardToken: CampaignSnapshotLiteForForecastFile['rewardToken'] = {};
-    if (campaign.rewardToken.address !== undefined) rewardToken.address = campaign.rewardToken.address;
-    if (campaign.rewardToken.symbol !== undefined) rewardToken.symbol = campaign.rewardToken.symbol;
-    if (campaign.rewardToken.price !== undefined) rewardToken.price = campaign.rewardToken.price;
-    if (campaign.rewardToken.decimals !== undefined) rewardToken.decimals = campaign.rewardToken.decimals;
+    const rewardToken: CampaignSnapshotLiteForForecastFile["rewardToken"] = {};
+    if (campaign.rewardToken.address !== undefined)
+      rewardToken.address = campaign.rewardToken.address;
+    if (campaign.rewardToken.symbol !== undefined)
+      rewardToken.symbol = campaign.rewardToken.symbol;
+    if (campaign.rewardToken.price !== undefined)
+      rewardToken.price = campaign.rewardToken.price;
+    if (campaign.rewardToken.decimals !== undefined)
+      rewardToken.decimals = campaign.rewardToken.decimals;
     if (Object.keys(rewardToken).length > 0) snapshot.rewardToken = rewardToken;
   }
   if (campaign?.params) {
-    const params: CampaignSnapshotLiteForForecastFile['params'] = {};
+    const params: CampaignSnapshotLiteForForecastFile["params"] = {};
     if (campaign.params.decimalsRewardToken !== undefined) {
       params.decimalsRewardToken = campaign.params.decimalsRewardToken;
     }
-    const apr = campaign.params?.distributionMethodParameters?.distributionSettings?.apr;
-    const targetAPR = campaign.params?.distributionMethodParameters?.distributionSettings?.targetAPR;
+    const apr =
+      campaign.params?.distributionMethodParameters?.distributionSettings?.apr;
+    const targetAPR =
+      campaign.params?.distributionMethodParameters?.distributionSettings
+        ?.targetAPR;
     if (apr !== undefined || targetAPR !== undefined) {
-      params.distributionMethodParameters = { distributionSettings: { ...(apr !== undefined ? { apr } : {}), ...(targetAPR !== undefined ? { targetAPR } : {}) } };
+      params.distributionMethodParameters = {
+        distributionSettings: {
+          ...(apr !== undefined ? { apr } : {}),
+          ...(targetAPR !== undefined ? { targetAPR } : {}),
+        },
+      };
     }
     if (Object.keys(params).length > 0) snapshot.params = params;
   }
@@ -694,15 +815,21 @@ export const buildForecastCampaignMetaLiteMap = (
     const breakdowns = opp?.rewardsRecord?.breakdowns;
     if (!Array.isArray(breakdowns) || breakdowns.length === 0) continue;
 
-    const campaignSnapshotById = new Map<string, CampaignSnapshotLiteForForecastFile>();
+    const campaignSnapshotById = new Map<
+      string,
+      CampaignSnapshotLiteForForecastFile
+    >();
     const localDbIdToCacheKey = new Map<string, string>();
     if (Array.isArray(opp.campaigns)) {
       for (const campaign of opp.campaigns) {
         const snapshot = buildCampaignSnapshotLiteForForecastFile(campaign);
         if (snapshot) {
-          const rawCampaignId = String(campaign.campaignId || '').trim();
-          const campaignHashId = (rawCampaignId && rawCampaignId.startsWith('0x')) ? rawCampaignId : '';
-          const dbId = String(campaign.id || '').trim();
+          const rawCampaignId = String(campaign.campaignId || "").trim();
+          const campaignHashId =
+            rawCampaignId && rawCampaignId.startsWith("0x")
+              ? rawCampaignId
+              : "";
+          const dbId = String(campaign.id || "").trim();
           const cacheKey = campaignHashId || dbId;
           if (cacheKey) {
             campaignSnapshotById.set(cacheKey, snapshot);
@@ -713,24 +840,25 @@ export const buildForecastCampaignMetaLiteMap = (
     }
 
     for (const breakdown of breakdowns) {
-      const breakdownDbId = String(breakdown?.campaignId || '').trim();
+      const breakdownDbId = String(breakdown?.campaignId || "").trim();
       if (!breakdownDbId) continue;
 
       const cacheKey = localDbIdToCacheKey.get(breakdownDbId) || breakdownDbId;
 
       const breakdownDistributionType =
-        (typeof breakdown?.distributionType === 'string' && breakdown.distributionType) ||
-        (typeof opp?.distributionType === 'string' && opp.distributionType) ||
+        (typeof breakdown?.distributionType === "string" &&
+          breakdown.distributionType) ||
+        (typeof opp?.distributionType === "string" && opp.distributionType) ||
         undefined;
       const campaignObj = opp.campaigns?.find(
-        (c: any) => String(c?.id || '') === breakdownDbId
+        (c: any) => String(c?.id || "") === breakdownDbId
       );
       const mode =
-        campaignObj?.params?.distributionMethodParameters?.distributionSettings?.mode ||
-        undefined;
+        campaignObj?.params?.distributionMethodParameters?.distributionSettings
+          ?.mode || undefined;
       const targetAPR =
-        campaignObj?.params?.distributionMethodParameters?.distributionSettings?.targetAPR ??
-        undefined;
+        campaignObj?.params?.distributionMethodParameters?.distributionSettings
+          ?.targetAPR ?? undefined;
 
       const campaignTypeHint = normalizeForecastCampaignTypeLite({
         distributionType: breakdownDistributionType,
@@ -741,7 +869,7 @@ export const buildForecastCampaignMetaLiteMap = (
       const existing = result[cacheKey];
       const campaignSnapshot = campaignSnapshotById.get(cacheKey) ?? null;
       const useTokenRateInMetrics = !(
-        typeof breakdown?.token?.price === 'number' &&
+        typeof breakdown?.token?.price === "number" &&
         Number.isFinite(breakdown.token.price) &&
         breakdown.token.price > 0
       );
@@ -754,7 +882,7 @@ export const buildForecastCampaignMetaLiteMap = (
           campaignSnapshot,
           useTokenRateInMetrics,
           rawDistributionType: breakdownDistributionType,
-          rawMode: typeof mode === 'string' ? mode : undefined,
+          rawMode: typeof mode === "string" ? mode : undefined,
         };
         continue;
       }
@@ -764,9 +892,12 @@ export const buildForecastCampaignMetaLiteMap = (
         tvl: existing.tvl > 0 ? existing.tvl : tvl,
         campaignTypeHint: existing.campaignTypeHint,
         campaignSnapshot: existing.campaignSnapshot ?? campaignSnapshot,
-        useTokenRateInMetrics: existing.useTokenRateInMetrics || useTokenRateInMetrics,
-        rawDistributionType: existing.rawDistributionType ?? breakdownDistributionType,
-        rawMode: existing.rawMode ?? (typeof mode === 'string' ? mode : undefined),
+        useTokenRateInMetrics:
+          existing.useTokenRateInMetrics || useTokenRateInMetrics,
+        rawDistributionType:
+          existing.rawDistributionType ?? breakdownDistributionType,
+        rawMode:
+          existing.rawMode ?? (typeof mode === "string" ? mode : undefined),
       };
     }
   }
@@ -775,8 +906,8 @@ export const buildForecastCampaignMetaLiteMap = (
 };
 
 const toFiniteNumberForForecast = (value: unknown): number | null => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -810,22 +941,31 @@ const buildForecastFieldsFromOpportunity = async (
     snapshot.rewardToken?.price !== undefined
       ? Number(snapshot.rewardToken.price)
       : undefined;
-  const normalizedPrice = Number.isFinite(rawPrice) && rawPrice! > 0 ? rawPrice : undefined;
-  if (!meta.useTokenRateInMetrics && normalizedPrice !== undefined && options?.priceSourceStats) {
+  const normalizedPrice =
+    Number.isFinite(rawPrice) && rawPrice! > 0 ? rawPrice : undefined;
+  if (
+    !meta.useTokenRateInMetrics &&
+    normalizedPrice !== undefined &&
+    options?.priceSourceStats
+  ) {
     options.priceSourceStats.snapshot += 1;
   }
 
   let effectiveSnapshot = snapshot;
   if (!meta.useTokenRateInMetrics && normalizedPrice === undefined) {
     const reserveTokenAddress =
-      typeof snapshot.rewardToken?.address === 'string' ? snapshot.rewardToken.address.toLowerCase() : '';
+      typeof snapshot.rewardToken?.address === "string"
+        ? snapshot.rewardToken.address.toLowerCase()
+        : "";
     const reservePriceKey = chainTokenKey(meta.chainId, reserveTokenAddress);
     const reserveTokenPrice =
       reserveTokenAddress && options?.reserveTokenPriceByChainAndAddress
         ? options.reserveTokenPriceByChainAndAddress.get(reservePriceKey)
         : undefined;
     const normalizedReserveTokenPrice =
-      typeof reserveTokenPrice === 'number' && Number.isFinite(reserveTokenPrice) && reserveTokenPrice > 0
+      typeof reserveTokenPrice === "number" &&
+      Number.isFinite(reserveTokenPrice) &&
+      reserveTokenPrice > 0
         ? reserveTokenPrice
         : undefined;
 
@@ -844,12 +984,16 @@ const buildForecastFieldsFromOpportunity = async (
     const resolved = await resolveUsdPriceWithPriority({
       chainId: meta.chainId,
       tokenAddress:
-        typeof snapshot.rewardToken?.address === 'string' ? snapshot.rewardToken.address : undefined,
+        typeof snapshot.rewardToken?.address === "string"
+          ? snapshot.rewardToken.address
+          : undefined,
       tokenSymbol:
-        typeof snapshot.rewardToken?.symbol === 'string' ? snapshot.rewardToken.symbol : undefined,
+        typeof snapshot.rewardToken?.symbol === "string"
+          ? snapshot.rewardToken.symbol
+          : undefined,
       snapshotPrice: undefined,
       reservePrice:
-        typeof effectiveSnapshot.rewardToken?.price === 'number' &&
+        typeof effectiveSnapshot.rewardToken?.price === "number" &&
         Number.isFinite(effectiveSnapshot.rewardToken.price) &&
         effectiveSnapshot.rewardToken.price > 0
           ? effectiveSnapshot.rewardToken.price
@@ -880,7 +1024,7 @@ const buildForecastFieldsFromOpportunity = async (
     if (!Number.isFinite(resolvedPrice) || resolvedPrice <= 0) {
       logger.warn(
         `⚠️ Skipping forecast budget fields for campaign ${snapshot.id}: missing USD price (chainId=${meta.chainId}, token=${String(
-          effectiveSnapshot.rewardToken?.symbol || ''
+          effectiveSnapshot.rewardToken?.symbol || ""
         )})`
       );
       return null;
@@ -899,16 +1043,19 @@ const buildForecastFieldsFromOpportunity = async (
 
   // APR cap (for MAX/FIX reward types + TARGET_TOTAL_APR)
   if (
-    meta.campaignTypeHint === 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE' ||
-    meta.campaignTypeHint === 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
+    meta.campaignTypeHint === "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE" ||
+    meta.campaignTypeHint === "FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE"
   ) {
-    const rawApr = snapshot.params?.distributionMethodParameters?.distributionSettings?.apr;
+    const rawApr =
+      snapshot.params?.distributionMethodParameters?.distributionSettings?.apr;
     const aprValue = toFiniteNumberForForecast(rawApr);
     if (aprValue !== null && aprValue > 0) {
       fields.aprCap = aprValue;
     }
-  } else if (meta.campaignTypeHint === 'TARGET_TOTAL_APR') {
-    const rawTargetAPR = snapshot.params?.distributionMethodParameters?.distributionSettings?.targetAPR;
+  } else if (meta.campaignTypeHint === "TARGET_TOTAL_APR") {
+    const rawTargetAPR =
+      snapshot.params?.distributionMethodParameters?.distributionSettings
+        ?.targetAPR;
     const targetAPRValue = toFiniteNumberForForecast(rawTargetAPR);
     if (targetAPRValue !== null && targetAPRValue > 0) {
       fields.aprCap = targetAPRValue;
@@ -923,19 +1070,24 @@ const buildForecastFieldsFromOpportunity = async (
  */
 export async function fetchMerklOpportunities(): Promise<MerklOpportunity[]> {
   try {
-    logger.info('🔄 Fetching Merkl opportunities for Aave + Tydro (LIVE, campaigns=true, short-page pagination)...');
+    logger.info(
+      "🔄 Fetching Merkl opportunities for Aave + Tydro (LIVE, campaigns=true, short-page pagination)..."
+    );
     const opportunities = (await fetchMerklOpportunitiesSnapshot({
-      baseUrl: 'https://api.merkl.xyz/v4',
+      baseUrl: "https://api.merkl.xyz/v4",
       ttlMs: OPPORTUNITIES_SOFT_TTL_MS,
       fetchImpl: fetch as unknown as typeof globalThis.fetch,
     })) as MerklOpportunity[];
 
     _merklState.lastFetchError = null;
-    logger.info(`✅ Fetched ${opportunities.length} live opportunities from Merkl`);
+    logger.info(
+      `✅ Fetched ${opportunities.length} live opportunities from Merkl`
+    );
     return opportunities;
   } catch (error) {
-    logger.error('❌ Error fetching Merkl opportunities:', error);
-    _merklState.lastFetchError = error instanceof Error ? error.message : String(error);
+    logger.error("❌ Error fetching Merkl opportunities:", error);
+    _merklState.lastFetchError =
+      error instanceof Error ? error.message : String(error);
     return [];
   }
 }
@@ -945,9 +1097,9 @@ export interface ResolvedCampaignApr {
 }
 
 const AMOUNT_VARIANT_TYPES: Set<ForecastCampaignTypeLite> = new Set([
-  'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE',
-  'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT',
-  'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT',
+  "FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE",
+  "FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT",
+  "MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT",
 ]);
 
 function isAmountVariant(type?: ForecastCampaignTypeLite | null): boolean {
@@ -960,12 +1112,13 @@ export interface PositionCapExtraction {
 }
 
 export function extractPositionCapFromCampaign(
-  campaign: any,
+  campaign: any
 ): PositionCapExtraction {
   const computeMethod = campaign?.params?.computeScoreParameters?.computeMethod;
-  if (computeMethod !== 'maxDeposit') return {};
+  if (computeMethod !== "maxDeposit") return {};
 
-  const rawMaxDeposit = campaign?.params?.computeScoreParameters?.computeSettings?.maxDeposit;
+  const rawMaxDeposit =
+    campaign?.params?.computeScoreParameters?.computeSettings?.maxDeposit;
   if (rawMaxDeposit == null) return {};
 
   const rawString = String(rawMaxDeposit);
@@ -977,9 +1130,9 @@ export function extractPositionCapFromCampaign(
 
 function extractDistributionSettingsApr(campaign: any): number {
   const dsApr =
-    campaign?.params?.distributionMethodParameters?.distributionSettings?.apr
-    ?? campaign?.distributionMethodParameters?.distributionSettings?.apr
-    ?? campaign?.distributionSettings?.apr;
+    campaign?.params?.distributionMethodParameters?.distributionSettings?.apr ??
+    campaign?.distributionMethodParameters?.distributionSettings?.apr ??
+    campaign?.distributionSettings?.apr;
   return Number(dsApr || 0);
 }
 
@@ -987,26 +1140,33 @@ export const resolveCampaignApr = (
   campaign: any,
   distributionType?: string,
   rewardTokenPrice?: number,
-  targetTokenPrice?: number,
+  targetTokenPrice?: number
 ): ResolvedCampaignApr => {
   if (!campaign) return { apr: 0 };
   const topApr = Number(campaign.apr || 0);
   const targetAPR =
-    campaign?.params?.distributionMethodParameters?.distributionSettings?.targetAPR ??
+    campaign?.params?.distributionMethodParameters?.distributionSettings
+      ?.targetAPR ??
     campaign?.distributionMethodParameters?.distributionSettings?.targetAPR ??
     undefined;
-  const campaignType = normalizeForecastCampaignTypeLite({ distributionType, targetAPR });
+  const campaignType = normalizeForecastCampaignTypeLite({
+    distributionType,
+    targetAPR,
+  });
 
   if (isAmountVariant(campaignType)) {
     const dsApr = extractDistributionSettingsApr(campaign);
     if (dsApr <= 0) return { apr: 0 };
 
-    if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE') {
+    if (campaignType === "FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE") {
       if (!rewardTokenPrice) return { apr: 0 };
       return { apr: dsApr * rewardTokenPrice };
     }
 
-    if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT' || campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
+    if (
+      campaignType === "FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT" ||
+      campaignType === "MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT"
+    ) {
       if (!rewardTokenPrice) return { apr: 0 };
       if (!targetTokenPrice) return { apr: 0 };
       return { apr: dsApr * (rewardTokenPrice / targetTokenPrice) };
@@ -1032,35 +1192,43 @@ export const resolveCampaignApr = (
  * - campaign.id → always DB ID
  * - campaign.campaignId → hash ID if 0x-prefixed, otherwise internal ID (not usable as hash)
  */
-export async function fetchMerklCampaignDetails(databaseId: string): Promise<MerklCampaignDetails | null> {
+export async function fetchMerklCampaignDetails(
+  databaseId: string
+): Promise<MerklCampaignDetails | null> {
   try {
     const response = await fetchWithRetry(
       `https://api.merkl.xyz/v4/campaigns/${databaseId}`,
       `Merkl campaign ${databaseId}`
     );
-    
+
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
-    
-    const campaign = await response.json() as any;
-    
-    const startedAt = campaign.startTimestamp ? 
-      new Date(campaign.startTimestamp * 1000).toISOString() : 
-      '';
-    const endedAt = campaign.endTimestamp ? 
-      new Date(campaign.endTimestamp * 1000).toISOString() : 
-      '';
-    
-    const campaignType = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
+
+    const campaign = (await response.json()) as any;
+
+    const startedAt = campaign.startTimestamp
+      ? new Date(campaign.startTimestamp * 1000).toISOString()
+      : "";
+    const endedAt = campaign.endTimestamp
+      ? new Date(campaign.endTimestamp * 1000).toISOString()
+      : "";
+
+    const campaignType = normalizeForecastCampaignTypeLite({
+      distributionType: campaign.distributionType,
+    });
     let rewardTokenPrice: number | undefined;
     let targetTokenPrice: number | undefined;
     if (isAmountVariant(campaignType)) {
       const chainId = campaign.chainId ?? 0;
-      const rewardAddr = typeof campaign?.rewardToken?.address === 'string'
-        ? campaign.rewardToken.address : undefined;
-      const rewardSym = typeof campaign?.rewardToken?.symbol === 'string'
-        ? campaign.rewardToken.symbol : undefined;
+      const rewardAddr =
+        typeof campaign?.rewardToken?.address === "string"
+          ? campaign.rewardToken.address
+          : undefined;
+      const rewardSym =
+        typeof campaign?.rewardToken?.symbol === "string"
+          ? campaign.rewardToken.symbol
+          : undefined;
       const rewardSnap = campaign?.rewardToken?.price;
       const resolved = await resolveUsdPriceWithPriority({
         chainId,
@@ -1069,12 +1237,18 @@ export async function fetchMerklCampaignDetails(databaseId: string): Promise<Mer
         snapshotPrice: rewardSnap,
       });
       rewardTokenPrice = resolved.price;
-      if (campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
-        || campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
-        const targetAddr = typeof campaign?.targetToken?.address === 'string'
-          ? campaign.targetToken.address : undefined;
-        const targetSym = typeof campaign?.targetToken?.symbol === 'string'
-          ? campaign.targetToken.symbol : undefined;
+      if (
+        campaignType === "FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT" ||
+        campaignType === "MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT"
+      ) {
+        const targetAddr =
+          typeof campaign?.targetToken?.address === "string"
+            ? campaign.targetToken.address
+            : undefined;
+        const targetSym =
+          typeof campaign?.targetToken?.symbol === "string"
+            ? campaign.targetToken.symbol
+            : undefined;
         if (targetAddr || targetSym) {
           const targetResolved = await resolveUsdPriceWithPriority({
             chainId,
@@ -1085,14 +1259,23 @@ export async function fetchMerklCampaignDetails(databaseId: string): Promise<Mer
         }
       }
     }
-    
-    const resolved = resolveCampaignApr(campaign, campaign.distributionType, rewardTokenPrice, targetTokenPrice);
-    const parentCampaignId = typeof campaign.parentCampaignId === 'string' && campaign.parentCampaignId
-      ? campaign.parentCampaignId
-      : undefined;
-    const rawCampaignId = typeof campaign.campaignId === 'string' && campaign.campaignId
-      ? campaign.campaignId : undefined;
-    const hashId = (rawCampaignId && rawCampaignId.startsWith('0x')) ? rawCampaignId : '';
+
+    const resolved = resolveCampaignApr(
+      campaign,
+      campaign.distributionType,
+      rewardTokenPrice,
+      targetTokenPrice
+    );
+    const parentCampaignId =
+      typeof campaign.parentCampaignId === "string" && campaign.parentCampaignId
+        ? campaign.parentCampaignId
+        : undefined;
+    const rawCampaignId =
+      typeof campaign.campaignId === "string" && campaign.campaignId
+        ? campaign.campaignId
+        : undefined;
+    const hashId =
+      rawCampaignId && rawCampaignId.startsWith("0x") ? rawCampaignId : "";
     // positionCapNative extraction: since we no longer need reserve context (price/decimals),
     // we can extract directly from the campaign's computeMethod/maxDeposit.
     // Non-Aave maxDeposit campaigns may also be extracted; the frontend filters by reserve match.
@@ -1105,8 +1288,12 @@ export async function fetchMerklCampaignDetails(databaseId: string): Promise<Mer
       apr: resolved.apr,
       whitelistOnly: isCampaignWhitelistOnly(campaign),
       ...(parentCampaignId && { parentCampaignId }),
-      ...(positionCapExtraction.positionCapNative !== undefined && { positionCapNative: positionCapExtraction.positionCapNative }),
-      ...(positionCapExtraction.isCombineCap !== undefined && { isCombineCap: positionCapExtraction.isCombineCap }),
+      ...(positionCapExtraction.positionCapNative !== undefined && {
+        positionCapNative: positionCapExtraction.positionCapNative,
+      }),
+      ...(positionCapExtraction.isCombineCap !== undefined && {
+        isCombineCap: positionCapExtraction.isCombineCap,
+      }),
     };
   } catch (error) {
     logger.error(`❌ Error fetching campaign ${databaseId}:`, error);
@@ -1117,21 +1304,27 @@ export async function fetchMerklCampaignDetails(databaseId: string): Promise<Mer
 /**
  * 生成 Merkl opportunity 详情页链接
  * 格式：https://app.merkl.xyz/opportunities/{chainName}/{type}/{identifier}
- * 
+ *
  * @param opportunity Merkl opportunity 对象
  * @returns Merkl opportunity 详情页的完整 URL，如果缺少必要字段则返回 null
  */
-export function generateMerklOpportunityLink(opportunity: MerklOpportunity): string | null {
+export function generateMerklOpportunityLink(
+  opportunity: MerklOpportunity
+): string | null {
   // 需要 identifier、type 和 chain.name 字段来构建链接
-  if (!opportunity.identifier || !opportunity.type || !opportunity.chain?.name) {
+  if (
+    !opportunity.identifier ||
+    !opportunity.type ||
+    !opportunity.chain?.name
+  ) {
     return null;
   }
 
   // 将链名称转换为小写（Merkl URL 使用小写链名称）
   const chainName = opportunity.chain.name.toLowerCase();
-  const baseUrl = 'https://app.merkl.xyz';
+  const baseUrl = "https://app.merkl.xyz";
   const link = `${baseUrl}/opportunities/${chainName}/${opportunity.type}/${opportunity.identifier}`;
-  
+
   return link;
 }
 
@@ -1143,31 +1336,33 @@ export function generateMerklOpportunityLink(opportunity: MerklOpportunity): str
  * - 如果 name 包含 "EtherFi" → AaveV3EthereumEtherFi
  * - 如果都不包含 → AaveV3Ethereum (默认)
  */
-export function parseMarketNameFromOpportunityName(opportunityName: string | undefined, chainId: number): string {
+export function parseMarketNameFromOpportunityName(
+  opportunityName: string | undefined,
+  chainId: number
+): string {
   if (!opportunityName) {
     // 如果没有 name，根据 chainId 返回默认值
-    return chainId === 1 ? 'AaveV3Ethereum' : 'Unknown';
+    return chainId === 1 ? "AaveV3Ethereum" : "Unknown";
   }
-  
+
   const nameLower = opportunityName.toLowerCase();
-  
+
   // 只对 chainId 1 (Ethereum) 进行特殊市场解析
   if (chainId === 1) {
-    if (nameLower.includes('horizon')) {
-      return 'AaveV3EthereumHorizon';
-    } else if (nameLower.includes('prime')) {
-      return 'AaveV3EthereumLido';
-    } else if (nameLower.includes('etherfi')) {
-      return 'AaveV3EthereumEtherFi';
+    if (nameLower.includes("horizon")) {
+      return "AaveV3EthereumHorizon";
+    } else if (nameLower.includes("prime")) {
+      return "AaveV3EthereumLido";
+    } else if (nameLower.includes("etherfi")) {
+      return "AaveV3EthereumEtherFi";
     } else {
-      return 'AaveV3Ethereum';
+      return "AaveV3Ethereum";
     }
   }
-  
-  // 对于其他 chainId，返回默认值（可以根据需要扩展）
-  return 'Unknown';
-}
 
+  // 对于其他 chainId，返回默认值（可以根据需要扩展）
+  return "Unknown";
+}
 
 /**
  * 处理 Merkl 数据，构建索引并返回
@@ -1183,7 +1378,11 @@ export function parseMarketNameFromOpportunityName(opportunityName: string | und
 export function merklPointsFieldsFromBreakdownValue(
   opp: MerklOpportunity,
   rewardsBreakdown: { value?: number },
-  options?: { distributionType?: string; targetTokenPrice?: number; campaignApr?: number }
+  options?: {
+    distributionType?: string;
+    targetTokenPrice?: number;
+    campaignApr?: number;
+  }
 ): { pointsPerThousandUsd: number } | undefined {
   if (options?.campaignApr !== undefined && options.campaignApr > 0) {
     return undefined;
@@ -1196,29 +1395,41 @@ export function merklPointsFieldsFromBreakdownValue(
     return undefined;
   }
   const tvl = Number(opp.tvl) || 0;
-  const isPerAmount = options?.distributionType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
-    || options?.distributionType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT';
+  const isPerAmount =
+    options?.distributionType === "FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT" ||
+    options?.distributionType === "MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT";
   const priceMultiplier = isPerAmount ? (options?.targetTokenPrice ?? 0) : 1;
-  const pointsPerThousandUsd = tvl > 0 ? (rewardUnits / tvl) * 1000 * priceMultiplier : 0;
+  const pointsPerThousandUsd =
+    tvl > 0 ? (rewardUnits / tvl) * 1000 * priceMultiplier : 0;
   return { pointsPerThousandUsd };
 }
 
 export type MerklRewardsBreakdownForIntensity = {
-  token?: { type?: string; symbol?: string; name?: string; icon?: string; id?: string };
+  token?: {
+    type?: string;
+    symbol?: string;
+    name?: string;
+    icon?: string;
+    id?: string;
+  };
 };
 
 export function extractRewardTokenFields(
-  token?: MerklRewardsBreakdownForIntensity['token']
-): { rewardTokenSymbol?: string; rewardTokenIconUrl?: string; rewardTokenId?: string } {
+  token?: MerklRewardsBreakdownForIntensity["token"]
+): {
+  rewardTokenSymbol?: string;
+  rewardTokenIconUrl?: string;
+  rewardTokenId?: string;
+} {
   if (!token) return {};
   return {
-    ...(typeof token.symbol === 'string' && token.symbol
+    ...(typeof token.symbol === "string" && token.symbol
       ? { rewardTokenSymbol: token.symbol }
       : {}),
-    ...(typeof token.icon === 'string' && token.icon
+    ...(typeof token.icon === "string" && token.icon
       ? { rewardTokenIconUrl: token.icon }
       : {}),
-    ...(typeof token.id === 'string' && token.id
+    ...(typeof token.id === "string" && token.id
       ? { rewardTokenId: token.id }
       : {}),
   };
@@ -1237,13 +1448,18 @@ export function extractRewardTokenFields(
 export function merklBreakdownUsesPointsIntensityFields(
   breakdown: MerklRewardsBreakdownForIntensity
 ): boolean {
-  const tokenType = String(breakdown.token?.type || '').trim().toUpperCase();
-  return tokenType === 'PRETGE' || tokenType === 'POINT';
+  const tokenType = String(breakdown.token?.type || "")
+    .trim()
+    .toUpperCase();
+  return tokenType === "PRETGE" || tokenType === "POINT";
 }
 
 export async function processMerklData(
   options?: ProcessMerklDataOptions
-): Promise<{ index: Record<string, MerklOpportunityData[]>; campaignAccess: MerklCampaignAccess[] }> {
+): Promise<{
+  index: Record<string, MerklOpportunityData[]>;
+  campaignAccess: MerklCampaignAccess[];
+}> {
   const priceSourceStats: Record<UsdPriceSource, number> = {
     snapshot: 0,
     reserve: 0,
@@ -1259,7 +1475,10 @@ export async function processMerklData(
   // Build protocol version lookup tables from baseDataset (ADR-0018)
   const protocolLookup = options?.baseDataset
     ? buildProtocolVersionLookup(options.baseDataset)
-    : { unambiguous: new Map<string, 'v3' | 'v4'>(), v4Underlying: new Map<string, true>() };
+    : {
+        unambiguous: new Map<string, "v3" | "v4">(),
+        v4Underlying: new Map<string, true>(),
+      };
   const reserveUnderlyingLookup = options?.baseDataset
     ? buildReserveUnderlyingLookup(options.baseDataset)
     : new Set<string>();
@@ -1284,7 +1503,7 @@ export async function processMerklData(
         `⚠️ Merkl opportunities empty; reusing ${fallback.source} fallback snapshot (${Object.keys(fallback.index).length} token keys${
           fallbackAgeMs !== null && Number.isFinite(fallbackAgeMs)
             ? `, age=${Math.max(0, Math.round(fallbackAgeMs / 1000))}s`
-            : ''
+            : ""
         })`
       );
 
@@ -1296,14 +1515,17 @@ export async function processMerklData(
         forecastCampaignMetaLite: fallback.forecastCampaignMetaLite,
         staleStatus: {
           stale: true,
-          reason: 'merkl-opportunities-empty',
+          reason: "merkl-opportunities-empty",
           fallbackSource: fallback.source,
           lastSuccessfulAt: fallback.lastSuccessfulAt,
-          ...(_merklState.lastFetchError ? { lastFetchError: _merklState.lastFetchError } : {}),
+          ...(_merklState.lastFetchError
+            ? { lastFetchError: _merklState.lastFetchError }
+            : {}),
           fetchedOpportunities: fetchedOpportunities.length,
-          usedOpportunities: fallback.source === 'memory'
-            ? (_merklState.lastSuccessfulSnapshot?.liveOpportunityCount ?? 0)
-            : fallback.liveOpportunities.length,
+          usedOpportunities:
+            fallback.source === "memory"
+              ? (_merklState.lastSuccessfulSnapshot?.liveOpportunityCount ?? 0)
+              : fallback.liveOpportunities.length,
         },
       });
 
@@ -1311,9 +1533,11 @@ export async function processMerklData(
         processedData: fallback.processedData,
         index: fallback.index,
         forecastCampaignMetaLite: fallback.forecastCampaignMetaLite,
-        liveOpportunityCount: fallback.source === 'memory'
-          ? (_merklState.lastSuccessfulSnapshot?.liveOpportunityCount ?? fallback.liveOpportunities.length)
-          : fallback.liveOpportunities.length,
+        liveOpportunityCount:
+          fallback.source === "memory"
+            ? (_merklState.lastSuccessfulSnapshot?.liveOpportunityCount ??
+              fallback.liveOpportunities.length)
+            : fallback.liveOpportunities.length,
         lastSuccessfulAt: fallback.lastSuccessfulAt,
       };
 
@@ -1324,27 +1548,37 @@ export async function processMerklData(
       const fallbackAgeMs = getSnapshotAgeMs(fallback.lastSuccessfulAt);
       logger.warn(
         `⚠️ Merkl fallback snapshot expired (max ${Math.round(MERKL_HARD_TTL_MS / 1000)}s, age=${
-          fallbackAgeMs === null ? 'unknown' : `${Math.round(fallbackAgeMs / 1000)}s`
+          fallbackAgeMs === null
+            ? "unknown"
+            : `${Math.round(fallbackAgeMs / 1000)}s`
         }); refusing stale fallback`
       );
     }
 
-    logger.warn('⚠️ Merkl opportunities empty and no fallback snapshot available; continuing with empty result');
+    logger.warn(
+      "⚠️ Merkl opportunities empty and no fallback snapshot available; continuing with empty result"
+    );
     staleStatus = {
       stale: true,
-      reason: fallback ? 'merkl-opportunities-empty-fallback-expired' : 'merkl-opportunities-empty-no-fallback',
-      ...(_merklState.lastFetchError ? { lastFetchError: _merklState.lastFetchError } : {}),
+      reason: fallback
+        ? "merkl-opportunities-empty-fallback-expired"
+        : "merkl-opportunities-empty-no-fallback",
+      ...(_merklState.lastFetchError
+        ? { lastFetchError: _merklState.lastFetchError }
+        : {}),
       fetchedOpportunities: fetchedOpportunities.length,
       usedOpportunities: 0,
     };
   }
 
   const merklData: Record<string, MerklOpportunityData[]> = {};
-  logger.info('🔍 Processing Merkl opportunities...');
+  logger.info("🔍 Processing Merkl opportunities...");
   // fetchMerklOpportunities 已在 API 层过滤 status=LIVE
   const liveOpportunities = opportunities;
-  logger.info(`Processing ${liveOpportunities.length} live Merkl opportunities`);
-  
+  logger.info(
+    `Processing ${liveOpportunities.length} live Merkl opportunities`
+  );
+
   const campaignDetailsCache = new Map<string, MerklCampaignDetails | null>();
   const campaignAccessMap = new Map<string, MerklCampaignAccess>();
 
@@ -1360,12 +1594,19 @@ export async function processMerklData(
   for (const opp of liveOpportunities) {
     if (!Array.isArray(opp.campaigns)) continue;
     for (const campaign of opp.campaigns) {
-      const hashId = String(campaign.campaignId || '').trim();
+      const hashId = String(campaign.campaignId || "").trim();
       if (!hashId) continue;
       if (campaignDetailsCache.has(hashId)) continue;
-      const campaignType = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
+      const campaignType = normalizeForecastCampaignTypeLite({
+        distributionType: campaign.distributionType,
+      });
       if (isAmountVariant(campaignType) && campaignType) {
-        amountVariantEntries.push({ campaignId: hashId, campaign, opp, campaignType });
+        amountVariantEntries.push({
+          campaignId: hashId,
+          campaign,
+          opp,
+          campaignType,
+        });
       }
     }
   }
@@ -1375,27 +1616,48 @@ export async function processMerklData(
   for (const entry of amountVariantEntries) {
     const chainId = entry.opp.chainId ?? 0;
     const rewardBreakdown = entry.opp.rewardsRecord?.breakdowns?.[0];
-    const rewardAddr = typeof rewardBreakdown?.token?.address === 'string' ? rewardBreakdown.token.address : '';
-    const rewardSym = typeof rewardBreakdown?.token?.symbol === 'string' ? rewardBreakdown.token.symbol : '';
+    const rewardAddr =
+      typeof rewardBreakdown?.token?.address === "string"
+        ? rewardBreakdown.token.address
+        : "";
+    const rewardSym =
+      typeof rewardBreakdown?.token?.symbol === "string"
+        ? rewardBreakdown.token.symbol
+        : "";
     if (rewardAddr || rewardSym) {
       const key = `${chainId}:${rewardAddr}:${rewardSym}` as PriceLookupKey;
       tokensToResolve.add(key);
-      const snapPrice = typeof rewardBreakdown?.token?.price === 'number' && Number.isFinite(rewardBreakdown.token.price) && rewardBreakdown.token.price > 0
-        ? rewardBreakdown.token.price : undefined;
+      const snapPrice =
+        typeof rewardBreakdown?.token?.price === "number" &&
+        Number.isFinite(rewardBreakdown.token.price) &&
+        rewardBreakdown.token.price > 0
+          ? rewardBreakdown.token.price
+          : undefined;
       if (snapPrice !== undefined && !snapshotPrices.has(key)) {
         snapshotPrices.set(key, snapPrice);
       }
     }
-    if (entry.campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
-      || entry.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
-      const targetToken = Array.isArray(entry.opp.tokens) && entry.opp.tokens.length > 0 ? entry.opp.tokens[0] : undefined;
-      const targetAddr = typeof targetToken?.address === 'string' ? targetToken.address : '';
-      const targetSym = typeof targetToken?.symbol === 'string' ? targetToken.symbol : '';
+    if (
+      entry.campaignType === "FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT" ||
+      entry.campaignType === "MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT"
+    ) {
+      const targetToken =
+        Array.isArray(entry.opp.tokens) && entry.opp.tokens.length > 0
+          ? entry.opp.tokens[0]
+          : undefined;
+      const targetAddr =
+        typeof targetToken?.address === "string" ? targetToken.address : "";
+      const targetSym =
+        typeof targetToken?.symbol === "string" ? targetToken.symbol : "";
       if (targetAddr || targetSym) {
         const key = `${chainId}:${targetAddr}:${targetSym}` as PriceLookupKey;
         tokensToResolve.add(key);
-        const snapPrice = typeof targetToken?.price === 'number' && Number.isFinite(targetToken.price) && targetToken.price > 0
-          ? targetToken.price : undefined;
+        const snapPrice =
+          typeof targetToken?.price === "number" &&
+          Number.isFinite(targetToken.price) &&
+          targetToken.price > 0
+            ? targetToken.price
+            : undefined;
         if (snapPrice !== undefined && !snapshotPrices.has(key)) {
           snapshotPrices.set(key, snapPrice);
         }
@@ -1404,7 +1666,7 @@ export async function processMerklData(
   }
 
   for (const key of tokensToResolve) {
-    const [chainIdStr, addr, sym] = key.split(':');
+    const [chainIdStr, addr, sym] = key.split(":");
     const chainId = Number(chainIdStr);
     const snapshotPrice = snapshotPrices.get(key);
     const resolved = await resolveUsdPriceWithPriority({
@@ -1416,26 +1678,46 @@ export async function processMerklData(
     preResolvedPrices.set(key, resolved.price);
   }
 
-  const amountVariantPriceMap = new Map<string, { rewardTokenPrice?: number; targetTokenPrice?: number }>();
+  const amountVariantPriceMap = new Map<
+    string,
+    { rewardTokenPrice?: number; targetTokenPrice?: number }
+  >();
   for (const entry of amountVariantEntries) {
     const chainId = entry.opp.chainId ?? 0;
     const rewardBreakdown = entry.opp.rewardsRecord?.breakdowns?.[0];
-    const rewardAddr = typeof rewardBreakdown?.token?.address === 'string' ? rewardBreakdown.token.address : '';
-    const rewardSym = typeof rewardBreakdown?.token?.symbol === 'string' ? rewardBreakdown.token.symbol : '';
+    const rewardAddr =
+      typeof rewardBreakdown?.token?.address === "string"
+        ? rewardBreakdown.token.address
+        : "";
+    const rewardSym =
+      typeof rewardBreakdown?.token?.symbol === "string"
+        ? rewardBreakdown.token.symbol
+        : "";
     const rewardKey = `${chainId}:${rewardAddr}:${rewardSym}` as PriceLookupKey;
     const rewardTokenPrice = preResolvedPrices.get(rewardKey);
 
     let targetTokenPrice: number | undefined;
-    if (entry.campaignType === 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
-      || entry.campaignType === 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT') {
-      const targetToken = Array.isArray(entry.opp.tokens) && entry.opp.tokens.length > 0 ? entry.opp.tokens[0] : undefined;
-      const targetAddr = typeof targetToken?.address === 'string' ? targetToken.address : '';
-      const targetSym = typeof targetToken?.symbol === 'string' ? targetToken.symbol : '';
-      const targetKey = `${chainId}:${targetAddr}:${targetSym}` as PriceLookupKey;
+    if (
+      entry.campaignType === "FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT" ||
+      entry.campaignType === "MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT"
+    ) {
+      const targetToken =
+        Array.isArray(entry.opp.tokens) && entry.opp.tokens.length > 0
+          ? entry.opp.tokens[0]
+          : undefined;
+      const targetAddr =
+        typeof targetToken?.address === "string" ? targetToken.address : "";
+      const targetSym =
+        typeof targetToken?.symbol === "string" ? targetToken.symbol : "";
+      const targetKey =
+        `${chainId}:${targetAddr}:${targetSym}` as PriceLookupKey;
       targetTokenPrice = preResolvedPrices.get(targetKey);
     }
 
-    amountVariantPriceMap.set(entry.campaignId, { rewardTokenPrice, targetTokenPrice });
+    amountVariantPriceMap.set(entry.campaignId, {
+      rewardTokenPrice,
+      targetTokenPrice,
+    });
   }
 
   // Build Database ID → Hash ID mapping from opp.campaigns FIRST,
@@ -1447,9 +1729,9 @@ export async function processMerklData(
   for (const opp of liveOpportunities) {
     if (!Array.isArray(opp.campaigns)) continue;
     for (const campaign of opp.campaigns) {
-      const dbId = String(campaign.id || '').trim();
-      const rawCampaignId = String(campaign.campaignId || '').trim();
-      const hashId = rawCampaignId.startsWith('0x') ? rawCampaignId : '';
+      const dbId = String(campaign.id || "").trim();
+      const rawCampaignId = String(campaign.campaignId || "").trim();
+      const hashId = rawCampaignId.startsWith("0x") ? rawCampaignId : "";
       if (dbId && hashId) {
         dbIdToHashId.set(dbId, hashId);
       }
@@ -1457,70 +1739,105 @@ export async function processMerklData(
   }
 
   const oppCampaignPromises: Promise<void>[] = [];
-   for (const opp of liveOpportunities) {
+  for (const opp of liveOpportunities) {
     if (!Array.isArray(opp.campaigns)) continue;
     for (const campaign of opp.campaigns) {
-      const rawCampaignId = String(campaign.campaignId || '').trim();
-      const hashId = (rawCampaignId && rawCampaignId.startsWith('0x')) ? rawCampaignId : '';
-      const databaseId = String(campaign.id || '').trim();
+      const rawCampaignId = String(campaign.campaignId || "").trim();
+      const hashId =
+        rawCampaignId && rawCampaignId.startsWith("0x") ? rawCampaignId : "";
+      const databaseId = String(campaign.id || "").trim();
       if (!rawCampaignId) continue;
       const cacheKey = hashId || databaseId;
       if (campaignDetailsCache.has(cacheKey)) continue;
-      oppCampaignPromises.push((async () => {
-        const campaignType = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
-        let rewardTokenPrice: number | undefined;
-        let targetTokenPrice: number | undefined;
-        if (isAmountVariant(campaignType)) {
-          const preResolved = amountVariantPriceMap.get(hashId) || amountVariantPriceMap.get(databaseId);
-          rewardTokenPrice = preResolved?.rewardTokenPrice;
-          targetTokenPrice = preResolved?.targetTokenPrice;
-        } else {
-          rewardTokenPrice = undefined;
-          targetTokenPrice = undefined;
-        }
-        const resolved = resolveCampaignApr(campaign, campaign.distributionType, rewardTokenPrice, targetTokenPrice);
-        const rawParentId = typeof campaign.parentCampaignId === 'string' && campaign.parentCampaignId
-          ? campaign.parentCampaignId
-          : undefined;
-        const parentCampaignId = rawParentId ? (dbIdToHashId.get(rawParentId) || rawParentId) : undefined;
-        const cacheKey = hashId || databaseId;
-        const explorerAddr = typeof opp.explorerAddress === 'string' ? opp.explorerAddress.toLowerCase() : '';
-        const isKnownReserve = explorerAddr && mergedOptionsWithLookup.reserveUnderlyingLookup
-          ? mergedOptionsWithLookup.reserveUnderlyingLookup.has(chainTokenKey(opp.chainId ?? 0, explorerAddr))
-          : false;
-        const positionCapExtraction = isKnownReserve
-          ? extractPositionCapFromCampaign(campaign)
-          : {};
-        campaignDetailsCache.set(cacheKey, {
-          startedAt: toIsoFromUnixLike(campaign.startTimestamp),
-          endedAt: toIsoFromUnixLike(campaign.endTimestamp),
-          id: hashId || databaseId,
-          ...(databaseId && { databaseId }),
-          apr: resolved.apr,
-          whitelistOnly: isCampaignWhitelistOnly(campaign),
-          ...(parentCampaignId && { parentCampaignId }),
-          ...(positionCapExtraction.positionCapNative !== undefined && { positionCapNative: positionCapExtraction.positionCapNative }),
-          ...(positionCapExtraction.isCombineCap !== undefined && { isCombineCap: positionCapExtraction.isCombineCap }),
-        });
-        const params = campaign.params ?? {};
-        // params.whitelist/blacklist are top-level Merkl API fields populated by various hookTypes:
-        //   whitelist: hookType=22 (WHITELIST_ADDRESSES), hookType=26 (WHITELIST_KEY_VALUE_STORE), etc.
-        //   blacklist: hookType=4 (SANCTIONED/OFAC), hookType=27 (BLACKLIST_KEY_VALUE_STORE), hookType=28 (BLACKLIST_PER_PROTOCOL), etc.
-        const wl = Array.isArray(params.whitelist) ? (params.whitelist as string[]).filter(Boolean) : [];
-        const bl = Array.isArray(params.blacklist) ? (params.blacklist as string[]).filter(Boolean) : [];
-        const borrowHookProtocols = extractBorrowHookProtocols(params.hooks);
-        const healthFactorHooks = extractHealthFactorHooks(params.hooks);
-        if (wl.length > 0 || bl.length > 0 || borrowHookProtocols.length > 0 || healthFactorHooks.length > 0) {
-          campaignAccessMap.set(cacheKey, {
-            campaignId: cacheKey,
-            chainId: opp.chainId ?? 0,
-            whitelist: wl,
-            blacklist: bl,
-            ...(borrowHookProtocols.length > 0 && { borrowHookProtocols }),
-            ...(healthFactorHooks.length > 0 && { healthFactorHooks }),
+      oppCampaignPromises.push(
+        (async () => {
+          const campaignType = normalizeForecastCampaignTypeLite({
+            distributionType: campaign.distributionType,
           });
-        }
-      })());
+          let rewardTokenPrice: number | undefined;
+          let targetTokenPrice: number | undefined;
+          if (isAmountVariant(campaignType)) {
+            const preResolved =
+              amountVariantPriceMap.get(hashId) ||
+              amountVariantPriceMap.get(databaseId);
+            rewardTokenPrice = preResolved?.rewardTokenPrice;
+            targetTokenPrice = preResolved?.targetTokenPrice;
+          } else {
+            rewardTokenPrice = undefined;
+            targetTokenPrice = undefined;
+          }
+          const resolved = resolveCampaignApr(
+            campaign,
+            campaign.distributionType,
+            rewardTokenPrice,
+            targetTokenPrice
+          );
+          const rawParentId =
+            typeof campaign.parentCampaignId === "string" &&
+            campaign.parentCampaignId
+              ? campaign.parentCampaignId
+              : undefined;
+          const parentCampaignId = rawParentId
+            ? dbIdToHashId.get(rawParentId) || rawParentId
+            : undefined;
+          const cacheKey = hashId || databaseId;
+          const explorerAddr =
+            typeof opp.explorerAddress === "string"
+              ? opp.explorerAddress.toLowerCase()
+              : "";
+          const isKnownReserve =
+            explorerAddr && mergedOptionsWithLookup.reserveUnderlyingLookup
+              ? mergedOptionsWithLookup.reserveUnderlyingLookup.has(
+                  chainTokenKey(opp.chainId ?? 0, explorerAddr)
+                )
+              : false;
+          const positionCapExtraction = isKnownReserve
+            ? extractPositionCapFromCampaign(campaign)
+            : {};
+          campaignDetailsCache.set(cacheKey, {
+            startedAt: toIsoFromUnixLike(campaign.startTimestamp),
+            endedAt: toIsoFromUnixLike(campaign.endTimestamp),
+            id: hashId || databaseId,
+            ...(databaseId && { databaseId }),
+            apr: resolved.apr,
+            whitelistOnly: isCampaignWhitelistOnly(campaign),
+            ...(parentCampaignId && { parentCampaignId }),
+            ...(positionCapExtraction.positionCapNative !== undefined && {
+              positionCapNative: positionCapExtraction.positionCapNative,
+            }),
+            ...(positionCapExtraction.isCombineCap !== undefined && {
+              isCombineCap: positionCapExtraction.isCombineCap,
+            }),
+          });
+          const params = campaign.params ?? {};
+          // params.whitelist/blacklist are top-level Merkl API fields populated by various hookTypes:
+          //   whitelist: hookType=22 (WHITELIST_ADDRESSES), hookType=26 (WHITELIST_KEY_VALUE_STORE), etc.
+          //   blacklist: hookType=4 (SANCTIONED/OFAC), hookType=27 (BLACKLIST_KEY_VALUE_STORE), hookType=28 (BLACKLIST_PER_PROTOCOL), etc.
+          const wl = Array.isArray(params.whitelist)
+            ? (params.whitelist as string[]).filter(Boolean)
+            : [];
+          const bl = Array.isArray(params.blacklist)
+            ? (params.blacklist as string[]).filter(Boolean)
+            : [];
+          const borrowHookProtocols = extractBorrowHookProtocols(params.hooks);
+          const healthFactorHooks = extractHealthFactorHooks(params.hooks);
+          if (
+            wl.length > 0 ||
+            bl.length > 0 ||
+            borrowHookProtocols.length > 0 ||
+            healthFactorHooks.length > 0
+          ) {
+            campaignAccessMap.set(cacheKey, {
+              campaignId: cacheKey,
+              chainId: opp.chainId ?? 0,
+              whitelist: wl,
+              blacklist: bl,
+              ...(borrowHookProtocols.length > 0 && { borrowHookProtocols }),
+              ...(healthFactorHooks.length > 0 && { healthFactorHooks }),
+            });
+          }
+        })()
+      );
     }
   }
   await Promise.all(oppCampaignPromises);
@@ -1531,7 +1848,7 @@ export async function processMerklData(
   for (const opp of liveOpportunities) {
     if (!opp.rewardsRecord?.breakdowns) continue;
     for (const breakdown of opp.rewardsRecord.breakdowns) {
-      const dbId = String(breakdown.campaignId || '').trim();
+      const dbId = String(breakdown.campaignId || "").trim();
       if (!dbId) continue;
       const hashId = dbIdToHashId.get(dbId) || dbId;
       if (!campaignDetailsCache.has(hashId)) {
@@ -1541,27 +1858,36 @@ export async function processMerklData(
   }
 
   if (missingCampaignDbIds.size > 0) {
-    logger.info(`📦 Fetching ${missingCampaignDbIds.size} missing campaign details (fallback)...`);
-    const campaignPromises = Array.from(missingCampaignDbIds).map(async (dbId) => {
-      const details = await fetchMerklCampaignDetails(dbId);
-      if (details) {
-        const cacheKey = details.id || dbId;
-        if (details.id && details.id !== dbId) {
-          dbIdToHashId.set(dbId, details.id);
+    logger.info(
+      `📦 Fetching ${missingCampaignDbIds.size} missing campaign details (fallback)...`
+    );
+    const campaignPromises = Array.from(missingCampaignDbIds).map(
+      async (dbId) => {
+        const details = await fetchMerklCampaignDetails(dbId);
+        if (details) {
+          const cacheKey = details.id || dbId;
+          if (details.id && details.id !== dbId) {
+            dbIdToHashId.set(dbId, details.id);
+          }
+          if (details.parentCampaignId) {
+            details.parentCampaignId =
+              dbIdToHashId.get(details.parentCampaignId) ||
+              details.parentCampaignId;
+          }
+          campaignDetailsCache.set(cacheKey, details);
         }
-        if (details.parentCampaignId) {
-          details.parentCampaignId = dbIdToHashId.get(details.parentCampaignId) || details.parentCampaignId;
-        }
-        campaignDetailsCache.set(cacheKey, details);
+        return { dbId, details };
       }
-      return { dbId, details };
-    });
+    );
     await Promise.all(campaignPromises);
   }
-  logger.info(`✅ Campaign details cache ready: ${campaignDetailsCache.size} items`);
+  logger.info(
+    `✅ Campaign details cache ready: ${campaignDetailsCache.size} items`
+  );
 
   // Build forecast meta map early so breakdowns can be enriched with opportunity-only forecast data
-  const forecastCampaignMetaLite = buildForecastCampaignMetaLiteMap(liveOpportunities);
+  const forecastCampaignMetaLite =
+    buildForecastCampaignMetaLiteMap(liveOpportunities);
 
   // 处理所有 live opportunities（现在可以快速从缓存中获取数据）
   for (const opp of liveOpportunities) {
@@ -1582,19 +1908,20 @@ export async function processMerklData(
       opp.explorerAddress,
       opp.chainId,
       protocolLookup.unambiguous,
-      protocolLookup.v4Underlying,
+      protocolLookup.v4Underlying
     );
-    const marketName = opp.chainId === 1 
-      ? parseMarketNameFromOpportunityName(opp.name, opp.chainId)
-      : 'Unknown';
+    const marketName =
+      opp.chainId === 1
+        ? parseMarketNameFromOpportunityName(opp.name, opp.chainId)
+        : "Unknown";
     const explorerAddress = opp.explorerAddress.toLowerCase();
-    
-    const opportunityId = String(opp.id || '').trim();
-    
+
+    const opportunityId = String(opp.id || "").trim();
+
     if (!opportunityId) {
       logger.warn(`   ⚠️ No opportunity ID found for opportunity ${opp.id}`);
     }
-    
+
     const breakdowns: MerklCampaignBreakdown[] = [];
     const rewardsBreakdowns = opp.rewardsRecord?.breakdowns;
     if (!rewardsBreakdowns?.length) {
@@ -1602,18 +1929,26 @@ export async function processMerklData(
     }
 
     let firstDistributionType: string | undefined;
-    const oppLevelDistributionType = typeof opp.distributionType === 'string' ? opp.distributionType : undefined;
-    if (oppLevelDistributionType && NET_DISTRIBUTION_TYPES.has(oppLevelDistributionType.toUpperCase())) {
+    const oppLevelDistributionType =
+      typeof opp.distributionType === "string"
+        ? opp.distributionType
+        : undefined;
+    if (
+      oppLevelDistributionType &&
+      NET_DISTRIBUTION_TYPES.has(oppLevelDistributionType.toUpperCase())
+    ) {
       firstDistributionType = oppLevelDistributionType;
     }
     for (const rewardBreakdown of rewardsBreakdowns) {
-      const breakdownDbId = String(rewardBreakdown.campaignId || '').trim();
+      const breakdownDbId = String(rewardBreakdown.campaignId || "").trim();
       if (!breakdownDbId) {
-        logger.warn(`   ⚠️ Skipping breakdown without campaignId on opportunity ${opp.id}`);
+        logger.warn(
+          `   ⚠️ Skipping breakdown without campaignId on opportunity ${opp.id}`
+        );
         continue;
       }
 
-      const resolvedHashId = dbIdToHashId.get(breakdownDbId) || '';
+      const resolvedHashId = dbIdToHashId.get(breakdownDbId) || "";
       const cacheKey = resolvedHashId || breakdownDbId;
       const campaignDetails = campaignDetailsCache.get(cacheKey);
       if (!campaignDetails) {
@@ -1624,8 +1959,11 @@ export async function processMerklData(
         firstDistributionType = rewardBreakdown.distributionType;
       }
 
-      const useIntensity = merklBreakdownUsesPointsIntensityFields(rewardBreakdown);
-      const amountVariantPrices = amountVariantPriceMap.get(resolvedHashId || breakdownDbId);
+      const useIntensity =
+        merklBreakdownUsesPointsIntensityFields(rewardBreakdown);
+      const amountVariantPrices = amountVariantPriceMap.get(
+        resolvedHashId || breakdownDbId
+      );
       const pointsFields = useIntensity
         ? merklPointsFieldsFromBreakdownValue(opp, rewardBreakdown, {
             distributionType: rewardBreakdown.distributionType,
@@ -1639,53 +1977,82 @@ export async function processMerklData(
         campaignStartedAt: campaignDetails.startedAt,
         campaignEndedAt: campaignDetails.endedAt,
         campaignId: campaignDetails.id || breakdownDbId,
-        ...(campaignDetails.databaseId && { databaseId: campaignDetails.databaseId }),
+        ...(campaignDetails.databaseId && {
+          databaseId: campaignDetails.databaseId,
+        }),
         whitelistOnly: campaignDetails.whitelistOnly,
         ...extractRewardTokenFields(rewardBreakdown.token),
         ...(pointsFields ?? {}),
-        ...(campaignDetails.parentCampaignId && { parentCampaignId: campaignDetails.parentCampaignId }),
-        ...(campaignDetails.positionCapNative !== undefined && { positionCapNative: campaignDetails.positionCapNative }),
-        ...(campaignDetails.isCombineCap !== undefined && { isCombineCap: campaignDetails.isCombineCap }),
+        ...(campaignDetails.parentCampaignId && {
+          parentCampaignId: campaignDetails.parentCampaignId,
+        }),
+        ...(campaignDetails.positionCapNative !== undefined && {
+          positionCapNative: campaignDetails.positionCapNative,
+        }),
+        ...(campaignDetails.isCombineCap !== undefined && {
+          isCombineCap: campaignDetails.isCombineCap,
+        }),
       });
     }
 
-    const coveredCampaignIds = new Set(breakdowns.map(b => b.campaignId));
+    const coveredCampaignIds = new Set(breakdowns.map((b) => b.campaignId));
     if (Array.isArray(opp.campaigns)) {
       let embedCount = 0;
       let checkedCount = 0;
-      const endedBySymbol = new Map<string, { endedAt: string; startedAt: string; campaignId: string }>();
+      const endedBySymbol = new Map<
+        string,
+        { endedAt: string; startedAt: string; campaignId: string }
+      >();
       for (const campaign of opp.campaigns) {
-        const cDbId = String(campaign.id || '').trim();
-        const cRawCampaignId = String(campaign.campaignId || '').trim();
-        const cHashId = (cRawCampaignId && cRawCampaignId.startsWith('0x')) ? cRawCampaignId : '';
+        const cDbId = String(campaign.id || "").trim();
+        const cRawCampaignId = String(campaign.campaignId || "").trim();
+        const cHashId =
+          cRawCampaignId && cRawCampaignId.startsWith("0x")
+            ? cRawCampaignId
+            : "";
         const cCacheKey = cHashId || cDbId;
         if (!cRawCampaignId || coveredCampaignIds.has(cCacheKey)) continue;
         const details = campaignDetailsCache.get(cCacheKey);
         checkedCount++;
         if (!details) continue;
         if (!isWithinLookbackWindow(details.endedAt)) continue;
-        const rtSymbol = typeof campaign.rewardToken?.symbol === 'string' && campaign.rewardToken.symbol
-          ? campaign.rewardToken.symbol.trim().toLowerCase() : '';
+        const rtSymbol =
+          typeof campaign.rewardToken?.symbol === "string" &&
+          campaign.rewardToken.symbol
+            ? campaign.rewardToken.symbol.trim().toLowerCase()
+            : "";
         if (!rtSymbol) continue;
         const existing = endedBySymbol.get(rtSymbol);
         if (!existing || details.endedAt > existing.endedAt) {
-          endedBySymbol.set(rtSymbol, { endedAt: details.endedAt, startedAt: details.startedAt, campaignId: cCacheKey });
+          endedBySymbol.set(rtSymbol, {
+            endedAt: details.endedAt,
+            startedAt: details.startedAt,
+            campaignId: cCacheKey,
+          });
         }
       }
       for (const breakdown of breakdowns) {
-        const symbol = breakdown.rewardTokenSymbol?.trim().toLowerCase() || '';
+        const symbol = breakdown.rewardTokenSymbol?.trim().toLowerCase() || "";
         if (!symbol) continue;
         const ended = endedBySymbol.get(symbol);
         if (!ended) continue;
-        breakdown.lastEndedCampaign = { startedAt: ended.startedAt, endedAt: ended.endedAt, campaignId: ended.campaignId };
+        breakdown.lastEndedCampaign = {
+          startedAt: ended.startedAt,
+          endedAt: ended.endedAt,
+          campaignId: ended.campaignId,
+        };
         embedCount++;
       }
       if (embedCount > 0) {
-        logger.debug(`   Opp ${opp.id}: ${embedCount} recently-ended embedded into live breakdowns from ${checkedCount} uncovered`);
+        logger.debug(
+          `   Opp ${opp.id}: ${embedCount} recently-ended embedded into live breakdowns from ${checkedCount} uncovered`
+        );
       }
     }
 
-    const intensityCount = breakdowns.filter((b) => b.pointsPerThousandUsd !== undefined).length;
+    const intensityCount = breakdowns.filter(
+      (b) => b.pointsPerThousandUsd !== undefined
+    ).length;
     if (intensityCount > 0) {
       const tvl = Number(opp.tvl) || 0;
       logger.debug(
@@ -1697,9 +2064,12 @@ export async function processMerklData(
     for (const bd of breakdowns) {
       const meta = forecastCampaignMetaLite[bd.campaignId];
       if (meta) {
-        const fields = await buildForecastFieldsFromOpportunity(meta, mergedOptionsWithLookup);
+        const fields = await buildForecastFieldsFromOpportunity(
+          meta,
+          mergedOptionsWithLookup
+        );
         if (fields) Object.assign(bd, fields);
-        if (meta.rawMode && meta.campaignTypeHint === 'TARGET_TOTAL_APR') {
+        if (meta.rawMode && meta.campaignTypeHint === "TARGET_TOTAL_APR") {
           bd.budgetBoundMode = meta.rawMode;
         }
       }
@@ -1711,34 +2081,52 @@ export async function processMerklData(
     // 记录过滤情况
     if (breakdowns.length > filteredBreakdowns.length) {
       const expiredCount = breakdowns.length - filteredBreakdowns.length;
-      logger.info(`   🗑️ Filtered out ${expiredCount} expired campaign(s) for opportunity ${opp.id}`);
+      logger.info(
+        `   🗑️ Filtered out ${expiredCount} expired campaign(s) for opportunity ${opp.id}`
+      );
     }
 
     // 如果过滤后没有有效的 campaign，跳过这个 opportunity
     if (filteredBreakdowns.length === 0) {
-      logger.info(`   ⏭️ Skipping opportunity ${opp.id}: all campaigns expired`);
+      logger.info(
+        `   ⏭️ Skipping opportunity ${opp.id}: all campaigns expired`
+      );
       continue;
     }
 
     const offsetTokenAddresses = extractOffsetTokenAddresses(opp);
-    const isBorrowBl = (opp.identifier?.includes('BORROW_BL') ?? false) || hasBorrowExclusionHook(opp);
+    const isBorrowBl =
+      (opp.identifier?.includes("BORROW_BL") ?? false) ||
+      hasBorrowExclusionHook(opp);
 
-    const { composedCampaignsCompute, composedSubCampaigns } = extractComposedCampaignInfo(opp);
+    const { composedCampaignsCompute, composedSubCampaigns } =
+      extractComposedCampaignInfo(opp);
 
     // Pre-compute V4 reserve ID keys for precise matching in findMatchingMerklOpportunities.
     // Spoke: full 4-component (chainId:spoke:token:hub). Hub: 3-component (chainId:token:hub, no spoke).
     const firstParams = opp.campaigns?.[0]?.params;
-    const ut = typeof firstParams?.underlyingToken === 'string' ? firstParams.underlyingToken : undefined;
-    const sa = typeof firstParams?.spokeAddress === 'string' ? firstParams.spokeAddress : undefined;
-    const ha = typeof firstParams?.hubAddress === 'string' ? firstParams.hubAddress : undefined;
-    const campaignReserveId = sa && ut && ha ? v4ReserveId(opp.chainId, sa, ut, ha) : undefined;
-    const hubScopeKey = ut && ha ? v4HubScopeKey(opp.chainId, ut, ha) : undefined;
+    const ut =
+      typeof firstParams?.underlyingToken === "string"
+        ? firstParams.underlyingToken
+        : undefined;
+    const sa =
+      typeof firstParams?.spokeAddress === "string"
+        ? firstParams.spokeAddress
+        : undefined;
+    const ha =
+      typeof firstParams?.hubAddress === "string"
+        ? firstParams.hubAddress
+        : undefined;
+    const campaignReserveId =
+      sa && ut && ha ? v4ReserveId(opp.chainId, sa, ut, ha) : undefined;
+    const hubScopeKey =
+      ut && ha ? v4HubScopeKey(opp.chainId, ut, ha) : undefined;
 
     // 创建 opportunity 数据对象，根据 action 直接设置对应数组
     const opportunityData: MerklOpportunityData = {
-      supply: opp.action === 'LEND' ? filteredBreakdowns : [],
-      borrow: opp.action === 'BORROW' ? filteredBreakdowns : [],
-      hold: opp.action === 'HOLD' ? filteredBreakdowns : [],
+      supply: opp.action === "LEND" ? filteredBreakdowns : [],
+      borrow: opp.action === "BORROW" ? filteredBreakdowns : [],
+      hold: opp.action === "HOLD" ? filteredBreakdowns : [],
       marketName,
       chainId: opp.chainId,
       protocolVersion,
@@ -1750,31 +2138,34 @@ export async function processMerklData(
       ...(offsetTokenAddresses.length > 0 && { offsetTokenAddresses }),
       ...(isBorrowBl && { borrowBlacklist: true }),
       ...(composedCampaignsCompute && { composedCampaignsCompute }),
-      ...(composedSubCampaigns && composedSubCampaigns.length > 0 && { composedSubCampaigns }),
+      ...(composedSubCampaigns &&
+        composedSubCampaigns.length > 0 && { composedSubCampaigns }),
       ...(campaignReserveId && { campaignReserveId }),
       ...(hubScopeKey && { hubScopeKey }),
     };
-    
+
     // 创建索引键：chainId + explorerAddress
     // V4 Spoke opportunities are indexed by explorerAddress (spoke pool), same as before.
     // Precise reserve ID matching is done in findMatchingMerklOpportunities using campaign params.
     const indexKey = `${opp.chainId}-${explorerAddress}`;
-    
+
     if (!merklData[indexKey]) {
       merklData[indexKey] = [];
     }
     merklData[indexKey]!.push(opportunityData);
   }
-  
+
   // 从索引中提取所有 opportunities 用于保存
   const processedData = Object.values(merklData).flat();
-  
+
   logger.info(`✅ Processed ${processedData.length} Merkl opportunities`);
-  logger.info(`📊 Created index with ${Object.keys(merklData).length} token keys`);
+  logger.info(
+    `📊 Created index with ${Object.keys(merklData).length} token keys`
+  );
   logger.info(
     `📈 Merkl budget price source usage (non-PRETGE): snapshot=${priceSourceStats.snapshot}, reserve=${priceSourceStats.reserve}, coingecko=${priceSourceStats.coingecko}, missing=${priceSourceStats.missing}`
   );
-  
+
   const freshTimestamp = new Date().toISOString();
   staleStatus = {
     ...staleStatus,
@@ -1804,7 +2195,9 @@ export async function processMerklData(
 
   const campaignAccessArr = Array.from(campaignAccessMap.values());
   if (campaignAccessArr.length > 0) {
-    logger.debug(`📋 Campaign access: ${campaignAccessArr.length} campaigns with whitelist/blacklist data`);
+    logger.debug(
+      `📋 Campaign access: ${campaignAccessArr.length} campaigns with whitelist/blacklist data`
+    );
   }
 
   return { index: merklData, campaignAccess: campaignAccessArr };
@@ -1817,7 +2210,7 @@ function extractComposedCampaignInfo(opp: MerklOpportunity): {
   if (!Array.isArray(opp.campaigns)) return {};
   for (const campaign of opp.campaigns) {
     const compute = campaign?.params?.composedCampaignsCompute;
-    if (typeof compute !== 'string' || !compute) continue;
+    if (typeof compute !== "string" || !compute) continue;
     // Only the first campaign with composedCampaignsCompute is used;
     // in practice each MULTILOG_DUTCH opportunity has at most one.
     const rawSubs = campaign?.params?.composedCampaigns;
@@ -1826,9 +2219,18 @@ function extractComposedCampaignInfo(opp: MerklOpportunity): {
       for (const sub of rawSubs) {
         const underlyingToken = sub?.campaignParameters?.underlyingToken;
         composedSubCampaigns.push({
-          underlyingToken: typeof underlyingToken === 'string' ? underlyingToken.toLowerCase() : undefined,
-          campaignType: typeof sub?.campaignType === 'number' ? sub.campaignType : undefined,
-          composedType: typeof sub?.composedType === 'string' ? sub.composedType : undefined,
+          underlyingToken:
+            typeof underlyingToken === "string"
+              ? underlyingToken.toLowerCase()
+              : undefined,
+          campaignType:
+            typeof sub?.campaignType === "number"
+              ? sub.campaignType
+              : undefined,
+          composedType:
+            typeof sub?.composedType === "string"
+              ? sub.composedType
+              : undefined,
         });
       }
     }
@@ -1837,10 +2239,12 @@ function extractComposedCampaignInfo(opp: MerklOpportunity): {
   return {};
 }
 
-export function filterRecentExpiredCampaigns(breakdowns: MerklCampaignBreakdown[]): MerklCampaignBreakdown[] {
+export function filterRecentExpiredCampaigns(
+  breakdowns: MerklCampaignBreakdown[]
+): MerklCampaignBreakdown[] {
   const nowMs = Date.now();
-  return breakdowns.filter(b =>
-    !b.campaignEndedAt || new Date(b.campaignEndedAt).getTime() >= nowMs
+  return breakdowns.filter(
+    (b) => !b.campaignEndedAt || new Date(b.campaignEndedAt).getTime() >= nowMs
   );
 }
 
@@ -1879,7 +2283,12 @@ export function hasHookType14(opp: MerklOpportunity): boolean {
     const hooks: unknown = c?.params?.hooks;
     if (Array.isArray(hooks)) {
       for (const h of hooks) {
-        if (typeof h === 'object' && h !== null && (h as any).hookType === HOOK_TYPE_BORROW_BL) return true;
+        if (
+          typeof h === "object" &&
+          h !== null &&
+          (h as any).hookType === HOOK_TYPE_BORROW_BL
+        )
+          return true;
       }
     }
   }
@@ -1899,23 +2308,34 @@ export function hasBorrowExclusionHook(opp: MerklOpportunity): boolean {
     const hooks: unknown = c?.params?.hooks;
     if (Array.isArray(hooks)) {
       for (const h of hooks) {
-        if (typeof h === 'object' && h !== null && isBorrowExclusionHookType((h as any).hookType)) return true;
+        if (
+          typeof h === "object" &&
+          h !== null &&
+          isBorrowExclusionHookType((h as any).hookType)
+        )
+          return true;
       }
     }
   }
   return false;
 }
 
-export function extractBorrowHookProtocols(hooks: unknown): MerklBorrowHookProtocol[] {
+export function extractBorrowHookProtocols(
+  hooks: unknown
+): MerklBorrowHookProtocol[] {
   if (!Array.isArray(hooks)) return [];
   const protocols: MerklBorrowHookProtocol[] = [];
   for (const h of hooks) {
-    if (typeof h === 'object' && h !== null && (h as any).hookType === HOOK_TYPE_BORROW_BL) {
+    if (
+      typeof h === "object" &&
+      h !== null &&
+      (h as any).hookType === HOOK_TYPE_BORROW_BL
+    ) {
       const hook = h as { protocol?: number; borrowBytesLike?: unknown };
       const borrowBytesLike: string[] = [];
       if (Array.isArray(hook.borrowBytesLike)) {
         for (const b of hook.borrowBytesLike) {
-          if (typeof b === 'string' && b.trim()) {
+          if (typeof b === "string" && b.trim()) {
             borrowBytesLike.push(b);
           }
         }
@@ -1931,19 +2351,33 @@ export function extractBorrowHookProtocols(hooks: unknown): MerklBorrowHookProto
   return protocols;
 }
 
-export function extractHealthFactorHooks(hooks: unknown): MerklHealthFactorHook[] {
+export function extractHealthFactorHooks(
+  hooks: unknown
+): MerklHealthFactorHook[] {
   if (!Array.isArray(hooks)) return [];
   const result: MerklHealthFactorHook[] = [];
   for (const h of hooks) {
-    if (typeof h === 'object' && h !== null && (h as any).hookType === HOOK_TYPE_HEALTH_FACTOR) {
-      const hook = h as { protocol?: number; healthFactorThreshold?: unknown; targetBytesLike?: unknown; chainId?: unknown };
-      const threshold = typeof hook.healthFactorThreshold === 'string' && hook.healthFactorThreshold.trim()
-        ? hook.healthFactorThreshold.trim()
-        : undefined;
-      const target = typeof hook.targetBytesLike === 'string' && hook.targetBytesLike.trim()
-        ? hook.targetBytesLike.trim()
-        : undefined;
-      const cid = typeof hook.chainId === 'number' ? hook.chainId : undefined;
+    if (
+      typeof h === "object" &&
+      h !== null &&
+      (h as any).hookType === HOOK_TYPE_HEALTH_FACTOR
+    ) {
+      const hook = h as {
+        protocol?: number;
+        healthFactorThreshold?: unknown;
+        targetBytesLike?: unknown;
+        chainId?: unknown;
+      };
+      const threshold =
+        typeof hook.healthFactorThreshold === "string" &&
+        hook.healthFactorThreshold.trim()
+          ? hook.healthFactorThreshold.trim()
+          : undefined;
+      const target =
+        typeof hook.targetBytesLike === "string" && hook.targetBytesLike.trim()
+          ? hook.targetBytesLike.trim()
+          : undefined;
+      const cid = typeof hook.chainId === "number" ? hook.chainId : undefined;
       if (threshold && target && cid) {
         result.push({
           protocol: hook.protocol ?? 0,
@@ -1971,9 +2405,7 @@ export function hasBlacklistWithBorrowHook(opp: MerklOpportunity): boolean {
   return hasBorrowExclusionHook(opp);
 }
 
-function extractOffsetTokenAddresses(
-  opp: MerklOpportunity,
-): string[] {
+function extractOffsetTokenAddresses(opp: MerklOpportunity): string[] {
   if (!Array.isArray(opp.campaigns)) return [];
   const seen = new Set<string>();
   const results: string[] = [];
@@ -1981,11 +2413,14 @@ function extractOffsetTokenAddresses(
     const tokens: unknown = campaign?.params?.tokens;
     if (Array.isArray(tokens)) {
       for (const t of tokens) {
-        const addr = typeof t === 'string'
-          ? t.toLowerCase()
-          : (typeof t === 'object' && t !== null && typeof (t as any).underlyingToken === 'string')
-            ? (t as any).underlyingToken.toLowerCase()
-            : null;
+        const addr =
+          typeof t === "string"
+            ? t.toLowerCase()
+            : typeof t === "object" &&
+                t !== null &&
+                typeof (t as any).underlyingToken === "string"
+              ? (t as any).underlyingToken.toLowerCase()
+              : null;
         if (addr && !seen.has(addr)) {
           seen.add(addr);
           results.push(addr);
@@ -2000,21 +2435,34 @@ const SUPPLY_PATTERN = /\b(supply|lend|deposit|stake)\b/i;
 const BORROW_PATTERN = /\b(borrow|loan|debt|repay)\b/i;
 const NET_SUPPLY_PATTERN = /\bnet\s*(supply|lend|deposit|long)\b/i;
 const NET_BORROW_PATTERN = /\bnet\s*(borrow|loan|debt|short)\b/i;
-const BOTH_SIDES_PATTERN = /(?:supply|lend|deposit|stake).*(?:borrow|loan|debt|repay)|(?:borrow|loan|debt|repay).*(?:supply|lend|deposit|stake)/i;
+const BOTH_SIDES_PATTERN =
+  /(?:supply|lend|deposit|stake).*(?:borrow|loan|debt|repay)|(?:borrow|loan|debt|repay).*(?:supply|lend|deposit|stake)/i;
 
 export function regexNetPositionFallback(
   opp: MerklOpportunityData,
-  oppReserveId?: string,
+  oppReserveId?: string
 ): NetPositionConstraint | null {
-  const text = `${opp.name ?? ''} ${opp.description ?? ''}`;
+  const text = `${opp.name ?? ""} ${opp.description ?? ""}`;
   const inferredBorrow = opp.borrow.length > 0;
   const inferredSupply = opp.supply.length > 0;
 
-  if (NET_BORROW_PATTERN.test(text) || (inferredBorrow && BOTH_SIDES_PATTERN.test(text))) {
-    return { sourceSide: 'borrow', offsetReserveIds: oppReserveId ? [oppReserveId] : [] };
+  if (
+    NET_BORROW_PATTERN.test(text) ||
+    (inferredBorrow && BOTH_SIDES_PATTERN.test(text))
+  ) {
+    return {
+      sourceSide: "borrow",
+      offsetReserveIds: oppReserveId ? [oppReserveId] : [],
+    };
   }
-  if (NET_SUPPLY_PATTERN.test(text) || (inferredSupply && BOTH_SIDES_PATTERN.test(text))) {
-    return { sourceSide: 'supply', offsetReserveIds: oppReserveId ? [oppReserveId] : [] };
+  if (
+    NET_SUPPLY_PATTERN.test(text) ||
+    (inferredSupply && BOTH_SIDES_PATTERN.test(text))
+  ) {
+    return {
+      sourceSide: "supply",
+      offsetReserveIds: oppReserveId ? [oppReserveId] : [],
+    };
   }
 
   return null;
@@ -2024,13 +2472,14 @@ export function composedNetPositionConstraint(
   opp: MerklOpportunityData,
   oppReserveId: string,
   reserveIdSet: Set<string>,
-  offsetLevel: OffsetLevel = 'reserve',
+  offsetLevel: OffsetLevel = "reserve"
 ): NetPositionConstraint | null {
-  if (opp.composedCampaignsCompute !== '1-2') return null;
+  if (opp.composedCampaignsCompute !== "1-2") return null;
 
   // Side inferred from action via breakdown arrays:
   // action=LEND → supply[], action=BORROW → borrow[], consistent with L0.
-  const sourceSide: 'supply' | 'borrow' = opp.borrow.length > 0 ? 'borrow' : 'supply';
+  const sourceSide: "supply" | "borrow" =
+    opp.borrow.length > 0 ? "borrow" : "supply";
 
   const offsetReserveIds: string[] = [];
   const seen = new Set<string>();
@@ -2038,7 +2487,12 @@ export function composedNetPositionConstraint(
   if (opp.composedSubCampaigns) {
     for (const sub of opp.composedSubCampaigns) {
       if (sub.underlyingToken) {
-        const resolvedIds = resolveOffsetReserveIds(oppReserveId, sub.underlyingToken, reserveIdSet, offsetLevel);
+        const resolvedIds = resolveOffsetReserveIds(
+          oppReserveId,
+          sub.underlyingToken,
+          reserveIdSet,
+          offsetLevel
+        );
         for (const rid of resolvedIds) {
           if (!seen.has(rid)) {
             seen.add(rid);
@@ -2066,46 +2520,88 @@ export async function detectNetPositionConstraint(
   reserveIdSet: Set<string>,
   symbolLookup: Map<string, string>,
   cachedConstraint?: NetPositionConstraint | null,
-  llmFn?: () => Promise<import('./merklLlmClient.js').LlmOutcome>,
-  offsetLevel: OffsetLevel = 'reserve',
+  llmFn?: () => Promise<import("./merklLlmClient.js").LlmOutcome>,
+  offsetLevel: OffsetLevel = "reserve",
   offsetTokenAddresses?: string[],
+  symbolLookupCI?: Map<string, string[]>,
+  equivLookup?: Map<string, Set<string>>
 ): Promise<NetPositionConstraint | null> {
   const resolvedOffsetAddrs = offsetTokenAddresses ?? opp.offsetTokenAddresses;
-  const layer0 = extractNetPositionConstraint(opp, sourceTokenAddress, oppReserveId, reserveIdSet, offsetLevel, resolvedOffsetAddrs);
+  const layer0 = extractNetPositionConstraint(
+    opp,
+    sourceTokenAddress,
+    oppReserveId,
+    reserveIdSet,
+    offsetLevel,
+    resolvedOffsetAddrs
+  );
   if (layer0) return layer0;
 
-  const layer05 = composedNetPositionConstraint(opp, oppReserveId, reserveIdSet, offsetLevel);
+  const layer05 = composedNetPositionConstraint(
+    opp,
+    oppReserveId,
+    reserveIdSet,
+    offsetLevel
+  );
   if (layer05) return layer05;
 
-  const text = `${opp.name ?? ''} ${opp.description ?? ''}`.toLowerCase();
-  if (text.includes('looping')) return null;
+  const text = `${opp.name ?? ""} ${opp.description ?? ""}`.toLowerCase();
+  if (text.includes("looping")) return null;
 
   if (cachedConstraint !== undefined) return cachedConstraint;
 
   let llmUnavailable = false;
   if (llmFn) {
     const outcome = await llmFn();
-    if (outcome.tag === 'result' && outcome.value) {
+    if (outcome.tag === "result" && outcome.value) {
       const { sourceSide, offsetTokenSymbols } = outcome.value;
       if (offsetTokenSymbols && offsetTokenSymbols.length > 0) {
         const offsetReserveIds: string[] = [];
         const seen = new Set<string>();
+        const ciMap = symbolLookupCI ?? new Map<string, string[]>();
+        const equivMap = equivLookup ?? new Map<string, Set<string>>();
         for (const symbol of offsetTokenSymbols) {
-          const tokenAddr = symbolLookup.get(chainSymbolKey(opp.chainId, symbol));
-          if (!tokenAddr) return null;
-          const resolvedIds = resolveOffsetReserveIds(oppReserveId, tokenAddr.toLowerCase(), reserveIdSet, offsetLevel);
-          if (resolvedIds.length === 0) return null;
-          for (const rid of resolvedIds) {
-            if (!seen.has(rid)) {
-              seen.add(rid);
-              offsetReserveIds.push(rid);
+          const tokenAddrs = resolveOffsetSymbolAddress(
+            opp.chainId,
+            symbol,
+            symbolLookup,
+            ciMap,
+            equivMap
+          );
+          if (tokenAddrs.length === 0) {
+            logger.warn(`⚠️ LLM offset symbol unresolvable`, {
+              symbol,
+              chainId: opp.chainId,
+              oppId: opp.opportunityId,
+              oppName: opp.name,
+            });
+            continue;
+          }
+          for (const addr of tokenAddrs) {
+            const resolvedIds = resolveOffsetReserveIds(
+              oppReserveId,
+              addr.toLowerCase(),
+              reserveIdSet,
+              offsetLevel
+            );
+            for (const rid of resolvedIds) {
+              if (!seen.has(rid)) {
+                seen.add(rid);
+                offsetReserveIds.push(rid);
+              }
             }
           }
         }
-        if (offsetReserveIds.length > 0) return { sourceSide, offsetReserveIds };
+        // Explicit self-add (align with L0 behavior — see ADR-0036)
+        if (!seen.has(oppReserveId)) {
+          offsetReserveIds.unshift(oppReserveId);
+          seen.add(oppReserveId);
+        }
+        if (offsetReserveIds.length > 0)
+          return { sourceSide, offsetReserveIds };
       }
     }
-    llmUnavailable = outcome.tag === 'unavailable';
+    llmUnavailable = outcome.tag === "unavailable";
   }
 
   if (llmUnavailable) {
@@ -2116,27 +2612,30 @@ export async function detectNetPositionConstraint(
   return null;
 }
 
-const NET_DISTRIBUTION_TYPES = new Set(['AAVE_V4_NET_APR', 'AAVE_NET_APR']);
+const NET_DISTRIBUTION_TYPES = new Set(["AAVE_V4_NET_APR", "AAVE_NET_APR"]);
 
 export function extractNetPositionConstraint(
   opp: MerklOpportunityData,
   sourceTokenAddress: string,
   oppReserveId: string,
   reserveIdSet: Set<string>,
-  offsetLevel: OffsetLevel = 'reserve',
-  offsetTokenAddresses?: string[],
+  offsetLevel: OffsetLevel = "reserve",
+  offsetTokenAddresses?: string[]
 ): NetPositionConstraint | null {
   const type = opp.opportunityType;
-  const isNetType = type && type.startsWith('AAVE_NET_');
-  const isNetDistribution = !isNetType && opp.distributionType && NET_DISTRIBUTION_TYPES.has(opp.distributionType.toUpperCase());
+  const isNetType = type && type.startsWith("AAVE_NET_");
+  const isNetDistribution =
+    !isNetType &&
+    opp.distributionType &&
+    NET_DISTRIBUTION_TYPES.has(opp.distributionType.toUpperCase());
 
   if (!isNetType && !isNetDistribution) return null;
 
-  let sourceSide: 'supply' | 'borrow';
+  let sourceSide: "supply" | "borrow";
   if (isNetType) {
-    sourceSide = type === 'AAVE_NET_BORROWING' ? 'borrow' : 'supply';
+    sourceSide = type === "AAVE_NET_BORROWING" ? "borrow" : "supply";
   } else {
-    sourceSide = opp.borrow.length > 0 ? 'borrow' : 'supply';
+    sourceSide = opp.borrow.length > 0 ? "borrow" : "supply";
   }
 
   const offsetReserveIds: string[] = [];
@@ -2144,9 +2643,14 @@ export function extractNetPositionConstraint(
 
   const debugMissing: string[] = [];
 
-  for (const addr of (offsetTokenAddresses ?? [])) {
+  for (const addr of offsetTokenAddresses ?? []) {
     const normalizedAddr = addr.toLowerCase();
-    const resolvedIds = resolveOffsetReserveIds(oppReserveId, normalizedAddr, reserveIdSet, offsetLevel);
+    const resolvedIds = resolveOffsetReserveIds(
+      oppReserveId,
+      normalizedAddr,
+      reserveIdSet,
+      offsetLevel
+    );
     for (const rid of resolvedIds) {
       if (!seen.has(rid)) {
         seen.add(rid);
@@ -2164,7 +2668,9 @@ export function extractNetPositionConstraint(
   }
 
   if (offsetReserveIds.length === 0) {
-    logger.warn(`⚠️ extractNetPositionConstraint: no offsetReserveIds for opp "${opp.name}" type=${type} dt=${opp.distributionType} chain=${opp.chainId} offsetAddrs=${JSON.stringify(offsetTokenAddresses)} missingAddrs=${JSON.stringify(debugMissing)} reserveIdSetSize=${reserveIdSet.size}`);
+    logger.warn(
+      `⚠️ extractNetPositionConstraint: no offsetReserveIds for opp "${opp.name}" type=${type} dt=${opp.distributionType} chain=${opp.chainId} offsetAddrs=${JSON.stringify(offsetTokenAddresses)} missingAddrs=${JSON.stringify(debugMissing)} reserveIdSetSize=${reserveIdSet.size}`
+    );
     return null;
   }
 
@@ -2187,15 +2693,19 @@ export function findMatchingMerklOpportunities(
     hubAddress?: string | null;
     reserveId?: string;
   },
-  merklData: Record<string, MerklOpportunityData[]>,
+  merklData: Record<string, MerklOpportunityData[]>
 ): MerklOpportunityData[] {
   const matchedOpportunities: MerklOpportunityData[] = [];
   const seenOpportunities = new Set<MerklOpportunityData>();
-  const isV4 = item.marketName.startsWith('AaveV4');
+  const isV4 = item.marketName.startsWith("AaveV4");
 
   const tokenAddressesToCheck: string[] = isV4
-    ? [item.tokenAddress, item.spokeAddress].filter((addr): addr is string => addr !== null && addr !== undefined)
-    : [item.aTokenAddress, item.vTokenAddress].filter((addr): addr is string => addr !== null && addr !== undefined);
+    ? [item.tokenAddress, item.spokeAddress].filter(
+        (addr): addr is string => addr !== null && addr !== undefined
+      )
+    : [item.aTokenAddress, item.vTokenAddress].filter(
+        (addr): addr is string => addr !== null && addr !== undefined
+      );
 
   for (const tokenAddr of tokenAddressesToCheck) {
     const indexKey = `${item.chainId}-${tokenAddr.toLowerCase()}`;
@@ -2213,7 +2723,15 @@ export function findMatchingMerklOpportunities(
           if (opp.campaignReserveId) {
             if (opp.campaignReserveId !== item.reserveId) continue;
           } else if (opp.hubScopeKey) {
-            if (opp.hubScopeKey !== v4HubScopeKey(item.chainId, item.tokenAddress, item.hubAddress ?? '')) continue;
+            if (
+              opp.hubScopeKey !==
+              v4HubScopeKey(
+                item.chainId,
+                item.tokenAddress,
+                item.hubAddress ?? ""
+              )
+            )
+              continue;
           }
         }
 
@@ -2237,7 +2755,7 @@ export function findMatchingMerklOpportunities(
  * Independent Hub campaigns (non-parent) are preserved. Non-V4 groups pass through untouched.
  */
 export function deduplicateHubSpokeBreakdowns(
-  groups: MerklOpportunityGroup[],
+  groups: MerklOpportunityGroup[]
 ): MerklOpportunityGroup[] {
   // 1. Collect parentCampaignIds from V4 Spoke groups
   const replacedHubIds = new Set<string>();
@@ -2255,12 +2773,15 @@ export function deduplicateHubSpokeBreakdowns(
   const result: MerklOpportunityGroup[] = [];
   let removedCount = 0;
   for (const group of groups) {
-    if (!group.opportunityType?.startsWith('AAVE_V4_HUB_')) {
+    if (!group.opportunityType?.startsWith("AAVE_V4_HUB_")) {
       result.push(group);
       continue;
     }
     const filtered = group.breakdowns.filter((bd) => {
-      if (replacedHubIds.has(bd.campaignId) || (bd.databaseId && replacedHubIds.has(bd.databaseId))) {
+      if (
+        replacedHubIds.has(bd.campaignId) ||
+        (bd.databaseId && replacedHubIds.has(bd.databaseId))
+      ) {
         removedCount++;
         return false;
       }
@@ -2271,7 +2792,9 @@ export function deduplicateHubSpokeBreakdowns(
     }
   }
   if (removedCount > 0) {
-    logger.info(`   🔄 Hub/Spoke dedup: removed ${removedCount} parent Hub breakdown(s) replaced by Spoke`);
+    logger.info(
+      `   🔄 Hub/Spoke dedup: removed ${removedCount} parent Hub breakdown(s) replaced by Spoke`
+    );
   }
   return result;
 }
@@ -2279,20 +2802,27 @@ export function deduplicateHubSpokeBreakdowns(
 /**
  * 格式化 Merkl campaign breakdown 为字符串（用于 CSV）
  * 字段顺序：campaignApr, campaignStartedAt, campaignEndedAt, campaignId
- * 
+ *
  * 按 opportunity 分组显示，每个 opportunity 的 breakdowns 后跟其对应的链接
  * 格式：breakdown1; breakdown2, link1; breakdown3; breakdown4, link2
- * 
+ *
  * @param breakdowns Merkl campaign breakdowns 数组（用于 CSV 时，每个 breakdown 可能包含 opportunityLink 属性）
  */
-export function formatMerklBreakdown(breakdowns: Array<MerklCampaignBreakdown & { opportunityId?: string }>): string {
+export function formatMerklBreakdown(
+  breakdowns: Array<MerklCampaignBreakdown & { opportunityId?: string }>
+): string {
   if (breakdowns.length === 0) {
-    return '';
+    return "";
   }
-  
-  const groupedByOppId = new Map<string, Array<MerklCampaignBreakdown & { opportunityId?: string }>>();
-  const noOppIdBreakdowns: Array<MerklCampaignBreakdown & { opportunityId?: string }> = [];
-  
+
+  const groupedByOppId = new Map<
+    string,
+    Array<MerklCampaignBreakdown & { opportunityId?: string }>
+  >();
+  const noOppIdBreakdowns: Array<
+    MerklCampaignBreakdown & { opportunityId?: string }
+  > = [];
+
   for (const b of breakdowns) {
     if (b.opportunityId) {
       if (!groupedByOppId.has(b.opportunityId)) {
@@ -2303,49 +2833,49 @@ export function formatMerklBreakdown(breakdowns: Array<MerklCampaignBreakdown & 
       noOppIdBreakdowns.push(b);
     }
   }
-  
+
   // 格式化每个分组的 breakdowns
   const formatBreakdown = (b: MerklCampaignBreakdown): string => {
-    let startDate = 'N/A';
+    let startDate = "N/A";
     if (b.campaignStartedAt) {
       const date = new Date(b.campaignStartedAt);
-      startDate = date.toLocaleString('en-US', { 
-        year: 'numeric', 
-        month: '2-digit', 
-        day: '2-digit', 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true
+      startDate = date.toLocaleString("en-US", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
       });
     }
-    let endDate = 'N/A';
+    let endDate = "N/A";
     if (b.campaignEndedAt) {
       const date = new Date(b.campaignEndedAt);
-      endDate = date.toLocaleString('en-US', { 
-        year: 'numeric', 
-        month: '2-digit', 
-        day: '2-digit', 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true
+      endDate = date.toLocaleString("en-US", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
       });
     }
     return `${b.campaignApr * 100}% (${startDate} - ${endDate}, ${b.campaignId})`;
   };
-  
+
   // 构建分组后的字符串
   const parts: string[] = [];
-  
+
   // 处理有 oppId 的分组：每个分组的 breakdowns 后跟其 oppId
   for (const [oppId, groupBreakdowns] of groupedByOppId.entries()) {
-    const breakdownsStr = groupBreakdowns.map(formatBreakdown).join('; ');
+    const breakdownsStr = groupBreakdowns.map(formatBreakdown).join("; ");
     parts.push(`${breakdownsStr}, oppId:${oppId}`);
   }
-  
+
   // 处理没有 oppId 的 breakdowns
   if (noOppIdBreakdowns.length > 0) {
-    parts.push(noOppIdBreakdowns.map(formatBreakdown).join('; '));
+    parts.push(noOppIdBreakdowns.map(formatBreakdown).join("; "));
   }
-  
-  return parts.join('; ');
+
+  return parts.join("; ");
 }
