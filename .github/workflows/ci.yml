@@ -32,6 +32,34 @@ jobs:
       - name: CI (root + backend)
         run: npm run ci
 
+  openapi-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared-contracts (required for codegen)
+        run: npm run build -w @internal/aave-shared-contracts
+
+      - name: Regenerate OpenAPI spec
+        run: npm run gen:openapi -w aave-dashboard-backend
+
+      - name: Check spec is committed and up to date
+        run: |
+          if ! git diff --exit-code backend/static/openapi.json; then
+            echo "❌ openapi.json is out of date. Run 'npm run gen:openapi -w aave-dashboard-backend' and commit the result."
+            git diff --stat backend/static/openapi.json
+            exit 1
+          fi
+          echo "✅ openapi.json is up to date"
 
   security-audit:
     runs-on: ubuntu-latest
@@ -75,7 +103,7 @@ jobs:
   # local pre-push hook. The broken commit gets pushed, CI catches it,
   # and this job reverts it so the remote branch stays green.
   auto-revert-on-failure:
-    needs: [build-and-prune, security-audit]
+    needs: [build-and-prune, security-audit, openapi-consistency]
     if: failure() && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
