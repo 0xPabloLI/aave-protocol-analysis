@@ -434,7 +434,7 @@
             "description": "GET /api/markets 响应形状；收益率类数字为百分数（序列化层由比例 ×100）。 从 RuntimeReserveData 派生：覆写 nullable 漂移字段 + 激励子类型截断。"
           },
           "ApiMeritCampaignGroup": {
-            "$ref": "#/components/schemas/CampaignGroup%3CApiMeritCampaignBreakdown%3E"
+            "$ref": "#/components/schemas/CampaignGroupApiMeritCampaignBreakdown"
           },
           "CampaignGroup<ApiMeritCampaignBreakdown>": {
             "type": "object",
@@ -727,7 +727,7 @@
             "additionalProperties": false
           },
           "ApiBrevisCampaignItem": {
-            "$ref": "#/components/schemas/CampaignGroup%3CApiBrevisBreakdown%3E"
+            "$ref": "#/components/schemas/CampaignGroupApiBrevisBreakdown"
           },
           "CampaignGroup<ApiBrevisBreakdown>": {
             "type": "object",
@@ -1032,9 +1032,9 @@
         "description": "GET /api/markets 响应形状；收益率类数字为百分数（序列化层由比例 ×100）。 从 RuntimeReserveData 派生：覆写 nullable 漂移字段 + 激励子类型截断。"
       },
       "ApiMeritCampaignGroup": {
-        "$ref": "#/components/schemas/CampaignGroup%3CApiMeritCampaignBreakdown%3E"
+        "$ref": "#/components/schemas/CampaignGroupApiMeritCampaignBreakdown"
       },
-      "CampaignGroup<ApiMeritCampaignBreakdown>": {
+      "CampaignGroupApiMeritCampaignBreakdown": {
         "type": "object",
         "properties": {
           "link": {
@@ -1325,9 +1325,9 @@
         "additionalProperties": false
       },
       "ApiBrevisCampaignItem": {
-        "$ref": "#/components/schemas/CampaignGroup%3CApiBrevisBreakdown%3E"
+        "$ref": "#/components/schemas/CampaignGroupApiBrevisBreakdown"
       },
-      "CampaignGroup<ApiBrevisBreakdown>": {
+      "CampaignGroupApiBrevisBreakdown": {
         "type": "object",
         "properties": {
           "link": {

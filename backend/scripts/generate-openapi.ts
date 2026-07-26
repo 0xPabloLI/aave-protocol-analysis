@@ -54,7 +54,18 @@ function extractDefinitions(
 }
 
 /**
- * 递归遍历 JSON 对象，将所有 $ref 从 "#/definitions/..." 重写为 "#/components/schemas/..."
+ * 清理 schema 名称：移除泛型尖括号等在 OpenAPI 3.1 $ref 中不安全的字符。
+ * ts-json-schema-generator 会生成类似 "CampaignGroup<ApiMeritCampaignBreakdown>" 的名称，
+ * 其中尖括号在 $ref URL 中会被编码为 %3C/%3E，导致 openapi-zod-client 无法解析。
+ */
+function sanitizeSchemaName(name: string): string {
+  return name.replace(/[<>]/g, "");
+}
+
+/**
+ * 递归遍历 JSON 对象，执行两个变换：
+ * 1. 将所有 $ref 从 "#/definitions/..." 重写为 "#/components/schemas/..."
+ * 2. 清理 $ref 中的 schema 名称（移除尖括号）
  * ts-json-schema-generator 默认使用 JSON Schema 的 #/definitions/ 格式，
  * 而 OpenAPI 3.1 要求 #/components/schemas/ 格式。
  */
@@ -64,7 +75,15 @@ function rewriteRefs(obj: unknown): unknown {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
     if (key === "$ref" && typeof value === "string") {
-      result[key] = value.replace(/^#\/definitions\//, "#/components/schemas/");
+      const rewritten = value.replace(
+        /^#\/definitions\//,
+        "#/components/schemas/"
+      );
+      // 清理 $ref 中的 schema 名称（处理 URL 编码的尖括号）
+      result[key] = rewritten
+        .replace(/%3C/g, "")
+        .replace(/%3E/g, "")
+        .replace(/<([^>]*)>/g, "$1");
     } else {
       result[key] = rewriteRefs(value);
     }
@@ -196,10 +215,12 @@ const spec = {
     },
   },
   components: {
-    schemas: {
-      MarketsErrorResponse: marketsErrorResponse,
-      ...allDefinitions,
-    },
+    schemas: Object.fromEntries(
+      Object.entries({
+        MarketsErrorResponse: marketsErrorResponse,
+        ...allDefinitions,
+      }).map(([name, schema]) => [sanitizeSchemaName(name), schema])
+    ),
   },
 };
 
