@@ -32,7 +32,6 @@ jobs:
       - name: CI (root + backend)
         run: npm run ci
 
-
   security-audit:
     runs-on: ubuntu-latest
     steps:
@@ -47,7 +46,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit runtime dependencies (shared script, excludes GHSA-848j-6mx2-7j84)
+      - name: Audit runtime dependencies (shared script, excludes GHSA-848j-6mx2-7j84, GHSA-58qx-3vcg-4xpx, GHSA-frvp-7c67-39w9)
         run: npm run audit
 
   socket-firewall:
