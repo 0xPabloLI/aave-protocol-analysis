@@ -1,4 +1,7 @@
-import type { BaseCampaignBreakdown, CampaignGroup } from '@internal/aave-shared-config';
+import type {
+  BaseCampaignBreakdown,
+  CampaignGroup,
+} from "@internal/aave-shared-config";
 
 export {
   normalizeAddress,
@@ -14,7 +17,7 @@ export {
   v4ReserveId,
   v4HubScopeKey,
   aaveProReserveIdBase64,
-} from './keys.js';
+} from "./keys.js";
 
 export {
   rayToRatio,
@@ -25,8 +28,8 @@ export {
   SERIALIZER_RULES,
   RATIO_FIELDS,
   PERCENT_FIELDS,
-} from './units.js';
-export type { FieldUnit } from './units.js';
+} from "./units.js";
+export type { FieldUnit } from "./units.js";
 
 export function fifoEvict<K>(map: Map<K, unknown>, maxEntries: number): void {
   while (map.size > maxEntries) {
@@ -41,16 +44,16 @@ export function fifoEvict<K>(map: Map<K, unknown>, maxEntries: number): void {
 // ============================================================
 
 export function getErrorCode(error: unknown): string | undefined {
-  if (typeof error === 'object' && error !== null) {
-    if ('code' in error) {
+  if (typeof error === "object" && error !== null) {
+    if ("code" in error) {
       const code = (error as { code: unknown }).code;
-      if (typeof code === 'string') return code;
+      if (typeof code === "string") return code;
     }
-    if ('cause' in error) {
+    if ("cause" in error) {
       const cause = (error as { cause: unknown }).cause;
-      if (typeof cause === 'object' && cause !== null && 'code' in cause) {
+      if (typeof cause === "object" && cause !== null && "code" in cause) {
         const code = (cause as { code: unknown }).code;
-        if (typeof code === 'string') return code;
+        if (typeof code === "string") return code;
       }
     }
   }
@@ -66,7 +69,7 @@ export const ENDED_CAMPAIGN_LOOKBACK_DAYS = 90;
 export function isWithinLookbackWindow(
   campaignEndedAt: string | undefined,
   nowMs: number = Date.now(),
-  lookbackDays: number = ENDED_CAMPAIGN_LOOKBACK_DAYS,
+  lookbackDays: number = ENDED_CAMPAIGN_LOOKBACK_DAYS
 ): boolean {
   if (!campaignEndedAt) return false;
   const endMs = new Date(campaignEndedAt).getTime();
@@ -92,13 +95,13 @@ export interface MeritCampaignBreakdown extends BaseCampaignBreakdown {
 export type MeritCampaignGroup = CampaignGroup<MeritCampaignBreakdown>;
 
 export type ForecastCampaignTypeLite =
-  | 'MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  | 'DUTCH_AUCTION'
-  | 'FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE'
-  | 'TARGET_TOTAL_APR'
-  | 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE'
-  | 'FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT'
-  | 'MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT';
+  | "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE"
+  | "DUTCH_AUCTION"
+  | "FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE"
+  | "TARGET_TOTAL_APR"
+  | "FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE"
+  | "FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT"
+  | "MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT";
 
 export interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
   /** Merkl Campaign Hash ID (hex, e.g. 0x0cf07a3891...). Used as Map key and in Merkl web UI URLs. */
@@ -230,25 +233,48 @@ export interface RuntimeReserveData {
 
 export type ApiMeritCampaignBreakdown = Pick<
   MeritCampaignBreakdown,
-  'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
-  | 'campaignType' | 'positionCapNative' | 'positionCapUsd' | 'isCombineCap' | 'message' | 'aprCap' | 'rewardTokenSymbol' | 'totalBudget' | 'latestTvl'
+  | "campaignApr"
+  | "campaignStartedAt"
+  | "campaignEndedAt"
+  | "campaignId"
+  | "campaignType"
+  | "positionCapNative"
+  | "positionCapUsd"
+  | "isCombineCap"
+  | "message"
+  | "aprCap"
+  | "rewardTokenSymbol"
+  | "totalBudget"
+  | "latestTvl"
 >;
 
 export type ApiMeritCampaignGroup = CampaignGroup<ApiMeritCampaignBreakdown>;
 
 export type ApiMerklBreakdown = MerklCampaignBreakdown;
 
-export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown> & { opportunityId?: string };
+export type ApiMerklOpportunityGroup = CampaignGroup<ApiMerklBreakdown> & {
+  opportunityId?: string;
+};
 
 export type ApiBrevisBreakdown = Pick<
   BrevisCampaignBreakdown,
-  'campaignApr' | 'campaignStartedAt' | 'campaignEndedAt' | 'campaignId'
-  | 'campaignType' | 'aprCap' | 'totalBudget' | 'latestTvl' | 'positionCapNative' | 'positionCapUsd' | 'isCombineCap' | 'rewardTokenSymbol'
+  | "campaignApr"
+  | "campaignStartedAt"
+  | "campaignEndedAt"
+  | "campaignId"
+  | "campaignType"
+  | "aprCap"
+  | "totalBudget"
+  | "latestTvl"
+  | "positionCapNative"
+  | "positionCapUsd"
+  | "isCombineCap"
+  | "rewardTokenSymbol"
 >;
 
 export type ApiBrevisCampaignItem = CampaignGroup<ApiBrevisBreakdown>;
 
-export type FetchSource = 'sdk' | 'rpc' | 'stale' | 'none';
+export type FetchSource = "sdk" | "rpc" | "stale" | "none";
 
 export interface SideFetchResult {
   success: boolean;
@@ -282,7 +308,7 @@ export interface MarketsPayload {
 
 /** Describes a net-position constraint detected for a Merkl opportunity. */
 export interface NetPositionConstraint {
-  sourceSide: 'supply' | 'borrow';
+  sourceSide: "supply" | "borrow";
   offsetReserveIds: string[];
 }
 
@@ -291,53 +317,53 @@ export interface NetPositionConstraint {
 // ============================================================
 
 export const EXPECTED_RUNTIME_FIELDS = [
-  'reserveId',
-  'marketName',
-  'chainName',
-  'chainId',
-  'tokenName',
-  'tokenSymbol',
-  'tokenAddress',
-  'tokenPrice',
-  'utilizationPct',
-  'aTokenAddress',
-  'vTokenAddress',
-  'supplyApy',
-  'supplyDisabled',
-  'isFrozen',
-  'isPaused',
-  'isActive',
-  'borrowApy',
-  'borrowDisabled',
-  'decimals',
-  'supplyCap',
-  'borrowCap',
-  'deficit',
-  'supplied',
-  'borrowed',
-  'hubBorrowed',
-  'hubSupplied',
-  'liquidity',
-  'protocolFee',
-  'slopeBelowOptimal',
-  'slopeAboveOptimal',
-  'optimalUtilization',
-  'baseBorrowRate',
-  'aaveProReserveId',
-  'meritSupplys',
-  'meritBorrows',
-  'merklSupplys',
-  'merklBorrows',
-  'merklHolds',
-  'brevisSupplys',
-  'brevisBorrows',
-  'hubId',
-  'hubName',
-  'hubAddress',
-  'spokeId',
-  'spokeName',
-  'spokeAddress',
-  'collateralRisk',
+  "reserveId",
+  "marketName",
+  "chainName",
+  "chainId",
+  "tokenName",
+  "tokenSymbol",
+  "tokenAddress",
+  "tokenPrice",
+  "utilizationPct",
+  "aTokenAddress",
+  "vTokenAddress",
+  "supplyApy",
+  "supplyDisabled",
+  "isFrozen",
+  "isPaused",
+  "isActive",
+  "borrowApy",
+  "borrowDisabled",
+  "decimals",
+  "supplyCap",
+  "borrowCap",
+  "deficit",
+  "supplied",
+  "borrowed",
+  "hubBorrowed",
+  "hubSupplied",
+  "liquidity",
+  "protocolFee",
+  "slopeBelowOptimal",
+  "slopeAboveOptimal",
+  "optimalUtilization",
+  "baseBorrowRate",
+  "aaveProReserveId",
+  "meritSupplys",
+  "meritBorrows",
+  "merklSupplys",
+  "merklBorrows",
+  "merklHolds",
+  "brevisSupplys",
+  "brevisBorrows",
+  "hubId",
+  "hubName",
+  "hubAddress",
+  "spokeId",
+  "spokeName",
+  "spokeAddress",
+  "collateralRisk",
 ] as const;
 
 export function validateRuntimeReserveShape(
@@ -352,7 +378,7 @@ export function validateRuntimeReserveShape(
   return missing;
 }
 
-type ExpectedField = typeof EXPECTED_RUNTIME_FIELDS[number];
+type ExpectedField = (typeof EXPECTED_RUNTIME_FIELDS)[number];
 type RuntimeKeys = keyof RuntimeReserveData;
 
 type _AllFieldsCovered = Exclude<RuntimeKeys, ExpectedField>;
@@ -370,3 +396,58 @@ export interface SpokeHubTopologyEntry {
 
 /** Full spoke-hub topology snapshot, used to drive addressBookRegistry and RPC fallback. */
 export type SpokeHubTopology = SpokeHubTopologyEntry[];
+
+// ============================================================
+// Side Data (GET /api/meta/side-data response)
+// ============================================================
+
+/** Sub-sources of the side-data endpoint, used for structured error reporting. */
+export type SideDataSubSource =
+  | "categories"
+  | "fdv"
+  | "forecast"
+  | "campaignAccess";
+
+/** Structured per-sub-source errors, replacing the removed `partial: boolean` field. */
+export type SideDataSubSourceErrors = Partial<
+  Record<SideDataSubSource, string>
+>;
+
+/** GET /api/meta/side-data response payload. */
+export interface SideDataPayload {
+  generatedAt: string;
+  categories?: {
+    uniqueSymbolsStablecoins: string[];
+    uniqueSymbolsEth: string[];
+    fetchedAt: string;
+    staleTimeMs: number;
+  };
+  fdv?: {
+    items: Array<{ symbol: string | null; fdvUsd: number | null }>;
+    fetchedAt: string;
+    staleTimeMs: number;
+  };
+  forecast?: {
+    items: Array<{
+      campaignId: string;
+      requiredDaily?: number;
+      distributedSoFar: number;
+      endTimestamp: number;
+    }>;
+    errors: Array<{ campaignId: string; message: string }>;
+    staleTimeMs: number;
+  };
+  campaignAccess?: {
+    campaigns: Record<
+      string,
+      {
+        chainId: number;
+        whitelist: string[];
+        blacklist: string[];
+        borrowHookProtocols?: MerklBorrowHookProtocol[];
+      }
+    >;
+    updatedAt: string;
+  };
+  errors?: SideDataSubSourceErrors;
+}
