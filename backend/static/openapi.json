@@ -71,7 +71,11 @@
                       "type": "string"
                     }
                   },
-                  "required": ["errorCode", "error", "message"]
+                  "required": [
+                    "errorCode",
+                    "error",
+                    "message"
+                  ]
                 }
               }
             }
@@ -134,7 +138,11 @@
                       "type": "string"
                     }
                   },
-                  "required": ["errorCode", "error", "message"]
+                  "required": [
+                    "errorCode",
+                    "error",
+                    "message"
+                  ]
                 }
               }
             }
@@ -150,7 +158,10 @@
         "properties": {
           "errorCode": {
             "type": "string",
-            "enum": ["MARKETS_SNAPSHOT_NOT_READY", "MARKETS_SNAPSHOT_STALE"]
+            "enum": [
+              "MARKETS_SNAPSHOT_NOT_READY",
+              "MARKETS_SNAPSHOT_STALE"
+            ]
           },
           "error": {
             "type": "string"
@@ -159,11 +170,15 @@
             "type": "string"
           }
         },
-        "required": ["errorCode", "error", "message"]
+        "required": [
+          "errorCode",
+          "error",
+          "message"
+        ]
       },
       "MarketsResponse": {
         "$schema": "http://json-schema.org/draft-07/schema#",
-        "$ref": "#/definitions/MarketsResponse",
+        "$ref": "#/components/schemas/MarketsResponse",
         "definitions": {
           "MarketsResponse": {
             "type": "object",
@@ -200,7 +215,10 @@
                     "type": "boolean"
                   },
                   "staleAgeMs": {
-                    "type": ["number", "null"]
+                    "type": [
+                      "number",
+                      "null"
+                    ]
                   }
                 },
                 "required": [
@@ -214,11 +232,14 @@
               "reserves": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/MarketWithSpread"
+                  "$ref": "#/components/schemas/MarketWithSpread"
                 }
               }
             },
-            "required": ["snapshot", "reserves"],
+            "required": [
+              "snapshot",
+              "reserves"
+            ],
             "additionalProperties": false
           },
           "MarketWithSpread": {
@@ -226,51 +247,57 @@
             "additionalProperties": false,
             "properties": {
               "supplyApy": {
-                "type": ["number", "null"]
+                "type": [
+                  "number",
+                  "null"
+                ]
               },
               "borrowApy": {
-                "type": ["number", "null"]
+                "type": [
+                  "number",
+                  "null"
+                ]
               },
               "meritSupplys": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/ApiMeritCampaignGroup"
+                  "$ref": "#/components/schemas/ApiMeritCampaignGroup"
                 }
               },
               "meritBorrows": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/ApiMeritCampaignGroup"
+                  "$ref": "#/components/schemas/ApiMeritCampaignGroup"
                 }
               },
               "merklSupplys": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/ApiMerklOpportunityGroup"
+                  "$ref": "#/components/schemas/ApiMerklOpportunityGroup"
                 }
               },
               "merklBorrows": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/ApiMerklOpportunityGroup"
+                  "$ref": "#/components/schemas/ApiMerklOpportunityGroup"
                 }
               },
               "merklHolds": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/ApiMerklOpportunityGroup"
+                  "$ref": "#/components/schemas/ApiMerklOpportunityGroup"
                 }
               },
               "brevisSupplys": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/ApiBrevisCampaignItem"
+                  "$ref": "#/components/schemas/ApiBrevisCampaignItem"
                 }
               },
               "brevisBorrows": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/ApiBrevisCampaignItem"
+                  "$ref": "#/components/schemas/ApiBrevisCampaignItem"
                 }
               },
               "reserveId": {
@@ -301,10 +328,16 @@
                 "type": "number"
               },
               "aTokenAddress": {
-                "type": ["string", "null"]
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "vTokenAddress": {
-                "type": ["string", "null"]
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "supplyDisabled": {
                 "type": "boolean"
@@ -401,7 +434,7 @@
             "description": "GET /api/markets 响应形状；收益率类数字为百分数（序列化层由比例 ×100）。 从 RuntimeReserveData 派生：覆写 nullable 漂移字段 + 激励子类型截断。"
           },
           "ApiMeritCampaignGroup": {
-            "$ref": "#/definitions/CampaignGroup%3CApiMeritCampaignBreakdown%3E"
+            "$ref": "#/components/schemas/CampaignGroup%3CApiMeritCampaignBreakdown%3E"
           },
           "CampaignGroup<ApiMeritCampaignBreakdown>": {
             "type": "object",
@@ -418,7 +451,7 @@
               "breakdowns": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/ApiMeritCampaignBreakdown"
+                  "$ref": "#/components/schemas/ApiMeritCampaignBreakdown"
                 }
               },
               "netPositionConstraint": {
@@ -428,7 +461,10 @@
                     "properties": {
                       "sourceSide": {
                         "type": "string",
-                        "enum": ["supply", "borrow"]
+                        "enum": [
+                          "supply",
+                          "borrow"
+                        ]
                       },
                       "offsetReserveIds": {
                         "type": "array",
@@ -437,7 +473,10 @@
                         }
                       }
                     },
-                    "required": ["sourceSide", "offsetReserveIds"],
+                    "required": [
+                      "sourceSide",
+                      "offsetReserveIds"
+                    ],
                     "additionalProperties": false
                   },
                   {
@@ -449,7 +488,10 @@
                 "type": "boolean"
               }
             },
-            "required": ["link", "breakdowns"],
+            "required": [
+              "link",
+              "breakdowns"
+            ],
             "additionalProperties": false
           },
           "ApiMeritCampaignBreakdown": {
@@ -468,7 +510,7 @@
                 "type": "string"
               },
               "campaignType": {
-                "$ref": "#/definitions/ForecastCampaignTypeLite"
+                "$ref": "#/components/schemas/ForecastCampaignTypeLite"
               },
               "positionCapNative": {
                 "type": "string",
@@ -537,7 +579,7 @@
               "breakdowns": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/ApiMerklBreakdown"
+                  "$ref": "#/components/schemas/ApiMerklBreakdown"
                 }
               },
               "netPositionConstraint": {
@@ -547,7 +589,10 @@
                     "properties": {
                       "sourceSide": {
                         "type": "string",
-                        "enum": ["supply", "borrow"]
+                        "enum": [
+                          "supply",
+                          "borrow"
+                        ]
                       },
                       "offsetReserveIds": {
                         "type": "array",
@@ -556,7 +601,10 @@
                         }
                       }
                     },
-                    "required": ["sourceSide", "offsetReserveIds"],
+                    "required": [
+                      "sourceSide",
+                      "offsetReserveIds"
+                    ],
                     "additionalProperties": false
                   },
                   {
@@ -568,10 +616,13 @@
                 "type": "boolean"
               }
             },
-            "required": ["breakdowns", "link"]
+            "required": [
+              "breakdowns",
+              "link"
+            ]
           },
           "ApiMerklBreakdown": {
-            "$ref": "#/definitions/MerklCampaignBreakdown"
+            "$ref": "#/components/schemas/MerklCampaignBreakdown"
           },
           "MerklCampaignBreakdown": {
             "type": "object",
@@ -621,13 +672,16 @@
                 "type": "string"
               },
               "campaignType": {
-                "$ref": "#/definitions/ForecastCampaignTypeLite"
+                "$ref": "#/components/schemas/ForecastCampaignTypeLite"
               },
               "totalBudget": {
                 "type": "number"
               },
               "aprCap": {
-                "type": ["number", "null"]
+                "type": [
+                  "number",
+                  "null"
+                ]
               },
               "latestTvl": {
                 "type": "number"
@@ -655,7 +709,11 @@
                     "type": "string"
                   }
                 },
-                "required": ["startedAt", "endedAt", "campaignId"],
+                "required": [
+                  "startedAt",
+                  "endedAt",
+                  "campaignId"
+                ],
                 "additionalProperties": false,
                 "description": "Most recently ended campaign embedded into this live breakdown (matched by rewardTokenSymbol)."
               }
@@ -669,7 +727,7 @@
             "additionalProperties": false
           },
           "ApiBrevisCampaignItem": {
-            "$ref": "#/definitions/CampaignGroup%3CApiBrevisBreakdown%3E"
+            "$ref": "#/components/schemas/CampaignGroup%3CApiBrevisBreakdown%3E"
           },
           "CampaignGroup<ApiBrevisBreakdown>": {
             "type": "object",
@@ -686,7 +744,7 @@
               "breakdowns": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/definitions/ApiBrevisBreakdown"
+                  "$ref": "#/components/schemas/ApiBrevisBreakdown"
                 }
               },
               "netPositionConstraint": {
@@ -696,7 +754,10 @@
                     "properties": {
                       "sourceSide": {
                         "type": "string",
-                        "enum": ["supply", "borrow"]
+                        "enum": [
+                          "supply",
+                          "borrow"
+                        ]
                       },
                       "offsetReserveIds": {
                         "type": "array",
@@ -705,7 +766,10 @@
                         }
                       }
                     },
-                    "required": ["sourceSide", "offsetReserveIds"],
+                    "required": [
+                      "sourceSide",
+                      "offsetReserveIds"
+                    ],
                     "additionalProperties": false
                   },
                   {
@@ -717,7 +781,10 @@
                 "type": "boolean"
               }
             },
-            "required": ["link", "breakdowns"],
+            "required": [
+              "link",
+              "breakdowns"
+            ],
             "additionalProperties": false
           },
           "ApiBrevisBreakdown": {
@@ -736,7 +803,7 @@
                 "type": "string"
               },
               "campaignType": {
-                "$ref": "#/definitions/ForecastCampaignTypeLite"
+                "$ref": "#/components/schemas/ForecastCampaignTypeLite"
               },
               "aprCap": {
                 "type": "number"
@@ -778,51 +845,57 @@
         "additionalProperties": false,
         "properties": {
           "supplyApy": {
-            "type": ["number", "null"]
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "borrowApy": {
-            "type": ["number", "null"]
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "meritSupplys": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ApiMeritCampaignGroup"
+              "$ref": "#/components/schemas/ApiMeritCampaignGroup"
             }
           },
           "meritBorrows": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ApiMeritCampaignGroup"
+              "$ref": "#/components/schemas/ApiMeritCampaignGroup"
             }
           },
           "merklSupplys": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ApiMerklOpportunityGroup"
+              "$ref": "#/components/schemas/ApiMerklOpportunityGroup"
             }
           },
           "merklBorrows": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ApiMerklOpportunityGroup"
+              "$ref": "#/components/schemas/ApiMerklOpportunityGroup"
             }
           },
           "merklHolds": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ApiMerklOpportunityGroup"
+              "$ref": "#/components/schemas/ApiMerklOpportunityGroup"
             }
           },
           "brevisSupplys": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ApiBrevisCampaignItem"
+              "$ref": "#/components/schemas/ApiBrevisCampaignItem"
             }
           },
           "brevisBorrows": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ApiBrevisCampaignItem"
+              "$ref": "#/components/schemas/ApiBrevisCampaignItem"
             }
           },
           "reserveId": {
@@ -853,10 +926,16 @@
             "type": "number"
           },
           "aTokenAddress": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "vTokenAddress": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "supplyDisabled": {
             "type": "boolean"
@@ -953,7 +1032,7 @@
         "description": "GET /api/markets 响应形状；收益率类数字为百分数（序列化层由比例 ×100）。 从 RuntimeReserveData 派生：覆写 nullable 漂移字段 + 激励子类型截断。"
       },
       "ApiMeritCampaignGroup": {
-        "$ref": "#/definitions/CampaignGroup%3CApiMeritCampaignBreakdown%3E"
+        "$ref": "#/components/schemas/CampaignGroup%3CApiMeritCampaignBreakdown%3E"
       },
       "CampaignGroup<ApiMeritCampaignBreakdown>": {
         "type": "object",
@@ -970,7 +1049,7 @@
           "breakdowns": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ApiMeritCampaignBreakdown"
+              "$ref": "#/components/schemas/ApiMeritCampaignBreakdown"
             }
           },
           "netPositionConstraint": {
@@ -980,7 +1059,10 @@
                 "properties": {
                   "sourceSide": {
                     "type": "string",
-                    "enum": ["supply", "borrow"]
+                    "enum": [
+                      "supply",
+                      "borrow"
+                    ]
                   },
                   "offsetReserveIds": {
                     "type": "array",
@@ -989,7 +1071,10 @@
                     }
                   }
                 },
-                "required": ["sourceSide", "offsetReserveIds"],
+                "required": [
+                  "sourceSide",
+                  "offsetReserveIds"
+                ],
                 "additionalProperties": false
               },
               {
@@ -1001,7 +1086,10 @@
             "type": "boolean"
           }
         },
-        "required": ["link", "breakdowns"],
+        "required": [
+          "link",
+          "breakdowns"
+        ],
         "additionalProperties": false
       },
       "ApiMeritCampaignBreakdown": {
@@ -1020,7 +1108,7 @@
             "type": "string"
           },
           "campaignType": {
-            "$ref": "#/definitions/ForecastCampaignTypeLite"
+            "$ref": "#/components/schemas/ForecastCampaignTypeLite"
           },
           "positionCapNative": {
             "type": "string",
@@ -1089,7 +1177,7 @@
           "breakdowns": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ApiMerklBreakdown"
+              "$ref": "#/components/schemas/ApiMerklBreakdown"
             }
           },
           "netPositionConstraint": {
@@ -1099,7 +1187,10 @@
                 "properties": {
                   "sourceSide": {
                     "type": "string",
-                    "enum": ["supply", "borrow"]
+                    "enum": [
+                      "supply",
+                      "borrow"
+                    ]
                   },
                   "offsetReserveIds": {
                     "type": "array",
@@ -1108,7 +1199,10 @@
                     }
                   }
                 },
-                "required": ["sourceSide", "offsetReserveIds"],
+                "required": [
+                  "sourceSide",
+                  "offsetReserveIds"
+                ],
                 "additionalProperties": false
               },
               {
@@ -1120,10 +1214,13 @@
             "type": "boolean"
           }
         },
-        "required": ["breakdowns", "link"]
+        "required": [
+          "breakdowns",
+          "link"
+        ]
       },
       "ApiMerklBreakdown": {
-        "$ref": "#/definitions/MerklCampaignBreakdown"
+        "$ref": "#/components/schemas/MerklCampaignBreakdown"
       },
       "MerklCampaignBreakdown": {
         "type": "object",
@@ -1173,13 +1270,16 @@
             "type": "string"
           },
           "campaignType": {
-            "$ref": "#/definitions/ForecastCampaignTypeLite"
+            "$ref": "#/components/schemas/ForecastCampaignTypeLite"
           },
           "totalBudget": {
             "type": "number"
           },
           "aprCap": {
-            "type": ["number", "null"]
+            "type": [
+              "number",
+              "null"
+            ]
           },
           "latestTvl": {
             "type": "number"
@@ -1207,7 +1307,11 @@
                 "type": "string"
               }
             },
-            "required": ["startedAt", "endedAt", "campaignId"],
+            "required": [
+              "startedAt",
+              "endedAt",
+              "campaignId"
+            ],
             "additionalProperties": false,
             "description": "Most recently ended campaign embedded into this live breakdown (matched by rewardTokenSymbol)."
           }
@@ -1221,7 +1325,7 @@
         "additionalProperties": false
       },
       "ApiBrevisCampaignItem": {
-        "$ref": "#/definitions/CampaignGroup%3CApiBrevisBreakdown%3E"
+        "$ref": "#/components/schemas/CampaignGroup%3CApiBrevisBreakdown%3E"
       },
       "CampaignGroup<ApiBrevisBreakdown>": {
         "type": "object",
@@ -1238,7 +1342,7 @@
           "breakdowns": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/ApiBrevisBreakdown"
+              "$ref": "#/components/schemas/ApiBrevisBreakdown"
             }
           },
           "netPositionConstraint": {
@@ -1248,7 +1352,10 @@
                 "properties": {
                   "sourceSide": {
                     "type": "string",
-                    "enum": ["supply", "borrow"]
+                    "enum": [
+                      "supply",
+                      "borrow"
+                    ]
                   },
                   "offsetReserveIds": {
                     "type": "array",
@@ -1257,7 +1364,10 @@
                     }
                   }
                 },
-                "required": ["sourceSide", "offsetReserveIds"],
+                "required": [
+                  "sourceSide",
+                  "offsetReserveIds"
+                ],
                 "additionalProperties": false
               },
               {
@@ -1269,7 +1379,10 @@
             "type": "boolean"
           }
         },
-        "required": ["link", "breakdowns"],
+        "required": [
+          "link",
+          "breakdowns"
+        ],
         "additionalProperties": false
       },
       "ApiBrevisBreakdown": {
@@ -1288,7 +1401,7 @@
             "type": "string"
           },
           "campaignType": {
-            "$ref": "#/definitions/ForecastCampaignTypeLite"
+            "$ref": "#/components/schemas/ForecastCampaignTypeLite"
           },
           "aprCap": {
             "type": "number"
@@ -1368,13 +1481,22 @@
                   "type": "object",
                   "properties": {
                     "symbol": {
-                      "type": ["string", "null"]
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "fdvUsd": {
-                      "type": ["number", "null"]
+                      "type": [
+                        "number",
+                        "null"
+                      ]
                     }
                   },
-                  "required": ["symbol", "fdvUsd"],
+                  "required": [
+                    "symbol",
+                    "fdvUsd"
+                  ],
                   "additionalProperties": false
                 }
               },
@@ -1385,7 +1507,11 @@
                 "type": "number"
               }
             },
-            "required": ["items", "fetchedAt", "staleTimeMs"],
+            "required": [
+              "items",
+              "fetchedAt",
+              "staleTimeMs"
+            ],
             "additionalProperties": false
           },
           "forecast": {
@@ -1429,7 +1555,10 @@
                       "type": "string"
                     }
                   },
-                  "required": ["campaignId", "message"],
+                  "required": [
+                    "campaignId",
+                    "message"
+                  ],
                   "additionalProperties": false
                 }
               },
@@ -1437,7 +1566,11 @@
                 "type": "number"
               }
             },
-            "required": ["items", "errors", "staleTimeMs"],
+            "required": [
+              "items",
+              "errors",
+              "staleTimeMs"
+            ],
             "additionalProperties": false
           },
           "campaignAccess": {
@@ -1466,11 +1599,15 @@
                     "borrowHookProtocols": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/definitions/MerklBorrowHookProtocol"
+                        "$ref": "#/components/schemas/MerklBorrowHookProtocol"
                       }
                     }
                   },
-                  "required": ["chainId", "whitelist", "blacklist"],
+                  "required": [
+                    "chainId",
+                    "whitelist",
+                    "blacklist"
+                  ],
                   "additionalProperties": false
                 }
               },
@@ -1478,14 +1615,19 @@
                 "type": "string"
               }
             },
-            "required": ["campaigns", "updatedAt"],
+            "required": [
+              "campaigns",
+              "updatedAt"
+            ],
             "additionalProperties": false
           },
           "errors": {
-            "$ref": "#/definitions/SideDataSubSourceErrors"
+            "$ref": "#/components/schemas/SideDataSubSourceErrors"
           }
         },
-        "required": ["generatedAt"],
+        "required": [
+          "generatedAt"
+        ],
         "additionalProperties": false,
         "description": "GET /api/meta/side-data response payload."
       },
@@ -1502,7 +1644,10 @@
             }
           }
         },
-        "required": ["protocol", "borrowBytesLike"],
+        "required": [
+          "protocol",
+          "borrowBytesLike"
+        ],
         "additionalProperties": false
       },
       "SideDataSubSourceErrors": {

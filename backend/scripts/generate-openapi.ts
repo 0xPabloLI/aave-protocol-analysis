@@ -53,6 +53,25 @@ function extractDefinitions(
   return (schema.definitions ?? {}) as Record<string, unknown>;
 }
 
+/**
+ * 递归遍历 JSON 对象，将所有 $ref 从 "#/definitions/..." 重写为 "#/components/schemas/..."
+ * ts-json-schema-generator 默认使用 JSON Schema 的 #/definitions/ 格式，
+ * 而 OpenAPI 3.1 要求 #/components/schemas/ 格式。
+ */
+function rewriteRefs(obj: unknown): unknown {
+  if (obj === null || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(rewriteRefs);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    if (key === "$ref" && typeof value === "string") {
+      result[key] = value.replace(/^#\/definitions\//, "#/components/schemas/");
+    } else {
+      result[key] = rewriteRefs(value);
+    }
+  }
+  return result;
+}
+
 // 为各入口类型生成 schema
 const marketsResponseSchema = generateSchemaForType(
   BACKEND_TYPES_PATH,
@@ -188,8 +207,11 @@ const spec = {
 // 写入文件
 // ============================================================
 
+// 重写 $ref 路径：#/definitions/ → #/components/schemas/
+const finalSpec = rewriteRefs(spec) as typeof spec;
+
 const outPath = new URL("../static/openapi.json", import.meta.url);
 mkdirSync(new URL("../static", import.meta.url), { recursive: true });
-writeFileSync(outPath, JSON.stringify(spec, null, 2) + "\n");
+writeFileSync(outPath, JSON.stringify(finalSpec, null, 2) + "\n");
 
 console.log(`✅ OpenAPI spec written to ${outPath.pathname}`);
