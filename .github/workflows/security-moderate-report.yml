@@ -33,6 +33,18 @@ jobs:
             const fs = require('fs');
             const { execSync } = require('child_process');
 
+            // Extract GHSA exclusion list from package.json audit script
+            // (single source of truth — same list used by `npm run audit` gate)
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const auditScript = pkg.scripts?.audit || '';
+            const excludeMatch = auditScript.match(/grep -vE ['"]([^'"]+)['"]/);
+            const excludedGhsas = new Set(
+              excludeMatch
+                ? excludeMatch[1].split('|').filter((s) => s.startsWith('GHSA-'))
+                : []
+            );
+            core.info(`Excluded GHSAs: ${[...excludedGhsas].join(', ') || '(none)'}`);
+
             try {
               execSync('npm audit --omit=dev --json > audit-report.json || true', {
                 stdio: 'inherit',
@@ -44,31 +56,66 @@ jobs:
 
             const report = JSON.parse(fs.readFileSync('audit-report.json', 'utf8'));
             const vulnerabilities = report.vulnerabilities || {};
-            const moderate = Object.entries(vulnerabilities)
+
+            const allModerate = Object.entries(vulnerabilities)
               .filter(([, detail]) => detail && detail.severity === 'moderate')
               .map(([name, detail]) => {
-                const via = Array.isArray(detail.via)
-                  ? detail.via.find((item) => item && typeof item === 'object' && item.title)
-                  : null;
+                const viaItems = Array.isArray(detail.via) ? detail.via : [];
+                const advisoryVia = viaItems.find(
+                  (item) => item && typeof item === 'object' && item.title
+                );
+                const ghsa = advisoryVia?.url?.match(/GHSA-[a-z0-9-]+/)?.[0] || '';
+                // via entries that are strings = names of vulnerable parent deps
+                const parentDeps = viaItems.filter(
+                  (item) => typeof item === 'string'
+                );
                 return {
                   name,
                   range: detail.range || 'unknown',
-                  title: via?.title || 'Moderate severity advisory',
-                  url: via?.url || '',
+                  title: advisoryVia?.title || 'Moderate severity advisory',
+                  url: advisoryVia?.url || '',
+                  ghsa,
+                  parentDeps,
                 };
               });
+
+            // First pass: filter out vulnerabilities whose GHSA is in the exclusion list
+            // and collect their package names for the second pass
+            const excludedPackages = new Set();
+            for (const item of allModerate) {
+              if (item.ghsa && excludedGhsas.has(item.ghsa)) {
+                excludedPackages.add(item.name);
+              }
+            }
+
+            // Second pass: also filter indirect deps whose via strings all point to
+            // already-excluded packages (e.g. @modelcontextprotocol/sdk via @hono/node-server)
+            const moderate = allModerate.filter((item) => {
+              if (item.ghsa && excludedGhsas.has(item.ghsa)) return false;
+              if (!item.ghsa && item.parentDeps.length > 0) {
+                return !item.parentDeps.every((dep) => excludedPackages.has(dep));
+              }
+              return true;
+            });
+            const excludedCount = allModerate.length - moderate.length;
 
             const now = new Date().toISOString();
             let markdown = `## Moderate dependency vulnerabilities\n\nGenerated at: ${now}\n\n`;
             if (moderate.length === 0) {
               markdown += 'No moderate vulnerabilities found in runtime dependencies.\n';
+              if (excludedCount > 0) {
+                markdown += `\n_${excludedCount} moderate vulnerabilit${excludedCount === 1 ? 'y' : 'ies'} excluded by audit allowlist (see \`package.json\` audit script)._`;
+              }
             } else {
-              markdown += `Found **${moderate.length}** moderate vulnerabilities.\n\n`;
+              markdown += `Found **${moderate.length}** moderate vulnerabilit${moderate.length === 1 ? 'y' : 'ies'}.\n\n`;
               markdown += '| Package | Affected Range | Advisory |\n';
               markdown += '| --- | --- | --- |\n';
               for (const item of moderate) {
                 const advisory = item.url ? `[${item.title}](${item.url})` : item.title;
                 markdown += `| ${item.name} | ${item.range} | ${advisory} |\n`;
+              }
+              if (excludedCount > 0) {
+                markdown += `\n_${excludedCount} additional moderate vulnerabilit${excludedCount === 1 ? 'y' : 'ies'} excluded by audit allowlist._`;
               }
             }
 
@@ -108,4 +155,47 @@ jobs:
                 title,
                 body,
               });
+            }
+
+      - name: Close tracking issue when no moderate vulnerabilities remain
+        if: steps.summary.outputs.count == '0'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const fs = require('fs');
+            const title = 'Security audit: moderate vulnerabilities (tracking)';
+            const body = fs.readFileSync('${{ steps.summary.outputs.report_path }}', 'utf8');
+            const { owner, repo } = context.repo;
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find((issue) => issue.title === title);
+
+            if (existing) {
+              // Update body with final state, then close
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body,
+              });
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body: 'All moderate vulnerabilities have been resolved or excluded. Closing tracking issue.',
+              });
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                state: 'closed',
+              });
+              core.info(`Closed tracking issue #${existing.number}`);
+            } else {
+              core.info('No open tracking issue to close.');
             }
