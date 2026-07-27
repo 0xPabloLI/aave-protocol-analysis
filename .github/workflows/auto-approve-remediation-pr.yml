@@ -9,13 +9,15 @@ permissions:
   pull-requests: write
 
 jobs:
-  # Job 1: github-actions[bot] PRs (ci-remediation, subgraph-sync)
+  # Job 1: github-actions[bot] PRs (ci-remediation, proactive-audit-fix, subgraph-sync, coingecko-sync)
   approve-github-actions-pr:
     if: >
       github.event.pull_request.user.login == 'github-actions[bot]' &&
       (
         startsWith(github.event.pull_request.head.ref, 'bot/ci-auto-remediation-') ||
-        startsWith(github.event.pull_request.head.ref, 'bot/subgraph-sync-')
+        startsWith(github.event.pull_request.head.ref, 'bot/proactive-audit-fix-') ||
+        startsWith(github.event.pull_request.head.ref, 'bot/subgraph-sync-') ||
+        startsWith(github.event.pull_request.head.ref, 'bot/sync-coingecko-platform-map-')
       )
     runs-on: ubuntu-latest
     steps:
@@ -38,18 +40,25 @@ jobs:
             let allowed;
             let policyLabel;
 
-            if (branch.startsWith('bot/ci-auto-remediation-')) {
+            if (branch.startsWith('bot/ci-auto-remediation-') || branch.startsWith('bot/proactive-audit-fix-')) {
               allowed = new Set([
                 'package.json',
                 'package-lock.json',
                 'backend/package.json',
               ]);
-              policyLabel = 'CI auto-remediation';
+              policyLabel = branch.startsWith('bot/proactive-audit-fix-')
+                ? 'Proactive audit fix'
+                : 'CI auto-remediation';
             } else if (branch.startsWith('bot/subgraph-sync-')) {
               allowed = new Set([
                 'docs/api/aave-subgraph-deployments.snapshot.json',
               ]);
               policyLabel = 'Subgraph sync';
+            } else if (branch.startsWith('bot/sync-coingecko-platform-map-')) {
+              allowed = new Set([
+                'src/generated/coingecko-platform-by-chain-id.ts',
+              ]);
+              policyLabel = 'CoinGecko platform map sync';
             } else {
               core.setFailed(`Unknown bot branch pattern: ${branch}`);
               return;

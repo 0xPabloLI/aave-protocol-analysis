@@ -1,6 +1,7 @@
 # AGENTS.md (Slim)
 
 ## Project Snapshot
+
 - Monorepo (npm workspaces) with four packages + backend:
   - `packages/aave-shared-contracts` — shared type definitions (`RuntimeReserveData`, `MarketsPayload`, `NetPositionConstraint`), field registry, validation
   - `packages/aave-fetcher` — data aggregation (`fetchMarketsData`): Aave SDK + Merit + Merkl + Brevis
@@ -11,18 +12,22 @@
 - Root `src/` = CLI entry (`cli.ts`) + package re-export (`index.ts`); backend imports from `@internal/*` packages, NOT from root dist.
 
 ## Core Commands
+
 ### Root (workspace-aware)
+
 - `npm run dev` — run fetcher CLI
 - `npm run build` — build shared-contracts → fetcher → root (ordered)
 - `npm run ci:remote` — full CI-equivalent local gate
 
 ### Packages
+
 - `npm run build -w @internal/aave-shared-contracts` — build shared types
 - `npm run build -w @internal/aave-fetcher` — build fetcher
 - `npm run test -w @internal/aave-shared-contracts` — shared contracts tests
 - `npm run test -w @internal/aave-fetcher` — fetcher tests
 
 ### Backend
+
 - `npm run dev -w aave-dashboard-backend` — run backend
 - `npm run build -w aave-dashboard-backend` — compile backend
 - `npm run test -w aave-dashboard-backend` — backend tests
@@ -31,38 +36,45 @@
 ## Deployment (Hard Safety Gate)
 
 ### ⛔ Before ANY deploy command, you MUST run `railway status` and verify:
+
 - The **linked service** is the one you intend to deploy to
 - If deploying the app → linked service MUST be `aave-protocol-analysis`
 - If the linked service is `Postgres-mDWG` → **STOP. Do NOT deploy.**
 
 ### Two-service topology
 
-| Service | Type | Builder | Deploy method |
-|---|---|---|---|
-| `aave-protocol-analysis` | App (Node.js) | Dockerfile | `railway up` |
-| `Postgres-mDWG` | Database (PostgreSQL) | Template image | `railway redeploy --from-source` |
+| Service                  | Type                  | Builder        | Deploy method                    |
+| ------------------------ | --------------------- | -------------- | -------------------------------- |
+| `aave-protocol-analysis` | App (Node.js)         | Dockerfile     | `railway up`                     |
+| `Postgres-mDWG`          | Database (PostgreSQL) | Template image | `railway redeploy --from-source` |
 
 ### App deploy
+
 ```bash
 railway up --detach --service aave-protocol-analysis -m "commit message"
 ```
 
 ### DB redeploy (only when needed, e.g., after config change)
+
 ```bash
 railway redeploy --service Postgres-mDWG --from-source -y
 ```
+
 Do NOT use `railway up` for the database — it will push the app's Dockerfile build
 to the DB service, replacing PostgreSQL with a Node.js container.
 
 ### ⚠️ Consequences of deploying app code to Postgres-mDWG
+
 Service outage (DB replaced by Node.js container), recoverable via `railway redeploy --service Postgres-mDWG --from-source -y`. Data persists on the volume.
 
 ### Post-deploy verification
+
 - App healthcheck needs ~3min to warm up (oracle prices + market data fetch)
 - Verify: `railway status` → app should show `● Online`, DB should show `● Online`
 - Verify: `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}`
 
 ## Session Workflow
+
 1. **Bootstrap when needed**: For substantial implementation, debugging, or design sessions, load `using-superpowers` via skill tool. Load `brainstorming` only for feature design, behavior changes, or solution exploration — skip for lightweight inspection, explanation, and routine work.
 2. **Hook policy**: Husky hooks have auto-fix capability. `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged). `pre-push` → `scripts/hook-autofix.sh pre-push` which runs `ci` (build+test, non-fixable) then auto-fixable checks (bin-paths, globstar, audit). If auto-fix changes files in pre-push, the commit is amended and you must push again. Do not bypass with `--no-verify` unless the user explicitly confirms. CI auto-reverts direct pushes that fail CI.
 3. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
@@ -71,8 +83,8 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
 6. **Cross-session boundary**: before committing, inspect `git diff` and `git diff --staged` for changes not made in the current session. If unrelated unstaged/unstaged changes exist (from another session or prior work), **STOP** and confirm with the user whether to include, exclude, or stash them. Never silently bundle foreign changes into your commit.
 7. **No code changes without explicit go-ahead**: 在用户确认开始或给出明确实施指令前，不修改任何代码文件。讨论、调研、Grill 阶段只做分析和方案设计。
 8. **Mandatory implementation workflow**: 每次改代码之前必须走完以下工作流，不得跳步：
-   1. **Grill with Docs** — 用 `grill-with-docs` skill 审视方案，确认设计决策有文档支撑
-   2. **To Spec** — 用 `to-spec` skill 将对话结论合成为 spec 文档
+   1. **Grill with Docs** — 用 `grill-with-docs` skill 审视方案，确认设计决策有文档支撑。**必须主动做场景风险分析**：穷举边界场景（并发/竞态、内存泄漏、数据一致性、CI/CD 交互、外部 API 失败模式），验证跨包/跨消费者一致性。涉及内存缓存的改动另参 `docs/memory-leak-checklist.md`。
+   2. **To Spec** — 用 `to-spec` skill 将对话结论合成为 spec 文档。**必须包含 Scenario & Risk Verification 章节**（场景矩阵），矩阵行直接成为 TDD 测试用例。**无矩阵 = spec 不完整**。
    3. **To Tickets** — 用 `to-tickets` skill 将 spec 拆分为带依赖边的 tracer-bullet tickets
    4. **TDD Implement** — 逐 ticket 先思考最佳实践的改法是什么，再用 `implement` skill 实施；`implement` 必须强制调用 `tdd`（red → green → refactor），关键逻辑必须先写测试
    5. **Code Review** — 实施完成后用 `code-review` skill 做双轴审查（Standards + Spec）
@@ -81,21 +93,25 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
 9. **每次修改都用最佳实践**: 改代码前先考虑最佳实践的改法是什么，再动手实施。
 
 ## Architecture Rules
+
 - ES modules only: local TS imports must use `.js` extension in source imports.
 - API fields should omit `undefined` / empty arrays (keep payload lean).
 - Keep cron-write/API-read-only pattern: request handlers should not trigger external fetches.
 - **Workspace boundary**: `packages/aave-shared-contracts` (types only) ← `packages/aave-fetcher` (runtime) ← root/backend.
 - **No root dist imports**: backend MUST NOT import from `../../../dist/index.js`. Use `@internal/aave-shared-contracts` for types, `@internal/aave-fetcher` for runtime.
 - **No hardcoded bin paths in sub-project scripts**: workspace sub-projects (`backend/scripts/`, `packages/*/scripts/`) MUST NOT hardcode `./node_modules/.bin/<tool>` paths. npm workspaces hoist all deps to root `node_modules/`. Use `npx --no-install <tool>` instead — it resolves the hoisted binary correctly.
-- **No `**/` glob in test scripts**: `tests/**/*.test.ts` won't expand in CI's `sh -c` (bash without globstar). Use `tests/*.test.ts` instead. Enforced by `npm run check:no-globstar` in `ci:remote`.
+- **No `**/`glob in test scripts**:`tests/\*_/_.test.ts`won't expand in CI's`sh -c`(bash without globstar). Use`tests/\*.test.ts`instead. Enforced by`npm run check:no-globstar`in`ci:remote`.
 - **Serialization stays in backend**: `marketsApiSerialize.ts` produces `MarketWithSpread` in backend only.
 - When adding reserve fields, update `RuntimeReserveData` in `@internal/aave-shared-contracts`, then backend types/serialization.
 
 ### Memory Safety Rule
+
 Adding/modifying in-memory caches, Maps, Sets, long-lived closures, or external resource handles — consult `docs/memory-leak-checklist.md`.
+
 - **Cache audit must use the exhaustive inventory** in that doc (38 entries). When asked to "review all caches" or "check memory safety", you MUST cross-reference the inventory table, not scan ad-hoc. New caches must be added to the table with full 3-layer defense assessment (Domain/TTL/Max/Shrink).
 
 ### Data Validity Rule (Critical)
+
 **When proposing ANY code change involving blockchain numerical values, you MUST cross-check against actual data files before making the recommendation.**
 
 1. **`raw` vs `value` are NOT interchangeable**:
@@ -116,26 +132,30 @@ Adding/modifying in-memory caches, Maps, Sets, long-lived closures, or external 
 **All numeric unit conversions MUST go through `packages/aave-shared-contracts/src/units.ts`.** Never define local `rayToPercent` / `rayToRatio` / etc. functions in other packages.
 
 #### Single Source of Truth
+
 - **`FIELD_UNITS`** (`units.ts`): declares the in-memory unit of every field in `RuntimeReserveData` (`'ratio'` | `'percent'` | `'number'` | `'string'` | `'boolean'` | `'campaignArray'`).
 - **`SERIALIZER_RULES`** (derived from `FIELD_UNITS`): `'multiply100'` for ratio fields, `'passthrough'` for everything else.
 - **`RATIO_FIELDS` / `PERCENT_FIELDS`**: convenience sets for testing.
 
 #### Unit Conventions
-| Layer | `supplyApy`/`borrowApy`/`campaignApr` | `utilizationPct`/`slopes`/`baseBorrowRate`/`protocolFee` |
-|---|---|---|
-| **In-memory** (`RuntimeReserveData`) | ratio (0.04) | percent (4.0) |
-| **API output** (`MarketWithSpread`) | percent (4.0) | percent (4.0) |
-| **Serializer action** | ×100 | passthrough |
+
+| Layer                                | `supplyApy`/`borrowApy`/`campaignApr` | `utilizationPct`/`slopes`/`baseBorrowRate`/`protocolFee` |
+| ------------------------------------ | ------------------------------------- | -------------------------------------------------------- |
+| **In-memory** (`RuntimeReserveData`) | ratio (0.04)                          | percent (4.0)                                            |
+| **API output** (`MarketWithSpread`)  | percent (4.0)                         | percent (4.0)                                            |
+| **Serializer action**                | ×100                                  | passthrough                                              |
 
 #### Conversion Functions (from `units.ts`)
-| Function | Input → Output | When to use |
-|---|---|---|
-| `rayToRatio(rayStr)` | RAY string → ratio (0.04) | On-chain RAY → ratio field (e.g. `borrowApy` in V4 RPC fallback) |
-| `rayToPercent(rayStr)` | RAY string → percent (4.0) | On-chain RAY → percent field (e.g. `baseBorrowRate` in on-chain service) |
-| `ratioToPercent(ratio)` | 0.04 → 4.0 | Manual conversion |
-| `percentToRatio(percent)` | 4.0 → 0.04 | Manual conversion |
+
+| Function                  | Input → Output             | When to use                                                              |
+| ------------------------- | -------------------------- | ------------------------------------------------------------------------ |
+| `rayToRatio(rayStr)`      | RAY string → ratio (0.04)  | On-chain RAY → ratio field (e.g. `borrowApy` in V4 RPC fallback)         |
+| `rayToPercent(rayStr)`    | RAY string → percent (4.0) | On-chain RAY → percent field (e.g. `baseBorrowRate` in on-chain service) |
+| `ratioToPercent(ratio)`   | 0.04 → 4.0                 | Manual conversion                                                        |
+| `percentToRatio(percent)` | 4.0 → 0.04                 | Manual conversion                                                        |
 
 #### Adding a New Numeric Field
+
 1. Add to `RuntimeReserveData` in `shared-contracts/src/index.ts`.
 2. Add to `EXPECTED_RUNTIME_FIELDS` in the same file.
 3. Add to `FIELD_UNITS` in `shared-contracts/src/units.ts` with the correct unit.
@@ -146,6 +166,7 @@ Adding/modifying in-memory caches, Maps, Sets, long-lived closures, or external 
 ## Automated Checks (No Manual Checklist Needed)
 
 ### Reserve Field Addition
+
 Adding new reserve fields to the single `RuntimeReserveData` type requires:
 
 1. **Type Sync**: Update `RuntimeReserveData` → `MarketWithSpread` (backend) → `marketsApiSerialize.ts` serialization
@@ -153,7 +174,9 @@ Adding new reserve fields to the single `RuntimeReserveData` type requires:
 3. **Field Registry**: `packages/aave-shared-contracts/src/index.ts` maintains `EXPECTED_RUNTIME_FIELDS` as source of truth
 
 ## Required Coupled Changes
+
 When touching one area, check its pair:
+
 - `packages/aave-shared-contracts/src/index.ts` (types) ↔ `backend/src/types/index.ts` (backend types)
 - `packages/aave-fetcher/src/index.ts` (pruneReserveForRuntime) ↔ `backend/src/types/index.ts`
 - Root output schema ↔ `backend/src/services/marketsApiSerialize.ts`
@@ -163,13 +186,15 @@ When touching one area, check its pair:
 - `packages/aave-shared-contracts/src/units.ts` (FIELD_UNITS) ↔ `backend/src/services/marketsApiSerialize.ts` (serializer behavior)
 
 ### Shared Package Boundaries (Non-Negotiable)
-| Package | Contains | Must NOT contain |
-|---|---|---|
-| `@internal/aave-shared-contracts` | Types, field registry, validation | Runtime fetch logic, serialization |
-| `@internal/aave-fetcher` | `fetchMarketsData`, SDK clients, adapters | Backend API types (`MarketWithSpread`) |
-| `backend` | API server, serialization (`marketsApiSerialize.ts`) | `fetchMarketsData` definition (imports it) |
+
+| Package                           | Contains                                             | Must NOT contain                           |
+| --------------------------------- | ---------------------------------------------------- | ------------------------------------------ |
+| `@internal/aave-shared-contracts` | Types, field registry, validation                    | Runtime fetch logic, serialization         |
+| `@internal/aave-fetcher`          | `fetchMarketsData`, SDK clients, adapters            | Backend API types (`MarketWithSpread`)     |
+| `backend`                         | API server, serialization (`marketsApiSerialize.ts`) | `fetchMarketsData` definition (imports it) |
 
 ## Validation Gate
+
 - Quality is enforced by Husky hooks with auto-fix: `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged); `pre-push` → `scripts/hook-autofix.sh pre-push` (ci build+test + auto-fix bin-paths/globstar/audit). CI auto-reverts direct pushes that fail.
 - Auto-fixable checks: bin-paths (`./node_modules/.bin/X` → `npx --no-install X`), globstar (`tests/**/*.test.ts` → `tests/*.test.ts`), audit (`npm audit fix --omit=dev`), Prettier (lint-staged).
 - Non-auto-fixable checks: build, test:typecheck, test, prune, workspace-coverage — these require manual fixes.
@@ -187,6 +212,7 @@ When touching one area, check its pair:
   ```
 
 ## High-Risk Areas (Coordinate Carefully)
+
 - Fetch orchestration: `packages/aave-fetcher/src/index.ts`
 - Incentive adapters: `packages/aave-fetcher/src/merit-api.ts`, `merkl-api.ts`, `brevis-api.ts`, `brevis-distributed-so-far.ts`
 - Merit dynamic info fallback chain: Render (CDP) → Worker → Playwright (local) → null
@@ -202,22 +228,27 @@ When touching one area, check its pair:
 ## Documentation Placement Rule
 
 ### `aaveapy-doc/` (symlink → `../aaveapy-doc`) — 跨前后端 + 协议知识
+
 Canonical source for knowledge spanning frontend AND backend, or Aave protocol fundamentals. Not a git submodule; changes committed directly in the symlinked repo.
 
 ### `docs/` — 本项目工程文档
+
 - API docs, backend architecture, deployment guides, development best practices.
 - `docs/plans/` — 活跃在 `plans/`，完成后移入 `plans/executed/`。
 
 ### Agent 查询优先级
+
 当被问到跨前后端或协议相关问题时，Agent 必须**优先搜索 `aaveapy-doc/` 子模块**寻找答案，`docs/` 仅作为本项目工程实现细节的补充。
 
 ## Learned Preferences (Condensed)
+
 - Keep docs concise and remove superseded content.
 - Prefer runtime verification/log evidence over speculative explanations.
 - Keep schema convergence across incentive sources; avoid unused fields in public payload.
 - Use exact-origin CORS settings; treat freshness TTL changes as explicit, documented decisions.
 
 ## Lessons Learned
+
 - **中间态产物在使命完成后必须立即清理**：迁移安全路径中的临时中间态，一旦最终步骤执行完成且验证通过，必须立即删除，不要留到"下次清理"。
 - **设计选项 ≠ 必经步骤**：文档中提出的可选方案需先验证是否有实际消费者，无消费者则直接跳过，不要机械写入任务清单并执行。
 - **"组件存在" ≠ "数据流接通"**：验证实现完成度时，不能只 grep 类名/函数名/字段名是否存在。必须按 issue acceptance criteria 逐条验证 import 链路和运行时可达性。例：`fetchV4ReservesViaRpc` 函数存在 + 有测试，但 fetcher 从未 import 它，Layer 2 fallback 是死代码。

@@ -1,0 +1,101 @@
+# Proactive dependency audit fix — runs daily to fix transitive dependency
+# vulnerabilities before they block bot PRs (CoinGecko sync, Dependabot).
+# Fills the gap left by `continue-on-error: true` on security-audit in ci.yml:
+# CI no longer fails on audit, so ci-auto-remediation (reactive) never triggers.
+# This workflow is the proactive replacement — see ADR-0037.
+name: Proactive Audit Fix
+
+on:
+  schedule:
+    # Daily at 06:00 UTC — after Dependabot's 03:00-03:20 window
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  audit-fix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch:
+          - main
+          - railway
+    concurrency:
+      # Per-branch concurrency — don't cancel an in-flight run
+      group: proactive-audit-fix-${{ matrix.branch }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ matrix.branch }}
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Attempt dependency remediation
+        run: npm audit fix --omit=dev || true
+
+      - name: Reinstall dependencies for build verification
+        run: npm ci
+
+      - name: Validate build and audit after remediation
+        id: verify
+        run: |
+          set +e
+          npm run build
+          BUILD_ROOT=$?
+          npm run build -w aave-dashboard-backend
+          BUILD_BACKEND=$?
+          # Use the SAME gate as CI (`npm run audit`): root high + backend moderate,
+          # with the shared GHSA allowlist. Mirroring CI guarantees we never open a
+          # PR that the canonical security-audit job will reject.
+          npm run audit
+          AUDIT=$?
+          if [ "$BUILD_ROOT" -eq 0 ] && [ "$BUILD_BACKEND" -eq 0 ] && [ "$AUDIT" -eq 0 ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Check for changes
+        id: diff
+        if: steps.verify.outputs.ok == 'true'
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create remediation PR
+        if: steps.verify.outputs.ok == 'true' && steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8
+        with:
+          commit-message: "chore: proactive npm audit fix (${{ matrix.branch }})"
+          branch: "bot/proactive-audit-fix-${{ matrix.branch }}"
+          delete-branch: true
+          title: "chore: proactive security audit fix (${{ matrix.branch }})"
+          body: |
+            Auto-generated proactive audit fix PR for `${{ matrix.branch }}`.
+
+            Actions performed:
+            - `npm audit fix --omit=dev`
+            - `npm run build` (root)
+            - `npm run build -w aave-dashboard-backend` (backend)
+            - `npm run audit` (canonical audit gate)
+
+            Triggered by: ${{ github.event_name }}
+          labels: ci-auto-remediation, dependencies
+          base: ${{ matrix.branch }}
