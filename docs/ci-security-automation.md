@@ -10,22 +10,23 @@ This repo uses `pre-commit` and `pre-push` hooks that run `npm run ci:remote`. O
 
 **Solution**: Hooks now include lock file drift detection:
 
-| Hook | Behavior |
-|------|----------|
-| `pre-commit` | Auto-stages uncommitted `package-lock.json` |
-| `pre-push` | Blocks push if lock files have uncommitted changes |
+| Hook         | Behavior                                           |
+| ------------ | -------------------------------------------------- |
+| `pre-commit` | Auto-stages uncommitted `package-lock.json`        |
+| `pre-push`   | Blocks push if lock files have uncommitted changes |
 
 This ensures lock file changes are always included in commits, preventing local/CI audit result drift.
 
 ## GitHub Actions
 
-This repository has five related workflows:
+This repository has six related workflows:
 
 1. `CI` (`.github/workflows/ci.yml`)
    - Triggered by `push` and `pull_request`
    - Runs build + prune checks
-   - Audit: root `npm audit --omit=dev --audit-level=high`; backend `npm audit --omit=dev --audit-level=moderate` (see `ci:remote` in root `package.json`)
-   - Result: root blocks on High/Critical; backend blocks on Moderate and above (low-only vulns allowed for transitive deps with no fix, e.g. elliptic)
+   - Audit: `npm run audit` (shared script with GHSA allowlist, see `package.json`)
+   - `security-audit` job uses `continue-on-error: true` — audit failures do not block PRs or trigger auto-revert (see ADR-0037)
+   - Result: build failures block merge; audit failures are non-blocking (tracked by Proactive Audit Fix + Security Moderate Report)
 
 2. `Security Moderate Report` (`.github/workflows/security-moderate-report.yml`)
    - Triggered every Monday at 04:00 UTC and by manual run
@@ -36,23 +37,36 @@ This repository has five related workflows:
 
 3. `CI Auto Remediation` (`.github/workflows/ci-auto-remediation.yml`)
    - Triggered when `CI` fails on `push` (or manually)
-  - Attempts automatic dependency remediation:
-    - `npm audit fix --omit=dev`
-  - Validates by running:
-    - `npm run build`
-    - `npm run build && npm run build -w aave-dashboard-backend`
-  - If changes exist and validation passes, opens a bot PR to the same branch
+
+- Attempts automatic dependency remediation:
+  - `npm audit fix --omit=dev`
+- Validates by running:
+  - `npm run build`
+  - `npm run build -w aave-dashboard-backend`
+  - `npm run audit`
+- If changes exist and validation passes, opens a bot PR to the same branch
+- If remediation fails, creates an escalation issue with `ci-auto-remediation` label
 
 4. `Auto Approve Remediation PR` (`.github/workflows/auto-approve-remediation-pr.yml`)
-   - Triggered on remediation PR updates (`pull_request_target`)
-   - Applies policy checks:
-     - only dependency manifest/lock files may change
+   - Triggered on bot PR updates (`pull_request_target`)
+   - Applies policy checks per branch pattern:
+     - `bot/ci-auto-remediation-*` / `bot/proactive-audit-fix-*`: only `package.json`, `package-lock.json`, `backend/package.json`
+     - `bot/subgraph-sync-*`: only `docs/api/aave-subgraph-deployments.snapshot.json`
+     - `bot/sync-coingecko-platform-map-*`: only `src/generated/coingecko-platform-by-chain-id.ts`
    - If policy passes:
      - bot submits an approval review
      - auto-merge is enabled (squash)
-   - Result: remediation PR can merge automatically after required checks pass
+   - Result: bot PRs merge automatically after required CI checks pass
 
-5. `Deployment Smoke Test` (`.github/workflows/deployment-smoke-test.yml`)
+5. `Proactive Audit Fix` (`.github/workflows/proactive-audit-fix.yml`)
+   - Triggered daily at 06:00 UTC (after Dependabot's 03:00 window) and manually
+   - Matrix runs on `main` and `railway` independently
+   - Attempts `npm audit fix --omit=dev`, then validates with full build + audit gate
+   - If validation passes and lockfile changed → creates PR (`bot/proactive-audit-fix-{branch}`)
+   - If validation fails → silent exit (unfixable vulns tracked by Security Moderate Report)
+   - Fills the reactive gap left by `continue-on-error: true` on `security-audit` (see ADR-0037)
+
+6. `Deployment Smoke Test` (`.github/workflows/deployment-smoke-test.yml`)
    - Triggered via `deployment_status` when Railway reports a successful deployment on `main` / `railway`
    - **Not** triggered by `push` — avoids deadlock with Railway's "Wait for CI" (see below)
    - Runs right after Railway reports deploy success: resolve target from `deployment.ref` with fallback to deployment environment, then health check, `/api/markets` (≥50 reserves + snapshot), `/api/meta/side-data`, frontend accessibility (curl retries only; no long poll for `commitSha`)
@@ -79,7 +93,7 @@ The **goal** is the same as with tags—run a newer release—but you edit the *
 
 1. Open the action’s GitHub repo → **Releases** (or **Tags**) and pick the version you want.
 2. Resolve that tag to a commit SHA:
-   - In the UI: open the tag → note the commit hash, or  
+   - In the UI: open the tag → note the commit hash, or
    - API: `GET https://api.github.com/repos/<owner>/<repo>/commits/<tag>` and use the `sha` field (full 40 characters).
 3. Update every `uses: <owner>/<repo>@<old-sha> # …` in `.github/workflows/*.yml` to the new SHA and update the comment (e.g. `# v6` → `# v7`).
 
@@ -87,30 +101,36 @@ The **goal** is the same as with tags—run a newer release—but you edit the *
 
 ### SHA pins vs tags only
 
-| | Tags only (`@v6`) | SHA + comment |
-|--|-------------------|---------------|
-| **What changes when you upgrade** | Bump the tag in `uses:` | Replace the 40-char SHA and refresh the `# vN` comment |
-| **Immutability** | Same tag name might point to a different commit later | Same SHA always means the same action code |
-| **CI still automatic?** | Yes | Yes |
+|                                   | Tags only (`@v6`)                                     | SHA + comment                                          |
+| --------------------------------- | ----------------------------------------------------- | ------------------------------------------------------ |
+| **What changes when you upgrade** | Bump the tag in `uses:`                               | Replace the 40-char SHA and refresh the `# vN` comment |
+| **Immutability**                  | Same tag name might point to a different commit later | Same SHA always means the same action code             |
+| **CI still automatic?**           | Yes                                                   | Yes                                                    |
 
 ## How to use
 
 - Normal daily flow:
   - Push code -> `CI` runs automatically
-  - If High/Critical vulnerabilities appear, `CI` fails and blocks merge
-- Auto-fix flow:
+  - Build failures block merge; audit failures are non-blocking (`continue-on-error`)
+- Proactive audit fix flow (daily):
+  - `Proactive Audit Fix` runs -> `npm audit fix` -> validates build + audit gate -> creates PR if safe
+  - `Auto Approve Remediation PR` auto-approves and enables auto-merge
+- Reactive auto-fix flow (on CI build failure):
   - Failed `CI` on push -> `CI Auto Remediation` tries to fix -> opens PR if safe
   - `Auto Approve Remediation PR` auto-approves that PR and enables auto-merge
+  - If remediation fails -> escalation issue created
+- CoinGecko sync flow (weekly):
+  - `CoinGecko platform map sync` creates PR -> `CI` runs -> `Auto Approve Remediation PR` auto-approves + auto-merge
 - Moderate tracking flow:
   - Weekly scheduled run updates the single tracking issue
 
 ## Manual trigger
 
 In GitHub UI:
+
 - Open `Actions`
-- Select a workflow (`Security Moderate Report` or `CI Auto Remediation`)
+- Select a workflow (`Security Moderate Report`, `CI Auto Remediation`, or `Proactive Audit Fix`)
 - Click `Run workflow`
-- For `CI Auto Remediation`, optional `branch` can be specified
 
 ## Architecture Notes
 
@@ -119,6 +139,7 @@ In GitHub UI:
 **Anti-pattern**: Having both an inline remediation job in `ci.yml` AND a separate `ci-auto-remediation.yml` workflow. Both trigger on CI failure and create duplicate PRs.
 
 **Correct pattern**: Keep remediation logic in ONE place only:
+
 - `ci.yml`: Only build/test/audit checks, read-only permissions
 - `ci-auto-remediation.yml`: Triggered via `workflow_run` event when CI fails, has write permissions
 
@@ -158,11 +179,25 @@ Context fields come from `github.event.deployment.*` (not `github.sha` / `github
 ### Workflow Run Trigger Conditions
 
 `ci-auto-remediation.yml` only triggers when:
+
 1. `CI` workflow completes with `conclusion == 'failure'`
 2. The triggering event was `push` (not PR)
-3. Branch matches configured list (main, railway, dependabot/**)
+3. Branch matches configured list (main, railway, dependabot/\*\*)
 
 This prevents:
+
 - Duplicate runs on PR events (PRs don't need auto-remediation PRs)
 - Runs on successful CI (no remediation needed)
 - Infinite loops (remediation branches start with `bot/ci-auto-remediation-`)
+
+### Security Audit Layered Architecture
+
+The `continue-on-error: true` on `security-audit` in `ci.yml` is a **hard constraint** — see ADR-0037. Removing it reintroduces the auto-revert loop. Audit remediation is handled by a layered system:
+
+| Layer | Mechanism                               | Trigger                | Coverage                                            |
+| ----- | --------------------------------------- | ---------------------- | --------------------------------------------------- |
+| 1     | `continue-on-error` on `security-audit` | Every CI run           | Prevents audit from blocking PRs + auto-revert loop |
+| 2     | Dependabot                              | Weekly (Mon 03:00 UTC) | Direct dependency security updates                  |
+| 3     | Proactive Audit Fix                     | Daily (06:00 UTC)      | Transitive dependency security updates              |
+| 4     | CI Auto Remediation                     | CI build failure       | Other CI failures (build break, etc.)               |
+| 5     | Security Moderate Report                | Weekly (Mon 04:00 UTC) | Unfixable vulnerability tracking                    |

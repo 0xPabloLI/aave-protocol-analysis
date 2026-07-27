@@ -52,6 +52,12 @@ jobs:
         # - GHSA-58qx-3vcg-4xpx: known, excluded
         # - GHSA-frvp-7c67-39w9: Hono serve-static path traversal on Windows only - backend runs on Linux
         # All other vulnerabilities must be fixed (npm audit fix) or explicitly excluded here.
+        # continue-on-error: audit failures must not block PRs or trigger auto-revert.
+        # npm registry can publish advisories with no fix available (e.g. elliptic) or
+        # breaking-change fixes (e.g. @hono/node-server). A hard gate would freeze all
+        # development on such events. Proactive Audit Fix (daily) handles remediation
+        # without blocking. See ADR-0037 before removing this flag.
+        continue-on-error: true
         run: npm run audit
 
   socket-firewall:
