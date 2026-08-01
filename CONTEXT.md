@@ -247,26 +247,26 @@ _Avoid_: cache（与 OnchainData cache 混淆），fallbackSnapshot（snapshot �
 
 ## Flagged Ambiguities
 
-| 术语                                | 歧义源                                                               | 本项目约定                                                                     |
-| ----------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| Pool                                | V3 实现概念 vs 通用"资金池"                                          | 仅指 V3 Pool.sol，V4 用 Hub/Spoke                                              |
-| Market                              | 逻辑概念 vs V3 Pool vs V4 Spoke                                      | 逻辑部署单元，V3=Pool, V4=Spoke                                                |
-| Reserve                             | per-Market 资产状态 vs V4 Asset                                      | per-Market per-token 的借贷状态单元                                            |
-| reserveId                           | 合约 uint256 局部 ID vs 项目 string 全局复合键                       | 项目全局复合键                                                                 |
-| exchangeRate                        | V4 份额兑换率 vs V3 liquidityIndex vs tokenPrice                     | V4 份额兑换率，仅用作 tokenPrice 来源                                          |
-| collateralFactor                    | V4 合约字段 vs V3 `baseLTVasCollateral` vs V3 `liquidationThreshold` | V4 单一参数同时充当借款上限和清算线，per-Reserve（版本化）                     |
-| targetHealthFactor                  | Spoke 级清算参数 vs 用户级 HF                                        | per-Spoke 清算后恢复目标（如 1.24），不是借入约束                              |
-| HEALTH_FACTOR_LIQUIDATION_THRESHOLD | 硬编码常量 vs `targetHealthFactor`                                   | 前者=1.0 全局不可改（借入+清算触发线），后者=治理配置 per-Spoke                |
-| collateralRisk                      | V4 per-Reserve 风险评分 vs 用户级 `riskPremium`                      | per-Reserve BPS 风险评分，驱动 RP 贪心算法。当前链上全部为 0                   |
-| riskPremium                         | 用户级聚合值 vs per-Reserve `collateralRisk`                         | per-User per-Spoke，贪心分配算法输出。当前链上全部为 0                         |
-| E-Mode                              | V3 全局 Pool 配置 vs V4 不存在                                       | V3-only 概念，V4 已移除。V4 用 per-Reserve `collateralFactor` 替代             |
-| Isolation Mode                      | V3 `isolated` 标志 vs V4 不存在                                      | V3-only 概念，V4 已移除。V4 用 Spoke 隔离 + Hub `drawCap` 替代                 |
-| TokenizationSpoke                   | V4 Spoke 变体 vs 普通 Spoke                                          | ERC4626 vault 变体，仅支持 add/remove，drawCap=0                               |
-| FlashLoan                           | V3 `flashLoan()` vs V4 不存在                                        | V3-only，V4 已移除                                                             |
-| Stable Rate Borrowing               | V3 `stableDebtToken` vs V4 不存在                                    | V3-only，V4 已移除。V4 只有单一 variable 模式（`drawnShares`）                 |
-| aToken / variableDebtToken          | V3 ERC20 仓位代币 vs V4 内部跟踪                                     | V3-only，V4 已移除。V4 用 `UserPosition` 内部跟踪（不可转移）                  |
-| DynamicReserveConfig                | V4 合约 struct vs SDK 概念                                           | V4 合约 struct（`ISpoke.sol:73`），per-Reserve 版本化，包含 `collateralFactor` |
-| dynamicConfigKey                    | Reserve 最新 key vs UserPosition 快照 key                            | 前者=Reserve 当前版本，后者=用户仓位绑定的历史版本快照                         |
+| 术语                                | 歧义源                                                               | 本项目约定                                                                               |
+| ----------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Pool                                | V3 实现概念 vs 通用"资金池"                                          | 仅指 V3 Pool.sol，V4 用 Hub/Spoke                                                        |
+| Market                              | 逻辑概念 vs V3 Pool vs V4 Spoke                                      | 逻辑部署单元，V3=Pool, V4=Spoke                                                          |
+| Reserve                             | per-Market 资产状态 vs V4 Asset                                      | per-Market per-token 的借贷状态单元                                                      |
+| reserveId                           | 合约 uint256 局部 ID vs 项目 string 全局复合键                       | 项目全局复合键                                                                           |
+| exchangeRate                        | V4 份额兑换率 vs V3 liquidityIndex vs tokenPrice                     | V4 份额兑换率，仅用作 tokenPrice 来源                                                    |
+| collateralFactor                    | V4 合约字段 vs V3 `baseLTVasCollateral` vs V3 `liquidationThreshold` | V4 单一参数同时充当借款上限和清算线，per-Reserve（版本化）                               |
+| targetHealthFactor                  | Spoke 级清算参数 vs 用户级 HF                                        | per-Spoke 清算后恢复目标（如 1.24），不是借入约束                                        |
+| HEALTH_FACTOR_LIQUIDATION_THRESHOLD | 硬编码常量 vs `targetHealthFactor`                                   | 前者=1.0 全局不可改（借入+清算触发线），后者=治理配置 per-Spoke                          |
+| collateralRisk                      | V4 per-Reserve 风险评分 vs 用户级 `riskPremium`                      | per-Reserve BPS 风险评分，驱动 RP 贪心算法。当前链上全部为 0                             |
+| riskPremium                         | 用户级聚合值 vs per-Reserve `collateralRisk`                         | per-User per-Spoke，贪心分配算法输出。当前链上全部为 0                                   |
+| E-Mode                              | V3 全局 Pool 配置 vs V4 不存在                                       | V3-only 概念，V4 已移除。V4 用 per-Reserve `collateralFactor` 替代                       |
+| Isolation Mode                      | V3 `isolated` 标志 vs V4 不存在                                      | V3-only 概念，V4 已移除。V4 用 Spoke 隔离 + Hub `drawCap` 替代                           |
+| TokenizationSpoke                   | V4 Spoke 变体 vs 普通 Spoke                                          | ERC4626 vault 变体，仅支持 add/remove，drawCap=0                                         |
+| FlashLoan                           | V3 `flashLoan()` vs V4 不存在                                        | V3 有独立 flashLoan；V4 有 0.05% flash loan fee（position swaps，V4 docs `tools/swaps`） |
+| Stable Rate Borrowing               | V3 `stableDebtToken` vs V4 不存在                                    | V3.2.0 已废弃 stable rate（enum 改名 `__DEPRECATED`）；V4 只有 variable 模式             |
+| aToken / variableDebtToken          | V3 ERC20 仓位代币 vs V4 内部跟踪                                     | V3-only，V4 已移除。V4 用 `UserPosition` 内部跟踪（不可转移）                            |
+| DynamicReserveConfig                | V4 合约 struct vs SDK 概念                                           | V4 合约 struct（`ISpoke.sol:73`），per-Reserve 版本化，包含 `collateralFactor`           |
+| dynamicConfigKey                    | Reserve 最新 key vs UserPosition 快照 key                            | 前者=Reserve 当前版本，后者=用户仓位绑定的历史版本快照                                   |
 
 ---
 
