@@ -86,22 +86,22 @@
 
 ## Phase 2B: Borrow Blacklist 体系
 
-| Issue        | 标题                                            | 状态            | 领域      | 优先级 | 说明                                 |
-| ------------ | ----------------------------------------------- | --------------- | --------- | ------ | ------------------------------------ |
-| **AAV-962**  | BorrowBL: 前端 Simulation 中 incentive 归零逻辑 | Ready for agent | 前端      | High   | 后端已实现，前端未处理               |
-| **AAV-1013** | borrowBlacklist + borrowHookProtocols 前端适配  | Ready for agent | 前端      | Medium | 前端类型/展示未接入                  |
-| **AAV-1071** | hookType=17 HEALTH_FACTOR 排除条件展示          | Backlog         | 前端+后端 | Low    | 后端缺口：`healthFactorHooks` 未透传 |
+| Issue        | 标题                                                | 状态        | 领域      | 优先级     | 说明                                 |
+| ------------ | --------------------------------------------------- | ----------- | --------- | ---------- | ------------------------------------ |
+| ~~AAV-962~~  | ~~BorrowBL: 前端 Simulation 中 incentive 归零逻辑~~ | **Done** ✅ | 前端      | ~~High~~   | 2026-07 完成                         |
+| ~~AAV-1013~~ | ~~borrowBlacklist + borrowHookProtocols 前端适配~~  | **Done** ✅ | 前端      | ~~Medium~~ | 2026-07 完成                         |
+| **AAV-1071** | hookType=17 HEALTH_FACTOR 排除条件展示              | Backlog     | 前端+后端 | Low        | 后端缺口：`healthFactorHooks` 未透传 |
 
-**建议执行顺序**: AAV-1071 后端修复 → AAV-1013 → AAV-962
+**建议执行顺序**: ~~AAV-1071 后端修复 → AAV-1013 → AAV-962~~ AAV-962/1013 已完成，仅剩 AAV-1071
 
 ## Phase 2C: Campaign Type 统一
 
-| Issue       | 标题                                          | 状态            | 领域 | 优先级 | 说明             |
-| ----------- | --------------------------------------------- | --------------- | ---- | ------ | ---------------- |
-| **AAV-862** | 统一 normalize campaignType 逻辑              | Ready for agent | 后端 | Medium | 父 issue         |
-| **AAV-868** | resolveCampaignApr 复用 normalize 函数链      | Ready for agent | 后端 | Medium | AAV-862 子 issue |
-| **AAV-870** | AMOUNT_PER_AMOUNT 无 TVL 数据                 | Ready for agent | 后端 | Medium | AAV-862 子 issue |
-| **AAV-866** | forecast endTimestamp 与 campaignEndedAt 冗余 | Ready for agent | 后端 | Medium | AAV-862 子 issue |
+| Issue       | 标题                                          | 状态            | 领域 | 优先级 | 说明                                         |
+| ----------- | --------------------------------------------- | --------------- | ---- | ------ | -------------------------------------------- |
+| **AAV-862** | 统一 normalize campaignType 逻辑              | Ready for agent | 后端 | Medium | 父 issue                                     |
+| **AAV-868** | resolveCampaignApr 复用 normalize 函数链      | Ready for agent | 后端 | Medium | AAV-862 子 issue。`done-candidate` 标签      |
+| **AAV-870** | AMOUNT_PER_AMOUNT 无 TVL 数据                 | Ready for agent | 后端 | Medium | AAV-862 子 issue。`done-candidate` 标签      |
+| **AAV-866** | forecast endTimestamp 与 campaignEndedAt 冗余 | Ready for agent | 后端 | Medium | AAV-862 子 issue。调查结论：不冗余，保留两者 |
 
 ## Phase 3: Medium — 架构改进 / 功能扩展
 
@@ -218,9 +218,11 @@
 
 ## 建议执行顺序
 
-1. ~~**Phase 1**: AAV-1222（后端，独立）~~ ✅ Done → **AAV-756 拆解**（完全 unblocked，Urgent）
-2. **Phase 2A**: AAV-1022（前端 spec）→ AAV-1023 + AAV-1024（并行）
-3. **Phase 2B**: AAV-1071 后端修复 → AAV-1013 → AAV-962
-4. **Phase 2C**: AAV-862 体系（868→870→866）
-5. **Phase 3**: AAV-864 缓存重构、AAV-843 Brevis per-user、AAV-333 Risk Premium Simulation
-6. **Phase 1**: AAV-895 跨资产 offset、AAV-1036 offsetNote 分离
+1. **AAV-756**（Urgent，完全 unblocked）— Portfolio LTV constraint + Health Factor
+2. **AAV-1022**（Medium）→ AAV-1023 + AAV-1024（并行，均 blocked by AAV-1022）
+3. **AAV-1071**（Low）— hookType=17 HEALTH_FACTOR 排除条件（~~AAV-962/1013 已完成~~）
+4. **AAV-862 体系**（Medium）— 868/870 有 `done-candidate` 标签待验证，866 调查已完成
+5. **AAV-864** 缓存重构、**AAV-843** Brevis per-user、**AAV-333** Risk Premium Simulation
+6. **AAV-895** 跨资产 offset、**AAV-1036** offsetNote 分离
+
+> ⚠️ Linear issue 之间未设置 native blocking link。上述依赖关系通过 issue description 中的 "Blocked by" 和 comment 标注。
