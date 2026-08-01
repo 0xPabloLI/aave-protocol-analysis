@@ -11,33 +11,33 @@
  *   2. Update the expected fingerprint below
  */
 
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import { computeSchemaFingerprint } from '../src/services/marketsApiSerialize.js';
+import test from "node:test";
+import assert from "node:assert/strict";
+import { computeSchemaFingerprint } from "../src/services/marketsApiSerialize.js";
 
 // ⚠️  UPDATE this value when you intentionally change the API response shape.
 // Also run: npm run gen:schema-fp -w aave-dashboard-backend
 // and sync the value to aaveapy/src/shared/schema-fingerprint.ts
-const EXPECTED_FINGERPRINT = '633ceb1dbd24';
+const EXPECTED_FINGERPRINT = "2d1059421baf";
 
-test('API schema fingerprint matches expected value', () => {
+test("API schema fingerprint matches expected value", () => {
   const current = computeSchemaFingerprint();
   assert.strictEqual(
     current,
     EXPECTED_FINGERPRINT,
     [
-      '',
-      '🚨 API response shape changed!',
+      "",
+      "🚨 API response shape changed!",
       `   Expected fingerprint: ${EXPECTED_FINGERPRINT}`,
       `   Current fingerprint:  ${current}`,
-      '',
-      '   If this change is intentional:',
-      '   1. Update EXPECTED_FINGERPRINT in this test (below)',
-      '   2. Run: npm run gen:schema-fp -w aave-dashboard-backend',
-      '      (this regenerates packages/aave-shared-config/schema-fingerprint.ts)',
-      '   3. Sync to frontend: copy the value to',
-      '      aaveapy/src/shared/schema-fingerprint.ts',
-      '',
-    ].join('\n'),
+      "",
+      "   If this change is intentional:",
+      "   1. Update EXPECTED_FINGERPRINT in this test (below)",
+      "   2. Run: npm run gen:schema-fp -w aave-dashboard-backend",
+      "      (this regenerates packages/aave-shared-config/schema-fingerprint.ts)",
+      "   3. Sync to frontend: copy the value to",
+      "      aaveapy/src/shared/schema-fingerprint.ts",
+      "",
+    ].join("\n")
   );
 });

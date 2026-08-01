@@ -225,6 +225,10 @@ export interface RuntimeReserveData {
   spokeName?: string;
   spokeAddress?: string;
   collateralRisk?: number;
+  /** Collateral LTV (percent: 80 = 80%). V3: supplyInfo.maxLTV, V4: settings.collateralFactor. */
+  ltv?: number;
+  /** Liquidation threshold (percent: 82.5 = 82.5%). V3: supplyInfo.liquidationThreshold, V4: = ltv (collateralFactor). */
+  liquidationThreshold?: number;
 }
 
 // ============================================================
@@ -364,6 +368,8 @@ export const EXPECTED_RUNTIME_FIELDS = [
   "spokeName",
   "spokeAddress",
   "collateralRisk",
+  "ltv",
+  "liquidationThreshold",
 ] as const;
 
 export function validateRuntimeReserveShape(
