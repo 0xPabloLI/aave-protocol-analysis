@@ -2,6 +2,8 @@
 
 > 全量 triage，续 2026-07-06。本轮聚焦 backlog 清理、E2E 代码验证、内存监控部署、offset 产品决策。
 > **此文档为当前权威 triage overview**，07-06 文档仅作历史参考。
+>
+> **2026-08-02 更新**：AAV-1222 已完成（ltv + liquidationThreshold 全链路落地）。AAV-756 完全 unblocked。AAV-333 优先级 Low → Medium。
 
 ## 本轮操作汇总
 
@@ -60,13 +62,13 @@
 
 ## Phase 1: Urgent / High — 最高优先级
 
-| Issue        | 标题                                                          | 状态            | 领域      | 优先级 | 说明                          |
-| ------------ | ------------------------------------------------------------- | --------------- | --------- | ------ | ----------------------------- |
-| **AAV-756**  | Portfolio LTV constraint + Net Effective APY + Health Factor  | Todo            | 全栈      | Urgent | 大特性，待拆解。依赖 AAV-1222 |
-| **AAV-1222** | [Backend] GET /markets API 增加 ltv + liquidationThreshold    | Ready for agent | 后端      | High   | 阻塞 AAV-756。spec 完整       |
-| **AAV-895**  | Borrow ETH with cbETH collateral — cross-asset offset formula | Ready for agent | 后端+前端 | High   | 跨资产 offset 计算特殊处理    |
-| **AAV-1036** | Data layer: separate offsetNote from capNote                  | Backlog         | 后端      | High   | 父 issue，AAV-1038 已 Done    |
-| **AAV-364**  | [EPIC] 市场宏观指标聚合                                       | Todo            | 全栈      | High   | deficit 已实现，其他指标待做  |
+| Issue        | 标题                                                           | 状态            | 领域      | 优先级   | 说明                                       |
+| ------------ | -------------------------------------------------------------- | --------------- | --------- | -------- | ------------------------------------------ |
+| **AAV-756**  | Portfolio LTV constraint + Net Effective APY + Health Factor   | Todo            | 全栈      | Urgent   | **完全 unblocked**。AAV-1222 ✅ 已完成     |
+| ~~AAV-1222~~ | ~~[Backend] GET /markets API 增加 ltv + liquidationThreshold~~ | **Done** ✅     | 后端      | ~~High~~ | 2026-08-02 完成。fingerprint: 2d1059421baf |
+| **AAV-895**  | Borrow ETH with cbETH collateral — cross-asset offset formula  | Ready for agent | 后端+前端 | High     | 跨资产 offset 计算特殊处理                 |
+| **AAV-1036** | Data layer: separate offsetNote from capNote                   | Backlog         | 后端      | High     | 父 issue，AAV-1038 已 Done                 |
+| **AAV-364**  | [EPIC] 市场宏观指标聚合                                        | Todo            | 全栈      | High     | deficit 已实现，其他指标待做               |
 
 ## Phase 2A: Offset 体系对齐 — 产品决策已定 (方案 C)
 
@@ -116,23 +118,23 @@
 
 ## Phase 4: Low — 前端 UX / 产品
 
-| Issue        | 标题                                       | 状态    | 领域      | 优先级        | 说明                                |
-| ------------ | ------------------------------------------ | ------- | --------- | ------------- | ----------------------------------- |
-| **AAV-1122** | Portfolio simulation 加 USD/token 切换按钮 | Backlog | 前端 UX   | Low           | 与 Shared scenario 操作一致         |
-| **AAV-1136** | Portfolio mobile 用 Magic pattern 重新设计 | Backlog | 前端 UX   | Low           |                                     |
-| **AAV-1113** | Reserve table campaign note 合并到一行     | Backlog | 前端 UX   | Low           |                                     |
-| **AAV-1162** | Portfolio APY 列呼吸空间                   | Backlog | 前端 UX   | Low           |                                     |
-| **AAV-809**  | Import portfolio 后不主动打开 Search bar   | Backlog | 前端 UX   | Low           |                                     |
-| **AAV-738**  | Portfolio 展开行滚动定位                   | Todo    | 前端 UX   | Low           |                                     |
-| **AAV-767**  | Simulation 刷新缓存策略                    | Backlog | 前端 UX   | Low           |                                     |
-| **AAV-772**  | eye off 恢复交互方式                       | Backlog | 前端 UX   | No priority⚠️ | API 更新失败                        |
-| **AAV-733**  | Checkbox 与 eye off 状态同步               | Todo    | 前端 UX   | Low           |                                     |
-| **AAV-760**  | 哪些 reserve 可做质押标记                  | Todo    | 后端+前端 | Low           |                                     |
-| **AAV-333**  | Risk premium simulation                    | Todo    | 前端      | Low           |                                     |
-| **AAV-596**  | 增加 ENS 读取                              | Backlog | 前端      | Low           |                                     |
-| **AAV-1239** | recently ended campaign 延迟显示           | Backlog | 前端      | Low           | 无 active campaign 时也显示一段时间 |
-| **AAV-127**  | liquidity 页面 per market                  | Backlog | 前端      | Low           |                                     |
-| **AAV-360**  | Megaeth 反色 logo                          | Backlog | 前端      | Low           |                                     |
+| Issue        | 标题                                            | 状态    | 领域      | 优先级               | 说明                                                     |
+| ------------ | ----------------------------------------------- | ------- | --------- | -------------------- | -------------------------------------------------------- |
+| **AAV-1122** | Portfolio simulation 加 USD/token 切换按钮      | Backlog | 前端 UX   | Low                  | 与 Shared scenario 操作一致                              |
+| **AAV-1136** | Portfolio mobile 用 Magic pattern 重新设计      | Backlog | 前端 UX   | Low                  |                                                          |
+| **AAV-1113** | Reserve table campaign note 合并到一行          | Backlog | 前端 UX   | Low                  |                                                          |
+| **AAV-1162** | Portfolio APY 列呼吸空间                        | Backlog | 前端 UX   | Low                  |                                                          |
+| **AAV-809**  | Import portfolio 后不主动打开 Search bar        | Backlog | 前端 UX   | Low                  |                                                          |
+| **AAV-738**  | Portfolio 展开行滚动定位                        | Todo    | 前端 UX   | Low                  |                                                          |
+| **AAV-767**  | Simulation 刷新缓存策略                         | Backlog | 前端 UX   | Low                  |                                                          |
+| **AAV-772**  | eye off 恢复交互方式                            | Backlog | 前端 UX   | No priority⚠️        | API 更新失败                                             |
+| **AAV-733**  | Checkbox 与 eye off 状态同步                    | Todo    | 前端 UX   | Low                  |                                                          |
+| **AAV-760**  | 哪些 reserve 可做质押标记                       | Todo    | 后端+前端 | Low                  |                                                          |
+| **AAV-333**  | V4 Risk Premium Simulation (per-user portfolio) | Todo    | 前端      | ~~Low~~ → **Medium** | Step 1（后端 collateralRisk）✅ 已完成。链上 CR 全部为 0 |
+| **AAV-596**  | 增加 ENS 读取                                   | Backlog | 前端      | Low                  |                                                          |
+| **AAV-1239** | recently ended campaign 延迟显示                | Backlog | 前端      | Low                  | 无 active campaign 时也显示一段时间                      |
+| **AAV-127**  | liquidity 页面 per market                       | Backlog | 前端      | Low                  |                                                          |
+| **AAV-360**  | Megaeth 反色 logo                               | Backlog | 前端      | Low                  |                                                          |
 
 ## Phase 5: Low — 后端技术债
 
@@ -216,9 +218,9 @@
 
 ## 建议执行顺序
 
-1. **Phase 1**: AAV-1222（后端，独立）→ AAV-756 拆解
+1. ~~**Phase 1**: AAV-1222（后端，独立）~~ ✅ Done → **AAV-756 拆解**（完全 unblocked，Urgent）
 2. **Phase 2A**: AAV-1022（前端 spec）→ AAV-1023 + AAV-1024（并行）
 3. **Phase 2B**: AAV-1071 后端修复 → AAV-1013 → AAV-962
 4. **Phase 2C**: AAV-862 体系（868→870→866）
-5. **Phase 3**: AAV-864 缓存重构、AAV-843 Brevis per-user
+5. **Phase 3**: AAV-864 缓存重构、AAV-843 Brevis per-user、AAV-333 Risk Premium Simulation
 6. **Phase 1**: AAV-895 跨资产 offset、AAV-1036 offsetNote 分离
