@@ -105,69 +105,69 @@
 
 ## Phase 3: Medium — 架构改进 / 功能扩展
 
-| Issue       | 标题                                                            | 状态            | 领域      | 优先级 | 说明                                                                                     |
-| ----------- | --------------------------------------------------------------- | --------------- | --------- | ------ | ---------------------------------------------------------------------------------------- |
-| **AAV-783** | 验证 memory leak 修复 + 长期监控                                | Ready for agent | 后端      | High   | /health 内存指标已部署 (commit `6ab351d`)。Staging RSS 非单调增长 ✅。长期趋势待持续观察 |
-| **AAV-864** | 单 cron + 缓存 TTL 重构                                         | Backlog         | 后端      | Medium | 设计完成，待实施                                                                         |
-| **AAV-843** | Brevis per-user API 接入                                        | Ready for agent | 后端+前端 | Medium | 个人 Dashboard + Claim                                                                   |
-| **AAV-781** | Unify endDate semantics in Merit cache                          | Ready for agent | 后端      | Medium |                                                                                          |
-| **AAV-782** | Distinguish extraction failed vs not-target-type in Merit cache | Ready for agent | 后端      | Medium |                                                                                          |
-| **AAV-726** | Refactor: flatten monorepo to single-package backend            | Ready for agent | 后端      | Medium | 大重构，需评估 ROI                                                                       |
-| **AAV-365** | side-data endpoints ETag + 前端 304 节流                        | Backlog         | 后端      | Low    | 性能优化                                                                                 |
-| **AAV-800** | PortfolioPanel 重复计算路径统一                                 | Backlog         | 前端      | Low    |                                                                                          |
+| Issue       | 标题                                                            | 状态            | 领域      | 优先级   | 说明                                           |
+| ----------- | --------------------------------------------------------------- | --------------- | --------- | -------- | ---------------------------------------------- |
+| ~~AAV-783~~ | ~~验证 memory leak 修复 + 长期监控~~                            | **Done** ✅     | 后端      | ~~High~~ | /health 内存指标已部署。memory leak 修复已验证 |
+| **AAV-864** | 单 cron + 缓存 TTL 重构                                         | Backlog         | 后端      | Medium   | 设计完成，待实施                               |
+| **AAV-843** | Brevis per-user API 接入                                        | Ready for agent | 后端+前端 | Medium   | 个人 Dashboard + Claim                         |
+| **AAV-781** | Unify endDate semantics in Merit cache                          | Ready for agent | 后端      | Medium   |                                                |
+| **AAV-782** | Distinguish extraction failed vs not-target-type in Merit cache | Ready for agent | 后端      | Medium   |                                                |
+| **AAV-726** | Refactor: flatten monorepo to single-package backend            | Ready for agent | 后端      | Medium   | 大重构，需评估 ROI                             |
+| **AAV-365** | side-data endpoints ETag + 前端 304 节流                        | Backlog         | 后端      | Low      | 性能优化                                       |
+| **AAV-800** | PortfolioPanel 重复计算路径统一                                 | Backlog         | 前端      | Low      |                                                |
 
 ## Phase 4: Low — 前端 UX / 产品
 
-| Issue        | 标题                                            | 状态    | 领域      | 优先级               | 说明                                                     |
-| ------------ | ----------------------------------------------- | ------- | --------- | -------------------- | -------------------------------------------------------- |
-| **AAV-1122** | Portfolio simulation 加 USD/token 切换按钮      | Backlog | 前端 UX   | Low                  | 与 Shared scenario 操作一致                              |
-| **AAV-1136** | Portfolio mobile 用 Magic pattern 重新设计      | Backlog | 前端 UX   | Low                  |                                                          |
-| **AAV-1113** | Reserve table campaign note 合并到一行          | Backlog | 前端 UX   | Low                  |                                                          |
-| **AAV-1162** | Portfolio APY 列呼吸空间                        | Backlog | 前端 UX   | Low                  |                                                          |
-| **AAV-809**  | Import portfolio 后不主动打开 Search bar        | Backlog | 前端 UX   | Low                  |                                                          |
-| **AAV-738**  | Portfolio 展开行滚动定位                        | Todo    | 前端 UX   | Low                  |                                                          |
-| **AAV-767**  | Simulation 刷新缓存策略                         | Backlog | 前端 UX   | Low                  |                                                          |
-| **AAV-772**  | eye off 恢复交互方式                            | Backlog | 前端 UX   | No priority⚠️        | API 更新失败                                             |
-| **AAV-733**  | Checkbox 与 eye off 状态同步                    | Todo    | 前端 UX   | Low                  |                                                          |
-| **AAV-760**  | 哪些 reserve 可做质押标记                       | Todo    | 后端+前端 | Low                  |                                                          |
-| **AAV-333**  | V4 Risk Premium Simulation (per-user portfolio) | Todo    | 前端      | ~~Low~~ → **Medium** | Step 1（后端 collateralRisk）✅ 已完成。链上 CR 全部为 0 |
-| **AAV-596**  | 增加 ENS 读取                                   | Backlog | 前端      | Low                  |                                                          |
-| **AAV-1239** | recently ended campaign 延迟显示                | Backlog | 前端      | Low                  | 无 active campaign 时也显示一段时间                      |
-| **AAV-127**  | liquidity 页面 per market                       | Backlog | 前端      | Low                  |                                                          |
-| **AAV-360**  | Megaeth 反色 logo                               | Backlog | 前端      | Low                  |                                                          |
+| Issue        | 标题                                            | 状态        | 领域      | 优先级               | 说明                                                     |
+| ------------ | ----------------------------------------------- | ----------- | --------- | -------------------- | -------------------------------------------------------- |
+| **AAV-1122** | Portfolio simulation 加 USD/token 切换按钮      | Backlog     | 前端 UX   | Low                  | 与 Shared scenario 操作一致                              |
+| **AAV-1136** | Portfolio mobile 用 Magic pattern 重新设计      | Backlog     | 前端 UX   | Low                  |                                                          |
+| **AAV-1113** | Reserve table campaign note 合并到一行          | Backlog     | 前端 UX   | Low                  |                                                          |
+| **AAV-1162** | Portfolio APY 列呼吸空间                        | Backlog     | 前端 UX   | Low                  |                                                          |
+| ~~AAV-809~~  | ~~Import portfolio 后不主动打开 Search bar~~    | **Done** ✅ | 前端 UX   | ~~Low~~              |                                                          |
+| **AAV-738**  | Portfolio 展开行滚动定位                        | Todo        | 前端 UX   | Low                  |                                                          |
+| **AAV-767**  | Simulation 刷新缓存策略                         | Backlog     | 前端 UX   | Low                  |                                                          |
+| **AAV-772**  | eye off 恢复交互方式                            | Backlog     | 前端 UX   | No priority⚠️        | API 更新失败                                             |
+| ~~AAV-733~~  | ~~Checkbox 与 eye off 状态同步~~                | **Done** ✅ | 前端 UX   | ~~Low~~              |                                                          |
+| **AAV-760**  | 哪些 reserve 可做质押标记                       | Todo        | 后端+前端 | Low                  |                                                          |
+| **AAV-333**  | V4 Risk Premium Simulation (per-user portfolio) | Todo        | 前端      | ~~Low~~ → **Medium** | Step 1（后端 collateralRisk）✅ 已完成。链上 CR 全部为 0 |
+| **AAV-596**  | 增加 ENS 读取                                   | Backlog     | 前端      | Low                  |                                                          |
+| **AAV-1239** | recently ended campaign 延迟显示                | Backlog     | 前端      | Low                  | 无 active campaign 时也显示一段时间                      |
+| **AAV-127**  | liquidity 页面 per market                       | Backlog     | 前端      | Low                  |                                                          |
+| **AAV-360**  | Megaeth 反色 logo                               | Backlog     | 前端      | Low                  |                                                          |
 
 ## Phase 5: Low — 后端技术债
 
-| Issue       | 标题                                           | 状态            | 领域      | 优先级        | 说明                      |
-| ----------- | ---------------------------------------------- | --------------- | --------- | ------------- | ------------------------- |
-| **AAV-534** | addressBookRegistry 其他字段动态化             | Todo            | 后端      | Low           | 设计完成 (ADR-0026)       |
-| **AAV-449** | 移除 spokeName 字段                            | Ready for agent | 后端      | Low           |                           |
-| **AAV-517** | spokeAddress 从 reserveId 解析                 | Ready for agent | 后端      | Low           | AAV-534 子 issue          |
-| **AAV-830** | Merit raw RPC → ProviderPool                   | Ready for agent | 后端      | Low           |                           |
-| **AAV-829** | 统一 ~35 个 toLowerCase() → normalizeAddress() | Ready for agent | 后端      | Low           |                           |
-| **AAV-395** | reserve ID 编码字段评估                        | Backlog         | 后端      | Low           |                           |
-| **AAV-900** | Pendle PT token targetTokenPrice               | Backlog         | 后端      | Low           | 3 个非 Aave campaign      |
-| **AAV-863** | 数据变更频率 → TTL 优化                        | Backlog         | 后端      | Low           | 与 AAV-864 重复           |
-| **AAV-923** | position cap 前后端 API 对齐                   | Backlog         | 后端+前端 | Low           | 可能被 AAV-1075/1076 覆盖 |
-| **AAV-707** | 大模型 URL 切换到 moonshot/deepseek            | Backlog         | 后端      | No priority⚠️ | 未批量更新                |
+| Issue       | 标题                                           | 状态            | 领域      | 优先级          | 说明                     |
+| ----------- | ---------------------------------------------- | --------------- | --------- | --------------- | ------------------------ |
+| **AAV-534** | addressBookRegistry 其他字段动态化             | Todo            | 后端      | Low             | 设计完成 (ADR-0026)      |
+| **AAV-449** | 移除 spokeName 字段                            | Ready for agent | 后端      | Low             |                          |
+| **AAV-517** | spokeAddress 从 reserveId 解析                 | Ready for agent | 后端      | Low             | AAV-534 子 issue         |
+| **AAV-830** | Merit raw RPC → ProviderPool                   | Ready for agent | 后端      | Low             |                          |
+| **AAV-829** | 统一 ~35 个 toLowerCase() → normalizeAddress() | Ready for agent | 后端      | Low             |                          |
+| **AAV-395** | reserve ID 编码字段评估                        | Backlog         | 后端      | Low             |                          |
+| **AAV-900** | Pendle PT token targetTokenPrice               | Backlog         | 后端      | Low             | 3 个非 Aave campaign     |
+| ~~AAV-863~~ | ~~数据变更频率 → TTL 优化~~                    | **Done** ✅     | 后端      | ~~Low~~         | 与 AAV-864 重复，已关闭  |
+| ~~AAV-923~~ | ~~position cap 前后端 API 对齐~~               | **Done** ✅     | 后端+前端 | ~~Low~~         | positionCap 已全链路落地 |
+| ~~AAV-707~~ | ~~大模型 URL 切换到 moonshot/deepseek~~        | **Canceled** 🚫 | 后端      | ~~No priority~~ | 用户已改用猀基流动       |
 
 ## Phase 6: Low — 运维 / 监控 / 文档 / 运营
 
-| Issue        | 标题                                 | 状态            | 领域   | 优先级 | 说明             |
-| ------------ | ------------------------------------ | --------------- | ------ | ------ | ---------------- |
-| **AAV-329**  | 建立自动告警 SOP                     | Todo            | DevOps | Low    | 父 issue         |
-| **AAV-587**  | 主动通知新链 RPC 检测                | Todo            | DevOps | Low    | AAV-329 子 issue |
-| **AAV-586**  | Prometheus counter for new chain RPC | Todo            | DevOps | Low    | AAV-329 子 issue |
-| **AAV-515**  | GitHub PR auto merge 问题            | Backlog         | DevOps | Low    |                  |
-| **AAV-732**  | Atlas 部署后不触发更新               | Backlog         | DevOps | Low    |                  |
-| **AAV-512**  | SEO: GSC 提交 URL 收录               | Todo            | SEO    | Low    |                  |
-| **AAV-135**  | V4 SDK Embedded Rewards - Skipped    | Todo            | 文档   | Low    |                  |
-| **AAV-30**   | Twitter 介绍 self 收益               | Todo            | 运营   | Low    |                  |
-| **AAV-248**  | 推进全站无障碍                       | Todo            | 前端   | Low    | 父 issue         |
-| **AAV-321**  | 整理无障碍规范                       | Backlog         | 前端   | Low    | AAV-248 子 issue |
-| **AAV-322**  | 无障碍审计                           | Backlog         | 前端   | Low    | AAV-248 子 issue |
-| **AAV-323**  | 修复无障碍问题                       | Backlog         | 前端   | Low    | AAV-248 子 issue |
-| **AAV-1227** | Spec: Inline Widget Embedding        | Ready for agent | 前端   | Low    |                  |
+| Issue        | 标题                                 | 状态            | 领域   | 优先级  | 说明              |
+| ------------ | ------------------------------------ | --------------- | ------ | ------- | ----------------- |
+| **AAV-329**  | 建立自动告警 SOP                     | Todo            | DevOps | Low     | 父 issue          |
+| **AAV-587**  | 主动通知新链 RPC 检测                | Todo            | DevOps | Low     | AAV-329 子 issue  |
+| **AAV-586**  | Prometheus counter for new chain RPC | Todo            | DevOps | Low     | AAV-329 子 issue  |
+| ~~AAV-515~~  | ~~GitHub PR auto merge 问题~~        | **Done** ✅     | DevOps | ~~Low~~ | auto-merge 已就位 |
+| **AAV-732**  | Atlas 部署后不触发更新               | Backlog         | DevOps | Low     |                   |
+| **AAV-512**  | SEO: GSC 提交 URL 收录               | Todo            | SEO    | Low     |                   |
+| **AAV-135**  | V4 SDK Embedded Rewards - Skipped    | Todo            | 文档   | Low     |                   |
+| **AAV-30**   | Twitter 介绍 self 收益               | Todo            | 运营   | Low     |                   |
+| **AAV-248**  | 推进全站无障碍                       | Todo            | 前端   | Low     | 父 issue          |
+| **AAV-321**  | 整理无障碍规范                       | Backlog         | 前端   | Low     | AAV-248 子 issue  |
+| **AAV-322**  | 无障碍审计                           | Backlog         | 前端   | Low     | AAV-248 子 issue  |
+| **AAV-323**  | 修复无障碍问题                       | Backlog         | 前端   | Low     | AAV-248 子 issue  |
+| **AAV-1227** | Spec: Inline Widget Embedding        | Ready for agent | 前端   | Low     |                   |
 
 ## Phase 7: Low — Epic / 大特性 / 远期
 
@@ -184,28 +184,32 @@
 
 ## ~~遗漏项：No priority 未更新~~ (已全部解决)
 
-以下 issue 仍为 No priority，需要手动更新为 Low：
-
-| Issue    | 标题                                | 原因                             |
-| -------- | ----------------------------------- | -------------------------------- |
-| AAV-772  | eye off 恢复交互方式                | Linear API 返回 Entity not found |
-| AAV-707  | 大模型 URL 切换到 moonshot/deepseek | 本轮新发现，未在批量列表中       |
-| AAV-91   | reserve 未来 APY 预测               | 本轮新发现，未在批量列表中       |
-| AAV-1025 | offset 扣减用户提醒                 | 本轮新发现，未在批量列表中       |
+~~AAV-707~~ 已 Canceled，~~AAV-1025~~ 已 Done。剩余 No priority：AAV-772（Backlog）、AAV-91（Backlog）——均为低优先级，暂不处理。
 
 ## 统计
 
-| 状态                      | 数量                                                               |
-| ------------------------- | ------------------------------------------------------------------ |
-| Done (本轮新标)           | 14 + 5 (AAV-923, AAV-515, AAV-863, AAV-1025 + AAV-733 确认已 Done) |
-| Canceled (本轮新标)       | 2 (AAV-1150, AAV-707)                                              |
-| Ready for agent           | 19                                                                 |
-| Backlog                   | 28                                                                 |
-| Todo                      | 14                                                                 |
-| **非 Done/Canceled 总计** | **61**                                                             |
-| No priority (待更新)      | 0                                                                  |
+| 状态                      | 数量                                                       |
+| ------------------------- | ---------------------------------------------------------- |
+| Done (07-31 轮)           | 14 + 5 (AAV-923, AAV-515, AAV-863, AAV-1025, AAV-733)      |
+| Done (08-02 验证)         | +6 (AAV-783, AAV-809, AAV-868, AAV-870, AAV-866, AAV-1222) |
+| Canceled                  | 2 (AAV-1150, AAV-707)                                      |
+| Ready for agent           | 13                                                         |
+| Backlog                   | 22                                                         |
+| Todo                      | 12                                                         |
+| **非 Done/Canceled 总计** | **~47**                                                    |
+| No priority (待更新)      | 2 (AAV-772, AAV-91 — 低优先级暂不处理)                     |
 
-### 本轮额外关闭
+### 08-02 额外验证关闭
+
+| Issue   | 标题                              | 关闭原因                                          |
+| ------- | --------------------------------- | ------------------------------------------------- |
+| AAV-868 | resolveCampaignApr 复用 normalize | 代码已改用 normalize 函数链（非正则），有测试覆盖 |
+| AAV-870 | AMOUNT_PER_AMOUNT 无 TVL          | opportunity 级 TVL + targetTokenPrice 转换已修复  |
+| AAV-866 | endTimestamp 冗余调查             | 调查结论：不冗余，两者格式/用途不同               |
+| AAV-783 | memory leak 修复验证              | /health 内存指标已部署，长期趋势已验证            |
+| AAV-809 | Import portfolio Search bar       | 代码已实现                                        |
+
+### 07-31 本轮额外关闭
 
 | Issue    | 标题                         | 关闭原因                                                                                |
 | -------- | ---------------------------- | --------------------------------------------------------------------------------------- |
