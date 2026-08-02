@@ -96,12 +96,12 @@
 
 ## Phase 2C: Campaign Type 统一
 
-| Issue       | 标题                                          | 状态            | 领域 | 优先级 | 说明                                         |
-| ----------- | --------------------------------------------- | --------------- | ---- | ------ | -------------------------------------------- |
-| **AAV-862** | 统一 normalize campaignType 逻辑              | Ready for agent | 后端 | Medium | 父 issue                                     |
-| **AAV-868** | resolveCampaignApr 复用 normalize 函数链      | Ready for agent | 后端 | Medium | AAV-862 子 issue。`done-candidate` 标签      |
-| **AAV-870** | AMOUNT_PER_AMOUNT 无 TVL 数据                 | Ready for agent | 后端 | Medium | AAV-862 子 issue。`done-candidate` 标签      |
-| **AAV-866** | forecast endTimestamp 与 campaignEndedAt 冗余 | Ready for agent | 后端 | Medium | AAV-862 子 issue。调查结论：不冗余，保留两者 |
+| Issue       | 标题                                              | 状态            | 领域 | 优先级     | 说明                                                             |
+| ----------- | ------------------------------------------------- | --------------- | ---- | ---------- | ---------------------------------------------------------------- |
+| **AAV-862** | 统一 normalize campaignType 逻辑                  | Ready for agent | 后端 | Medium     | 父 issue。子 issue 全部 Done。scope 1-2（统一函数+重命名）未完成 |
+| ~~AAV-868~~ | ~~resolveCampaignApr 复用 normalize 函数链~~      | **Done** ✅     | 后端 | ~~Medium~~ | 2026-08-02 验证。已改用 normalize 函数链                         |
+| ~~AAV-870~~ | ~~AMOUNT_PER_AMOUNT 无 TVL 数据~~                 | **Done** ✅     | 后端 | ~~Medium~~ | 2026-08-02 验证。opportunity TVL + targetTokenPrice 转换         |
+| ~~AAV-866~~ | ~~forecast endTimestamp 与 campaignEndedAt 冗余~~ | **Done** ✅     | 后端 | ~~Medium~~ | 2026-08-02 验证。调查结论：不冗余，保留两者                      |
 
 ## Phase 3: Medium — 架构改进 / 功能扩展
 
@@ -221,7 +221,7 @@
 1. **AAV-756**（Urgent，完全 unblocked）— Portfolio LTV constraint + Health Factor
 2. **AAV-1022**（Medium）→ AAV-1023 + AAV-1024（并行，均 blocked by AAV-1022）
 3. **AAV-1071**（Low）— hookType=17 HEALTH_FACTOR 排除条件（~~AAV-962/1013 已完成~~）
-4. **AAV-862 体系**（Medium）— 868/870 有 `done-candidate` 标签待验证，866 调查已完成
+4. **AAV-862**（Medium）— 子 issue 868/870/866 全部 Done ✅。父 issue scope 1-2（统一函数+重命名）待定
 5. **AAV-864** 缓存重构、**AAV-843** Brevis per-user、**AAV-333** Risk Premium Simulation
 6. **AAV-895** 跨资产 offset、**AAV-1036** offsetNote 分离
 
