@@ -5,7 +5,9 @@
 >
 > **2026-08-02 更新**：AAV-1222 已完成（ltv + liquidationThreshold 全链路落地）。AAV-756 完全 unblocked。AAV-333 优先级 Low → Medium。
 >
-> **2026-08-03 更新**：AAV-1248（P2）已完成。前端 `ReserveWithSpread` 类型已加 `ltv`/`liquidationThreshold`，schema fingerprint 已 sync 到 `2d1059421baf`。下一步：P3/AAV-1250（maxBorrow 约束）。
+> **2026-08-03 更新**：AAV-1248（P2）已完成。前端 `ReserveWithSpread` 类型已加 `ltv`/`liquidationThreshold`，schema fingerprint 已 sync 到 `2d1059421baf`。
+>
+> **2026-08-04 更新**：AAV-1250（P3）已在 Linear 标为 Done。maxBorrow 约束（per-pool/spoke LTV）已实现。下一步：P4/AAV-1251（模拟 HF 计算）。
 >
 > **2026-08-02 Grill 更新**：AAV-756 已拆分为 P2-P7 六个子步骤（见下方 AAV-756 拆分详情）。确认 HF 按 per-pool/spoke 隔离边界计算，非全局。先做 simulation 逻辑，后接 on-chain HF baseline。
 
@@ -86,7 +88,7 @@
 | ---- | ---------------------------------------------------------------------------------------------------------------------------------- | ----- | ---- | ------ | ------------------ |
 | P1   | 后端 `ltv` + `liquidationThreshold` API 落地（V3 来源 `baseLTVasCollateral`/`liquidationThreshold`，V4 来源 `collateralFactor`）   | —     | 后端 | —      | ✅ Done            |
 | P2   | 前端 `ReserveWithSpread` 类型加 `ltv`/`liquidationThreshold` + `schema-fingerprint.ts` sync (`541bf2ebdf0c` → `2d1059421baf`)      | P1    | 前端 | 低     | ✅ Done (AAV-1248) |
-| P3   | 前端 maxBorrow 约束：per-pool/spoke 分组 + `maxBorrow = Σ(supplyUsd × ltv / 100) - Σ(borrowUsd)`。约束 borrow 输入不超过 maxBorrow | P2    | 前端 | 中     | Todo (AAV-1250)    |
+| P3   | 前端 maxBorrow 约束：per-pool/spoke 分组 + `maxBorrow = Σ(supplyUsd × ltv / 100) - Σ(borrowUsd)`。约束 borrow 输入不超过 maxBorrow | P2    | 前端 | 中     | ✅ Done (AAV-1250) |
 | P4   | 前端模拟 HF 计算：per-pool/spoke 分组 + `HF = Σ(supplyUsd × liquidationThreshold / 100) / Σ(borrowUsd)`。无 borrow 时 HF = “—”     | P2,P3 | 前端 | 中     | Todo (AAV-1251)    |
 | P5   | 前端 NE APY 展示：`PortfolioSummary.netEffectiveApy` 已计算，加到 Summary footer。公式不改                                         | —     | 前端 | 低     | Todo (AAV-1249)    |
 | P6   | 前端 Summary 整合：HF 展示 + 颜色编码（绿≥2/黄≥1.5/橙≥1/红<1）+ NE APY + maxBorrow 提示                                            | P4,P5 | 前端 | 中     | Todo (AAV-1252)    |
@@ -271,7 +273,7 @@
 
 ## 建议执行顺序
 
-1. **AAV-756**（Urgent，完全 unblocked）— 已拆分为 6 个子 issue（AAV-1248~1253）。~~P2/AAV-1248（类型 sync）✅ Done~~ → **下一步：P3/AAV-1250（maxBorrow 约束）** → P4/AAV-1251（模拟 HF）→ P5/AAV-1249（NE APY 展示，可并行）→ P6/AAV-1252（Summary 整合）→ P7/AAV-1253（on-chain baseline）
+1. **AAV-756**（Urgent，完全 unblocked）— 已拆分为 6 个子 issue（AAV-1248~1253）。~~P2/AAV-1248（类型 sync）✅ Done~~ → ~~P3/AAV-1250（maxBorrow 约束）✅ Done~~ → **下一步：P4/AAV-1251（模拟 HF）** → P5/AAV-1249（NE APY 展示，可并行）→ P6/AAV-1252（Summary 整合）→ P7/AAV-1253（on-chain baseline）
 2. **AAV-1022**（Medium）→ AAV-1023 + AAV-1024（并行，均 blocked by AAV-1022）
 3. **AAV-1071**（Low）— hookType=17 HEALTH_FACTOR 排除条件（~~AAV-962/1013 已完成~~）
 4. **AAV-862**（Medium）— 子 issue 868/870/866 全部 Done ✅。父 issue scope 1-2（统一函数+重命名）待定
