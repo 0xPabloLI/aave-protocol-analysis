@@ -4,6 +4,8 @@
 > **此文档为当前权威 triage overview**，07-06 文档仅作历史参考。
 >
 > **2026-08-02 更新**：AAV-1222 已完成（ltv + liquidationThreshold 全链路落地）。AAV-756 完全 unblocked。AAV-333 优先级 Low → Medium。
+>
+> **2026-08-02 Grill 更新**：AAV-756 已拆分为 P2-P7 六个子步骤（见下方 AAV-756 拆分详情）。确认 HF 按 per-pool/spoke 隔离边界计算，非全局。先做 simulation 逻辑，后接 on-chain HF baseline。
 
 ## 本轮操作汇总
 
@@ -62,13 +64,58 @@
 
 ## Phase 1: Urgent / High — 最高优先级
 
-| Issue        | 标题                                                           | 状态            | 领域      | 优先级   | 说明                                       |
-| ------------ | -------------------------------------------------------------- | --------------- | --------- | -------- | ------------------------------------------ |
-| **AAV-756**  | Portfolio LTV constraint + Net Effective APY + Health Factor   | Todo            | 全栈      | Urgent   | **完全 unblocked**。AAV-1222 ✅ 已完成     |
-| ~~AAV-1222~~ | ~~[Backend] GET /markets API 增加 ltv + liquidationThreshold~~ | **Done** ✅     | 后端      | ~~High~~ | 2026-08-02 完成。fingerprint: 2d1059421baf |
-| **AAV-895**  | Borrow ETH with cbETH collateral — cross-asset offset formula  | Ready for agent | 后端+前端 | High     | 跨资产 offset 计算特殊处理                 |
-| **AAV-1036** | Data layer: separate offsetNote from capNote                   | Backlog         | 后端      | High     | 父 issue，AAV-1038 已 Done                 |
-| **AAV-364**  | [EPIC] 市场宏观指标聚合                                        | Todo            | 全栈      | High     | deficit 已实现，其他指标待做               |
+| Issue        | 标题                                                           | 状态            | 领域      | 优先级   | 说明                                           |
+| ------------ | -------------------------------------------------------------- | --------------- | --------- | -------- | ---------------------------------------------- |
+| **AAV-756**  | Portfolio LTV constraint + Net Effective APY + Health Factor   | Todo            | 前端      | Urgent   | **完全 unblocked**。已拆分 P2-P7（见下方详情） |
+| ~~AAV-1222~~ | ~~[Backend] GET /markets API 增加 ltv + liquidationThreshold~~ | **Done** ✅     | 后端      | ~~High~~ | 2026-08-02 完成。fingerprint: 2d1059421baf     |
+| **AAV-895**  | Borrow ETH with cbETH collateral — cross-asset offset formula  | Ready for agent | 后端+前端 | High     | 跨资产 offset 计算特殊处理                     |
+| **AAV-1036** | Data layer: separate offsetNote from capNote                   | Backlog         | 后端      | High     | 父 issue，AAV-1038 已 Done                     |
+| **AAV-364**  | [EPIC] 市场宏观指标聚合                                        | Todo            | 全栈      | High     | deficit 已实现，其他指标待做                   |
+
+## AAV-756 拆分详情 — Portfolio LTV + HF + Net Effective APY
+
+> **Grill 结论 (2026-08-02)**：HF 按 per-pool/spoke 隔离边界计算（合约行为），非全局。先做 simulation 逻辑（适用于 wallet / non-wallet），后接 on-chain HF baseline。
+>
+> **Grill 更新 2 (2026-08-02)**：顺序重排——先约束（maxBorrow）后安全（HF）。V3 叫 LTV/liquidationThreshold，V4 叫 collateralFactor（合并参数）。后端数据已就绪（AAV-1222），约束计算是纯前端。无 borrow 的 group 展示 "—"。NE APY 公式不改，只加 UI。
+
+### 拆分步骤
+
+| Step | 内容                                                                                                                               | 依赖  | 仓库 | 复杂度 | 状态            |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------- | ----- | ---- | ------ | --------------- |
+| P1   | 后端 `ltv` + `liquidationThreshold` API 落地（V3 来源 `baseLTVasCollateral`/`liquidationThreshold`，V4 来源 `collateralFactor`）   | —     | 后端 | —      | ✅ Done         |
+| P2   | 前端 `ReserveWithSpread` 类型加 `ltv`/`liquidationThreshold` + `schema-fingerprint.ts` sync (`541bf2ebdf0c` → `2d1059421baf`)      | P1    | 前端 | 低     | Todo (AAV-1248) |
+| P3   | 前端 maxBorrow 约束：per-pool/spoke 分组 + `maxBorrow = Σ(supplyUsd × ltv / 100) - Σ(borrowUsd)`。约束 borrow 输入不超过 maxBorrow | P2    | 前端 | 中     | Todo (AAV-1250) |
+| P4   | 前端模拟 HF 计算：per-pool/spoke 分组 + `HF = Σ(supplyUsd × liquidationThreshold / 100) / Σ(borrowUsd)`。无 borrow 时 HF = “—”     | P2,P3 | 前端 | 中     | Todo (AAV-1251) |
+| P5   | 前端 NE APY 展示：`PortfolioSummary.netEffectiveApy` 已计算，加到 Summary footer。公式不改                                         | —     | 前端 | 低     | Todo (AAV-1249) |
+| P6   | 前端 Summary 整合：HF 展示 + 颜色编码（绿≥2/黄≥1.5/橙≥1/红<1）+ NE APY + maxBorrow 提示                                            | P4,P5 | 前端 | 中     | Todo (AAV-1252) |
+| P7   | on-chain HF baseline 接入：`V3AccountSummary.healthFactorWad` / `V4AccountSummary.healthFactor` → current → after → delta 模式     | P6    | 前端 | 中     | Todo (AAV-1253) |
+
+> **顺序逻辑**：先约束（P3 maxBorrow）→ 后安全（P4 HF）→ 再展示（P5+P6）→ 最后接 on-chain baseline（P7）。无约束的 HF 是虚假的——用户能借无限多时 HF 无意义。
+
+### 关键设计决策
+
+1. **HF 粒度**：per-pool/spoke 隔离边界（合约行为），**非全局**。V3 按 `(chainId, marketName)` 分组，V4 按 `(chainId, spokeName)` 分组。跨 pool/spoke 的 collateral 不能互相对冲。
+2. **先 simulation 后 on-chain**：simulation 逻辑是核心（P3），on-chain HF 只是一层 baseline 接入（P7）。先做 simulation，所有用户可用；后接 on-chain baseline，wallet 用户可看 current → after → delta。
+3. **两种场景**：有 wallet position → 有 on-chain HF baseline + simulated HF（可展示 current → after → delta）；无 wallet position → 仅有 simulated HF（展示 after 值，无 current baseline）。
+4. **Net Effective APY**：已有计算（`aggregatePortfolioSummary` 中），仅需加 UI 展示。加 LTV 约束后 supply/borrow 比例有物理意义，NE APY 有意义。
+5. **V3 vs V4 差异**：V3 有 `baseLTVasCollateral`（LTV）和 `liquidationThreshold` 两个独立参数（有安全缓冲）。V4 合并为单一参数 `collateralFactor`（无缓冲）。后端 API 统一输出 `ltv` + `liquidationThreshold` 两个字段，V4 两者同值。统一公式对 V3/V4 都成立，前端无需版本分支。
+6. **无 borrow 的 group**：HF = “—”（无债务 = 无清算风险，不展示数字）。
+7. **NE APY 公式不改**：`(netUsdPerDay × 365) / totalSupplyUsd × 100`。NE APY 是全局投资组合收益率指标，不需 per-pool/spoke。加 LTV 约束后 borrow 被限制在合理范围，NE APY 才有参考价值。
+8. **后端状态**：`ltv`/`liquidationThreshold` 已在 API（AAV-1222 Done）。maxBorrow 计算是纯前端（用 API 的 `ltv` + 用户的 `supplyUsd`/`borrowUsd`）。后端不需要新增工作。潜在的 V4 `drawCap`（Spoke 级借款上限）未暴露，作为 follow-up。
+
+### 前端已有基础设施
+
+- `aaveV3UserClient.ts`：`V3AccountSummary.healthFactorWad`，按 `(chainId, marketName)` 隔离
+- `aaveV4UserClient.ts`：`V4AccountSummary.healthFactor`，按 `(chainId, spokeName)` 隔离
+- `PortfolioSummary.netEffectiveApy`：已计算但未展示在主面板 footer
+- `SimulationSubRow.tsx`：已有 per-reserve borrow cap 约束（"Adjust to max"），无 portfolio 级 LTV 约束
+
+### 参考文档
+
+- `aaveapy-doc/v3-v4-collateral-and-health-factor.md` — V3↔V4 抵押参数、HF 公式对比
+- `aaveapy-doc/hub-spoke-position-isolation.md` — V4 仓位隔离、可借量约束链路
+
+---
 
 ## Phase 2A: Offset 体系对齐 — 产品决策已定 (方案 C)
 
@@ -222,7 +269,7 @@
 
 ## 建议执行顺序
 
-1. **AAV-756**（Urgent，完全 unblocked）— Portfolio LTV constraint + Health Factor
+1. **AAV-756**（Urgent，完全 unblocked）— 已拆分为 6 个子 issue（AAV-1248~1253）。顺序：P2/AAV-1248（类型 sync）→ P3/AAV-1250（maxBorrow 约束）→ P4/AAV-1251（模拟 HF）→ P5/AAV-1249（NE APY 展示，可并行）→ P6/AAV-1252（Summary 整合）→ P7/AAV-1253（on-chain baseline）
 2. **AAV-1022**（Medium）→ AAV-1023 + AAV-1024（并行，均 blocked by AAV-1022）
 3. **AAV-1071**（Low）— hookType=17 HEALTH_FACTOR 排除条件（~~AAV-962/1013 已完成~~）
 4. **AAV-862**（Medium）— 子 issue 868/870/866 全部 Done ✅。父 issue scope 1-2（统一函数+重命名）待定
