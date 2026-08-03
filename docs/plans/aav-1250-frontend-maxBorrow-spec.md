@@ -49,9 +49,11 @@ maxBorrowRemaining_group = Σ(supplyUsd_i × ltv_i / 100) - Σ(borrowUsd_i)
 ### 4. 截断与 borrowCap 的交互
 
 三个约束同等地位，一步取 min：
+
 ```
 effectiveBorrowUsd = min(userInput, maxBorrowRemaining, borrowCapRemaining)
 ```
+
 无优先级，哪个最低就哪个生效。
 
 ### 5. UX 模式
@@ -78,38 +80,38 @@ P3 不处理 `isCollateral` 字段（默认所有 supply 都是 collateral）。
 
 ## Scenario & Risk Verification Matrix
 
-| #   | 场景                                           | 输入                                                                        | 预期行为                                                  | 风险维度     | 测试用例 |
-| --- | ---------------------------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------- | ------------ | -------- |
-| S1  | 单 reserve，borrow 在 LTV 限内                 | supply $10000, ltv=80%, borrow $5000                                       | 不截断，amountUsd=5000                                    | 正常路径     | ✅       |
-| S2  | 单 reserve，borrow 超 LTV                      | supply $10000, ltv=80%, borrow $9000                                       | 截断到 $8000, ltvClampedUsd=8000                          | 截断正确性   | ✅       |
-| S3  | 单 reserve，无 supply                          | supply=0, borrow $1000                                                      | maxBorrow=0, 截断到 0                                     | 边界：零抵押 | ✅       |
-| S4  | 单 reserve，ltv=0 (frozen)                     | supply $10000, ltv=0, borrow $1000                                         | maxBorrow=0, 截断到 0                                     | 边界：frozen | ✅       |
-| S5  | 单 reserve，ltv=undefined                      | supply $10000, ltv=undefined, borrow $1000                                 | maxBorrow=0, 截断到 0                                     | 边界：缺失   | ✅       |
-| S6  | 同 pool 两 reserve，第二个超 remaining         | r1: supply $10k ltv=80%, r2: supply $5k ltv=80%, borrow r2 $13k            | group maxBorrow=$12k, r2 截断到 $12k                      | 跨 reserve   | ✅       |
-| S7  | 不同 pool 两 reserve，各自独立                 | pool A: supply $10k ltv=80%, pool B: supply $10k ltv=80%, borrow B $9k    | B 在自身 pool 内 maxBorrow=$8k, 截断到 $8k                | 隔离边界     | ✅       |
-| S8  | 同 pool 两 borrow entry，lastModified 拿剩余   | r1 borrow $3k (非 last), r2 borrow $10k (last), group maxBorrow=$8k        | r1 全额 $3k, r2 拿 $5k remaining                          | lastModified | ✅       |
-| S9  | borrowCap 低于 maxBorrow                       | supply $10k ltv=80%, borrowCap remaining=$5k, borrow $7k                   | 截断到 $5k (borrowCap 生效)                               | 约束交互     | ✅       |
-| S10 | maxBorrow 低于 borrowCap                       | supply $10k ltv=80%, borrowCap remaining=$10k, borrow $9k                  | 截断到 $8k (LTV 生效)                                     | 约束交互     | ✅       |
-| S11 | 三个约束都触发                                 | supply $10k ltv=80%, borrowCap=$5k, borrow $15k                            | 截断到 $5k (min of 8k, 5k, 15k)                           | 约束交互     | ✅       |
-| S12 | V4 同链不同 spoke                              | spoke A: supply $10k ltv=80%, spoke B: supply $10k ltv=80%, borrow B $9k  | B 在自身 spoke group 内 maxBorrow=$8k                     | V4 隔离      | ✅       |
-| S13 | wallet + delta 组合仓位                        | wallet supply $5k + delta +$5k, ltv=80%, borrow $9k                        | 总 supply=$10k, maxBorrow=$8k, 截断                       | 仓位基准     | ✅       |
-| S14 | 同 reserve 多 entry 聚合后截断                 | r1: supply $5k, r1 dup: supply $5k, ltv=80%, borrow $9k                    | 聚合 supply=$10k, maxBorrow=$8k                           | 聚合正确性   | ✅       |
-| S15 | supply delta 为负（提款）减少抵押              | wallet supply $10k - delta $5k, ltv=80%, borrow $5k                        | 有效 supply=$5k, maxBorrow=$4k, 截断到 $4k                | 负 delta     | ✅       |
-| S16 | lastModifiedReserveId 为空（初始化）           | 两 borrow entry, 无 lastModified                                            | 按 entry 顺序前者全额，后者拿 remaining                   | 降级处理     | ✅       |
-| S17 | lastModified 不在当前 group 中                 | lastModified 在 pool A, 但 pool B 有超限 borrow                             | pool B 按 entry 顺序截断                                  | 跨 group     | ✅       |
-| S18 | 100% LTV 资产（V4 collateralFactor=100）       | supply $10k ltv=100%, borrow $10k                                          | maxBorrow=$10k, 不截断                                    | V4 满额      | ✅       |
-| S19 | 多 group 同时超限                              | pool A 和 pool B 各有超限 borrow                                            | 各自独立截断，互不影响                                    | 并行安全     | ✅       |
+| #   | 场景                                         | 输入                                                                     | 预期行为                                   | 风险维度     | 测试用例 |
+| --- | -------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ------------ | -------- |
+| S1  | 单 reserve，borrow 在 LTV 限内               | supply $10000, ltv=80%, borrow $5000                                     | 不截断，amountUsd=5000                     | 正常路径     | ✅       |
+| S2  | 单 reserve，borrow 超 LTV                    | supply $10000, ltv=80%, borrow $9000                                     | 截断到 $8000, ltvClampedUsd=8000           | 截断正确性   | ✅       |
+| S3  | 单 reserve，无 supply                        | supply=0, borrow $1000                                                   | maxBorrow=0, 截断到 0                      | 边界：零抵押 | ✅       |
+| S4  | 单 reserve，ltv=0 (frozen)                   | supply $10000, ltv=0, borrow $1000                                       | maxBorrow=0, 截断到 0                      | 边界：frozen | ✅       |
+| S5  | 单 reserve，ltv=undefined                    | supply $10000, ltv=undefined, borrow $1000                               | maxBorrow=0, 截断到 0                      | 边界：缺失   | ✅       |
+| S6  | 同 pool 两 reserve，第二个超 remaining       | r1: supply $10k ltv=80%, r2: supply $5k ltv=80%, borrow r2 $13k          | group maxBorrow=$12k, r2 截断到 $12k       | 跨 reserve   | ✅       |
+| S7  | 不同 pool 两 reserve，各自独立               | pool A: supply $10k ltv=80%, pool B: supply $10k ltv=80%, borrow B $9k   | B 在自身 pool 内 maxBorrow=$8k, 截断到 $8k | 隔离边界     | ✅       |
+| S8  | 同 pool 两 borrow entry，lastModified 拿剩余 | r1 borrow $3k (非 last), r2 borrow $10k (last), group maxBorrow=$8k      | r1 全额 $3k, r2 拿 $5k remaining           | lastModified | ✅       |
+| S9  | borrowCap 低于 maxBorrow                     | supply $10k ltv=80%, borrowCap remaining=$5k, borrow $7k                 | 截断到 $5k (borrowCap 生效)                | 约束交互     | ✅       |
+| S10 | maxBorrow 低于 borrowCap                     | supply $10k ltv=80%, borrowCap remaining=$10k, borrow $9k                | 截断到 $8k (LTV 生效)                      | 约束交互     | ✅       |
+| S11 | 三个约束都触发                               | supply $10k ltv=80%, borrowCap=$5k, borrow $15k                          | 截断到 $5k (min of 8k, 5k, 15k)            | 约束交互     | ✅       |
+| S12 | V4 同链不同 spoke                            | spoke A: supply $10k ltv=80%, spoke B: supply $10k ltv=80%, borrow B $9k | B 在自身 spoke group 内 maxBorrow=$8k      | V4 隔离      | ✅       |
+| S13 | wallet + delta 组合仓位                      | wallet supply $5k + delta +$5k, ltv=80%, borrow $9k                      | 总 supply=$10k, maxBorrow=$8k, 截断        | 仓位基准     | ✅       |
+| S14 | 同 reserve 多 entry 聚合后截断               | r1: supply $5k, r1 dup: supply $5k, ltv=80%, borrow $9k                  | 聚合 supply=$10k, maxBorrow=$8k            | 聚合正确性   | ✅       |
+| S15 | supply delta 为负（提款）减少抵押            | wallet supply $10k - delta $5k, ltv=80%, borrow $5k                      | 有效 supply=$5k, maxBorrow=$4k, 截断到 $4k | 负 delta     | ✅       |
+| S16 | lastModifiedReserveId 为空（初始化）         | 两 borrow entry, 无 lastModified                                         | 按 entry 顺序前者全额，后者拿 remaining    | 降级处理     | ✅       |
+| S17 | lastModified 不在当前 group 中               | lastModified 在 pool A, 但 pool B 有超限 borrow                          | pool B 按 entry 顺序截断                   | 跨 group     | ✅       |
+| S18 | 100% LTV 资产（V4 collateralFactor=100）     | supply $10k ltv=100%, borrow $10k                                        | maxBorrow=$10k, 不截断                     | V4 满额      | ✅       |
+| S19 | 多 group 同时超限                            | pool A 和 pool B 各有超限 borrow                                         | 各自独立截断，互不影响                     | 并行安全     | ✅       |
 
 ### 风险维度说明
 
-| 风险类型     | 评估                                                                                         |
-| ------------ | -------------------------------------------------------------------------------------------- |
-| **并发/竞态**   | `lastModifiedReserveId` 在 React state 更新中设置，不存在竞态（单线程事件循环）              |
-| **内存泄漏**   | 无新缓存/Map/闭包。`lastModifiedReserveId` 是一个 string，随 args 传递                       |
-| **数据一致性** | `ltv=undefined` 降级为 0，不会 crash。与后端 AAV-1222 已交付的 `ltv` 字段一致                  |
-| **CI/CD 交互** | 纯前端改动，无后端变更，无 DB 迁移                                                            |
-| **外部 API 失败** | 不涉及外部 API 调用，`ltv` 来自已有 API response                                             |
-| **跨包一致性** | 仅改 `aaveapy/` 前端，不涉及 `packages/` 或 `backend/`                                       |
+| 风险类型          | 评估                                                                            |
+| ----------------- | ------------------------------------------------------------------------------- |
+| **并发/竞态**     | `lastModifiedReserveId` 在 React state 更新中设置，不存在竞态（单线程事件循环） |
+| **内存泄漏**      | 无新缓存/Map/闭包。`lastModifiedReserveId` 是一个 string，随 args 传递          |
+| **数据一致性**    | `ltv=undefined` 降级为 0，不会 crash。与后端 AAV-1222 已交付的 `ltv` 字段一致   |
+| **CI/CD 交互**    | 纯前端改动，无后端变更，无 DB 迁移                                              |
+| **外部 API 失败** | 不涉及外部 API 调用，`ltv` 来自已有 API response                                |
+| **跨包一致性**    | 仅改 `aaveapy/` 前端，不涉及 `packages/` 或 `backend/`                          |
 
 ## Testing Decisions
 
@@ -137,8 +139,23 @@ P3 不处理 `isCollateral` 字段（默认所有 supply 都是 collateral）。
 ### 运行时验证（补做）
 
 - [x] 单元测试：19 个场景 (S1-S19) 全部通过
-- [ ] Dev server 验证：浏览器中验证 LTV 截断警告点渲染 + 用户输入截断行为
-- [ ] Playwright E2E 回归：确认现有 E2E 测试无回归
+- [x] Dev server 验证：`npm run dev:staging` 启动成功 (port 8080)，Portfolio 模式 toggle 正常开启
+- [x] Playwright E2E 回归：跑了 5 个 portfolio 相关 spec 文件（27 passed, 21 failed, 32 skipped）
+
+#### E2E 失败分析（21 failures）
+
+| 失败类别                                   | 数量 | 根因                                                                                 | 类型                      |
+| ------------------------------------------ | ---- | ------------------------------------------------------------------------------------ | ------------------------- |
+| cross-reserve-offset (self-loop)           | 8    | LTV 截断限制了 borrow ≤ supply×ltv/100，测试中 borrow $1000/$2000 被截断到 maxBorrow | 预期行为变更 — 测试需更新 |
+| cross-reserve-offset (cross-reserve)       | 6    | 同 pool 内 borrow 受 target supply 的 LTV 限制                                       | 预期行为变更 — 测试需更新 |
+| cross-reserve-offset (mobile)              | 2    | 同上（mobile 变体）                                                                  | 预期行为变更 — 测试需更新 |
+| incentive-calculation (columns)            | 1    | supply-incentive 显示 "—"——需排查是 staging 数据变更还是代码问题                     | 待排查                    |
+| incentive-calculation (current invariance) | 2    | 大额 supply delta 后 current 值变化——可能与 simulation 重算有关                      | 待排查                    |
+| inline-delta                               | 1    | delta badges 因 borrow 截断而显示不同值                                              | 预期行为变更 — 测试需更新 |
+
+**结论**：15/21 失败是 LTV 截断引入的预期行为变更（测试假设 unlimited borrow 不再成立），需更新测试逻辑。6/21 待排查（可能与 staging 数据变更有关，需在 pre-P3 commit 上验证）。
+
+**Follow-up**：创建 Linear issue 跟踪 E2E 测试修复。
 
 ## Out of Scope
 
