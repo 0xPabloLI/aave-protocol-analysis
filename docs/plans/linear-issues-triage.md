@@ -287,10 +287,11 @@
 ## 建议执行顺序
 
 1. **AAV-756**（Urgent，完全 unblocked）— 已拆分为 6 个子 issue（AAV-1248~1253）。~~P2/AAV-1248（类型 sync）✅ Done~~ → ~~P3/AAV-1250（maxBorrow 约束）✅ Done~~ → ~~P4/AAV-1251（模拟 HF）✅ Done~~ → **下一步：P5/AAV-1249（NE APY 展示，可并行）** → P6/AAV-1252（Summary 整合）→ P7/AAV-1253（on-chain baseline）
-2. **AAV-1022**（Medium）→ AAV-1023 + AAV-1024（并行，均 blocked by AAV-1022）
-3. **AAV-1071**（Low）— hookType=17 HEALTH_FACTOR 排除条件（~~AAV-962/1013 已完成~~）
-4. **AAV-862**（Medium）— 子 issue 868/870/866 全部 Done ✅。父 issue scope 1-2（统一函数+重命名）待定
-5. **AAV-864** 缓存重构、**AAV-843** Brevis per-user、**AAV-333** Risk Premium Simulation
-6. **AAV-895** 跨资产 offset、**AAV-1036** offsetNote 分离
+2. **AAV-1257**（High）— Pre-existing mobile E2E 失败（Cap threshold crossing current invariance）。CI E2E job 当前 `continue-on-error: true`，修复后移除并加 mobile-chromium project。
+3. **AAV-1022**
+4. **AAV-1071**
+5. **AAV-862**
+6. **AAV-864**
+7. **AAV-895** 跨资产 offset、**AAV-1036** offsetNote 分离
 
 > ⚠️ Linear issue 之间未设置 native blocking link。上述依赖关系通过 issue description 中的 "Blocked by" 和 comment 标注。
