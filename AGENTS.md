@@ -88,9 +88,10 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
    2. **To Spec** — 用 `to-spec` skill 将对话结论合成为 spec 文档。**必须包含 Scenario & Risk Verification 章节**（场景矩阵），矩阵行直接成为 TDD 测试用例。**无矩阵 = spec 不完整**。
    3. **To Tickets** — 用 `to-tickets` skill 将 spec 拆分为带依赖边的 tracer-bullet tickets
    4. **TDD Implement** — 逐 ticket 先思考最佳实践的改法是什么，再用 `implement` skill 实施；`implement` 必须强制调用 `tdd`（red → green → refactor），关键逻辑必须先写测试
-   5. **Code Review + Runtime Verify** — 双轴审查（Standards + Spec）+ 运行时验证：前端 `npm run dev:staging` + 浏览器核心交互 + 现有 E2E 无回归；后端 `npm run dev` + API 端点验证。spec 标注"不做 UI"不豁免此步。
-   6. **Commit & Push** — 通过验证后 commit + push 到远端（遵循 commit 规范）
-   7. **更新相关文档及 Issue** — 同步更新 docs、ADR、Linear issue 状态
+   5. **Code Review** — 用 `code-review` skill 做双轴审查（Standards + Spec）
+   6. **Runtime Verify** — 前端 `npm run dev:staging` + 浏览器核心交互 + 现有 E2E 无回归；后端 `npm run dev` + API 端点验证。spec 标注"不做 UI"不豁免此步。
+   7. **Commit & Push** — 通过验证后 commit + push 到远端（遵循 commit 规范）
+   8. **更新相关文档及 Issue** — 同步更新 docs、ADR、Linear issue 状态
 10. **每次修改都用最佳实践**: 改代码前先考虑最佳实践的改法是什么，再动手实施。
 
 ## Architecture Rules
