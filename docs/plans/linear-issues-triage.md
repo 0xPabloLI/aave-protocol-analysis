@@ -116,6 +116,17 @@
 - `PortfolioSummary.netEffectiveApy`：已计算但未展示在主面板 footer
 - `SimulationSubRow.tsx`：已有 per-reserve borrow cap 约束（"Adjust to max"），无 portfolio 级 LTV 约束
 
+### P3+P4 实现状态（2026-08-04）
+
+| Phase | 计算产出                                                             | UI 消费者                                                                           | 状态                  |
+| ----- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------- |
+| P3    | `PortfolioPositionResult.ltvClampedUsd`                              | `PortfolioUnifiedTable.tsx` L220 + `MobilePortfolioCard.tsx` L152（inline warning） | ✅ 计算+UI 完成       |
+| P4    | `SimulatePortfolioResult.healthFactors`                              | **无**（P6 将消费）                                                                 | ✅ 计算完成，UI 待 P6 |
+| P5    | `PortfolioSummary.netEffectiveApy`                                   | **无**（P5 将加 footer）                                                            | 计算已存在，UI 待 P5  |
+| P7    | `V3AccountSummary.healthFactorWad` / `V4AccountSummary.healthFactor` | **未接入** portfolio simulation                                                     | 数据源存在，接入待 P7 |
+
+> **关键**：P4 的 `healthFactors` 当前无任何组件消费。用户在 UI 中看不到 HF——这是 by design（HF 是 Summary 级指标，属于 P6 scope）。P3 有 inline UI 是因为 maxBorrow 截断是 per-row 交互。
+
 ### 参考文档
 
 - `aaveapy-doc/v3-v4-collateral-and-health-factor.md` — V3↔V4 抵押参数、HF 公式对比
