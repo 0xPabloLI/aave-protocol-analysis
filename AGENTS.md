@@ -84,7 +84,7 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
 7. **Cross-session boundary**: before committing, inspect `git diff` and `git diff --staged` for changes not made in the current session. If unrelated unstaged/unstaged changes exist (from another session or prior work), **STOP** and confirm with the user whether to include, exclude, or stash them. Never silently bundle foreign changes into your commit.
 8. **No code changes without explicit go-ahead**: 在用户确认开始或给出明确实施指令前，不修改任何代码文件。讨论、调研、Grill 阶段只做分析和方案设计。
 9. **Mandatory implementation workflow**: 每次改代码之前必须走完以下工作流，不得跳步：
-   1. **Grill with Docs** — 用 `grill-with-docs` skill 审视方案，确认设计决策有文档支撑。**必须主动做场景风险分析**：穷举边界场景（并发/竞态、内存泄漏、数据一致性、CI/CD 交互、外部 API 失败模式），验证跨包/跨消费者一致性。涉及内存缓存的改动另参 `docs/memory-leak-checklist.md`。
+   1. **Grill with Docs** — 用 `grill-with-docs` skill 审视方案，确认设计决策有文档支撑。**必须主动做场景风险分析**：按 `docs/best-practices/scenario-enumeration-checklist.md` 逐类检查边界场景（含跨 step 接口契约验证），验证跨包/跨消费者一致性。涉及内存缓存的改动另参 `docs/memory-leak-checklist.md`。
    2. **To Spec** — 用 `to-spec` skill 将对话结论合成为 spec 文档。**必须包含 Scenario & Risk Verification 章节**（场景矩阵），矩阵行直接成为 TDD 测试用例。**无矩阵 = spec 不完整**。
    3. **To Tickets** — 用 `to-tickets` skill 将 spec 拆分为带依赖边的 tracer-bullet tickets
    4. **TDD Implement** — 逐 ticket 先思考最佳实践的改法是什么，再用 `implement` skill 实施；`implement` 必须强制调用 `tdd`（red → green → refactor），关键逻辑必须先写测试
