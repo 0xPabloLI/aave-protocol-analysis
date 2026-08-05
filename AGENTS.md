@@ -92,6 +92,16 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
    6. **Runtime Verify** — 前端 `npm run dev:staging` + 浏览器核心交互 + 现有 E2E 无回归；后端 `npm run dev` + API 端点验证。spec 标注"不做 UI"不豁免此步。
    7. **Commit & Push** — 通过验证后 commit + push 到远端（遵循 commit 规范）
    8. **更新相关文档及 Issue** — 同步更新 docs、ADR、Linear issue 状态
+   9. **Session 结束验证** — 在 session 结束前，逐条确认 Step 1-8 全部完成。**未完成的步骤必须当场补做或显式标注为"跳过 + 原因"**。确认清单：
+      - [ ] Step 1 Grill 完成（有 spec 或对话记录佐证）
+      - [ ] Step 2 Spec 完成（有 spec 文件，含 Scenario Matrix）
+      - [ ] Step 3 Tickets 完成（有 ticket 拆分）
+      - [ ] Step 4 TDD 完成（测试 red → green → refactor）
+      - [ ] Step 5 Code Review 完成（有审查报告）
+      - [ ] Step 6 Runtime Verify 完成（有运行时验证证据：截图 / DOM 检查 / API 响应）
+      - [ ] Step 7 Commit & Push 完成（有 commit hash + push 成功）
+      - [ ] Step 8 文档及 Issue 更新完成（Linear 状态已更新）
+      - 如有任何步骤跳过，必须在向用户汇报时**显式列出**跳过的步骤和原因，不得遗漏
 10. **每次修改都用最佳实践**: 改代码前先考虑最佳实践的改法是什么，再动手实施。
 
 ## Architecture Rules
