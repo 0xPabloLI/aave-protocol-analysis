@@ -377,4 +377,6 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 > ⚠️ Linear issue 之间未设置 native blocking link。上述依赖关系通过 issue description 中的 "Blocked by" 和 comment 标注。
 >
-> **排序逻辑**：Urgent（AAV-756 P7）→ High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
+> **排序逻辑**：~~Urgent（AAV-756 P7）~~ ✅ 全部完成 → High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
+>
+> **下一步**：AAV-895（跨资产 offset，cbETH 抵押借 ETH，Ready for agent）。
