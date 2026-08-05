@@ -11,6 +11,8 @@
 >
 > **2026-08-04 更新 2**：AAV-1251（P4）已完成。per-pool/spoke HF 计算已实现（`computeHealthFactors()` 纯函数 + 16 场景测试）。下一步：P5/AAV-1249（NE APY 展示，可并行）→ P6/AAV-1252（Summary 整合）。
 >
+> **2026-08-05 更新**：AAV-1257（mobile E2E）已完成（commit `1919e13a`）。E2E CI 流程改进已落地（`continue-on-error` 移除 + `mobile-chromium` 加入 CI）。4 个 E2E 测试文件已迁移到动态发现（`findIncentiveReserve()` / `findAnyActiveReserve()`）。Handoff 文档 `handoff-aav-1250-e2e-remaining.md` 已合并到本文档。
+>
 > **2026-08-02 Grill 更新**：AAV-756 已拆分为 P2-P7 六个子步骤（见下方 AAV-756 拆分详情）。确认 HF 按 per-pool/spoke 隔离边界计算，非全局。先做 simulation 逻辑，后接 on-chain HF baseline。
 
 ## 本轮操作汇总
@@ -61,10 +63,72 @@
 - 核心修复已完成并验证（PR #381/#385 通过 auto-merge 合并到 main）
 - 遗留项（dev GITHUB_TOKEN approve 实测）为独立 follow-up，不阻塞关闭
 
+### AAV-1257: Fix pre-existing mobile E2E — Cap threshold crossing current invariance
+
+- 状态: Backlog → **Done** ✅（commit `1919e13a`，前端 lovable 分支）
+- 根因: Mobile 测试用 `card.locator('[data-testid="delta-current"]').first()` 匹配第一个渲染的 DeltaRow。但 DeltaRow 条件渲染（delta ≥ 0.005pp 才渲染），导致 $1000 supply（仅 $/day DeltaRow 渲染）和 $999999999 supply（全部 4 个 DeltaRow 渲染）匹配到不同 metric 的 DeltaRow（$/day vs Total），读取了不同的值（"—" vs "6.43%"）
+- 修复: Mobile 测试改为从 metrics strip（always rendered）读取 `span[data-cell="supply-incentive"] span[data-current]`，与 desktop 一致
+- CI 改进: 移除 e2e job 的 `continue-on-error: true`；CI E2E 命令加入 `--project=mobile-chromium`
+- 验证: 12/12 incentive E2E 通过（6 desktop + 6 mobile），3412 单元测试通过
+
 ### AAV-1150: SummaryCard delta E2E test
 
 - 状态: Backlog → **Canceled** (wontfix)
 - 理由: DOM 结构从 `div.grid` 变为 `<table>`，selector 不匹配；已有 35 个 incentive E2E 测试覆盖核心逻辑
+
+---
+
+## E2E 回归修复 + 流程改进 (2026-08-04)
+
+> 来源：AAV-1250 (P3 maxBorrow) + AAV-1251 (P4 HF) 完成后的 E2E 回归修复。21 个失败已全部修复，流程改进已全部落地。
+
+### E2E 回归根因总结
+
+| 测试文件                                  | 失败数 | 根因                         | 修复                             |
+| ----------------------------------------- | ------ | ---------------------------- | -------------------------------- |
+| `portfolio-cross-reserve-offset.spec.ts`  | ~8     | USDe ltv=0 → borrow 截断到 0 | 过滤 ltv=0；supply 提升至 $100k  |
+| `portfolio-incentive-calculation.spec.ts` | ~7     | USDC 失去 incentive          | 动态发现（findIncentiveReserve） |
+| `portfolio-results-inline-delta.spec.ts`  | ~6     | 同上 + LTV clamping          | 动态发现（findIncentiveReserve） |
+
+### E2E 测试数据韧性
+
+新建 `e2e/test-reserves.ts` 共享模块：
+
+- `findIncentiveReserve()`: 动态发现有 supply incentive + ltv > 0 的 reserve（按 ltv 降序排序）
+- `findAnyActiveReserve()`: 动态发现任意 active + ltv > 0 的 reserve（优先 USDC/USDT/DAI/WETH/GHO）
+- `setupPortfolioWithReserve()`: 共享 UI setup helper
+- `getMarketChipLabel()`: market label 工具函数
+
+已迁移的测试文件（4 个）：
+
+- `portfolio-incentive-calculation.spec.ts` → `findIncentiveReserve()`
+- `portfolio-results-inline-delta.spec.ts` → `findIncentiveReserve()`
+- `portfolio-mobile-spacing.spec.ts` → `findAnyActiveReserve()`
+- `portfolio-decimal-input.spec.ts` → `findAnyActiveReserve()`
+
+### CI E2E 流程
+
+前端 `.github/workflows/ci.yml` 新增 `e2e` job：
+
+- 触发条件：PR / push（与 build/lint 并行）
+- `continue-on-error` 已移除（AAV-1257 修复后）
+- 同时跑 `--project=chromium` + `--project=mobile-chromium`
+- 上传 `test-results/` artifact（7 天保留）
+- Playwright `webServer` 自动启动 dev server
+
+### Pre-commit Hook
+
+根目录 `.prettierignore` 排除生成文件：
+
+```text
+backend/static/openapi.json
+packages/aave-shared-config/schema-fingerprint.ts
+```
+
+### 工作流执行保障
+
+- AGENTS.md 工作流 Step 7 已从 "Commit" 改为 "Commit & Push"
+- CI E2E job 作为安全网：即使本地跳过 E2E，CI 会在 PR 阶段拦截回归
 
 ---
 
@@ -235,16 +299,15 @@
 
 ## Phase 7: Low — Epic / 大特性 / 远期
 
-| Issue        | 标题                         | 状态    | 领域      | 优先级        | 说明             |
-| ------------ | ---------------------------- | ------- | --------- | ------------- | ---------------- |
-| **AAV-564**  | 多链组合最佳 deployment 推荐 | Todo    | 全栈      | Low           |                  |
-| **AAV-84**   | 计算最佳 deployment 推荐     | Backlog | 全栈      | Low           |                  |
-| **AAV-86**   | 执行最佳部署路径             | Backlog | 全栈      | Low           |                  |
-| **AAV-75**   | size/liquidity 变化展示      | Backlog | 全栈      | Low           |                  |
-| **AAV-76**   | 对比 DeFiLlama 内容          | Backlog | 产品评估  | Low           | API 更新失败     |
-| **AAV-262**  | 增加 TVL 历史                | Backlog | 后端+前端 | Low           | AAV-364 子 issue |
-| **AAV-91**   | reserve 未来 APY 预测        | Backlog | 前端      | No priority⚠️ | 未批量更新       |
-| **AAV-1025** | offset 扣减用户提醒          | Backlog | 前端      | No priority⚠️ | 未批量更新       |
+| Issue       | 标题                         | 状态    | 领域      | 优先级        | 说明             |
+| ----------- | ---------------------------- | ------- | --------- | ------------- | ---------------- |
+| **AAV-564** | 多链组合最佳 deployment 推荐 | Todo    | 全栈      | Low           |                  |
+| **AAV-84**  | 计算最佳 deployment 推荐     | Backlog | 全栈      | Low           |                  |
+| **AAV-86**  | 执行最佳部署路径             | Backlog | 全栈      | Low           |                  |
+| **AAV-75**  | size/liquidity 变化展示      | Backlog | 全栈      | Low           |                  |
+| **AAV-76**  | 对比 DeFiLlama 内容          | Backlog | 产品评估  | Low           | API 更新失败     |
+| **AAV-262** | 增加 TVL 历史                | Backlog | 后端+前端 | Low           | AAV-364 子 issue |
+| **AAV-91**  | reserve 未来 APY 预测        | Backlog | 前端      | No priority⚠️ | 未批量更新       |
 
 ## ~~遗漏项：No priority 未更新~~ (已全部解决)
 
@@ -252,16 +315,18 @@
 
 ## 统计
 
-| 状态                      | 数量                                                       |
-| ------------------------- | ---------------------------------------------------------- |
-| Done (07-31 轮)           | 14 + 5 (AAV-923, AAV-515, AAV-863, AAV-1025, AAV-733)      |
-| Done (08-02 验证)         | +6 (AAV-783, AAV-809, AAV-868, AAV-870, AAV-866, AAV-1222) |
-| Canceled                  | 2 (AAV-1150, AAV-707)                                      |
-| Ready for agent           | 13                                                         |
-| Backlog                   | 22                                                         |
-| Todo                      | 12                                                         |
-| **非 Done/Canceled 总计** | **~47**                                                    |
-| No priority (待更新)      | 2 (AAV-772, AAV-91 — 低优先级暂不处理)                     |
+| 状态                       | 数量                                                       |
+| -------------------------- | ---------------------------------------------------------- |
+| Done (07-31 轮)            | 14 + 5 (AAV-923, AAV-515, AAV-863, AAV-1025, AAV-733)      |
+| Done (08-02 验证)          | +6 (AAV-783, AAV-809, AAV-868, AAV-870, AAV-866, AAV-1222) |
+| Done (08-04 AAV-756 P2-P4) | +3 (AAV-1248, AAV-1250, AAV-1251)                          |
+| Done (08-04 E2E)           | +1 (AAV-1257)                                              |
+| Canceled                   | 2 (AAV-1150, AAV-707)                                      |
+| Ready for agent            | 13                                                         |
+| Backlog                    | 22                                                         |
+| Todo                       | 15（+3: AAV-1249, AAV-1252, AAV-1253）                     |
+| **非 Done/Canceled 总计**  | **~50**                                                    |
+| No priority (待更新)       | 2 (AAV-772, AAV-91 — 低优先级暂不处理)                     |
 
 ### 08-02 额外验证关闭
 
@@ -286,12 +351,26 @@
 
 ## 建议执行顺序
 
-1. **AAV-756**（Urgent，完全 unblocked）— 已拆分为 6 个子 issue（AAV-1248~1253）。~~P2/AAV-1248（类型 sync）✅ Done~~ → ~~P3/AAV-1250（maxBorrow 约束）✅ Done~~ → ~~P4/AAV-1251（模拟 HF）✅ Done~~ → **下一步：P5/AAV-1249（NE APY 展示，可并行）** → P6/AAV-1252（Summary 整合）→ P7/AAV-1253（on-chain baseline）
-2. **AAV-1257**（High）— Pre-existing mobile E2E 失败（Cap threshold crossing current invariance）。CI E2E job 当前 `continue-on-error: true`，修复后移除并加 mobile-chromium project。
-3. **AAV-1022**
-4. **AAV-1071**
-5. **AAV-862**
-6. **AAV-864**
-7. **AAV-895** 跨资产 offset、**AAV-1036** offsetNote 分离
+> **2026-08-05 重排**：AAV-1257 已完成，从列表移除。High 优先级 issue（AAV-895、AAV-1036）提前到 Medium 之前。AAV-1071（Low）后移。
+
+### AAV-756 Portfolio LTV + HF + NE APY（Urgent）
+
+~~P1/AAV-1222 ✅ Done~~ → ~~P2/AAV-1248 ✅ Done~~ → ~~P3/AAV-1250 ✅ Done~~ → ~~P4/AAV-1251 ✅ Done~~ → **下一步：P5/AAV-1249（NE APY 展示）** → P6/AAV-1252（Summary 整合）→ P7/AAV-1253（on-chain baseline）
+
+### 其他 issue（按优先级排序）
+
+| 顺序 | Issue         | 优先级 | 状态            | 说明                                                           |
+| ---- | ------------- | ------ | --------------- | -------------------------------------------------------------- |
+| 1    | AAV-1249 (P5) | Urgent | Todo            | NE APY 展示，无依赖，可立即开始                                |
+| 2    | AAV-1252 (P6) | Urgent | Todo            | Summary 整合（HF + 颜色编码 + NE APY + maxBorrow 提示）        |
+| 3    | AAV-1253 (P7) | Urgent | Todo            | on-chain HF baseline 接入                                      |
+| 4    | AAV-895       | High   | Ready for agent | 跨资产 offset（cbETH 抵押借 ETH）                              |
+| 5    | AAV-1036      | High   | Backlog         | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）     |
+| 6    | AAV-1022      | Medium | Ready for agent | 定义 offset 对齐规则（AAV-1023/1024 前置）                     |
+| 7    | AAV-862       | Medium | Ready for agent | normalize campaignType 统一 + 重命名（`done-candidate` 标签）  |
+| 8    | AAV-864       | Medium | Backlog         | 单 cron + 缓存 TTL 重构                                        |
+| 9    | AAV-1071      | Low    | Backlog         | hookType=17 HF 排除条件展示（后端 `healthFactorHooks` 未透传） |
 
 > ⚠️ Linear issue 之间未设置 native blocking link。上述依赖关系通过 issue description 中的 "Blocked by" 和 comment 标注。
+>
+> **排序逻辑**：Urgent（AAV-756 P5-P7）→ High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
