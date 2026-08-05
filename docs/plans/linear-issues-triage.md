@@ -15,6 +15,8 @@
 >
 > **2026-08-05 更新 2**：AAV-1249（P5）已合并到 AAV-1252（P6）→ Canceled。AAV-1252（P6）已完成（commit `71d25e60` on `aaveapy/lovable`）。`PortfolioSummaryBar` 组件实现 Min HF badge（始终可见）+ Advanced 折叠区（HF per-pool + NE APY + maxBorrow 容量）。3430 测试通过，0 回归。下一步：P7/AAV-1253（on-chain HF baseline）。
 >
+> **2026-08-05 更新 3**：AAV-1253（P7）已完成（commit `8fb07f9c` on `aaveapy/lovable`）。on-chain HF baseline 接入：`useOnchainHealthFactor` hook multicall `getUserAccountData` per V3 Pool/V4 Spoke。V4 匹配用 `spokeAddress`（非 `spokeName`）规避 address-book/SDK 命名不匹配。`PortfolioSummaryBar` 升级为 "Lowest HF" badge + ↑/↓ delta 箭头 + Advanced 区 current→after 展示。20 新场景测试，3452 测试通过，0 回归。Spec: `docs/plans/aav-1253-onchain-hf-baseline-spec.md`。
+>
 > **2026-08-02 Grill 更新**：AAV-756 已拆分为 P2-P7 六个子步骤（见下方 AAV-756 拆分详情）。确认 HF 按 per-pool/spoke 隔离边界计算，非全局。先做 simulation 逻辑，后接 on-chain HF baseline。
 
 ## 本轮操作汇总
@@ -160,7 +162,7 @@ packages/aave-shared-config/schema-fingerprint.ts
 | P4   | 前端模拟 HF 计算：per-pool/spoke 分组 + `HF = Σ(supplyUsd × liquidationThreshold / 100) / Σ(borrowUsd)`。无 borrow 时 HF = “—”     | P2,P3 | 前端 | 中     | ✅ Done (AAV-1251)         |
 | P5   | 前端 NE APY 展示：`PortfolioSummary.netEffectiveApy` 已计算，加到 Summary footer。公式不改                                         | —     | 前端 | 低     | ✅ Canceled (merged to P6) |
 | P6   | 前端 Summary 整合：HF 展示 + 颜色编码（绿≥2/黄≥1.5/橙≥1/红<1）+ NE APY + maxBorrow 提示                                            | P4,P5 | 前端 | 中     | ✅ Done (AAV-1252)         |
-| P7   | on-chain HF baseline 接入：`V3AccountSummary.healthFactorWad` / `V4AccountSummary.healthFactor` → current → after → delta 模式     | P6    | 前端 | 中     | Todo (AAV-1253)            |
+| P7   | on-chain HF baseline 接入：`V3AccountSummary.healthFactorWad` / `V4AccountSummary.healthFactor` → current → after → delta 模式     | P6    | 前端 | 中     | ✅ Done (AAV-1253)         |
 
 > **顺序逻辑**：先约束（P3 maxBorrow）→ 后安全（P4 HF）→ 再展示（P5+P6）→ 最后接 on-chain baseline（P7）。无约束的 HF 是虚假的——用户能借无限多时 HF 无意义。
 
@@ -357,13 +359,15 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ### AAV-756 Portfolio LTV + HF + NE APY（Urgent）
 
-~~P1/AAV-1222 ✅ Done~~ → ~~P2/AAV-1248 ✅ Done~~ → ~~P3/AAV-1250 ✅ Done~~ → ~~P4/AAV-1251 ✅ Done~~ → ~~P5/AAV-1249 ✅ Canceled (merged to P6)~~ → ~~P6/AAV-1252 ✅ Done~~ → **下一步：P7/AAV-1253（on-chain HF baseline）**
+~~P1/AAV-1222 ✅ Done~~ → ~~P2/AAV-1248 ✅ Done~~ → ~~P3/AAV-1250 ✅ Done~~ → ~~P4/AAV-1251 ✅ Done~~ → ~~P5/AAV-1249 ✅ Canceled (merged to P6)~~ → ~~P6/AAV-1252 ✅ Done~~ → ~~P7/AAV-1253 ✅ Done~~
+
+> AAV-756 全部子步骤完成。
 
 ### 其他 issue（按优先级排序）
 
 | 顺序 | Issue         | 优先级 | 状态            | 说明                                                           |
 | ---- | ------------- | ------ | --------------- | -------------------------------------------------------------- |
-| 1    | AAV-1253 (P7) | Urgent | Todo            | on-chain HF baseline 接入                                      |
+| 1    | AAV-1253 (P7) | Urgent | Done            | on-chain HF baseline 接入 ✅                                   |
 | 2    | AAV-895       | High   | Ready for agent | 跨资产 offset（cbETH 抵押借 ETH）                              |
 | 3    | AAV-1036      | High   | Backlog         | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）     |
 | 4    | AAV-1022      | Medium | Ready for agent | 定义 offset 对齐规则（AAV-1023/1024 前置）                     |
