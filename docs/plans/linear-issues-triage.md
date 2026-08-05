@@ -13,6 +13,8 @@
 >
 > **2026-08-05 更新**：AAV-1257（mobile E2E）已完成（commit `1919e13a`）。E2E CI 流程改进已落地（`continue-on-error` 移除 + `mobile-chromium` 加入 CI）。4 个 E2E 测试文件已迁移到动态发现（`findIncentiveReserve()` / `findAnyActiveReserve()`）。Handoff 文档 `handoff-aav-1250-e2e-remaining.md` 已合并到本文档。
 >
+> **2026-08-05 更新 2**：AAV-1249（P5）已合并到 AAV-1252（P6）→ Canceled。AAV-1252（P6）已完成（commit `71d25e60` on `aaveapy/lovable`）。`PortfolioSummaryBar` 组件实现 Min HF badge（始终可见）+ Advanced 折叠区（HF per-pool + NE APY + maxBorrow 容量）。3430 测试通过，0 回归。下一步：P7/AAV-1253（on-chain HF baseline）。
+>
 > **2026-08-02 Grill 更新**：AAV-756 已拆分为 P2-P7 六个子步骤（见下方 AAV-756 拆分详情）。确认 HF 按 per-pool/spoke 隔离边界计算，非全局。先做 simulation 逻辑，后接 on-chain HF baseline。
 
 ## 本轮操作汇总
@@ -150,15 +152,15 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ### 拆分步骤
 
-| Step | 内容                                                                                                                               | 依赖  | 仓库 | 复杂度 | 状态               |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------- | ----- | ---- | ------ | ------------------ |
-| P1   | 后端 `ltv` + `liquidationThreshold` API 落地（V3 来源 `baseLTVasCollateral`/`liquidationThreshold`，V4 来源 `collateralFactor`）   | —     | 后端 | —      | ✅ Done            |
-| P2   | 前端 `ReserveWithSpread` 类型加 `ltv`/`liquidationThreshold` + `schema-fingerprint.ts` sync (`541bf2ebdf0c` → `2d1059421baf`)      | P1    | 前端 | 低     | ✅ Done (AAV-1248) |
-| P3   | 前端 maxBorrow 约束：per-pool/spoke 分组 + `maxBorrow = Σ(supplyUsd × ltv / 100) - Σ(borrowUsd)`。约束 borrow 输入不超过 maxBorrow | P2    | 前端 | 中     | ✅ Done (AAV-1250) |
-| P4   | 前端模拟 HF 计算：per-pool/spoke 分组 + `HF = Σ(supplyUsd × liquidationThreshold / 100) / Σ(borrowUsd)`。无 borrow 时 HF = “—”     | P2,P3 | 前端 | 中     | ✅ Done (AAV-1251) |
-| P5   | 前端 NE APY 展示：`PortfolioSummary.netEffectiveApy` 已计算，加到 Summary footer。公式不改                                         | —     | 前端 | 低     | Todo (AAV-1249)    |
-| P6   | 前端 Summary 整合：HF 展示 + 颜色编码（绿≥2/黄≥1.5/橙≥1/红<1）+ NE APY + maxBorrow 提示                                            | P4,P5 | 前端 | 中     | Todo (AAV-1252)    |
-| P7   | on-chain HF baseline 接入：`V3AccountSummary.healthFactorWad` / `V4AccountSummary.healthFactor` → current → after → delta 模式     | P6    | 前端 | 中     | Todo (AAV-1253)    |
+| Step | 内容                                                                                                                               | 依赖  | 仓库 | 复杂度 | 状态                       |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------- | ----- | ---- | ------ | -------------------------- |
+| P1   | 后端 `ltv` + `liquidationThreshold` API 落地（V3 来源 `baseLTVasCollateral`/`liquidationThreshold`，V4 来源 `collateralFactor`）   | —     | 后端 | —      | ✅ Done                    |
+| P2   | 前端 `ReserveWithSpread` 类型加 `ltv`/`liquidationThreshold` + `schema-fingerprint.ts` sync (`541bf2ebdf0c` → `2d1059421baf`)      | P1    | 前端 | 低     | ✅ Done (AAV-1248)         |
+| P3   | 前端 maxBorrow 约束：per-pool/spoke 分组 + `maxBorrow = Σ(supplyUsd × ltv / 100) - Σ(borrowUsd)`。约束 borrow 输入不超过 maxBorrow | P2    | 前端 | 中     | ✅ Done (AAV-1250)         |
+| P4   | 前端模拟 HF 计算：per-pool/spoke 分组 + `HF = Σ(supplyUsd × liquidationThreshold / 100) / Σ(borrowUsd)`。无 borrow 时 HF = “—”     | P2,P3 | 前端 | 中     | ✅ Done (AAV-1251)         |
+| P5   | 前端 NE APY 展示：`PortfolioSummary.netEffectiveApy` 已计算，加到 Summary footer。公式不改                                         | —     | 前端 | 低     | ✅ Canceled (merged to P6) |
+| P6   | 前端 Summary 整合：HF 展示 + 颜色编码（绿≥2/黄≥1.5/橙≥1/红<1）+ NE APY + maxBorrow 提示                                            | P4,P5 | 前端 | 中     | ✅ Done (AAV-1252)         |
+| P7   | on-chain HF baseline 接入：`V3AccountSummary.healthFactorWad` / `V4AccountSummary.healthFactor` → current → after → delta 模式     | P6    | 前端 | 中     | Todo (AAV-1253)            |
 
 > **顺序逻辑**：先约束（P3 maxBorrow）→ 后安全（P4 HF）→ 再展示（P5+P6）→ 最后接 on-chain baseline（P7）。无约束的 HF 是虚假的——用户能借无限多时 HF 无意义。
 
@@ -355,22 +357,20 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ### AAV-756 Portfolio LTV + HF + NE APY（Urgent）
 
-~~P1/AAV-1222 ✅ Done~~ → ~~P2/AAV-1248 ✅ Done~~ → ~~P3/AAV-1250 ✅ Done~~ → ~~P4/AAV-1251 ✅ Done~~ → **下一步：P5/AAV-1249（NE APY 展示）** → P6/AAV-1252（Summary 整合）→ P7/AAV-1253（on-chain baseline）
+~~P1/AAV-1222 ✅ Done~~ → ~~P2/AAV-1248 ✅ Done~~ → ~~P3/AAV-1250 ✅ Done~~ → ~~P4/AAV-1251 ✅ Done~~ → ~~P5/AAV-1249 ✅ Canceled (merged to P6)~~ → ~~P6/AAV-1252 ✅ Done~~ → **下一步：P7/AAV-1253（on-chain HF baseline）**
 
 ### 其他 issue（按优先级排序）
 
 | 顺序 | Issue         | 优先级 | 状态            | 说明                                                           |
 | ---- | ------------- | ------ | --------------- | -------------------------------------------------------------- |
-| 1    | AAV-1249 (P5) | Urgent | Todo            | NE APY 展示，无依赖，可立即开始                                |
-| 2    | AAV-1252 (P6) | Urgent | Todo            | Summary 整合（HF + 颜色编码 + NE APY + maxBorrow 提示）        |
-| 3    | AAV-1253 (P7) | Urgent | Todo            | on-chain HF baseline 接入                                      |
-| 4    | AAV-895       | High   | Ready for agent | 跨资产 offset（cbETH 抵押借 ETH）                              |
-| 5    | AAV-1036      | High   | Backlog         | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）     |
-| 6    | AAV-1022      | Medium | Ready for agent | 定义 offset 对齐规则（AAV-1023/1024 前置）                     |
-| 7    | AAV-862       | Medium | Ready for agent | normalize campaignType 统一 + 重命名（`done-candidate` 标签）  |
-| 8    | AAV-864       | Medium | Backlog         | 单 cron + 缓存 TTL 重构                                        |
-| 9    | AAV-1071      | Low    | Backlog         | hookType=17 HF 排除条件展示（后端 `healthFactorHooks` 未透传） |
+| 1    | AAV-1253 (P7) | Urgent | Todo            | on-chain HF baseline 接入                                      |
+| 2    | AAV-895       | High   | Ready for agent | 跨资产 offset（cbETH 抵押借 ETH）                              |
+| 3    | AAV-1036      | High   | Backlog         | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）     |
+| 4    | AAV-1022      | Medium | Ready for agent | 定义 offset 对齐规则（AAV-1023/1024 前置）                     |
+| 5    | AAV-862       | Medium | Ready for agent | normalize campaignType 统一 + 重命名（`done-candidate` 标签）  |
+| 6    | AAV-864       | Medium | Backlog         | 单 cron + 缓存 TTL 重构                                        |
+| 7    | AAV-1071      | Low    | Backlog         | hookType=17 HF 排除条件展示（后端 `healthFactorHooks` 未透传） |
 
 > ⚠️ Linear issue 之间未设置 native blocking link。上述依赖关系通过 issue description 中的 "Blocked by" 和 comment 标注。
 >
-> **排序逻辑**：Urgent（AAV-756 P5-P7）→ High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
+> **排序逻辑**：Urgent（AAV-756 P7）→ High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
