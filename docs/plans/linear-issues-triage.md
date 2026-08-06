@@ -382,4 +382,4 @@ packages/aave-shared-config/schema-fingerprint.ts
 >
 > **排序逻辑**：~~Urgent（AAV-756 P7）~~ ✅ 全部完成 → High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
 >
-> **下一步**：AAV-895（跨资产 offset，cbETH 抵押借 ETH，Ready for agent）。
+> **下一步**：AAV-895 前端 ticket（T4）— 在 aaveapy 仓库 `rateSimulationCalculator` 中消费 `crossAssetPairing` 计算 `min(sourcePos, pairedPos × discountFactor)`。后端已完成 (commit a5eb421)。Spec: `docs/plans/aav-895-cross-asset-pairing-spec.md`。
