@@ -37,6 +37,7 @@ import {
   deduplicateHubSpokeBreakdowns,
   formatMerklBreakdown,
   detectNetPositionConstraint,
+  detectCrossAssetPairing,
 } from "./merkl-api.js";
 import type { OffsetLevel } from "./merkl-api.js";
 import type { NetPositionConstraint } from "@internal/aave-shared-contracts";
@@ -636,6 +637,12 @@ async function enrichDatasetWithIncentiveData(
               netPositionConstraint ?? null
             );
           }
+          const crossAssetPairing = detectCrossAssetPairing(
+            opp,
+            item.reserveId,
+            reserveIdSet,
+            oppOffsetLevel
+          );
           const oppBase = {
             link: opp.opportunityId
               ? `https://app.merkl.xyz/opportunities/${opp.opportunityId}`
@@ -648,6 +655,9 @@ async function enrichDatasetWithIncentiveData(
             ...(opp.description && { message: opp.description }),
             ...(opp.opportunityId && netPositionConstraint !== undefined
               ? { netPositionConstraint }
+              : {}),
+            ...(opp.opportunityId && crossAssetPairing !== null
+              ? { crossAssetPairing }
               : {}),
             ...(opp.borrowBlacklist && { borrowBlacklist: true }),
           };

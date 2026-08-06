@@ -19,6 +19,7 @@ import type {
   MerklHealthFactorHook,
   RuntimeReserveData,
   NetPositionConstraint,
+  CrossAssetPairing,
 } from "@internal/aave-shared-contracts";
 import {
   chainTokenKey,
@@ -321,6 +322,10 @@ export interface ComposedSubCampaign {
   underlyingToken?: string;
   campaignType?: number;
   composedType?: string;
+  composedMultiplier?: number;
+  composedIndex?: number;
+  mainParameter?: string;
+  symbolTargetToken?: string;
 }
 
 export interface MerklOpportunityData {
@@ -344,6 +349,8 @@ export interface MerklOpportunityData {
   campaignReserveId?: string;
   /** Pre-computed hub scope key for V4 Hub matching (chainId:token:hub via v4HubScopeKey). */
   hubScopeKey?: string;
+  /** Opportunity explorerAddress (used for source sub identification in cross-asset pairing). */
+  explorerAddress?: string;
 }
 
 /**
@@ -2142,6 +2149,7 @@ export async function processMerklData(
         composedSubCampaigns.length > 0 && { composedSubCampaigns }),
       ...(campaignReserveId && { campaignReserveId }),
       ...(hubScopeKey && { hubScopeKey }),
+      ...(explorerAddress && { explorerAddress }),
     };
 
     // 创建索引键：chainId + explorerAddress
@@ -2218,6 +2226,13 @@ function extractComposedCampaignInfo(opp: MerklOpportunity): {
     if (Array.isArray(rawSubs)) {
       for (const sub of rawSubs) {
         const underlyingToken = sub?.campaignParameters?.underlyingToken;
+        const rawMultiplier = sub?.composedMultiplier;
+        const parsedMultiplier =
+          typeof rawMultiplier === "string" && rawMultiplier
+            ? Number(rawMultiplier) / 1e9
+            : typeof rawMultiplier === "number"
+              ? rawMultiplier
+              : undefined;
         composedSubCampaigns.push({
           underlyingToken:
             typeof underlyingToken === "string"
@@ -2230,6 +2245,24 @@ function extractComposedCampaignInfo(opp: MerklOpportunity): {
           composedType:
             typeof sub?.composedType === "string"
               ? sub.composedType
+              : undefined,
+          composedMultiplier:
+            parsedMultiplier !== undefined &&
+            Number.isFinite(parsedMultiplier) &&
+            parsedMultiplier >= 0
+              ? parsedMultiplier
+              : undefined,
+          composedIndex:
+            typeof sub?.composedIndex === "number"
+              ? sub.composedIndex
+              : undefined,
+          mainParameter:
+            typeof sub?.mainParameter === "string"
+              ? sub.mainParameter.toLowerCase()
+              : undefined,
+          symbolTargetToken:
+            typeof sub?.symbolTargetToken === "string"
+              ? sub.symbolTargetToken
               : undefined,
         });
       }
@@ -2511,6 +2544,106 @@ export function composedNetPositionConstraint(
   if (offsetReserveIds.length === 0) return null;
 
   return { sourceSide, offsetReserveIds };
+}
+
+/**
+ * Detects cross-asset pairing constraint for Merkl min(1,2) opportunities.
+ *
+ * Unlike netPositionConstraint (subtraction: source - Σoffset),
+ * cross-asset pairing uses min(): min(sourcePos, pairedPos × discountFactor).
+ *
+ * This is an independent constraint type — not a net position constraint.
+ * min(1,2) and looping are parallel conditions that can coexist.
+ *
+ * Source sub identification: the sub whose mainParameter matches the opportunity's
+ * explorerAddress is the source sub (multiplier always 1.0). The other sub is the
+ * paired sub.
+ *
+ * Paired side direction: determined by campaignType — 60 (MAIN/supply aToken) → supply,
+ * 61 (DEFAULT/borrow vToken) → borrow. Falls back to composedType if campaignType missing.
+ */
+export function detectCrossAssetPairing(
+  opp: MerklOpportunityData,
+  oppReserveId: string,
+  reserveIdSet: Set<string>,
+  offsetLevel: OffsetLevel = "reserve"
+): CrossAssetPairing | null {
+  if (opp.composedCampaignsCompute !== "min(1,2)") return null;
+  if (!opp.composedSubCampaigns || opp.composedSubCampaigns.length < 2)
+    return null;
+
+  const explorerAddr = opp.explorerAddress?.toLowerCase();
+  if (!explorerAddr) return null;
+
+  let sourceSub: ComposedSubCampaign | undefined;
+  let pairedSub: ComposedSubCampaign | undefined;
+
+  for (const sub of opp.composedSubCampaigns) {
+    if (sub.mainParameter?.toLowerCase() === explorerAddr) {
+      sourceSub = sub;
+    } else {
+      pairedSub = sub;
+    }
+  }
+
+  if (!sourceSub || !pairedSub) return null;
+
+  if (
+    !pairedSub.underlyingToken ||
+    !sourceSub.underlyingToken ||
+    pairedSub.underlyingToken === sourceSub.underlyingToken
+  ) {
+    return null;
+  }
+
+  if (
+    pairedSub.composedMultiplier === undefined ||
+    !Number.isFinite(pairedSub.composedMultiplier) ||
+    pairedSub.composedMultiplier < 0
+  ) {
+    logger.warn(`⚠️ detectCrossAssetPairing: invalid composedMultiplier`, {
+      oppId: opp.opportunityId,
+      oppName: opp.name,
+      pairedToken: pairedSub.underlyingToken,
+    });
+    return null;
+  }
+
+  const resolvedIds = resolveOffsetReserveIds(
+    oppReserveId,
+    pairedSub.underlyingToken,
+    reserveIdSet,
+    offsetLevel
+  );
+
+  if (resolvedIds.length === 0) {
+    logger.warn(
+      `⚠️ detectCrossAssetPairing: pairedReserveId not found in reserveIdSet`,
+      {
+        oppId: opp.opportunityId,
+        oppName: opp.name,
+        pairedToken: pairedSub.underlyingToken,
+        oppReserveId,
+      }
+    );
+    return null;
+  }
+
+  const sourceSide: "supply" | "borrow" =
+    opp.borrow.length > 0 ? "borrow" : "supply";
+
+  const pairedSide: "supply" | "borrow" = pairedSub.symbolTargetToken
+    ?.toLowerCase()
+    .includes("debt")
+    ? "borrow"
+    : "supply";
+
+  return {
+    sourceSide,
+    pairedReserveId: resolvedIds[0],
+    pairedSide,
+    discountFactor: pairedSub.composedMultiplier,
+  };
 }
 
 export async function detectNetPositionConstraint(
