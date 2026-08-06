@@ -17,6 +17,8 @@
 >
 > **2026-08-05 更新 3**：AAV-1253（P7）已完成（commit `8fb07f9c` on `aaveapy/lovable`）。on-chain HF baseline 接入：`useOnchainHealthFactor` hook multicall `getUserAccountData` per V3 Pool/V4 Spoke。V4 匹配用 `spokeAddress`（非 `spokeName`）规避 address-book/SDK 命名不匹配。`PortfolioSummaryBar` 升级为 "Lowest HF" badge + ↑/↓ delta 箭头 + Advanced 区 current→after 展示。20 新场景测试，3452 测试通过，0 回归。Spec: `docs/plans/aav-1253-onchain-hf-baseline-spec.md`。
 >
+> **2026-08-06 更新**：修复 `usePortfolioToggle.ts` 中 useMemo key 不匹配 bug（commit `45675516` on `aaveapy/lovable`）。根因：`useMemo` 返回对象 key 为 `portfolioHealthFactors`，但解构语法 `healthFactors: portfolioHealthFactors` 期望 key `healthFactors`，导致 `portfolioHealthFactors` 始终为 `undefined`。虽然 P4-P7 的 HF 计算逻辑全部正确（`computeHealthFactors` 正确产出 `healthFactor: 1.56`），但 HF 数据从未传递到 `PortfolioSummaryBar`，UI 始终显示 "—"。全代码库审查确认仅此一处。回归测试已添加（断言 `portfolioHealthFactors` 为 defined 且 `healthFactor > 0`）。同时创建 `docs/conventions/wallet-js-injection-testing.md`（前端），归档 wallet JS 注入 E2E 测试模式。
+>
 > **2026-08-02 Grill 更新**：AAV-756 已拆分为 P2-P7 六个子步骤（见下方 AAV-756 拆分详情）。确认 HF 按 per-pool/spoke 隔离边界计算，非全局。先做 simulation 逻辑，后接 on-chain HF baseline。
 
 ## 本轮操作汇总
@@ -184,16 +186,17 @@ packages/aave-shared-config/schema-fingerprint.ts
 - `PortfolioSummary.netEffectiveApy`：已计算但未展示在主面板 footer
 - `SimulationSubRow.tsx`：已有 per-reserve borrow cap 约束（"Adjust to max"），无 portfolio 级 LTV 约束
 
-### P3+P4 实现状态（2026-08-04）
+### P3-P7 实现状态（2026-08-06 更新）
 
-| Phase | 计算产出                                                             | UI 消费者                                                                           | 状态                  |
-| ----- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------- |
-| P3    | `PortfolioPositionResult.ltvClampedUsd`                              | `PortfolioUnifiedTable.tsx` L220 + `MobilePortfolioCard.tsx` L152（inline warning） | ✅ 计算+UI 完成       |
-| P4    | `SimulatePortfolioResult.healthFactors`                              | **无**（P6 将消费）                                                                 | ✅ 计算完成，UI 待 P6 |
-| P5    | `PortfolioSummary.netEffectiveApy`                                   | **无**（P5 将加 footer）                                                            | 计算已存在，UI 待 P5  |
-| P7    | `V3AccountSummary.healthFactorWad` / `V4AccountSummary.healthFactor` | **未接入** portfolio simulation                                                     | 数据源存在，接入待 P7 |
+| Phase | 计算产出                                                             | UI 消费者                                                                           | 状态               |
+| ----- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------ |
+| P3    | `PortfolioPositionResult.ltvClampedUsd`                              | `PortfolioUnifiedTable.tsx` L220 + `MobilePortfolioCard.tsx` L152（inline warning） | ✅ 计算+UI 完成    |
+| P4    | `SimulatePortfolioResult.healthFactors`                              | `PortfolioSummaryBar.tsx`（P6 消费）                                                | ✅ 计算+UI 完成    |
+| P5    | `PortfolioSummary.netEffectiveApy`                                   | `PortfolioSummaryBar.tsx`（P6 合并）                                                | ✅ 合并到 P6       |
+| P6    | `PortfolioSummaryBar` 组件                                           | Min HF badge + Advanced 折叠区                                                      | ✅ Done (AAV-1252) |
+| P7    | `V3AccountSummary.healthFactorWad` / `V4AccountSummary.healthFactor` | `useOnchainHealthFactor` → `PortfolioSummaryBar`                                    | ✅ Done (AAV-1253) |
 
-> **关键**：P4 的 `healthFactors` 当前无任何组件消费。用户在 UI 中看不到 HF——这是 by design（HF 是 Summary 级指标，属于 P6 scope）。P3 有 inline UI 是因为 maxBorrow 截断是 per-row 交互。
+> **Bug 修复 (2026-08-06)**：P4-P7 虽然代码全部正确，但 `usePortfolioToggle.ts` 中 `useMemo` 返回对象的 key (`portfolioHealthFactors`) 与解构期望的 key (`healthFactors`) 不匹配，导致 HF 数据从未传递到 UI。已修复（commit `45675516`），回归测试已添加。
 
 ### 参考文档
 
