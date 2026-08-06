@@ -140,13 +140,13 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ## Phase 1: Urgent / High — 最高优先级
 
-| Issue        | 标题                                                           | 状态            | 领域      | 优先级   | 说明                                           |
-| ------------ | -------------------------------------------------------------- | --------------- | --------- | -------- | ---------------------------------------------- |
-| **AAV-756**  | Portfolio LTV constraint + Net Effective APY + Health Factor   | Todo            | 前端      | Urgent   | **完全 unblocked**。已拆分 P2-P7（见下方详情） |
-| ~~AAV-1222~~ | ~~[Backend] GET /markets API 增加 ltv + liquidationThreshold~~ | **Done** ✅     | 后端      | ~~High~~ | 2026-08-02 完成。fingerprint: 2d1059421baf     |
-| **AAV-895**  | Borrow ETH with cbETH collateral — cross-asset offset formula  | Ready for agent | 后端+前端 | High     | 跨资产 offset 计算特殊处理                     |
-| **AAV-1036** | Data layer: separate offsetNote from capNote                   | Backlog         | 后端      | High     | 父 issue，AAV-1038 已 Done                     |
-| **AAV-364**  | [EPIC] 市场宏观指标聚合                                        | Todo            | 全栈      | High     | deficit 已实现，其他指标待做                   |
+| Issue        | 标题                                                           | 状态        | 领域      | 优先级   | 说明                                           |
+| ------------ | -------------------------------------------------------------- | ----------- | --------- | -------- | ---------------------------------------------- |
+| **AAV-756**  | Portfolio LTV constraint + Net Effective APY + Health Factor   | Todo        | 前端      | Urgent   | **完全 unblocked**。已拆分 P2-P7（见下方详情） |
+| ~~AAV-1222~~ | ~~[Backend] GET /markets API 增加 ltv + liquidationThreshold~~ | **Done** ✅ | 后端      | ~~High~~ | 2026-08-02 完成。fingerprint: 2d1059421baf     |
+| **AAV-895**  | Borrow ETH with cbETH collateral — cross-asset offset formula  | In Progress | 后端+前端 | High     | 后端完成 (commit a5eb421)，前端待做            |
+| **AAV-1036** | Data layer: separate offsetNote from capNote                   | Backlog     | 后端      | High     | 父 issue，AAV-1038 已 Done                     |
+| **AAV-364**  | [EPIC] 市场宏观指标聚合                                        | Todo        | 全栈      | High     | deficit 已实现，其他指标待做                   |
 
 ## AAV-756 拆分详情 — Portfolio LTV + HF + Net Effective APY
 
@@ -371,7 +371,7 @@ packages/aave-shared-config/schema-fingerprint.ts
 | 顺序 | Issue         | 优先级 | 状态            | 说明                                                           |
 | ---- | ------------- | ------ | --------------- | -------------------------------------------------------------- |
 | 1    | AAV-1253 (P7) | Urgent | Done            | on-chain HF baseline 接入 ✅                                   |
-| 2    | AAV-895       | High   | Ready for agent | 跨资产 offset（cbETH 抵押借 ETH）                              |
+| 2    | AAV-895       | High   | In Progress     | 跨资产 offset 后端完成 (a5eb421)，前端待做                     |
 | 3    | AAV-1036      | High   | Backlog         | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）     |
 | 4    | AAV-1022      | Medium | Ready for agent | 定义 offset 对齐规则（AAV-1023/1024 前置）                     |
 | 5    | AAV-862       | Medium | Ready for agent | normalize campaignType 统一 + 重命名（`done-candidate` 标签）  |
