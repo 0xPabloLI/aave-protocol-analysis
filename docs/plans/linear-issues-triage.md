@@ -273,18 +273,20 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ## Phase 5: Low — 后端技术债
 
-| Issue       | 标题                                           | 状态            | 领域      | 优先级          | 说明                     |
-| ----------- | ---------------------------------------------- | --------------- | --------- | --------------- | ------------------------ |
-| **AAV-534** | addressBookRegistry 其他字段动态化             | Todo            | 后端      | Low             | 设计完成 (ADR-0026)      |
-| **AAV-449** | 移除 spokeName 字段                            | Ready for agent | 后端      | Low             |                          |
-| **AAV-517** | spokeAddress 从 reserveId 解析                 | Ready for agent | 后端      | Low             | AAV-534 子 issue         |
-| **AAV-830** | Merit raw RPC → ProviderPool                   | Ready for agent | 后端      | Low             |                          |
-| **AAV-829** | 统一 ~35 个 toLowerCase() → normalizeAddress() | Ready for agent | 后端      | Low             |                          |
-| **AAV-395** | reserve ID 编码字段评估                        | Backlog         | 后端      | Low             |                          |
-| **AAV-900** | Pendle PT token targetTokenPrice               | Backlog         | 后端      | Low             | 3 个非 Aave campaign     |
-| ~~AAV-863~~ | ~~数据变更频率 → TTL 优化~~                    | **Done** ✅     | 后端      | ~~Low~~         | 与 AAV-864 重复，已关闭  |
-| ~~AAV-923~~ | ~~position cap 前后端 API 对齐~~               | **Done** ✅     | 后端+前端 | ~~Low~~         | positionCap 已全链路落地 |
-| ~~AAV-707~~ | ~~大模型 URL 切换到 moonshot/deepseek~~        | **Canceled** 🚫 | 后端      | ~~No priority~~ | 用户已改用猀基流动       |
+| Issue        | 标题                                             | 状态            | 领域      | 优先级          | 说明                                        |
+| ------------ | ------------------------------------------------ | --------------- | --------- | --------------- | ------------------------------------------- |
+| **AAV-534**  | addressBookRegistry 其他字段动态化               | Todo            | 后端      | Low             | 设计完成 (ADR-0026)                         |
+| **AAV-449**  | 移除 spokeName 字段                              | Ready for agent | 后端      | Low             |                                             |
+| **AAV-517**  | spokeAddress 从 reserveId 解析                   | Ready for agent | 后端      | Low             | AAV-534 子 issue                            |
+| **AAV-830**  | Merit raw RPC → ProviderPool                     | Ready for agent | 后端      | Low             |                                             |
+| **AAV-829**  | 统一 ~35 个 toLowerCase() → normalizeAddress()   | Ready for agent | 后端      | Low             |                                             |
+| **AAV-395**  | reserve ID 编码字段评估                          | Backlog         | 后端      | Low             |                                             |
+| **(待创建)** | LOCF 查询实现（`/api/markets/history` 历史回放） | Backlog         | 后端      | Low             | incentive-normalization Task 9，见下方专节  |
+| **(待创建)** | `incentive_details` 列级 NULL 命中率测试 + 决策  | Backlog         | 后端      | Low             | incentive-normalization Task 11，见下方专节 |
+| **AAV-900**  | Pendle PT token targetTokenPrice                 | Backlog         | 后端      | Low             | 3 个非 Aave campaign                        |
+| ~~AAV-863~~  | ~~数据变更频率 → TTL 优化~~                      | **Done** ✅     | 后端      | ~~Low~~         | 与 AAV-864 重复，已关闭                     |
+| ~~AAV-923~~  | ~~position cap 前后端 API 对齐~~                 | **Done** ✅     | 后端+前端 | ~~Low~~         | positionCap 已全链路落地                    |
+| ~~AAV-707~~  | ~~大模型 URL 切换到 moonshot/deepseek~~          | **Canceled** 🚫 | 后端      | ~~No priority~~ | 用户已改用猀基流动                          |
 
 ## Phase 6: Low — 运维 / 监控 / 文档 / 运营
 
@@ -316,24 +318,65 @@ packages/aave-shared-config/schema-fingerprint.ts
 | **AAV-262** | 增加 TVL 历史                | Backlog | 后端+前端 | Low           | AAV-364 子 issue |
 | **AAV-91**  | reserve 未来 APY 预测        | Backlog | 前端      | No priority⚠️ | 未批量更新       |
 
+## Incentive Normalization 父工作
+
+> **来源**: `.codeartsdoer/specs/incentive-normalization/`（工作 spec）
+> **设计文档**: `docs/backend/change-detection-and-incentive-normalization.md`（权威来源）
+> **状态**: 2026-05-20 完成主体工作（Task 0-5, 8, 10），Task 4 已移除（设计变更），Task 6-7 已取消（无消费者）
+
+| #   | 任务                                                         | 状态      | Linear Issue |
+| --- | ------------------------------------------------------------ | --------- | ------------ |
+| 0   | 行级 change-detection（market_snapshots / configs / oracle） | ✅ 已实施 | —            |
+| 1   | `buildIncentiveDetails()` per-campaign 结构                  | ✅ 已实施 | —            |
+| 2   | 停写 `supply_incentives_apr` / `borrow_incentives_apr`       | ✅ 已实施 | —            |
+| 3   | `/api/markets` SUM 推导聚合 APR                              | ✅ 已实施 | —            |
+| 4   | `_isExpired` 序列化                                          | ❌ 已移除 | —            |
+| 5   | `filterRecentExpiredCampaigns()`                             | ✅ 已实施 | —            |
+| 6   | 建视图                                                       | ❌ 已取消 | —            |
+| 7   | Staging 验证                                                 | ❌ 已取消 | —            |
+| 8   | Migration: DROP 两列 + DROP 两表                             | ✅ 已实施 | —            |
+| 9   | LOCF 查询（PG 原生方案）                                     | 🟡 待实施 | (待创建)     |
+| 10  | 单测 + e2e 测试                                              | ✅ 已实施 | —            |
+| 11  | 列级 NULL 命中率测试 + 决策                                  | 🟡 待决策 | (待创建)     |
+
+**Issue 内容草稿**（供 Linear 创建时使用）：
+
+### Issue 1: LOCF 查询实现
+
+- **标题**: 后端：LOCF 查询实现（`/api/markets/history` 历史回放）
+- **优先级**: Low (4)
+- **描述**: `incentive_details` 已改为 per-campaign 结构，聚合 APR 列已删除。`/api/markets/history` 历史查询需要 LOCF（Last Observation Carried Forward）回填 NULL 列。PostgreSQL 不支持 `LAG(...) IGNORE NULLS`，需用 `array_agg FILTER` / 相关子查询 / 物化视图三种 PG 原生方案之一。
+- **参考**: `docs/backend/change-detection-and-incentive-normalization.md` §3.1.4
+- **Scope**: `persistenceService.ts` + history route
+
+### Issue 2: 列级 NULL 命中率测试
+
+- **标题**: 后端：`incentive_details` 列级 NULL 命中率测试 + 决策
+- **优先级**: Low (4)
+- **描述**: `incentive_details` 列级 NULL 写入模式的收益取决于两次 tick 间 incentive 不变的频率。Merkl Dutch auction APR 每 5min 变化，可能使命中率为 0。需在 staging 执行命中率 SQL，根据结果决定是否实施。
+- **判定规则**: >0.5 实施；<0.2 不实施；中间值需评估 LOCF 成本
+- **参考**: `docs/backend/change-detection-and-incentive-normalization.md` §7
+- **Scope**: staging SQL 查询 + 决策文档
+
 ## ~~遗漏项：No priority 未更新~~ (已全部解决)
 
 ~~AAV-707~~ 已 Canceled，~~AAV-1025~~ 已 Done。剩余 No priority：AAV-772（Backlog）、AAV-91（Backlog）——均为低优先级，暂不处理。
 
 ## 统计
 
-| 状态                       | 数量                                                       |
-| -------------------------- | ---------------------------------------------------------- |
-| Done (07-31 轮)            | 14 + 5 (AAV-923, AAV-515, AAV-863, AAV-1025, AAV-733)      |
-| Done (08-02 验证)          | +6 (AAV-783, AAV-809, AAV-868, AAV-870, AAV-866, AAV-1222) |
-| Done (08-04 AAV-756 P2-P4) | +3 (AAV-1248, AAV-1250, AAV-1251)                          |
-| Done (08-04 E2E)           | +1 (AAV-1257)                                              |
-| Canceled                   | 2 (AAV-1150, AAV-707)                                      |
-| Ready for agent            | 13                                                         |
-| Backlog                    | 22                                                         |
-| Todo                       | 15（+3: AAV-1249, AAV-1252, AAV-1253）                     |
-| **非 Done/Canceled 总计**  | **~50**                                                    |
-| No priority (待更新)       | 2 (AAV-772, AAV-91 — 低优先级暂不处理)                     |
+| 状态                       | 数量                                                         |
+| -------------------------- | ------------------------------------------------------------ |
+| Done (07-31 轮)            | 14 + 5 (AAV-923, AAV-515, AAV-863, AAV-1025, AAV-733)        |
+| Done (08-02 验证)          | +6 (AAV-783, AAV-809, AAV-868, AAV-870, AAV-866, AAV-1222)   |
+| Done (08-04 AAV-756 P2-P4) | +3 (AAV-1248, AAV-1250, AAV-1251)                            |
+| Done (08-04 E2E)           | +1 (AAV-1257)                                                |
+| Canceled                   | 2 (AAV-1150, AAV-707)                                        |
+| Ready for agent            | 13                                                           |
+| Backlog (新增)             | +2 (incentive-normalization Task 9 + Task 11, 待创建 Linear) |
+| Backlog                    | 22                                                           |
+| Todo                       | 15（+3: AAV-1249, AAV-1252, AAV-1253）                       |
+| **非 Done/Canceled 总计**  | **~50**                                                      |
+| No priority (待更新)       | 2 (AAV-772, AAV-91 — 低优先级暂不处理)                       |
 
 ### 08-02 额外验证关闭
 
@@ -383,3 +426,5 @@ packages/aave-shared-config/schema-fingerprint.ts
 > **排序逻辑**：~~Urgent（AAV-756 P7）~~ ✅ 全部完成 → High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
 >
 > **下一步**：AAV-895 前端 ticket（T4）— 在 aaveapy 仓库 `rateSimulationCalculator` 中消费 `crossAssetPairing` 计算 `min(sourcePos, pairedPos × discountFactor)`。后端已完成 (commit a5eb421)。Spec: `docs/plans/aav-895-cross-asset-pairing-spec.md`。
+>
+> **待创建 Linear issue**：incentive-normalization Task 9（LOCF 查询）+ Task 11（列级 NULL 命中率测试）。Issue 内容草稿见上方专节。
