@@ -33,31 +33,54 @@ export interface BaseCampaignBreakdown {
   isCombineCap?: boolean;
 }
 
-export interface CampaignGroup<TBreakdown extends BaseCampaignBreakdown = BaseCampaignBreakdown> {
+export interface CampaignGroup<
+  TBreakdown extends BaseCampaignBreakdown = BaseCampaignBreakdown,
+> {
   link: string;
   name?: string;
   message?: string;
   breakdowns: TBreakdown[];
   netPositionConstraint?: {
-    sourceSide: 'supply' | 'borrow';
+    sourceSide: "supply" | "borrow";
     offsetReserveIds: string[];
+  } | null;
+  crossAssetPairing?: {
+    sourceSide: "supply" | "borrow";
+    pairedReserveId: string;
+    pairedSide: "supply" | "borrow";
+    discountFactor: number;
   } | null;
   borrowBlacklist?: boolean;
 }
 
-export const DEFAULT_SPOKE_HUB_TOPOLOGY: { chainId: number; spokeAddress: string; hubAddress: string; }[];
+export const DEFAULT_SPOKE_HUB_TOPOLOGY: {
+  chainId: number;
+  spokeAddress: string;
+  hubAddress: string;
+}[];
 
-export declare const AAVE_RPC_URLS_BY_CHAIN_KEY: Readonly<Record<string, readonly string[]>>;
+export declare const AAVE_RPC_URLS_BY_CHAIN_KEY: Readonly<
+  Record<string, readonly string[]>
+>;
 export declare const AAVE_CHAIN_KEY_ALIASES: Readonly<Record<string, string>>;
 export declare const AAVE_CHAIN_ID_TO_RPC_KEY: Readonly<Record<number, string>>;
-export declare const resolveAaveRpcChainKey: (chainNameOrKey: unknown) => string;
-export declare const getAaveRpcUrlsByChainName: (chainNameOrKey: unknown) => string[];
+export declare const resolveAaveRpcChainKey: (
+  chainNameOrKey: unknown
+) => string;
+export declare const getAaveRpcUrlsByChainName: (
+  chainNameOrKey: unknown
+) => string[];
 export declare const getAaveRpcUrlsByChainId: (chainId: unknown) => string[];
 
 export declare const DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY: DefaultAaveTydroOpportunitiesQuery;
 
-export declare const resolveCacheTtlMs: (raw: unknown, fallbackMs?: number) => number;
-export declare const normalizeMerklCampaignTotalBudget: (campaign: unknown) => number | null;
+export declare const resolveCacheTtlMs: (
+  raw: unknown,
+  fallbackMs?: number
+) => number;
+export declare const normalizeMerklCampaignTotalBudget: (
+  campaign: unknown
+) => number | null;
 
 /**
  * Wraps any fetch-like function with a shared process-wide concurrency pool.
@@ -73,7 +96,9 @@ export interface SlidingWindowRateLimiter {
   reset(): void;
 }
 
-export declare function createSlidingWindowRateLimiter(maxRequestsPerSecond: number): SlidingWindowRateLimiter;
+export declare function createSlidingWindowRateLimiter(
+  maxRequestsPerSecond: number
+): SlidingWindowRateLimiter;
 
 export declare function createAaveV3RateLimitedFetch(
   fetchImpl?: typeof globalThis.fetch
@@ -123,12 +148,17 @@ export interface NumberEnvOptions {
   min?: number;
 }
 
-export declare function readNumberEnv(key: string, options: NumberEnvOptions): number;
+export declare function readNumberEnv(
+  key: string,
+  options: NumberEnvOptions
+): number;
 
 // ============================================================
 // Shared env-file / Doppler helpers
 // ============================================================
 
-export declare function parseEnvLinesToObject(envText: string): Record<string, string>;
+export declare function parseEnvLinesToObject(
+  envText: string
+): Record<string, string>;
 export declare function injectEnv(envVars: Record<string, string>): void;
 export declare function tryLoadFromDoppler(): boolean;

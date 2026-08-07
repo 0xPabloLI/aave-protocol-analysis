@@ -2,22 +2,27 @@
  * GET /api/markets 响应层：将内存快照中的收益率字段从比例值转为百分值（方案 A）。
  * 内存/cron 路径仍使用比例值，与 on-chain 回退计算一致。
  */
-import { createHash } from 'node:crypto';
-import type { MarketWithSpread } from '../types/index.js';
-import type { RuntimeReserveData } from '@internal/aave-shared-contracts';
+import { createHash } from "node:crypto";
+import type { MarketWithSpread } from "../types/index.js";
+import type { RuntimeReserveData } from "@internal/aave-shared-contracts";
 import {
   getBreakdownFieldRule,
   type CampaignForecastType,
-} from '../lib/merklApiContract.js';
-import { computeTargetTotalAprIncentiveApr } from '../lib/aprApyConversion.js';
+} from "../lib/merklApiContract.js";
+import { computeTargetTotalAprIncentiveApr } from "../lib/aprApyConversion.js";
 
 export function roundTo6(n: number): number {
   return Number(n.toFixed(6));
 }
 
-function scaleMeritCampaignBreakdown<T extends { campaignApr: number; positionCapUsd?: number; aprCap?: number }>(b: T): T {
+function scaleMeritCampaignBreakdown<
+  T extends { campaignApr: number; positionCapUsd?: number; aprCap?: number },
+>(b: T): T {
   const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
-  if (Object.prototype.hasOwnProperty.call(b, 'aprCap') && b.aprCap !== undefined) {
+  if (
+    Object.prototype.hasOwnProperty.call(b, "aprCap") &&
+    b.aprCap !== undefined
+  ) {
     (next as { aprCap?: number }).aprCap = roundTo6(b.aprCap * 100);
   }
   return next;
@@ -32,12 +37,21 @@ function scaleMerklBreakdown<
     totalBudget?: number;
     budgetBoundMode?: string;
   },
->(b: T, nativeApy?: number, side?: 'supply' | 'borrow'): T {
-  const isTargetTotal = b.campaignType === 'TARGET_TOTAL_APR';
+>(b: T, nativeApy?: number, side?: "supply" | "borrow"): T {
+  const isTargetTotal = b.campaignType === "TARGET_TOTAL_APR";
   let campaignAprScaled: number;
-  if (isTargetTotal && nativeApy !== undefined && side !== undefined && b.aprCap != null) {
+  if (
+    isTargetTotal &&
+    nativeApy !== undefined &&
+    side !== undefined &&
+    b.aprCap != null
+  ) {
     const aprCapPercent = roundTo6(b.aprCap * 100);
-    const incentiveAprPercent = computeTargetTotalAprIncentiveApr(aprCapPercent, roundTo6(nativeApy * 100), side);
+    const incentiveAprPercent = computeTargetTotalAprIncentiveApr(
+      aprCapPercent,
+      roundTo6(nativeApy * 100),
+      side
+    );
     campaignAprScaled = incentiveAprPercent;
   } else {
     campaignAprScaled = roundTo6(b.campaignApr * 100);
@@ -45,7 +59,7 @@ function scaleMerklBreakdown<
   const next = { ...b, campaignApr: campaignAprScaled } as T;
   // parentCampaignId is an internal Hub/Spoke dedup field — strip from API payload
   delete (next as Record<string, unknown>).parentCampaignId;
-  if (Object.prototype.hasOwnProperty.call(b, 'aprCap')) {
+  if (Object.prototype.hasOwnProperty.call(b, "aprCap")) {
     const cap = b.aprCap;
     (next as { aprCap?: number | null }).aprCap =
       cap === null || cap === undefined ? cap : roundTo6(cap * 100);
@@ -59,11 +73,14 @@ function scaleMerklBreakdown<
   return next;
 }
 
-function scaleBrevisBreakdown<T extends { campaignApr: number; aprCap?: number }>(b: T): T {
+function scaleBrevisBreakdown<
+  T extends { campaignApr: number; aprCap?: number },
+>(b: T): T {
   const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
-  if (Object.prototype.hasOwnProperty.call(b, 'aprCap')) {
+  if (Object.prototype.hasOwnProperty.call(b, "aprCap")) {
     const cap = b.aprCap;
-    (next as { aprCap?: number }).aprCap = cap === undefined ? cap : roundTo6(cap * 100);
+    (next as { aprCap?: number }).aprCap =
+      cap === undefined ? cap : roundTo6(cap * 100);
   }
   return next;
 }
@@ -71,7 +88,10 @@ function scaleBrevisBreakdown<T extends { campaignApr: number; aprCap?: number }
 function scaleGroupedCampaigns<
   TBreakdown extends { campaignApr: number },
   TGroup extends { breakdowns: TBreakdown[] },
->(groups: TGroup[] | undefined, scaleBreakdown: (breakdown: TBreakdown) => TBreakdown): TGroup[] | undefined {
+>(
+  groups: TGroup[] | undefined,
+  scaleBreakdown: (breakdown: TBreakdown) => TBreakdown
+): TGroup[] | undefined {
   if (!groups?.length) return undefined;
   return groups.map((group) => ({
     ...group,
@@ -82,21 +102,43 @@ function scaleGroupedCampaigns<
 function scaleGroupedCampaignsWithContext<
   TBreakdown extends { campaignApr: number },
   TGroup extends { breakdowns: TBreakdown[] },
->(groups: TGroup[] | undefined, nativeApy: number, side: 'supply' | 'borrow'): TGroup[] | undefined {
+>(
+  groups: TGroup[] | undefined,
+  nativeApy: number,
+  side: "supply" | "borrow"
+): TGroup[] | undefined {
   if (!groups?.length) return undefined;
   return groups.map((group) => ({
     ...group,
-    breakdowns: group.breakdowns.map((bd) => scaleMerklBreakdown(bd, nativeApy, side)),
+    breakdowns: group.breakdowns.map((bd) =>
+      scaleMerklBreakdown(bd, nativeApy, side)
+    ),
   }));
 }
 
 const PASSTHROUGH_FIELDS: readonly (keyof RuntimeReserveData)[] = [
-  'tokenPrice', 'utilizationPct', 'aTokenAddress', 'vTokenAddress',
-  'liquidity', 'hubBorrowed', 'hubSupplied', 'borrowed', 'supplied', 'supplyCap', 'borrowCap', 'deficit',
-  'hubId', 'hubName', 'spokeId', 'spokeName',
+  "tokenPrice",
+  "utilizationPct",
+  "aTokenAddress",
+  "vTokenAddress",
+  "liquidity",
+  "hubBorrowed",
+  "hubSupplied",
+  "borrowed",
+  "supplied",
+  "supplyCap",
+  "borrowCap",
+  "deficit",
+  "hubId",
+  "hubName",
+  "spokeId",
+  "spokeName",
 ] as const;
 
-function pickDefined(reserve: RuntimeReserveData, fields: readonly (keyof RuntimeReserveData)[]): Partial<MarketWithSpread> {
+function pickDefined(
+  reserve: RuntimeReserveData,
+  fields: readonly (keyof RuntimeReserveData)[]
+): Partial<MarketWithSpread> {
   const out: Partial<MarketWithSpread> = {};
   for (const f of fields) {
     const v = reserve[f];
@@ -105,7 +147,9 @@ function pickDefined(reserve: RuntimeReserveData, fields: readonly (keyof Runtim
   return out;
 }
 
-export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithSpread {
+export function serializeReserveForApi(
+  reserve: RuntimeReserveData
+): MarketWithSpread {
   return {
     reserveId: reserve.reserveId,
     marketName: reserve.marketName,
@@ -115,36 +159,120 @@ export function serializeReserveForApi(reserve: RuntimeReserveData): MarketWithS
     tokenSymbol: reserve.tokenSymbol,
     tokenAddress: reserve.tokenAddress,
     ...pickDefined(reserve, PASSTHROUGH_FIELDS),
-    ...(reserve.aaveProReserveId ? { aaveProReserveId: reserve.aaveProReserveId } : {}),
+    ...(reserve.aaveProReserveId
+      ? { aaveProReserveId: reserve.aaveProReserveId }
+      : {}),
     ...(reserve.supplyDisabled ? { supplyDisabled: true } : {}),
     ...(reserve.isFrozen ? { isFrozen: true } : {}),
     ...(reserve.isPaused ? { isPaused: true } : {}),
     ...(reserve.isActive === false ? { isActive: false as const } : {}),
     ...(reserve.borrowDisabled ? { borrowDisabled: true } : {}),
-    ...(reserve.decimals !== undefined && reserve.decimals !== 18 ? { decimals: reserve.decimals } : {}),
-    ...(reserve.supplyApy !== undefined ? { supplyApy: roundTo6(reserve.supplyApy * 100) } : {}),
-    ...(reserve.borrowApy !== undefined ? { borrowApy: roundTo6(reserve.borrowApy * 100) } : {}),
-    ...(reserve.protocolFee ? { protocolFee: roundTo6(reserve.protocolFee) } : {}),
-    ...(reserve.slopeBelowOptimal !== undefined ? { slopeBelowOptimal: roundTo6(reserve.slopeBelowOptimal) } : {}),
-    ...(reserve.slopeAboveOptimal !== undefined ? { slopeAboveOptimal: roundTo6(reserve.slopeAboveOptimal) } : {}),
-    ...(reserve.optimalUtilization !== undefined ? { optimalUtilization: roundTo6(reserve.optimalUtilization) } : {}),
-    ...(reserve.baseBorrowRate !== undefined ? { baseBorrowRate: roundTo6(reserve.baseBorrowRate) } : {}),
-    ...(reserve.collateralRisk !== undefined ? { collateralRisk: roundTo6(reserve.collateralRisk) } : {}),
-    ...(reserve.meritSupplys?.length ? { meritSupplys: scaleGroupedCampaigns(reserve.meritSupplys, scaleMeritCampaignBreakdown) } : {}),
-    ...(reserve.meritBorrows?.length ? { meritBorrows: scaleGroupedCampaigns(reserve.meritBorrows, scaleMeritCampaignBreakdown) } : {}),
+    ...(reserve.decimals !== undefined && reserve.decimals !== 18
+      ? { decimals: reserve.decimals }
+      : {}),
+    ...(reserve.supplyApy !== undefined
+      ? { supplyApy: roundTo6(reserve.supplyApy * 100) }
+      : {}),
+    ...(reserve.borrowApy !== undefined
+      ? { borrowApy: roundTo6(reserve.borrowApy * 100) }
+      : {}),
+    ...(reserve.protocolFee
+      ? { protocolFee: roundTo6(reserve.protocolFee) }
+      : {}),
+    ...(reserve.slopeBelowOptimal !== undefined
+      ? { slopeBelowOptimal: roundTo6(reserve.slopeBelowOptimal) }
+      : {}),
+    ...(reserve.slopeAboveOptimal !== undefined
+      ? { slopeAboveOptimal: roundTo6(reserve.slopeAboveOptimal) }
+      : {}),
+    ...(reserve.optimalUtilization !== undefined
+      ? { optimalUtilization: roundTo6(reserve.optimalUtilization) }
+      : {}),
+    ...(reserve.baseBorrowRate !== undefined
+      ? { baseBorrowRate: roundTo6(reserve.baseBorrowRate) }
+      : {}),
+    ...(reserve.collateralRisk !== undefined
+      ? { collateralRisk: roundTo6(reserve.collateralRisk) }
+      : {}),
+    ...(reserve.ltv !== undefined ? { ltv: roundTo6(reserve.ltv) } : {}),
+    ...(reserve.liquidationThreshold !== undefined
+      ? { liquidationThreshold: roundTo6(reserve.liquidationThreshold) }
+      : {}),
+    ...(reserve.meritSupplys?.length
+      ? {
+          meritSupplys: scaleGroupedCampaigns(
+            reserve.meritSupplys,
+            scaleMeritCampaignBreakdown
+          ),
+        }
+      : {}),
+    ...(reserve.meritBorrows?.length
+      ? {
+          meritBorrows: scaleGroupedCampaigns(
+            reserve.meritBorrows,
+            scaleMeritCampaignBreakdown
+          ),
+        }
+      : {}),
     ...(reserve.merklSupplys?.length && reserve.supplyApy !== undefined
-      ? { merklSupplys: scaleGroupedCampaignsWithContext(reserve.merklSupplys, reserve.supplyApy, 'supply') }
-      : reserve.merklSupplys?.length ? { merklSupplys: scaleGroupedCampaigns(reserve.merklSupplys, (bd) => scaleMerklBreakdown(bd)) } : {}),
+      ? {
+          merklSupplys: scaleGroupedCampaignsWithContext(
+            reserve.merklSupplys,
+            reserve.supplyApy,
+            "supply"
+          ),
+        }
+      : reserve.merklSupplys?.length
+        ? {
+            merklSupplys: scaleGroupedCampaigns(reserve.merklSupplys, (bd) =>
+              scaleMerklBreakdown(bd)
+            ),
+          }
+        : {}),
     ...(reserve.merklBorrows?.length && reserve.borrowApy !== undefined
-      ? { merklBorrows: scaleGroupedCampaignsWithContext(reserve.merklBorrows, reserve.borrowApy, 'borrow') }
-      : reserve.merklBorrows?.length ? { merklBorrows: scaleGroupedCampaigns(reserve.merklBorrows, (bd) => scaleMerklBreakdown(bd)) } : {}),
-    ...(reserve.merklHolds?.length ? { merklHolds: scaleGroupedCampaigns(reserve.merklHolds, (bd) => scaleMerklBreakdown(bd)) } : {}),
-    ...(reserve.brevisSupplys?.length ? { brevisSupplys: scaleGroupedCampaigns(reserve.brevisSupplys, scaleBrevisBreakdown) } : {}),
-    ...(reserve.brevisBorrows?.length ? { brevisBorrows: scaleGroupedCampaigns(reserve.brevisBorrows, scaleBrevisBreakdown) } : {}),
+      ? {
+          merklBorrows: scaleGroupedCampaignsWithContext(
+            reserve.merklBorrows,
+            reserve.borrowApy,
+            "borrow"
+          ),
+        }
+      : reserve.merklBorrows?.length
+        ? {
+            merklBorrows: scaleGroupedCampaigns(reserve.merklBorrows, (bd) =>
+              scaleMerklBreakdown(bd)
+            ),
+          }
+        : {}),
+    ...(reserve.merklHolds?.length
+      ? {
+          merklHolds: scaleGroupedCampaigns(reserve.merklHolds, (bd) =>
+            scaleMerklBreakdown(bd)
+          ),
+        }
+      : {}),
+    ...(reserve.brevisSupplys?.length
+      ? {
+          brevisSupplys: scaleGroupedCampaigns(
+            reserve.brevisSupplys,
+            scaleBrevisBreakdown
+          ),
+        }
+      : {}),
+    ...(reserve.brevisBorrows?.length
+      ? {
+          brevisBorrows: scaleGroupedCampaigns(
+            reserve.brevisBorrows,
+            scaleBrevisBreakdown
+          ),
+        }
+      : {}),
   };
 }
 
-export function serializeMarketsReservesForApi(reserves: RuntimeReserveData[]): MarketWithSpread[] {
+export function serializeMarketsReservesForApi(
+  reserves: RuntimeReserveData[]
+): MarketWithSpread[] {
   return reserves.map(serializeReserveForApi);
 }
 
@@ -172,18 +300,18 @@ export function computeSchemaFingerprint(): string {
   if (_cachedFingerprint) return _cachedFingerprint;
 
   const canonical: RuntimeReserveData = {
-    reserveId: '__fingerprint__',
-    marketName: '__fingerprint__',
-    chainName: '__fingerprint__',
+    reserveId: "__fingerprint__",
+    marketName: "__fingerprint__",
+    chainName: "__fingerprint__",
     chainId: 1,
-    tokenName: '__fingerprint__',
-    tokenSymbol: '__fingerprint__',
-    tokenAddress: '0x0000000000000000000000000000000000000001',
-    aaveProReserveId: '__fingerprint__',
+    tokenName: "__fingerprint__",
+    tokenSymbol: "__fingerprint__",
+    tokenAddress: "0x0000000000000000000000000000000000000001",
+    aaveProReserveId: "__fingerprint__",
     tokenPrice: 1,
     utilizationPct: 1,
-    aTokenAddress: '0x0000000000000000000000000000000000000001',
-    vTokenAddress: '0x0000000000000000000000000000000000000001',
+    aTokenAddress: "0x0000000000000000000000000000000000000001",
+    vTokenAddress: "0x0000000000000000000000000000000000000001",
     supplyApy: 0.01,
     supplyDisabled: true,
     isFrozen: true,
@@ -192,92 +320,151 @@ export function computeSchemaFingerprint(): string {
     borrowApy: 0.01,
     borrowDisabled: true,
     decimals: 6,
-    liquidity: '1',
-    borrowed: '1',
-    supplied: '1',
-    supplyCap: '1',
-    borrowCap: '1',
+    liquidity: "1",
+    borrowed: "1",
+    supplied: "1",
+    supplyCap: "1",
+    borrowCap: "1",
     protocolFee: 10,
     slopeBelowOptimal: 1,
     slopeAboveOptimal: 1,
     optimalUtilization: 1,
     baseBorrowRate: 0.01,
-    deficit: '1',
-    meritSupplys: [{
-      link: '__fingerprint__',
-      breakdowns: [{
-        campaignApr: 0.01, campaignId: '__fingerprint__-base',
-        campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
-        campaignType: 'DUTCH_AUCTION',
-      }],
-    }],
-    meritBorrows: [{
-      link: '__fingerprint__',
-      breakdowns: [{
-        campaignApr: 0.01, campaignId: '__fingerprint__-base',
-        campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
-        campaignType: 'DUTCH_AUCTION',
-      }],
-    }],
-    merklSupplys: [{
-      link: '__fingerprint__',
-      breakdowns: [{
-        campaignApr: 0.01, campaignId: '__fingerprint__', databaseId: '__fp_db__',
-        campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
-        lastEndedCampaign: { startedAt: '2025-01-01', endedAt: '2025-01-01', campaignId: '__fingerprint__' },
-      }],
-    }],
-    merklBorrows: [{
-      link: '__fingerprint__',
-      breakdowns: [{
-        campaignApr: 0.01, campaignId: '__fingerprint__', databaseId: '__fp_db__',
-        campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
-        lastEndedCampaign: { startedAt: '2025-01-01', endedAt: '2025-01-01', campaignId: '__fingerprint__' },
-      }],
-    }],
-    merklHolds: [{
-      link: '__fingerprint__',
-      breakdowns: [{
-        campaignApr: 0.01, campaignId: '__fingerprint__', databaseId: '__fp_db__',
-        campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
-        lastEndedCampaign: { startedAt: '2025-01-01', endedAt: '2025-01-01', campaignId: '__fingerprint__' },
-      }],
-    }],
-    brevisSupplys: [{
-      link: '__fingerprint__',
-      breakdowns: [{
-        campaignApr: 0.01, campaignId: '__fingerprint__',
-        campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
-      }],
-    }],
-    brevisBorrows: [{
-      link: '__fingerprint__',
-      breakdowns: [{
-        campaignApr: 0.01, campaignId: '__fingerprint__',
-        campaignStartedAt: '2025-01-01', campaignEndedAt: '2025-01-01',
-      }],
-    }],
-    hubId: '__fingerprint__',
-    hubName: '__fingerprint__',
-    hubAddress: '0x0000000000000000000000000000000000000001',
-    spokeId: '__fingerprint__',
-    spokeName: '__fingerprint__',
-    spokeAddress: '0x0000000000000000000000000000000000000001',
+    deficit: "1",
+    meritSupplys: [
+      {
+        link: "__fingerprint__",
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignId: "__fingerprint__-base",
+            campaignStartedAt: "2025-01-01",
+            campaignEndedAt: "2025-01-01",
+            campaignType: "DUTCH_AUCTION",
+          },
+        ],
+      },
+    ],
+    meritBorrows: [
+      {
+        link: "__fingerprint__",
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignId: "__fingerprint__-base",
+            campaignStartedAt: "2025-01-01",
+            campaignEndedAt: "2025-01-01",
+            campaignType: "DUTCH_AUCTION",
+          },
+        ],
+      },
+    ],
+    merklSupplys: [
+      {
+        link: "__fingerprint__",
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignId: "__fingerprint__",
+            databaseId: "__fp_db__",
+            campaignStartedAt: "2025-01-01",
+            campaignEndedAt: "2025-01-01",
+            lastEndedCampaign: {
+              startedAt: "2025-01-01",
+              endedAt: "2025-01-01",
+              campaignId: "__fingerprint__",
+            },
+          },
+        ],
+      },
+    ],
+    merklBorrows: [
+      {
+        link: "__fingerprint__",
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignId: "__fingerprint__",
+            databaseId: "__fp_db__",
+            campaignStartedAt: "2025-01-01",
+            campaignEndedAt: "2025-01-01",
+            lastEndedCampaign: {
+              startedAt: "2025-01-01",
+              endedAt: "2025-01-01",
+              campaignId: "__fingerprint__",
+            },
+          },
+        ],
+      },
+    ],
+    merklHolds: [
+      {
+        link: "__fingerprint__",
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignId: "__fingerprint__",
+            databaseId: "__fp_db__",
+            campaignStartedAt: "2025-01-01",
+            campaignEndedAt: "2025-01-01",
+            lastEndedCampaign: {
+              startedAt: "2025-01-01",
+              endedAt: "2025-01-01",
+              campaignId: "__fingerprint__",
+            },
+          },
+        ],
+      },
+    ],
+    brevisSupplys: [
+      {
+        link: "__fingerprint__",
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignId: "__fingerprint__",
+            campaignStartedAt: "2025-01-01",
+            campaignEndedAt: "2025-01-01",
+          },
+        ],
+      },
+    ],
+    brevisBorrows: [
+      {
+        link: "__fingerprint__",
+        breakdowns: [
+          {
+            campaignApr: 0.01,
+            campaignId: "__fingerprint__",
+            campaignStartedAt: "2025-01-01",
+            campaignEndedAt: "2025-01-01",
+          },
+        ],
+      },
+    ],
+    hubId: "__fingerprint__",
+    hubName: "__fingerprint__",
+    hubAddress: "0x0000000000000000000000000000000000000001",
+    spokeId: "__fingerprint__",
+    spokeName: "__fingerprint__",
+    spokeAddress: "0x0000000000000000000000000000000000000001",
     collateralRisk: 5,
+    ltv: 80,
+    liquidationThreshold: 82.5,
   };
 
   const serialized = serializeReserveForApi(canonical);
   const keyPaths = collectNestedKeyPaths(serialized).sort();
-  _cachedFingerprint = createHash('sha256')
-    .update(keyPaths.join(','))
-    .digest('hex')
+  _cachedFingerprint = createHash("sha256")
+    .update(keyPaths.join(","))
+    .digest("hex")
     .slice(0, 12);
 
   return _cachedFingerprint;
 }
 
-function collectNestedKeyPaths(obj: unknown, prefix: string = ''): string[] {
-  if (obj === null || obj === undefined || typeof obj !== 'object') return [];
+function collectNestedKeyPaths(obj: unknown, prefix: string = ""): string[] {
+  if (obj === null || obj === undefined || typeof obj !== "object") return [];
   const paths: string[] = [];
   if (Array.isArray(obj)) {
     if (obj.length > 0) {
@@ -289,7 +476,7 @@ function collectNestedKeyPaths(obj: unknown, prefix: string = ''): string[] {
     const path = prefix ? `${prefix}.${key}` : key;
     paths.push(path);
     const value = (obj as Record<string, unknown>)[key];
-    if (value !== null && value !== undefined && typeof value === 'object') {
+    if (value !== null && value !== undefined && typeof value === "object") {
       paths.push(...collectNestedKeyPaths(value, path));
     }
   }

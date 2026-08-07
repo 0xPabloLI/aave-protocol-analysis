@@ -225,6 +225,10 @@ export interface RuntimeReserveData {
   spokeName?: string;
   spokeAddress?: string;
   collateralRisk?: number;
+  /** Collateral LTV (percent: 80 = 80%). V3: supplyInfo.maxLTV, V4: settings.collateralFactor. */
+  ltv?: number;
+  /** Liquidation threshold (percent: 82.5 = 82.5%). V3: supplyInfo.liquidationThreshold, V4: = ltv (collateralFactor). */
+  liquidationThreshold?: number;
 }
 
 // ============================================================
@@ -312,6 +316,26 @@ export interface NetPositionConstraint {
   offsetReserveIds: string[];
 }
 
+/**
+ * Describes a cross-asset pairing constraint for Merkl min(1,2) opportunities.
+ *
+ * Unlike NetPositionConstraint (which uses subtraction: source - Σoffset),
+ * cross-asset pairing uses min(): min(sourcePos, pairedPos × discountFactor).
+ *
+ * This is an independent constraint type — not a net position constraint.
+ * min(1,2) and looping are parallel conditions that can coexist.
+ */
+export interface CrossAssetPairing {
+  /** Source side direction (matches opportunity action: LEND→supply, BORROW→borrow). */
+  sourceSide: "supply" | "borrow";
+  /** Reserve ID of the paired token (resolved within same pool/spoke). */
+  pairedReserveId: string;
+  /** Paired side direction (determined by targetToken type: aToken→supply, vToken→borrow). */
+  pairedSide: "supply" | "borrow";
+  /** Paired-side multiplier from composedMultiplier / 1e9 (e.g. 0.823 for cbETH, 1.196 for sUSDe). */
+  discountFactor: number;
+}
+
 // ============================================================
 // Runtime validation
 // ============================================================
@@ -364,6 +388,8 @@ export const EXPECTED_RUNTIME_FIELDS = [
   "spokeName",
   "spokeAddress",
   "collateralRisk",
+  "ltv",
+  "liquidationThreshold",
 ] as const;
 
 export function validateRuntimeReserveShape(

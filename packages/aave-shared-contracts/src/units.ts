@@ -111,61 +111,63 @@ export function percentToRatio(percent: number): number {
  */
 export const FIELD_UNITS = {
   // Identity & metadata
-  reserveId: 'string',
-  marketName: 'string',
-  chainName: 'string',
-  chainId: 'number',
-  tokenName: 'string',
-  tokenSymbol: 'string',
-  tokenAddress: 'string',
-  aaveProReserveId: 'string',
+  reserveId: "string",
+  marketName: "string",
+  chainName: "string",
+  chainId: "number",
+  tokenName: "string",
+  tokenSymbol: "string",
+  tokenAddress: "string",
+  aaveProReserveId: "string",
   // Token info
-  tokenPrice: 'number',
-  decimals: 'number',
-  aTokenAddress: 'string',
-  vTokenAddress: 'string',
+  tokenPrice: "number",
+  decimals: "number",
+  aTokenAddress: "string",
+  vTokenAddress: "string",
   // Yield fields (ratio — serializer applies ×100)
-  supplyApy: 'ratio',
-  borrowApy: 'ratio',
+  supplyApy: "ratio",
+  borrowApy: "ratio",
   // Rate-model config (percent — serializer passes through)
-  utilizationPct: 'percent',
-  protocolFee: 'percent',
-  slopeBelowOptimal: 'percent',
-  slopeAboveOptimal: 'percent',
-  optimalUtilization: 'percent',
-  baseBorrowRate: 'percent',
-  collateralRisk: 'percent',
+  utilizationPct: "percent",
+  protocolFee: "percent",
+  slopeBelowOptimal: "percent",
+  slopeAboveOptimal: "percent",
+  optimalUtilization: "percent",
+  baseBorrowRate: "percent",
+  collateralRisk: "percent",
+  ltv: "percent",
+  liquidationThreshold: "percent",
   // Flags
-  supplyDisabled: 'boolean',
-  isFrozen: 'boolean',
-  isPaused: 'boolean',
-  isActive: 'boolean',
-  borrowDisabled: 'boolean',
+  supplyDisabled: "boolean",
+  isFrozen: "boolean",
+  isPaused: "boolean",
+  isActive: "boolean",
+  borrowDisabled: "boolean",
   // Raw on-chain amounts (string, base units)
-  supplyCap: 'string',
-  borrowCap: 'string',
-  deficit: 'string',
-  supplied: 'string',
-  borrowed: 'string',
-  hubBorrowed: 'string',
-  hubSupplied: 'string',
-  liquidity: 'string',
+  supplyCap: "string",
+  borrowCap: "string",
+  deficit: "string",
+  supplied: "string",
+  borrowed: "string",
+  hubBorrowed: "string",
+  hubSupplied: "string",
+  liquidity: "string",
   // Hub & Spoke metadata
-  hubId: 'string',
-  hubName: 'string',
-  hubAddress: 'string',
-  spokeId: 'string',
-  spokeName: 'string',
-  spokeAddress: 'string',
+  hubId: "string",
+  hubName: "string",
+  hubAddress: "string",
+  spokeId: "string",
+  spokeName: "string",
+  spokeAddress: "string",
   // Incentive campaign arrays — nested objects with ratio fields inside
   // (campaignApr, aprCap are ratio in memory; serializer applies ×100 per breakdown)
-  meritSupplys: 'campaignArray',
-  meritBorrows: 'campaignArray',
-  merklSupplys: 'campaignArray',
-  merklBorrows: 'campaignArray',
-  merklHolds: 'campaignArray',
-  brevisSupplys: 'campaignArray',
-  brevisBorrows: 'campaignArray',
+  meritSupplys: "campaignArray",
+  meritBorrows: "campaignArray",
+  merklSupplys: "campaignArray",
+  merklBorrows: "campaignArray",
+  merklHolds: "campaignArray",
+  brevisSupplys: "campaignArray",
+  brevisBorrows: "campaignArray",
 } as const;
 
 export type FieldUnit = (typeof FIELD_UNITS)[keyof typeof FIELD_UNITS];
@@ -183,12 +185,13 @@ export type FieldUnit = (typeof FIELD_UNITS)[keyof typeof FIELD_UNITS];
  *
  * Derived from FIELD_UNITS: ratio → multiply100, everything else → passthrough.
  */
-export const SERIALIZER_RULES: Record<string, 'multiply100' | 'passthrough'> = Object.fromEntries(
-  Object.entries(FIELD_UNITS).map(([field, unit]) => [
-    field,
-    unit === 'ratio' ? 'multiply100' : 'passthrough',
-  ]),
-);
+export const SERIALIZER_RULES: Record<string, "multiply100" | "passthrough"> =
+  Object.fromEntries(
+    Object.entries(FIELD_UNITS).map(([field, unit]) => [
+      field,
+      unit === "ratio" ? "multiply100" : "passthrough",
+    ])
+  );
 
 // ============================================================
 // Convenience sets for testing
@@ -196,10 +199,10 @@ export const SERIALIZER_RULES: Record<string, 'multiply100' | 'passthrough'> = O
 
 /** All fields that are stored as ratio in memory (serializer must ×100). */
 export const RATIO_FIELDS = Object.entries(FIELD_UNITS)
-  .filter(([, unit]) => unit === 'ratio')
+  .filter(([, unit]) => unit === "ratio")
   .map(([field]) => field);
 
 /** All fields that are stored as percent in memory (serializer passes through). */
 export const PERCENT_FIELDS = Object.entries(FIELD_UNITS)
-  .filter(([, unit]) => unit === 'percent')
+  .filter(([, unit]) => unit === "percent")
   .map(([field]) => field);

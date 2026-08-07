@@ -16,21 +16,24 @@
  *   are emitted as percent numbers (e.g., 9.0 means 9%) to match V3 after unification.
  */
 
-import { AaveClient, chainId as v4ChainId } from '@aave/client-v4';
-import { chains, reserves } from '@aave/client-v4/actions';
-import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
-import { v4ReserveId } from '@internal/aave-shared-contracts';
-import { logger } from './logger.js';
-import { toFiniteNumber, percentValueToPercent } from './utils/number.js';
-import { V4ChainsFetchError } from './v4-errors.js';
-import { fetchV4WithRetry, type V4FetchResult } from './v4-retry.js';
-import { extractSpokeHubTopology } from './v4-topology.js';
+import { AaveClient, chainId as v4ChainId } from "@aave/client-v4";
+import { chains, reserves } from "@aave/client-v4/actions";
+import type {
+  RuntimeReserveData,
+  SpokeHubTopology,
+} from "@internal/aave-shared-contracts";
+import { v4ReserveId } from "@internal/aave-shared-contracts";
+import { logger } from "./logger.js";
+import { toFiniteNumber, percentValueToPercent } from "./utils/number.js";
+import { V4ChainsFetchError } from "./v4-errors.js";
+import { fetchV4WithRetry, type V4FetchResult } from "./v4-retry.js";
+import { extractSpokeHubTopology } from "./v4-topology.js";
 
 type V4FormattedReserveData = RuntimeReserveData;
 
-const v4RetryLogFn: import('./v4-retry.js').LogFn = (level, msg, meta) => {
-  if (level === 'error') logger.error(msg, meta);
-  else if (level === 'warn') logger.warn(msg, meta);
+const v4RetryLogFn: import("./v4-retry.js").LogFn = (level, msg, meta) => {
+  if (level === "error") logger.error(msg, meta);
+  else if (level === "warn") logger.warn(msg, meta);
   else logger.info(msg, meta);
 };
 
@@ -44,7 +47,7 @@ function createV4Client() {
 }
 
 export function bigintReplacer(_key: string, value: unknown): unknown {
-  return typeof value === 'bigint' ? value.toString() : value;
+  return typeof value === "bigint" ? value.toString() : value;
 }
 
 // Re-export canonical V4FetchResult from v4-retry.ts
@@ -57,14 +60,18 @@ export type { V4FetchResult };
  * Internal implementation — use fetchV4ReservesData() for production callers.
  */
 async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
-  logger.info('🔄 [V4] Fetching Aave V4 reserves data...');
+  logger.info("🔄 [V4] Fetching Aave V4 reserves data...");
 
   // 1. Discover supported chains
   const v4Client = createV4Client();
 
-  const chainsResult = await chains(v4Client, { query: { filter: 'ALL' as any } });
+  const chainsResult = await chains(v4Client, {
+    query: { filter: "ALL" as any },
+  });
   if (chainsResult.isErr()) {
-    throw new V4ChainsFetchError(`[V4] Failed to fetch chains: ${chainsResult.error.message}`);
+    throw new V4ChainsFetchError(
+      `[V4] Failed to fetch chains: ${chainsResult.error.message}`
+    );
   }
 
   const supportedChainIds = chainsResult.value
@@ -81,7 +88,9 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
   });
 
   if (reservesResult.isErr()) {
-    throw new Error(`[V4] Failed to fetch reserves: ${reservesResult.error.message}`);
+    throw new Error(
+      `[V4] Failed to fetch reserves: ${reservesResult.error.message}`
+    );
   }
 
   const v4Reserves = reservesResult.value;
@@ -93,18 +102,19 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
   for (const reserve of v4Reserves) {
     const r = reserve as any; // V4 types are deeply nested fragments
 
-    const spokeName: string = r.spoke?.name ?? 'Unknown';
-    const chainName: string = r.chain?.name ?? 'Unknown';
+    const spokeName: string = r.spoke?.name ?? "Unknown";
+    const chainName: string = r.chain?.name ?? "Unknown";
     const chainIdNum: number = Number(r.chain?.chainId ?? 0);
-    const tokenAddress: string = r.asset?.underlying?.address ?? '';
+    const tokenAddress: string = r.asset?.underlying?.address ?? "";
     const tokenAddressLower = tokenAddress.toLowerCase();
-    const tokenSymbol: string = r.asset?.underlying?.info?.symbol ?? 'Unknown';
-    const tokenName: string = r.asset?.underlying?.info?.name ?? 'Unknown';
-    const decimals: number | undefined = r.asset?.underlying?.info?.decimals ?? undefined;
+    const tokenSymbol: string = r.asset?.underlying?.info?.symbol ?? "Unknown";
+    const tokenName: string = r.asset?.underlying?.info?.name ?? "Unknown";
+    const decimals: number | undefined =
+      r.asset?.underlying?.info?.decimals ?? undefined;
 
-    const hubName: string = r.asset?.hub?.name ?? 'Unknown';
-    const hubAddress: string = r.asset?.hub?.address ?? '';
-    const spokeAddress: string = r.spoke?.address ?? '';
+    const hubName: string = r.asset?.hub?.name ?? "Unknown";
+    const hubAddress: string = r.asset?.hub?.address ?? "";
+    const spokeAddress: string = r.spoke?.address ?? "";
     if (!spokeAddress) continue;
     const spokeAddressLower = spokeAddress.toLowerCase();
     const hubAddressLower = hubAddress.toLowerCase();
@@ -112,12 +122,18 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     // address-based，和 V3 (${chainId}:${poolAddress}:${tokenAddr}) 风格一致
     // hubAddress 确保唯一性：同一 spoke 内同一 token 可来自不同 hub
     // hubAddress 与 onchainKey 天然一致（两端都是链上地址），无需映射表
-    const reserveId = v4ReserveId(chainIdNum, spokeAddress, tokenAddressLower, hubAddress);
-    const marketName = `AaveV4${spokeName.replace(/\s+/g, '')}`;
+    const reserveId = v4ReserveId(
+      chainIdNum,
+      spokeAddress,
+      tokenAddressLower,
+      hubAddress
+    );
+    const marketName = `AaveV4${spokeName.replace(/\s+/g, "")}`;
 
     // Token price from exchange rate
-    const exchangeRate = toFiniteNumber(r.summary?.supplied?.exchangeRate?.value)
-      ?? toFiniteNumber(r.summary?.supplied?.exchangeRate);
+    const exchangeRate =
+      toFiniteNumber(r.summary?.supplied?.exchangeRate?.value) ??
+      toFiniteNumber(r.summary?.supplied?.exchangeRate);
     const tokenPrice = exchangeRate ?? undefined;
 
     // Supply / Borrow APY: use .value (ratio) — serializer applies ×100.
@@ -137,22 +153,44 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     // Hub-level (shared across spokes) liquidity / utilization / rate model
     const a = r.asset;
     const utilizationPct = percentValueToPercent(a?.summary?.utilizationRate);
-    const liquidity = a?.summary?.availableLiquidity?.amount?.onChainValue?.toString?.() ?? undefined;
-    const hubBorrowed = a?.summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined;
-    const hubSupplied = a?.summary?.supplied?.amount?.onChainValue?.toString?.() ?? undefined;
+    const liquidity =
+      a?.summary?.availableLiquidity?.amount?.onChainValue?.toString?.() ??
+      undefined;
+    const hubBorrowed =
+      a?.summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined;
+    const hubSupplied =
+      a?.summary?.supplied?.amount?.onChainValue?.toString?.() ?? undefined;
 
     const protocolFee = percentValueToPercent(a?.settings?.liquidityFee);
-    const slopeBelowOptimal = percentValueToPercent(a?.settings?.slopeBelowOptimal);
-    const slopeAboveOptimal = percentValueToPercent(a?.settings?.slopeAboveOptimal);
-    const optimalUtilization = percentValueToPercent(a?.settings?.optimalUtilizationRate);
+    const slopeBelowOptimal = percentValueToPercent(
+      a?.settings?.slopeBelowOptimal
+    );
+    const slopeAboveOptimal = percentValueToPercent(
+      a?.settings?.slopeAboveOptimal
+    );
+    const optimalUtilization = percentValueToPercent(
+      a?.settings?.optimalUtilizationRate
+    );
     const baseBorrowRate = percentValueToPercent(a?.settings?.baseBorrowRate);
 
     // Reserve-level (per-spoke) sizes & caps in raw token units
-    const supplied = r.summary?.supplied?.amount?.onChainValue?.toString?.() ?? undefined;
-    const borrowed = r.summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined;
-    const supplyCap = r.settings?.supplyCap?.amount?.onChainValue?.toString?.() ?? undefined;
-    const borrowCap = r.settings?.borrowCap?.amount?.onChainValue?.toString?.() ?? undefined;
+    const supplied =
+      r.summary?.supplied?.amount?.onChainValue?.toString?.() ?? undefined;
+    const borrowed =
+      r.summary?.borrowed?.amount?.onChainValue?.toString?.() ?? undefined;
+    const supplyCap =
+      r.settings?.supplyCap?.amount?.onChainValue?.toString?.() ?? undefined;
+    const borrowCap =
+      r.settings?.borrowCap?.amount?.onChainValue?.toString?.() ?? undefined;
     const collateralRisk = percentValueToPercent(r.settings?.collateralRisk);
+
+    // AAV-1222: V4 collateralFactor replaces V3's ltv + liquidationThreshold.
+    // V4 architecture merges both into a single parameter — double-fill to unify with V3.
+    const collateralFactor = percentValueToPercent(
+      r.settings?.collateralFactor
+    );
+    const ltv = collateralFactor;
+    const liquidationThreshold = collateralFactor;
 
     // V4 SDK embeds summary.rewards[] (MerklSupplyReward / MerklBorrowReward) but they
     // are internal Aave points (payout token "aglaMerklUSD") that don't exist in the
@@ -179,7 +217,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(supplyDisabled ? { supplyDisabled: true } : {}),
       ...(isFrozen ? { isFrozen: true } : {}),
       ...(isPaused ? { isPaused: true } : {}),
-      ...(isInactive ? { isActive: false } as const : {}),
+      ...(isInactive ? ({ isActive: false } as const) : {}),
       borrowApy,
       ...(borrowDisabled ? { borrowDisabled: true } : {}),
       ...(decimals !== undefined && decimals !== 18 ? { decimals } : {}),
@@ -204,12 +242,16 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
       ...(spoke?.name ? { spokeName: spoke.name } : {}),
       ...(spoke?.address ? { spokeAddress: spoke.address } : {}),
       ...(collateralRisk !== undefined ? { collateralRisk } : {}),
+      ...(ltv !== undefined ? { ltv } : {}),
+      ...(liquidationThreshold !== undefined ? { liquidationThreshold } : {}),
     });
   }
 
   logger.info(`🎯 [V4] Mapped ${dataset.length} V4 reserves to unified format`);
   const spokeHubTopology = extractSpokeHubTopology(v4Reserves as any[]);
-  logger.info(`🔗 [V4] Extracted ${spokeHubTopology.length} spoke-hub topology entries`);
+  logger.info(
+    `🔗 [V4] Extracted ${spokeHubTopology.length} spoke-hub topology entries`
+  );
   return {
     mapped: dataset,
     raw: { reserves: v4Reserves as any[] },
@@ -228,16 +270,17 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
  * @param throwOnFinalFailure - If true, throws on final failure instead of returning empty
  */
 // ts-prune-ignore-next
-export async function fetchV4ReservesData(
-  options?: { maxRetries?: number; throwOnFinalFailure?: boolean }
-): Promise<V4FetchResult> {
+export async function fetchV4ReservesData(options?: {
+  maxRetries?: number;
+  throwOnFinalFailure?: boolean;
+}): Promise<V4FetchResult> {
   const result = await fetchV4WithRetry(fetchV4MarketsDataInner, {
     maxRetries: options?.maxRetries,
     logFn: v4RetryLogFn,
   });
 
   if (result.mapped.length === 0 && options?.throwOnFinalFailure) {
-    throw result.lastError ?? new Error('[V4] All fetch attempts failed');
+    throw result.lastError ?? new Error("[V4] All fetch attempts failed");
   }
 
   if (result.mapped.length === 0) {

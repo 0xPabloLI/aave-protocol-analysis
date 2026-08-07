@@ -75,22 +75,34 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
 
 ## Session Workflow
 
-1. **Bootstrap when needed**: For substantial implementation, debugging, or design sessions, load `using-superpowers` via skill tool. Load `brainstorming` only for feature design, behavior changes, or solution exploration — skip for lightweight inspection, explanation, and routine work.
-2. **Hook policy**: Husky hooks have auto-fix capability. `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged). `pre-push` → `scripts/hook-autofix.sh pre-push` which runs `ci` (build+test, non-fixable) then auto-fixable checks (bin-paths, globstar, audit). If auto-fix changes files in pre-push, the commit is amended and you must push again. Do not bypass with `--no-verify` unless the user explicitly confirms. CI auto-reverts direct pushes that fail CI.
-3. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
-4. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`. Before creating a PR, always `git merge origin/main` (or the target branch) to resolve conflicts locally, then push. Never create a PR with unresolved merge conflicts.
-5. **Branch discipline**: all development commits go directly on `railway` branch. Do NOT create feature branches or worktrees unless explicitly asked by the user. If a stray branch exists, merge it into `railway` and delete it promptly.
-6. **Cross-session boundary**: before committing, inspect `git diff` and `git diff --staged` for changes not made in the current session. If unrelated unstaged/unstaged changes exist (from another session or prior work), **STOP** and confirm with the user whether to include, exclude, or stash them. Never silently bundle foreign changes into your commit.
-7. **No code changes without explicit go-ahead**: 在用户确认开始或给出明确实施指令前，不修改任何代码文件。讨论、调研、Grill 阶段只做分析和方案设计。
-8. **Mandatory implementation workflow**: 每次改代码之前必须走完以下工作流，不得跳步：
-   1. **Grill with Docs** — 用 `grill-with-docs` skill 审视方案，确认设计决策有文档支撑。**必须主动做场景风险分析**：穷举边界场景（并发/竞态、内存泄漏、数据一致性、CI/CD 交互、外部 API 失败模式），验证跨包/跨消费者一致性。涉及内存缓存的改动另参 `docs/memory-leak-checklist.md`。
+1. **Web access**: Prefer the `web-access` skill (`.cursor/skills/web-access/SKILL.md`) for any web browsing — it uses Chrome CDP to access real browser content (Twitter, SPAs, login-walled pages). Only use `web_fetch` for simple static URL content. Run `node ~/.agents/skills/web-access/scripts/check-deps.mjs` to verify availability.
+2. **Bootstrap when needed**: For substantial implementation, debugging, or design sessions, load `using-superpowers` via skill tool. Load `brainstorming` only for feature design, behavior changes, or solution exploration — skip for lightweight inspection, explanation, and routine work.
+3. **Hook policy**: Husky hooks have auto-fix capability. `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged). `pre-push` → `scripts/hook-autofix.sh pre-push` which runs `ci` (build+test, non-fixable) then auto-fixable checks (bin-paths, globstar, audit). If auto-fix changes files in pre-push, the commit is amended and you must push again. Do not bypass with `--no-verify` unless the user explicitly confirms. CI auto-reverts direct pushes that fail CI.
+4. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
+5. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`. Before creating a PR, always `git merge origin/main` (or the target branch) to resolve conflicts locally, then push. Never create a PR with unresolved merge conflicts.
+6. **Branch discipline**: all development commits go directly on `railway` branch. Do NOT create feature branches or worktrees unless explicitly asked by the user. If a stray branch exists, merge it into `railway` and delete it promptly.
+7. **Cross-session boundary**: before committing, inspect `git diff` and `git diff --staged` for changes not made in the current session. If unrelated unstaged/unstaged changes exist (from another session or prior work), **STOP** and confirm with the user whether to include, exclude, or stash them. Never silently bundle foreign changes into your commit.
+8. **No code changes without explicit go-ahead**: 在用户确认开始或给出明确实施指令前，不修改任何代码文件。讨论、调研、Grill 阶段只做分析和方案设计。
+9. **Mandatory implementation workflow**: 每次改代码之前必须走完以下工作流，不得跳步：
+   1. **Grill with Docs** — 用 `grill-with-docs` skill 审视方案，确认设计决策有文档支撑。**必须主动做场景风险分析**：按 `docs/best-practices/scenario-enumeration-checklist.md` 逐类**穷举**边界场景（含跨 step 接口契约验证），验证跨包/跨消费者一致性。涉及内存缓存的改动另参 `docs/memory-leak-checklist.md`。
    2. **To Spec** — 用 `to-spec` skill 将对话结论合成为 spec 文档。**必须包含 Scenario & Risk Verification 章节**（场景矩阵），矩阵行直接成为 TDD 测试用例。**无矩阵 = spec 不完整**。
    3. **To Tickets** — 用 `to-tickets` skill 将 spec 拆分为带依赖边的 tracer-bullet tickets
    4. **TDD Implement** — 逐 ticket 先思考最佳实践的改法是什么，再用 `implement` skill 实施；`implement` 必须强制调用 `tdd`（red → green → refactor），关键逻辑必须先写测试
-   5. **Code Review** — 实施完成后用 `code-review` skill 做双轴审查（Standards + Spec）
-   6. **Commit** — 通过验证后 commit（遵循 commit 规范）
-   7. **更新相关文档及 Issue** — 同步更新 docs、ADR、Linear issue 状态
-9. **每次修改都用最佳实践**: 改代码前先考虑最佳实践的改法是什么，再动手实施。
+   5. **Code Review** — 用 `code-review` skill 做双轴审查（Standards + Spec）
+   6. **Runtime Verify** — 前端 `npm run dev:staging` + 浏览器核心交互 + 现有 E2E 无回归；后端 `npm run dev` + API 端点验证。spec 标注"不做 UI"不豁免此步。
+   7. **Commit & Push** — 通过验证后 commit + push 到远端（遵循 commit 规范）
+   8. **更新相关文档及 Issue** — 同步更新 docs、ADR、Linear issue 状态
+   9. **Session 结束验证** — 在 session 结束前，逐条确认 Step 1-8 全部完成。**未完成的步骤必须当场补做或显式标注为"跳过 + 原因"**。确认清单：
+      - [ ] Step 1 Grill 完成（有 spec 或对话记录佐证）
+      - [ ] Step 2 Spec 完成（有 spec 文件，含 Scenario Matrix）
+      - [ ] Step 3 Tickets 完成（有 ticket 拆分）
+      - [ ] Step 4 TDD 完成（测试 red → green → refactor）
+      - [ ] Step 5 Code Review 完成（有审查报告）
+      - [ ] Step 6 Runtime Verify 完成（有运行时验证证据：截图 / DOM 检查 / API 响应）
+      - [ ] Step 7 Commit & Push 完成（有 commit hash + push 成功）
+      - [ ] Step 8 文档及 Issue 更新完成（Linear 状态已更新）
+      - 如有任何步骤跳过，必须在向用户汇报时**显式列出**跳过的步骤和原因，不得遗漏
+10. **每次修改都用最佳实践**: 改代码前先考虑最佳实践的改法是什么，再动手实施。
 
 ## Architecture Rules
 
