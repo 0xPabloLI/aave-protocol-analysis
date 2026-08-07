@@ -1,9 +1,11 @@
 # AAV-895: Cross-Asset Pairing (min(1,2)) — Spec
 
-> **Status**: Draft (Grill 完成，待 TDD)
-> **Date**: 2026-08-06
+> **Status**: 前端完成 ✅（后端完成 ✅，前端 TDD 完成 ✅，待后端部署 E2E 验证）
+> **Date**: 2026-08-06 (后端) / 2026-08-07 (前端)
 > **Linear**: [AAV-895](https://linear.app/aaveapy/issue/AAV-895)
-> **Scope**: 后端（fetcher 检测 + 类型 + 序列化）+ 前端（simulation calculator 消费）— 分两个 ticket
+> **Scope**: ~~后端（fetcher 检测 + 类型 + 序列化）~~ ✅ + 前端（simulation calculator 消费）— 分两个 ticket
+>
+> **后端完成状态 (2026-08-06)**：shared-contracts `CrossAssetPairing` 接口 ✅、fetcher `detectCrossAssetPairing()` ✅、persistence pass-through ✅、serializer `...group` spread 自动传递 ✅。后端测试 `detectCrossAssetPairing.test.ts` + `crossAssetPairing.test.ts` ✅。
 
 ---
 
@@ -168,16 +170,141 @@ function getEffectivePosition(
 | `src/services/persistenceService.ts`  | `buildMerklGroups` pass through `crossAssetPairing`          |
 | `src/services/marketsApiSerialize.ts` | 序列化 pass through `crossAssetPairing`（无单位转换）        |
 
-### 5.4 前端（aaveapy 仓库 — 独立 ticket）
+### 5.4 前端（aaveapy 仓库 — 当前实施）
 
-| 文件                                  | 变更                                   |
-| ------------------------------------- | -------------------------------------- |
-| `src/types/aave.ts`                   | opportunity 类型加 `crossAssetPairing` |
-| `src/shared/schema-fingerprint.ts`    | bump fingerprint                       |
-| `src/lib/rateSimulationCalculator.ts` | 消费 `crossAssetPairing` 计算 min 公式 |
-| `src/hooks/useRateSimulation.ts`      | 传递 crossAssetPairing 到 calculator   |
+#### 5.4.1 类型层
+
+| 文件                | 变更                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------ |
+| `src/types/aave.ts` | 新增 `CrossAssetPairing` 接口；`CampaignGroup` 加 `crossAssetPairing?: CrossAssetPairing \| null` 字段 |
+
+```typescript
+// src/types/aave.ts
+export interface CrossAssetPairing {
+  sourceSide: "supply" | "borrow";
+  pairedReserveId: string;
+  pairedSide: "supply" | "borrow";
+  discountFactor: number;
+}
+
+export interface CampaignGroup<TBreakdown = BaseCampaignBreakdown> {
+  // ... existing fields ...
+  crossAssetPairing?: CrossAssetPairing | null;
+}
+```
+
+#### 5.4.2 计算函数层
+
+| 文件                                | 变更                                                                                                              |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `src/lib/netLendingCrossReserve.ts` | 新增 `computeCrossAssetNetEligible()` + `computeCrossAssetEligibilityRatio()`，镜像现有 NPC 函数但用 `min()` 公式 |
+
+```typescript
+// src/lib/netLendingCrossReserve.ts
+export interface CrossAssetNetInput {
+  sourceGrossUsd: number;
+  pairing: CrossAssetPairing;
+  crossReservePositions: Map<string, ReservePositions>;
+}
+
+export function computeCrossAssetNetEligible(
+  input: CrossAssetNetInput
+): number {
+  const { sourceGrossUsd, pairing, crossReservePositions } = input;
+  const pairedPos = crossReservePositions.get(pairing.pairedReserveId);
+  const pairedUsd =
+    pairing.pairedSide === "supply"
+      ? (pairedPos?.supplyUsd ?? 0)
+      : (pairedPos?.borrowUsd ?? 0);
+  return Math.min(sourceGrossUsd, pairedUsd * pairing.discountFactor);
+}
+
+export function computeCrossAssetEligibilityRatio(
+  input: CrossAssetNetInput
+): number {
+  if (input.sourceGrossUsd <= 0) return 1;
+  return computeCrossAssetNetEligible(input) / input.sourceGrossUsd;
+}
+```
+
+#### 5.4.3 Note 函数层
+
+| 文件                       | 变更                                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| `src/lib/incentiveCaps.ts` | 新增 `buildCrossAssetPairingNote()` — 生成 "Capped by {symbol} {side} (×{factor})" 提示文案 |
+
+```typescript
+// src/lib/incentiveCaps.ts
+export function buildCrossAssetPairingNote(input: {
+  effectiveUsd: number;
+  grossUsd: number;
+  pairedSymbol: string;
+  pairedSide: "supply" | "borrow";
+  discountFactor: number;
+}): string | null {
+  if (input.grossUsd <= 0 || input.effectiveUsd >= input.grossUsd) return null;
+  const sideLabel = input.pairedSide === "supply" ? "supply" : "borrow";
+  return `${formatUsd(input.effectiveUsd)} of ${formatUsd(input.grossUsd)} effective (capped by ${input.pairedSymbol} ${sideLabel} ×${input.discountFactor})`;
+}
+```
+
+#### 5.4.4 集成层（5 个函数）
+
+| 文件                                  | 变更                                                                                                                                                                                                                                                  |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/rateSimulationCalculator.ts` | 在 5 个函数中检查 `crossAssetPairing`（在 `borrowBlacklist` 之后、`netPositionConstraint` 之前）：`merklGroupMultiplier`、`walletMerklGroupMultiplier`、`crossReserveNetEligibleUsdFn`、`walletCrossReserveNetEligibleUsdFn`、`merklCrossReserveNote` |
+
+**优先级链**：`borrowBlacklist`（短路归零）→ `crossAssetPairing`（min 公式）→ `netPositionConstraint`（减法公式）→ 1（无约束）
+
+```typescript
+// rateSimulationCalculator.ts — merklGroupMultiplier 示例
+return (group) => {
+  // 1. borrowBlacklist (unchanged)
+  if (
+    group.borrowBlacklist === true &&
+    side === "supply" &&
+    borrowGrossForEligibility > 0
+  )
+    return 0;
+  // 2. crossAssetPairing (NEW — before netPositionConstraint, mutually exclusive)
+  const pairing = group.crossAssetPairing;
+  if (pairing && crossReservePositions && crossReservePositions.size > 0) {
+    return computeCrossAssetEligibilityRatio({
+      sourceGrossUsd: grossUsd,
+      pairing,
+      crossReservePositions,
+    });
+  }
+  // 3. netPositionConstraint (unchanged)
+  const constraint = group.netPositionConstraint;
+  return constraint && crossReservePositions && crossReservePositions.size > 0
+    ? computeCrossReserveEligibilityRatio({
+        sourceSide: constraint.sourceSide,
+        sourceGrossUsd: grossUsd,
+        constraint,
+        crossReservePositions,
+      })
+    : 1;
+};
+```
+
+#### 5.4.5 Field Canary 测试
+
+| 文件                             | 变更                                                                |
+| -------------------------------- | ------------------------------------------------------------------- |
+| `src/types/field-canary.test.ts` | 新增 `crossAssetPairing` 字段名 canary 测试（镜像 NPC canary 测试） |
+
+#### 5.4.6 Schema Fingerprint
+
+**不需要 bump**。`crossAssetPairing` 已通过 backend serializer 的 `...group` spread 出现在 API 响应中。`computeSchemaFingerprint()` 的 canonical reserve 未包含 `crossAssetPairing`（与 `netPositionConstraint` 同样情况——两者都是 optional 字段，不在 canonical reserve 中）。Fingerprint 机制只捕获 canonical reserve 中存在的字段，optional 字段不改变 fingerprint。
+
+#### 5.4.7 `useRateSimulation.ts` — 无需修改
+
+`crossAssetPairing` 是 `CampaignGroup` 上的字段，通过 `crossReservePositions` Map 和 `group` 对象自动传递到 calculator。`useRateSimulation.ts` 不需要新增参数——它已传递 `crossReservePositions` 和 `reserveSymbolById`。
 
 ## 6. Scenario & Risk Verification Matrix
+
+### 6.1 后端场景（S1-S18，已完成 ✅）
 
 | #   | 场景                                                    | 风险维度           | 预期行为                                                                    | 测试类型 |
 | --- | ------------------------------------------------------- | ------------------ | --------------------------------------------------------------------------- | -------- |
@@ -197,15 +324,35 @@ function getEffectivePosition(
 | S14 | 多链多 min(1,2) 机会                                    | 多实体             | 每个 opp 独立检测，无共享状态                                               | 集成测试 |
 | S15 | V3 reserve + min(1,2)                                   | V3 路径            | resolveOffsetReserveIds V3 分支正确 resolve pairedReserveId                 | 单元测试 |
 | S16 | API 序列化 pass through                                 | 跨Step契约         | crossAssetPairing 字段原样传递到 API JSON                                   | 快照测试 |
-| S17 | schema fingerprint 变更                                 | CI/CD              | 后端 snapshot test 捕获 fingerprint 变更                                    | 快照测试 |
+| S17 | schema fingerprint 变更                                 | CI/CD              | 不需要 bump（canonical reserve 未包含 crossAssetPairing，同 NPC 情况）      | 快照测试 |
 | S18 | 真实 Merkl 数据验证                                     | 外部依赖           | 用 merkl-raw-data.json 中的 cbETH/ETH 机会验证 detectCrossAssetPairing 输出 | 集成测试 |
+
+### 6.2 前端场景（F1-F12，当前实施）
+
+> 前端场景聚焦于 `computeCrossAssetNetEligible` / `computeCrossAssetEligibilityRatio` 纯函数和 5 个集成点的行为验证。
+
+| #   | 场景                                                   | 风险维度       | 预期行为                                                                | 测试文件                         |
+| --- | ------------------------------------------------------ | -------------- | ----------------------------------------------------------------------- | -------------------------------- |
+| F1  | cbETH/ETH：source 50, paired supply 100, df=0.823      | 正常路径       | netEligible = min(50, 100×0.823) = 50; ratio = 50/50 = 1                | netLendingCrossReserve.test.ts   |
+| F2  | cbETH/ETH：source 100, paired supply 50, df=0.823      | paired 不足    | netEligible = min(100, 50×0.823) = 41.15; ratio = 41.15/100 = 0.4115    | netLendingCrossReserve.test.ts   |
+| F3  | paired reserve 不在 Map 中                             | Null/Undefined | pairedUsd = 0 → netEligible = min(source, 0) = 0; ratio = 0             | netLendingCrossReserve.test.ts   |
+| F4  | sourceGrossUsd = 0                                     | 数值边界       | ratio = 1（与 NPC 函数一致，避免除以零）                                | netLendingCrossReserve.test.ts   |
+| F5  | discountFactor = 0                                     | 数值边界       | netEligible = min(source, 0) = 0; ratio = 0                             | netLendingCrossReserve.test.ts   |
+| F6  | discountFactor > 1（如 sUSDe df=1.196）                | 数值边界       | netEligible = min(source, paired×1.196); 若 paired > source 则 = source | netLendingCrossReserve.test.ts   |
+| F7  | pairing = undefined                                    | Null/Undefined | 跳过 crossAssetPairing 检查，落入 netPositionConstraint                 | netLendingCrossReserve.test.ts   |
+| F8  | pairing = null                                         | Null/Undefined | 跳过 crossAssetPairing 检查，落入 netPositionConstraint                 | netLendingCrossReserve.test.ts   |
+| F9  | group 同时有 crossAssetPairing + netPositionConstraint | 互斥/优先级    | crossAssetPairing 优先（先检查），netPositionConstraint 被跳过          | rateSimulationCalculator.test.ts |
+| F10 | group 有 crossAssetPairing + borrowBlacklist=true      | 优先级         | borrowBlacklist 先短路归零，crossAssetPairing 不执行                    | rateSimulationCalculator.test.ts |
+| F11 | field canary：CrossAssetPairing 类型字段验证           | 跨Step契约     | sourceSide/pairedReserveId/pairedSide/discountFactor 字段存在且类型正确 | field-canary.test.ts             |
+| F12 | note 生成：effectiveUsd < grossUsd                     | UI 提示        | 生成 "Capped by {symbol} {side} ×{factor}" 文案                         | incentiveCaps.test.ts            |
 
 ## 7. 不在 scope 内
 
 - AAV-1036（offsetNote 与 capNote 分离）
-- 前端 UI 展示逻辑（crossAssetPairing 提示文案）
+- ~~前端 UI 展示逻辑（crossAssetPairing 提示文案）~~ →纳入 scope（`buildCrossAssetPairingNote` 函数）
 - V4 链 min(1,2) 机会（当前数据中无 V4 min(1,2) 案例，但 resolveOffsetReserveIds 已支持 V4）
 - `max(1,2)` / 其他 compute 模式（当前数据中无）
+- `useRateSimulation.ts` 修改（无需新增参数，`crossAssetPairing` 通过 group 对象自动传递）
 
 ## 8. 参考文档
 
