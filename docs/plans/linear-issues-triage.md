@@ -281,8 +281,8 @@ packages/aave-shared-config/schema-fingerprint.ts
 | **AAV-830**  | Merit raw RPC → ProviderPool                     | Ready for agent | 后端      | Low             |                                             |
 | **AAV-829**  | 统一 ~35 个 toLowerCase() → normalizeAddress()   | Ready for agent | 后端      | Low             |                                             |
 | **AAV-395**  | reserve ID 编码字段评估                          | Backlog         | 后端      | Low             |                                             |
-| **(待创建)** | LOCF 查询实现（`/api/markets/history` 历史回放） | Backlog         | 后端      | Low             | incentive-normalization Task 9，见下方专节  |
-| **(待创建)** | `incentive_details` 列级 NULL 命中率测试 + 决策  | Backlog         | 后端      | Low             | incentive-normalization Task 11，见下方专节 |
+| **AAV-1269** | LOCF 查询实现（`/api/markets/history` 历史回放） | Backlog         | 后端      | Low             | incentive-normalization Task 9，见下方专节  |
+| **AAV-1270** | `incentive_details` 列级 NULL 命中率测试 + 决策  | Backlog         | 后端      | Low             | incentive-normalization Task 11，见下方专节 |
 | **AAV-900**  | Pendle PT token targetTokenPrice                 | Backlog         | 后端      | Low             | 3 个非 Aave campaign                        |
 | ~~AAV-863~~  | ~~数据变更频率 → TTL 优化~~                      | **Done** ✅     | 后端      | ~~Low~~         | 与 AAV-864 重复，已关闭                     |
 | ~~AAV-923~~  | ~~position cap 前后端 API 对齐~~                 | **Done** ✅     | 后端+前端 | ~~Low~~         | positionCap 已全链路落地                    |
@@ -290,21 +290,22 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ## Phase 6: Low — 运维 / 监控 / 文档 / 运营
 
-| Issue        | 标题                                 | 状态            | 领域   | 优先级  | 说明              |
-| ------------ | ------------------------------------ | --------------- | ------ | ------- | ----------------- |
-| **AAV-329**  | 建立自动告警 SOP                     | Todo            | DevOps | Low     | 父 issue          |
-| **AAV-587**  | 主动通知新链 RPC 检测                | Todo            | DevOps | Low     | AAV-329 子 issue  |
-| **AAV-586**  | Prometheus counter for new chain RPC | Todo            | DevOps | Low     | AAV-329 子 issue  |
-| ~~AAV-515~~  | ~~GitHub PR auto merge 问题~~        | **Done** ✅     | DevOps | ~~Low~~ | auto-merge 已就位 |
-| **AAV-732**  | Atlas 部署后不触发更新               | Backlog         | DevOps | Low     |                   |
-| **AAV-512**  | SEO: GSC 提交 URL 收录               | Todo            | SEO    | Low     |                   |
-| **AAV-135**  | V4 SDK Embedded Rewards - Skipped    | Todo            | 文档   | Low     |                   |
-| **AAV-30**   | Twitter 介绍 self 收益               | Todo            | 运营   | Low     |                   |
-| **AAV-248**  | 推进全站无障碍                       | Todo            | 前端   | Low     | 父 issue          |
-| **AAV-321**  | 整理无障碍规范                       | Backlog         | 前端   | Low     | AAV-248 子 issue  |
-| **AAV-322**  | 无障碍审计                           | Backlog         | 前端   | Low     | AAV-248 子 issue  |
-| **AAV-323**  | 修复无障碍问题                       | Backlog         | 前端   | Low     | AAV-248 子 issue  |
-| **AAV-1227** | Spec: Inline Widget Embedding        | Ready for agent | 前端   | Low     |                   |
+| Issue        | 标题                                 | 状态            | 领域   | 优先级  | 说明                                                                         |
+| ------------ | ------------------------------------ | --------------- | ------ | ------- | ---------------------------------------------------------------------------- |
+| **AAV-329**  | 建立自动告警 SOP                     | Todo            | DevOps | Low     | 父 issue                                                                     |
+| **AAV-587**  | 主动通知新链 RPC 检测                | Todo            | DevOps | Low     | AAV-329 子 issue                                                             |
+| **AAV-586**  | Prometheus counter for new chain RPC | Todo            | DevOps | Low     | AAV-329 子 issue                                                             |
+| ~~AAV-515~~  | ~~GitHub PR auto merge 问题~~        | **Done** ✅     | DevOps | ~~Low~~ | auto-merge 已就位                                                            |
+| **AAV-732**  | Atlas 部署后不触发更新               | Backlog         | DevOps | Low     |                                                                              |
+| **AAV-512**  | SEO: GSC 提交 URL 收录               | Todo            | SEO    | Low     |                                                                              |
+| **AAV-135**  | V4 SDK Embedded Rewards - Skipped    | Todo            | 文档   | Low     |                                                                              |
+| **AAV-30**   | Twitter 介绍 self 收益               | Todo            | 运营   | Low     |                                                                              |
+| **AAV-248**  | 推进全站无障碍                       | Todo            | 前端   | Low     | 父 issue                                                                     |
+| **AAV-321**  | 整理无障碍规范                       | Backlog         | 前端   | Low     | AAV-248 子 issue                                                             |
+| **AAV-322**  | 无障碍审计                           | Backlog         | 前端   | Low     | AAV-248 子 issue                                                             |
+| **AAV-323**  | 修复无障碍问题                       | Backlog         | 前端   | Low     | AAV-248 子 issue                                                             |
+| **AAV-1227** | Spec: Inline Widget Embedding        | Ready for agent | 前端   | Low     |                                                                              |
+| **AAV-1271** | Aave UI ↔ API 对比工具 Phase 3       | Backlog         | DevOps | Low     | Phase 1+2 完成, spec: `docs/plans/2026-07-16-aave-ui-api-comparison-tool.md` |
 
 ## Phase 7: Low — Epic / 大特性 / 远期
 
@@ -335,28 +336,9 @@ packages/aave-shared-config/schema-fingerprint.ts
 | 6   | 建视图                                                       | ❌ 已取消 | —            |
 | 7   | Staging 验证                                                 | ❌ 已取消 | —            |
 | 8   | Migration: DROP 两列 + DROP 两表                             | ✅ 已实施 | —            |
-| 9   | LOCF 查询（PG 原生方案）                                     | 🟡 待实施 | (待创建)     |
+| 9   | LOCF 查询（PG 原生方案）                                     | 🟡 待实施 | AAV-1269     |
 | 10  | 单测 + e2e 测试                                              | ✅ 已实施 | —            |
-| 11  | 列级 NULL 命中率测试 + 决策                                  | 🟡 待决策 | (待创建)     |
-
-**Issue 内容草稿**（供 Linear 创建时使用）：
-
-### Issue 1: LOCF 查询实现
-
-- **标题**: 后端：LOCF 查询实现（`/api/markets/history` 历史回放）
-- **优先级**: Low (4)
-- **描述**: `incentive_details` 已改为 per-campaign 结构，聚合 APR 列已删除。`/api/markets/history` 历史查询需要 LOCF（Last Observation Carried Forward）回填 NULL 列。PostgreSQL 不支持 `LAG(...) IGNORE NULLS`，需用 `array_agg FILTER` / 相关子查询 / 物化视图三种 PG 原生方案之一。
-- **参考**: `docs/backend/change-detection-and-incentive-normalization.md` §3.1.4
-- **Scope**: `persistenceService.ts` + history route
-
-### Issue 2: 列级 NULL 命中率测试
-
-- **标题**: 后端：`incentive_details` 列级 NULL 命中率测试 + 决策
-- **优先级**: Low (4)
-- **描述**: `incentive_details` 列级 NULL 写入模式的收益取决于两次 tick 间 incentive 不变的频率。Merkl Dutch auction APR 每 5min 变化，可能使命中率为 0。需在 staging 执行命中率 SQL，根据结果决定是否实施。
-- **判定规则**: >0.5 实施；<0.2 不实施；中间值需评估 LOCF 成本
-- **参考**: `docs/backend/change-detection-and-incentive-normalization.md` §7
-- **Scope**: staging SQL 查询 + 决策文档
+| 11  | 列级 NULL 命中率测试 + 决策                                  | 🟡 待决策 | AAV-1270     |
 
 ## ~~遗漏项：No priority 未更新~~ (已全部解决)
 
@@ -372,7 +354,7 @@ packages/aave-shared-config/schema-fingerprint.ts
 | Done (08-04 E2E)           | +1 (AAV-1257)                                                |
 | Canceled                   | 2 (AAV-1150, AAV-707)                                        |
 | Ready for agent            | 13                                                           |
-| Backlog (新增)             | +2 (incentive-normalization Task 9 + Task 11, 待创建 Linear) |
+| Backlog (新增)             | +3 (AAV-1269 LOCF + AAV-1270 列级NULL + AAV-1271 UI对比工具) |
 | Backlog                    | 22                                                           |
 | Todo                       | 15（+3: AAV-1249, AAV-1252, AAV-1253）                       |
 | **非 Done/Canceled 总计**  | **~50**                                                      |
@@ -427,4 +409,4 @@ packages/aave-shared-config/schema-fingerprint.ts
 >
 > **下一步**：AAV-895 前端 ticket（T4）— 在 aaveapy 仓库 `rateSimulationCalculator` 中消费 `crossAssetPairing` 计算 `min(sourcePos, pairedPos × discountFactor)`。后端已完成 (commit a5eb421)。Spec: `docs/plans/aav-895-cross-asset-pairing-spec.md`。
 >
-> **待创建 Linear issue**：incentive-normalization Task 9（LOCF 查询）+ Task 11（列级 NULL 命中率测试）。Issue 内容草稿见上方专节。
+> **已创建 Linear issue**：AAV-1269（LOCF 查询）+ AAV-1270（列级 NULL 命中率测试）。见上方专节。
