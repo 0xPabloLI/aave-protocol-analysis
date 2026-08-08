@@ -76,7 +76,9 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
 ## Session Workflow
 
 1. **Web access**: Prefer the `web-access` skill (`.cursor/skills/web-access/SKILL.md`) for any web browsing — it uses Chrome CDP to access real browser content (Twitter, SPAs, login-walled pages). Only use `web_fetch` for simple static URL content. Run `node ~/.agents/skills/web-access/scripts/check-deps.mjs` to verify availability.
-2. **Bootstrap when needed**: For substantial implementation, debugging, or design sessions, load `using-superpowers` via skill tool. Load `brainstorming` only for feature design, behavior changes, or solution exploration — skip for lightweight inspection, explanation, and routine work.
+2. **Decision: Lightweight or Substantial?**
+   - **Lightweight**（检查、解释、常规工作）：直接进行，不需要加载额外 skill。
+   - **Substantial implementation**: 按以下 Mandatory Implementation Workflow 执行。
 3. **Hook policy**: Husky hooks have auto-fix capability. `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged). `pre-push` → `scripts/hook-autofix.sh pre-push` which runs `ci` (build+test, non-fixable) then auto-fixable checks (bin-paths, globstar, audit). If auto-fix changes files in pre-push, the commit is amended and you must push again. Do not bypass with `--no-verify` unless the user explicitly confirms. CI auto-reverts direct pushes that fail CI.
 4. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
 5. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`. Before creating a PR, always `git merge origin/main` (or the target branch) to resolve conflicts locally, then push. Never create a PR with unresolved merge conflicts.
