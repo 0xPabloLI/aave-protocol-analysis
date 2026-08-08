@@ -140,13 +140,13 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ## Phase 1: Urgent / High — 最高优先级
 
-| Issue        | 标题                                                           | 状态        | 领域      | 优先级   | 说明                                                                                   |
-| ------------ | -------------------------------------------------------------- | ----------- | --------- | -------- | -------------------------------------------------------------------------------------- |
-| **AAV-756**  | Portfolio LTV constraint + Net Effective APY + Health Factor   | Todo        | 前端      | Urgent   | **完全 unblocked**。已拆分 P2-P7（见下方详情）                                         |
-| ~~AAV-1222~~ | ~~[Backend] GET /markets API 增加 ltv + liquidationThreshold~~ | **Done** ✅ | 后端      | ~~High~~ | 2026-08-02 完成。fingerprint: 2d1059421baf                                             |
-| **AAV-895**  | Borrow ETH with cbETH collateral — cross-asset offset formula  | In Progress | 后端+前端 | High     | 后端完成 (commit a5eb421)，前端完成 (commit e3a14833 on lovable)。待后端部署后验证 E2E |
-| **AAV-1036** | Data layer: separate offsetNote from capNote                   | Backlog     | 后端      | High     | 父 issue，AAV-1038 已 Done                                                             |
-| **AAV-364**  | [EPIC] 市场宏观指标聚合                                        | Todo        | 全栈      | High     | deficit 已实现，其他指标待做                                                           |
+| Issue        | 标题                                                           | 状态        | 领域      | 优先级   | 说明                                                                                                                                                                              |
+| ------------ | -------------------------------------------------------------- | ----------- | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AAV-756**  | Portfolio LTV constraint + Net Effective APY + Health Factor   | Todo        | 前端      | Urgent   | **完全 unblocked**。已拆分 P2-P7（见下方详情）                                                                                                                                    |
+| ~~AAV-1222~~ | ~~[Backend] GET /markets API 增加 ltv + liquidationThreshold~~ | **Done** ✅ | 后端      | ~~High~~ | 2026-08-02 完成。fingerprint: 2d1059421baf                                                                                                                                        |
+| ~~AAV-895~~  | Borrow ETH with cbETH collateral — cross-asset offset formula  | **Done** ✅ | 后端+前端 | ~~High~~ | 后端完成 (commit a5eb421)，staging 自动部署成功。前端完成 (commit e3a14833 on lovable)。E2E 测试已添加 (commit 58aa1542)，当前 Merkl 无活跃 min(1,2) campaign，测试 graceful skip |
+| **AAV-1036** | Data layer: separate offsetNote from capNote                   | Backlog     | 后端      | High     | 父 issue，AAV-1038 已 Done                                                                                                                                                        |
+| **AAV-364**  | [EPIC] 市场宏观指标聚合                                        | Todo        | 全栈      | High     | deficit 已实现，其他指标待做                                                                                                                                                      |
 
 ## AAV-756 拆分详情 — Portfolio LTV + HF + Net Effective APY
 
@@ -393,20 +393,22 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ### 其他 issue（按优先级排序）
 
-| 顺序 | Issue         | 优先级 | 状态            | 说明                                                                       |
-| ---- | ------------- | ------ | --------------- | -------------------------------------------------------------------------- |
-| 1    | AAV-1253 (P7) | Urgent | Done            | on-chain HF baseline 接入 ✅                                               |
-| 2    | AAV-895       | High   | Frontend Done   | 跨资产 offset 后端完成 (a5eb421) + 前端完成 (e3a14833)。待后端部署验证 E2E |
-| 3    | AAV-1036      | High   | Backlog         | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）                 |
-| 4    | AAV-1022      | Medium | Ready for agent | 定义 offset 对齐规则（AAV-1023/1024 前置）                                 |
-| 5    | AAV-862       | Medium | Ready for agent | normalize campaignType 统一 + 重命名（`done-candidate` 标签）              |
-| 6    | AAV-864       | Medium | Backlog         | 单 cron + 缓存 TTL 重构                                                    |
-| 7    | AAV-1071      | Low    | Backlog         | hookType=17 HF 排除条件展示（后端 `healthFactorHooks` 未透传）             |
+| 顺序  | Issue         | 优先级   | 状态            | 说明                                                                                                                      |
+| ----- | ------------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1     | AAV-1253 (P7) | Urgent   | Done            | on-chain HF baseline 接入 ✅                                                                                              |
+| ~~2~~ | ~~AAV-895~~   | ~~High~~ | ~~Done~~        | 跨资产 offset 后端完成 (a5eb421) + 前端完成 (e3a14833) + E2E 测试 (58aa1542)。Merkl 无活跃 min(1,2) campaign，E2E skip ✅ |
+| 3     | AAV-1036      | High     | Backlog         | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）                                                                |
+| 4     | AAV-1022      | Medium   | Ready for agent | 定义 offset 对齐规则（AAV-1023/1024 前置）                                                                                |
+| 5     | AAV-862       | Medium   | Ready for agent | normalize campaignType 统一 + 重命名（`done-candidate` 标签）                                                             |
+| 6     | AAV-864       | Medium   | Backlog         | 单 cron + 缓存 TTL 重构                                                                                                   |
+| 7     | AAV-1071      | Low      | Backlog         | hookType=17 HF 排除条件展示（后端 `healthFactorHooks` 未透传）                                                            |
 
 > ⚠️ Linear issue 之间未设置 native blocking link。上述依赖关系通过 issue description 中的 "Blocked by" 和 comment 标注。
 >
 > **排序逻辑**：~~Urgent（AAV-756 P7）~~ ✅ 全部完成 → High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
 >
-> **下一步**：AAV-1036（offsetNote 与 capNote 分离）或 AAV-1022（offset 对齐规则定义）。AAV-895 前端已完成 (commit e3a14833 on lovable)，待后端部署到 staging 后验证 E2E。
+> **下一步**：AAV-1036（offsetNote 与 capNote 分离）或 AAV-1022（offset 对齐规则定义）。AAV-895 已完成 — 后端 staging 自动部署 + 前端 + E2E 测试 (graceful skip，等 Merkl campaign 回来后自动运行)。
+>
+> **2026-08-08 更新**：AAV-895 全部完成。后端 staging 环境从 railway 分支自动部署 (commit 45dbb68)。前端 lovable 分支 commit e3a14833 + 58aa1542。E2E 测试数据驱动设计：从 staging API 动态发现 crossAssetPairing 场景，当前无活跃 min(1,2) campaign 时 graceful skip。PR #170 (railway→main) 合并触发了 production 部署。
 >
 > **已创建 Linear issue**：AAV-1269（LOCF 查询）+ AAV-1270（列级 NULL 命中率测试）。见上方专节。
