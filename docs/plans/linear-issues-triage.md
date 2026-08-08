@@ -19,6 +19,8 @@
 >
 > **2026-08-06 更新**：修复 `usePortfolioToggle.ts` 中 useMemo key 不匹配 bug（commit `45675516` on `aaveapy/lovable`）。根因：`useMemo` 返回对象 key 为 `portfolioHealthFactors`，但解构语法 `healthFactors: portfolioHealthFactors` 期望 key `healthFactors`，导致 `portfolioHealthFactors` 始终为 `undefined`。虽然 P4-P7 的 HF 计算逻辑全部正确（`computeHealthFactors` 正确产出 `healthFactor: 1.56`），但 HF 数据从未传递到 `PortfolioSummaryBar`，UI 始终显示 "—"。全代码库审查确认仅此一处。回归测试已添加（断言 `portfolioHealthFactors` 为 defined 且 `healthFactor > 0`）。同时创建 `docs/conventions/wallet-js-injection-testing.md`（前端），归档 wallet JS 注入 E2E 测试模式。
 >
+> **2026-08-08 更新 2**：AAV-1022（offset 对齐规则定义）已完成。Spec: `docs/plans/aav-1022-offset-alignment-rules-spec.md`。方案 C 形式化：4 个上下文的 offset 行为定义 + 16 场景 Scenario Matrix + 通用/精确 note 文案。代码验证结论：Portfolio mode offset 已正确实现，Shared scenario 唯一 gap 是通用 note（AAV-1024 scope）。AAV-1023 预期为 no-op 或 minor display improvement。下一步：AAV-1024（Shared scenario 通用 note）→ AAV-1023（Reserve table 验证）。
+>
 > **2026-08-02 Grill 更新**：AAV-756 已拆分为 P2-P7 六个子步骤（见下方 AAV-756 拆分详情）。确认 HF 按 per-pool/spoke 隔离边界计算，非全局。先做 simulation 逻辑，后接 on-chain HF baseline。
 
 ## 本轮操作汇总
@@ -211,13 +213,13 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 **代码验证**: `rateSimulationCalculator.ts` 中 offset 由 `crossReservePositions` 参数控制。Shared scenario 不传入则不应用。
 
-| Issue        | 标题                                 | 状态            | 领域      | 优先级        | 说明                        |
-| ------------ | ------------------------------------ | --------------- | --------- | ------------- | --------------------------- |
-| **AAV-832**  | Portfolio simulation offset 对齐规则 | Backlog         | 产品决策  | Low           | 父 issue，决策已定          |
-| **AAV-1022** | 定义 offset 对齐规则                 | Ready for agent | 前端+产品 | Medium        | 可执行                      |
-| **AAV-1023** | 改造 Reserve table 展示逻辑          | Ready for agent | 前端      | Medium        | 依赖 AAV-1022               |
-| **AAV-1024** | 同步 Shared scenario                 | Ready for agent | 前端      | Medium        | 依赖 AAV-1022，仅 note 展示 |
-| **AAV-1025** | offset 扣减时给用户提醒              | Backlog         | 前端      | No priority⚠️ | 独立增强，未批量更新        |
+| Issue        | 标题                                 | 状态            | 领域      | 优先级        | 说明                                                               |
+| ------------ | ------------------------------------ | --------------- | --------- | ------------- | ------------------------------------------------------------------ |
+| **AAV-832**  | Portfolio simulation offset 对齐规则 | Backlog         | 产品决策  | Low           | 父 issue，决策已定                                                 |
+| ~~AAV-1022~~ | ~~定义 offset 对齐规则~~             | **Done** ✅     | 前端+产品 | ~~Medium~~    | Spec 完成，见 `docs/plans/aav-1022-offset-alignment-rules-spec.md` |
+| **AAV-1023** | 改造 Reserve table 展示逻辑          | Ready for agent | 前端      | Medium        | 依赖 AAV-1022                                                      |
+| **AAV-1024** | 同步 Shared scenario                 | Ready for agent | 前端      | Medium        | 依赖 AAV-1022，仅 note 展示                                        |
+| **AAV-1025** | offset 扣减时给用户提醒              | Backlog         | 前端      | No priority⚠️ | 独立增强，未批量更新                                               |
 
 ## Phase 2B: Borrow Blacklist 体系
 
@@ -393,21 +395,21 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ### 其他 issue（按优先级排序）
 
-| 顺序  | Issue         | 优先级   | 状态            | 说明                                                                                                                      |
-| ----- | ------------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| 1     | AAV-1253 (P7) | Urgent   | Done            | on-chain HF baseline 接入 ✅                                                                                              |
-| ~~2~~ | ~~AAV-895~~   | ~~High~~ | ~~Done~~        | 跨资产 offset 后端完成 (a5eb421) + 前端完成 (e3a14833) + E2E 测试 (58aa1542)。Merkl 无活跃 min(1,2) campaign，E2E skip ✅ |
-| 3     | AAV-1036      | High     | Backlog         | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）                                                                |
-| 4     | AAV-1022      | Medium   | Ready for agent | 定义 offset 对齐规则（AAV-1023/1024 前置）                                                                                |
-| 5     | AAV-862       | Medium   | Ready for agent | normalize campaignType 统一 + 重命名（`done-candidate` 标签）                                                             |
-| 6     | AAV-864       | Medium   | Backlog         | 单 cron + 缓存 TTL 重构                                                                                                   |
-| 7     | AAV-1071      | Low      | Backlog         | hookType=17 HF 排除条件展示（后端 `healthFactorHooks` 未透传）                                                            |
+| 顺序  | Issue         | 优先级     | 状态            | 说明                                                                                                                      |
+| ----- | ------------- | ---------- | --------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1     | AAV-1253 (P7) | Urgent     | Done            | on-chain HF baseline 接入 ✅                                                                                              |
+| ~~2~~ | ~~AAV-895~~   | ~~High~~   | ~~Done~~        | 跨资产 offset 后端完成 (a5eb421) + 前端完成 (e3a14833) + E2E 测试 (58aa1542)。Merkl 无活跃 min(1,2) campaign，E2E skip ✅ |
+| 3     | AAV-1036      | High       | Backlog         | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）                                                                |
+| ~~4~~ | ~~AAV-1022~~  | ~~Medium~~ | ~~Done~~        | ~~定义 offset 对齐规则~~ ✅ Spec: `docs/plans/aav-1022-offset-alignment-rules-spec.md`                                    |
+| 5     | AAV-862       | Medium     | Ready for agent | normalize campaignType 统一 + 重命名（`done-candidate` 标签）                                                             |
+| 6     | AAV-864       | Medium     | Backlog         | 单 cron + 缓存 TTL 重构                                                                                                   |
+| 7     | AAV-1071      | Low        | Backlog         | hookType=17 HF 排除条件展示（后端 `healthFactorHooks` 未透传）                                                            |
 
 > ⚠️ Linear issue 之间未设置 native blocking link。上述依赖关系通过 issue description 中的 "Blocked by" 和 comment 标注。
 >
 > **排序逻辑**：~~Urgent（AAV-756 P7）~~ ✅ 全部完成 → High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
 >
-> **下一步**：AAV-1036（offsetNote 与 capNote 分离）或 AAV-1022（offset 对齐规则定义）。AAV-895 已完成 — 后端 staging 自动部署 + 前端 + E2E 测试 (graceful skip，等 Merkl campaign 回来后自动运行)。
+> **下一步**：AAV-1024（Shared scenario 通用 note，Ready for agent）→ AAV-1023（Reserve table 验证，预计 no-op/minor）。AAV-1022 spec 已完成，AAV-1024 可直接实施。AAV-1036（offsetNote 分离，技术债）可后续处理。
 >
 > **2026-08-08 更新**：AAV-895 全部完成。后端 staging 环境从 railway 分支自动部署 (commit 45dbb68)。前端 lovable 分支 commit e3a14833 + 58aa1542。E2E 测试数据驱动设计：从 staging API 动态发现 crossAssetPairing 场景，当前无活跃 min(1,2) campaign 时 graceful skip。PR #170 (railway→main) 合并触发了 production 部署。
 >
