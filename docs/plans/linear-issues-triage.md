@@ -19,7 +19,9 @@
 >
 > **2026-08-06 更新**：修复 `usePortfolioToggle.ts` 中 useMemo key 不匹配 bug（commit `45675516` on `aaveapy/lovable`）。根因：`useMemo` 返回对象 key 为 `portfolioHealthFactors`，但解构语法 `healthFactors: portfolioHealthFactors` 期望 key `healthFactors`，导致 `portfolioHealthFactors` 始终为 `undefined`。虽然 P4-P7 的 HF 计算逻辑全部正确（`computeHealthFactors` 正确产出 `healthFactor: 1.56`），但 HF 数据从未传递到 `PortfolioSummaryBar`，UI 始终显示 "—"。全代码库审查确认仅此一处。回归测试已添加（断言 `portfolioHealthFactors` 为 defined 且 `healthFactor > 0`）。同时创建 `docs/conventions/wallet-js-injection-testing.md`（前端），归档 wallet JS 注入 E2E 测试模式。
 >
-> **2026-08-08 更新 2**：AAV-1022（offset 对齐规则定义）已完成。Spec: `docs/plans/aav-1022-offset-alignment-rules-spec.md`。方案 C 形式化：4 个上下文的 offset 行为定义 + 16 场景 Scenario Matrix + 通用/精确 note 文案。代码验证结论：Portfolio mode offset 已正确实现，Shared scenario 唯一 gap 是通用 note（AAV-1024 scope）。AAV-1023 预期为 no-op 或 minor display improvement。下一步：AAV-1024（Shared scenario 通用 note）→ AAV-1023（Reserve table 验证）。
+> **2026-08-08 更新 3**：AAV-1024（Shared scenario 通用 note）+ AAV-1023（Reserve table 验证）均已完成。AAV-1024 commit `db2e5fd4` on `aaveapy/lovable`：在 `merklCrossReserveNote()` 中增加 `crossReservePositions == null` 分支，NPC/CAP 分别显示通用提示 note。5 个 TDD 测试，3496 测试通过，0 回归。AAV-1023 确认为 no-op：4 项验证全部通过（offset 已正确实现，note 已附加，归零展示正常，数值一致性由同一 `simulationsById` 保证）。Offset 体系对齐（AAV-1022/1023/1024）全部完成。
+>
+> **2026-08-08 更新 2**：AAV-1022（offset 对齐规则定义）已完成。Spec: `docs/plans/aav-1022-offset-alignment-rules-spec.md`。方案 C 形式化：4 个上下文的 offset 行为定义 + 16 场景 Scenario Matrix + 通用/精确 note 文案。代码验证结论：Portfolio mode offset 已正确实现，Shared scenario 唯一 gap 是通用 note（AAV-1024 scope）。AAV-1023 预期为 no-op 或 minor display improvement。
 >
 > **2026-08-02 Grill 更新**：AAV-756 已拆分为 P2-P7 六个子步骤（见下方 AAV-756 拆分详情）。确认 HF 按 per-pool/spoke 隔离边界计算，非全局。先做 simulation 逻辑，后接 on-chain HF baseline。
 
@@ -213,13 +215,13 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 **代码验证**: `rateSimulationCalculator.ts` 中 offset 由 `crossReservePositions` 参数控制。Shared scenario 不传入则不应用。
 
-| Issue        | 标题                                 | 状态            | 领域      | 优先级        | 说明                                                               |
-| ------------ | ------------------------------------ | --------------- | --------- | ------------- | ------------------------------------------------------------------ |
-| **AAV-832**  | Portfolio simulation offset 对齐规则 | Backlog         | 产品决策  | Low           | 父 issue，决策已定                                                 |
-| ~~AAV-1022~~ | ~~定义 offset 对齐规则~~             | **Done** ✅     | 前端+产品 | ~~Medium~~    | Spec 完成，见 `docs/plans/aav-1022-offset-alignment-rules-spec.md` |
-| **AAV-1023** | 改造 Reserve table 展示逻辑          | Ready for agent | 前端      | Medium        | 依赖 AAV-1022                                                      |
-| **AAV-1024** | 同步 Shared scenario                 | Ready for agent | 前端      | Medium        | 依赖 AAV-1022，仅 note 展示                                        |
-| **AAV-1025** | offset 扣减时给用户提醒              | Backlog         | 前端      | No priority⚠️ | 独立增强，未批量更新                                               |
+| Issue        | 标题                                 | 状态        | 领域      | 优先级        | 说明                                                               |
+| ------------ | ------------------------------------ | ----------- | --------- | ------------- | ------------------------------------------------------------------ |
+| **AAV-832**  | Portfolio simulation offset 对齐规则 | Backlog     | 产品决策  | Low           | 父 issue，决策已定                                                 |
+| ~~AAV-1022~~ | ~~定义 offset 对齐规则~~             | **Done** ✅ | 前端+产品 | ~~Medium~~    | Spec 完成，见 `docs/plans/aav-1022-offset-alignment-rules-spec.md` |
+| ~~AAV-1023~~ | ~~改造 Reserve table 展示逻辑~~      | **Done** ✅ | 前端      | ~~Medium~~    | No-op。验证 4 项全部已实现，无代码变更                             |
+| ~~AAV-1024~~ | ~~同步 Shared scenario~~             | **Done** ✅ | 前端      | ~~Medium~~    | commit `db2e5fd4`。Shared scenario 通用 note 已实现                |
+| **AAV-1025** | offset 扣减时给用户提醒              | Backlog     | 前端      | No priority⚠️ | 独立增强，未批量更新                                               |
 
 ## Phase 2B: Borrow Blacklist 体系
 
@@ -409,7 +411,7 @@ packages/aave-shared-config/schema-fingerprint.ts
 >
 > **排序逻辑**：~~Urgent（AAV-756 P7）~~ ✅ 全部完成 → High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
 >
-> **下一步**：AAV-1024（Shared scenario 通用 note，Ready for agent）→ AAV-1023（Reserve table 验证，预计 no-op/minor）。AAV-1022 spec 已完成，AAV-1024 可直接实施。AAV-1036（offsetNote 分离，技术债）可后续处理。
+> **下一步**：~~AAV-1024~~ ✅ Done → ~~AAV-1023~~ ✅ Done (no-op)。Offset 体系对齐全部完成。下一优先级：AAV-862（normalize campaignType，Ready for agent）→ AAV-864（单 cron + TTL，Backlog）→ AAV-1036（offsetNote 分离，技术债）。
 >
 > **2026-08-08 更新**：AAV-895 全部完成。后端 staging 环境从 railway 分支自动部署 (commit 45dbb68)。前端 lovable 分支 commit e3a14833 + 58aa1542。E2E 测试数据驱动设计：从 staging API 动态发现 crossAssetPairing 场景，当前无活跃 min(1,2) campaign 时 graceful skip。PR #170 (railway→main) 合并触发了 production 部署。
 >
