@@ -406,6 +406,8 @@ packages/aave-shared-config/schema-fingerprint.ts
 | ~~5~~ | ~~AAV-862~~   | ~~Medium~~ | ~~Done~~     | ~~normalize campaignType 统一~~ ✅ Scope 1 Done (commit `0cb09a2`)。Scope 2 (重命名) + Scope 3 (AMOUNT 变体) deferred     |
 | ~~6~~ | ~~AAV-864~~   | ~~Medium~~ | ~~Canceled~~ | ~~单 cron + 缓存 TTL 重构~~ Canceled：字段迁移不可行（前端已直接消费），cron 合并收益边际                                 |
 | 7     | AAV-1071      | Low        | Backlog      | hookType=17 HF 排除条件展示（后端 `healthFactorHooks` 未透传）                                                            |
+| 8     | AAV-1274      | High       | Backlog      | RENAME campaignType→distributionType（AAV-862 Scope 2 follow-up）。跨仓库 API breaking，需前端协调                        |
+| 9     | AAV-1275      | Medium     | Backlog      | DESIGN AMOUNT variant APR display strategy（AAV-862 Scope 3 follow-up）。需产品决策                                       |
 
 > ⚠️ Linear issue 之间未设置 native blocking link。上述依赖关系通过 issue description 中的 "Blocked by" 和 comment 标注。
 >
