@@ -401,12 +401,12 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 #### High 优先级
 
-| Issue    | 状态       | 领域      | 说明                                                                                     |
-| -------- | ---------- | --------- | ---------------------------------------------------------------------------------------- |
-| AAV-1036 | Backlog    | 后端      | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）                               |
-| AAV-1274 | Backlog    | 后端+前端 | RENAME campaignType→distributionType（AAV-862 Scope 2）。跨仓库 API breaking，需前端协调 |
-| AAV-364  | Todo       | 后端      | [EPIC] 市场宏观指标聚合 — market size / liquidity / utilization / 全局 deficit           |
-| AAV-482  | Needs Info | 前端      | Risk Premium Simulation。High 但 blocked on info                                         |
+| Issue        | 状态        | 领域      | 说明                                                                                     |
+| ------------ | ----------- | --------- | ---------------------------------------------------------------------------------------- |
+| ~~AAV-1036~~ | ~~Done~~ ✅ | 前端      | offsetNote 与 capNote 分离。commit `442d0f77` on lovable。3501 tests pass                |
+| AAV-1274     | Backlog     | 后端+前端 | RENAME campaignType→distributionType（AAV-862 Scope 2）。跨仓库 API breaking，需前端协调 |
+| AAV-364      | Todo        | 后端      | [EPIC] 市场宏观指标聚合 — market size / liquidity / utilization / 全局 deficit           |
+| AAV-482      | Needs Info  | 前端      | Risk Premium Simulation。High 但 blocked on info                                         |
 
 #### Medium 优先级
 
@@ -468,7 +468,7 @@ packages/aave-shared-config/schema-fingerprint.ts
 >
 > **排序逻辑**：Ready for agent > Backlog > Todo（同优先级内）；High > Medium > Low > No priority。
 >
-> **下一步**：AAV-1036（offsetNote 分离，High Backlog）→ AAV-1274（重命名，High Backlog，需前端协调）→ AAV-364（宏观指标 EPIC，High Todo）→ Medium 优先级 Ready for agent 批次（AAV-726, AAV-781, AAV-782, AAV-843）。
+> **下一步**：~~AAV-1036~~ ✅ Done → AAV-1274（重命名，High Backlog，需前端协调）→ AAV-364（宏观指标 EPIC，High Todo）→ Medium 优先级 Ready for agent 批次（AAV-726, AAV-781, AAV-782, AAV-843）。
 >
 > **2026-08-10 全面 re-triage**：主跟踪表从 9 行扩展到完整 37 个活跃 issue。新增：AAV-1245（V4 RPC Fallback, Medium）、AAV-726（flatten monorepo, Medium）、AAV-781/782（Merit cache, Medium）、AAV-843（Brevis per-user, Medium）、AAV-449/829/830/517（后端 Ready for agent, Low）、AAV-534/586/587/512/135/329（Todo, Low）、AAV-1227（Widget, Low）、AAV-1272（Dependabot）、AAV-1254（eMode）、AAV-387/891/892（Needs Info）、AAV-364（宏观指标 EPIC, High）、AAV-482（Risk Premium, High）、AAV-333（V4 RP Sim, Medium）。Phase 专节表格保留作为历史参考。
 >
