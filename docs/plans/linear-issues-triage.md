@@ -235,12 +235,12 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ## Phase 2C: Campaign Type 统一
 
-| Issue       | 标题                                              | 状态            | 领域 | 优先级     | 说明                                                             |
-| ----------- | ------------------------------------------------- | --------------- | ---- | ---------- | ---------------------------------------------------------------- |
-| **AAV-862** | 统一 normalize campaignType 逻辑                  | Ready for agent | 后端 | Medium     | 父 issue。子 issue 全部 Done。scope 1-2（统一函数+重命名）未完成 |
-| ~~AAV-868~~ | ~~resolveCampaignApr 复用 normalize 函数链~~      | **Done** ✅     | 后端 | ~~Medium~~ | 2026-08-02 验证。已改用 normalize 函数链                         |
-| ~~AAV-870~~ | ~~AMOUNT_PER_AMOUNT 无 TVL 数据~~                 | **Done** ✅     | 后端 | ~~Medium~~ | 2026-08-02 验证。opportunity TVL + targetTokenPrice 转换         |
-| ~~AAV-866~~ | ~~forecast endTimestamp 与 campaignEndedAt 冗余~~ | **Done** ✅     | 后端 | ~~Medium~~ | 2026-08-02 验证。调查结论：不冗余，保留两者                      |
+| Issue       | 标题                                              | 状态        | 领域 | 优先级     | 说明                                                                         |
+| ----------- | ------------------------------------------------- | ----------- | ---- | ---------- | ---------------------------------------------------------------------------- |
+| ~~AAV-862~~ | ~~统一 normalize campaignType 逻辑~~              | **Done** ✅ | 后端 | ~~Medium~~ | Scope 1 Done (commit `0cb09a2`)。统一到 shared-contracts。Scope 2+3 deferred |
+| ~~AAV-868~~ | ~~resolveCampaignApr 复用 normalize 函数链~~      | **Done** ✅ | 后端 | ~~Medium~~ | 2026-08-02 验证。已改用 normalize 函数链                                     |
+| ~~AAV-870~~ | ~~AMOUNT_PER_AMOUNT 无 TVL 数据~~                 | **Done** ✅ | 后端 | ~~Medium~~ | 2026-08-02 验证。opportunity TVL + targetTokenPrice 转换                     |
+| ~~AAV-866~~ | ~~forecast endTimestamp 与 campaignEndedAt 冗余~~ | **Done** ✅ | 后端 | ~~Medium~~ | 2026-08-02 验证。调查结论：不冗余，保留两者                                  |
 
 ## Phase 3: Medium — 架构改进 / 功能扩展
 
@@ -397,22 +397,24 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ### 其他 issue（按优先级排序）
 
-| 顺序  | Issue         | 优先级     | 状态            | 说明                                                                                                                      |
-| ----- | ------------- | ---------- | --------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| 1     | AAV-1253 (P7) | Urgent     | Done            | on-chain HF baseline 接入 ✅                                                                                              |
-| ~~2~~ | ~~AAV-895~~   | ~~High~~   | ~~Done~~        | 跨资产 offset 后端完成 (a5eb421) + 前端完成 (e3a14833) + E2E 测试 (58aa1542)。Merkl 无活跃 min(1,2) campaign，E2E skip ✅ |
-| 3     | AAV-1036      | High       | Backlog         | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）                                                                |
-| ~~4~~ | ~~AAV-1022~~  | ~~Medium~~ | ~~Done~~        | ~~定义 offset 对齐规则~~ ✅ Spec: `docs/plans/aav-1022-offset-alignment-rules-spec.md`                                    |
-| 5     | AAV-862       | Medium     | Ready for agent | normalize campaignType 统一 + 重命名（`done-candidate` 标签）                                                             |
-| 6     | AAV-864       | Medium     | Backlog         | 单 cron + 缓存 TTL 重构                                                                                                   |
-| 7     | AAV-1071      | Low        | Backlog         | hookType=17 HF 排除条件展示（后端 `healthFactorHooks` 未透传）                                                            |
+| 顺序  | Issue         | 优先级     | 状态     | 说明                                                                                                                      |
+| ----- | ------------- | ---------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1     | AAV-1253 (P7) | Urgent     | Done     | on-chain HF baseline 接入 ✅                                                                                              |
+| ~~2~~ | ~~AAV-895~~   | ~~High~~   | ~~Done~~ | 跨资产 offset 后端完成 (a5eb421) + 前端完成 (e3a14833) + E2E 测试 (58aa1542)。Merkl 无活跃 min(1,2) campaign，E2E skip ✅ |
+| 3     | AAV-1036      | High       | Backlog  | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）                                                                |
+| ~~4~~ | ~~AAV-1022~~  | ~~Medium~~ | ~~Done~~ | ~~定义 offset 对齐规则~~ ✅ Spec: `docs/plans/aav-1022-offset-alignment-rules-spec.md`                                    |
+| ~~5~~ | ~~AAV-862~~   | ~~Medium~~ | ~~Done~~ | ~~normalize campaignType 统一~~ ✅ Scope 1 Done (commit `0cb09a2`)。Scope 2 (重命名) + Scope 3 (AMOUNT 变体) deferred     |
+| 6     | AAV-864       | Medium     | Backlog  | 单 cron + 缓存 TTL 重构                                                                                                   |
+| 7     | AAV-1071      | Low        | Backlog  | hookType=17 HF 排除条件展示（后端 `healthFactorHooks` 未透传）                                                            |
 
 > ⚠️ Linear issue 之间未设置 native blocking link。上述依赖关系通过 issue description 中的 "Blocked by" 和 comment 标注。
 >
 > **排序逻辑**：~~Urgent（AAV-756 P7）~~ ✅ 全部完成 → High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
 >
-> **下一步**：~~AAV-1024~~ ✅ Done → ~~AAV-1023~~ ✅ Done (no-op)。Offset 体系对齐全部完成。下一优先级：AAV-862（normalize campaignType，Ready for agent）→ AAV-864（单 cron + TTL，Backlog）→ AAV-1036（offsetNote 分离，技术债）。
+> **下一步**：~~AAV-1024~~ ✅ Done → ~~AAV-1023~~ ✅ Done (no-op)。Offset 体系对齐全部完成。~~AAV-862~~ ✅ Done (Scope 1)。下一优先级：AAV-864（单 cron + TTL，Backlog）→ AAV-1036（offsetNote 分离，技术债）→ AAV-1071（HF 排除条件，Low）。
 >
 > **2026-08-08 更新**：AAV-895 全部完成。后端 staging 环境从 railway 分支自动部署 (commit 45dbb68)。前端 lovable 分支 commit e3a14833 + 58aa1542。E2E 测试数据驱动设计：从 staging API 动态发现 crossAssetPairing 场景，当前无活跃 min(1,2) campaign 时 graceful skip。PR #170 (railway→main) 合并触发了 production 部署。
+>
+> **2026-08-10 更新**：AAV-862 Scope 1 完成（commit `0cb09a2` on `railway`）。`normalizeCampaignType` + 映射表统一到 `@internal/aave-shared-contracts/src/campaign-type.ts`。消除 3 处类型重复 + 2 处函数重复，净删 -424 行。26 场景测试矩阵。CI 全绿。ADR-0024 trade-off 更新为 RESOLVED。Scope 2 (重命名 campaignType→distributionType，跨仓库 API breaking) + Scope 3 (AMOUNT 变体语义，需产品决策) deferred。
 >
 > **已创建 Linear issue**：AAV-1269（LOCF 查询）+ AAV-1270（列级 NULL 命中率测试）。见上方专节。
