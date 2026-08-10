@@ -14,6 +14,7 @@ import type {
   MerklCampaignBreakdown,
   MerklOpportunityGroup,
   ForecastCampaignTypeLite,
+  NormalizeCampaignTypeInput,
   MerklCampaignAccess,
   MerklBorrowHookProtocol,
   MerklHealthFactorHook,
@@ -29,16 +30,19 @@ import {
   v4ReserveId,
   v4HubScopeKey,
   isWithinLookbackWindow,
+  normalizeCampaignType,
 } from "@internal/aave-shared-contracts";
 import { resolveOffsetSymbolAddress } from "./merkl-symbol-resolver.js";
 export type {
   MerklCampaignBreakdown,
   MerklOpportunityGroup,
   ForecastCampaignTypeLite,
+  NormalizeCampaignTypeInput,
   MerklCampaignAccess,
   MerklBorrowHookProtocol,
   MerklHealthFactorHook,
 } from "@internal/aave-shared-contracts";
+export { normalizeCampaignType } from "@internal/aave-shared-contracts";
 import {
   resolveUsdPriceWithPriority,
   type UsdPriceSource,
@@ -682,79 +686,6 @@ const persistMerklArtifacts = async (
   );
 };
 
-export interface NormalizeForecastCampaignTypeLiteInput {
-  distributionType?: string;
-  targetAPR?: number | string;
-}
-
-const FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS: Array<{
-  pattern: string;
-  result: ForecastCampaignTypeLite;
-}> = [
-  {
-    pattern: "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-    result: "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-  },
-  {
-    pattern: "MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT",
-    result: "MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT",
-  },
-  {
-    pattern: "FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-    result: "FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE",
-  },
-  {
-    pattern: "FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE",
-    result: "FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE",
-  },
-  {
-    pattern: "FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT",
-    result: "FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT",
-  },
-  { pattern: "DUTCH_AUCTION", result: "DUTCH_AUCTION" },
-  { pattern: "AAVE_NET_APR", result: "TARGET_TOTAL_APR" },
-  { pattern: "AAVE_V4_NET_APR", result: "TARGET_TOTAL_APR" },
-  { pattern: "ERC4626_APR", result: "TARGET_TOTAL_APR" },
-  { pattern: "ERC4626_SPREAD_CAPPED", result: "TARGET_TOTAL_APR" },
-  { pattern: "ERC4626_TARGET_APR_WITH_MERKL", result: "TARGET_TOTAL_APR" },
-  { pattern: "SOFR_SPREAD_RATCHET", result: "TARGET_TOTAL_APR" },
-  { pattern: "DEEL_DISTRIBUTION", result: "TARGET_TOTAL_APR" },
-];
-
-const toFinitePositiveNumber = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0)
-    return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
-  return null;
-};
-
-export const normalizeForecastCampaignTypeLite = (
-  input: NormalizeForecastCampaignTypeLiteInput | unknown
-): ForecastCampaignTypeLite | null => {
-  if (!input || typeof input !== "object") return null;
-  const { distributionType, targetAPR } =
-    input as NormalizeForecastCampaignTypeLiteInput;
-
-  if (distributionType) {
-    const upper = distributionType.trim().toUpperCase();
-    for (const {
-      pattern,
-      result,
-    } of FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS) {
-      if (upper === pattern) return result;
-    }
-  }
-
-  if (toFinitePositiveNumber(targetAPR) !== null) {
-    return "TARGET_TOTAL_APR";
-  }
-
-  return null;
-};
-
 const buildCampaignSnapshotLiteForForecastFile = (
   campaign: any
 ): CampaignSnapshotLiteForForecastFile | null => {
@@ -867,7 +798,7 @@ export const buildForecastCampaignMetaLiteMap = (
         campaignObj?.params?.distributionMethodParameters?.distributionSettings
           ?.targetAPR ?? undefined;
 
-      const campaignTypeHint = normalizeForecastCampaignTypeLite({
+      const campaignTypeHint = normalizeCampaignType({
         distributionType: breakdownDistributionType,
         targetAPR,
       });
@@ -1156,7 +1087,7 @@ export const resolveCampaignApr = (
       ?.targetAPR ??
     campaign?.distributionMethodParameters?.distributionSettings?.targetAPR ??
     undefined;
-  const campaignType = normalizeForecastCampaignTypeLite({
+  const campaignType = normalizeCampaignType({
     distributionType,
     targetAPR,
   });
@@ -1221,7 +1152,7 @@ export async function fetchMerklCampaignDetails(
       ? new Date(campaign.endTimestamp * 1000).toISOString()
       : "";
 
-    const campaignType = normalizeForecastCampaignTypeLite({
+    const campaignType = normalizeCampaignType({
       distributionType: campaign.distributionType,
     });
     let rewardTokenPrice: number | undefined;
@@ -1604,7 +1535,7 @@ export async function processMerklData(
       const hashId = String(campaign.campaignId || "").trim();
       if (!hashId) continue;
       if (campaignDetailsCache.has(hashId)) continue;
-      const campaignType = normalizeForecastCampaignTypeLite({
+      const campaignType = normalizeCampaignType({
         distributionType: campaign.distributionType,
       });
       if (isAmountVariant(campaignType) && campaignType) {
@@ -1758,7 +1689,7 @@ export async function processMerklData(
       if (campaignDetailsCache.has(cacheKey)) continue;
       oppCampaignPromises.push(
         (async () => {
-          const campaignType = normalizeForecastCampaignTypeLite({
+          const campaignType = normalizeCampaignType({
             distributionType: campaign.distributionType,
           });
           let rewardTokenPrice: number | undefined;

@@ -31,6 +31,9 @@ export {
 } from "./units.js";
 export type { FieldUnit } from "./units.js";
 
+export { normalizeCampaignType } from "./campaign-type.js";
+export type { NormalizeCampaignTypeInput } from "./campaign-type.js";
+
 export function fifoEvict<K>(map: Map<K, unknown>, maxEntries: number): void {
   while (map.size > maxEntries) {
     const { value: oldestKey, done } = map.keys().next();

@@ -4,11 +4,11 @@
  */
 import { createHash } from "node:crypto";
 import type { MarketWithSpread } from "../types/index.js";
-import type { RuntimeReserveData } from "@internal/aave-shared-contracts";
-import {
-  getBreakdownFieldRule,
-  type CampaignForecastType,
-} from "../lib/merklApiContract.js";
+import type {
+  RuntimeReserveData,
+  ForecastCampaignTypeLite,
+} from "@internal/aave-shared-contracts";
+import { getBreakdownFieldRule } from "../lib/merklApiContract.js";
 import { computeTargetTotalAprIncentiveApr } from "../lib/aprApyConversion.js";
 
 export function roundTo6(n: number): number {
@@ -32,7 +32,7 @@ function scaleMerklBreakdown<
   T extends {
     campaignApr: number;
     aprCap?: number | null;
-    campaignType?: CampaignForecastType;
+    campaignType?: ForecastCampaignTypeLite;
     plannedDaily?: number;
     totalBudget?: number;
     budgetBoundMode?: string;
