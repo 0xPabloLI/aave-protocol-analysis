@@ -58,7 +58,7 @@ jobs:
 
           echo ""
           echo "=== Storage summary ==="
-          TOTAL_SIZE=$(grep "Total Size" /tmp/r2-listing.txt | awk '{print $3}')
+          TOTAL_SIZE=$(grep "Total Size" /tmp/r2-listing.txt | awk '{print $3, $4}')
           TOTAL_COUNT=$(grep "Total Objects" /tmp/r2-listing.txt | awk '{print $3}')
           echo "Total objects: $TOTAL_COUNT"
           echo "Total size: $TOTAL_SIZE"
