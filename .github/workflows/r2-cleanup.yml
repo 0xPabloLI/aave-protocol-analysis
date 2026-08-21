@@ -1,0 +1,94 @@
+name: R2 Cleanup & Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "List only or list+delete old daily backups"
+        required: false
+        default: "list"
+        type: choice
+        options:
+          - list
+          - delete
+
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+    steps:
+      - name: List all R2 objects
+        run: |
+          set -euo pipefail
+          echo "=== All objects in R2 bucket ==="
+          aws s3 ls "s3://${R2_BUCKET}/" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --region auto \
+            --recursive \
+            --human-readable \
+            --summarize 2>&1 | tee /tmp/r2-listing.txt
+
+          echo ""
+          echo "=== Storage summary ==="
+          TOTAL_SIZE=$(grep "Total Size" /tmp/r2-listing.txt | awk '{print $3}')
+          TOTAL_COUNT=$(grep "Total Objects" /tmp/r2-listing.txt | awk '{print $3}')
+          echo "Total objects: $TOTAL_COUNT"
+          echo "Total size: $TOTAL_SIZE"
+
+          echo ""
+          echo "=== daily/ prefix objects (sorted by date) ==="
+          grep "daily/" /tmp/r2-listing.txt | sort || echo "No daily/ objects found"
+
+          echo ""
+          echo "=== archive/ prefix objects ==="
+          grep "archive/" /tmp/r2-listing.txt | sort || echo "No archive/ objects found"
+
+      - name: Delete old daily backups (keep latest 2)
+        if: github.event.inputs.action == 'delete'
+        run: |
+          set -euo pipefail
+          echo "=== Fetching daily/ objects sorted by date (newest first) ==="
+          aws s3 ls "s3://${R2_BUCKET}/daily/" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --region auto 2>&1 | sort -rk1,2 > /tmp/daily-listing.txt
+
+          TOTAL_DAILY=$(wc -l < /tmp/daily-listing.txt)
+          echo "Total daily/ objects: $TOTAL_DAILY"
+
+          if [ "$TOTAL_DAILY" -le 2 ]; then
+            echo "Only $TOTAL_DAILY daily/ objects, nothing to delete."
+            exit 0
+          fi
+
+          echo ""
+          echo "=== Keeping the 2 newest daily/ backups ==="
+          head -2 /tmp/daily-listing.txt
+
+          echo ""
+          echo "=== Objects to delete ==="
+          tail -n +3 /tmp/daily-listing.txt
+
+          echo ""
+          echo "=== Deleting old daily/ backups ==="
+          tail -n +3 /tmp/daily-listing.txt | awk '{print $4}' | while read -r KEY; do
+            echo "Deleting: daily/$KEY"
+            aws s3 rm "s3://${R2_BUCKET}/daily/${KEY}" \
+              --endpoint-url "$R2_ENDPOINT" \
+              --region auto || echo "Failed to delete: daily/$KEY"
+          done
+
+          echo ""
+          echo "=== Remaining objects after cleanup ==="
+          aws s3 ls "s3://${R2_BUCKET}/" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --region auto \
+            --recursive \
+            --human-readable \
+            --summarize
