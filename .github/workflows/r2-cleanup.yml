@@ -64,25 +64,50 @@ jobs:
 
           if [ "$TOTAL_DAILY" -le 2 ]; then
             echo "Only $TOTAL_DAILY daily/ objects, nothing to delete."
-            exit 0
+          else
+            echo ""
+            echo "=== Keeping the 2 newest daily/ backups ==="
+            head -2 /tmp/daily-listing.txt
+
+            echo ""
+            echo "=== Objects to delete ==="
+            tail -n +3 /tmp/daily-listing.txt
+
+            echo ""
+            echo "=== Deleting old daily/ backups ==="
+            tail -n +3 /tmp/daily-listing.txt | awk '{print $4}' | while read -r KEY; do
+              echo "Deleting: daily/$KEY"
+              aws s3 rm "s3://${R2_BUCKET}/daily/${KEY}" \
+                --endpoint-url "$R2_ENDPOINT" \
+                --region auto || echo "Failed to delete: daily/$KEY"
+            done
           fi
 
           echo ""
-          echo "=== Keeping the 2 newest daily/ backups ==="
-          head -2 /tmp/daily-listing.txt
+          echo "=== Fetching archive/ objects sorted by date (newest first) ==="
+          aws s3 ls "s3://${R2_BUCKET}/archive/" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --region auto 2>&1 | sort -rk1,2 > /tmp/archive-listing.txt
 
-          echo ""
-          echo "=== Objects to delete ==="
-          tail -n +3 /tmp/daily-listing.txt
+          TOTAL_ARCHIVE=$(wc -l < /tmp/archive-listing.txt)
+          echo "Total archive/ objects: $TOTAL_ARCHIVE"
 
-          echo ""
-          echo "=== Deleting old daily/ backups ==="
-          tail -n +3 /tmp/daily-listing.txt | awk '{print $4}' | while read -r KEY; do
-            echo "Deleting: daily/$KEY"
-            aws s3 rm "s3://${R2_BUCKET}/daily/${KEY}" \
-              --endpoint-url "$R2_ENDPOINT" \
-              --region auto || echo "Failed to delete: daily/$KEY"
-          done
+          if [ "$TOTAL_ARCHIVE" -le 2 ]; then
+            echo "Only $TOTAL_ARCHIVE archive/ objects, nothing to delete."
+          else
+            echo ""
+            echo "=== Keeping the 2 newest archive/ backups ==="
+            head -2 /tmp/archive-listing.txt
+
+            echo ""
+            echo "=== Deleting old archive/ backups ==="
+            tail -n +3 /tmp/archive-listing.txt | awk '{print $4}' | while read -r KEY; do
+              echo "Deleting: archive/$KEY"
+              aws s3 rm "s3://${R2_BUCKET}/archive/${KEY}" \
+                --endpoint-url "$R2_ENDPOINT" \
+                --region auto || echo "Failed to delete: archive/$KEY"
+            done
+          fi
 
           echo ""
           echo "=== Remaining objects after cleanup ==="
