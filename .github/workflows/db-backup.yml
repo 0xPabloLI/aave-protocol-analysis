@@ -8,7 +8,8 @@ name: Database Backup to Cloudflare R2
 #
 # Retention:
 #   daily/   keeps the 7 most recent backups, older ones auto-deleted after each upload
-#   archive/ permanent (never auto-deleted); clears daily/ on success
+#   archive/ keeps the 4 most recent backups, older ones auto-deleted after each upload
+#            also clears daily/ on success (daily snapshots superseded by archive)
 #
 # Backs up staging database only (production DB not deployed).
 #
@@ -158,3 +159,38 @@ jobs:
             --include "${{ matrix.environment }}-aave-pg-*" \
             --endpoint-url "$R2_ENDPOINT" \
             --region auto || true
+
+      - name: Prune old archive backups (keep 4 most recent)
+        if: env.MODE == 'archive'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          echo "=== Pruning old archive/ backups (keeping 4 most recent) ==="
+          aws s3 ls "s3://${R2_BUCKET}/archive/" \
+            --endpoint-url "$R2_ENDPOINT" \
+            --region auto 2>&1 | sort -rk1,2 > /tmp/archive-listing.txt
+
+          TOTAL_ARCHIVE=$(wc -l < /tmp/archive-listing.txt)
+          echo "Total archive/ objects: $TOTAL_ARCHIVE"
+
+          if [ "$TOTAL_ARCHIVE" -le 4 ]; then
+            echo "Only $TOTAL_ARCHIVE archive/ objects, nothing to prune."
+            exit 0
+          fi
+
+          echo "Keeping the 4 newest archive/ backups:"
+          head -4 /tmp/archive-listing.txt
+
+          echo "Deleting old archive/ backups:"
+          tail -n +5 /tmp/archive-listing.txt | awk '{print $4}' | while read -r KEY; do
+            echo "  Deleting: archive/$KEY"
+            aws s3 rm "s3://${R2_BUCKET}/archive/${KEY}" \
+              --endpoint-url "$R2_ENDPOINT" \
+              --region auto || echo "  Failed to delete: archive/$KEY"
+          done
+
+          echo "=== Pruning complete ==="

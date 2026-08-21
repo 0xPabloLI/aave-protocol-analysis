@@ -1,10 +1,27 @@
 name: R2 Cleanup & Audit
 
+# Automated R2 storage management:
+#   1. Weekly auto-cleanup (Sunday 06:00 UTC): list + delete old backups
+#   2. Storage quota check: create GitHub issue if usage > 8 GB (80% of 10 GB free tier)
+#   3. Manual trigger: list-only (audit) or list+delete (cleanup)
+#
+# Retention when deleting:
+#   daily/   keep 2 most recent
+#   archive/ keep 2 most recent
+#
+# Required GitHub Secrets:
+#   R2_ACCESS_KEY_ID       Cloudflare R2 API token Access Key
+#   R2_SECRET_ACCESS_KEY   Cloudflare R2 API token Secret
+#   R2_ENDPOINT            https://<account-id>.r2.cloudflarestorage.com
+#   R2_BUCKET              Bucket name (e.g. aave-db-backups)
+
 on:
+  schedule:
+    - cron: "0 6 * * 0" # Sunday 06:00 UTC — weekly auto-cleanup
   workflow_dispatch:
     inputs:
       action:
-        description: "List only or list+delete old daily backups"
+        description: "List only or list+delete old backups"
         required: false
         default: "list"
         type: choice
@@ -12,7 +29,9 @@ on:
           - list
           - delete
 
-permissions: {}
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   cleanup:
@@ -23,6 +42,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      # Scheduled runs always do delete; manual runs respect the input
+      ACTION: ${{ github.event_name == 'schedule' && 'delete' || github.event.inputs.action }}
     steps:
       - name: List all R2 objects
         run: |
@@ -41,6 +62,8 @@ jobs:
           TOTAL_COUNT=$(grep "Total Objects" /tmp/r2-listing.txt | awk '{print $3}')
           echo "Total objects: $TOTAL_COUNT"
           echo "Total size: $TOTAL_SIZE"
+          echo "TOTAL_SIZE=$TOTAL_SIZE" >> "$GITHUB_ENV"
+          echo "TOTAL_COUNT=$TOTAL_COUNT" >> "$GITHUB_ENV"
 
           echo ""
           echo "=== daily/ prefix objects (sorted by date) ==="
@@ -50,8 +73,84 @@ jobs:
           echo "=== archive/ prefix objects ==="
           grep "archive/" /tmp/r2-listing.txt | sort || echo "No archive/ objects found"
 
+      - name: Storage quota check (create issue if > 8 GB)
+        if: env.TOTAL_SIZE != ''
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          github-token: ${{ secrets.CODEX_BOT_TOKEN != '' && secrets.CODEX_BOT_TOKEN || github.token }}
+          script: |
+            const sizeStr = process.env.TOTAL_SIZE || '0';
+            const count = process.env.TOTAL_COUNT || '0';
+
+            // Parse sizes like "35.3 GiB", "396.2 MiB", "1.2 KiB"
+            const match = sizeStr.match(/^([\d.]+)\s+(\w+)$/);
+            if (!match) {
+              console.log(`Could not parse size: ${sizeStr}`);
+              return;
+            }
+            const value = parseFloat(match[1]);
+            const unit = match[2];
+
+            // Convert to GB
+            const multipliers = {
+              'KiB': 1 / (1024 * 1024),
+              'MiB': 1 / 1024,
+              'GiB': 1,
+              'TiB': 1024,
+            };
+            const sizeGB = value * (multipliers[unit] || 0);
+            const threshold = 8; // 8 GB = 80% of 10 GB free tier
+
+            console.log(`R2 storage: ${sizeGB.toFixed(2)} GB (threshold: ${threshold} GB)`);
+
+            if (sizeGB <= threshold) {
+              console.log('Storage within limits, no action needed.');
+              return;
+            }
+
+            // Check if an open issue with the "r2-quota-warning" label already exists
+            const { owner, repo } = context.repo;
+            const existing = await github.rest.issues.listForRepo({
+              owner, repo,
+              labels: 'r2-quota-warning',
+              state: 'open',
+            });
+
+            if (existing.data.length > 0) {
+              // Add a comment to the existing issue
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: existing.data[0].number,
+                body: `⚠️ **R2 storage still exceeds threshold**\n\nCurrent: ${sizeStr} (${sizeGB.toFixed(2)} GB)\nThreshold: ${threshold} GB\nObjects: ${count}\n\nRun: ${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+              });
+              console.log(`Commented on existing issue #${existing.data[0].number}`);
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner, repo,
+              title: `R2 storage quota warning: ${sizeStr} (${sizeGB.toFixed(2)} GB)`,
+              body: [
+                `## R2 Storage Exceeds Threshold`,
+                '',
+                `**Current**: ${sizeStr} (${sizeGB.toFixed(2)} GB)`,
+                `**Threshold**: ${threshold} GB (80% of 10 GB free tier)`,
+                `**Objects**: ${count}`,
+                '',
+                `**CI run**: ${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+                '',
+                '### Action needed',
+                '',
+                '1. Trigger `R2 Cleanup & Audit` workflow with `delete` mode',
+                '2. Review backup retention settings in `db-backup.yml`',
+                '3. Consider reducing retention counts if backup sizes are growing',
+              ].join('\n'),
+              labels: ['r2-quota-warning', 'ci-failure'],
+            });
+            console.log('Created new R2 quota warning issue');
+
       - name: Delete old daily backups (keep latest 2)
-        if: github.event.inputs.action == 'delete'
+        if: env.ACTION == 'delete'
         run: |
           set -euo pipefail
           echo "=== Fetching daily/ objects sorted by date (newest first) ==="
