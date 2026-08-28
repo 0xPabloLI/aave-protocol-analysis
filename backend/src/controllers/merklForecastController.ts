@@ -2,6 +2,7 @@ import {
   FORECAST_SOFT_TTL_MS,
   getMerklForecastState,
 } from "../services/merklForecastService.js";
+import { persistSideData } from "../services/sideDataPersistenceService.js";
 import {
   getMarketsSnapshot,
   type RuntimeReserveData,
@@ -195,6 +196,7 @@ export const refreshForecastSnapshotCache =
     }
 
     snapshotCache = { snapshot, generatedAt: Date.now() };
+    void persistSideData("forecast", snapshot, snapshotCache.generatedAt);
     return snapshot;
   };
 
@@ -208,6 +210,34 @@ export const getForecastSnapshot = async (): Promise<ForecastSnapshot> => {
   }
   throw new Error("Forecast snapshot not ready: cache not yet populated");
 };
+
+/**
+ * Restore forecast snapshot cache from DB snapshot (startup warm).
+ * The `staleTimeMs` is re-added from the runtime constant (it was stripped
+ * during persistence since it's a config value, not data).
+ */
+export function restoreForecastFromDb(data: unknown, fetchedAt: number): void {
+  const fc = data as {
+    items: ForecastResponseItem[];
+    errors?: Array<{ campaignId: string; message: string }>;
+    staleTimeMs?: number;
+  } | null;
+  if (!fc || !Array.isArray(fc.items)) {
+    logger.warn("⚠️ restoreForecastFromDb: invalid data shape, skipping");
+    return;
+  }
+  snapshotCache = {
+    snapshot: {
+      items: fc.items,
+      errors: Array.isArray(fc.errors) ? fc.errors : [],
+      staleTimeMs: FORECAST_SOFT_TTL_MS,
+    },
+    generatedAt: fetchedAt,
+  };
+  logger.info(
+    `💾 Forecast snapshot cache restored from DB (age=${Math.round((Date.now() - fetchedAt) / 1000)}s)`
+  );
+}
 
 /**
  * Warm the forecast snapshot cache by fetching fresh data from Merkl API.
