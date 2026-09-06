@@ -1,12 +1,12 @@
-import { providers } from 'ethers';
+import { providers } from "ethers";
 import {
   executeMulticall3,
   type Multicall3Call,
   type ProviderPoolLike,
-} from '@internal/aave-rpc-infra';
-import { chainTokenKey } from '@internal/aave-shared-contracts';
+} from "@internal/aave-rpc-infra";
+import { chainTokenKey } from "@internal/aave-shared-contracts";
 
-const TOKEN_CUMULATIVE_REWARDS_SELECTOR = '0xd4f3c7cc';
+const TOKEN_CUMULATIVE_REWARDS_SELECTOR = "0xd4f3c7cc";
 
 const BREVIS_CHAIN_CALL_CACHE_TTL_MS = 60 * 60 * 1000;
 const BREVIS_CHAIN_CALL_CACHE_MAX = 100;
@@ -51,19 +51,23 @@ export interface FetchBrevisDistributedSoFarOptions {
   rpcUrlsByChainId?: Record<number, string[]>;
   providerPool?: ProviderPoolLike;
   timeoutMs?: number;
-  _mockExecuteMulticall3?: (provider: unknown, calls: Multicall3Call[], options: { timeoutMs: number; label: string }) => Promise<{ success: boolean; returnData: string }[]>;
+  _mockExecuteMulticall3?: (
+    provider: unknown,
+    calls: Multicall3Call[],
+    options: { timeoutMs: number; label: string }
+  ) => Promise<{ success: boolean; returnData: string }[]>;
 }
 
 function encodeTokenCumulativeRewards(tokenAddr: string): string {
-  const padded = tokenAddr.toLowerCase().replace(/^0x/, '').padStart(64, '0');
+  const padded = tokenAddr.toLowerCase().replace(/^0x/, "").padStart(64, "0");
   return TOKEN_CUMULATIVE_REWARDS_SELECTOR + padded;
 }
 
 function decodeUint256(returnData: string): bigint | null {
   try {
-    const hex = returnData.replace(/^0x/, '');
+    const hex = returnData.replace(/^0x/, "");
     if (hex.length !== 64) return null;
-    return BigInt('0x' + hex);
+    return BigInt("0x" + hex);
   } catch {
     return null;
   }
@@ -72,7 +76,7 @@ function decodeUint256(returnData: string): bigint | null {
 export async function fetchBrevisDistributedSoFar(
   campaigns: BrevisChainCallCampaign[],
   tokenPrices: Map<string, number>,
-  options: FetchBrevisDistributedSoFarOptions,
+  options: FetchBrevisDistributedSoFarOptions
 ): Promise<Map<string, number | undefined>> {
   pruneCache();
 
@@ -87,7 +91,7 @@ export async function fetchBrevisDistributedSoFar(
     }
     const key = cacheKey(c);
     const cached = chainCallCache.get(key);
-    if (cached && (now - cached.fetchedAt) <= BREVIS_CHAIN_CALL_CACHE_TTL_MS) {
+    if (cached && now - cached.fetchedAt <= BREVIS_CHAIN_CALL_CACHE_TTL_MS) {
       result.set(c.campaignId, cached.value);
     } else {
       uncached.push(c);
@@ -117,24 +121,40 @@ export async function fetchBrevisDistributedSoFar(
       label: `Brevis tokenCumulativeRewards chain=${chainId}`,
     };
 
-    let multicallResults: { success: boolean; returnData: string }[] | undefined;
+    let multicallResults:
+      | { success: boolean; returnData: string }[]
+      | undefined;
 
     if (options.providerPool) {
       try {
-        const poolResult = await options.providerPool.executeWithAutoRpc(chainId, {
-          primary: async (provider: providers.Provider) => {
-            if (options._mockExecuteMulticall3) {
-              return options._mockExecuteMulticall3(provider, calls, multicallOptions);
-            }
-            return executeMulticall3(provider, calls, multicallOptions);
+        const poolResult = await options.providerPool.executeWithAutoRpc(
+          chainId,
+          {
+            primary: async (provider: providers.Provider) => {
+              if (options._mockExecuteMulticall3) {
+                return options._mockExecuteMulticall3(
+                  provider,
+                  calls,
+                  multicallOptions
+                );
+              }
+              return executeMulticall3(provider, calls, multicallOptions);
+            },
           },
-        }, { label: multicallOptions.label });
+          { label: multicallOptions.label }
+        );
         multicallResults = poolResult ?? undefined;
       } catch (err) {
         if (err instanceof Error && err.stack) {
-          console.warn(`Brevis multicall3 via ProviderPool failed for chain=${chainId}: ${err.message}`, err.stack);
+          console.warn(
+            `Brevis multicall3 via ProviderPool failed for chain=${chainId}: ${err.message}`,
+            err.stack
+          ); // nosemgrep: unsafe-formatstring — template literal interpolation, not a printf-style format string
         } else if (err !== undefined) {
-          console.warn(`Brevis multicall3 via ProviderPool failed for chain=${chainId}:`, err);
+          console.warn(
+            `Brevis multicall3 via ProviderPool failed for chain=${chainId}:`,
+            err
+          ); // nosemgrep: unsafe-formatstring — template literal interpolation, not a printf-style format string
         }
       }
     } else if (options.rpcUrlsByChainId) {
@@ -147,7 +167,11 @@ export async function fetchBrevisDistributedSoFar(
       for (const rpcUrl of rpcUrls) {
         try {
           const provider = new providers.JsonRpcProvider(rpcUrl);
-          multicallResults = await executeMulticall3(provider, calls, multicallOptions);
+          multicallResults = await executeMulticall3(
+            provider,
+            calls,
+            multicallOptions
+          );
           lastError = undefined;
           break;
         } catch (err) {
@@ -156,9 +180,15 @@ export async function fetchBrevisDistributedSoFar(
       }
       if (!multicallResults) {
         if (lastError instanceof Error && lastError.stack) {
-          console.warn(`Brevis multicall3 failed for chain=${chainId}: ${lastError.message}`, lastError.stack);
+          console.warn(
+            `Brevis multicall3 failed for chain=${chainId}: ${lastError.message}`,
+            lastError.stack
+          ); // nosemgrep: unsafe-formatstring — template literal interpolation, not a printf-style format string
         } else if (lastError !== undefined) {
-          console.warn(`Brevis multicall3 failed for chain=${chainId}:`, lastError);
+          console.warn(
+            `Brevis multicall3 failed for chain=${chainId}:`,
+            lastError
+          ); // nosemgrep: unsafe-formatstring — template literal interpolation, not a printf-style format string
         }
         for (const c of group) {
           result.set(c.campaignId, undefined);
