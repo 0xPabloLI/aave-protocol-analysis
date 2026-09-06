@@ -2,6 +2,7 @@
 
 ## Project Snapshot
 
+- **Agent harness 总览**: `docs/agents/harness.md` — 组件地图、什么时机读哪份、本地改编登记（含 git 纪律刻意差异）。
 - Monorepo (npm workspaces) with four packages + backend:
   - `packages/aave-shared-contracts` — shared type definitions (`RuntimeReserveData`, `MarketsPayload`, `NetPositionConstraint`), field registry, validation
   - `packages/aave-fetcher` — data aggregation (`fetchMarketsData`): Aave SDK + Merit + Merkl + Brevis
