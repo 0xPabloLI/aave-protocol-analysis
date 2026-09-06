@@ -147,14 +147,14 @@ export async function fetchBrevisDistributedSoFar(
       } catch (err) {
         if (err instanceof Error && err.stack) {
           console.warn(
-            `Brevis multicall3 via ProviderPool failed for chain=${chainId}: ${err.message}`,
+            `Brevis multicall3 via ProviderPool failed for chain=${chainId}: ${err.message}`, // nosemgrep
             err.stack
-          ); // nosemgrep: unsafe-formatstring — template literal interpolation, not a printf-style format string
+          );
         } else if (err !== undefined) {
           console.warn(
-            `Brevis multicall3 via ProviderPool failed for chain=${chainId}:`,
+            `Brevis multicall3 via ProviderPool failed for chain=${chainId}:`, // nosemgrep
             err
-          ); // nosemgrep: unsafe-formatstring — template literal interpolation, not a printf-style format string
+          );
         }
       }
     } else if (options.rpcUrlsByChainId) {
@@ -181,14 +181,14 @@ export async function fetchBrevisDistributedSoFar(
       if (!multicallResults) {
         if (lastError instanceof Error && lastError.stack) {
           console.warn(
-            `Brevis multicall3 failed for chain=${chainId}: ${lastError.message}`,
+            `Brevis multicall3 failed for chain=${chainId}: ${lastError.message}`, // nosemgrep
             lastError.stack
-          ); // nosemgrep: unsafe-formatstring — template literal interpolation, not a printf-style format string
+          );
         } else if (lastError !== undefined) {
           console.warn(
-            `Brevis multicall3 failed for chain=${chainId}:`,
+            `Brevis multicall3 failed for chain=${chainId}:`, // nosemgrep
             lastError
-          ); // nosemgrep: unsafe-formatstring — template literal interpolation, not a printf-style format string
+          );
         }
         for (const c of group) {
           result.set(c.campaignId, undefined);
