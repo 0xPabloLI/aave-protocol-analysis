@@ -1,52 +1,8 @@
-# Agent Harness 架构总览
+# Agent Harness 本地改编登记
 
-> 本仓库的 agent harness 让 agent 并行、安全、可追溯地工作。core 通用层源自 agent-harness 核心仓（`~/Documents/code/agent-harness`，其 MANIFEST.md 是跨 repo 全景）。**每个新 session 的起点：读本文件 → 按需加载组件。**
+> core 通用层的唯一编辑入口在 agent-harness 核心仓（`~/Documents/code/agent-harness`，其 MANIFEST.md 是跨 repo 全景与拷贝映射）。本文件只登记**本 repo 相对 core 的偏离**：同步 core 时按此表保留本地化，防止覆盖；不承担组件地图职责。
 
-## 组件地图
-
-```
-AGENTS.md (每 session 必读，路由 + 插槽值)
-│  Workflow Router（lightweight/substantial 分流 → 10 步强制工作流，内联）
-│  Hard Safety Gates（Railway 部署 gate、stash/checkout 禁令、分支纪律）
-└─→ docs/ (无 DOCS-INDEX；按需查阅)
-    │
-    ├─ 怎么干活：
-    │   ├─ AGENTS.md 内联 10 步工作流（Grill → Spec → Tickets → TDD →
-    │   │   Review → Runtime Verify → Commit&Push → Docs+Issue → Session
-    │   │   结束 checklist → 最佳实践确认）
-    │   ├─ best-practices/scenario-enumeration-checklist.md（core 合并版）
-    │   ├─ best-practices/scenario-matrix.md（core 合并版，本次新增）
-    │   └─ best-practices/memory-leak-checklist.md（内存缓存专项，38 项清单）
-    │
-    ├─ 怎么碰 git：
-    │   └─ AGENTS.md 内联（railway 分支直提、PR 前本地合并、跨 session 边界）
-    │
-    ├─ 怎么找信息：
-    │   ├─ agents/issue-tracker.md（core 契约 + Linear MCP 后端操作）
-    │   ├─ agents/triage-labels.md（五角色 label，core 版）
-    │   └─ agents/domain.md（CONTEXT.md/ADR 消费规则，含词汇纪律）
-    │
-    └─ 机器兜底（不靠自觉）：
-        ├── .husky/ pre-commit（build + typecheck + auto-fix + lint-staged）
-        ├── pre-push hook-autofix.sh（ci + auto-fix + audit）
-        └── CI auto-revert（fail 的直接 push 自动回滚）
-```
-
-## 什么时机读哪份
-
-- **session 开始**：AGENTS.md → 本文件
-- **拿到实施任务**：AGENTS.md 内联 10 步工作流
-- **R2/R3 场景分析**：`best-practices/scenario-enumeration-checklist.md` → `scenario-matrix.md`
-- **改缓存/长生命周期对象**：`best-practices/memory-leak-checklist.md`（必须对表审计，不许 ad-hoc 扫）
-- **准备 commit / push / 部署**：AGENTS.md（Railway gate：先 `railway status` 确认目标 service）
-- **要建/查 issue**：`agents/issue-tracker.md`；triage 用 `agents/triage-labels.md`
-- **命名领域概念**：`agents/domain.md` + CONTEXT.md 词汇纪律（Market ≠ pool、Reserve ≠ asset）
-
-## 移植记录（本 repo 视角）
-
-- 来源：agent-harness core（2026-09-06 同步）。**逐组件对照移植，不整目录覆盖。**
-
-### 本地改编登记（相对 core 的偏离与刻意不搬）
+## 本地改编登记（相对 core 的偏离与刻意不搬）
 
 | 组件                       | 状态                                                                                                                                                     | 原因                                                             |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
