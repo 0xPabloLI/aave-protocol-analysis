@@ -135,6 +135,12 @@ jobs:
       - name: Test naming convention
         run: npm run check:test-naming
 
+      - name: Feature-flag registry (dead flag detection)
+        run: npm run check:feature-flags
+
+      - name: Workers unit + integration tests (coverage thresholds)
+        run: npm run test:coverage --prefix workers
+
       - name: Worker bundle size budget
         run: npm run check:worker-bundle
 

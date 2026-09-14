@@ -31,7 +31,7 @@ interface Semaphore {
   acquire(): Promise<() => void>;
 }
 
-function createSemaphore(concurrency: number): Semaphore {
+export function createSemaphore(concurrency: number): Semaphore {
   let available = concurrency;
   const queue: Array<() => void> = [];
 
@@ -64,7 +64,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isRateLimitError(error: unknown): boolean {
+export function isRateLimitError(error: unknown): boolean {
   if (error instanceof Error) {
     // 检查错误代码
     if ((error as any).code === 429) {
@@ -82,7 +82,7 @@ function isRateLimitError(error: unknown): boolean {
   return false;
 }
 
-function getRetryAfterMs(error: unknown, defaultMs: number): number {
+export function getRetryAfterMs(error: unknown, defaultMs: number): number {
   if (error instanceof Error) {
     const match = error.message.match(/retry[-\s]after[:\s]+(\d+)/i);
     if (match) {
@@ -92,7 +92,7 @@ function getRetryAfterMs(error: unknown, defaultMs: number): number {
   return defaultMs;
 }
 
-function secureRandomIndex(maxExclusive: number): number {
+export function secureRandomIndex(maxExclusive: number): number {
   if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
     throw new Error(`secureRandomIndex: invalid maxExclusive=${maxExclusive}`);
   }
@@ -109,7 +109,7 @@ function secureRandomIndex(maxExclusive: number): number {
   }
 }
 
-function secureRandomAlphaNum(length: number): string {
+export function secureRandomAlphaNum(length: number): string {
   const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
   let out = "";
   for (let i = 0; i < length; i++) {
@@ -498,6 +498,11 @@ export class BrowserPool {
         }
       } catch {
         // History is optional telemetry; ignore lookup failures.
+      }
+      // Local workerd (wrangler dev without a browser binding) RESOLVES to
+      // undefined instead of throwing — normalize so .slice below is safe.
+      if (!Array.isArray(history)) {
+        history = [];
       }
 
       return new Response(

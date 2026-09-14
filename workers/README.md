@@ -1,79 +1,33 @@
-# Cloudflare Workers Browser Rendering
+# aave-browser-rendering
 
-这个 Worker 使用 Cloudflare Workers Bindings + Puppeteer 来执行浏览器自动化任务，可以：
-- 点击按钮
-- 执行自定义 JavaScript
-- 提取动态内容
+Cloudflare Worker (Durable Object + Puppeteer Browser Rendering) used as the
+Merit dynamic-info fallback by the fetcher.
 
-## 部署步骤
+## Local development / Interactive QA path
 
-### 1. 安装依赖
+1. **Install**: from `workers/`, run `npm install` (or `npm ci`).
+2. **Auth gate**: `Browser Rendering` is a Cloudflare service — browser-backed
+   actions (`extractCampaignInfo`, `extractSelfAuth`, `extractDynamicInfo`,
+   `debugSessions`) require a Cloudflare account:
+   `npx wrangler login` (opens browser), then run dev in remote mode:
+   `npm run dev -- --remote`.
+   The health/limits routes below work without any auth.
+3. **Launch**: `npm run dev` (local mode) — Worker listens on
+   `http://localhost:8787`.
+4. **Drive interactions**:
+   - Liveness: `curl http://localhost:8787/health` → `{"status": "ok"}`
+   - Browser quota: `curl http://localhost:8787/limits`
+   - Pool stats (no browser launch): `curl -X POST http://localhost:8787/ -H 'Content-Type: application/json' -d '{"action":"getStats"}'`
+   - Browser-backed extraction (requires remote mode + CF auth): POST
+     `{"action":"extractCampaignInfo","key":"https://app.aavechan.com/merit/..."}`
 
-```bash
-cd workers
-npm install
-```
+## Tests
 
-### 2. 登录 Cloudflare
+- `npm test` — unit (rate-limit detection, semaphore, secure randomness) +
+  integration (routing, DO request contract) via node:test/tsx; no browser or
+  CF account needed.
+- `npm run test:coverage` — same suite under c8 with ratcheted thresholds.
 
-```bash
-npx wrangler login
-```
+## API schema
 
-### 3. 部署 Worker
-
-```bash
-npm run deploy
-```
-
-部署后会得到一个 URL，例如：`https://aave-browser-rendering.your-subdomain.workers.dev`
-
-### 4. 配置环境变量
-
-在项目根目录的 `.env` 文件中添加：
-
-```bash
-CLOUDFLARE_WORKER_URL=https://aave-browser-rendering.your-subdomain.workers.dev
-```
-
-## API 使用
-
-### 提取 Campaign Info
-
-```bash
-curl -X POST https://your-worker-url.workers.dev \
-  -H "Content-Type: application/json" \
-  -d '{
-    "action": "extractCampaignInfo",
-    "key": "celo-supply-usdt"
-  }'
-```
-
-### 提取 Self Authentication 描述
-
-```bash
-curl -X POST https://your-worker-url.workers.dev \
-  -H "Content-Type: application/json" \
-  -d '{
-    "action": "extractSelfAuth",
-    "key": "celo-supply-usdt"
-  }'
-```
-
-## 响应格式
-
-成功：
-```json
-{
-  "success": true,
-  "result": [...]
-}
-```
-
-失败：
-```json
-{
-  "success": false,
-  "error": "Error message"
-}
-```
+`openapi.yaml` describes the three HTTP surfaces (health, limits, DO actions).

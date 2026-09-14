@@ -18,7 +18,8 @@
   "scripts": {
     "build": "tsc",
     "test": "npx --no-install tsx --test tests/*.test.ts",
-    "test:ci": "MERIT_ALLOW_LOCAL_PLAYWRIGHT=false npx --no-install tsx --test tests/*.test.ts"
+    "test:ci": "MERIT_ALLOW_LOCAL_PLAYWRIGHT=false npx --no-install tsx --test tests/*.test.ts",
+    "test:coverage": "MERIT_ALLOW_LOCAL_PLAYWRIGHT=false npx --no-install c8 --include 'src/**' --check-coverage --lines 40 --statements 40 --functions 51 --branches 75 --reporter=text-summary npx --no-install tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@aave-dao/aave-address-book": "^4.57.1",

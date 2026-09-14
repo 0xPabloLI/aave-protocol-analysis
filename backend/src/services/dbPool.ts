@@ -10,8 +10,9 @@
  * GSC cron uses batch UPSERT, avoiding long-held connections.
  * Reduced from 5 to 3 to save native memory (each SSL conn ~5-10MB) in 1GB container.
  */
-import pg from 'pg';
-import { logger } from '../logger.js';
+import pg from "pg";
+import client from "prom-client";
+import { logger } from "../logger.js";
 
 const { Pool } = pg;
 type PoolType = pg.Pool;
@@ -66,10 +67,10 @@ export function isPersistenceEnabled(): boolean {
  * for non-localhost connections. This avoids mismatches with Railway
  * templates that enforce SSL (e.g. postgres-ssl).
  */
-function resolveSslConfig(connectionString: string): pg.PoolConfig['ssl'] {
+function resolveSslConfig(connectionString: string): pg.PoolConfig["ssl"] {
   const explicit = process.env.DATABASE_SSL?.toLowerCase();
-  if (explicit === 'true') return { rejectUnauthorized: false };
-  if (explicit === 'false') return undefined;
+  if (explicit === "true") return { rejectUnauthorized: false };
+  if (explicit === "false") return undefined;
 
   // Localhost: SSL typically not configured.
   if (/@(localhost|127\.0\.0\.1)/i.test(connectionString)) return undefined;
@@ -80,13 +81,15 @@ function resolveSslConfig(connectionString: string): pg.PoolConfig['ssl'] {
 
 export function getPool(): PoolType {
   if (poolClosed) {
-    throw new Error('Database pool has been closed (process is shutting down)');
+    throw new Error("Database pool has been closed (process is shutting down)");
   }
   if (pool) return pool;
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
-    throw new Error('DATABASE_URL environment variable is required for database persistence');
+    throw new Error(
+      "DATABASE_URL environment variable is required for database persistence"
+    );
   }
 
   pool = new Pool({
@@ -97,9 +100,9 @@ export function getPool(): PoolType {
     connectionTimeoutMillis: 5_000,
   });
 
-  pool.on('error', (err) => {
+  pool.on("error", (err) => {
     lastPoolErrorTime = Date.now();
-    logger.error('Unexpected database pool error:', err);
+    logger.error("Unexpected database pool error:", err);
   });
 
   return pool;
@@ -109,14 +112,40 @@ export function getPool(): PoolType {
  * Execute a DB operation with automatic unhealthy marking on failure.
  * Wraps pool.query() calls so all DB consumers benefit from the backoff
  * without manually calling markPoolUnhealthy() in every catch block.
+ *
+ * Slow-query detection: every query's duration is recorded in the
+ * `aave_backend_db_query_duration_seconds` Prometheus histogram (see
+ * middleware/metrics.ts registry) and queries exceeding DB_SLOW_QUERY_MS
+ * (default 1000ms) are logged at warn level with a statement preview —
+ * this is how N+1 patterns (many similar statements, long total wall time)
+ * become visible in production.
  */
-export async function queryWithHealthTracking<T extends pg.QueryResultRow = Record<string, unknown>>(
-  text: string,
-  params?: unknown[],
-): Promise<pg.QueryResult<T>> {
+const DB_SLOW_QUERY_MS =
+  Number.parseInt(process.env.DB_SLOW_QUERY_MS ?? "", 10) || 1_000;
+
+const dbQueryDuration = new client.Histogram({
+  name: "aave_backend_db_query_duration_seconds",
+  help: "PostgreSQL query duration in seconds (slow-query detection)",
+  buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  registers: [client.register],
+});
+
+export async function queryWithHealthTracking<
+  T extends pg.QueryResultRow = Record<string, unknown>,
+>(text: string, params?: unknown[]): Promise<pg.QueryResult<T>> {
   const p = getPool();
+  const startNs = process.hrtime.bigint();
   try {
-    return await p.query<T>(text, params);
+    const result = await p.query<T>(text, params);
+    const durationMs = Number(process.hrtime.bigint() - startNs) / 1e6;
+    if (durationMs >= DB_SLOW_QUERY_MS) {
+      logger.warn("Slow database query detected", {
+        durationMs: Math.round(durationMs),
+        statementPreview: text.replace(/\s+/g, " ").slice(0, 120),
+        paramCount: params?.length ?? 0,
+      });
+    }
+    return result;
   } catch (error) {
     lastPoolErrorTime = Date.now();
     throw error;
@@ -131,6 +160,6 @@ export async function closePool(): Promise<void> {
   try {
     await p.end();
   } catch (error) {
-    logger.warn('Error while closing database pool:', error);
+    logger.warn("Error while closing database pool:", error);
   }
 }

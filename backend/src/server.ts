@@ -49,6 +49,16 @@ import {
 } from "./services/persistenceService.js";
 import { runMigrations } from "./services/autoMigrate.js";
 import { warmSideDataFromDb } from "./services/sideDataPersistenceService.js";
+import { requestIdMiddleware } from "./middleware/requestId.js";
+import { metricsMiddleware, metricsHandler } from "./middleware/metrics.js";
+import { flags } from "./flags.js";
+import { initSentry, tagRequestScope } from "./instrumentation.js";
+
+// Sentry error tracking — dormant unless SENTRY_DSN is set.
+const sentryActive = flags.sentryEnabled ? initSentry() : false;
+if (sentryActive) {
+  logger.info("Sentry error tracking initialized");
+}
 
 // Limit undici globalDispatcher connection pool to cap native memory (TLS buffers)
 // consumed by Node.js built-in fetch. Without this, each fetchMarketsData call
@@ -130,6 +140,9 @@ const PORT: number = (() => {
 })();
 
 // Middleware
+// X-Request-ID propagation first so every later layer (logs, metrics, Sentry)
+// can correlate to the same request id.
+app.use(requestIdMiddleware);
 app.use(corsMiddleware);
 app.use(express.json({ limit: "256kb" }));
 app.use(
@@ -139,6 +152,13 @@ app.use(
   })
 );
 app.use(apiCacheHeadersMiddleware);
+if (flags.metricsEnabled) {
+  app.use((req, res, next) => {
+    tagRequestScope(req);
+    metricsMiddleware(req, res, next);
+  });
+  app.get("/metrics", metricsHandler);
+}
 
 const apiRateLimit = rateLimitMiddleware(60_000, 120);
 app.use("/api/markets", apiRateLimit);

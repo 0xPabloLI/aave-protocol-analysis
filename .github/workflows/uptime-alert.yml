@@ -1,0 +1,85 @@
+name: Uptime alert
+
+# Custom alerting rule: probe public health endpoints on a schedule; open or
+# update a GitHub issue when a probe fails. This is the runtime alerting
+# channel (complements CI auto-revert, which only covers push-time failures).
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe backend /health
+        id: backend
+        continue-on-error: true
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
+            https://staging-api.aaveapy.com/health || echo 000)
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          [ "$code" = "200" ]
+
+      - name: Probe worker /health (if URL configured)
+        id: worker
+        continue-on-error: true
+        if: ${{ vars.WORKER_HEALTH_URL != '' }}
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
+            "${{ vars.WORKER_HEALTH_URL }}" || echo 000)
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          [ "$code" = "200" ]
+
+      - name: Open or update alert issue
+        if: steps.backend.outcome == 'failure' || steps.worker.outcome == 'failure'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a2325f34cd # v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const title = '⚠️ Uptime alert: health probe failing';
+            const backend = '${{ steps.backend.outputs.code }}';
+            const worker = '${{ steps.worker.outputs.code }}';
+            const body = [
+              `Scheduled probe failed at ${new Date().toISOString()}`,
+              '',
+              `- backend /health → HTTP \`${backend || 'not probed'}\``,
+              `- worker /health → HTTP \`${worker || 'not probed'}\``,
+              '',
+              'Runbooks: `docs/runbooks/backend-outage.md`, `docs/runbooks/worker-outage.md`.',
+            ].join('\n');
+
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const alert = existing.find((i) => i.title === title);
+            if (alert) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: alert.number, body });
+            } else {
+              await github.rest.issues.create({
+                owner, repo, title, body, labels: ['alerting', 'needs-triage'],
+              });
+            }
+
+      - name: Close alert issue on recovery
+        if: steps.backend.outcome == 'success' && (steps.worker.outcome == 'success' || steps.worker.outcome == 'skipped')
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a2325f34cd # v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const title = '⚠️ Uptime alert: health probe failing';
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            for (const issue of open.filter((i) => i.title === title)) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: `✅ Probes recovered at ${new Date().toISOString()} — closing.`,
+              });
+              await github.rest.issues.update({ owner, repo, issue_number: issue.number, state: 'closed' });
+            }

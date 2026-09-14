@@ -7,6 +7,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "build": "tsc",
+    "test": "npx --no-install tsx --test tests/*.test.ts",
+    "test:coverage": "npx --no-install c8 --include 'src/**' --check-coverage --lines 33 --statements 33 --functions 67 --branches 80 --reporter=text-summary npx --no-install tsx --test tests/*.test.ts",
     "check:knip": "knip"
   },
   "dependencies": {

@@ -1,0 +1,34 @@
+name: "✨ Feature / enhancement"
+description: "Propose a change or new capability"
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - backend (API server)
+        - packages/aave-fetcher (data aggregation)
+        - workers (browser rendering)
+        - root CLI / scripts
+        - infra / deploy
+    validations:
+      required: true
+  - type: checkboxes
+    id: agent-ready
+    attributes:
+      label: Agent readiness
+      options:
+        - label: Acceptance criteria are concrete enough for an agent to implement and verify

@@ -147,6 +147,7 @@ jobs:
                 repo,
                 issue_number: existing.number,
                 body,
+                labels: ['automation', 'dependencies'],
               });
             } else {
               await github.rest.issues.create({
@@ -154,6 +155,7 @@ jobs:
                 repo,
                 title,
                 body,
+                labels: ['automation', 'dependencies'],
               });
             }
 

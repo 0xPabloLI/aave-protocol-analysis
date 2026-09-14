@@ -1,0 +1,37 @@
+name: "🐛 Bug report"
+description: "Report incorrect behavior or a regression"
+labels: ["bug", "needs-triage"]
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+      description: Observed behavior, including error messages/log excerpts.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - backend (API server)
+        - packages/aave-fetcher (data aggregation)
+        - workers (browser rendering)
+        - root CLI / scripts
+        - infra / deploy
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment (branch/commit, env)
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps

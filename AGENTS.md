@@ -30,6 +30,8 @@
 | Tech-debt markers        | `npm run check:todos`         | `TODO`/`FIXME` must reference an issue key: `TODO(AAV-123)`                                      |
 | Duplicate code (jscpd)   | `npm run check:duplicates`    | Fails above 5% duplicated lines (`min-tokens: 70`); lower the threshold as debt shrinks          |
 | Unused deps/files (knip) | `npm run check:knip`          | Root + workers; config in `knip.json` / `workers/knip.json`; exports checked by `ts-prune` gates |
+| Test naming              | `npm run check:test-naming`   | Every test lives in a `tests/` dir, named `*.test.ts`                                            |
+| Feature flags            | `npm run check:feature-flags` | Flags defined in `backend/src/flags.ts` must have at least one consumer (dead-flag detection)    |
 | Worker bundle budget     | `npm run check:worker-bundle` | `wrangler deploy --dry-run` gzip size ≤ 3 MiB                                                    |
 
 Workspace-boundary rules (dependency direction, no dist imports, workers standalone) are enforced by `eslint.config.js` (`import/no-restricted-paths` zones + `no-restricted-imports` patterns).
@@ -41,6 +43,17 @@ Workspace-boundary rules (dependency direction, no dist imports, workers standal
 - Browser e2e (Playwright) skips in CI via `MERIT_ALLOW_LOCAL_PLAYWRIGHT=false` (fetcher `test:ci` script); run locally with `npm run test -w @internal/aave-fetcher`.
 - Flaky detection: weekly canary `.github/workflows/test-canary.yml` runs all suites WITH browser e2e + `RUN_API_FIELDS_TESTS=true` and records suite durations in the step summary. A canary failure that passes in hot-path CI = flaky signal.
 - Test file naming enforced by `npm run check:test-naming` (in `check:quality`): every test must live in a `tests/` dir and be named `*.test.ts` (runner globs never pick up anything else).
+- Workers has its own suite now: `npm test --prefix workers` (unit + DO routing integration, no browser needed); coverage thresholds via `test:coverage --prefix workers`.
+
+## Observability
+
+- **Request tracing**: backend stamps `X-Request-ID` (middleware `requestId.ts`) on responses, logs and Sentry scope.
+- **Metrics**: `GET /metrics` (Prometheus, `aave_backend_` prefix; gate `METRICS_ENABLED`) — HTTP counters/durations + DB query durations with slow-query warn logs (`DB_SLOW_QUERY_MS`).
+- **Errors**: Sentry, env-gated by `SENTRY_DSN` (`instrumentation.ts`) — dormant locally.
+- **Analytics**: structured API usage events → `backend/logs/analytics.log` (`analytics.ts`, gate `ANALYTICS_ENABLED`).
+- **Alerting**: scheduled `uptime-alert.yml` probes `/health` (backend + worker via `WORKER_HEALTH_URL` repo variable) and opens/updates a labeled issue on failure.
+- **Runbooks**: `docs/runbooks/` (app deploy failure, backend outage, worker outage) — incident procedures start here.
+- **Profiling**: `npm run profile:cpu -w aave-dashboard-backend` (`node --prof`), then `npm run profile:report -w aave-dashboard-backend` — V8 isolate log → flame summary; see docs/runbooks/backend-outage.md for when to use.
 
 ## Dependency Update Policy
 
