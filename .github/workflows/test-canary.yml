@@ -1,0 +1,72 @@
+name: Test Canary (flaky detection)
+
+# Scheduled full-suite run INCLUDING network/browser e2e tests.
+# Purpose: catch flaky tests outside the hot CI path. Hot-path `ci` runs the
+# same suites with MERIT_ALLOW_LOCAL_PLAYWRIGHT=false (browser e2e skipped);
+# here the guard is off, so e2e tests run against real endpoints.
+# A failure here that passes in hot-path CI is a flakiness signal.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium (for fetcher browser e2e)
+        run: npx --no-install playwright install --with-deps chromium
+        working-directory: packages/aave-fetcher
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+
+      - name: Run full suites (browser e2e ON) with duration tracking
+        shell: bash
+        run: |
+          SUMMARY="$GITHUB_STEP_SUMMARY"
+          {
+            echo "# Test canary — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo ""
+            echo "| Suite | Duration | Result |"
+            echo "| ----- | -------- | ------ |"
+          } >> "$SUMMARY"
+
+          run_suite() {
+            local name="$1"; shift
+            local start end status
+            start=$(date +%s)
+            if "$@"; then status="✅ pass"; else status="❌ FAIL"; fi
+            end=$(date +%s)
+            echo "| ${name} | $(( end - start ))s | ${status} |" >> "$SUMMARY"
+            [[ "$status" == "✅ pass" ]]
+          }
+
+          RUN_API_FIELDS_TESTS=true
+          export RUN_API_FIELDS_TESTS
+
+          run_suite "shared-contracts" npm run test -w @internal/aave-shared-contracts
+          run_suite "root" npm test
+          run_suite "rpc-infra" npm run test -w @internal/aave-rpc-infra
+          run_suite "fetcher (e2e on)" npm run test -w @internal/aave-fetcher
+          run_suite "backend" npm run test -w aave-dashboard-backend
+
+      - name: Report
+        if: always()
+        run: cat "$GITHUB_STEP_SUMMARY" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true

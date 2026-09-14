@@ -1,22 +1,24 @@
-import './env.js';
-import { logger } from './logger.js';
+import "./env.js";
+import { logger } from "./logger.js";
 
 async function main() {
-  const { runMarketsFetcher } = await import('./index.js');
+  const { runMarketsFetcher } = await import("./index.js");
 
   try {
     await runMarketsFetcher();
   } catch (error) {
-    logger.error('❌ Failed to fetch Aave markets:', error);
+    logger.error("❌ Failed to fetch Aave markets:", error);
     process.exit(1);
   }
 
   try {
-    const { closeBrowser } = await import('./merit-api.js');
+    const { closeBrowser } = await import("./merit-api.js");
     await closeBrowser().catch((err) => {
-      logger.warn('⚠️ Error when closing browser:', err);
+      logger.warn("⚠️ Error when closing browser:", err);
     });
   } catch {
+    // Best-effort cleanup: never block process exit if the dynamic import or
+    // closeBrowser fails.
   }
 
   process.exit(0);

@@ -94,7 +94,6 @@ jspm_packages/
 node_modules
 
 scripts/*
-!scripts/sync-aave-subgraph-deployments.mjs
 !scripts/sync-coingecko-platform-map.ts
 !scripts/sync-oracle-pool-configs.ts
 !scripts/patch-ethers-exports.js
@@ -103,6 +102,8 @@ scripts/*
 !scripts/check-no-omit-dev-in-ci-autofix.sh
 !scripts/check-no-globstar-in-test.sh
 !scripts/hook-autofix.sh
+!scripts/check-todo-format.mjs
+!scripts/check-worker-bundle-size.mjs
 !scripts/verification/
 
 data/

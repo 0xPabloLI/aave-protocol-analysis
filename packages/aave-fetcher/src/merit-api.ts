@@ -12,7 +12,12 @@ import {
   type MeritDynamicInfo,
 } from "./cloudflare-browser.js";
 import { meritKeyAliases } from "./config.js";
-import { fifoEvict, type MeritCampaignGroup, isWithinLookbackWindow, percentToRatio } from "@internal/aave-shared-contracts";
+import {
+  fifoEvict,
+  type MeritCampaignGroup,
+  isWithinLookbackWindow,
+  percentToRatio,
+} from "@internal/aave-shared-contracts";
 
 const MERIT_ENDED_LOOKBACK_DAYS = 7;
 import {
@@ -935,22 +940,50 @@ function isMeritCampaignMetadataEnded(endDateRaw?: string): boolean {
   return hasEndedByMeritEndDate(endDateRaw);
 }
 
-export function filterRecentExpiredMeritCampaigns(groups: MeritCampaignGroup[]): MeritCampaignGroup[] {
+export function filterRecentExpiredMeritCampaigns(
+  groups: MeritCampaignGroup[]
+): MeritCampaignGroup[] {
   const nowMs = Date.now();
-  const active = groups.filter(g => {
+  const active = groups.filter((g) => {
     const bd = g.breakdowns ?? [];
-    return bd.length === 0 || bd.some(b => !b.campaignEndedAt || new Date(b.campaignEndedAt).getTime() >= nowMs);
+    return (
+      bd.length === 0 ||
+      bd.some(
+        (b) =>
+          !b.campaignEndedAt || new Date(b.campaignEndedAt).getTime() >= nowMs
+      )
+    );
   });
-  const recentlyEnded = groups.filter(g => {
+  const recentlyEnded = groups.filter((g) => {
     const bd = g.breakdowns ?? [];
     if (bd.length === 0) return false;
-    if (!bd.every(b => b.campaignEndedAt && new Date(b.campaignEndedAt).getTime() < nowMs)) return false;
-    return bd.some(b => isWithinLookbackWindow(b.campaignEndedAt, nowMs, MERIT_ENDED_LOOKBACK_DAYS));
+    if (
+      !bd.every(
+        (b) =>
+          b.campaignEndedAt && new Date(b.campaignEndedAt).getTime() < nowMs
+      )
+    )
+      return false;
+    return bd.some((b) =>
+      isWithinLookbackWindow(
+        b.campaignEndedAt,
+        nowMs,
+        MERIT_ENDED_LOOKBACK_DAYS
+      )
+    );
   });
   if (recentlyEnded.length === 0) return active;
   const latest = recentlyEnded.reduce((a, b) => {
-    const aEnd = Math.max(...(a.breakdowns ?? []).map(bd => bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0));
-    const bEnd = Math.max(...(b.breakdowns ?? []).map(bd => bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0));
+    const aEnd = Math.max(
+      ...(a.breakdowns ?? []).map((bd) =>
+        bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0
+      )
+    );
+    const bEnd = Math.max(
+      ...(b.breakdowns ?? []).map((bd) =>
+        bd.campaignEndedAt ? new Date(bd.campaignEndedAt).getTime() : 0
+      )
+    );
     return aEnd >= bEnd ? a : b;
   });
   return [...active, latest];
@@ -1043,7 +1076,9 @@ async function loadCachedMeritCampaignMetadata(): Promise<
       const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/;
       const datesAreIso =
         (!timeRange.startDate || ISO_DATE_PATTERN.test(timeRange.startDate)) &&
-        (!timeRange.endDate || timeRange.endDate.trim() === "" || ISO_DATE_PATTERN.test(timeRange.endDate));
+        (!timeRange.endDate ||
+          timeRange.endDate.trim() === "" ||
+          ISO_DATE_PATTERN.test(timeRange.endDate));
 
       const hasBlockFields =
         timeRange.startBlock &&
@@ -1059,11 +1094,16 @@ async function loadCachedMeritCampaignMetadata(): Promise<
 
       const keyParts = key.split("-");
       const shouldHaveMessage = keyParts.length > 2;
-      const hasMessage =
-        !shouldHaveMessage || timeRange.message !== undefined;
+      const hasMessage = !shouldHaveMessage || timeRange.message !== undefined;
 
       const isValidEntry =
-        hasLinkAndStart && hasName && datesAreIso && (hasEndIndicator || hasBlockFields || timeRange.endDate !== undefined) && hasMessage;
+        hasLinkAndStart &&
+        hasName &&
+        datesAreIso &&
+        (hasEndIndicator ||
+          hasBlockFields ||
+          timeRange.endDate !== undefined) &&
+        hasMessage;
 
       if (isValidEntry) {
         if (timeRange.startBlock || timeRange.endBlock) {
@@ -1163,9 +1203,13 @@ export function isCachedTimeRangeComplete(params: {
   const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/;
   const linkOk = !!cached.link && cached.link.trim() !== "";
   const startDateOk = !!cached.startDate && cached.startDate.trim() !== "";
-  const startDateIsoOk = !cached.startDate || ISO_DATE_PATTERN.test(cached.startDate);
+  const startDateIsoOk =
+    !cached.startDate || ISO_DATE_PATTERN.test(cached.startDate);
   const endDateOk = cached.endDate !== undefined;
-  const endDateIsoOk = !cached.endDate || cached.endDate.trim() === "" || ISO_DATE_PATTERN.test(cached.endDate);
+  const endDateIsoOk =
+    !cached.endDate ||
+    cached.endDate.trim() === "" ||
+    ISO_DATE_PATTERN.test(cached.endDate);
   const nameOk = cached.name !== undefined;
   const hasEndIndicatorOk =
     (cached.endDate !== undefined && cached.endDate.trim() !== "") ||
@@ -1197,7 +1241,12 @@ export function isCachedTimeRangeComplete(params: {
 
   // Self-auth required only when the self- key exists for this campaign
   // and message was fetched with actual content
-  if (hasSelfAuth && shouldHaveMessage && cached.message && cached.message.length > 0) {
+  if (
+    hasSelfAuth &&
+    shouldHaveMessage &&
+    cached.message &&
+    cached.message.length > 0
+  ) {
     if (!hasSelfAuthMessage(cached.message)) missing.push("self-auth");
   }
 
@@ -1457,7 +1506,7 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
 
       const { supplyTokens, borrowTokens, chainKey } = nonSelfInfo;
 
-      const MERIT_LINK_PREFIX = 'https://apps.aavechan.com/merit/';
+      const MERIT_LINK_PREFIX = "https://apps.aavechan.com/merit/";
       const meritKey = link.startsWith(MERIT_LINK_PREFIX)
         ? link.slice(MERIT_LINK_PREFIX.length)
         : undefined;
@@ -1497,7 +1546,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               ...(finalMessage.length > 0 && { message: finalMessage }),
               ...(estimate ?? {}),
             };
-            incentives.meritBorrows.push(buildCampaignGroupFromMeritEntry(entry, campaignKey));
+            incentives.meritBorrows.push(
+              buildCampaignGroupFromMeritEntry(entry, campaignKey)
+            );
           } else {
             const estimate = getMeritEstimateForEntry(
               meritRoundEstimates,
@@ -1519,7 +1570,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               ...(finalMessage.length > 0 && { message: finalMessage }),
               ...(estimate ?? {}),
             };
-            incentives.meritBorrows.push(buildCampaignGroupFromMeritEntry(entry, campaignKey));
+            incentives.meritBorrows.push(
+              buildCampaignGroupFromMeritEntry(entry, campaignKey)
+            );
           }
         }
 
@@ -1549,7 +1602,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
               ...(finalMessage.length > 0 && { message: finalMessage }),
               ...(estimate ?? {}),
             };
-            supplyIncentives.meritSupplys.push(buildCampaignGroupFromMeritEntry(entry, campaignKey));
+            supplyIncentives.meritSupplys.push(
+              buildCampaignGroupFromMeritEntry(entry, campaignKey)
+            );
           }
         }
       }
@@ -1581,7 +1636,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             ...(finalMessage.length > 0 && { message: finalMessage }),
             ...(estimate ?? {}),
           };
-          incentives.meritSupplys.push(buildCampaignGroupFromMeritEntry(entry, campaignKey));
+          incentives.meritSupplys.push(
+            buildCampaignGroupFromMeritEntry(entry, campaignKey)
+          );
         }
       }
 
@@ -1611,7 +1668,9 @@ export async function fetchMeritData(): Promise<Record<string, MeritDataItem>> {
             ...(finalMessage.length > 0 && { message: finalMessage }),
             ...(estimate ?? {}),
           };
-          incentives.meritSupplys.push(buildCampaignGroupFromMeritEntry(entry, campaignKey));
+          incentives.meritSupplys.push(
+            buildCampaignGroupFromMeritEntry(entry, campaignKey)
+          );
         }
       }
     }
@@ -1798,11 +1857,22 @@ export async function fetchAllMeritTimeRanges(
       // Cache completeness is necessary but not sufficient:
       // once a campaign end date has passed, we must refetch to pick up renewed rounds.
       const cachedCampaignEnded = isMeritCampaignMetadataEnded(cached?.endDate);
-      const failedAtMs = cached?.failedAt ? new Date(cached.failedAt).getTime() : 0;
-      const withinRetryCooldown = failedAtMs > 0 && (Date.now() - failedAtMs) < MERIT_FAILED_RETRY_INTERVAL_MS;
-      const lastCheckedAtMs = cached?.lastCheckedAt ? new Date(cached.lastCheckedAt).getTime() : 0;
-      const withinEndedRecheck = cachedCampaignEnded && lastCheckedAtMs > 0 && (Date.now() - lastCheckedAtMs) < MERIT_ENDED_RECHECK_INTERVAL_MS;
-      const needsUpdate = !completeness.isComplete || (cachedCampaignEnded && !withinRetryCooldown && !withinEndedRecheck);
+      const failedAtMs = cached?.failedAt
+        ? new Date(cached.failedAt).getTime()
+        : 0;
+      const withinRetryCooldown =
+        failedAtMs > 0 &&
+        Date.now() - failedAtMs < MERIT_FAILED_RETRY_INTERVAL_MS;
+      const lastCheckedAtMs = cached?.lastCheckedAt
+        ? new Date(cached.lastCheckedAt).getTime()
+        : 0;
+      const withinEndedRecheck =
+        cachedCampaignEnded &&
+        lastCheckedAtMs > 0 &&
+        Date.now() - lastCheckedAtMs < MERIT_ENDED_RECHECK_INTERVAL_MS;
+      const needsUpdate =
+        !completeness.isComplete ||
+        (cachedCampaignEnded && !withinRetryCooldown && !withinEndedRecheck);
       if (completeness.isComplete) {
         logger.debug(
           `📦 Skip refresh for ${canonicalKey}: cached metadata is complete`
@@ -1915,11 +1985,14 @@ export async function fetchAllMeritTimeRanges(
       const hasSelfAuth =
         meritAPRs[`self-${key}`] !== null &&
         meritAPRs[`self-${key}`] !== undefined;
-      const data: MeritCampaignMetadataEntry = await fetchMeritTimeRange(key, { hasSelfAuth });
+      const data: MeritCampaignMetadataEntry = await fetchMeritTimeRange(key, {
+        hasSelfAuth,
+      });
       data.lastCheckedAt = new Date().toISOString();
       results.push({ key, data });
     } catch (error) {
-      const cached = cachedTimeRanges[key] ?? cachedTimeRanges[getCanonicalKey(key)];
+      const cached =
+        cachedTimeRanges[key] ?? cachedTimeRanges[getCanonicalKey(key)];
       const failedEntry: MeritCampaignMetadataEntry = {
         link: cached?.link ?? `https://apps.aavechan.com/merit/${key}`,
         startDate: cached?.startDate ?? "",
@@ -1929,7 +2002,9 @@ export async function fetchAllMeritTimeRanges(
         failedAt: new Date().toISOString(),
       };
       results.push({ key, data: failedEntry });
-      logger.warn(`⚠️ Merit timeRange fetch failed for ${key}, marked failedAt to suppress retry`);
+      logger.warn(
+        `⚠️ Merit timeRange fetch failed for ${key}, marked failedAt to suppress retry`
+      );
     } finally {
       semaphore.count--;
     }
@@ -2064,7 +2139,9 @@ async function getBrowser(): Promise<Browser> {
     } catch (_error) {
       // isConnected() failed — treat as disconnected
     }
-    logger.warn("⚠️ Browser instance disconnected, closing old instance before creating new one");
+    logger.warn(
+      "⚠️ Browser instance disconnected, closing old instance before creating new one"
+    );
     const oldBrowser = _meritState.browserInstance;
     _meritState.browserInstance = null;
     _browserLastUsedAt = null;
@@ -2234,7 +2311,11 @@ async function extractMeritDynamicInfoWithBrowser(
   }
 
   if (!allowLocalPlaywrightFallback) {
-    return { campaignInfo: [], selfAuthDescription: null, source: "playwright" };
+    return {
+      campaignInfo: [],
+      selfAuthDescription: null,
+      source: "playwright",
+    };
   }
 
   const PLAYWRIGHT_RSS_GUARD_MB = 700;
@@ -2243,7 +2324,11 @@ async function extractMeritDynamicInfoWithBrowser(
     logger.warn(
       `🛡️ Skipping Playwright fallback for ${key}: RSS ${Math.round(rssBeforeLaunch)}MB exceeds guard ${PLAYWRIGHT_RSS_GUARD_MB}MB`
     );
-    return { campaignInfo: [], selfAuthDescription: null, source: "playwright" };
+    return {
+      campaignInfo: [],
+      selfAuthDescription: null,
+      source: "playwright",
+    };
   }
 
   let context: BrowserContext | null = null;
@@ -2280,13 +2365,19 @@ async function extractMeritDynamicInfoWithBrowser(
     if (context) {
       try {
         await context.close();
-      } catch (_) {}
+      } catch (_) {
+        // Ignore close errors during best-effort cleanup.
+      }
     }
     logger.warn(
       `⚠️ extractMeritDynamicInfoWithBrowser failed for ${key}:`,
       error
     );
-    return { campaignInfo: [], selfAuthDescription: null, source: "playwright" };
+    return {
+      campaignInfo: [],
+      selfAuthDescription: null,
+      source: "playwright",
+    };
   }
 }
 
@@ -2436,12 +2527,7 @@ async function extractSelfAuthFromPage(
           let foundValid = false;
           for (let i = 0; i < 4; i++) {
             const t = norm(container ? container.textContent : null);
-            if (
-              t &&
-              t.length >= 60 &&
-              t.length <= 900 &&
-              hasSelfAuth(t)
-            ) {
+            if (t && t.length >= 60 && t.length <= 900 && hasSelfAuth(t)) {
               foundValid = true;
               break;
             }
@@ -2467,9 +2553,7 @@ async function extractSelfAuthFromPage(
             bestText.length >= 60 &&
             bestText.length <= 1200
           ) {
-            return bestText.length > 950
-              ? bestText.slice(0, 950)
-              : bestText;
+            return bestText.length > 950 ? bestText.slice(0, 950) : bestText;
           }
         }
       } catch (e) {
@@ -2481,11 +2565,7 @@ async function extractSelfAuthFromPage(
         const element = allElements[i];
         if (!element) continue;
         const text = norm(element.textContent || "");
-        if (
-          hasSelfAuth(text) &&
-          text.length > 60 &&
-          text.length < 1000
-        ) {
+        if (hasSelfAuth(text) && text.length > 60 && text.length < 1000) {
           return text;
         }
       }
@@ -2493,10 +2573,7 @@ async function extractSelfAuthFromPage(
       return null;
     })) as string | null;
   } catch (evalError) {
-    logger.error(
-      `❌ Error in page.evaluate for self-auth ${key}:`,
-      evalError
-    );
+    logger.error(`❌ Error in page.evaluate for self-auth ${key}:`, evalError);
     result = null;
   }
 
@@ -2548,7 +2625,9 @@ async function extractMeritDynamicInfoWithRender(
       `🔗 [Render Fallback] Connecting to remote browser at ${renderUrl} for ${key} (recentlyActive=${recentlyActive}, timeout=${cdpTimeout}ms)`
     );
 
-    browser = await (await import("playwright")).chromium.connectOverCDP(wsEndpoint, {
+    browser = await (
+      await import("playwright")
+    ).chromium.connectOverCDP(wsEndpoint, {
       timeout: cdpTimeout,
     });
 
@@ -2577,19 +2656,22 @@ async function extractMeritDynamicInfoWithRender(
     if (context) {
       try {
         await context.close();
-      } catch (_) {}
+      } catch (_) {
+        // Ignore close errors during best-effort cleanup.
+      }
     }
     if (browser) {
       try {
         await browser.close();
-      } catch (_) {}
+      } catch (_) {
+        // Ignore close errors during best-effort cleanup.
+      }
     }
     renderConcurrentCount--;
   }
 }
 
 const ETHEREUM_AVERAGE_BLOCK_TIME_S = 12;
-
 
 /**
  * 优先级 #3：提取区块号
@@ -2683,8 +2765,7 @@ function estimateEndBlockTimestamp(
   endBlock: string
 ): string {
   const startTsMs = new Date(startBlockTsIso).getTime();
-  const blockDiff =
-    parseInt(endBlock, 10) - parseInt(startBlock, 10);
+  const blockDiff = parseInt(endBlock, 10) - parseInt(startBlock, 10);
   const estimatedTsMs =
     startTsMs + blockDiff * ETHEREUM_AVERAGE_BLOCK_TIME_S * 1000;
   return new Date(estimatedTsMs).toISOString();
@@ -2696,8 +2777,18 @@ function estimateEndBlockTimestamp(
 async function convertBlocksToDates(
   startBlock?: string,
   endBlock?: string
-): Promise<{ startDate?: string; endDate?: string; startDateSource?: string; endDateSource?: string }> {
-  const result: { startDate?: string; endDate?: string; startDateSource?: string; endDateSource?: string } = {};
+): Promise<{
+  startDate?: string;
+  endDate?: string;
+  startDateSource?: string;
+  endDateSource?: string;
+}> {
+  const result: {
+    startDate?: string;
+    endDate?: string;
+    startDateSource?: string;
+    endDateSource?: string;
+  } = {};
 
   if (startBlock) {
     const startDate = await getEthereumBlockTimestamp(startBlock);
@@ -3112,8 +3203,8 @@ export async function fetchMeritTimeRange(
         );
         // 记录更详细的错误信息，帮助诊断问题
         if (dynamic.source === "playwright") {
-            logger.warn(
-              `   → Playwright fallback may have failed. Check if page loaded correctly.`
+          logger.warn(
+            `   → Playwright fallback may have failed. Check if page loaded correctly.`
           );
         } else if (dynamic.source === "worker") {
           logger.warn(`   → Worker extraction may have failed or timed out.`);
@@ -3154,7 +3245,9 @@ export async function fetchMeritTimeRange(
     if (!result.endDate) result.endDate = "";
 
     if (!dateStrategy) {
-      logger.warn(`⚠️ Could not extract time range information for key: ${key}`);
+      logger.warn(
+        `⚠️ Could not extract time range information for key: ${key}`
+      );
     }
 
     logger.info(
@@ -3184,23 +3277,36 @@ export interface MeritCampaignBreakdownInput {
   selfBreakdownMessage?: string;
 }
 
-export function extractPositionCapFromSelfAuth(text: string | null): number | null {
+export function extractPositionCapFromSelfAuth(
+  text: string | null
+): number | null {
   if (!text) return null;
-  if (!text.toLowerCase().includes('self')) return null;
+  if (!text.toLowerCase().includes("self")) return null;
   const match = text.match(/\$\s*([\d,]+(?:\.\d+)?)/);
   if (!match) return null;
-  const parsed = Number(match[1].replace(/,/g, ''));
+  const parsed = Number(match[1].replace(/,/g, ""));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput) {
-  const { baseApr, selfApr, startDate, endDate, meritKey, selfPositionCap, baseBreakdownMessage, selfBreakdownMessage } = input;
+export function buildMeritCampaignBreakdowns(
+  input: MeritCampaignBreakdownInput
+) {
+  const {
+    baseApr,
+    selfApr,
+    startDate,
+    endDate,
+    meritKey,
+    selfPositionCap,
+    baseBreakdownMessage,
+    selfBreakdownMessage,
+  } = input;
   const breakdowns: Array<{
     campaignApr: number;
     campaignStartedAt: string;
     campaignEndedAt: string;
     campaignId: string;
-    campaignType: 'DUTCH_AUCTION';
+    campaignType: "DUTCH_AUCTION";
     positionCapUsd?: number;
     message?: string;
   }> = [];
@@ -3211,7 +3317,7 @@ export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput)
       campaignStartedAt: startDate,
       campaignEndedAt: endDate,
       campaignId: `${meritKey}-base`,
-      campaignType: 'DUTCH_AUCTION',
+      campaignType: "DUTCH_AUCTION",
       ...(baseBreakdownMessage ? { message: baseBreakdownMessage } : {}),
     });
   }
@@ -3222,8 +3328,10 @@ export function buildMeritCampaignBreakdowns(input: MeritCampaignBreakdownInput)
       campaignStartedAt: startDate,
       campaignEndedAt: endDate,
       campaignId: `${meritKey}-self`,
-      campaignType: 'DUTCH_AUCTION',
-      ...(selfPositionCap != null && selfPositionCap > 0 ? { positionCapUsd: selfPositionCap } : {}),
+      campaignType: "DUTCH_AUCTION",
+      ...(selfPositionCap != null && selfPositionCap > 0
+        ? { positionCapUsd: selfPositionCap }
+        : {}),
       ...(selfBreakdownMessage ? { message: selfBreakdownMessage } : {}),
     });
   }
@@ -3235,24 +3343,23 @@ export function buildCampaignGroupFromMeritEntry(
   entry: MeritAprEntry,
   meritKey: string
 ): MeritCampaignGroup {
-  const selfAuthMsg = (entry.message ?? []).find(
-    (m) => m.action?.toLowerCase().includes('self authentication')
+  const selfAuthMsg = (entry.message ?? []).find((m) =>
+    m.action?.toLowerCase().includes("self authentication")
   );
   let selfPositionCap: number | null = null;
   if (selfAuthMsg?.description) {
     const match = selfAuthMsg.description.match(/\$\s*([\d,]+(?:\.\d+)?)/);
     if (match) {
-      const parsed = Number(match[1].replace(/,/g, ''));
+      const parsed = Number(match[1].replace(/,/g, ""));
       if (Number.isFinite(parsed) && parsed > 0) selfPositionCap = parsed;
     }
   }
 
   const nonSelfMessages = (entry.message ?? []).filter(
-    (m) => !m.action?.toLowerCase().includes('self authentication')
+    (m) => !m.action?.toLowerCase().includes("self authentication")
   );
-  const baseBreakdownMessage = nonSelfMessages.length > 0
-    ? JSON.stringify(nonSelfMessages)
-    : undefined;
+  const baseBreakdownMessage =
+    nonSelfMessages.length > 0 ? JSON.stringify(nonSelfMessages) : undefined;
   const selfBreakdownMessage = selfAuthMsg
     ? JSON.stringify([selfAuthMsg])
     : undefined;

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "build": "tsc"
+    "build": "tsc",
+    "check:knip": "knip"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.0.6"

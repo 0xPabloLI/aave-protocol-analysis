@@ -1,0 +1,32 @@
+name: Release
+
+# Cut a release by pushing a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+# Creates a GitHub Release with auto-generated notes for the tagged commit.
+# Deployment stays manual via `railway up` (see AGENTS.md hard safety gate).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  github-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Create GitHub Release with generated notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            --verify-tag

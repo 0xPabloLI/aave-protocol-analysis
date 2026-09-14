@@ -24,7 +24,7 @@
     "postinstall": "node scripts/patch-ethers-exports.js",
     "audit": "npm audit --omit=dev --audit-level=high >/tmp/_audit1 2>/dev/null; head -1 /tmp/_audit1 | grep -qE '^found|^# npm audit report' || { cat /tmp/_audit1 >&2; exit 1; }; grep -oE 'GHSA-[a-z0-9-]+' /tmp/_audit1 | sort -u | grep -vE 'GHSA-848j-6mx2-7j84|GHSA-58qx-3vcg-4xpx|GHSA-frvp-7c67-39w9' | grep -q . && exit 1; npm audit --omit=dev --audit-level=moderate >/tmp/_audit2 2>/dev/null; head -1 /tmp/_audit2 | grep -qE '^found|^# npm audit report' || { cat /tmp/_audit2 >&2; exit 1; }; grep -oE 'GHSA-[a-z0-9-]+' /tmp/_audit2 | sort -u | grep -vE 'GHSA-848j-6mx2-7j84|GHSA-58qx-3vcg-4xpx|GHSA-frvp-7c67-39w9' | grep -q . && exit 1; exit 0",
     "check:shared-config-syntax": "node --check packages/aave-shared-config/index.js",
-    "ci": "npm ci && npm run check:shared-config-syntax && npm run build && npm run prune && npm run build -w aave-dashboard-backend && npm run prune -w aave-dashboard-backend && npm run test -w @internal/aave-shared-contracts && npm run test:typecheck -w aave-dashboard-backend && npm run test -w aave-dashboard-backend",
+    "ci": "npm ci && npm run check:shared-config-syntax && npm run build && npm run prune && npm test && npm run test:ci -w @internal/aave-fetcher && npm run test -w @internal/aave-rpc-infra && npm run build -w aave-dashboard-backend && npm run prune -w aave-dashboard-backend && npm run test -w @internal/aave-shared-contracts && npm run test:typecheck -w aave-dashboard-backend && npm run test:coverage -w aave-dashboard-backend",
     "ci:remote": "npm run ci && npm run check:bin-paths && npm run check:workspace-coverage && npm run check:no-globstar && npm run audit",
     "ci:auto-fix": "npm audit fix --omit=dev",
     "deploy": "./deploy.sh",
@@ -32,6 +32,15 @@
     "check:bin-paths": "bash scripts/check-no-hardcoded-bin-paths.sh",
     "check:workspace-coverage": "bash scripts/check-workspace-coverage.sh",
     "check:no-globstar": "bash scripts/check-no-globstar-in-test.sh",
+    "lint": "eslint . --max-warnings 371",
+    "lint:fix": "eslint . --fix",
+    "check:syncpack": "syncpack lint",
+    "check:todos": "node scripts/check-todo-format.mjs",
+    "check:duplicates": "jscpd --config .jscpd.json",
+    "check:knip": "knip && cd workers && knip",
+    "check:test-naming": "node scripts/check-test-naming.mjs",
+    "check:worker-bundle": "node scripts/check-worker-bundle-size.mjs",
+    "check:quality": "npm run lint && npm run check:syncpack && npm run check:todos && npm run check:duplicates && npm run check:knip && npm run check:test-naming && npm run check:worker-bundle",
     "prune": "ts-prune -i '\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v '^src/' | (grep -q . && exit 1 || exit 0)",
     "scan": "npm run scan:code && npm run scan:deps",
     "scan:code": "semgrep scan --config p/default --metrics=off --error src/ packages/",
@@ -43,17 +52,12 @@
   },
   "dependencies": {
     "@aave-dao/aave-address-book": "^4.57.1",
-    "@aave/client": "^0.6.1",
-    "@aave/client-v4": "npm:@aave/client@^4.2.0",
-    "@internal/aave-fetcher": "*",
-    "@internal/aave-shared-config": "*",
-    "@internal/aave-shared-contracts": "*",
+    "@aave/contract-helpers": "^1.37.1",
+    "@internal/aave-fetcher": "1.0.0",
+    "@internal/aave-shared-config": "1.0.0",
+    "@internal/aave-shared-contracts": "1.0.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "cheerio": "^1.1.2",
-    "dotenv": "^17.4.2",
-    "get-tsconfig": "^4.14.0",
-    "winston": "^3.19.0",
-    "zod": "^4.3.6"
+    "ethers": "5.8.0"
   },
   "overrides": {
     "axios": "^1.13.5",
@@ -65,14 +69,21 @@
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "@types/cheerio": "^0.22.35",
+    "@eslint/js": "^9.39.5",
     "@types/node": "^25.4.0",
+    "c8": "^12.0.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-import": "^2.32.0",
+    "globals": "^17.12.0",
     "husky": "^9.1.7",
+    "jscpd": "^5.2.0",
+    "knip": "^6.35.1",
     "lint-staged": "^15.5.2",
     "prettier": "^3.8.3",
-    "ts-json-schema-generator": "^2.9.0",
+    "syncpack": "^15.3.3",
     "ts-prune": "^0.10.3",
     "tsx": "^4.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "typescript-eslint": "^8.70.0"
   }
 }

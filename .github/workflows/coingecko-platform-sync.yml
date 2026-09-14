@@ -1,4 +1,4 @@
-# Regenerate `src/generated/coingecko-platform-by-chain-id.ts` from CoinGecko + address book; open PR if changed.
+# Regenerate `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts` from CoinGecko + address book; open PR if changed.
 name: CoinGecko platform map sync
 
 on:
@@ -53,6 +53,6 @@ jobs:
           delete-branch: true
           title: "chore: sync CoinGecko platform map"
           body: |
-            Automated update of `src/generated/coingecko-platform-by-chain-id.ts` from CoinGecko `asset_platforms` for Aave V3 mainnet chains in `@bgd-labs/aave-address-book`.
+            Automated update of `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts` from CoinGecko `asset_platforms` for Aave V3 mainnet chains in `@bgd-labs/aave-address-book`.
 
             Merge after CI passes.

@@ -35,7 +35,7 @@ async function main() {
     try {
       const oldSnapshotContent = await readFile(originalSnapshotPath, 'utf8');
       oldSnapshot = JSON.parse(oldSnapshotContent);
-    } catch (error) {
+    } catch {
       // File doesn't exist - assume there are changes
       console.log('⚠️  Could not read original file, assuming changes exist');
       process.exit(0); // Exit with 0 to indicate changes exist

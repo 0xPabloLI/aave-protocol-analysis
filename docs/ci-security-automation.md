@@ -52,7 +52,7 @@ This repository has six related workflows:
    - Applies policy checks per branch pattern:
      - `bot/ci-auto-remediation-*` / `bot/proactive-audit-fix-*`: only `package.json`, `package-lock.json`, `backend/package.json`
      - `bot/subgraph-sync-*`: only `docs/api/aave-subgraph-deployments.snapshot.json`
-     - `bot/sync-coingecko-platform-map-*`: only `src/generated/coingecko-platform-by-chain-id.ts`
+     - `bot/sync-coingecko-platform-map-*`: only `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts`
    - If policy passes:
      - bot submits an approval review
      - auto-merge is enabled (squash)

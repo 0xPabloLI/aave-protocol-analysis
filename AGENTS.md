@@ -19,6 +19,38 @@
 - `npm run dev` — run fetcher CLI
 - `npm run build` — build shared-contracts → fetcher → root (ordered)
 - `npm run ci:remote` — full CI-equivalent local gate
+- `npm run check:quality` — quality gates: ESLint + syncpack + TODO scan + jscpd + knip + worker bundle budget (CI job `quality-gates` runs the same set)
+
+### Quality gates (CI `quality-gates` job)
+
+| Gate                     | Command                       | Policy                                                                                           |
+| ------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| ESLint                   | `npm run lint`                | 0 errors; warnings ratcheted via `--max-warnings` — **lower over time, never raise**             |
+| Version drift (syncpack) | `npm run check:syncpack`      | Same dependency must use the same specifier in every workspace; `ethers` pinned exact `5.8.0`    |
+| Tech-debt markers        | `npm run check:todos`         | `TODO`/`FIXME` must reference an issue key: `TODO(AAV-123)`                                      |
+| Duplicate code (jscpd)   | `npm run check:duplicates`    | Fails above 5% duplicated lines (`min-tokens: 70`); lower the threshold as debt shrinks          |
+| Unused deps/files (knip) | `npm run check:knip`          | Root + workers; config in `knip.json` / `workers/knip.json`; exports checked by `ts-prune` gates |
+| Worker bundle budget     | `npm run check:worker-bundle` | `wrangler deploy --dry-run` gzip size ≤ 3 MiB                                                    |
+
+Workspace-boundary rules (dependency direction, no dist imports, workers standalone) are enforced by `eslint.config.js` (`import/no-restricted-paths` zones + `no-restricted-imports` patterns).
+
+### Testing gates (in `npm run ci`)
+
+- All suites run in CI: root `tests/`, `@internal/aave-fetcher` (`test:ci`), `@internal/aave-rpc-infra`, `@internal/aave-shared-contracts`, backend (`test:coverage`).
+- Backend coverage thresholds (c8, ratchet — **raise over time, never lower**): lines 53 / statements 53 / functions 60 / branches 80.
+- Browser e2e (Playwright) skips in CI via `MERIT_ALLOW_LOCAL_PLAYWRIGHT=false` (fetcher `test:ci` script); run locally with `npm run test -w @internal/aave-fetcher`.
+- Flaky detection: weekly canary `.github/workflows/test-canary.yml` runs all suites WITH browser e2e + `RUN_API_FIELDS_TESTS=true` and records suite durations in the step summary. A canary failure that passes in hot-path CI = flaky signal.
+- Test file naming enforced by `npm run check:test-naming` (in `check:quality`): every test must live in a `tests/` dir and be named `*.test.ts` (runner globs never pick up anything else).
+
+## Dependency Update Policy
+
+- Non-security dependency bumps must wait **≥ 7 days** after the version's release date before merging (supply-chain cool-down). Security/CVE fixes are exempt and merge as soon as green.
+- Dependabot opens the PRs (`.github/dependabot.yml`); `scripts/verify-doppler.sh` / audit gate still apply. When updating manually, check the release date before merging.
+
+### Releases
+
+- Tag `vX.Y.Z` on the deploy branch and push the tag → `.github/workflows/release.yml` creates a GitHub Release with auto-generated notes for that commit.
+- Deployment remains manual (`railway up`, hard safety gate above) — the tag marks what shipped; deploy the tagged commit.
 
 ### Packages
 

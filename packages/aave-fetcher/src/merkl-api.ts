@@ -1424,7 +1424,7 @@ export async function processMerklData(
     ...mergedOptions,
     reserveUnderlyingLookup,
   };
-  let opportunities = fetchedOpportunities;
+  const opportunities = fetchedOpportunities;
   let staleStatus: MerklStaleStatus = {
     stale: false,
     fetchedOpportunities: fetchedOpportunities.length,

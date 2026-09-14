@@ -1,11 +1,13 @@
-const DEFAULT_BACKEND_URL = 'https://staging-api.aaveapy.com/api/markets';
+const DEFAULT_BACKEND_URL = "https://staging-api.aaveapy.com/api/markets";
 
 async function fetchBackendApi(backendUrl = DEFAULT_BACKEND_URL) {
   console.log(`[Backend] Fetching from ${backendUrl}...`);
 
   const response = await fetch(backendUrl);
   if (!response.ok) {
-    throw new Error(`Backend API request failed: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `Backend API request failed: ${response.status} ${response.statusText}`
+    );
   }
 
   const json = await response.json();
@@ -13,11 +15,15 @@ async function fetchBackendApi(backendUrl = DEFAULT_BACKEND_URL) {
   console.log(`[Backend] Got ${reserves.length} reserves`);
 
   const normalized = reserves.map((r) => {
-    const parts = (r.reserveId ?? '').split(':');
+    const parts = (r.reserveId ?? "").split(":");
     const chainId = parseInt(parts[0], 10);
     const poolAddress = parts[1]?.toLowerCase();
     const tokenAddress = parts[2]?.toLowerCase();
-    const isV4 = !!(r.hubId || r.spokeId || (r.marketName && /v4/i.test(r.marketName)));
+    const isV4 = !!(
+      r.hubId ||
+      r.spokeId ||
+      (r.marketName && /v4/i.test(r.marketName))
+    );
 
     let supplyCapValue = r.supplyCap;
     let borrowCapValue = r.borrowCap;
@@ -26,10 +32,12 @@ async function fetchBackendApi(backendUrl = DEFAULT_BACKEND_URL) {
     let spokeChainId;
     if (isV4 && r.spokeId) {
       try {
-        const decoded = Buffer.from(r.spokeId, 'base64').toString('utf-8');
+        const decoded = Buffer.from(r.spokeId, "base64").toString("utf-8");
         const match = decoded.match(/^(\d+):/);
         if (match) spokeChainId = parseInt(match[1], 10);
-      } catch {}
+      } catch {
+        // Decode failures are non-fatal; spokeChainId keeps its default.
+      }
     }
 
     let aaveProReserveId;
@@ -38,7 +46,7 @@ async function fetchBackendApi(backendUrl = DEFAULT_BACKEND_URL) {
     }
 
     return {
-      version: isV4 ? 'v4' : 'v3',
+      version: isV4 ? "v4" : "v3",
       reserveId: r.reserveId,
       chainId,
       poolAddress,
@@ -62,13 +70,16 @@ async function fetchBackendApi(backendUrl = DEFAULT_BACKEND_URL) {
       isV4,
       marketName: r.marketName,
       hubChainId: r.hubChainId ?? (isV4 ? chainId : undefined),
-      spokeChainId: r.spokeChainId ?? spokeChainId ?? (isV4 ? chainId : undefined),
+      spokeChainId:
+        r.spokeChainId ?? spokeChainId ?? (isV4 ? chainId : undefined),
       spokeName: r.spokeName,
       aaveProReserveId,
     };
   });
 
-  console.log(`[Backend] Normalized ${normalized.length} reserves (V3: ${normalized.filter((r) => r.version === 'v3').length}, V4: ${normalized.filter((r) => r.version === 'v4').length})`);
+  console.log(
+    `[Backend] Normalized ${normalized.length} reserves (V3: ${normalized.filter((r) => r.version === "v3").length}, V4: ${normalized.filter((r) => r.version === "v4").length})`
+  );
   return normalized;
 }
 

@@ -9,6 +9,7 @@ This project provides a backend service that uses the Aave TypeScript SDK and @b
 ## 📋 Table of Contents
 
 - [Features](#features)
+- [API](#api)
 - [Project Structure](#project-structure)
 - [Quick Start](#quick-start)
 - [Usage](#usage)
@@ -31,38 +32,44 @@ This project provides a backend service that uses the Aave TypeScript SDK and @b
 - ⚠️ Automatically identifies and skips unsupported networks
 - ❌ Comprehensive error handling and logging
 
+## API
+
+- **Swagger UI**: served at `/api/docs` on the running backend (staging: <https://staging-api.aaveapy.com/api/docs>)
+- **OpenAPI 3.0 spec**: served at `/api/docs/openapi.json`; source of truth is generated at build time to `backend/static/openapi.json` (committed, drift-guarded by `backend/tests/openapiAutoGen.test.ts`), regenerate with `npm run gen:openapi -w aave-dashboard-backend`
+- **Endpoint reference**: see `docs/api/api-documentation.md`
+
 ## Project Structure
 
 \`\`\`
 aave/
-├── src/                  # Data fetcher service
-│   ├── index.ts          # Main logic, integrates all data sources
-│   ├── logger.ts         # Logging configuration module
-│   ├── brevis-api.ts     # Brevis Network API client
-│   ├── merit-api.ts      # Merit Protocol API client
-│   └── merkl-api.ts      # Merkl API client
-├── backend/              # REST API server
-│   ├── src/
-│   │   ├── server.ts     # Express API server
-│   │   ├── controllers/  # API controllers
-│   │   ├── services/     # Business logic services
-│   │   ├── routes/       # API routes
-│   │   └── middleware/   # Express middleware
-│   └── package.json      # Backend dependencies
-├── data/                 # Output data folder (git ignored); API markets come from backend memory, not these files
-│   ├── runtime/          # Fetcher/runtime files (e.g. Merkl forecast lite)
-│   ├── debug/            # Debug/troubleshoot snapshots
-│   └── exports/          # CSV and export files
-├── logs/                 # Log files folder (git ignored)
-│   ├── combined.log      # All logs
-│   └── error.log         # Error logs only
-├── dist/                 # TypeScript compilation output (git ignored)
-├── node_modules/         # Dependencies (git ignored)
-├── package.json          # Root dependencies and scripts
-├── package-lock.json     # Dependency lock file
-├── tsconfig.json         # TypeScript configuration
-├── LICENSE               # MIT License
-└── README.md             # Project documentation
+├── src/ # Data fetcher service
+│ ├── index.ts # Main logic, integrates all data sources
+│ ├── logger.ts # Logging configuration module
+│ ├── brevis-api.ts # Brevis Network API client
+│ ├── merit-api.ts # Merit Protocol API client
+│ └── merkl-api.ts # Merkl API client
+├── backend/ # REST API server
+│ ├── src/
+│ │ ├── server.ts # Express API server
+│ │ ├── controllers/ # API controllers
+│ │ ├── services/ # Business logic services
+│ │ ├── routes/ # API routes
+│ │ └── middleware/ # Express middleware
+│ └── package.json # Backend dependencies
+├── data/ # Output data folder (git ignored); API markets come from backend memory, not these files
+│ ├── runtime/ # Fetcher/runtime files (e.g. Merkl forecast lite)
+│ ├── debug/ # Debug/troubleshoot snapshots
+│ └── exports/ # CSV and export files
+├── logs/ # Log files folder (git ignored)
+│ ├── combined.log # All logs
+│ └── error.log # Error logs only
+├── dist/ # TypeScript compilation output (git ignored)
+├── node_modules/ # Dependencies (git ignored)
+├── package.json # Root dependencies and scripts
+├── package-lock.json # Dependency lock file
+├── tsconfig.json # TypeScript configuration
+├── LICENSE # MIT License
+└── README.md # Project documentation
 \`\`\`
 
 ## Quick Start
@@ -81,11 +88,13 @@ npm install
 ### Run the Data Fetcher
 
 #### Development Mode (Recommended)
+
 \`\`\`bash
 npm run dev
 \`\`\`
 
 #### Build and Run
+
 \`\`\`bash
 npm run build
 npm start
@@ -96,6 +105,7 @@ After successful execution, data files will be saved under `data/runtime`, `data
 ### Run the Backend API Server
 
 #### Development Mode
+
 \`\`\`bash
 cd backend
 npm run dev
@@ -104,6 +114,7 @@ npm run dev
 The API server will start on `http://localhost:3001` by default.
 
 #### Production Mode
+
 \`\`\`bash
 cd backend
 npm run build
@@ -111,6 +122,7 @@ npm start
 \`\`\`
 
 The server uses environment variables for configuration (see [AGENTS.md](AGENTS.md#configuration) for full list). Key settings:
+
 - `PORT` - Server port (default: 3001)
 - `NODE_ENV` - Environment (development/production)
 - `FRONTEND_URL` - CORS allowed origins for production (comma-separated)
@@ -125,12 +137,12 @@ The server uses environment variables for configuration (see [AGENTS.md](AGENTS.
 
 The backend API server runs on `http://localhost:3001` by default. Public clients should rely on **4 URL paths / 3 logical endpoints**:
 
-| Method & Path | Description |
-|--------------|-------------|
-| `GET /health` | Health check with environment info |
-| `GET /api/health` | Same as `/health` (API namespace) |
-| `GET /api/markets` | `markets-v2`: root `snapshot` + `reserves` (prices on `reserves[].tokenPrice`); cron-warmed memory snapshot, request does not trigger fetches; hard stale boundary enforced by `marketsHardTtlMs` |
-| `GET /api/meta/side-data` | Aggregated side-data payload (`categories` + `fdv` + `forecast`) |
+| Method & Path             | Description                                                                                                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`             | Health check with environment info                                                                                                                                                                |
+| `GET /api/health`         | Same as `/health` (API namespace)                                                                                                                                                                 |
+| `GET /api/markets`        | `markets-v2`: root `snapshot` + `reserves` (prices on `reserves[].tokenPrice`); cron-warmed memory snapshot, request does not trigger fetches; hard stale boundary enforced by `marketsHardTtlMs` |
+| `GET /api/meta/side-data` | Aggregated side-data payload (`categories` + `fdv` + `forecast`)                                                                                                                                  |
 
 **Data freshness**: Public data endpoints use **cron-write / API-read-only**. `meta/side-data` still reads the same internal category/FDV/forecast caches, but the standalone public routes for those caches are no longer exposed. `markets` uses `staleTimeMs` (`marketsSoftTtlMs`) plus a hard stale cap (`marketsHardTtlMs`, over which API returns `503`). See [docs/backend/data-freshness-mechanism.md](docs/backend/data-freshness-mechanism.md).
 
@@ -161,6 +173,7 @@ When you run the **root** data fetcher (`npm run dev` / `npm start` at repo root
 The formatted output data contains the following fields. For the full current schema (including all incentive structures and optional fields), see [docs/api/api-documentation.md](docs/api/api-documentation.md).
 
 ### Basic Fields
+
 - `marketName` - Market name (e.g., AaveV3Ethereum)
 - `chainName` - Chain name (e.g., ethereum)
 - `chainId` - Chain ID
@@ -171,10 +184,12 @@ The formatted output data contains the following fields. For the full current sc
 - `borrowApy` - Borrow APY (string | null, null when borrowCap is 1 or borrowing is disabled)
 
 ### Protocol Incentives
+
 - `supplyIncentives` - Aave protocol supply incentives
 - `borrowIncentives` - Aave protocol borrow incentives
 
 ### Merit Incentives
+
 - `meritSupplyApr` - Merit supply APR
 - `meritBorrowApr` - Merit borrow APR
 - `meritSelfSupply` - Merit self supply APR
@@ -183,6 +198,7 @@ The formatted output data contains the following fields. For the full current sc
 - `meritSupplyWithBorrowRequirement` - Supply APR that requires borrow first
 
 ### Merkl Incentives
+
 - `merklSupplyApr` - Merkl supply APR (number)
 - `merklBorrowApr` - Merkl borrow APR (number)
 - `merklHoldApr` - Merkl hold APR (number)
@@ -191,10 +207,12 @@ The formatted output data contains the following fields. For the full current sc
 - `merklHoldAprBreakdowns` - Merkl hold campaign details
 
 ### Brevis Incentives
+
 - `brevisSupplyApr` - Brevis Network Linea Surge supply APR
 - `brevisBorrowApr` - Brevis Network Linea Surge borrow APR
 
 ### Total APY Fields
+
 - `totalIncentiveSupplyApy` - Total incentive supply APY (all incentives converted to APY)
 - `totalSupplyApy` - Total supply APY (native supplyApy + totalIncentiveSupplyApy)
 - `totalIncentiveBorrowApy` - Total incentive borrow APY (all incentives converted to APY)
@@ -207,6 +225,7 @@ Historical market data is persisted to Railway PostgreSQL every 5 minutes for tr
 **Architecture**: cron-write → `persistenceService.ts` → batch INSERT (`market_snapshots` + `market_configs` + `oracle_prices`) → Railway PG; daily `pg_dump` → R2 backup.
 
 **Key tables**:
+
 - `market_snapshots` — 高频数据（价格/APY/利用率/流动性），每 5 分钟写入，内容哈希去重
 - `market_configs` — 低频数据（利率策略/额度/状态标志），仅内容变化时写入
 - `oracle_prices` — 预言机价格快照
@@ -222,6 +241,7 @@ The project uses [winston](https://github.com/winstonjs/winston) logging library
 ### Log Files
 
 All logs are automatically saved to the `logs/` folder:
+
 - `logs/combined.log` - Contains all log levels (info, warn, error, debug)
 - `logs/error.log` - Contains only error level logs
 
@@ -293,6 +313,7 @@ The backend API server automatically checks data freshness (1-minute window). If
 ## Tech Stack
 
 ### Data Fetcher
+
 - **TypeScript**: Type-safe JavaScript
 - **@aave/client**: Official Aave SDK
 - **@bgd-labs/aave-address-book**: Aave address book containing all network configurations
@@ -301,6 +322,7 @@ The backend API server automatically checks data freshness (1-minute window). If
 - **Node.js**: JavaScript runtime environment
 
 ### Backend API
+
 - **Express**: Web framework for Node.js
 - **CORS**: Cross-origin resource sharing middleware
 - **node-cron**: Task scheduler for automatic data updates
@@ -319,6 +341,7 @@ The project fetches incentive data from the following APIs:
 ### Data Updates
 
 The project automatically fetches the latest data from the following sources:
+
 - Aave official SDK for market data
 - Merit API for APR incentive data
 - Merkl API for campaign incentive data
@@ -327,12 +350,14 @@ The project automatically fetches the latest data from the following sources:
 ### Viewing Logs
 
 All log files are saved in the `logs/` directory:
+
 - `combined.log` - All log levels
 - `error.log` - Error logs only
 
 ### Data File Descriptions
 
 When the root fetcher runs, data files are written under `data/` (paths relative to repo root). **`GET /api/markets` is served from the backend in-memory snapshot**, not from these files.
+
 - `data/debug/aave-formatted-data.full.json` - Full formatted output from the root fetcher (optional artifact; not read by the API)
 - `data/runtime/merkl-opportunity-meta-lite.json` - Forecast campaign meta (runtime-lite)
 - `data/runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)

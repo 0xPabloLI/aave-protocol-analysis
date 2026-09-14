@@ -17,23 +17,22 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "npx --no-install tsx --test tests/*.test.ts"
+    "test": "npx --no-install tsx --test tests/*.test.ts",
+    "test:ci": "MERIT_ALLOW_LOCAL_PLAYWRIGHT=false npx --no-install tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@aave-dao/aave-address-book": "^4.52.3",
+    "@aave-dao/aave-address-book": "^4.57.1",
     "@aave/client": "^0.6.1",
     "@aave/client-v4": "npm:@aave/client@^4.1.1",
-    "@internal/aave-rpc-infra": "*",
-    "@internal/aave-shared-config": "*",
-    "@internal/aave-shared-contracts": "*",
+    "@internal/aave-rpc-infra": "1.0.0",
+    "@internal/aave-shared-config": "1.0.0",
+    "@internal/aave-shared-contracts": "1.0.0",
     "cheerio": "^1.1.2",
     "dotenv": "^17.3.1",
     "playwright": "^1.61.0",
-    "winston": "^3.19.0",
-    "zod": "^4.3.6"
+    "winston": "^3.19.0"
   },
   "devDependencies": {
-    "@types/cheerio": "^0.22.35",
     "@types/node": "^25.4.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"

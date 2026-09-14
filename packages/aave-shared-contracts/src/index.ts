@@ -146,7 +146,7 @@ export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
   rewardTokenSymbol?: string;
 }
 
-export interface BrevisCampaignItem extends CampaignGroup<BrevisCampaignBreakdown> {}
+export type BrevisCampaignItem = CampaignGroup<BrevisCampaignBreakdown>;
 
 export interface MerklBorrowHookProtocol {
   protocol: number;

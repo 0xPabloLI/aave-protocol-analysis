@@ -9,7 +9,7 @@
  * 5. Reports discrepancies
  */
 
-import fs from 'fs';
+import fs from "fs";
 
 interface V4Reserve {
   id: string;
@@ -110,7 +110,8 @@ function calculateV4SupplyApy(
   if (denominator === 0) return 0;
 
   const utilization = D / denominator;
-  const supplyApy_pct = utilization * R_borrow_pct * (1 - liquidityFee_pct / 100);
+  const supplyApy_pct =
+    utilization * R_borrow_pct * (1 - liquidityFee_pct / 100);
 
   return supplyApy_pct;
 }
@@ -122,20 +123,20 @@ function calculateUtilization(D: number, L: number, S: number): number {
 }
 
 function main() {
-  const jsonPath = process.argv[2] || './v4-raw-sdk-response.json';
+  const jsonPath = process.argv[2] || "./v4-raw-sdk-response.json";
 
   if (!fs.existsSync(jsonPath)) {
     console.error(`Error: ${jsonPath} not found`);
     process.exit(1);
   }
 
-  const jsonContent = fs.readFileSync(jsonPath, 'utf-8');
+  const jsonContent = fs.readFileSync(jsonPath, "utf-8");
   const data: V4Response = JSON.parse(jsonContent);
 
   console.log(`\n=== V4 SDK Calculation Verification ===`);
   console.log(`Total reserves: ${data.reserves.length}\n`);
 
-  let discrepancies: any[] = [];
+  const discrepancies: any[] = [];
   let debugCount = 0;
 
   for (const reserve of data.reserves) {
@@ -143,23 +144,49 @@ function main() {
     const spokeName = reserve.spoke.name;
     const chainName = reserve.chain.name;
 
-    const hubSupplied = parseFloat(reserve.asset.summary.supplied.amount.onChainValue);
-    const hubBorrowed = parseFloat(reserve.asset.summary.borrowed.amount.onChainValue);
-    const hubLiquidity = parseFloat(reserve.asset.summary.availableLiquidity.amount.onChainValue);
+    const hubSupplied = parseFloat(
+      reserve.asset.summary.supplied.amount.onChainValue
+    );
+    const hubBorrowed = parseFloat(
+      reserve.asset.summary.borrowed.amount.onChainValue
+    );
+    const hubLiquidity = parseFloat(
+      reserve.asset.summary.availableLiquidity.amount.onChainValue
+    );
     const sdkSupplyApy = parseFloat(reserve.asset.summary.supplyApy.value);
     const sdkBorrowApy = parseFloat(reserve.asset.summary.borrowApy.value);
-    const sdkUtilization = parseFloat(reserve.asset.summary.utilizationRate.value);
+    const sdkUtilization = parseFloat(
+      reserve.asset.summary.utilizationRate.value
+    );
 
-    const liquidityFee_pct = percentValueToPercent(reserve.asset.settings.liquidityFee.value);
-    const optimalUtil_pct = percentValueToPercent(reserve.asset.settings.optimalUtilizationRate.value);
-    const baseRate_pct = percentValueToPercent(reserve.asset.settings.baseBorrowRate.value);
-    const slope1_pct = percentValueToPercent(reserve.asset.settings.slopeBelowOptimal.value);
-    const slope2_pct = percentValueToPercent(reserve.asset.settings.slopeAboveOptimal.value);
+    const liquidityFee_pct = percentValueToPercent(
+      reserve.asset.settings.liquidityFee.value
+    );
+    const optimalUtil_pct = percentValueToPercent(
+      reserve.asset.settings.optimalUtilizationRate.value
+    );
+    const baseRate_pct = percentValueToPercent(
+      reserve.asset.settings.baseBorrowRate.value
+    );
+    const slope1_pct = percentValueToPercent(
+      reserve.asset.settings.slopeBelowOptimal.value
+    );
+    const slope2_pct = percentValueToPercent(
+      reserve.asset.settings.slopeAboveOptimal.value
+    );
 
-    const reserveSupplied = parseFloat(reserve.summary.supplied.amount.onChainValue);
-    const reserveBorrowed = parseFloat(reserve.summary.borrowed.amount.onChainValue);
+    const reserveSupplied = parseFloat(
+      reserve.summary.supplied.amount.onChainValue
+    );
+    const reserveBorrowed = parseFloat(
+      reserve.summary.borrowed.amount.onChainValue
+    );
 
-    const calculatedUtilization = calculateUtilization(hubBorrowed, hubLiquidity, 0);
+    const calculatedUtilization = calculateUtilization(
+      hubBorrowed,
+      hubLiquidity,
+      0
+    );
     const calculatedBorrowApy = calculateV4BorrowRate(
       hubBorrowed,
       hubLiquidity,
@@ -184,23 +211,35 @@ function main() {
     if (debugCount < 5) {
       console.log(`\n--- Debug: ${hubName}/${spokeName} ---`);
       console.log(`  SDK utilization: ${sdkUtilization_pct.toFixed(4)}%`);
-      console.log(`  Calc utilization: ${(calculatedUtilization * 100).toFixed(4)}%`);
+      console.log(
+        `  Calc utilization: ${(calculatedUtilization * 100).toFixed(4)}%`
+      );
       console.log(`  SDK borrow APY: ${sdkBorrowApy_pct.toFixed(4)}%`);
       console.log(`  Calc borrow APY: ${calculatedBorrowApy.toFixed(4)}%`);
       console.log(`  SDK supply APY: ${sdkSupplyApy_pct.toFixed(4)}%`);
       console.log(`  Calc supply APY: ${calculatedSupplyApy.toFixed(4)}%`);
-      console.log(`  Rate params: base=${baseRate_pct}%, slope1=${slope1_pct}%, slope2=${slope2_pct}%, opt=${optimalUtil_pct}%`);
-      console.log(`  Liquidity: ${hubLiquidity}, Borrowed: ${hubBorrowed}, Supplied: ${hubSupplied}`);
+      console.log(
+        `  Rate params: base=${baseRate_pct}%, slope1=${slope1_pct}%, slope2=${slope2_pct}%, opt=${optimalUtil_pct}%`
+      );
+      console.log(
+        `  Liquidity: ${hubLiquidity}, Borrowed: ${hubBorrowed}, Supplied: ${hubSupplied}`
+      );
       debugCount++;
     }
 
-    const utilizationDiff = Math.abs(calculatedUtilization * 100 - sdkUtilization_pct);
+    const utilizationDiff = Math.abs(
+      calculatedUtilization * 100 - sdkUtilization_pct
+    );
     const borrowApyDiff = Math.abs(calculatedBorrowApy - sdkBorrowApy_pct);
     const supplyApyDiff = Math.abs(calculatedSupplyApy - sdkSupplyApy_pct);
 
     const threshold = 0.01;
 
-    if (utilizationDiff > threshold || borrowApyDiff > threshold || supplyApyDiff > threshold) {
+    if (
+      utilizationDiff > threshold ||
+      borrowApyDiff > threshold ||
+      supplyApyDiff > threshold
+    ) {
       discrepancies.push({
         hubName,
         spokeName,
@@ -224,29 +263,47 @@ function main() {
     }
   }
 
-  console.log(`\nDiscrepancies found: ${discrepancies.length} / ${data.reserves.length}\n`);
+  console.log(
+    `\nDiscrepancies found: ${discrepancies.length} / ${data.reserves.length}\n`
+  );
 
   if (discrepancies.length > 0) {
-    console.log('=== Discrepancy Details ===\n');
+    console.log("=== Discrepancy Details ===\n");
     for (const d of discrepancies) {
-      console.log(`Hub: ${d.hubName}, Spoke: ${d.spokeName}, Chain: ${d.chainName}`);
-      console.log(`  Utilization: SDK=${d.sdkUtilization.toFixed(4)}%, Calc=${d.calculatedUtilization.toFixed(4)}%, Diff=${d.utilizationDiff.toFixed(4)}%`);
-      console.log(`  Borrow APY: SDK=${d.sdkBorrowApy.toFixed(4)}%, Calc=${d.calculatedBorrowApy.toFixed(4)}%, Diff=${d.borrowApyDiff.toFixed(4)}%`);
-      console.log(`  Supply APY: SDK=${d.sdkSupplyApy.toFixed(4)}%, Calc=${d.calculatedSupplyApy.toFixed(4)}%, Diff=${d.supplyApyDiff.toFixed(4)}%`);
-      console.log(`  Rate params: base=${d.rateParams.baseRate_pct}%, slope1=${d.rateParams.slope1_pct}%, slope2=${d.rateParams.slope2_pct}%, opt=${d.rateParams.optimalUtil_pct}%`);
-      console.log(`  Hub supplied: ${d.hubSupplied}, borrowed: ${d.hubBorrowed}, liquidity: ${d.hubLiquidity}`);
+      console.log(
+        `Hub: ${d.hubName}, Spoke: ${d.spokeName}, Chain: ${d.chainName}`
+      );
+      console.log(
+        `  Utilization: SDK=${d.sdkUtilization.toFixed(4)}%, Calc=${d.calculatedUtilization.toFixed(4)}%, Diff=${d.utilizationDiff.toFixed(4)}%`
+      );
+      console.log(
+        `  Borrow APY: SDK=${d.sdkBorrowApy.toFixed(4)}%, Calc=${d.calculatedBorrowApy.toFixed(4)}%, Diff=${d.borrowApyDiff.toFixed(4)}%`
+      );
+      console.log(
+        `  Supply APY: SDK=${d.sdkSupplyApy.toFixed(4)}%, Calc=${d.calculatedSupplyApy.toFixed(4)}%, Diff=${d.supplyApyDiff.toFixed(4)}%`
+      );
+      console.log(
+        `  Rate params: base=${d.rateParams.baseRate_pct}%, slope1=${d.rateParams.slope1_pct}%, slope2=${d.rateParams.slope2_pct}%, opt=${d.rateParams.optimalUtil_pct}%`
+      );
+      console.log(
+        `  Hub supplied: ${d.hubSupplied}, borrowed: ${d.hubBorrowed}, liquidity: ${d.hubLiquidity}`
+      );
       console.log();
     }
   } else {
-    console.log('✅ All calculations match SDK values within tolerance');
+    console.log("✅ All calculations match SDK values within tolerance");
   }
 
-  console.log('\n=== Verification Summary ===\n');
-  console.log('1. Supply APY = SDK_utilization × SDK_borrowAPY × (1-fee): 完美匹配 (63/63)');
-  console.log('2. Borrow APY 公式正确，差异来自链上 RAY 精度损失');
-  console.log('3. Utilization 公式 D/(L+D) 与 SDK 有微小差异 (0.01-0.03%)');
-  console.log('4. 结论: V3/V4 SDK 层精度已统一，公式计算正确');
-  console.log('5. 建议: 前端 simulation 应直接用 SDK 提供的 utilization 和 borrowAPY');
+  console.log("\n=== Verification Summary ===\n");
+  console.log(
+    "1. Supply APY = SDK_utilization × SDK_borrowAPY × (1-fee): 完美匹配 (63/63)"
+  );
+  console.log("2. Borrow APY 公式正确，差异来自链上 RAY 精度损失");
+  console.log("3. Utilization 公式 D/(L+D) 与 SDK 有微小差异 (0.01-0.03%)");
+  console.log("4. 结论: V3/V4 SDK 层精度已统一，公式计算正确");
+  console.log(
+    "5. 建议: 前端 simulation 应直接用 SDK 提供的 utilization 和 borrowAPY"
+  );
 }
 
 main();

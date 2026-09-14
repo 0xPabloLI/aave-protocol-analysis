@@ -56,7 +56,7 @@ jobs:
               policyLabel = 'Subgraph sync';
             } else if (branch.startsWith('bot/sync-coingecko-platform-map-')) {
               allowed = new Set([
-                'src/generated/coingecko-platform-by-chain-id.ts',
+                'packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts',
               ]);
               policyLabel = 'CoinGecko platform map sync';
             } else {

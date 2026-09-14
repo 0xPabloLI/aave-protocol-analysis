@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/knip/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "repro-consumer.ts",
+        "ecosystem.config.cjs",
+        "tests/*.test.ts",
+        "scripts/verification/**"
+      ],
+      "project": ["src/**/*.ts", "scripts/**", "tests/**/*.ts"]
+    },
+    "backend": {
+      "entry": ["scripts/*.ts", "scripts/*.mjs"],
+      "ignore": ["dist/**"]
+    }
+  },
+  "ignoreFiles": ["**/schema-fingerprint.ts"],
+  "ignoreDependencies": ["@modelcontextprotocol/sdk"],
+  "ignoreBinaries": ["semgrep", "mcp-scanner", "osv-scanner", "doppler"],
+  "rules": {
+    "duplicates": "off",
+    "exports": "off",
+    "nsExports": "off",
+    "nsTypes": "off",
+    "types": "off"
+  }
+}
