@@ -25,7 +25,10 @@ try {
     maxBuffer: 16 * 1024 * 1024,
   })
     .split("\n")
-    .filter((f) => SOURCE_EXT.test(f));
+    .filter((f) => SOURCE_EXT.test(f))
+    // Exclude this scanner itself: its source intentionally contains literal
+    // TODO/FIXME tokens (docs, regex, output strings) and would self-flag.
+    .filter((f) => f !== "scripts/check-todo-format.mjs");
 } catch (err) {
   console.error("check:todos: failed to list git-tracked files:", err.message);
   exit(1);
