@@ -326,6 +326,8 @@ Canonical source for knowledge spanning frontend AND backend, or Aave protocol f
 - **SDK 内部状态泄漏不只看 queryRegistry**：V3 AaveClient 不继承 GqlClient（无 queryRegistry），之前注释说"safe as singleton"。但 urql 的 fetchExchange 和 Client 内部也保留 Operation/Response 引用。`.toPromise()` 不触发 urql teardown，导致 Response 对象链无法 GC。**任何使用 urql 的 SDK 在长期运行进程中都应 per-fetch 创建 client**，而非依赖"不继承 GqlClient"的假设。
 - **V3/V4 SDK 修复必须同步**：V4 AaveClient 已在 Session 4 修复为 per-fetch 创建，但 V3 AaveClient 的单例泄漏被 V4 的更大泄漏掩盖。修完 V4 后，V3 的泄漏才变得可见。**修复 SDK 类泄漏时，必须检查同一依赖的所有入口**。
 - **单位转换必须走统一入口**：`rayToPercent`/`rayToRatio` 等转换函数散落在多个包中（onchainDataService 本地定义、aave-rpc-infra 本地定义），导致 V4 RPC fallback 用 `rayToPercent` 给 ratio 字段 `borrowApy` 赋值，序列化器再 ×100 → 400%。**所有转换函数必须 import 自 `@internal/aave-shared-contracts/units.ts`**，新增字段必须注册到 `FIELD_UNITS`，invariant 测试会自动验证注册表完整性。
+- **新 CI 检查必须在干净 checkout 上首验**：quality-gates 上线后连挂七个 push 才绿——每个失败层（锁文件 npm 版本差异、扫描器自指、gitignore 数据、未跟踪脚本、wrangler Node 版本）在开发机上都不可见。本地"绿"可能依赖未跟踪文件/旧 node_modules/更宽松的本地工具链。新 gate 落地前用 `git stash` 无关文件 + fresh clone 或至少 `git clean -xdn` 自查依赖面。
+- **npm 锁文件校验跨小版本不稳定**：npm 11 的 `install` 会丢弃 `@emnapi/*` 等可选链条目，而 `ci` 又要求它们；不同 minor 版本校验严格度也不同。**CI 和 Dockerfile 里的 npm 版本必须钉死**（`npm install -g npm@11.6.2`），锁文件只由该版本生成和验证。
 
 ## Agent skills
 

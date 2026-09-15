@@ -1,7 +1,11 @@
 # Stage 1: Build
-FROM node:20-slim AS builder
+FROM node:24-slim AS builder
 
 WORKDIR /app
+
+# Pin npm to the version the lockfile is generated and validated with
+# (npm's lockfile validation differs across minor versions).
+RUN npm install -g npm@11.6.2
 
 # Install all workspace dependencies (including devDependencies for TypeScript compilation)
 # HUSKY=0 prevents husky from trying to install git hooks in Docker (no .git)
@@ -27,7 +31,10 @@ RUN mkdir -p backend/static
 RUN npm run build -w aave-dashboard-backend
 
 # Stage 2: Production
-FROM node:20-slim
+FROM node:24-slim
+
+# Pin npm for deterministic installs in this stage too
+RUN npm install -g npm@11.6.2
 
 # Install Playwright Chromium system dependencies
 RUN npx -y playwright install --with-deps chromium
