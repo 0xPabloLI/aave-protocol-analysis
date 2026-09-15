@@ -191,13 +191,13 @@ jobs:
             const reverted = '${{ steps.revert.outputs.reverted }}' === 'true';
             const title = `CI failed on push to ${branch} — ${sha}`;
             const body = [
-              `## CI failed on direct push to \\`${branch}\``,
+              `## CI failed on direct push to ${branch}`,
               '',
-              `**Commit**: \`${sha}\``,
+              `**Commit**: ${sha}`,
               `**CI run**: ${runUrl}`,
               '',
               reverted
-                ? `✅ The commit has been **auto-reverted** on \`${branch}\`. Fix the issue and push again.`
+                ? `✅ The commit has been **auto-reverted** on ${branch}. Fix the issue and push again.`
                 : `⚠️ Could not auto-revert (merge commit or conflict). **Manual intervention required.**`,
               '',
               '### How to prevent this',
