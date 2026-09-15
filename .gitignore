@@ -142,3 +142,4 @@ packages/aave-fetcher/scripts/
 
 # Codex IDE local config
 .codex/
+!scripts/verify-doppler.sh
