@@ -1,6 +1,5 @@
 node_modules
 backend/node_modules
-workers/node_modules
 dist
 backend/dist
 data
@@ -8,7 +7,6 @@ logs
 backend/logs
 .git
 .gitignore
-workers
 .cursor
 .factory
 *.md

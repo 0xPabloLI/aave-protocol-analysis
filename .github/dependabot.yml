@@ -90,38 +90,6 @@ updates:
           - "ws"
           - "js-yaml"
 
-  # ── Security-only: workers ────────────────────────────────
-  - package-ecosystem: npm
-    directory: "/workers"
-    target-branch: railway
-    schedule:
-      interval: weekly
-      day: monday
-      time: "03:15"
-      timezone: UTC
-    open-pull-requests-limit: 0
-    labels:
-      - dependencies
-    commit-message:
-      prefix: "chore"
-      include: scope
-    ignore:
-      - dependency-name: "undici"
-        versions: [">=7.0.0"]
-      - dependency-name: "ws"
-        versions: [">=8.0.0"]
-      - dependency-name: "js-yaml"
-        versions: [">=4.0.0"]
-    groups:
-      security-all:
-        applies-to: security-updates
-        patterns:
-          - "*"
-        exclude-patterns:
-          - "undici"
-          - "ws"
-          - "js-yaml"
-
   # ── Security-only: GitHub Actions ─────────────────────────
   - package-ecosystem: github-actions
     directory: "/"

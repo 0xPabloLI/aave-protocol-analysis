@@ -1,10 +1,10 @@
-// ESLint flat config — repo-wide quality gate (root fetcher, packages, backend, workers).
+// ESLint flat config — repo-wide quality gate (root fetcher, packages, backend).
 //
 // Enforces the architecture rules documented in AGENTS.md ("Architecture Rules" /
 // "Shared Package Boundaries"):
 //   shared-config ← shared-contracts ← aave-fetcher ← root/backend
 //   shared-contracts ← aave-rpc-infra ← backend
-// plus "No root dist imports" and the standalone nature of workers/.
+// plus "No root dist imports".
 //
 // Two rules run at "warn" with a --max-warnings ratchet (see the `lint` script):
 //   - complexity            (41 legacy functions above the max of 20)
@@ -27,7 +27,6 @@ const TS_GLOBS = [
   "backend/src/**/*.ts",
   "backend/tests/**/*.ts",
   "backend/scripts/**/*.ts",
-  "workers/src/**/*.ts",
 ];
 
 // Plain Node.js scripts (no TS type info available).
@@ -68,8 +67,6 @@ export default tseslint.config(
       "repro-src/**",
       "repro-dist/**",
       "packages/aave-fetcher/scripts/**",
-      // Wrangler dry-run bundle output (generated artifact).
-      "workers/.wrangler/**",
       // Agent/tool scratch dirs (untracked or tool-managed).
       ".codeartsdoer/**",
       ".playwright-cli/**",
@@ -171,16 +168,16 @@ export default tseslint.config(
       ],
 
       // ── Workspace boundaries (relative imports) ───────────────────────────
-      // packages/* must not reach into root src, backend, workers, or any dist.
+      // packages/* must not reach into root src, backend, or any dist.
       "import/no-restricted-paths": [
         "error",
         {
           zones: [
             {
-              target: ["./src", "./backend", "./workers"],
+              target: ["./src", "./backend"],
               from: "./packages",
               message:
-                "packages must not import the root CLI, backend, or workers (dependency direction: AGENTS.md)",
+                "packages must not import the root CLI or backend (dependency direction: AGENTS.md)",
             },
             {
               target: "./backend/src",
@@ -193,12 +190,6 @@ export default tseslint.config(
               from: "./packages",
               message:
                 "backend must consume packages via @internal/* workspace deps, not relative paths into packages/",
-            },
-            {
-              target: "./workers/src",
-              from: ["./packages", "./backend", "./src"],
-              message:
-                "workers is a standalone Cloudflare Worker and must not import monorepo code",
             },
           ],
         },
@@ -268,26 +259,6 @@ export default tseslint.config(
               group: ["@internal/*"],
               message:
                 "aave-shared-config is a leaf package with no @internal dependencies.",
-            },
-          ],
-        },
-      ],
-    },
-  },
-
-  // workers is a standalone Cloudflare Worker; no @internal/* imports.
-  {
-    files: ["workers/src/**/*.ts"],
-    rules: {
-      "@typescript-eslint/no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            DIST_PATTERN,
-            {
-              group: ["@internal/*"],
-              message:
-                "workers is a standalone Cloudflare Worker; it must not import @internal/* packages.",
             },
           ],
         },

@@ -80,7 +80,7 @@
 | 后端类型定义 | `backend/src/types/index.ts` |
 | CORS / 中间件 | `backend/src/middleware/cors.ts`, `backend/src/middleware/cacheHeaders.ts` |
 | CI / GitHub Actions | `.github/workflows/`, `.github/scripts/` |
-| 部署配置 | `deploy.sh`, `railway.json`, `workers/` |
+| 部署配置 | `deploy.sh`, `railway.json` |
 | 共享包配置 | `packages/aave-shared-config/` |
 | 测试 | `backend/tests/` |
 

@@ -46,11 +46,11 @@ Data is built and enriched in `enrichDatasetWithIncentiveData()` which also hand
 
 The frontend cache (`aaveapy/src/lib/cache.ts`) uses two complementary fingerprints:
 
-| Mechanism | Where | Trigger | Latency |
-|---|---|---|---|
-| `SCHEMA_FP` | `aaveapy/src/shared/schema-fingerprint.ts` (baked into bundle) | Frontend deploy | **Instant** (page load) |
-| `snapshot.schemaFingerprint` | Backend API response → `fetchMarkets()` drift detection | Backend deploy | Lazy (next cache access) |
-| `CACHE_VERSION` | `aaveapy/src/lib/cache.ts` | Manual bump | Next deploy |
+| Mechanism                    | Where                                                          | Trigger         | Latency                  |
+| ---------------------------- | -------------------------------------------------------------- | --------------- | ------------------------ |
+| `SCHEMA_FP`                  | `aaveapy/src/shared/schema-fingerprint.ts` (baked into bundle) | Frontend deploy | **Instant** (page load)  |
+| `snapshot.schemaFingerprint` | Backend API response → `fetchMarkets()` drift detection        | Backend deploy  | Lazy (next cache access) |
+| `CACHE_VERSION`              | `aaveapy/src/lib/cache.ts`                                     | Manual bump     | Next deploy              |
 
 `SCHEMA_FP` is a hash of all API response field names, computed by the backend build script (`backend/scripts/generate-schema-fp.ts`) and written to `packages/aave-shared-config/schema-fingerprint.ts`. When the API shape changes, the hash changes.
 
@@ -95,9 +95,9 @@ When you change the backend API response shape and want frontend cache to invali
 
 ## Related Documentation
 
-| Topic | Document |
-|-------|----------|
-| TTL/Freshness configuration | `docs/backend/data-freshness-mechanism.md` |
-| Merkl/Merit data flow | `docs/merkl-merit-cache-architecture.md` |
-| API cache headers & Cloudflare | `docs/deploy/cloudflare-complete-guide.md` |
-| Reusable patterns | `docs/reusable/` |
+| Topic                          | Document                                   |
+| ------------------------------ | ------------------------------------------ |
+| TTL/Freshness configuration    | `docs/backend/data-freshness-mechanism.md` |
+| Merkl/Merit data flow          | `docs/merkl-merit-cache-architecture.md`   |
+| API cache headers & Cloudflare | `docs/deploy/cloudflare-api-cache.md`      |
+| Reusable patterns              | `docs/reusable/`                           |

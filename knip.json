@@ -16,10 +16,7 @@
     }
   },
   "ignoreFiles": ["**/schema-fingerprint.ts"],
-  "ignoreDependencies": [
-    "@modelcontextprotocol/sdk",
-    "@cloudflare/workers-types"
-  ],
+  "ignoreDependencies": ["@modelcontextprotocol/sdk"],
   "ignoreBinaries": ["semgrep", "mcp-scanner", "osv-scanner", "doppler"],
   "rules": {
     "duplicates": "off",

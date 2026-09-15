@@ -106,15 +106,9 @@ scripts/*
 !scripts/check-no-globstar-in-test.sh
 !scripts/hook-autofix.sh
 !scripts/check-todo-format.mjs
-!scripts/check-worker-bundle-size.mjs
 !scripts/verification/
 
 data/
-
-# Cloudflare Workers
-workers/.wrangler/
-workers/node_modules/
-workers/dist/
 
 # Railway CLI local config
 .railway

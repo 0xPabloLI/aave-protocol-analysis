@@ -22,7 +22,6 @@ body:
       options:
         - backend (API server)
         - packages/aave-fetcher (data aggregation)
-        - workers (browser rendering)
         - root CLI / scripts
         - infra / deploy
     validations:

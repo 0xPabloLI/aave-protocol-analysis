@@ -138,10 +138,7 @@ jobs:
       - name: Duplicate code (jscpd, 5% threshold)
         run: npm run check:duplicates
 
-      - name: Install workers dependencies
-        run: npm ci --prefix workers
-
-      - name: Unused dependencies and files (knip, root + workers)
+      - name: Unused dependencies and files (knip)
         run: npm run check:knip
 
       - name: Test naming convention
@@ -149,12 +146,6 @@ jobs:
 
       - name: Feature-flag registry (dead flag detection)
         run: npm run check:feature-flags
-
-      - name: Workers unit + integration tests (coverage thresholds)
-        run: npm run test:coverage --prefix workers
-
-      - name: Worker bundle size budget
-        run: npm run check:worker-bundle
 
   # Auto-revert: when CI fails on a direct push (not PR), revert the commit.
   # This is the safety net for `git push --no-verify` which bypasses the

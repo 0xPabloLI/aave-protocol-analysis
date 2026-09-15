@@ -1,6 +1,6 @@
 {
   "$schema": "https://syncpack.dev/config/schema.json",
-  "source": ["package.json", "packages/*/package.json", "backend/package.json", "workers/package.json"],
+  "source": ["package.json", "packages/*/package.json", "backend/package.json"],
   "semverGroups": [
     {
       "label": "ethers-exact-pin",

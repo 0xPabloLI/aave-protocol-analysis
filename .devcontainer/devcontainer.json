@@ -18,5 +18,5 @@
       }
     }
   },
-  "forwardPorts": [3001, 8787]
+  "forwardPorts": [3001]
 }
