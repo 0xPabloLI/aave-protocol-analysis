@@ -26,32 +26,20 @@ jobs:
           echo "code=$code" >> "$GITHUB_OUTPUT"
           [ "$code" = "200" ]
 
-      - name: Probe worker /health (if URL configured)
-        id: worker
-        continue-on-error: true
-        if: ${{ vars.WORKER_HEALTH_URL != '' }}
-        run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
-            "${{ vars.WORKER_HEALTH_URL }}" || echo 000)
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          [ "$code" = "200" ]
-
       - name: Open or update alert issue
-        if: steps.backend.outcome == 'failure' || steps.worker.outcome == 'failure'
+        if: steps.backend.outcome == 'failure'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a2325f34cd # v8
         with:
           script: |
             const { owner, repo } = context.repo;
             const title = '⚠️ Uptime alert: health probe failing';
             const backend = '${{ steps.backend.outputs.code }}';
-            const worker = '${{ steps.worker.outputs.code }}';
             const body = [
               `Scheduled probe failed at ${new Date().toISOString()}`,
               '',
               `- backend /health → HTTP \`${backend || 'not probed'}\``,
-              `- worker /health → HTTP \`${worker || 'not probed'}\``,
               '',
-              'Runbooks: `docs/runbooks/backend-outage.md`, `docs/runbooks/worker-outage.md`.',
+              'Runbook: `docs/runbooks/backend-outage.md`.',
             ].join('\n');
 
             const existing = await github.paginate(github.rest.issues.listForRepo, {
@@ -67,7 +55,7 @@ jobs:
             }
 
       - name: Close alert issue on recovery
-        if: steps.backend.outcome == 'success' && (steps.worker.outcome == 'success' || steps.worker.outcome == 'skipped')
+        if: steps.backend.outcome == 'success'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a2325f34cd # v8
         with:
           script: |

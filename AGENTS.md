@@ -51,7 +51,7 @@ Workspace-boundary rules (dependency direction, no dist imports, workers standal
 - **Metrics**: `GET /metrics` (Prometheus, `aave_backend_` prefix; gate `METRICS_ENABLED`) — HTTP counters/durations + DB query durations with slow-query warn logs (`DB_SLOW_QUERY_MS`).
 - **Errors**: Sentry, env-gated by `SENTRY_DSN` (`instrumentation.ts`) — dormant locally.
 - **Analytics**: structured API usage events → `backend/logs/analytics.log` (`analytics.ts`, gate `ANALYTICS_ENABLED`).
-- **Alerting**: scheduled `uptime-alert.yml` probes `/health` (backend + worker via `WORKER_HEALTH_URL` repo variable) and opens/updates a labeled issue on failure.
+- **Alerting**: scheduled `uptime-alert.yml` probes backend `/health` and opens/updates a labeled issue on failure.
 - **Runbooks**: `docs/runbooks/` (app deploy failure, backend outage, worker outage) — incident procedures start here.
 - **Profiling**: `npm run profile:cpu -w aave-dashboard-backend` (`node --prof`), then `npm run profile:report -w aave-dashboard-backend` — V8 isolate log → flame summary; see docs/runbooks/backend-outage.md for when to use.
 

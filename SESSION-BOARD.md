@@ -55,6 +55,7 @@
 | codex-0409f | Codex | 压缩 freshness 文档 | docs/backend/data-freshness-mechanism.md, docs/api/api-documentation.md | done | 2026-04-09T00:00:00 | 已完成压缩与协议收敛 |
 | codex-0409g | Codex | 再压缩 backend freshness 文档 | docs/backend/data-freshness-mechanism.md | done | 2026-04-09T00:00:00 | 已统一术语并压缩描述段落 |
 | codex-0504a | CodeArts | 分析 v4 reserve 冻结/暂停与 supply/borrow 标志的关系 | (只读分析，无写入) | done | 2026-05-04T00:00:00 | |
+| workbuddy-0916a | WorkBuddy | AAV-1289 下线 Merit 全链路 + AAV-1290 readiness 补齐 | workers/, packages/aave-fetcher/src/{merit-api,cloudflare-browser,incentive-prune,index,cli,config}.ts, packages/aave-shared-contracts/src/{index,units}.ts, backend/src/{types,server}.ts, backend/src/services/{persistenceService,marketsApiSerialize}.ts, .github/workflows/{ci,uptime-alert,test-canary}.yml, package.json, knip.json, .devcontainer/, docs/ | active | 2026-09-16T05:45:00 | 与 4 月遗留条目（均已 done / 视为 stale）无实际冲突 |
 
 ---
 
