@@ -100,6 +100,9 @@ scripts/*
 !scripts/check-no-hardcoded-bin-paths.sh
 !scripts/check-workspace-coverage.sh
 !scripts/check-no-omit-dev-in-ci-autofix.sh
+!scripts/check-todo-format.mjs
+!scripts/check-test-naming.mjs
+!scripts/check-feature-flags.mjs
 !scripts/check-no-globstar-in-test.sh
 !scripts/hook-autofix.sh
 !scripts/check-todo-format.mjs
