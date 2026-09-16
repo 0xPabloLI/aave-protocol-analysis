@@ -36,7 +36,6 @@ import {
 import { logger } from "./logger.js";
 import { providerPool } from "@internal/aave-rpc-infra";
 import {
-  getMeritCacheStats,
   getTokenPriceCacheStats,
   getBrevisCacheStats,
 } from "@internal/aave-fetcher";
@@ -462,7 +461,6 @@ setInterval(() => {
   const merklStats = getMerklForecastCacheStats();
   const onchainStats = getOnchainCacheStatus();
   const oracleStats = getOracleCacheStats();
-  const meritStats = getMeritCacheStats();
   const tokenPriceStats = getTokenPriceCacheStats();
   const brevisStats = getBrevisCacheStats();
   const hashSizes = getHashMapSizes();
@@ -498,12 +496,10 @@ setInterval(() => {
       `onchain=${onchainStats.poolCount}pools/${onchainStats.reserveCount}res ` +
       `oracle=${oracleStats.leanPrice}+${oracleStats.v4ReserveToken} ` +
       `merkl=${merklStats.metricsCacheSize}+${merklStats.zeroBaselineCacheSize}z+${merklStats.inFlightSize}f ` +
-      `merit=${meritStats.roundEstimateCache}r+${meritStats.campaignMetadataCache}m+${meritStats.blockNumberCache}b+${meritStats.redirectAliases}a ` +
       `tokenPrice=${tokenPriceStats.priceCache}+${tokenPriceStats.inFlight}f ` +
       `brevis=${brevisStats.chainCallCache} ` +
       `hashes=${hashSizes.marketRow}+${hashSizes.marketConfig}+${hashSizes.oraclePrice} ` +
       `rpc=${providerStats.providers}p+${providerStats.endpoints}e+${providerStats.rpcUrls}u ` +
-      `browser=${meritStats.browserActive} ` +
       `undici=[${undiciSummary}] ` +
       `nodeAgent=https:${(https.globalAgent as any).totalSocketCount ?? "?"}/${Object.keys((https.globalAgent as any).sockets ?? {}).length}act/${Object.keys((https.globalAgent as any).freeSockets ?? {}).length}free http:${(http.globalAgent as any).totalSocketCount ?? "?"}/${Object.keys((http.globalAgent as any).sockets ?? {}).length}act/${Object.keys((http.globalAgent as any).freeSockets ?? {}).length}free`
   );

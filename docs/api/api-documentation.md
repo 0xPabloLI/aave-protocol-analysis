@@ -109,27 +109,7 @@ interface RuntimeReserveData {
   borrowCapUsd?: number; // 【单位: USD】借贷上限金额，与 supplyCapUsd 对称
 
   // 协议激励（已完全迁移到结构化字段，单位: 百分比）
-  // Merit APR 激励（可选字段，仅在存在数据时出现）
-  meritSupplys?: Array<{
-    apr: number; // APR 百分比值（如 5.2 表示 5.2%）
-    selfApr?: number; // Self APR 百分比值（如果有对应的 self- 前缀的 key）
-    link: string; // Merit 活动详情页链接
-    startDate: string; // 活动开始日期
-    endDate: string; // 活动结束日期
-    startBlock?: string; // 活动开始区块（可选）
-    endBlock?: string; // 活动结束区块（可选）
-    requiredBorrowTokens?: string[]; // 需要 borrow 的 token 列表（用于 supply with borrow requirement），'multiple' 表示任意 token
-  }>;
-  meritBorrows?: Array<{
-    apr: number; // APR 百分比值（如 5.2 表示 5.2%）
-    selfApr?: number; // Self APR 百分比值（如果有对应的 self- 前缀的 key）
-    link: string; // Merit 活动详情页链接
-    startDate: string; // 活动开始日期
-    endDate: string; // 活动结束日期
-    startBlock?: string; // 活动开始区块（可选）
-    endBlock?: string; // 活动结束区块（可选）
-    requiredSupplyTokens?: string[]; // 需要 supply 的 token 列表（用于 borrow with supply requirement），'multiple' 表示任意 token
-  }>;
+  // 注：Merit 激励字段（meritSupplys/meritBorrows）已随 Merit 计划终止移除（AAV-1289）。
 
   // Merkl 详细机会数据（可选字段，仅在存在数据时出现）
   merklSupplys?: MerklOpportunityGroup[];
@@ -180,7 +160,7 @@ interface RuntimeReserveData {
 
 ### MerklOpportunityGroup
 
-Merkl 机会分组数据，用于 JSON 输出，避免重复。Merkl `GET /v4/opportunities` 响应里哪些字段参与构建，见 `docs/merkl-merit-cache-architecture.md` 中章节 **Merkl `/v4/opportunities[]` item: which fields `merkl-api.ts` reads**（含字段表与 Mermaid 图）。
+Merkl 机会分组数据，用于 JSON 输出，避免重复。Merkl `GET /v4/opportunities` 响应里哪些字段参与构建，见 `docs/merkl-cache-architecture.md` 中章节 **Merkl `/v4/opportunities[]` item: which fields `merkl-api.ts` reads**（含字段表与 Mermaid 图）。
 
 ```typescript
 interface MerklOpportunityGroup {
@@ -658,15 +638,15 @@ Merkl 返回里历史上存在两套命名：
 
 字段说明：
 
-| 字段          | Contract 语义    | 备注                                                    |
-| ------------- | ---------------- | ------------------------------------------------------- |
-| `generatedAt` | 响应生成时间     | ISO 8601                                                |
-| `partial`     | 是否部分成功     | 任一子块失败时为 `true`                                 |
-| `categories`  | 分类子块         | `fetchedAt` + `staleTimeMs`（softTTL）                  |
-| `fdv`         | FDV 子块         | `fetchedAt` + `staleTimeMs`（softTTL）                  |
-| `forecast`        | forecast 子块（Merkl+Brevis） | `items` + `errors` + `staleTimeMs`（snapshot 发布节奏） |
-| `campaignAccess`  | campaign 白名单子块     | `campaigns` + `updatedAt`                                |
-| `errors`          | 子块整体错误对象        | key 为 `categories` / `fdv` / `forecast` |
+| 字段             | Contract 语义                 | 备注                                                    |
+| ---------------- | ----------------------------- | ------------------------------------------------------- |
+| `generatedAt`    | 响应生成时间                  | ISO 8601                                                |
+| `partial`        | 是否部分成功                  | 任一子块失败时为 `true`                                 |
+| `categories`     | 分类子块                      | `fetchedAt` + `staleTimeMs`（softTTL）                  |
+| `fdv`            | FDV 子块                      | `fetchedAt` + `staleTimeMs`（softTTL）                  |
+| `forecast`       | forecast 子块（Merkl+Brevis） | `items` + `errors` + `staleTimeMs`（snapshot 发布节奏） |
+| `campaignAccess` | campaign 白名单子块           | `campaigns` + `updatedAt`                               |
+| `errors`         | 子块整体错误对象              | key 为 `categories` / `fdv` / `forecast`                |
 
 **状态码**:
 
@@ -782,13 +762,14 @@ Brevis forecast 数据已合并到 `GET /api/meta/side-data` 的 `forecast.items
 
 Brevis 条目字段：
 
-| 字段               | 说明                                                         |
-| ------------------ | ------------------------------------------------------------ |
-| `campaignId`        | Brevis campaign ID，与 `/api/markets` breakdown 的 `campaignId` 对应 |
+| 字段               | 说明                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| `campaignId`       | Brevis campaign ID，与 `/api/markets` breakdown 的 `campaignId` 对应                    |
 | `distributedSoFar` | 链上实际累计分发量（USD），由 `fetchBrevisDistributedSoFar` 从链上合约读取，1h 缓存 TTL |
-| `endTimestamp`     | 可选，campaign 结束时间（Unix seconds），从 breakdown `campaignEndedAt` 提取 |
+| `endTimestamp`     | 可选，campaign 结束时间（Unix seconds），从 breakdown `campaignEndedAt` 提取            |
 
 与 Merkl forecast 条目的区别：
+
 - Brevis 条目无 `requiredDaily`（Brevis 无此数据）
 - Brevis `endTimestamp` 为可选（Merkl 总有）
 - Brevis `distributedSoFar` 跟着 markets 1m cron + 1h 链上缓存刷新
@@ -832,13 +813,6 @@ Brevis 条目字段：
    - `supplyApy`: 如果为 `undefined` 则在 JSON 中不出现
    - `borrowApy`: 数值格式的百分比（如 `3.97` 表示 3.97%），即使借贷被禁用也会返回真实值
    - `borrowDisabled`: 布尔值，仅当借贷被禁用时出现且为 `true`（节约带宽）
-   - `meritSupplys` / `meritBorrows`: 对象数组，每个对象包含：
-     - `apr`: 数值格式的百分比（如 `5.2` 表示 5.2%）
-     - `selfApr`: 可选的 Self APR 百分比值（如果有对应的 self- 前缀的 key）
-     - `link`: Merit 活动详情页链接
-     - `startDate` / `endDate`: 活动时间范围
-     - `startBlock` / `endBlock`: 可选的区块范围
-     - `requiredBorrowTokens` / `requiredSupplyTokens`: 可选的条件要求 token 列表
    - `merklSupplys` / `merklBorrows` / `merklHolds`: 对象数组，每个对象包含 `link`、`name`（可选）、`message`（可选）和 `breakdowns` 数组；`breakdowns[].campaignApr` / `aprCap` 在 JSON 中亦为**百分数值**（与 `supplyApy` 一致）
    - `brevisSupplys` / `brevisBorrows`: 对象数组，字段为 `link`、`campaignApr`（百分数）、`campaignStartedAt`、`campaignEndedAt`，以及可选字段 `message`、`latestTvl`、`totalBudget`、`positionCap`、`campaignId`
 
@@ -851,33 +825,16 @@ Brevis 条目字段：
    - 所有激励相关字段都是可选的，包括：
      - `supplyApy` / `borrowApy`
      - `borrowDisabled`（仅当 `true` 时出现）
-     - `meritSupplys` / `meritBorrows`
      - `merklSupplys` / `merklBorrows` / `merklHolds`
    - `brevisSupplys` / `brevisBorrows`
    - 以下字段如果为空（空数组或 undefined），会在 JSON 中被省略：
-     - `meritSupplys` / `meritBorrows`（空数组时）
      - `merklSupplys` / `merklBorrows` / `merklHolds`（空数组时）
      - `brevisSupplys` / `brevisBorrows`（空数组时）
      - `aTokenAddress` / `vTokenAddress`（null 时）
      - `supplyApy`（undefined 时）
      - `borrowDisabled`（`false` 或 undefined 时，即借贷启用时不出现）
 
-3. **Merit 数据结构说明**:
-   - `meritSupplys` 和 `meritBorrows` 是数组，每个元素代表一个 Merit 激励活动
-   - 如果同一个活动有 self 和非 self 版本，它们会合并到同一条目中：
-     - `apr` 字段存储非 self 版本的 APR
-     - `selfApr` 字段存储 self 版本的 APR（如果存在）
-   - `requiredBorrowTokens` 和 `requiredSupplyTokens` 用于表示条件激励：
-     - 如果 `meritSupplys` 条目包含 `requiredBorrowTokens`，表示需要先 borrow 指定的 token 才能获得该 supply APR
-     - 如果 `meritBorrows` 条目包含 `requiredSupplyTokens`，表示需要先 supply 指定的 token 才能获得该 borrow APR
-     - `'multiple'` 表示任意 token 都可以满足条件
-   - Merit 活动有效期判定（后端过滤逻辑）：
-     - 主要依据 `endDate`，当 `parsedEndDate <= now` 视为过期
-     - 在 `endDate` 当天会结合 `endBlock` 做更精确的截止判断
-     - 若 `endDate` 缺失或不可解析，则回退使用 `endBlock`
-     - `endBlock` 回退比较使用 Ethereum mainnet 最新块高（不是 Celo 等 reserve 所在链的块高）
-
-4. **供应禁用状态 (`supplyDisabled`)**:
+3. **供应禁用状态 (`supplyDisabled`)**:
    - Aave 协议有三种方式禁用供应：
      1. 储备冻结：`isFrozen === true`
      2. 储备暂停：`isPaused === true`
@@ -896,7 +853,7 @@ Brevis 条目字段：
      }
      ```
 
-5. **借贷禁用状态 (`borrowDisabled`)**:
+4. **借贷禁用状态 (`borrowDisabled`)**:
    - Aave 协议有两种方式禁用借贷：
      1. 直接禁用：`borrowingState === "DISABLED"`
      2. Cap 设为 1：`borrowCap === 1`（实际上无法借贷）
@@ -916,7 +873,7 @@ Brevis 条目字段：
      }
      ```
 
-6. **数值单位说明**:
+5. **数值单位说明**:
 
    #### `/api/markets` 响应字段单位
 
@@ -928,7 +885,6 @@ Brevis 条目字段：
    | `utilizationPct`                          | 百分比 (0-100) | 资金利用率，如 `45.5` 表示 45.5% |
    | `supplyApy`                               | 百分比         | 供应 APY，如 `2.07` 表示 2.07%   |
    | `borrowApy`                               | 百分比         | 借贷 APY，如 `3.97` 表示 3.97%   |
-   | `meritSupplys[].apr`                      | 百分比         | Merit 供应 APR                   |
    | `merklSupplys[].breakdowns[].campaignApr` | 百分比         | Merkl campaign APR               |
 
    #### On-chain & SDK 字段单位（位于 `/api/markets` 的 `reserves[]` 中）
@@ -948,7 +904,7 @@ Brevis 条目字段：
    | `slopeBelowOptimal`  | `number` percent   | 利率曲线斜率 1。例如 `4` = 4%                                                                             |
    | `slopeAboveOptimal`  | `number` percent   | 利率曲线斜率 2。例如 `60` = 60%                                                                           |
    | `optimalUtilization` | `number` percent   | 最优利用率。例如 `92` = 92%                                                                               |
-   | `baseBorrowRate`     | `number` percent   | 基础借款利率。例如 `5.5` = 5.5%                                                                          |
+   | `baseBorrowRate`     | `number` percent   | 基础借款利率。例如 `5.5` = 5.5%                                                                           |
 
    **On-chain 字段说明**：`baseBorrowRate` 和 `deficit` 仅从 RPC 获取（UiPoolDataProvider.getReservesHumanized）。如 RPC 失败，使用 5 分钟内的缓存数据；超过缓存期或无缓存时字段缺失。
 
@@ -976,7 +932,6 @@ Brevis 条目字段：
 
 - **基础 APY**: 来自 Aave 协议 API
 - **协议激励**: 来自 Aave 协议的 `reserve.incentives`
-- **Merit APR**: 来自 `https://apps.aavechan.com/api/merit/aprs`
 - **Merkl APR**: 来自 `https://api.merkl.xyz/v4/opportunities`
 - **Brevis APR**: 来自 Brevis Network Linea Surge API
 - **Token 价格（/api/markets）**: 当前仅在 `reserves[].tokenPrice` 行内返回，不再输出 Merkl reward token 的单独价格补充。
@@ -1049,6 +1004,7 @@ curl http://localhost:3001/api/meta/side-data
 - **API 版本**: 3.1
 - **文档更新时间**: 2026-03-24
 - **最后更新**:
+  - 移除 Merit 激励字段：`meritSupplys` / `meritBorrows` 随 Merit 计划终止一并删除（AAV-1289），激励字段现为 `merklSupplys` / `merklBorrows` / `merklHolds` / `brevisSupplys` / `brevisBorrows`
   - 补充端点：`GET /api/health`、`GET /api/meta/side-data`
   - 基础路径说明更新为完整 API 列表
   - 重构 Merit 数据结构：统一为 `meritSupplys` 和 `meritBorrows` 数组，每个条目包含完整的活动信息（apr, selfApr, link, startDate, endDate, startBlock, endBlock）
@@ -1078,8 +1034,8 @@ curl http://localhost:3001/api/meta/side-data
   - **2026-05-13**：`/api/markets` 的 `decimals` 字段不再输出值为 18 的 token（占绝大多数），仅非 18 位 token（如 USDC=6、WBTC=8）保留此字段。前端自动默认 18，无需额外处理。
   - **2026-05-20**：`incentive_details`（DB 列 + API 序列化）从聚合级改为 **per-campaign 级**，内含 `meritSupplys`/`meritBorrows`（带 `key`/`endDate`/`link`） + `merklSupplys`/`merklBorrows`/`merklHolds`（带 `groupId`/`breakdowns`） + `brevisSupplys`/`brevisBorrows`（带 `groupId`/`breakdowns`）。`_isExpired` 标志仅在 API 序列化时按 `now() > endDate` 动态计算，**不写入 DB**。
   - **2026-06-01**：清理 V3 遗留字段 `supplyIncentives`/`borrowIncentives`（API 响应 + RuntimeReserveData + fetcher + DB `legacySupply`/`legacyBorrow`）。移除 `sumIncentiveAprFromDetails` 死代码。激励全部由结构化字段 `meritSupplys`/`merklSupplys`/`brevisSupplys` 承载。
-   - **2026-06-14**：Brevis `distributedSoFarUsd` 从 `/api/markets` breakdown 移至 `/api/meta/side-data` 的 `brevisForecast` 子块（与 Merkl forecast 架构统一）。`brevisForecast.items[].campaignId` + `distributedSoFarUsd` 为链上实际累计分发量（USD），`staleTimeMs=60000`（1 分钟，跟着 markets cron）。
-   - **2026-06-14（breaking）**：`brevisForecast` 子块移除，Brevis 数据合并到 `forecast.items[]`。字段名 `distributedSoFarUsd` → `distributedSoFar`（与 Merkl 统一）。Brevis 条目新增可选 `endTimestamp`。`fetchBrevisDistributedSoFar` 新增 1h 链上缓存 TTL。`partial` 计数从 5 降为 4。
+  - **2026-06-14**：Brevis `distributedSoFarUsd` 从 `/api/markets` breakdown 移至 `/api/meta/side-data` 的 `brevisForecast` 子块（与 Merkl forecast 架构统一）。`brevisForecast.items[].campaignId` + `distributedSoFarUsd` 为链上实际累计分发量（USD），`staleTimeMs=60000`（1 分钟，跟着 markets cron）。
+  - **2026-06-14（breaking）**：`brevisForecast` 子块移除，Brevis 数据合并到 `forecast.items[]`。字段名 `distributedSoFarUsd` → `distributedSoFar`（与 Merkl 统一）。Brevis 条目新增可选 `endTimestamp`。`fetchBrevisDistributedSoFar` 新增 1h 链上缓存 TTL。`partial` 计数从 5 降为 4。
 
 ## 注意事项
 

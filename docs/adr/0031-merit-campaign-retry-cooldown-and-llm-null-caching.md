@@ -1,8 +1,12 @@
 # ADR-0031: Merit Campaign Retry Cooldown and LLM Null Caching
 
-**Status**: Implemented
+**Status**: Superseded (obsolete) — Merit 全链路已于 2026-09 下线（AAV-1289），本文描述的重试冷却与 null 缓存机制随 `merit-api.ts` 一并删除
 **Date**: 2026-06-21
 **Commit**: `1d5cbfc`
+
+> **历史文档**：本文保留作为决策记录。Merit 激励计划终止、上游 API 字段已消失，
+> `packages/aave-fetcher/src/merit-api.ts`、`cloudflare-browser.ts`、Cloudflare
+> Browser Rendering Worker 及其缓存/冷却逻辑均已移除。文中引用的符号不再存在。
 
 ## Context
 
@@ -13,6 +17,7 @@ Two infinite retry loops were consuming Cloudflare Browser Rendering quota and L
 2. **LLM null results not cached**: `detectNetPositionConstraint()` returns `null` when LLM is unavailable and regex also fails. This `null` was never written back to `cachedConstraints`, so every cycle re-invokes LLM. Logs show 331 `unavailable` outcomes per cycle, wasting ~3.5min on LLM timeouts.
 
 Additionally, the Cloudflare Worker had two bugs amplifying quota consumption:
+
 - Browser closed immediately after each request (`closeBrowser()` in `finally`), preventing reuse
 - `maxLaunchesPerMinute=3` matches Free plan limit exactly with no safety margin
 
@@ -21,6 +26,7 @@ Additionally, the Cloudflare Worker had two bugs amplifying quota consumption:
 ### Merit retry cooldown
 
 Add two timestamp fields to `MeritCampaignMetadataEntry`:
+
 - `lastCheckedAt`: set after successful fetch. If `cachedCampaignEnded && lastCheckedAt` is within 6 hours, skip retry.
 - `failedAt`: set after failed fetch. If `failedAt` is within 30 minutes, skip retry.
 
@@ -31,6 +37,7 @@ needsUpdate = !completeness.isComplete || (cachedCampaignEnded && !withinRetryCo
 ### LLM null caching
 
 Change `cachedConstraints` value type from `Map<string, NetPositionConstraint>` to `Map<string, NetPositionConstraint | null>`. Use `!== undefined` (vs truthy) to distinguish:
+
 - `undefined` → key not in map → never checked → proceed to LLM
 - `null` → key exists with null value → already checked, no result → skip LLM
 - `NetPositionConstraint` → already checked with result → skip LLM

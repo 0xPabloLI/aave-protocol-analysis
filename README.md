@@ -24,7 +24,6 @@ This project provides a backend service that uses the Aave TypeScript SDK and @b
 
 - 🌐 Automatically discovers all AaveV3 networks using @bgd-labs/aave-address-book
 - 🔄 Fetches multi-chain market data using Aave SDK (17 chains, 20 markets)
-- 💰 Integrates Merit APR incentive data
 - 🎁 Integrates Merkl incentive campaign data
 - 🌐 Integrates Brevis Network Linea Surge APR data
 - 💾 Saves data to JSON and CSV files
@@ -46,7 +45,6 @@ aave/
 │ ├── index.ts # Main logic, integrates all data sources
 │ ├── logger.ts # Logging configuration module
 │ ├── brevis-api.ts # Brevis Network API client
-│ ├── merit-api.ts # Merit Protocol API client
 │ └── merkl-api.ts # Merkl API client
 ├── backend/ # REST API server
 │ ├── src/
@@ -160,12 +158,9 @@ When you run the **root** data fetcher (`npm run dev` / `npm start` at repo root
 
 - `data/debug/aave-formatted-data.full.json` - Full formatted output (debug artifact; not the API backing store)
 - `data/runtime/merkl-opportunity-meta-lite.json` - Forecast runtime-lite snapshot (campaign meta; **read by backend** forecast path when present/fresh)
-- `data/runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
 - `data/debug/aave-all-markets-data.json` - Complete raw market data for all supported networks
 - `data/debug/brevis-raw-data.json` - Brevis Network raw activity/API debug snapshot
 - `data/debug/merkl-raw-data.json` - Merkl incentive debug snapshot
-- `data/debug/merit-raw-data.json` - Merit raw data
-- `data/debug/merit-merkl-raw-data.json` - Merit↔Merkl round estimation debug
 - `data/exports/aave-formatted-data.csv` - CSV export for spreadsheet use
 
 ## Data Fields
@@ -187,15 +182,6 @@ The formatted output data contains the following fields. For the full current sc
 
 - `supplyIncentives` - Aave protocol supply incentives
 - `borrowIncentives` - Aave protocol borrow incentives
-
-### Merit Incentives
-
-- `meritSupplyApr` - Merit supply APR
-- `meritBorrowApr` - Merit borrow APR
-- `meritSelfSupply` - Merit self supply APR
-- `meritSelfBorrow` - Merit self borrow APR
-- `meritBorrowWithSupplyRequirement` - Borrow APR that requires supply first
-- `meritSupplyWithBorrowRequirement` - Supply APR that requires borrow first
 
 ### Merkl Incentives
 
@@ -331,7 +317,6 @@ The backend API server automatically checks data freshness (1-minute window). If
 
 The project fetches incentive data from the following APIs:
 
-- **Merit APR**: `https://apps.aavechan.com/api/merit/aprs`
 - **Merkl Opportunities**: `https://api.merkl.xyz/v4/opportunities?name=aave`
 - **Merkl Campaigns**: `https://api.merkl.xyz/v4/campaigns/{campaignId}`
 - **Brevis Network**: `https://linea-surge-endpoint.brevis.network/LineaSurgeV2Provider/GetActivities`
@@ -343,7 +328,6 @@ The project fetches incentive data from the following APIs:
 The project automatically fetches the latest data from the following sources:
 
 - Aave official SDK for market data
-- Merit API for APR incentive data
 - Merkl API for campaign incentive data
 - Brevis Network API for Linea Surge APR data
 
@@ -360,12 +344,9 @@ When the root fetcher runs, data files are written under `data/` (paths relative
 
 - `data/debug/aave-formatted-data.full.json` - Full formatted output from the root fetcher (optional artifact; not read by the API)
 - `data/runtime/merkl-opportunity-meta-lite.json` - Forecast campaign meta (runtime-lite)
-- `data/runtime/merit-campaign-metadata-cache.json` - Merit campaign metadata cache (time/message/link)
 - `data/debug/aave-all-markets-data.json` - Raw Aave SDK market data
 - `data/debug/brevis-raw-data.json` - Brevis raw activity data
 - `data/debug/merkl-raw-data.json` - Merkl raw incentive data
-- `data/debug/merit-raw-data.json` - Merit raw data
-- `data/debug/merit-merkl-raw-data.json` - Merit↔Merkl round estimation debug
 - `data/exports/aave-formatted-data.csv` - CSV export (for spreadsheet use)
 
 ## Contributing
@@ -393,7 +374,6 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 - [Aave V3 Documentation](https://aave.com/docs/developers/aave-v3/markets/data#listing-available-markets)
 - [Aave SDK](https://github.com/aave/aave-sdk)
-- [Merit Protocol](https://apps.aavechan.com/)
 - [Merkl](https://merkl.xyz/)
 - [Brevis Network](https://brevis.network/)
 

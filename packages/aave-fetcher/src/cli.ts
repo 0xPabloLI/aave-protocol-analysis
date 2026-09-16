@@ -11,16 +11,6 @@ async function main() {
     process.exit(1);
   }
 
-  try {
-    const { closeBrowser } = await import("./merit-api.js");
-    await closeBrowser().catch((err) => {
-      logger.warn("⚠️ Error when closing browser:", err);
-    });
-  } catch {
-    // Best-effort cleanup: never block process exit if the dynamic import or
-    // closeBrowser fails.
-  }
-
   process.exit(0);
 }
 

@@ -1,19 +1,21 @@
-# Merkl / Merit Data Flow & Cache Architecture
+# Merkl Data Flow & Cache Architecture
 
-Last updated: 2026-04-09 (compressed overview)
+Last updated: 2026-09-16 (Merit removed — AAV-1289)
 
-This document explains how Merkl + Merit data moves through the codebase, which files are for debugging vs runtime, and which caches are in memory.
+This document explains how Merkl data moves through the codebase, which files are for debugging vs runtime, and which caches are in memory.
+
+> **历史变更**：本文原名「Merkl / Merit Data Flow & Cache Architecture」。Merit 全链路已于 2026-09 下线（AAV-1289），`merit-api.ts`、`cloudflare-browser.ts`、Cloudflare Worker 及其缓存/运行时文件均已移除，相关章节与图示随之下线。
 
 ## 0) Cache Taxonomy
 
 One data set can pass through more than one layer. The terms below describe the role, not just the implementation.
 
-| Type | What it is | Scope | Writes | Reads | Example |
-|---|---|---|---|---|---|
-| Pure in-memory cache | Small keyed cache for repeated sub-results | One process | Lazy/on demand | Same process only | `metricsCache`, `tokenPriceResolveCache` |
-| In-memory snapshot | Whole assembled state ready to serve | One process | Cron/startup refresh | API reads only | `snapshotCache`, `marketsService.snapshot` |
-| Runtime bridge file | Compact file used to hand off data across processes or restarts | Disk + runtime | Root writer | Backend/root fallback | `data/runtime/merkl-opportunity-meta-lite.json` |
-| Debug file | Verbose troubleshooting artifact | Disk + debug | Root writer | Humans/scripts | `data/debug/merkl-raw-data.json` |
+| Type                 | What it is                                                      | Scope          | Writes               | Reads                 | Example                                         |
+| -------------------- | --------------------------------------------------------------- | -------------- | -------------------- | --------------------- | ----------------------------------------------- |
+| Pure in-memory cache | Small keyed cache for repeated sub-results                      | One process    | Lazy/on demand       | Same process only     | `metricsCache`, `tokenPriceResolveCache`        |
+| In-memory snapshot   | Whole assembled state ready to serve                            | One process    | Cron/startup refresh | API reads only        | `snapshotCache`, `marketsService.snapshot`      |
+| Runtime bridge file  | Compact file used to hand off data across processes or restarts | Disk + runtime | Root writer          | Backend/root fallback | `data/runtime/merkl-opportunity-meta-lite.json` |
+| Debug file           | Verbose troubleshooting artifact                                | Disk + debug   | Root writer          | Humans/scripts        | `data/debug/merkl-raw-data.json`                |
 
 ## 1) Two Key Flows (Most Practical View)
 
@@ -31,23 +33,19 @@ One data set can pass through more than one layer. The terms below describe the 
 flowchart LR
   IDX["packages/aave-fetcher/src/index.ts (orchestrator)"]
   MERKL["packages/aave-fetcher/src/merkl-api.ts (Merkl ingest + indexing)"]
-  MERIT["packages/aave-fetcher/src/merit-api.ts (Merit ingest + mapping)"]
   SHARED["@internal/aave-shared-config (Merkl opportunities fetch/cache)"]
   MKS["backend/marketsService (internalized fetcher + memory snapshot)"]
   FCS["backend/merklForecastService (forecast compute + caches)"]
   MOC["backend/merklOpportunityClient (forecast Merkl opportunities fetcher)"]
   MKLITE["data/runtime/merkl-opportunity-meta-lite.json"]
   MARKETS["aave-formatted-data.full.json (root fetcher writes; backend does not read)"]
-  TIMER["data/runtime/merit-campaign-metadata-cache.json"]
   MERKLAPI["Merkl API"]
 
   IDX --> MERKL
-  IDX --> MERIT
   MERKL -. "uses data" .-> SHARED
   SHARED -. "uses data" .-> MERKLAPI
   MERKL -- "writes" --> MKLITE
    IDX -- "writes" --> MARKETS
-  MERIT -- "writes" --> TIMER
 
   IDX -. "exports fetchMarketsData" .-> MKS
   FCS -- "reads" --> MKLITE
@@ -65,10 +63,6 @@ flowchart LR
   C --> D["Merkl /v4/opportunities"]
   B -- "writes" --> E["data/runtime/merkl-opportunity-meta-lite.json"]
   B -- "writes" --> F["data/debug/merkl-raw-data.json"]
-  A --> G["packages/aave-fetcher/src/merit-api.ts fetchMeritData()"]
-  G -- "writes" --> H["data/runtime/merit-campaign-metadata-cache.json"]
-  G -- "writes" --> I["data/debug/merit-raw-data.json"]
-  G -- "writes" --> J["data/debug/merit-merkl-raw-data.json"]
    A -- "writes" --> K["data/debug/aave-formatted-data.full.json"]
 ```
 
@@ -104,12 +98,8 @@ flowchart LR
 ```mermaid
 flowchart TD
   A["Root CLI: runMarketsFetcher()"] --> B["packages/aave-fetcher/src/index.ts pipeline"]
-  B --> C["Merit: packages/aave-fetcher/src/merit-api.ts"]
   B --> D["Merkl: packages/aave-fetcher/src/merkl-api.ts"]
   B --> E["Brevis"]
-  C --> F["data/debug/merit-raw-data.json"]
-  C --> G["data/debug/merit-merkl-raw-data.json"]
-  C --> H["data/runtime/merit-campaign-metadata-cache.json"]
   D --> I["data/debug/merkl-raw-data.json (debug)"]
   D --> J["data/runtime/merkl-opportunity-meta-lite.json (runtime-lite)"]
   D --> R["@internal/aave-shared-config snapshot (memory)"]
@@ -129,32 +119,26 @@ flowchart TD
 ## 3) File Responsibilities (Disk)
 
 ### Runtime-facing (program reads)
+
 - `data/runtime/merkl-opportunity-meta-lite.json`
   - Forecast service preferred file source (campaign-level lightweight meta)
-- `data/runtime/merit-campaign-metadata-cache.json`
-  - Merit campaign metadata cache (time ranges/message/link) for `fetchMeritData()`
 
 ### Debug / Troubleshoot (human-facing first)
+
 - `data/debug/aave-formatted-data.full.json`
   - Written when the **root** fetcher runs (`runMarketsFetcher` / CLI); not read by `GET /api/markets`. The backend serves markets from `marketsService` memory via `fetchMarketsData()` (same pipeline, no file read on the request path).
 - `data/debug/merkl-raw-data.json`
   - Full Merkl debug snapshot (raw/live opportunities + processed/index)
-- `data/debug/merit-raw-data.json`
-  - Merit APR raw + campaignMetadataByKey + built index
-- `data/debug/merit-merkl-raw-data.json`
-  - Merit last-round reward estimation debug (Merkl JSON_AIRDROP history scan)
 - `data/debug/brevis-raw-data.json`
   - Brevis debug snapshot
 
-### Merkl / Merit focused caches
+### Merkl focused caches
 
 - `marketsService.snapshot`: in-memory markets snapshot, read by `GET /api/markets`
 - `campaignOpportunityCache`: per-forecast campaign meta index, rebuilt on demand
 - `snapshotCache`: cron-written forecast response snapshot for `GET /api/meta/side-data`
 - `metricsCache`: per-campaign Merkl metrics cache, dynamic TTL by cadence
 - `@internal/aave-shared-config` snapshot cache: shared raw opportunities cache for root/backend fallback
-- `meritRoundEstimateCache`: per-key Merit history estimate cache
-- `meritCampaignMetadataMemoryCache` + `data/runtime/merit-campaign-metadata-cache.json`: in-memory + runtime bridge for Merit metadata
 
 ### Other runtime caches
 
@@ -192,11 +176,11 @@ flowchart TD
 
 ### Fileability status
 
-| Status | Meaning | Examples |
-|---|---|---|
-| 已文件化 | 现在已经依赖 runtime file / disk artifact | `data/runtime/merkl-opportunity-meta-lite.json`, `data/runtime/merit-campaign-metadata-cache.json` |
+| Status             | Meaning                                          | Examples                                                                      |
+| ------------------ | ------------------------------------------------ | ----------------------------------------------------------------------------- |
+| 已文件化           | 现在已经依赖 runtime file / disk artifact        | `data/runtime/merkl-opportunity-meta-lite.json`                               |
 | 适合文件化但未实现 | 重启后希望保留上次可用结果，且结果天然是整块快照 | `GET /api/markets` full snapshot, `GET /api/meta/side-data` forecast snapshot |
-| 不适合文件化 | 细粒度、短生命周期、或重建成本很低 | `metricsCache`, `tokenPriceResolveCache`, `coingeckoPlatformCache` |
+| 不适合文件化       | 细粒度、短生命周期、或重建成本很低               | `metricsCache`, `tokenPriceResolveCache`, `coingeckoPlatformCache`            |
 
 Rules of thumb:
 

@@ -2,7 +2,7 @@
 
 Last updated: 2026-03-27
 
-General implementation and architecture practices. For detailed caching/TTL configuration, see `docs/backend/data-freshness-mechanism.md`. For Merkl/Merit data flow, see `docs/merkl-merit-cache-architecture.md`.
+General implementation and architecture practices. For detailed caching/TTL configuration, see `docs/backend/data-freshness-mechanism.md`. For Merkl data flow, see `docs/merkl-cache-architecture.md`.
 
 ---
 
@@ -87,7 +87,6 @@ When you change the backend API response shape and want frontend cache to invali
 
 ## 7) Pending/Watchlist
 
-- Consider cache GC for obsolete Merit keys in `meritRoundEstimateCache`.
 - Consider forecast cache prewarm if first-request latency becomes noticeable.
 - Revisit local-file strategy before moving to multi-replica deployment.
 
@@ -98,6 +97,6 @@ When you change the backend API response shape and want frontend cache to invali
 | Topic                          | Document                                   |
 | ------------------------------ | ------------------------------------------ |
 | TTL/Freshness configuration    | `docs/backend/data-freshness-mechanism.md` |
-| Merkl/Merit data flow          | `docs/merkl-merit-cache-architecture.md`   |
+| Merkl data flow                | `docs/merkl-cache-architecture.md`         |
 | API cache headers & Cloudflare | `docs/deploy/cloudflare-api-cache.md`      |
 | Reusable patterns              | `docs/reusable/`                           |

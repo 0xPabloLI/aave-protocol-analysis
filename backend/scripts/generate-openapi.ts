@@ -55,7 +55,7 @@ function extractDefinitions(
 
 /**
  * 清理 schema 名称：移除泛型尖括号等在 OpenAPI 3.1 $ref 中不安全的字符。
- * ts-json-schema-generator 会生成类似 "CampaignGroup<ApiMeritCampaignBreakdown>" 的名称，
+ * ts-json-schema-generator 会生成类似 "CampaignGroup<ApiMerklBreakdown>" 的名称，
  * 其中尖括号在 $ref URL 中会被编码为 %3C/%3E，导致 openapi-zod-client 无法解析。
  */
 function sanitizeSchemaName(name: string): string {

@@ -27,7 +27,7 @@ export interface BaseCampaignBreakdown {
   campaignId?: string;
   /** Per-user position cap as native raw amount string (e.g. "20150000000000000000" for 20.15 WETH). Used by Merkl/Brevis. Mutually exclusive with positionCapUsd. */
   positionCapNative?: string;
-  /** Per-user position cap in USD. Used by Merit (extracted from "$X" text). Mutually exclusive with positionCapNative. */
+  /** Per-user position cap in USD (extracted from "$X" text). Mutually exclusive with positionCapNative. */
   positionCapUsd?: number;
   /** Whether the position cap is shared across supply+borrow sides (true) or per-side (false/default). */
   isCombineCap?: boolean;

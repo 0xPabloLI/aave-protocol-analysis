@@ -158,16 +158,12 @@ _Avoid_: campaignId（Campaign Hash ID 才是 campaignId）
 _Avoid_: recentlyEnded（旧命名，已废弃）, stubBreakdown（旧模式，已移除）
 
 **CampaignGroup**:
-按逻辑分组的一组 **Campaign** 容器。例如 Merkl 中同一 opportunity 下的多个 Campaign。每个 CampaignGroup 通过 **protocolVersion** (`'v3'` | `'v4'`) 绑定到对应协议版本的 Reserve，确保 V3/V4 激励来源不会交叉污染。Merit 和 Brevis 目前仅服务于 V3。
+按逻辑分组的一组 **Campaign** 容器。例如 Merkl 中同一 opportunity 下的多个 Campaign。每个 CampaignGroup 通过 **protocolVersion** (`'v3'` | `'v4'`) 绑定到对应协议版本的 Reserve，确保 V3/V4 激励来源不会交叉污染。Brevis 目前仅服务于 V3。
 _Avoid_: opportunity（Merkl 术语，与通用概念混淆）
 
 **protocolVersion**:
-CampaignGroup 的协议版本标签 (`'v3'` | `'v4'`)。Merkl 的 protocolVersion 通过 4-step 优先级推导（ADR-0018）：1) type 前缀 `AAVE_V4_` → `v4`；2) explorerAddress 反查无歧义地址(aToken/vToken/spoke) → 对应版本；3) explorerAddress 匹配 V4 underlying token → `v4`；4) 默认 → `v3`。Merit 和 Brevis 暂固定为 `v3`。
+CampaignGroup 的协议版本标签 (`'v3'` | `'v4'`)。Merkl 的 protocolVersion 通过 4-step 优先级推导（ADR-0018）：1) type 前缀 `AAVE_V4_` → `v4`；2) explorerAddress 反查无歧义地址(aToken/vToken/spoke) → 对应版本；3) explorerAddress 匹配 V4 underlying token → `v4`；4) 默认 → `v3`。Brevis 暂固定为 `v3`。
 _Avoid_: version, networkVersion
-
-**meritSupplys** / **meritBorrows**:
-Merit（社区贡献证明）激励，per-Campaign APR 数组。每条包含 apr、selfApr、link、startDate、endDate 等。仅服务于 V3。
-_Avoid_: meritSupplyIncentives, meritBorrowIncentives
 
 **merklSupplys** / **merklBorrows** / **merklHolds**:
 Merkl 激励，按 CampaignGroup 组织的 per-Campaign APR 数组。每个 CampaignGroup 包含 link + breakdowns（含 campaignApr、campaignId、campaignType 等）。支持 V3/V4，protocolVersion 由 4-step 优先级推导 (ADR-0018)。
@@ -315,13 +311,11 @@ graph TD
     ReserveV4 -->|"priced via"| ExchangeRate["exchangeRate → tokenPrice"]
 
     Incentive -->|"sources"| Protocol["Protocol"]
-    Incentive -->|"sources"| Merit["Merit"]
     Incentive -->|"sources"| Merkl["Merkl"]
     Incentive -->|"sources"| Brevis["Brevis"]
 
     Merkl -->|"groups into"| CampaignGroup["CampaignGroup"]
     CampaignGroup -->|"contains"| Campaign["Campaign"]
-    Merit -->|"contains"| Campaign
     Brevis -->|"contains"| Campaign
 
     classDef v3 fill:#e6f3ff,stroke:#336699

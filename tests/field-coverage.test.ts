@@ -47,32 +47,6 @@ const mockFullReserve = {
   optimalUtilization: 80,
   baseBorrowRate: 0.4,
   aaveProReserveId: "12345",
-  meritSupplys: [
-    {
-      link: "test",
-      breakdowns: [
-        {
-          campaignApr: 0.01,
-          campaignId: "test-base",
-          campaignStartedAt: "2024-01-01",
-          campaignEndedAt: "2024-12-31",
-        },
-      ],
-    },
-  ],
-  meritBorrows: [
-    {
-      link: "test",
-      breakdowns: [
-        {
-          campaignApr: 0.01,
-          campaignId: "test-base",
-          campaignStartedAt: "2024-01-01",
-          campaignEndedAt: "2024-12-31",
-        },
-      ],
-    },
-  ],
   merklSupplys: [{ link: "test", breakdowns: [] }],
   merklBorrows: [{ link: "test", breakdowns: [] }],
   merklHolds: [{ link: "test", breakdowns: [] }],

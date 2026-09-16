@@ -65,7 +65,7 @@ if doppler secrets download --no-file --format env > /dev/null 2>&1; then
     # 检查关键环境变量
     echo ""
     echo "   关键环境变量检查："
-    CRITICAL_VARS=("CLOUDFLARE_WORKER_URL")
+    CRITICAL_VARS=("ALCHEMY_API_KEY")
     for var in "${CRITICAL_VARS[@]}"; do
       if echo "$ENV_VARS" | grep -q "^${var}="; then
         echo "      ✅ $var 已设置"
@@ -102,14 +102,6 @@ if command -v pm2 &> /dev/null; then
       echo "      - 或重启 PM2: pm2 restart aave-backend --update-env"
     fi
     
-    # 检查 PM2 进程是否有 CLOUDFLARE_WORKER_URL
-    PM2_WORKER_URL=$(pm2 describe aave-backend 2>/dev/null | grep -oP 'CLOUDFLARE_WORKER_URL[^=]*=\K[^\s]*' || echo "")
-    if [ -n "$PM2_WORKER_URL" ]; then
-      echo "   ✅ PM2 进程中有 CLOUDFLARE_WORKER_URL"
-    else
-      echo "   ❌ PM2 进程中没有 CLOUDFLARE_WORKER_URL"
-      echo "   💡 这可能是导致警告的原因"
-    fi
   else
     echo "   ℹ️  aave-backend 进程未运行"
   fi
@@ -124,9 +116,6 @@ echo "验证完成"
 echo "=========================================="
 echo ""
 echo "💡 提示："
-echo "   - 如果看到 'CLOUDFLARE_WORKER_URL not set' 警告，请确保："
-echo "     1. 在 Doppler 中已添加 CLOUDFLARE_WORKER_URL secret"
-echo "     2. PM2 进程已重启以加载新环境变量: pm2 reload ecosystem.config.cjs --only aave-backend --update-env"
 echo "   - 查看应用日志: pm2 logs aave-backend"
 echo "   - 查看应用启动时的环境变量加载日志: pm2 logs aave-backend --lines 50"
 echo ""

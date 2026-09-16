@@ -15,19 +15,6 @@ export function roundTo6(n: number): number {
   return Number(n.toFixed(6));
 }
 
-function scaleMeritCampaignBreakdown<
-  T extends { campaignApr: number; positionCapUsd?: number; aprCap?: number },
->(b: T): T {
-  const next = { ...b, campaignApr: roundTo6(b.campaignApr * 100) } as T;
-  if (
-    Object.prototype.hasOwnProperty.call(b, "aprCap") &&
-    b.aprCap !== undefined
-  ) {
-    (next as { aprCap?: number }).aprCap = roundTo6(b.aprCap * 100);
-  }
-  return next;
-}
-
 function scaleMerklBreakdown<
   T extends {
     campaignApr: number;
@@ -198,22 +185,6 @@ export function serializeReserveForApi(
     ...(reserve.liquidationThreshold !== undefined
       ? { liquidationThreshold: roundTo6(reserve.liquidationThreshold) }
       : {}),
-    ...(reserve.meritSupplys?.length
-      ? {
-          meritSupplys: scaleGroupedCampaigns(
-            reserve.meritSupplys,
-            scaleMeritCampaignBreakdown
-          ),
-        }
-      : {}),
-    ...(reserve.meritBorrows?.length
-      ? {
-          meritBorrows: scaleGroupedCampaigns(
-            reserve.meritBorrows,
-            scaleMeritCampaignBreakdown
-          ),
-        }
-      : {}),
     ...(reserve.merklSupplys?.length && reserve.supplyApy !== undefined
       ? {
           merklSupplys: scaleGroupedCampaignsWithContext(
@@ -331,34 +302,6 @@ export function computeSchemaFingerprint(): string {
     optimalUtilization: 1,
     baseBorrowRate: 0.01,
     deficit: "1",
-    meritSupplys: [
-      {
-        link: "__fingerprint__",
-        breakdowns: [
-          {
-            campaignApr: 0.01,
-            campaignId: "__fingerprint__-base",
-            campaignStartedAt: "2025-01-01",
-            campaignEndedAt: "2025-01-01",
-            campaignType: "DUTCH_AUCTION",
-          },
-        ],
-      },
-    ],
-    meritBorrows: [
-      {
-        link: "__fingerprint__",
-        breakdowns: [
-          {
-            campaignApr: 0.01,
-            campaignId: "__fingerprint__-base",
-            campaignStartedAt: "2025-01-01",
-            campaignEndedAt: "2025-01-01",
-            campaignType: "DUTCH_AUCTION",
-          },
-        ],
-      },
-    ],
     merklSupplys: [
       {
         link: "__fingerprint__",

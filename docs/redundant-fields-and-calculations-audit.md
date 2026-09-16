@@ -12,8 +12,8 @@
 
 ### 1.1 In model output but not used inside `buildForecastState` math
 
-| Item | Notes |
-|------|--------|
+| Item            | Notes                                                                                                                                                                                                                                                                                           |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`latestTvl`** | Normalized and returned on state; **not** used in any formula inside `buildForecastState`. Current public forecast snapshot（`/api/meta/side-data` 的 `forecast.items`）does **not** expose it. It remains useful via `/api/markets` Merkl breakdown fields (opportunity-only forecast fields). |
 
 ### 1.2 Full state vs HTTP response
@@ -46,9 +46,9 @@ When opportunity metadata always supplies TVL (normal path), **`extractLatestTvl
 
 ### 3.1 `data/runtime/merkl-opportunity-meta-lite.json` (and embedded campaign snapshots)
 
-| Field | Notes |
-|-------|--------|
-| **`campaignTypeHint`** | Required by backend forecast typing when loading lite snapshots (used as canonical campaign type). |
+| Field                  | Notes                                                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **`campaignTypeHint`** | Required by backend forecast typing when loading lite snapshots (used as canonical campaign type).                         |
 | **`campaignSnapshot`** | Optional fast path source for budget/time/APR-cap fields; when unavailable backend falls back to `GET /v4/campaigns/{id}`. |
 
 ### 3.2 Root fetcher alignment
@@ -59,8 +59,8 @@ When opportunity metadata always supplies TVL (normal path), **`extractLatestTvl
 
 ## 4. Root fetcher: duplicate business logic (maintainability, not “unused export”)
 
-| Area | Notes |
-|------|--------|
+| Area                     | Notes                                                                                                                                                                                                                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Budget normalization** | `buildForecastFieldsFromOpportunity` in `packages/aave-fetcher/src/merkl-api.ts` mirrors the intent of **`extractNormalizedTotalBudget`** in `backend/src/services/merklForecastService.ts` (comment in source references the backend). Two places to update if rules change. |
 
 ---
@@ -75,10 +75,10 @@ When opportunity metadata always supplies TVL (normal path), **`extractLatestTvl
 
 ## 6. Intentionally not “redundant” (architecture)
 
-| Topic | Notes |
-|-------|--------|
+| Topic                                     | Notes                                                                                                                                                                          |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Root `data/runtime/*.json` vs backend** | Backend serves markets from in-memory snapshot from cron; it does not read root fetcher JSON for `/api/markets`. On-disk artifacts are for exports/debug; not redundant logic. |
-| **`remainingBudget` / `remainingDays`** | Used inside `buildForecastState` to compute **`requiredDaily`** for non–DUTCH campaigns—not dead variables. |
+| **`remainingBudget` / `remainingDays`**   | Used inside `buildForecastState` to compute **`requiredDaily`** for non–DUTCH campaigns—not dead variables.                                                                    |
 
 ---
 
@@ -98,7 +98,7 @@ Priority is subjective; align with product/API contracts before deleting fields.
 - Forecast response shaping: `backend/src/controllers/merklForecastController.ts` (`toForecastResponseItem`).
 - Opportunity-only forecast fields on markets payload: `packages/aave-fetcher/src/merkl-api.ts` (`buildForecastFieldsFromOpportunity`) + `packages/aave-fetcher/src/index.ts` (`pruneMerklBreakdownForRuntime`).
 - Internal state vs REST: `docs/api/api-documentation.md` (Merkl forecast / `MerklForecastState` notes).
-- Cache layers: `docs/merkl-merit-cache-architecture.md`, `docs/backend/data-freshness-mechanism.md`.
+- Cache layers: `docs/merkl-cache-architecture.md`, `docs/backend/data-freshness-mechanism.md`.
 
 ---
 

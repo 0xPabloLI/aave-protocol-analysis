@@ -40,11 +40,11 @@
 
 ## 三个服务的职责
 
-| 服务 | 类型 | Root Directory | 职责 | 运行模式 |
-|------|------|----------------|------|----------|
-| **Redis** | 模板服务 | — | 存储 markets 数据（可扩展存 CoinGecko、Merkl 结果） | 常驻 |
-| **更新服务** | 应用服务 | `/`（仓库根） | 定时拉取 Aave/Merkl/Merit/Brevis 数据，写入 Redis | Railway Cron（每 5 分钟）或常驻 + node-cron |
-| **API 服务** | 应用服务 | `/backend` | 对外 HTTP 接口，从 Redis 读数据，可开 App Sleeping | 可 Serverless |
+| 服务         | 类型     | Root Directory | 职责                                                | 运行模式                                    |
+| ------------ | -------- | -------------- | --------------------------------------------------- | ------------------------------------------- |
+| **Redis**    | 模板服务 | —              | 存储 markets 数据（可扩展存 CoinGecko、Merkl 结果） | 常驻                                        |
+| **更新服务** | 应用服务 | `/`（仓库根）  | 定时拉取 Aave/Merkl/Brevis 数据，写入 Redis         | Railway Cron（每 5 分钟）或常驻 + node-cron |
+| **API 服务** | 应用服务 | `/backend`     | 对外 HTTP 接口，从 Redis 读数据，可开 App Sleeping  | 可 Serverless                               |
 
 ## 数据流
 
@@ -53,7 +53,6 @@ flowchart LR
     subgraph External["外部 API"]
         AAVE["Aave SDK"]
         MERKL["Merkl API"]
-        MERIT["Merit API"]
         BREVIS["Brevis API"]
     end
 
@@ -65,7 +64,6 @@ flowchart LR
 
     AAVE --> WORKER
     MERKL --> WORKER
-    MERIT --> WORKER
     BREVIS --> WORKER
     WORKER -- "SET aave:markets" --> REDIS
     REDIS -- "GET aave:markets" --> API
@@ -81,7 +79,7 @@ flowchart LR
 **改动**：在 `runMarketsFetcher()` 完成后，若存在 `REDIS_URL`，将数据写入 Redis：
 
 ```typescript
-import Redis from 'ioredis';
+import Redis from "ioredis";
 
 // 在 runMarketsFetcher() 最后
 const redisUrl = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL;
@@ -92,9 +90,9 @@ if (redisUrl) {
     data: formattedData,
     tokenPrices,
   });
-  await redis.set('aave:markets', payload);
+  await redis.set("aave:markets", payload);
   await redis.quit();
-  logger.info('✅ Markets data written to Redis');
+  logger.info("✅ Markets data written to Redis");
 }
 ```
 
@@ -107,28 +105,28 @@ if (redisUrl) {
 **改动**：`refreshMarketsSnapshot()` 优先从 Redis 读取，失败或无配置时回退到内部 fetcher：
 
 ```typescript
-import Redis from 'ioredis';
+import Redis from "ioredis";
 
 export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
   const redisUrl = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL;
-  
+
   // 优先 Redis（Serverless 场景）
   if (redisUrl) {
     try {
       const redis = new Redis(redisUrl);
-      const raw = await redis.get('aave:markets');
+      const raw = await redis.get("aave:markets");
       await redis.quit();
-      
+
       if (raw) {
         const payload = JSON.parse(raw) as MarketsPayload;
         snapshot = { payload, fetchedAt: Date.now() };
         return snapshot;
       }
     } catch (error) {
-      logger.warn('Failed to load from Redis, falling back to fetcher:', error);
+      logger.warn("Failed to load from Redis, falling back to fetcher:", error);
     }
   }
-  
+
   // 回退到内部 fetcher（本地开发或 Redis 不可用）
   const payload = await fetchMarketsData();
   snapshot = { payload, fetchedAt: Date.now() };
@@ -144,8 +142,8 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
 
 ```typescript
 // 更新服务额外写入
-await redis.set('aave:coingecko-categories', JSON.stringify(coingeckoData));
-await redis.set('aave:coingecko-fdv', JSON.stringify(fdvData));
+await redis.set("aave:coingecko-categories", JSON.stringify(coingeckoData));
+await redis.set("aave:coingecko-fdv", JSON.stringify(fdvData));
 ```
 
 API 侧 `coingeckoController` 和 `merklForecastService` 改为优先从 Redis 读取。
@@ -208,11 +206,11 @@ const redisUrl = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL;
 
 ## 费用考量
 
-| 服务 | 计费方式 | 优化建议 |
-|------|----------|----------|
-| **Redis** | 按内存/连接数 | 选择合适的 plan；数据量小时费用很低 |
+| 服务         | 计费方式                      | 优化建议                                                   |
+| ------------ | ----------------------------- | ---------------------------------------------------------- |
+| **Redis**    | 按内存/连接数                 | 选择合适的 plan；数据量小时费用很低                        |
 | **更新服务** | Railway Cron 模式只算执行时间 | 用 Cron 比常驻便宜很多（每 5 分钟跑 1-2 分钟 vs 24h 常驻） |
-| **API 服务** | 可开 App Sleeping | 无请求时不计费；有请求才唤醒 |
+| **API 服务** | 可开 App Sleeping             | 无请求时不计费；有请求才唤醒                               |
 
 **对比单服务**：三服务总价通常略高，但通过 Cron + Sleeping 组合，总成本仍可控制在合理范围。
 
@@ -230,11 +228,11 @@ const redisUrl = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL;
 
 ## Serverless 与缓存
 
-| 缓存类型 | Serverless 休眠后 | 三服务方案下 |
-|----------|-------------------|--------------|
-| **markets 数据** | 内存丢失 | 从 Redis 读，唤醒后立刻可用 |
-| **CoinGecko** | 内存丢失 | 保持内存缓存（可选存 Redis） |
-| **Merkl forecast** | 内存丢失 | 保持内存缓存（可选存 Redis） |
+| 缓存类型           | Serverless 休眠后 | 三服务方案下                 |
+| ------------------ | ----------------- | ---------------------------- |
+| **markets 数据**   | 内存丢失          | 从 Redis 读，唤醒后立刻可用  |
+| **CoinGecko**      | 内存丢失          | 保持内存缓存（可选存 Redis） |
+| **Merkl forecast** | 内存丢失          | 保持内存缓存（可选存 Redis） |
 
 唤醒后 `loadData()` 从 Redis 读取 markets 数据，只做 JSON parse，不调外部 API，首请求延迟可控（毫秒级）。
 
@@ -267,7 +265,7 @@ const redisUrl = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL;
 Railway 支持同一个 Repo 的不同服务使用不同的 Root Directory：
 
 - **API 服务**：Root = `backend` → 使用 `backend/package.json`
-- **更新服务**：Root = `` 或 `/` → 使用根目录 `package.json`
+- **更新服务**：Root = ``或`/`→ 使用根目录`package.json`
 
 这是 Railway 的标准做法，不需要维护两个 Repo。
 
@@ -275,4 +273,4 @@ Railway 支持同一个 Repo 的不同服务使用不同的 Root Directory：
 
 - [deploy.md](./deploy.md) - 后端部署指南（单服务模式）
 - [data-freshness-mechanism.md](../backend/data-freshness-mechanism.md) - 数据新鲜度机制
-- [merkl-merit-cache-architecture.md](../merkl-merit-cache-architecture.md) - Merkl/Merit 缓存架构
+- [merkl-cache-architecture.md](../merkl-cache-architecture.md) - Merkl 缓存架构

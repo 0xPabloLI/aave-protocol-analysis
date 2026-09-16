@@ -1,9 +1,9 @@
 name: Test Canary (flaky detection)
 
-# Scheduled full-suite run INCLUDING network/browser e2e tests.
+# Scheduled full-suite run with the extra network-touching guards enabled.
 # Purpose: catch flaky tests outside the hot CI path. Hot-path `ci` runs the
-# same suites with MERIT_ALLOW_LOCAL_PLAYWRIGHT=false (browser e2e skipped);
-# here the guard is off, so e2e tests run against real endpoints.
+# same suites with RUN_API_FIELDS_TESTS unset; here it is on, so the
+# API-fields assertions run too.
 # A failure here that passes in hot-path CI is a flakiness signal.
 
 on:
@@ -30,14 +30,10 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
-      - name: Install Playwright Chromium (for fetcher browser e2e)
-        run: npx --no-install playwright install --with-deps chromium
-        working-directory: packages/aave-fetcher
-
       - name: Install backend dependencies
         run: npm ci --prefix backend
 
-      - name: Run full suites (browser e2e ON) with duration tracking
+      - name: Run full suites with duration tracking
         shell: bash
         run: |
           SUMMARY="$GITHUB_STEP_SUMMARY"
@@ -64,7 +60,7 @@ jobs:
           run_suite "shared-contracts" npm run test -w @internal/aave-shared-contracts
           run_suite "root" npm test
           run_suite "rpc-infra" npm run test -w @internal/aave-rpc-infra
-          run_suite "fetcher (e2e on)" npm run test -w @internal/aave-fetcher
+          run_suite "fetcher" npm run test -w @internal/aave-fetcher
           run_suite "backend" npm run test -w aave-dashboard-backend
 
       - name: Report

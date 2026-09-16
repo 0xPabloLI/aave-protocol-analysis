@@ -40,7 +40,7 @@ export type BrevisCampaignItem = CampaignGroup<BrevisCampaignBreakdown>;
 
 /**
  * 去掉 Brevis campaign 上仅供 enrich 的预算解析字段，使对象符合对外 / runtime 形状。
- * 在 `fetchBrevisAprs` 中于算出 `totalBudget` 后调用；命名与 `pruneMeritEntryForRuntime` 等一致。
+ * 在 `fetchBrevisAprs` 中于算出 `totalBudget` 后调用；命名与 `incentive-prune.ts` 中的 pruner 一致。
  */
 export function pruneBrevisCampaignForRuntime(
   campaign: BrevisCampaignItem
@@ -113,7 +113,7 @@ export function filterRecentExpiredBrevis<
   return [...active, ...byType.values()];
 }
 
-// Brevis 数据项结构（类似 MeritDataItem）
+// Brevis 数据项结构（按 reserve key 索引的 supply/borrow 激励数组）
 export interface BrevisDataItem {
   brevisSupplys: BrevisCampaignItem[];
   brevisBorrows: BrevisCampaignItem[];

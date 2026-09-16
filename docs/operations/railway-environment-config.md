@@ -4,32 +4,32 @@ This document records all Railway platform configuration that lives **outside of
 
 ## 1. Service Topology
 
-| Property | Value |
-|---|---|
-| Workspace | Pablo's Projects |
-| Project | aaveapy (`a83beb30-40ae-4862-ba12-73b7188193d7`) |
-| Service | aave-protocol-analysis (`b0f24c39-38f2-41a4-9d64-0291282dda52`) |
-| Builder | Dockerfile |
-| Health check | `/health` (timeout: 360s) |
-| Restart policy | ON_FAILURE, max 5 retries |
+| Property       | Value                                                           |
+| -------------- | --------------------------------------------------------------- |
+| Workspace      | Pablo's Projects                                                |
+| Project        | aaveapy (`a83beb30-40ae-4862-ba12-73b7188193d7`)                |
+| Service        | aave-protocol-analysis (`b0f24c39-38f2-41a4-9d64-0291282dda52`) |
+| Builder        | Dockerfile                                                      |
+| Health check   | `/health` (timeout: 360s)                                       |
+| Restart policy | ON_FAILURE, max 5 retries                                       |
 
-| | Staging | Production |
-|---|---|---|
-| Environment ID | `48113ea2-...` | `5d5ddcf3-...` |
-| Public domain | `staging-api.aaveapy.com` | `api.aaveapy.com` |
-| Memory limit | **1 GB** | **2 GB** |
-| CPU limit | 0.50 vCPU | 0.50 vCPU |
-| Postgres | Postgres-15fr (attached) | No DB service (volume detached) |
+|                | Staging                   | Production                      |
+| -------------- | ------------------------- | ------------------------------- |
+| Environment ID | `48113ea2-...`            | `5d5ddcf3-...`                  |
+| Public domain  | `staging-api.aaveapy.com` | `api.aaveapy.com`               |
+| Memory limit   | **1 GB**                  | **2 GB**                        |
+| CPU limit      | 0.50 vCPU                 | 0.50 vCPU                       |
+| Postgres       | Postgres-15fr (attached)  | No DB service (volume detached) |
 
 ## 2. Container Memory Tuning
 
 The Dockerfile defaults are tuned for the 1 GB staging container. Production overrides via Railway env vars.
 
-| Variable | Dockerfile Default | Staging | Production | Why |
-|---|---|---|---|---|
-| `NODE_OPTIONS` | `--max-old-space-size=512` | *(default)* | `--max-old-space-size=1024` | V8 heap GC trigger. 512 MB ≈ 3× steady-state heap (~95 MB) for 1 GB. 1024 MB for 2 GB. |
-| `MALLOC_ARENA_MAX` | `2` | *(default)* | `4` | glibc malloc arenas. Fewer = less fragmentation but more thread contention. 2 for 1 GB, 4 for 2 GB. |
-| `RSS_RESTART_THRESHOLD_MB` | *(none)* | `800` | `1600` | Graceful shutdown when RSS exceeds threshold. ~78% of container limit. Railway restart policy brings up fresh instance. |
+| Variable                   | Dockerfile Default         | Staging     | Production                  | Why                                                                                                                     |
+| -------------------------- | -------------------------- | ----------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `NODE_OPTIONS`             | `--max-old-space-size=512` | _(default)_ | `--max-old-space-size=1024` | V8 heap GC trigger. 512 MB ≈ 3× steady-state heap (~95 MB) for 1 GB. 1024 MB for 2 GB.                                  |
+| `MALLOC_ARENA_MAX`         | `2`                        | _(default)_ | `4`                         | glibc malloc arenas. Fewer = less fragmentation but more thread contention. 2 for 1 GB, 4 for 2 GB.                     |
+| `RSS_RESTART_THRESHOLD_MB` | _(none)_                   | `800`       | `1600`                      | Graceful shutdown when RSS exceeds threshold. ~78% of container limit. Railway restart policy brings up fresh instance. |
 
 **Rule of thumb:** RSS threshold should be ~78% of container memory limit. When changing container size, recalculate: `limit_MB × 0.78`.
 
@@ -49,12 +49,6 @@ Additionally, `RAILWAY_GIT_COMMIT_SHA` is injected at deploy time (used by `/hea
 **Data Providers:**
 `COINGECKO_API_KEY`, `COINMARKETCAP_API_KEY` (different keys per environment)
 
-**Cloudflare Browser Rendering:**
-`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_BROWSER_RENDERING_TOKEN`, `CLOUDFLARE_WORKER_URL`, `CLOUDFLARE_DYNAMIC_MIN_INTERVAL_MS`
-
-**Merit Incentive Fallback Chain** (Render → Worker → Playwright → null):
-`RENDER_SERVICE_URL`, `MERIT_ALLOW_LOCAL_PLAYWRIGHT` (must be `false` in both environments)
-
 **LLM Integration:**
 `LLM_API_KEY`, `LLM_BASE_URL`, `OPENROUTER_API_KEY`
 
@@ -69,20 +63,21 @@ Additionally, `RAILWAY_GIT_COMMIT_SHA` is injected at deploy time (used by `/hea
 
 ### 3c. Environment-Specific Variables
 
-| Variable | Staging | Production | Notes |
-|---|---|---|---|
-| `DATABASE_URL` | Present (Postgres-15fr) | **Not set** (no DB) | Production persistence disabled. Code returns 503 for DB-dependent endpoints. |
-| `FRONTEND_URL` | Not set | Present | CORS allowed origins for restricted endpoints. |
-| `GITHUB_TOKEN` | Not set | Present | Production-specific GitHub PAT. |
-| `SEO_ADMIN_TOKEN` | Staging token | Production token | Different per environment. Used as `X-Admin-Token` header for SEO API auth. |
-| `SEO_ALLOWED_ORIGINS` | `https://aaveapy.com,https://staging-api.aaveapy.com,https://aaveapy.lovable.app` | `https://aaveapy.com` | CORS origins for SEO endpoints. |
-| `NODE_OPTIONS` | Not set (default 512 MB) | `--max-old-space-size=1024` | V8 heap override for 2 GB container. |
-| `MALLOC_ARENA_MAX` | Not set (default 2) | `4` | glibc arena override for 2 GB container. |
-| `RSS_RESTART_THRESHOLD_MB` | `800` | `1600` | OOM guard proportional to container size. |
+| Variable                   | Staging                                                                           | Production                  | Notes                                                                         |
+| -------------------------- | --------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------------------------------------------- |
+| `DATABASE_URL`             | Present (Postgres-15fr)                                                           | **Not set** (no DB)         | Production persistence disabled. Code returns 503 for DB-dependent endpoints. |
+| `FRONTEND_URL`             | Not set                                                                           | Present                     | CORS allowed origins for restricted endpoints.                                |
+| `GITHUB_TOKEN`             | Not set                                                                           | Present                     | Production-specific GitHub PAT.                                               |
+| `SEO_ADMIN_TOKEN`          | Staging token                                                                     | Production token            | Different per environment. Used as `X-Admin-Token` header for SEO API auth.   |
+| `SEO_ALLOWED_ORIGINS`      | `https://aaveapy.com,https://staging-api.aaveapy.com,https://aaveapy.lovable.app` | `https://aaveapy.com`       | CORS origins for SEO endpoints.                                               |
+| `NODE_OPTIONS`             | Not set (default 512 MB)                                                          | `--max-old-space-size=1024` | V8 heap override for 2 GB container.                                          |
+| `MALLOC_ARENA_MAX`         | Not set (default 2)                                                               | `4`                         | glibc arena override for 2 GB container.                                      |
+| `RSS_RESTART_THRESHOLD_MB` | `800`                                                                             | `1600`                      | OOM guard proportional to container size.                                     |
 
 ## 4. Deployment Workflow
 
 **Branch → Environment mapping:**
+
 - `main` branch → Production auto-deploy
 - `railway` branch → Staging auto-deploy
 

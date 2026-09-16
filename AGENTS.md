@@ -39,8 +39,8 @@ Workspace-boundary rules (dependency direction, no dist imports) are enforced by
 
 - All suites run in CI: root `tests/`, `@internal/aave-fetcher` (`test:ci`), `@internal/aave-rpc-infra`, `@internal/aave-shared-contracts`, backend (`test:coverage`).
 - Backend coverage thresholds (c8, ratchet — **raise over time, never lower**): lines 53 / statements 53 / functions 60 / branches 80.
-- Browser e2e (Playwright) skips in CI via `MERIT_ALLOW_LOCAL_PLAYWRIGHT=false` (fetcher `test:ci` script); run locally with `npm run test -w @internal/aave-fetcher`.
-- Flaky detection: weekly canary `.github/workflows/test-canary.yml` runs all suites WITH browser e2e + `RUN_API_FIELDS_TESTS=true` and records suite durations in the step summary. A canary failure that passes in hot-path CI = flaky signal.
+- Fetcher tests run identically in CI and locally: `npm run test -w @internal/aave-fetcher` (no browser e2e suite remains after the Merit teardown, AAV-1289).
+- Flaky detection: weekly canary `.github/workflows/test-canary.yml` runs all suites with `RUN_API_FIELDS_TESTS=true` and records suite durations in the step summary. A canary failure that passes in hot-path CI = flaky signal.
 - Test file naming enforced by `npm run check:test-naming` (in `check:quality`): every test must live in a `tests/` dir and be named `*.test.ts` (runner globs never pick up anything else).
 
 ## Observability
@@ -272,12 +272,7 @@ When touching one area, check its pair:
 ## High-Risk Areas (Coordinate Carefully)
 
 - Fetch orchestration: `packages/aave-fetcher/src/index.ts`
-- Incentive adapters: `packages/aave-fetcher/src/merit-api.ts`, `merkl-api.ts`, `brevis-api.ts`, `brevis-distributed-so-far.ts`
-- Merit dynamic info fallback chain: Render (CDP) → Worker → Playwright (local) → null
-  - `RENDER_SERVICE_URL` env var enables Render browserless fallback (free tier: ~90s cold start, 750h/month)
-  - `MERIT_ALLOW_LOCAL_PLAYWRIGHT` — default `true`; set to `"false"` in production to prevent Chromium OOM on Railway
-  - Shared helpers: `extractCampaignInfoFromPage()`, `extractSelfAuthFromPage()`, `createMeritPage()`
-  - Source type: `'worker' | 'render' | 'playwright'`
+- Incentive adapters: `packages/aave-fetcher/src/merkl-api.ts`, `brevis-api.ts`, `brevis-distributed-so-far.ts`
 - Token pricing + chain mapping: `packages/aave-fetcher/src/token-price-resolver.ts`, `generated/coingecko-platform-by-chain-id.ts`
 - Backend freshness/caching: `backend/src/services/marketsService.ts`, `onchainDataService.ts`, `merklForecastService.ts`, `cacheTtl.ts`
 - Shared contracts: `packages/aave-shared-contracts/src/index.ts` (source of truth for `RuntimeReserveData` and `EXPECTED_RUNTIME_FIELDS`)

@@ -85,18 +85,6 @@ export function isWithinLookbackWindow(
 // Incentive types
 // ============================================================
 
-export interface MeritCampaignBreakdown extends BaseCampaignBreakdown {
-  campaignId: string;
-  campaignType?: ForecastCampaignTypeLite;
-  message?: string;
-  aprCap?: number;
-  rewardTokenSymbol?: string;
-  totalBudget?: number;
-  latestTvl?: number;
-}
-
-export type MeritCampaignGroup = CampaignGroup<MeritCampaignBreakdown>;
-
 export type ForecastCampaignTypeLite =
   | "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE"
   | "DUTCH_AUCTION"
@@ -214,8 +202,6 @@ export interface RuntimeReserveData {
   optimalUtilization?: number;
   baseBorrowRate?: number;
   aaveProReserveId?: string;
-  meritSupplys?: MeritCampaignGroup[];
-  meritBorrows?: MeritCampaignGroup[];
   merklSupplys?: MerklOpportunityGroup[];
   merklBorrows?: MerklOpportunityGroup[];
   merklHolds?: MerklOpportunityGroup[];
@@ -237,25 +223,6 @@ export interface RuntimeReserveData {
 // ============================================================
 // API layer types (derived from runtime types)
 // ============================================================
-
-export type ApiMeritCampaignBreakdown = Pick<
-  MeritCampaignBreakdown,
-  | "campaignApr"
-  | "campaignStartedAt"
-  | "campaignEndedAt"
-  | "campaignId"
-  | "campaignType"
-  | "positionCapNative"
-  | "positionCapUsd"
-  | "isCombineCap"
-  | "message"
-  | "aprCap"
-  | "rewardTokenSymbol"
-  | "totalBudget"
-  | "latestTvl"
->;
-
-export type ApiMeritCampaignGroup = CampaignGroup<ApiMeritCampaignBreakdown>;
 
 export type ApiMerklBreakdown = MerklCampaignBreakdown;
 
@@ -377,8 +344,6 @@ export const EXPECTED_RUNTIME_FIELDS = [
   "optimalUtilization",
   "baseBorrowRate",
   "aaveProReserveId",
-  "meritSupplys",
-  "meritBorrows",
   "merklSupplys",
   "merklBorrows",
   "merklHolds",

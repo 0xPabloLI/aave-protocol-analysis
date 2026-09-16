@@ -13,6 +13,9 @@
     "backend": {
       "entry": ["scripts/*.ts", "scripts/*.mjs"],
       "ignore": ["dist/**"]
+    },
+    "packages/aave-fetcher": {
+      "entry": ["src/cli.ts", "tests/*.test.ts", "scripts/**/*.mjs"]
     }
   },
   "ignoreFiles": ["**/schema-fingerprint.ts"],
