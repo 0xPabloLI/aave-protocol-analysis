@@ -99,8 +99,12 @@ export function scrubSensitiveMeta<T>(meta: T, depth = 0): T {
  * missing symbol makes `levels[level] >= levels[undefined]` false for *every*
  * transport and the record is discarded with no error at all. (Fixed in
  * AAV-1290 — this was a silent, total log blackout.)
+ *
+ * Exported so every other log channel can compose the same gate instead of
+ * re-implementing it — `analytics.ts` writes its own log file and must not be
+ * the one channel that skips redaction.
  */
-const scrubFormat = winston.format((info) => {
+export const scrubFormat = winston.format((info) => {
   if (typeof info !== "object" || info === null) return info;
   const record = info as Record<string | symbol, unknown>;
 

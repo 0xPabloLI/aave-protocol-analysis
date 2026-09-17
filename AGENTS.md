@@ -48,8 +48,9 @@ Workspace-boundary rules (dependency direction, no dist imports) are enforced by
 - **Request tracing**: backend stamps `X-Request-ID` (middleware `requestId.ts`) on responses, logs and Sentry scope.
 - **Metrics**: `GET /metrics` (Prometheus, `aave_backend_` prefix; gate `METRICS_ENABLED`) — HTTP counters/durations + DB query durations with slow-query warn logs (`DB_SLOW_QUERY_MS`).
 - **Errors**: Sentry, env-gated by `SENTRY_DSN` (`instrumentation.ts`) — dormant locally.
-- **Analytics**: structured API usage events → `backend/logs/analytics.log` (`analytics.ts`, gate `ANALYTICS_ENABLED`).
-- **Alerting**: scheduled `uptime-alert.yml` probes backend `/health` and opens/updates a labeled issue on failure.
+- **Analytics**: structured API usage events → `backend/logs/analytics.log` (`analytics.ts`, gate `ANALYTICS_ENABLED`). Same scrub gate as the main logger since AAV-1290.
+- **PII boundary**: `docs/operations/pii-handling-policy.md` — per-channel data inventory, the rules callers must follow, where the guarantees are enforced, and the residual risks (IP in the 404 access log is the only routine PII that reaches disk).
+- **Alerting**: `uptime-alert.yml` probes backend `/health` and opens/updates a labeled issue on failure. ⚠️ **Verified 2026-09-17: this has never run.** Scheduled workflows only fire when the file exists on the _default_ branch (`main`); this file exists only on `railway`, so the Actions API does not even resolve it by name. The same applies to `test-canary.yml` and `dast-baseline.yml`.
 - **Runbooks**: `docs/runbooks/` (app deploy failure, backend outage) — incident procedures start here.
 - **Profiling**: `npm run profile:cpu -w aave-dashboard-backend` (`node --prof`), then `npm run profile:report -w aave-dashboard-backend` — V8 isolate log → flame summary; see docs/runbooks/backend-outage.md for when to use.
 

@@ -8,6 +8,7 @@ import {
   scrubSensitiveMeta,
   scrubSecretsInString,
 } from "../src/logger.js";
+import { getAnalyticsLogger } from "../src/analytics.js";
 
 const MESSAGE = Symbol.for("message");
 // logform's colorize() looks the level up through this symbol; a hand-built
@@ -211,6 +212,41 @@ test("console transport carries the scrub format (not a bare colouriser)", () =>
     renderWith(consoleTransport.format, LEAKY_INFO),
     "console transport"
   );
+});
+
+// ── Analytics channel: a separate log file is not a separate policy ──────────
+
+test("analytics channel scrubs secret-shaped fields and keeps the event shape", () => {
+  const analytics = getAnalyticsLogger();
+  const line = renderWith(analytics.format, {
+    message: "",
+    event: "api_request",
+    requestId: "req-1",
+    authorization: "Bearer eyJhbGciOiJIUzI1NiJ9xx",
+    nested: { apiKey: "should-not-leak-1234" },
+  });
+
+  // The gate must not damage the pipeline's own contract...
+  assert.match(line, /"event":"api_request"/);
+  assert.match(line, /"requestId":"req-1"/);
+  // ...but nothing credential-shaped may reach logs/analytics.log.
+  assertScrubbed(line, "analytics.log");
+});
+
+test("analytics transport inherits the scrubbed logger format", () => {
+  const analytics = getAnalyticsLogger();
+  assert.equal(
+    analytics.transports.length,
+    1,
+    "expected a single rotating analytics file"
+  );
+  // A transport with its own format would silently bypass logger.format.
+  assert.equal(
+    analytics.transports[0].format,
+    undefined,
+    "analytics transport overrides the logger format, so it cannot be assumed safe"
+  );
+  assert.ok(analytics.format, "analytics logger has no format at all");
 });
 
 // ── Regression: the scrub format must not eat triple-beam symbols ────────────
