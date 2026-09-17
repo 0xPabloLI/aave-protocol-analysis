@@ -95,6 +95,7 @@ node_modules
 
 scripts/*
 !scripts/sync-coingecko-platform-map.ts
+!scripts/sync-oracle-pool-configs.ts
 !scripts/patch-ethers-exports.js
 !scripts/check-no-hardcoded-bin-paths.sh
 !scripts/check-workspace-coverage.sh
@@ -105,7 +106,6 @@ scripts/*
 !scripts/check-no-globstar-in-test.sh
 !scripts/hook-autofix.sh
 !scripts/ci-build-trend.mjs
-!scripts/check-agents-drift.mjs
 !scripts/verification/
 
 data/

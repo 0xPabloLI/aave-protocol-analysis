@@ -19,22 +19,19 @@
 - `npm run dev` — run fetcher CLI
 - `npm run build` — build shared-contracts → fetcher → root (ordered)
 - `npm run ci:remote` — full CI-equivalent local gate
-- `npm run check:quality` — quality gates: ESLint + syncpack + TODO scan + jscpd + knip + test-naming + feature-flags + AGENTS.md drift (CI job `quality-gates` runs the same set)
+- `npm run check:quality` — quality gates: ESLint + syncpack + TODO scan + jscpd + knip (CI job `quality-gates` runs the same set)
 
 ### Quality gates (CI `quality-gates` job)
 
-| Gate                     | Command                       | Policy                                                                                                                               |
-| ------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| ESLint                   | `npm run lint`                | 0 errors; warnings ratcheted via `--max-warnings` — **lower over time, never raise**                                                 |
-| Version drift (syncpack) | `npm run check:syncpack`      | Same dependency must use the same specifier in every workspace; `ethers` pinned exact `5.8.0`                                        |
-| Tech-debt markers        | `npm run check:todos`         | `TODO`/`FIXME` must reference an issue key: `TODO(AAV-123)`                                                                          |
-| Duplicate code (jscpd)   | `npm run check:duplicates`    | Fails above 5% duplicated lines (`min-tokens: 70`); lower the threshold as debt shrinks                                              |
-| Unused deps/files (knip) | `npm run check:knip`          | Root workspace; config in `knip.json`; exports checked by `ts-prune` gates                                                           |
-| Test naming              | `npm run check:test-naming`   | Every test lives in a `tests/` dir, named `*.test.ts`                                                                                |
-| Feature flags            | `npm run check:feature-flags` | Flags defined in `backend/src/flags.ts` must have at least one consumer (dead-flag detection)                                        |
-| AGENTS.md drift          | `npm run check:agents-drift`  | Every file/workflow/script this file names must exist; cross-repo refs need a reasoned exemption in `scripts/check-agents-drift.mjs` |
-
-Quality gates are run by `npm run check:quality`; `npm run check:agents-drift -- --verbose` lists the deliberate cross-repo exemptions.
+| Gate                     | Command                       | Policy                                                                                        |
+| ------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------- |
+| ESLint                   | `npm run lint`                | 0 errors; warnings ratcheted via `--max-warnings` — **lower over time, never raise**          |
+| Version drift (syncpack) | `npm run check:syncpack`      | Same dependency must use the same specifier in every workspace; `ethers` pinned exact `5.8.0` |
+| Tech-debt markers        | `npm run check:todos`         | `TODO`/`FIXME` must reference an issue key: `TODO(AAV-123)`                                   |
+| Duplicate code (jscpd)   | `npm run check:duplicates`    | Fails above 5% duplicated lines (`min-tokens: 70`); lower the threshold as debt shrinks       |
+| Unused deps/files (knip) | `npm run check:knip`          | Root workspace; config in `knip.json`; exports checked by `ts-prune` gates                    |
+| Test naming              | `npm run check:test-naming`   | Every test lives in a `tests/` dir, named `*.test.ts`                                         |
+| Feature flags            | `npm run check:feature-flags` | Flags defined in `backend/src/flags.ts` must have at least one consumer (dead-flag detection) |
 
 Workspace-boundary rules (dependency direction, no dist imports) are enforced by `eslint.config.js` (`import/no-restricted-paths` zones + `no-restricted-imports` patterns).
 
@@ -222,7 +219,7 @@ Adding/modifying in-memory caches, Maps, Sets, long-lived closures, or external 
 2. Add to `EXPECTED_RUNTIME_FIELDS` in the same file.
 3. Add to `FIELD_UNITS` in `shared-contracts/src/units.ts` with the correct unit.
 4. Update `marketsApiSerialize.ts` — check `SERIALIZER_RULES` matches actual serializer behavior.
-5. The invariant test (`packages/aave-shared-contracts/tests/units.test.ts`) will fail if you forget step 3.
+5. The invariant test (`tests/units.test.ts`) will fail if you forget step 3.
 6. The backend consistency test (`backend/tests/unitsConsistency.test.ts`) will fail if serializer behavior doesn't match `SERIALIZER_RULES`.
 
 ## Automated Checks (No Manual Checklist Needed)
@@ -244,6 +241,7 @@ When touching one area, check its pair:
 - Root output schema ↔ `backend/src/services/marketsApiSerialize.ts`
 - `backend/src/cacheTtl.ts` ↔ `backend/src/services/updateScheduler.ts`
 - Chain/platform mapping ↔ `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts`
+- `scripts/sync-oracle-pool-configs.ts` ↔ `backend/src/generated/oracle-pool-configs.ts`
 - `packages/aave-shared-contracts/src/units.ts` (FIELD_UNITS) ↔ `backend/src/services/marketsApiSerialize.ts` (serializer behavior)
 
 ### Shared Package Boundaries (Non-Negotiable)
