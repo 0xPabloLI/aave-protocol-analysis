@@ -122,6 +122,7 @@ SESSION-BOARD.md
 
 # Agent config directories (local tools, not part of the project)
 .claude/
+.workbuddy/
 .trae/skills
 .cursor/skills
 
