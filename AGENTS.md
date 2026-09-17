@@ -34,7 +34,7 @@
 | Feature flags            | `npm run check:feature-flags` | Flags defined in `backend/src/flags.ts` must have at least one consumer (dead-flag detection)                                        |
 | AGENTS.md drift          | `npm run check:agents-drift`  | Every file/workflow/script this file names must exist; cross-repo refs need a reasoned exemption in `scripts/check-agents-drift.mjs` |
 
-Quality gates are run by `npm run check:quality`; `npm run check:agents-drift -- --verbose` lists the deliberate cross-repo exemptions.
+Quality gates are run by `npm run check:quality`. The drift check resolves against the **git-tracked** tree, so a path that exists only locally (gitignored, or a symlink out of the work tree) is reported rather than accepted — a reference is only satisfied by a file a fresh clone would have. `npm run check:agents-drift -- --verbose` lists those local-only entries and the deliberate cross-repo exemptions.
 
 Workspace-boundary rules (dependency direction, no dist imports) are enforced by `eslint.config.js` (`import/no-restricted-paths` zones + `no-restricted-imports` patterns).
 
