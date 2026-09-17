@@ -15,7 +15,8 @@
       "ignore": ["dist/**"]
     },
     "packages/aave-fetcher": {
-      "entry": ["src/cli.ts", "tests/*.test.ts", "scripts/**/*.mjs"]
+      "entry": ["src/cli.ts", "tests/*.test.ts", "scripts/**/*.mjs"],
+      "ignoreDependencies": ["playwright"]
     }
   },
   "ignoreFiles": ["**/schema-fingerprint.ts"],

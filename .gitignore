@@ -95,7 +95,6 @@ node_modules
 
 scripts/*
 !scripts/sync-coingecko-platform-map.ts
-!scripts/sync-oracle-pool-configs.ts
 !scripts/patch-ethers-exports.js
 !scripts/check-no-hardcoded-bin-paths.sh
 !scripts/check-workspace-coverage.sh
@@ -106,6 +105,7 @@ scripts/*
 !scripts/check-no-globstar-in-test.sh
 !scripts/hook-autofix.sh
 !scripts/ci-build-trend.mjs
+!scripts/check-agents-drift.mjs
 !scripts/verification/
 
 data/
@@ -130,6 +130,9 @@ SESSION-BOARD.md
 .worktrees/
 
 # Research/debug scripts (not part of build or runtime)
+# These are deliberately local, which is why knip exempts `playwright` for
+# packages/aave-fetcher: its only importer is scrape_merkl_leaderboard.mjs here.
+# If this directory ever goes away, drop that exemption too.
 packages/aave-fetcher/scripts/
 
 # Playwright CLI cache
