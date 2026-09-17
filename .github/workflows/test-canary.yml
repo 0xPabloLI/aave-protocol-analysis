@@ -1,10 +1,23 @@
-name: Test Canary (flaky detection)
+name: Test Canary (flaky detection + build trend)
 
 # Scheduled full-suite run with the extra network-touching guards enabled.
 # Purpose: catch flaky tests outside the hot CI path. Hot-path `ci` runs the
 # same suites with RUN_API_FIELDS_TESTS unset; here it is on, so the
 # API-fields assertions run too.
 # A failure here that passes in hot-path CI is a flakiness signal.
+#
+# It also owns build-duration trend tracking (AAV-1290): `ci.yml` records each
+# run's duration in its own step summary, but a single run cannot say whether
+# that number is normal. This workflow samples the build stage weekly, compares
+# it against the median of recent canary runs, and opens an issue on regression.
+#
+# ⚠️ DEFAULT-BRANCH CONSTRAINT: a scheduled workflow only fires when this file
+# exists on the repository's *default* branch (here `main`). A copy living only
+# on a feature branch never runs, the workflow does not appear in
+# `gh api repos/:owner/:repo/actions/workflows`, and the Actions API will not
+# resolve it by file name at all. Verified 2026-09-17: uptime-alert.yml,
+# test-canary.yml and dast-baseline.yml were all absent from `main` — so none of
+# them had ever run, despite being committed on `railway`.
 
 on:
   schedule:
@@ -13,6 +26,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   canary:
@@ -63,6 +77,106 @@ jobs:
           run_suite "fetcher" npm run test -w @internal/aave-fetcher
           run_suite "backend" npm run test -w aave-dashboard-backend
 
+      # Deliberately after the suites: keeps this addition strictly additive to
+      # the existing test execution, so a timing change can never alter what the
+      # suites see. `always()` still yields a sample when a suite already failed.
+      - name: Build (timed)
+        id: build
+        if: always()
+        shell: bash
+        continue-on-error: true
+        run: |
+          start=$(date +%s)
+          npm run build
+          end=$(date +%s)
+          echo "seconds=$(( end - start ))" >> "$GITHUB_OUTPUT"
+          echo "Build stage: $(( end - start ))s" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build duration trend
+        if: always() && steps.build.outputs.seconds != ''
+        env:
+          # Only same-workflow runs are sampled, keeping the series
+          # apples-to-apples — ci.yml measures a different command.
+          TREND_WORKFLOW: test-canary.yml
+          TREND_JOB: canary
+          TREND_STEP: Build (timed)
+          CURRENT_SECONDS: ${{ steps.build.outputs.seconds }}
+          TREND_SAMPLE_SIZE: "20"
+          # Alert only on a real jump: both bars must be cleared, so a 1s → 3s
+          # wobble on a tiny baseline stays quiet.
+          TREND_RATIO: "1.5"
+          TREND_MIN_DELTA_SECONDS: "30"
+          TREND_MIN_SAMPLES: "3"
+          # Handed to the next step; kept explicit so both steps agree on the path.
+          TREND_DECISION_PATH: ${{ runner.temp }}/ci-build-trend.json
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Always exits 0: a broken trend reading must not fail the canary, which
+        # exists to detect flaky tests.
+        run: node scripts/ci-build-trend.mjs
+
+      - name: Open, update or close the regression issue
+        if: always()
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          TREND_DECISION_PATH: ${{ runner.temp }}/ci-build-trend.json
+        with:
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const decisionPath = process.env.TREND_DECISION_PATH;
+
+            if (!fs.existsSync(decisionPath)) {
+              core.info('no trend decision this run — nothing to report');
+              return;
+            }
+            const decision = JSON.parse(fs.readFileSync(decisionPath, 'utf8'));
+
+            const title = '⚠️ CI build duration regression';
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100, labels: 'ci-perf',
+            });
+            const existing = open.find((i) => i.title === title);
+
+            if (decision.regressed) {
+              const body = [
+                `Build stage regressed at ${new Date().toISOString()}`,
+                '',
+                `- current: **${decision.current}s**`,
+                `- median of last ${decision.sampleCount}: **${decision.baseline}s**`,
+                `- decision: ${decision.reason}`,
+                '',
+                `Run: ${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+                '',
+                'See the run summary for the full trend table.',
+              ].join('\n');
+              if (existing) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: existing.number, body,
+                });
+              } else {
+                await github.rest.issues.create({
+                  owner, repo, title, body, labels: ['ci-perf', 'needs-triage'],
+                });
+              }
+            } else if (existing && decision.sampleCount >= 3) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body:
+                  `✅ Build duration back within threshold at ${new Date().toISOString()}: ` +
+                  `${decision.current}s vs median ${decision.baseline}s — closing.`,
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: existing.number, state: 'closed',
+              });
+            }
+
+            core.info(
+              `build=${decision.current}s baseline=${decision.baseline}s ` +
+                `samples=${decision.sampleCount} regressed=${decision.regressed}`,
+            );
+
+      # Print the collected summary to the job log (the previous form appended the
+      # file to itself, which only duplicated it).
       - name: Report
         if: always()
-        run: cat "$GITHUB_STEP_SUMMARY" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+        run: cat "$GITHUB_STEP_SUMMARY" || true

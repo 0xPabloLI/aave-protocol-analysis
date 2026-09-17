@@ -105,7 +105,7 @@ scripts/*
 !scripts/check-feature-flags.mjs
 !scripts/check-no-globstar-in-test.sh
 !scripts/hook-autofix.sh
-!scripts/check-todo-format.mjs
+!scripts/ci-build-trend.mjs
 !scripts/verification/
 
 data/
