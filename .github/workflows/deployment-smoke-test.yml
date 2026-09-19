@@ -36,9 +36,10 @@ jobs:
       deploy_branch: ${{ steps.target.outputs.deploy_branch }}
       deploy_sha: ${{ steps.target.outputs.deploy_sha }}
       environment_label: ${{ steps.target.outputs.environment_label }}
+      environment_name: ${{ steps.target.outputs.environment_name }}
+      ref_kind: ${{ steps.target.outputs.ref_kind }}
       api_base_url: ${{ steps.target.outputs.api_base_url }}
       site_url: ${{ steps.target.outputs.site_url }}
-
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -60,17 +61,21 @@ jobs:
           ")
 
           SHOULD_RUN=$(echo "$TARGET_JSON" | jq -r '.shouldRun')
-          DEPLOY_BRANCH=$(echo "$TARGET_JSON" | jq -r '.deployBranch')
-          DEPLOY_SHA=$(echo "$TARGET_JSON" | jq -r '.deploySha')
-          ENV_LABEL=$(echo "$TARGET_JSON" | jq -r '.environmentLabel')
-          API_BASE_URL=$(echo "$TARGET_JSON" | jq -r '.apiBaseUrl')
-          SITE_URL=$(echo "$TARGET_JSON" | jq -r '.siteUrl')
+          DEPLOY_BRANCH=$(echo "$TARGET_JSON" | jq -r '.deployBranch // ""')
+          DEPLOY_SHA=$(echo "$TARGET_JSON" | jq -r '.deploySha // ""')
+          ENV_LABEL=$(echo "$TARGET_JSON" | jq -r '.environmentLabel // ""')
+          ENV_NAME=$(echo "$TARGET_JSON" | jq -r '.environmentName // ""')
+          REF_KIND=$(echo "$TARGET_JSON" | jq -r '.refKind // ""')
+          API_BASE_URL=$(echo "$TARGET_JSON" | jq -r '.apiBaseUrl // ""')
+          SITE_URL=$(echo "$TARGET_JSON" | jq -r '.siteUrl // ""')
 
           {
             echo "should_run=$SHOULD_RUN"
             echo "deploy_branch=$DEPLOY_BRANCH"
             echo "deploy_sha=$DEPLOY_SHA"
             echo "environment_label=$ENV_LABEL"
+            echo "environment_name=$ENV_NAME"
+            echo "ref_kind=$REF_KIND"
             echo "api_base_url=$API_BASE_URL"
             echo "site_url=$SITE_URL"
           } >> "$GITHUB_OUTPUT"
@@ -79,15 +84,38 @@ jobs:
             echo "DEPLOY_BRANCH=$DEPLOY_BRANCH"
             echo "DEPLOY_SHA=$DEPLOY_SHA"
             echo "ENV_LABEL=$ENV_LABEL"
+            echo "ENV_NAME=$ENV_NAME"
+            echo "REF_KIND=$REF_KIND"
             echo "API_BASE_URL=$API_BASE_URL"
             echo "SITE_URL=$SITE_URL"
           } >> "$GITHUB_ENV"
 
+      # A skipped job still reports success. Without this step a resolver
+      # regression (e.g. an environment string the matcher does not recognise)
+      # is indistinguishable from a passing verification — exactly how this
+      # workflow reported green for every deployment while never running a
+      # single check (AAV-1294).
       - name: Skip unsupported deployment target
         if: steps.target.outputs.should_run != 'true'
         run: |
-          echo "Skipping deployment_status event for non-target deployment."
-          echo "ref='${{ github.event.deployment.ref }}' environment='${{ github.event.deployment.environment }}'"
+          RAW_REF='${{ github.event.deployment.ref }}'
+          RAW_ENV='${{ github.event.deployment.environment }}'
+          echo "::warning::Smoke test SKIPPED — no target resolved (ref='$RAW_REF' ref_kind='${{ steps.target.outputs.ref_kind }}' environment='$RAW_ENV' environment_name='${{ steps.target.outputs.environment_name }}'). No verification was performed."
+          {
+            echo "## ⏭️ Smoke test skipped — nothing was verified"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| deployment.ref | \`$RAW_REF\` |"
+            echo "| ref kind | \`${{ steps.target.outputs.ref_kind }}\` |"
+            echo "| deployment.environment | \`$RAW_ENV\` |"
+            echo "| normalised environment | \`${{ steps.target.outputs.environment_name }}\` |"
+            echo ""
+            echo "This job reports **success** but performed no checks. If that deployment"
+            echo "belongs to this repository's Railway project, the target resolver in"
+            echo "\`.github/scripts/deployment-smoke-test-helpers.mjs\` needs to learn its"
+            echo "environment string."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Health check
         id: health
@@ -184,7 +212,7 @@ jobs:
           echo "========================================"
           echo "  Smoke Test Summary (${{ env.ENV_LABEL }})"
           echo "========================================"
-          echo "  Branch:     ${{ env.DEPLOY_BRANCH }}"
+          echo "  Branch:     ${{ env.DEPLOY_BRANCH }} (ref kind: ${{ env.REF_KIND }})"
           echo "  Commit:     ${{ env.DEPLOY_SHA }}"
           echo "  API URL:    ${{ env.API_BASE_URL }}"
           echo "  Site URL:   ${{ env.SITE_URL }}"
@@ -193,6 +221,21 @@ jobs:
           echo "  Side Data:  ${{ steps.sidedata.outcome }}"
           echo "  Frontend:   ${{ steps.frontend.outcome }}"
           echo "========================================"
+
+          {
+            echo "## ${{ steps.target.outputs.should_run == 'true' && '✅' || '⏭️' }} Smoke test — ${{ env.ENV_LABEL || 'no target resolved' }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Environment | \`${{ env.ENV_LABEL }}\` (from \`${{ steps.target.outputs.environment_name }}\`) |"
+            echo "| Branch | \`${{ env.DEPLOY_BRANCH }}\` (ref kind: \`${{ env.REF_KIND }}\`) |"
+            echo "| Commit | \`${{ env.DEPLOY_SHA }}\` |"
+            echo "| API | ${{ env.API_BASE_URL }} |"
+            echo "| Health | ${{ steps.health.outcome }} |"
+            echo "| Markets | ${{ steps.markets.outcome }} |"
+            echo "| Side data | ${{ steps.sidedata.outcome }} |"
+            echo "| Frontend | ${{ steps.frontend.outcome }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Auto-rollback on smoke test failure (both staging and production) ──
   rollback:
