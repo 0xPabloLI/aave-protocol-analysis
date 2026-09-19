@@ -138,11 +138,11 @@ _Avoid_: badDebt
 ### 激励
 
 **Incentive**:
-对 **Reserve** 上供应或借贷行为的年化奖励，以 APR 表达。四源：Protocol / Merit / Merkl / Brevis。
+对 **Reserve** 上供应或借贷行为的年化奖励，以 APR 表达。三源：Protocol / Merkl / Brevis（Merit 已随计划终止于 2026-09 下线，见 AAV-1289）。
 _Avoid_: reward, emission
 
 **Campaign**:
-最小激励单元，由单一源（Merit/Merkl/Brevis）发放，包含 APR 值、目标条件、有效期。多个 Campaign 可归入同一 **CampaignGroup**。
+最小激励单元，由单一源（Merkl/Brevis）发放，包含 APR 值、目标条件、有效期。多个 Campaign 可归入同一 **CampaignGroup**。
 _Avoid_: campaignBreakdown（已归并）
 
 **Campaign Hash ID** (campaignId):
@@ -150,7 +150,7 @@ Campaign 的全局唯一标识符，格式为 64 位 hex 哈希（如 `0x0cf07a3
 _Avoid_: campaignDatabaseId, dbId（已从 API 移除）
 
 **Campaign Database ID** (campaign.id):
-Merkl API 原始响应中 `campaign.id` 字段，数字型自增 ID，per-opportunity 局部唯一。仅在 fetcher 内部用于 Merit 动态信息查找（构建 Merit 页面 URL），不输出到 API。与 **Campaign Hash ID** 不同。
+Merkl API 原始响应中 `campaign.id` 字段，数字型自增 ID，per-opportunity 局部唯一。仅在 fetcher 内部使用 —— 作为 Merkl `/v4/campaigns/{id}` 的入参取 campaign 详情，不输出到 API。与 **Campaign Hash ID** 不同。
 _Avoid_: campaignId（Campaign Hash ID 才是 campaignId）
 
 **lastEndedCampaign**:
@@ -324,7 +324,7 @@ graph TD
     classDef removed fill:#ffcccc,stroke:#cc3333,stroke-dasharray: 5 5
     class Pool,ReserveV3,AaveOracle,LTV,LT,EMode,IsoMode v3
     class Hub,Spoke,Asset,ReserveV4,ExchangeRate,CF,CR,RP,THF v4
-    class IrModel,Incentive,Protocol,Merit,Merkl,Brevis,CampaignGroup,Campaign shared
+    class IrModel,Incentive,Protocol,Merkl,Brevis,CampaignGroup,Campaign shared
     class EMode,IsoMode removed
 ```
 

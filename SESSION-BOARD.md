@@ -66,7 +66,6 @@
 | 区域 | 典型文件 |
 |------|----------|
 | 数据获取主流程 | `src/index.ts` |
-| Merit 集成 | `src/merit-api.ts` |
 | Merkl 集成 | `src/merkl-api.ts` |
 | Brevis 集成 | `src/brevis-api.ts` |
 | 代币价格解析 | `src/token-price-resolver.ts`, `src/generated/coingecko-platform-by-chain-id.ts` |

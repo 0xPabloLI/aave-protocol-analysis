@@ -2,13 +2,13 @@
 
 ## 概述
 
-本文档描述了 Aave 市场数据服务的 API 接口和数据格式。服务提供 Aave V3 协议的市场数据，包括基础 APY、协议激励、Merit APR、Merkl APR 和 Brevis APR 等激励信息。
+本文档描述了 Aave 市场数据服务的 API 接口和数据格式。服务提供 Aave V3 协议的市场数据，包括基础 APY、协议激励、Merkl APR 和 Brevis APR 等激励信息。
 
 **相关**：Brevis Incentra 非核心参考（已删 client API、type/status 全表、REST 补证）见 [brevis-supplement.md](./brevis-supplement.md)。
 
 **收益率字段口径（重要）**：
 
-- **`GET /api/markets` 的 JSON 响应**：`supplyApy`、`borrowApy`、协议激励数组、Merit / Merkl / Brevis 等与收益率相关的数字均为 **百分数**（例如 `5.2` 表示 5.2%/年），由服务端在响应序列化时从内存中的 **年化比例（ratio）** 乘以 100 得到。
+- **`GET /api/markets` 的 JSON 响应**：`supplyApy`、`borrowApy`、协议激励数组、Merkl / Brevis 等与收益率相关的数字均为 **百分数**（例如 `5.2` 表示 5.2%/年），由服务端在响应序列化时从内存中的 **年化比例（ratio）** 乘以 100 得到。
 - **服务端内存快照、cron 合并路径、root fetcher 写入的 `data/runtime/*.json`（及同结构的中间数据）**：上述字段为 **比例**（例如 `0.052` = 5.2%/年）。依赖磁盘文件或内存结构的脚本/集成须按 ratio 读取，勿与 HTTP 响应混用。
 
 下文「数据模型」中的百分比说明 **指 `GET /api/markets` 对外 JSON**，除非另行注明。

@@ -4,7 +4,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-This project provides a backend service that uses the Aave TypeScript SDK and @bgd-labs/aave-address-book to fetch market data from all supported networks, and integrates Merit, Merkl, and Brevis incentive data. The service includes both a data fetcher and a REST API server.
+This project provides a backend service that uses the Aave TypeScript SDK and @bgd-labs/aave-address-book to fetch market data from all supported networks, and integrates Merkl and Brevis incentive data. The service includes both a data fetcher and a REST API server.
 
 ## 📋 Table of Contents
 

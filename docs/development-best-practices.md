@@ -15,7 +15,7 @@ General implementation and architecture practices. For detailed caching/TTL conf
 
 ### Runtime payload shaping (lean output)
 
-Data is built and enriched in `enrichDatasetWithIncentiveData()` which also handles nested field pruning inline (strips transient SDK fields from Merit/Merkl/Brevis sub-objects before writing to disk). There is no separate pruning pass — the single `RuntimeReserveData` type is the source of truth for both fetch output and API payload.
+Data is built and enriched in `enrichDatasetWithIncentiveData()` which also handles nested field pruning inline (strips transient SDK fields from Merkl/Brevis sub-objects before writing to disk). There is no separate pruning pass — the single `RuntimeReserveData` type is the source of truth for both fetch output and API payload.
 
 ## 2) API Design
 

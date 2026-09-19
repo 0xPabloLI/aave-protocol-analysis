@@ -5,7 +5,7 @@
 - **Agent harness 总览**: `docs/agents/harness.md` — 本地改编登记（相对 agent-harness core 的偏离与刻意不搬项，含 git 纪律刻意差异）。
 - Monorepo (npm workspaces) with four packages + backend:
   - `packages/aave-shared-contracts` — shared type definitions (`RuntimeReserveData`, `MarketsPayload`, `NetPositionConstraint`), field registry, validation
-  - `packages/aave-fetcher` — data aggregation (`fetchMarketsData`): Aave SDK + Merit + Merkl + Brevis
+  - `packages/aave-fetcher` — data aggregation (`fetchMarketsData`): Aave SDK + Merkl + Brevis
   - `packages/aave-shared-config` — static config constants
   - `packages/aave-rpc-infra` — RPC infrastructure (ProviderPool, Multicall3, V4 reserve fetch)
   - `backend/` — API server, in-memory snapshots (cron-write / API-read-only), DB is pure archive (0 SELECT)
