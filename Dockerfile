@@ -36,9 +36,6 @@ FROM node:24-slim
 # Pin npm for deterministic installs in this stage too
 RUN npm install -g npm@11.6.2
 
-# Install Playwright Chromium system dependencies
-RUN npx -y playwright install --with-deps chromium
-
 WORKDIR /app
 
 # Set production environment (also gates Console transport in logger)
