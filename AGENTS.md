@@ -44,7 +44,7 @@ Workspace-boundary rules (dependency direction, no dist imports) are enforced by
 - Backend coverage thresholds (c8, ratchet — **raise over time, never lower**): lines 53 / statements 53 / functions 60 / branches 80.
 - Fetcher tests run identically in CI and locally: `npm run test -w @internal/aave-fetcher` (no browser e2e suite remains after the Merit teardown, AAV-1289).
 - Flaky detection: weekly canary `.github/workflows/test-canary.yml` runs all suites with `RUN_API_FIELDS_TESTS=true` and records suite durations in the step summary. A canary failure that passes in hot-path CI = flaky signal.
-- Test file naming enforced by `npm run check:test-naming` (in `check:quality`): every test must live in a `tests/` dir and be named `*.test.ts` (runner globs never pick up anything else).
+- Test file naming enforced by `npm run check:test-naming` (in `check:quality`): every test must live in a `tests/` dir and be named `*.test.ts`. The check collects **every** test-like extension (`.mjs`, `.cjs`, `.js`, `.tsx`, …), so a test file the runner globs would never pick up is a violation rather than a silent no-op.
 
 ## Observability
 
@@ -65,7 +65,7 @@ Workspace-boundary rules (dependency direction, no dist imports) are enforced by
 ### Releases
 
 - Tag `vX.Y.Z` on the deploy branch and push the tag → `.github/workflows/release.yml` creates a GitHub Release with auto-generated notes for that commit.
-- Deployment remains manual (`railway up`, hard safety gate above) — the tag marks what shipped; deploy the tagged commit.
+- Pushing a tag does **not** deploy anything. Deployment is driven by the branch push (see Deployment) — the tag only records what shipped.
 
 ### Packages
 
@@ -81,45 +81,52 @@ Workspace-boundary rules (dependency direction, no dist imports) are enforced by
 - `npm run test -w aave-dashboard-backend` — backend tests
 - Log files: `backend/logs/error.log` (errors only), `backend/logs/combined.log` (all levels), rotated with suffixes (`error1.log`, `combined1.log`, etc.)
 
-## Deployment (Hard Safety Gate)
+## Deployment
 
-### ⛔ Before ANY deploy command, you MUST run `railway status` and verify:
+Deploys are **automatic**. Both environments are wired to Railway's GitHub app
+(`railway-app[bot]`); `railway up` is _not_ part of the normal flow.
 
-- The **linked service** is the one you intend to deploy to
-- If deploying the app → linked service MUST be `aave-protocol-analysis`
-- If the linked service is `Postgres-mDWG` → **STOP. Do NOT deploy.**
+| Branch push | Environment | Railway environment name | Public API                        |
+| ----------- | ----------- | ------------------------ | --------------------------------- |
+| `railway`   | staging     | `aaveapy / staging`      | `https://staging-api.aaveapy.com` |
+| `main`      | production  | `aaveapy / production`   | `https://api.aaveapy.com`         |
 
-### Two-service topology
+Chain: push → CI passes → Railway's "Wait for CI" releases the deploy → Railway
+deploys → `deployment_status` comes back → `.github/workflows/deployment-smoke-test.yml`
+runs as post-deploy verification (health, `/api/markets`, `/api/meta/side-data`,
+frontend), and rolls the deployment back via the Railway GraphQL API if a check
+fails.
 
-| Service                  | Type                  | Builder        | Deploy method                    |
-| ------------------------ | --------------------- | -------------- | -------------------------------- |
-| `aave-protocol-analysis` | App (Node.js)         | Dockerfile     | `railway up`                     |
-| `Postgres-mDWG`          | Database (PostgreSQL) | Template image | `railway redeploy --from-source` |
+- **Pushing to `railway` ships to staging.** A passing CI run is the only gate — there is no separate approval step.
+- **Pushing to `main` ships to production.** Verified 2026-09-19: all 15 production deployments in the repo's history are authored by `railway-app[bot]` and point at commits on `main`.
+- The `railway` CLI is **not installed** on the dev machine, and none of the above needs it. Verify a deploy by polling the public hosts (`/health` returns the deployed `commitSha`), not by running `railway status`.
+- `deployment_smoke` never verifying anything was a long-standing silent failure: the resolver matched `ref` against a branch name and `environment` against a bare `staging`/`production`, but Railway sends a commit SHA and `"<project> / <environment>"`. All 100 historical deployments resolved to "skip" while the job reported success (AAV-1294, fixed 2026-09-19). The skip path now emits a warning and a step summary, so a resolver miss can never look like a pass again.
 
-### App deploy
+### Manual `railway` CLI use (exceptional)
 
-```bash
-railway up --detach --service aave-protocol-analysis -m "commit message"
-```
+Only needed for out-of-band work — the normal path is a branch push. The
+two-service topology still applies:
 
-### DB redeploy (only when needed, e.g., after config change)
+| Service                  | Type                  | Builder        |
+| ------------------------ | --------------------- | -------------- |
+| `aave-protocol-analysis` | App (Node.js)         | Dockerfile     |
+| `Postgres-mDWG`          | Database (PostgreSQL) | Template image |
 
-```bash
-railway redeploy --service Postgres-mDWG --from-source -y
-```
+Before any manual deploy command, confirm the linked service is the one you
+intend — the CLI is not installed here, so this check is on you when you do
+install it. If the linked service is `Postgres-mDWG` → **STOP.**
 
-Do NOT use `railway up` for the database — it will push the app's Dockerfile build
-to the DB service, replacing PostgreSQL with a Node.js container.
+### ⚠️ Consequences of pushing app code to `Postgres-mDWG`
 
-### ⚠️ Consequences of deploying app code to Postgres-mDWG
-
-Service outage (DB replaced by Node.js container), recoverable via `railway redeploy --service Postgres-mDWG --from-source -y`. Data persists on the volume.
+Service outage (DB replaced by a Node.js container), recoverable via
+`railway redeploy --service Postgres-mDWG --from-source -y`. Data persists on the volume.
 
 ### Post-deploy verification
 
-- App healthcheck needs ~3min to warm up (oracle prices + market data fetch)
-- Verify: `railway status` → app should show `● Online`, DB should show `● Online`
-- Verify: `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}`
+- App healthcheck needs ~3min to warm up (oracle prices + market data fetch).
+- `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}` — the payload's `commitSha` tells you which commit is live.
+- `deployment-smoke-test.yml` runs the same checks automatically and opens a
+  `smoke-test-failure` issue if they fail.
 
 ## Session Workflow
 
