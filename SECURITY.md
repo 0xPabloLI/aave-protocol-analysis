@@ -22,11 +22,14 @@ declined, etc.
 
 ## Automated Review on Pull Requests
 
-Every pull request automatically receives two AI-assisted reviews via Factory
-Droid (`.github/workflows/droid-review.yml`):
+Pull requests receive AI-assisted reviews via Factory Droid
+(`.github/workflows/droid-review.yml`) when they are opened, marked ready for
+review, or reopened. Subsequent pushes to an open PR do not re-trigger the
+review, and reviews cannot run on PRs from forks (the workflow secret is
+unavailable there).
 
 - **Code review** — correctness and best-practice findings posted on the PR.
 - **Security review** — a STRIDE/OWASP-oriented reviewer examining the diff.
 
-Reviews run on non-draft PRs. To ask Droid a question or request a change at
-any time, comment `@droid` on the PR or issue.
+To ask Droid a question or request a change at any time, comment `@droid` on
+the PR or issue.
