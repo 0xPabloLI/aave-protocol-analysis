@@ -1,0 +1,4 @@
+# Factory Droid CI config - https://docs.factory.ai
+# Allow Renovate's dependency-update PRs to receive automated review.
+allowed_bots:
+  - renovate
