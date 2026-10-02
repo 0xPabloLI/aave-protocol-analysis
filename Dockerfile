@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM node:24-slim AS builder
+FROM node:24-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS builder
 
 WORKDIR /app
 
@@ -31,7 +31,7 @@ RUN mkdir -p backend/static
 RUN npm run build -w aave-dashboard-backend
 
 # Stage 2: Production
-FROM node:24-slim
+FROM node:24-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
 
 # Pin npm for deterministic installs in this stage too
 RUN npm install -g npm@11.6.2
