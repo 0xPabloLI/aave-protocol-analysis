@@ -20,7 +20,9 @@ test('renovate.json is valid JSON with required keys', () => {
 
 test('renovate targets the railway branch', () => {
   const config = JSON.parse(readConfig('renovate.json'));
-  assert.deepEqual(config.baseBranches, ['railway']);
+  // Renovate's onboarding normalizes `baseBranches` to `baseBranchPatterns`.
+  const branches = config.baseBranchPatterns ?? config.baseBranches;
+  assert.deepEqual(branches, ['railway']);
 });
 
 test('renovate enforces the 7-day dependency cool-down', () => {
