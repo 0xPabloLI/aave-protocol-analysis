@@ -60,7 +60,7 @@ Workspace-boundary rules (dependency direction, no dist imports) are enforced by
 ## Dependency Update Policy
 
 - Non-security dependency bumps must wait **≥ 7 days** after the version's release date before merging (supply-chain cool-down). Security/CVE fixes are exempt and merge as soon as green.
-- Dependabot opens the PRs (`.github/dependabot.yml`); `scripts/verify-doppler.sh` / audit gate still apply. When updating manually, check the release date before merging.
+- Renovate opens the PRs (`renovate.json` + Renovate GitHub App, targeting `railway`); `scripts/verify-doppler.sh` / audit gate still apply. Non-security bumps wait ≥ 7 days via `minimumReleaseAge`; security (OSV alert) fixes merge as soon as green. When updating manually, check the release date before merging.
 
 ### Releases
 

@@ -2,6 +2,8 @@
 
 ## 状态
 
+**Superseded (2026-10-02, PR #180)**：Proactive Audit Fix（层 3）已移除。`npm audit fix` 对本 repo 的 overrides 型传递依赖修复结构性无效（见 `ci-auto-remediation.yml` 的 escalation 说明），该 bot 自 2026-09-29 起每日失败。层 2 Dependabot 同时被 Renovate 取代（`renovate.json`：OSV vulnerability alerts + 每周 lockfile maintenance + `minimumReleaseAge: 7 days`）。层 1 的 `continue-on-error` 硬约束不受影响，继续有效；不可修复公告仍由 Security Moderate Report 每周追踪。以下为历史设计记录。
+
 Proposed
 
 ## 上下文

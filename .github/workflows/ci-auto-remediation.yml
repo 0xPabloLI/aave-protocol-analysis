@@ -4,11 +4,11 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    # Include dependabot/* so security PRs (e.g. path-to-regexp) trigger remediation too.
+    # Include renovate/* so Renovate PR branches trigger remediation too.
     branches:
       - main
       - railway
-      - dependabot/**
+      - renovate/**
   workflow_dispatch:
     inputs:
       branch:

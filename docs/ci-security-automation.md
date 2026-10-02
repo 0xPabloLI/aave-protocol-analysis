@@ -19,7 +19,7 @@ This ensures lock file changes are always included in commits, preventing local/
 
 ## GitHub Actions
 
-This repository has six related workflows:
+This repository has five related workflows:
 
 1. `CI` (`.github/workflows/ci.yml`)
    - Triggered by `push` and `pull_request`
@@ -50,7 +50,7 @@ This repository has six related workflows:
 4. `Auto Approve Remediation PR` (`.github/workflows/auto-approve-remediation-pr.yml`)
    - Triggered on bot PR updates (`pull_request_target`)
    - Applies policy checks per branch pattern:
-     - `bot/ci-auto-remediation-*` / `bot/proactive-audit-fix-*`: only `package.json`, `package-lock.json`, `backend/package.json`
+     - `bot/ci-auto-remediation-*`: only `package.json`, `package-lock.json`, `backend/package.json`
      - `bot/subgraph-sync-*`: only `docs/api/aave-subgraph-deployments.snapshot.json`
      - `bot/sync-coingecko-platform-map-*`: only `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts`
    - If policy passes:
@@ -58,15 +58,7 @@ This repository has six related workflows:
      - auto-merge is enabled (squash)
    - Result: bot PRs merge automatically after required CI checks pass
 
-5. `Proactive Audit Fix` (`.github/workflows/proactive-audit-fix.yml`)
-   - Triggered daily at 06:00 UTC (after Dependabot's 03:00 window) and manually
-   - Matrix runs on `main` and `railway` independently
-   - Attempts `npm audit fix --omit=dev`, then validates with full build + audit gate
-   - If validation passes and lockfile changed → creates PR (`bot/proactive-audit-fix-{branch}`)
-   - If validation fails → silent exit (unfixable vulns tracked by Security Moderate Report)
-   - Fills the reactive gap left by `continue-on-error: true` on `security-audit` (see ADR-0037)
-
-6. `Deployment Smoke Test` (`.github/workflows/deployment-smoke-test.yml`)
+5. `Deployment Smoke Test` (`.github/workflows/deployment-smoke-test.yml`)
    - Triggered via `deployment_status` when Railway reports a successful deployment on `main` / `railway`
    - **Not** triggered by `push` — avoids deadlock with Railway's "Wait for CI" (see below)
    - Runs right after Railway reports deploy success: resolve target from `deployment.ref` with fallback to deployment environment, then health check, `/api/markets` (≥50 reserves + snapshot), `/api/meta/side-data`, frontend accessibility (curl retries only; no long poll for `commitSha`)
@@ -97,7 +89,7 @@ The **goal** is the same as with tags—run a newer release—but you edit the *
    - API: `GET https://api.github.com/repos/<owner>/<repo>/commits/<tag>` and use the `sha` field (full 40 characters).
 3. Update every `uses: <owner>/<repo>@<old-sha> # …` in `.github/workflows/*.yml` to the new SHA and update the comment (e.g. `# v6` → `# v7`).
 
-**Dependabot**: this repo includes `package-ecosystem: github-actions` in `.github/dependabot.yml`. With `open-pull-requests-limit: 0` (same idea as for npm), **routine** version-update PRs for actions are suppressed; **security-related** updates may still arrive via Dependabot depending on GitHub’s classification. Do not rely only on Dependabot for feature upgrades of pinned actions—use the steps above when you intentionally bump versions.
+**Renovate**: `renovate.json` covers the `github-actions` manager (autodiscovered), so action-update PRs arrive via Renovate and are auto-merged when non-major (CI-green). Do not rely only on Renovate for feature upgrades of pinned actions—use the steps above when you intentionally bump versions.
 
 ### SHA pins vs tags only
 
@@ -112,9 +104,9 @@ The **goal** is the same as with tags—run a newer release—but you edit the *
 - Normal daily flow:
   - Push code -> `CI` runs automatically
   - Build failures block merge; audit failures are non-blocking (`continue-on-error`)
-- Proactive audit fix flow (daily):
-  - `Proactive Audit Fix` runs -> `npm audit fix` -> validates build + audit gate -> creates PR if safe
-  - `Auto Approve Remediation PR` auto-approves and enables auto-merge
+- Dependency update flow:
+  - Renovate opens update PRs against `railway` — vulnerability-alert fixes immediately, routine updates after the 7-day release age, weekly lockfile maintenance
+  - `Auto-merge Bot PRs` auto-approves non-major Renovate PRs and enables auto-merge; majors get a comment only
 - Reactive auto-fix flow (on CI build failure):
   - Failed `CI` on push -> `CI Auto Remediation` tries to fix -> opens PR if safe
   - `Auto Approve Remediation PR` auto-approves that PR and enables auto-merge
@@ -129,7 +121,7 @@ The **goal** is the same as with tags—run a newer release—but you edit the *
 In GitHub UI:
 
 - Open `Actions`
-- Select a workflow (`Security Moderate Report`, `CI Auto Remediation`, or `Proactive Audit Fix`)
+- Select a workflow (`Security Moderate Report` or `CI Auto Remediation`)
 - Click `Run workflow`
 
 ## Architecture Notes
@@ -182,7 +174,7 @@ Context fields come from `github.event.deployment.*` (not `github.sha` / `github
 
 1. `CI` workflow completes with `conclusion == 'failure'`
 2. The triggering event was `push` (not PR)
-3. Branch matches configured list (main, railway, dependabot/\*\*)
+3. Branch matches configured list (main, railway, renovate/\*\*)
 
 This prevents:
 
@@ -194,10 +186,9 @@ This prevents:
 
 The `continue-on-error: true` on `security-audit` in `ci.yml` is a **hard constraint** — see ADR-0037. Removing it reintroduces the auto-revert loop. Audit remediation is handled by a layered system:
 
-| Layer | Mechanism                               | Trigger                | Coverage                                            |
-| ----- | --------------------------------------- | ---------------------- | --------------------------------------------------- |
-| 1     | `continue-on-error` on `security-audit` | Every CI run           | Prevents audit from blocking PRs + auto-revert loop |
-| 2     | Dependabot                              | Weekly (Mon 03:00 UTC) | Direct dependency security updates                  |
-| 3     | Proactive Audit Fix                     | Daily (06:00 UTC)      | Transitive dependency security updates              |
-| 4     | CI Auto Remediation                     | CI build failure       | Other CI failures (build break, etc.)               |
-| 5     | Security Moderate Report                | Weekly (Mon 04:00 UTC) | Unfixable vulnerability tracking                    |
+| Layer | Mechanism                               | Trigger                | Coverage                                                    |
+| ----- | --------------------------------------- | ---------------------- | ----------------------------------------------------------- |
+| 1     | `continue-on-error` on `security-audit` | Every CI run           | Prevents audit from blocking PRs + auto-revert loop         |
+| 2     | Renovate (`renovate.json`)              | OSV alerts + weekly    | Dependency security + routine updates, lockfile maintenance |
+| 3     | CI Auto Remediation                     | CI build failure       | Other CI failures (build break, etc.)                       |
+| 4     | Security Moderate Report                | Weekly (Mon 04:00 UTC) | Unfixable vulnerability tracking                            |
