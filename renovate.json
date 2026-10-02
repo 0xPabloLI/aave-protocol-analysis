@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "osvVulnerabilityAlerts": true,
+  "baseBranches": ["railway"],
+  "labels": ["dependencies"],
+  "minimumReleaseAge": "7 days",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["on monday"]
+  },
+  "packageRules": [
+    {
+      "matchDepNames": ["@aave-dao/aave-address-book"],
+      "labels": ["dependencies", "address-book-upgrade"]
+    },
+    {
+      "matchDepNames": ["ethers"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ]
+}
