@@ -1,0 +1,191 @@
+name: Auto-merge Bot PRs
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  # Job 1: github-actions[bot] PRs (ci-remediation, subgraph-sync, coingecko-sync).
+  # (bot/proactive-audit-fix-* removed with the Renovate migration.)
+  approve-github-actions-pr:
+    if: >
+      github.event.pull_request.user.login == 'github-actions[bot]' &&
+      (
+        startsWith(github.event.pull_request.head.ref, 'bot/ci-auto-remediation-') ||
+        startsWith(github.event.pull_request.head.ref, 'bot/subgraph-sync-') ||
+        startsWith(github.event.pull_request.head.ref, 'bot/sync-coingecko-platform-map-')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Policy-check changed files, approve, and enable auto-merge
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.pull_request.number;
+            const branch = context.payload.pull_request.head.ref;
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: prNumber,
+              per_page: 100,
+            });
+
+            // Define allowed files per bot PR type
+            let allowed;
+            let policyLabel;
+
+            if (branch.startsWith('bot/ci-auto-remediation-')) {
+              allowed = new Set([
+                'package.json',
+                'package-lock.json',
+                'backend/package.json',
+              ]);
+              policyLabel = 'CI auto-remediation';
+            } else if (branch.startsWith('bot/subgraph-sync-')) {
+              allowed = new Set([
+                'docs/api/aave-subgraph-deployments.snapshot.json',
+              ]);
+              policyLabel = 'Subgraph sync';
+            } else if (branch.startsWith('bot/sync-coingecko-platform-map-')) {
+              allowed = new Set([
+                'packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts',
+              ]);
+              policyLabel = 'CoinGecko platform map sync';
+            } else {
+              core.setFailed(`Unknown bot branch pattern: ${branch}`);
+              return;
+            }
+
+            const disallowed = files
+              .map((file) => file.filename)
+              .filter((filename) => !allowed.has(filename));
+
+            if (disallowed.length > 0) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: [
+                  `${policyLabel} PR contains disallowed file changes.`,
+                  '',
+                  ...disallowed.map((name) => `- \`${name}\``),
+                  '',
+                  'Skipping auto-approval and auto-merge.',
+                ].join('\n'),
+              });
+              core.setFailed('Disallowed files found in bot PR');
+              return;
+            }
+
+            await github.rest.pulls.createReview({
+              owner,
+              repo,
+              pull_number: prNumber,
+              event: 'APPROVE',
+              body: `${policyLabel}: automated review passed policy checks.`,
+            });
+
+            // Retry enableAutoMerge — CI checks may still be pending ("unstable status")
+            const maxAttempts = 5;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              try {
+                await github.graphql(
+                  `
+                  mutation EnableAutoMerge($pullRequestId: ID!) {
+                    enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
+                      pullRequest { number }
+                    }
+                  }
+                  `,
+                  { pullRequestId: context.payload.pull_request.node_id }
+                );
+                core.info(`Auto-merge enabled on attempt ${attempt}`);
+                break;
+              } catch (error) {
+                if (attempt === maxAttempts) {
+                  core.warning(`Enable auto-merge failed after ${maxAttempts} attempts: ${error.message}`);
+                } else {
+                  core.info(`Attempt ${attempt} failed (${error.message}), retrying in 30s...`);
+                  await new Promise(r => setTimeout(r, 30000));
+                }
+              }
+            }
+
+  # Job 2: Renovate PRs — auto-approve + auto-merge non-major updates.
+  # Major updates get a comment only (manual review for breaking changes).
+  # The Renovate onboarding PR ("Configure Renovate") is skipped for human review.
+  approve-renovate-pr:
+    if: github.event.pull_request.user.login == 'renovate[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide policy from PR title
+        id: policy
+        run: |
+          title="${{ github.event.pull_request.title }}"
+          if [[ "$title" == *"Configure Renovate"* ]]; then
+            echo "action=skip" >> "$GITHUB_OUTPUT"
+          elif [[ "$title" == *"(major)"* ]]; then
+            echo "action=comment" >> "$GITHUB_OUTPUT"
+          else
+            echo "action=automerge" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment on major updates
+        if: steps.policy.outputs.action == 'comment'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: context.payload.pull_request.number,
+              body: '⚠️ **Major version bump detected** — skipping auto-merge. Please review manually for breaking changes.',
+            });
+
+      - name: Approve and enable auto-merge
+        if: steps.policy.outputs.action == 'automerge'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.pull_request.number;
+            await github.rest.pulls.createReview({
+              owner,
+              repo,
+              pull_number: prNumber,
+              event: 'APPROVE',
+              body: 'Renovate non-major update: auto-approved.',
+            });
+            const maxAttempts = 5;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              try {
+                await github.graphql(
+                  `
+                  mutation EnableAutoMerge($pullRequestId: ID!) {
+                    enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
+                      pullRequest { number }
+                    }
+                  }
+                  `,
+                  { pullRequestId: context.payload.pull_request.node_id }
+                );
+                core.info(`Auto-merge enabled on attempt ${attempt}`);
+                break;
+              } catch (error) {
+                if (attempt === maxAttempts) {
+                  core.warning(`Enable auto-merge failed after ${maxAttempts} attempts: ${error.message}`);
+                } else {
+                  core.info(`Attempt ${attempt} failed (${error.message}), retrying in 30s...`);
+                  await new Promise(r => setTimeout(r, 30000));
+                }
+              }
+            }
