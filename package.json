@@ -83,7 +83,7 @@
     "prettier": "^3.8.3",
     "syncpack": "^15.3.3",
     "ts-prune": "^0.10.3",
-    "tsx": "^4.0.0",
+    "tsx": "^4.20.5",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.70.0"
   }
