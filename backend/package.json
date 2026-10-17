@@ -28,7 +28,7 @@
     "@internal/aave-shared-contracts": "*",
     "@types/compression": "^1.8.1",
     "@types/pg": "^8.20.0",
-    "compression": "^1.8.1",
+    "compression": "^1.8.2",
     "cors": "^2.8.6",
     "dayjs": "^1.11.20",
     "dotenv": "^17.3.1",
