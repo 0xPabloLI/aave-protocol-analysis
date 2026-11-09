@@ -156,13 +156,15 @@ jobs:
       # Approve only — do NOT arm GitHub's native auto-merge here.
       # Renovate arms its own automerge (`renovate.json`: automerge=true,
       # platformAutomerge=false) and waits for green checks itself, so doing it
-      # here is redundant. It is also unsafe: `railway` declares no required
-      # status checks, so GitHub's merge gate has nothing to wait for and will
-      # merge a PR with failing CI. That is what happened on 2026-11-09 — this
-      # job armed auto-merge on the rebased renovate/pin-dependencies PR #186 at
-      # 11:16:36 (on its 4th retry, after CI had already failed at 11:15:11) and
-      # GitHub merged it at 11:17:16 carrying a lockfile `npm ci` rejects, which
-      # skipped the staging deploy for that commit.
+      # here would leave two merge controllers for one PR.
+      # That is what happened on 2026-11-09 — this job armed auto-merge on the
+      # rebased renovate/pin-dependencies PR #186 at 11:16:36 (on its 4th retry,
+      # after CI had already failed at 11:15:11) and GitHub merged it at
+      # 11:17:16 carrying a lockfile `npm ci` rejects, which skipped the staging
+      # deploy for that commit. `railway` now declares required status checks
+      # (build-and-prune, security-audit, socket-firewall, quality-gates), which
+      # would make the mutation safe — but Renovate still owns automerge, so
+      # this job must not re-introduce a second controller.
       - name: Approve
         if: steps.policy.outputs.action == 'automerge'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8

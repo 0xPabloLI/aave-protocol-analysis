@@ -61,15 +61,16 @@ test("renovate automerges non-major updates itself, not via platform auto-merge"
       "arm it (enablePullRequestAutoMerge is rejected with 'unstable status' " +
       "while CI is still running, and nothing retries afterwards)"
   );
-  // With platformAutomerge=true Renovate arms GitHub's native auto-merge. The
-  // Renovate docs warn that combination can merge a PR with failing tests
-  // unless at least one required status check exists on the base branch, and
-  // `railway` declares none (required_status_checks.contexts is empty). Leaving
-  // it false makes Renovate wait for green checks itself.
+  // With platformAutomerge=true Renovate arms GitHub's native auto-merge
+  // instead of waiting for green itself. Keep it false: arming depends on a
+  // GitHub mutation that has to land at the right moment, while Renovate's own
+  // automerge simply re-checks on every run. `railway` now declares required
+  // status checks (added 2026-11-09), so native auto-merge would no longer be
+  // unsafe — but it is still the less reliable of the two.
   assert.equal(
     config.platformAutomerge,
     false,
-    "platformAutomerge must be false while `railway` has no required status checks"
+    "Renovate should own automerge rather than arming GitHub's native one"
   );
 });
 
@@ -215,17 +216,22 @@ test("the Renovate job never arms GitHub's native auto-merge", () => {
 
   // Renovate arms its own automerge (automerge=true, platformAutomerge=false)
   // and waits for green checks itself, so arming GitHub's native auto-merge
-  // here is redundant — and unsafe. `railway` declares no required status
-  // checks, so GitHub's merge gate has nothing to wait for and merges PRs with
-  // failing CI. Verified 2026-11-09: this job armed auto-merge on the rebased
-  // renovate/pin-dependencies PR #186 at 11:16:36, on its 4th retry and after
-  // CI had already failed at 11:15:11; GitHub merged it at 11:17:16 with a
-  // lockfile `npm ci` rejects, and the staging deploy for that commit was
-  // skipped. The retry loop is what made it land — the first three attempts
-  // were still rejected with "unstable status".
+  // here would leave two merge controllers for one PR.
+  //
+  // Verified 2026-11-09: that was not a theoretical concern. This job armed
+  // auto-merge on the rebased renovate/pin-dependencies PR #186 at 11:16:36, on
+  // its 4th retry and after CI had already failed at 11:15:11; GitHub merged it
+  // at 11:17:16 with a lockfile `npm ci` rejects, and the staging deploy for
+  // that commit was skipped. The retry loop is what made it land — the first
+  // three attempts were rejected with "unstable status". At the time `railway`
+  // declared no required status checks, so the merge gate had nothing to wait
+  // for. Those checks now exist (build-and-prune, security-audit,
+  // socket-firewall, quality-gates), which would make the mutation safe — but
+  // Renovate still owns automerge, so this job must not re-introduce a second
+  // controller.
   assert.ok(
     !job.includes("enablePullRequestAutoMerge"),
-    "the Renovate job must not call enablePullRequestAutoMerge while " +
-      "`railway` has no required status checks"
+    "the Renovate job must not call enablePullRequestAutoMerge — Renovate " +
+      "owns automerge for its own PRs"
   );
 });
