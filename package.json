@@ -57,7 +57,7 @@
     "@internal/aave-fetcher": "1.0.0",
     "@internal/aave-shared-config": "1.0.0",
     "@internal/aave-shared-contracts": "1.0.0",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "ethers": "5.8.0"
   },
   "overrides": {
