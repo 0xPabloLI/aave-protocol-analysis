@@ -50,10 +50,10 @@ Additionally, `RAILWAY_GIT_COMMIT_SHA` is injected at deploy time (used by `/hea
 `COINGECKO_API_KEY`, `COINMARKETCAP_API_KEY` (different keys per environment)
 
 **LLM Integration:**
-`LLM_API_KEY`, `LLM_BASE_URL`, `OPENROUTER_API_KEY`
+`LLM_API_KEY`, `LLM_BASE_URL` (SiliconFlow, `https://api.siliconflow.cn/v1`)
 
 **Google Search Console (SEO):**
-`GSC_SA_EMAIL`, `GSC_SA_PRIVATE_KEY`, `GSC_CLIENT_EMAIL`, `GSC_PRIVATE_KEY`, `GSC_SITE_URL`
+`GSC_SA_EMAIL`, `GSC_SA_PRIVATE_KEY`, `GSC_SITE_URL`
 
 **GitHub Integration:**
 `GITHUB_ACTIONS_TOKEN`, `GITHUB_REPOSITORY`
@@ -83,7 +83,25 @@ Additionally, `RAILWAY_GIT_COMMIT_SHA` is injected at deploy time (used by `/hea
 
 **Merge rule:** Always use **merge commit** (never squash) when merging railway → main. Squash creates a new SHA that breaks commit history alignment between branches, causing future PRs to include hundreds of "duplicate" commits.
 
-**Variable changes:** Setting Railway env vars via CLI or UI triggers a redeploy automatically. Railway reference variables (e.g. `${{Postgres.DATABASE_URL}}`) can only be set via the Railway UI, not the CLI.
+**Variable changes:** Setting Railway env vars via CLI or UI triggers a redeploy automatically. **Deleting** a variable does _not_ trigger one (observed 2026-11-09). Railway reference variables (e.g. `${{Postgres.DATABASE_URL}}`) can only be set via the Railway UI, not the CLI.
+
+⚠️ **`DATABASE_URL` is a literal value, not a reference variable** (verified 2026-11-09 via GraphQL `variables()` — the raw template contains no `${{ }}`). It does **not** follow the Postgres service's own `DATABASE_URL`, so a password rotation requires updating it here by hand. See `railway-postgres-operations.md`.
+
+### Dead variables removed 2026-11-09
+
+These were present in both environments but had **zero runtime consumers** and were deleted:
+
+`OPENROUTER_API_KEY` (OpenRouter integration removed in ADR-0023), `MERIT_ALLOW_LOCAL_PLAYWRIGHT`, `RENDER_SERVICE_URL` (only referenced by the deleted `merit-api` / `cloudflare-browser` modules), `GSC_CLIENT_EMAIL`, `GSC_PRIVATE_KEY` (only ever in docs), `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_BROWSER_RENDERING_TOKEN`, `CLOUDFLARE_WORKER_URL` (the `cloudflareWorkerConfig` export in `packages/aave-fetcher/src/config.ts` is never imported; `cloudflare-browser.ts` was deleted).
+
+### Database public access (staging) — kept ON, deliberate
+
+Staging `Postgres-15fr` has **Public Access enabled** (reachable via the Railway TCP proxy; `DATABASE_PUBLIC_URL` exists on the service).
+
+- **Why it stays on:** the daily backup (`db-backup.yml`) runs on a GitHub-hosted runner and `pg_dump`s through `DATABASE_URL_PUBLIC_STAGING`. GitHub runners are outside Railway's private network, so they cannot reach `postgres-15fr.railway.internal`.
+- **Why not Railway's own backups:** the workspace is on the **hobby** plan, whose limits report `volumes.maxBackupsCount: 0` — native volume backups are unavailable. The R2-based workflow exists to fill that gap using Cloudflare's free tier.
+- **Accepted risk (2026-11-09):** the staging DB holds only public on-chain market data, no user PII. The password is the sole gate on the public proxy.
+- **Compensating controls:** password rotated 2026-11-09; `sslmode=require`; no other consumer uses the public URL.
+- **To revisit:** closing public access requires replacing the backup path (e.g. an in-project Railway cron service that can reach the private network) — not a config toggle.
 
 ## 5. Adding a New Variable
 

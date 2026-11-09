@@ -99,7 +99,7 @@ fails.
 
 - **Pushing to `railway` ships to staging.** A passing CI run is the only gate — there is no separate approval step.
 - **Pushing to `main` ships to production.** Verified 2026-09-19: all 15 production deployments in the repo's history are authored by `railway-app[bot]` and point at commits on `main`.
-- The `railway` CLI is **not installed** on the dev machine, and none of the above needs it. Verify a deploy by polling the public hosts (`/health` returns the deployed `commitSha`), not by running `railway status`.
+- The `railway` CLI **is** installed on the dev machine (v4.61.1) but none of the above needs it. Verify a deploy by polling the public hosts (`/health` returns the deployed `commitSha`), not by running `railway status` — polling works even when the CLI session is stale.
 - `deployment_smoke` never verifying anything was a long-standing silent failure: the resolver matched `ref` against a branch name and `environment` against a bare `staging`/`production`, but Railway sends a commit SHA and `"<project> / <environment>"`. All 100 historical deployments resolved to "skip" while the job reported success (AAV-1294, fixed 2026-09-19). The skip path now emits a warning and a step summary, so a resolver miss can never look like a pass again.
 
 ### Manual `railway` CLI use (exceptional)
@@ -110,16 +110,16 @@ two-service topology still applies:
 | Service                  | Type                  | Builder        |
 | ------------------------ | --------------------- | -------------- |
 | `aave-protocol-analysis` | App (Node.js)         | Dockerfile     |
-| `Postgres-mDWG`          | Database (PostgreSQL) | Template image |
+| `Postgres-15fr`          | Database (PostgreSQL) | Template image |
 
 Before any manual deploy command, confirm the linked service is the one you
-intend — the CLI is not installed here, so this check is on you when you do
-install it. If the linked service is `Postgres-mDWG` → **STOP.**
+intend — a stale or wrong link sends app code to the database. If the linked
+service is `Postgres-15fr` → **STOP.**
 
-### ⚠️ Consequences of pushing app code to `Postgres-mDWG`
+### ⚠️ Consequences of pushing app code to `Postgres-15fr`
 
 Service outage (DB replaced by a Node.js container), recoverable via
-`railway redeploy --service Postgres-mDWG --from-source -y`. Data persists on the volume.
+`railway redeploy --service Postgres-15fr --from-source -y`. Data persists on the volume.
 
 ### Post-deploy verification
 
