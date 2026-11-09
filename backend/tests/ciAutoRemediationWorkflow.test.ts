@@ -35,8 +35,11 @@ function stepBlocks(yaml: string): string[] {
 /**
  * A line that actually invokes npm, as opposed to prose that mentions a command.
  * Prose lines start with `echo`/`#` and therefore never match.
+ *
+ * `install -g npm@` is included deliberately: the pin step is the first npm
+ * command in the job, so an unguarded failure there aborts everything after it.
  */
-const NPM_COMMAND = /^\s*(?:run:\s*)?npm (?:ci|audit fix)\b/;
+const NPM_COMMAND = /^\s*(?:run:\s*)?npm (?:ci|audit fix|install -g npm@)\b/;
 
 test("remediation workflow pins npm to the same version as ci.yml", () => {
   const pin = /npm install -g npm@([\d.]+)/;
@@ -94,6 +97,44 @@ test("every npm command in the remediation workflow tolerates failure", () => {
     offenders,
     [],
     `these steps run npm without continue-on-error: ${offenders.join(", ")}`
+  );
+});
+
+test("escalation path is reachable even when an earlier step fails", () => {
+  const steps = stepBlocks(readConfig(REMEDIATION_WORKFLOW));
+  // GitHub implicitly ANDs a bare `if` with `success()`. Without an explicit
+  // `!cancelled()`, a failure in any earlier step that lacks its own
+  // continue-on-error skips this entire path — and because the job carries
+  // job-level continue-on-error, the run still reports success, so the lost
+  // escalation is invisible. Each step here must opt out of that implicit gate.
+  for (const name of [
+    "Classify remediation failure",
+    "Read audit output for escalation",
+    "Escalate via issue when remediation fails",
+  ]) {
+    const step = steps.find((block) => block.includes(name));
+    assert.ok(step, `${name} step not found`);
+    assert.ok(
+      step.includes("!cancelled()"),
+      `${name} must gate on !cancelled() so an earlier failure cannot skip it`
+    );
+  }
+});
+
+test("classifier distinguishes a failed npm pin from a failed install", () => {
+  const step = stepBlocks(readConfig(REMEDIATION_WORKFLOW)).find((block) =>
+    block.includes("Classify remediation failure")
+  );
+  assert.ok(step, "classifier step not found");
+  // Without this branch a registry outage is reported as a lockfile problem,
+  // sending the reader to regenerate a lockfile that was never at fault.
+  assert.ok(
+    step.includes("steps.npm-pin.outcome"),
+    "classifier must name a failed npm pin separately"
+  );
+  assert.ok(
+    step.includes("steps.install.outcome"),
+    "classifier must still handle a failed install"
   );
 });
 
