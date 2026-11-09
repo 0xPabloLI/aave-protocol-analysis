@@ -61,6 +61,8 @@ Workspace-boundary rules (dependency direction, no dist imports) are enforced by
 
 - Non-security dependency bumps must wait **≥ 7 days** after the version's release date before merging (supply-chain cool-down). Security/CVE fixes are exempt and merge as soon as green.
 - Renovate opens the PRs (`renovate.json` + Renovate GitHub App, targeting `railway`); `scripts/verify-doppler.sh` / audit gate still apply. Non-security bumps wait ≥ 7 days via `minimumReleaseAge`; security (OSV alert) fixes merge as soon as green. When updating manually, check the release date before merging. Renovate merges non-major updates itself once CI is green (`automerge: true`, `platformAutomerge: false` — `railway` declares no required status checks, so GitHub-native auto-merge is not safe there); majors get a comment and wait for a human.
+- ⚠️ **Renovate reads `renovate.json` from the default branch (`main`), not from `railway`** — `baseBranchPatterns: ["railway"]` only sets where it opens PRs. A config edit on `railway` therefore has **no effect** until it reaches `main`; verified 2026-11-09, when a Renovate run at 12:13 still reported "Automerge: Disabled by config" on every PR despite the change being on `railway` since ~12:05.
+- Automerge is deliberately limited to update types whose release age Renovate can check (`major`/`minor`/`patch`/`digest`/`pinDigest`, and majors are excluded anyway). `lockFileMaintenance`, `lockfileUpdate`, `pin`, `replacement`, `bump` and `rollback` carry no release timestamp, so the ≥ 7-day cool-down cannot be enforced on them and they wait for a human. Do not widen automerge to cover them — `backend/tests/renovate-config.test.ts` fails if either list drifts.
 
 ### Releases
 
