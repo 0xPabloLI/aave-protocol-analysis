@@ -189,6 +189,8 @@ push → CI (push-triggered, Railway waits for this)
 
 Context fields come from `github.event.deployment.*` (not `github.sha` / `github.ref_name`). The workflow gates on `deployment_status.state == 'success'`, then resolves target branch/environment from `deployment.ref` with fallback to `deployment.environment` so commit-SHA deployments do not skip smoke tests when `ref` is empty.
 
+⚠️ **A failed check suite does not hold the deploy — it cancels it.** Railway reads each workflow run's conclusion, and a single `failure` on the commit moves the deployment straight to `SKIPPED` (`reason=deploy`), leaving the previous commit serving traffic. This is silent: `/health` still returns `status: ok`, just with the old `commitSha`. Observed 2026-11-09, when Dependabot's `elliptic`/`minimatch` security-update run failed on the `railway` → `main` merge `5e6b87b`. Recovery and diagnosis steps: `docs/operations/railway-environment-config.md` §4.
+
 ### Workflow Run Trigger Conditions
 
 `ci-auto-remediation.yml` only triggers when:
@@ -213,3 +215,5 @@ The `continue-on-error: true` on `security-audit` in `ci.yml` is a **hard constr
 | 2     | Renovate (`renovate.json`)              | OSV alerts + weekly    | Dependency security + routine updates, lockfile maintenance |
 | 3     | CI Auto Remediation                     | CI build failure       | Other CI failures (build break, etc.)                       |
 | 4     | Security Moderate Report                | Weekly (Mon 04:00 UTC) | Unfixable vulnerability tracking                            |
+
+**Dependabot security updates are disabled** (repo setting, 2026-11-09). The toggle outlived the Renovate migration but had nothing left to do: both remaining alerts (`elliptic`, `minimatch`) have no fix path, so Dependabot could not open a PR — it could only fail a workflow run on every push to `main`, which made Railway skip the production deploy (see "A failed check suite does not hold the deploy" above). Dependabot **alerts** remain enabled for visibility; Renovate is the update path. Unfixable advisories are tracked by layer 4, which reads `npm audit`, not the Dependabot API.

@@ -87,6 +87,29 @@ Additionally, `RAILWAY_GIT_COMMIT_SHA` is injected at deploy time (used by `/hea
 
 ⚠️ **`DATABASE_URL` is a literal value, not a reference variable** (verified 2026-11-09 via GraphQL `variables()` — the raw template contains no `${{ }}`). It does **not** follow the Postgres service's own `DATABASE_URL`, so a password rotation requires updating it here by hand. See `railway-postgres-operations.md`.
 
+### Deploy skipped by "Wait for CI"
+
+Both branch triggers run with **Wait for CI** enabled (`checkSuites: true`). Railway holds a new deployment until every GitHub Actions workflow run on the commit has finished — and **one failed run skips the deployment immediately** instead of merely delaying it.
+
+Observed 2026-11-09 on the `railway` → `main` merge `5e6b87b`: 26 seconds after the push, Dependabot's security-update run failed (`elliptic` and `minimatch` — both advisories have no fix path), and Railway recorded `SKIPPED 5e6b87b reason=deploy` roughly 25 minutes later. The merge itself was healthy; only the deploy was dropped, and silently — `/health` kept answering `status: ok` with the _previous_ `commitSha`.
+
+**Root cause removed 2026-11-09:** repo-level `dependabot_security_updates` is now **disabled**. That toggle had survived the Renovate migration while Dependabot could no longer open any PR (no fix path for either remaining alert), leaving it with nothing to do but fail on every push to `main`. Renovate (`renovate.json`, `osvVulnerabilityAlerts`) is the sole dependency-security update path; Dependabot **alerts** stay enabled for visibility.
+
+**Recovering a skipped deploy** (applies to any failing workflow run, not just Dependabot):
+
+```bash
+# 1. Confirm the skip and which commit should have shipped
+railway deployment list --service b0f24c39-38f2-41a4-9d64-0291282dda52 --environment 5d5ddcf3-aa4a-49ac-b7a8-1faf26b90bb3
+
+# 2. Deploy the latest commit from the configured source
+railway redeploy --service b0f24c39-38f2-41a4-9d64-0291282dda52 --environment 5d5ddcf3-aa4a-49ac-b7a8-1faf26b90bb3 --from-source -y
+
+# 3. Verify the live SHA (health needs ~3 min to warm up)
+curl -s https://api.aaveapy.com/health
+```
+
+**Finding the failing run:** `gh api "repos/0xPabloLI/aave-protocol-analysis/actions/runs?head_sha=<sha>"` and look for a non-`success` conclusion. Railway evaluates only GitHub Actions workflow runs — other GitHub apps are out of scope.
+
 ### Dead variables removed 2026-11-09
 
 These were present in both environments but had **zero runtime consumers** and were deleted:

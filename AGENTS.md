@@ -97,6 +97,13 @@ runs as post-deploy verification (health, `/api/markets`, `/api/meta/side-data`,
 frontend), and rolls the deployment back via the Railway GraphQL API if a check
 fails.
 
+⚠️ **A failed workflow run on the commit does not hold the deploy — it skips it.**
+Railway marks the deployment `SKIPPED` (`reason=deploy`) and the previous commit keeps
+serving, with `/health` still reporting `status: ok`. Verified 2026-11-09: a Dependabot
+security-update run failed on the `railway` → `main` merge `5e6b87b` and production never
+moved. Always confirm the deployed `commitSha` after a `main` push; recovery steps are in
+`docs/operations/railway-environment-config.md` §4.
+
 - **Pushing to `railway` ships to staging.** A passing CI run is the only gate — there is no separate approval step.
 - **Pushing to `main` ships to production.** Verified 2026-09-19: all 15 production deployments in the repo's history are authored by `railway-app[bot]` and point at commits on `main`.
 - The `railway` CLI **is** installed on the dev machine (v4.61.1) but none of the above needs it. Verify a deploy by polling the public hosts (`/health` returns the deployed `commitSha`), not by running `railway status` — polling works even when the CLI session is stale.
