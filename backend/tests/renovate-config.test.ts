@@ -11,6 +11,25 @@ function readConfig(path: string): string {
   return readFileSync(resolve(ROOT, path), "utf-8");
 }
 
+// Update types that carry no release timestamp, so `minimumReleaseAge` cannot
+// be enforced for them. Kept in sync with the `unsupportedUpdateTypeRules`
+// carve-outs in Renovate's `lib/config/presets/internal/security.preset.ts`,
+// which the docs require to match the ❌ rows of
+// https://docs.renovatebot.com/key-concepts/minimum-release-age/
+//
+// Two consequences, and both are asserted below: the cool-down rule must not
+// match these (it would re-impose an age requirement they can never satisfy,
+// and the update would silently stop being raised at all), and automerge must
+// not cover them (nothing would enforce the ≥7-day supply-chain cool-down).
+const NO_RELEASE_TIMESTAMP_UPDATE_TYPES = [
+  "lockFileMaintenance",
+  "lockfileUpdate",
+  "pin",
+  "replacement",
+  "bump",
+  "rollback",
+];
+
 test("renovate.json is valid JSON with required keys", () => {
   const config = JSON.parse(readConfig("renovate.json"));
   assert.ok(config.$schema);
@@ -102,18 +121,41 @@ test("the npm cool-down override keeps the preset's unsupported-update-type opt-
     Array.isArray(rule.matchUpdateTypes),
     "the npm cool-down rule must declare matchUpdateTypes"
   );
-  const unsupportedUpdateTypes = [
-    "lockFileMaintenance",
-    "replacement",
-    "pin",
-    "bump",
-    "lockfileUpdate",
-    "rollback",
-  ];
-  for (const updateType of unsupportedUpdateTypes) {
+  for (const updateType of NO_RELEASE_TIMESTAMP_UPDATE_TYPES) {
     assert.ok(
       !rule.matchUpdateTypes.includes(updateType),
       `the npm cool-down rule must not match ${updateType} (no release timestamp to check)`
+    );
+  }
+});
+
+test("automerge is disabled for every update type the cool-down cannot cover", () => {
+  const config = JSON.parse(readConfig("renovate.json"));
+  // The cool-down rule above deliberately skips update types that carry no
+  // release timestamp. Repo-wide `automerge: true` would otherwise merge those
+  // unattended, with nothing enforcing the ≥7-day cool-down that AGENTS.md
+  // requires — the update would land as soon as CI went green.
+  //
+  // Verified 2026-11-09: this is live, not theoretical. PRs #190 and #192
+  // changed *only* package-lock.json (lockfileUpdate — the `-lockfile` branch
+  // suffix is added by the default branchTopic template when isLockfileUpdate
+  // is true), and their target versions were 4.50 and 6.74 days old
+  // (@aave-dao/aave-address-book@4.76.1 and express-rate-limit@8.7.3).
+  const rule = config.packageRules.find(
+    (r: { matchUpdateTypes?: string[]; automerge?: boolean }) =>
+      r.automerge === false &&
+      r.matchUpdateTypes?.includes("lockFileMaintenance")
+  );
+  assert.ok(
+    rule,
+    "a packageRule must set automerge:false for update types that carry no " +
+      "release timestamp, so the cool-down cannot be bypassed"
+  );
+  for (const updateType of NO_RELEASE_TIMESTAMP_UPDATE_TYPES) {
+    assert.ok(
+      rule.matchUpdateTypes.includes(updateType),
+      `automerge must be disabled for ${updateType} (no release timestamp to ` +
+        "check against the 7-day cool-down)"
     );
   }
 });

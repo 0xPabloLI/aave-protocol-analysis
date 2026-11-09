@@ -30,6 +30,18 @@
     {
       "matchUpdateTypes": ["major"],
       "automerge": false
+    },
+    {
+      "description": "Automerge only where the 7-day cool-down can be enforced: Renovate has no release timestamp for these update types, so it cannot check the release age and must not merge them unattended.",
+      "matchUpdateTypes": [
+        "lockFileMaintenance",
+        "lockfileUpdate",
+        "pin",
+        "replacement",
+        "bump",
+        "rollback"
+      ],
+      "automerge": false
     }
   ]
 }
