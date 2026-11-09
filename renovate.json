@@ -5,6 +5,9 @@
   "baseBranchPatterns": ["railway"],
   "labels": ["dependencies"],
   "minimumReleaseAge": "7 days",
+  "automerge": true,
+  "platformAutomerge": false,
+  "postUpdateOptions": ["npmInstallTwice"],
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["on monday"]
@@ -18,6 +21,15 @@
       "matchDepNames": ["ethers"],
       "matchUpdateTypes": ["major"],
       "enabled": false
+    },
+    {
+      "matchDatasources": ["npm"],
+      "matchUpdateTypes": ["major", "minor", "patch", "digest", "pinDigest"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "automerge": false
     }
   ]
 }

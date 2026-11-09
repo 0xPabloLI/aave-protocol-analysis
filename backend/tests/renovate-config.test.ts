@@ -33,6 +33,91 @@ test("renovate enforces the 7-day dependency cool-down", () => {
   assert.equal(config.minimumReleaseAge, "7 days");
 });
 
+test("renovate automerges non-major updates itself, not via platform auto-merge", () => {
+  const config = JSON.parse(readConfig("renovate.json"));
+  assert.equal(
+    config.automerge,
+    true,
+    "Renovate must own automerge — the GitHub Actions workflow could never " +
+      "arm it (enablePullRequestAutoMerge is rejected with 'unstable status' " +
+      "while CI is still running, and nothing retries afterwards)"
+  );
+  // With platformAutomerge=true Renovate arms GitHub's native auto-merge. The
+  // Renovate docs warn that combination can merge a PR with failing tests
+  // unless at least one required status check exists on the base branch, and
+  // `railway` declares none (required_status_checks.contexts is empty). Leaving
+  // it false makes Renovate wait for green checks itself.
+  assert.equal(
+    config.platformAutomerge,
+    false,
+    "platformAutomerge must be false while `railway` has no required status checks"
+  );
+});
+
+test("major updates are excluded from automerge", () => {
+  const config = JSON.parse(readConfig("renovate.json"));
+  const rule = config.packageRules.find(
+    (r: { matchUpdateTypes?: string[]; automerge?: boolean }) =>
+      r.matchUpdateTypes?.includes("major") && r.automerge === false
+  );
+  assert.ok(
+    rule,
+    "a packageRule must set automerge:false for major updates (breaking changes need review)"
+  );
+});
+
+test("renovate runs npm install twice so its lockfile survives npm ci", () => {
+  const config = JSON.parse(readConfig("renovate.json"));
+  // npm sometimes writes a lockfile that its own `npm ci` rejects — observed
+  // 2026-11-09, when the renovate/pin-dependencies branch omitted the hoisted
+  // node_modules/@emnapi/wasi-threads entry and `npm ci` failed with
+  // "Missing: @emnapi/wasi-threads@1.2.3 from lock file".
+  // https://docs.renovatebot.com/modules/manager/npm/#invalid-lock-file-npm-ci-fails
+  assert.ok(
+    config.postUpdateOptions?.includes("npmInstallTwice"),
+    "postUpdateOptions must include npmInstallTwice"
+  );
+});
+
+test("the npm cool-down override keeps the preset's unsupported-update-type opt-outs", () => {
+  const config = JSON.parse(readConfig("renovate.json"));
+  // config:best-practices pulls in security:minimumReleaseAgeNpm, which sets
+  // minimumReleaseAge: '3 days' for npm *inside a packageRule*. Renovate merges
+  // matching packageRules in order and applies them after the top-level config,
+  // so the repo's own top-level `minimumReleaseAge` does not win; this rule is
+  // what restores the documented 7-day policy.
+  const rule = config.packageRules.find(
+    (r: { matchDatasources?: string[]; minimumReleaseAge?: string }) =>
+      r.matchDatasources?.includes("npm") && r.minimumReleaseAge
+  );
+  assert.ok(rule, "an npm packageRule must pin minimumReleaseAge to 7 days");
+  assert.equal(rule.minimumReleaseAge, "7 days");
+
+  // The preset also sets minimumReleaseAge: null for update types that carry no
+  // release timestamp. Those opt-out rules sit earlier in the array, so an
+  // *unscoped* npm rule here would override them and re-impose an age
+  // requirement those update types can never satisfy — lock file maintenance
+  // would silently stop being raised at all. The rule must stay scoped.
+  assert.ok(
+    Array.isArray(rule.matchUpdateTypes),
+    "the npm cool-down rule must declare matchUpdateTypes"
+  );
+  const unsupportedUpdateTypes = [
+    "lockFileMaintenance",
+    "replacement",
+    "pin",
+    "bump",
+    "lockfileUpdate",
+    "rollback",
+  ];
+  for (const updateType of unsupportedUpdateTypes) {
+    assert.ok(
+      !rule.matchUpdateTypes.includes(updateType),
+      `the npm cool-down rule must not match ${updateType} (no release timestamp to check)`
+    );
+  }
+});
+
 test("address-book upgrade rule is present with its label", () => {
   const config = JSON.parse(readConfig("renovate.json"));
   const rule = config.packageRules.find((r: { matchDepNames?: string[] }) =>
