@@ -120,9 +120,7 @@ jobs:
               }
             }
 
-  # Job 2: Renovate PRs — auto-approve non-major updates.
-  # Renovate merges them itself once checks pass (see the note on the Approve
-  # step below); this job only records the approval.
+  # Job 2: Renovate PRs — auto-approve + auto-merge non-major updates.
   # Major updates get a comment only (manual review for breaking changes).
   # The Renovate onboarding PR ("Configure Renovate") is skipped for human review.
   approve-renovate-pr:
@@ -153,17 +151,7 @@ jobs:
               body: '⚠️ **Major version bump detected** — skipping auto-merge. Please review manually for breaking changes.',
             });
 
-      # Approve only — do NOT arm GitHub's native auto-merge here.
-      # Renovate arms its own automerge (`renovate.json`: automerge=true,
-      # platformAutomerge=false) and waits for green checks itself, so doing it
-      # here is redundant. It is also unsafe: `railway` declares no required
-      # status checks, so GitHub's merge gate has nothing to wait for and will
-      # merge a PR with failing CI. That is what happened on 2026-11-09 — this
-      # job armed auto-merge on the rebased renovate/pin-dependencies PR #186 at
-      # 11:16:36 (on its 4th retry, after CI had already failed at 11:15:11) and
-      # GitHub merged it at 11:17:16 carrying a lockfile `npm ci` rejects, which
-      # skipped the staging deploy for that commit.
-      - name: Approve
+      - name: Approve and enable auto-merge
         if: steps.policy.outputs.action == 'automerge'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
@@ -177,3 +165,27 @@ jobs:
               event: 'APPROVE',
               body: 'Renovate non-major update: auto-approved.',
             });
+            const maxAttempts = 5;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              try {
+                await github.graphql(
+                  `
+                  mutation EnableAutoMerge($pullRequestId: ID!) {
+                    enablePullRequestAutoMerge(input: { pullRequestId: $pullRequestId, mergeMethod: SQUASH }) {
+                      pullRequest { number }
+                    }
+                  }
+                  `,
+                  { pullRequestId: context.payload.pull_request.node_id }
+                );
+                core.info(`Auto-merge enabled on attempt ${attempt}`);
+                break;
+              } catch (error) {
+                if (attempt === maxAttempts) {
+                  core.warning(`Enable auto-merge failed after ${maxAttempts} attempts: ${error.message}`);
+                } else {
+                  core.info(`Attempt ${attempt} failed (${error.message}), retrying in 30s...`);
+                  await new Promise(r => setTimeout(r, 30000));
+                }
+              }
+            }
