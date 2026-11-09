@@ -98,8 +98,13 @@ Observed 2026-11-09 on the `railway` → `main` merge `5e6b87b`: 26 seconds afte
 **Recovering a skipped deploy** (applies to any failing workflow run, not just Dependabot):
 
 ```bash
-# 1. Confirm the skip and which commit should have shipped
-railway deployment list --service b0f24c39-38f2-41a4-9d64-0291282dda52 --environment 5d5ddcf3-aa4a-49ac-b7a8-1faf26b90bb3
+# 1. Confirm the skip and which commit should have shipped.
+#    The default table output shows only id/status/time — no commit — so ask for
+#    JSON. A skipped deployment carries meta.reason=deploy and still records the
+#    commit it was meant to ship.
+railway deployment list --service b0f24c39-38f2-41a4-9d64-0291282dda52 \
+  --environment 5d5ddcf3-aa4a-49ac-b7a8-1faf26b90bb3 --json \
+  | jq -r '.[] | "\(.status)\t\((.meta.commitHash // "-")[0:7])\t\(.createdAt)\t\(.meta.reason // "-")"'
 
 # 2. Deploy the latest commit from the configured source
 railway redeploy --service b0f24c39-38f2-41a4-9d64-0291282dda52 --environment 5d5ddcf3-aa4a-49ac-b7a8-1faf26b90bb3 --from-source -y
