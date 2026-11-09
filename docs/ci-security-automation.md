@@ -17,6 +17,27 @@ This repo uses `pre-commit` and `pre-push` hooks that run `npm run ci:remote`. O
 
 This ensures lock file changes are always included in commits, preventing local/CI audit result drift.
 
+### Security Scanner Gates (pre-push only)
+
+`.husky/pre-push` runs two blocking scanners that have **no CI counterpart** — they gate the local push, not the merge:
+
+| Gate          | Command                                          | Blocks on                           |
+| ------------- | ------------------------------------------------ | ----------------------------------- |
+| `osv-scanner` | `osv-scanner --lockfile package-lock.json`       | Any advisory not in `OSV_ALLOWLIST` |
+| `semgrep`     | `semgrep scan --config p/default src/ packages/` | Any finding                         |
+
+Because the osv-scanner gate has no CI counterpart, an advisory it cannot resolve would block every push indefinitely. `OSV_ALLOWLIST` in `.husky/pre-push` exists for that case; each entry carries its justification inline. Current entries:
+
+| GHSA                  | Package     | Why allowlisted                                                   |
+| --------------------- | ----------- | ----------------------------------------------------------------- |
+| `GHSA-848j-6mx2-7j84` | `elliptic`  | No upstream fix; reaches us via `ethers@5`.                       |
+| `GHSA-3g3m-2fjr-6pw4` | `glob`      | dev-only; latest parents still pin `^13.0.6`, the fix is a major. |
+| `GHSA-g3hv-75wg-m249` | `minimatch` | dev-only; latest parents still pin `^10.2.2`, the fix is a major. |
+
+Re-check the two dev-only entries whenever `test-exclude`, `ts-json-schema-generator` or `@typescript-eslint/typescript-estree` widen their ranges.
+
+The `npm audit` allowlist is a separate list, kept in the `"audit"` script in `package.json` (see [Security Audit Layered Architecture](#security-audit-layered-architecture)).
+
 ## GitHub Actions
 
 This repository has five related workflows:

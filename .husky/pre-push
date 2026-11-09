@@ -2,15 +2,25 @@ bash scripts/hook-autofix.sh pre-push
 
 # ── Security scan (#197 toolchain: osv-scanner + semgrep) ──
 # Both gates BLOCKING as of 2026-09-06. Known-unfixable exceptions are
-# allowlisted below (currently: elliptic GHSA-848j-6mx2-7j84, Medium, no
-# upstream fix available). Remove the entry once a fixed version ships.
+# allowlisted below. Remove an entry once a fixed version ships.
+#   GHSA-848j-6mx2-7j84  elliptic (Medium) — no upstream fix; reaches us via ethers@5.
+#   GHSA-3g3m-2fjr-6pw4  glob (dev-only, Medium) — every consumer pins the vulnerable
+#                        range: test-exclude@8.0.0 and ts-json-schema-generator@2.9.0
+#                        (both latest) declare ^13.0.6, while the fix is a major
+#                        (14.0.2). Forcing it via overrides would drop an unvalidated
+#                        major into the coverage + schema tooling.
+#   GHSA-g3hv-75wg-m249  minimatch (dev-only, Medium) — same shape: latest test-exclude
+#                        and @typescript-eslint/typescript-estree still declare
+#                        ^10.2.2, while the fix is a major (11.0.1).
+# Re-check the two dev entries when those parents widen their ranges.
 # scan:mcp (.mcp.json supply chain) stays manual: npm run scan:mcp
+OSV_ALLOWLIST="GHSA-848j-6mx2-7j84|GHSA-3g3m-2fjr-6pw4|GHSA-g3hv-75wg-m249"
 if command -v osv-scanner >/dev/null 2>&1; then
   # set -e safe: every pipeline that may match nothing ends with "|| true"
   if ! osv-scanner --lockfile package-lock.json 2>/dev/null; then
-    _UNFIXED=$(osv-scanner --lockfile package-lock.json 2>/dev/null | grep -oE "GHSA-[a-z0-9-]+" | grep -v "GHSA-848j-6mx2-7j84" || true)
+    _UNFIXED=$(osv-scanner --lockfile package-lock.json 2>/dev/null | grep -oE "GHSA-[a-z0-9-]+" | grep -vE "$OSV_ALLOWLIST" || true)
     if [ -n "$_UNFIXED" ]; then
-      osv-scanner --lockfile package-lock.json 2>/dev/null | grep "GHSA" | grep -v "GHSA-848j-6mx2-7j84" || true
+      osv-scanner --lockfile package-lock.json 2>/dev/null | grep "GHSA" | grep -vE "$OSV_ALLOWLIST" || true
       echo "❌ [pre-push] BLOCKED: fixable vulnerabilities in package-lock.json — run 'npm audit fix', then 'npm run scan:deps'"
       exit 1
     fi
