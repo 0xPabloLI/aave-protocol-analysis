@@ -128,7 +128,7 @@ The **goal** is the same as with tags—run a newer release—but you edit the *
 - Dependency update flow:
   - Renovate opens update PRs against `railway` — vulnerability-alert fixes immediately, routine updates after the 7-day release age, weekly lockfile maintenance
   - Renovate merges non-major updates itself once CI is green; majors get a comment and wait for a human — see "Renovate automerge" below
-  - `Auto-merge Bot PRs` still auto-approves non-major Renovate PRs as a record of the automated review. Its GitHub-native auto-merge call is a no-op: Renovate owns the merge.
+  - `Auto-merge Bot PRs` still auto-approves non-major Renovate PRs as a record of the automated review. It deliberately does **not** arm GitHub's native auto-merge — see "Renovate automerge" below for why that is unsafe on this branch.
 - Reactive auto-fix flow (on CI build failure):
   - Failed `CI` on push -> `CI Auto Remediation` tries to fix -> opens PR if safe
   - `Auto Approve Remediation PR` auto-approves that PR and enables auto-merge
@@ -244,7 +244,11 @@ Both are therefore **known and accepted with no layer tracking them** — visibl
 
 **Renovate merges its own non-major PRs** (`automerge: true` in `renovate.json`). It does not delegate to GitHub's native auto-merge.
 
-Before 2026-11-09 nothing merged at all. `auto-merge-bot-prs.yml` approved every non-major Renovate PR and then tried `enablePullRequestAutoMerge`, but that workflow only runs on `opened`/`synchronize`/`reopened` — moments when CI is necessarily still running. GitHub rejects the mutation with `Pull request is in unstable status`, all five 30-second retries failed, and because no further `synchronize` event ever arrived it was never retried. The result was 10 approved PRs sitting with `autoMergeRequest: null`, each one "Automerge: Disabled by config" in its body. Renovate retries its own automerge on every subsequent run, so it does not have this race.
+Before 2026-11-09 nothing merged at all. `auto-merge-bot-prs.yml` approved every non-major Renovate PR and then tried `enablePullRequestAutoMerge`, but that workflow only runs on `opened`/`synchronize`/`reopened` — moments when CI is necessarily still running. GitHub rejects the mutation with `Pull request is in unstable status`, so in the original observation (PR #194, 09:33) all five 30-second retries failed, and because no further `synchronize` event ever arrived it was never retried again. The result was 10 approved PRs sitting with `autoMergeRequest: null`, each one "Automerge: Disabled by config" in its body. Renovate retries its own automerge on every subsequent run, so it does not have this race.
+
+⚠️ **That retry loop was not merely ineffective — it was dangerous.** When Renovate rebased a branch, the fresh `synchronize` event re-ran it, and its retries eventually found a window GitHub would accept. Verified 2026-11-09 on the rebased PR #186: attempts 1-3 were rejected with `unstable status`, attempt 4 armed native auto-merge at 11:16:36 (SQUASH), and GitHub merged at 11:17:16 — with CI already failed at 11:15:11. Because `railway` declares no required status checks, GitHub's merge gate had nothing to wait for. The merged lockfile was one `npm ci` rejects (`Missing: @emnapi/wasi-threads@1.2.3 from lock file`), and the staging deploy for that commit was `SKIPPED` with `reason=deploy`.
+
+So the Renovate job in `auto-merge-bot-prs.yml` now approves and stops. Arming GitHub's native auto-merge is only safe once the base branch declares required status checks; until then, the safest arrangement is what is in place now — Renovate merges its own PRs after waiting for green checks itself.
 
 Four config invariants hold this together:
 
@@ -257,4 +261,4 @@ Four config invariants hold this together:
 
 ⚠️ **The npm cool-down needs its own rule.** `config:best-practices` pulls in `security:minimumReleaseAgeNpm`, which sets `minimumReleaseAge: '3 days'` for npm **inside a `packageRule`**. Renovate applies matching `packageRules` _after_ the top-level config and merges them in array order, so the repo's top-level `minimumReleaseAge: "7 days"` does not win — without the npm override below, the effective cool-down is 3 days, not the documented 7. The override must stay scoped to update types that carry a release timestamp (`major`, `minor`, `patch`, `digest`, `pinDigest`): the preset sets `minimumReleaseAge: null` for `lockFileMaintenance`, `pin`, `replacement`, `bump`, `lockfileUpdate` and `rollback` because those have no timestamp to check, and an unscoped rule would re-impose an age requirement they can never satisfy — lock file maintenance would silently stop being raised at all.
 
-`backend/tests/renovate-config.test.ts` guards all four invariants plus the cool-down scoping.
+`backend/tests/renovate-config.test.ts` guards all four invariants, the cool-down scoping, and the rule that the Renovate job never arms native auto-merge.

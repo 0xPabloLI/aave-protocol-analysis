@@ -160,3 +160,30 @@ test("auto-merge workflow filters for renovate[bot] actor", () => {
     "auto-merge must filter for renovate[bot] actor"
   );
 });
+
+test("the Renovate job never arms GitHub's native auto-merge", () => {
+  const yaml = readConfig(".github/workflows/auto-merge-bot-prs.yml");
+  const jobStart = yaml.indexOf("approve-renovate-pr:");
+  assert.ok(jobStart !== -1, "approve-renovate-pr job not found");
+  // Slice to the next top-level job key so the assertion stays scoped to this
+  // job even when another job is appended below it.
+  const rest = yaml.slice(jobStart);
+  const nextJob = rest.slice(1).search(/^ {2}\S.*:$/m);
+  const job = nextJob === -1 ? rest : rest.slice(0, nextJob + 1);
+
+  // Renovate arms its own automerge (automerge=true, platformAutomerge=false)
+  // and waits for green checks itself, so arming GitHub's native auto-merge
+  // here is redundant — and unsafe. `railway` declares no required status
+  // checks, so GitHub's merge gate has nothing to wait for and merges PRs with
+  // failing CI. Verified 2026-11-09: this job armed auto-merge on the rebased
+  // renovate/pin-dependencies PR #186 at 11:16:36, on its 4th retry and after
+  // CI had already failed at 11:15:11; GitHub merged it at 11:17:16 with a
+  // lockfile `npm ci` rejects, and the staging deploy for that commit was
+  // skipped. The retry loop is what made it land — the first three attempts
+  // were still rejected with "unstable status".
+  assert.ok(
+    !job.includes("enablePullRequestAutoMerge"),
+    "the Renovate job must not call enablePullRequestAutoMerge while " +
+      "`railway` has no required status checks"
+  );
+});
