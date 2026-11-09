@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process';
+import { execSync } from "node:child_process";
 
 const DEFAULT_ITEMS_PER_PAGE = 100;
 const MAX_ITEMS_PER_PAGE = 100;
@@ -8,7 +8,7 @@ const DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS = 60 * 1000;
 const readMerklFetchMaxConcurrency = () => {
   const raw = process.env.MERKL_FETCH_MAX_CONCURRENCY;
   const defaultValue = 5;
-  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  if (raw === undefined || raw === null || raw === "") return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 1 ? n : defaultValue;
 };
@@ -62,7 +62,7 @@ export function createSlidingWindowRateLimiter(maxRequestsPerSecond) {
   }
 
   async function wait() {
-    return chain = chain.then(async () => {
+    return (chain = chain.then(async () => {
       const now = Date.now();
       cleanup(now);
       if (timestamps.length >= maxRequestsPerSecond) {
@@ -73,7 +73,7 @@ export function createSlidingWindowRateLimiter(maxRequestsPerSecond) {
         cleanup(Date.now());
       }
       timestamps.push(Date.now());
-    });
+    }));
   }
 
   function getTimestamps() {
@@ -91,7 +91,7 @@ export function createSlidingWindowRateLimiter(maxRequestsPerSecond) {
 const readV3FetchMaxConcurrency = () => {
   const raw = process.env.V3_FETCH_MAX_CONCURRENCY;
   const defaultValue = 2;
-  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  if (raw === undefined || raw === null || raw === "") return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 1 ? n : defaultValue;
 };
@@ -99,7 +99,7 @@ const readV3FetchMaxConcurrency = () => {
 const readV3MaxRequestsPerSecond = () => {
   const raw = process.env.V3_MAX_REQUESTS_PER_SECOND;
   const defaultValue = 1;
-  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  if (raw === undefined || raw === null || raw === "") return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 1 ? n : defaultValue;
 };
@@ -107,26 +107,14 @@ const readV3MaxRequestsPerSecond = () => {
 const readV3FetchMaxRetries = () => {
   const raw = process.env.V3_FETCH_MAX_RETRIES;
   const defaultValue = 3;
-  if (raw === undefined || raw === null || raw === '') return defaultValue;
+  if (raw === undefined || raw === null || raw === "") return defaultValue;
   const n = Number.parseInt(String(raw), 10);
   return Number.isFinite(n) && n >= 0 ? n : defaultValue;
 };
 
-const readV3FetchBaseDelayMs = () => {
-  const raw = process.env.V3_FETCH_BASE_DELAY_MS;
-  const defaultValue = 2000;
-  if (raw === undefined || raw === null || raw === '') return defaultValue;
-  const n = Number.parseInt(String(raw), 10);
-  return Number.isFinite(n) && n >= 0 ? n : defaultValue;
-};
-
-const readV3FetchMaxDelayMs = () => {
-  const raw = process.env.V3_FETCH_MAX_DELAY_MS;
-  const defaultValue = 30000;
-  if (raw === undefined || raw === null || raw === '') return defaultValue;
-  const n = Number.parseInt(String(raw), 10);
-  return Number.isFinite(n) && n >= 0 ? n : defaultValue;
-};
+// NOTE: V3_FETCH_BASE_DELAY_MS / V3_FETCH_MAX_DELAY_MS are read via the
+// generic readNumberEnv() helper below (see buildV3RateLimitConfig); the
+// bespoke readers that used to live here were dead code and were removed.
 
 function parseRetryAfterMs(headerValue) {
   if (!headerValue) return null;
@@ -171,17 +159,34 @@ export function installV3RateLimitedFetch() {
   originalFetch = globalThis.fetch;
 
   const maxRetries = readV3FetchMaxRetries();
-  const rateLimitBaseDelayMs = readNumberEnv('V3_RATE_LIMIT_BASE_DELAY_MS', { defaultValue: 3000, min: 1000 });
-  const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
-  const retryAfterCapMs = readNumberEnv('V3_RETRY_AFTER_CAP_MS', { defaultValue: 3000, min: 1000, max: 30000 });
+  const rateLimitBaseDelayMs = readNumberEnv("V3_RATE_LIMIT_BASE_DELAY_MS", {
+    defaultValue: 3000,
+    min: 1000,
+  });
+  const maxDelayMs = readNumberEnv("V3_FETCH_MAX_DELAY_MS", {
+    defaultValue: 10000,
+    min: 0,
+  });
+  const retryAfterCapMs = readNumberEnv("V3_RETRY_AFTER_CAP_MS", {
+    defaultValue: 3000,
+    min: 1000,
+    max: 30000,
+  });
 
-  const V3_HOSTS = ['api.v3.aave.com', 'api.aave.com'];
+  const V3_HOSTS = ["api.v3.aave.com", "api.aave.com"];
 
   const isV3Request = (input) => {
     try {
-      const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
-      return V3_HOSTS.some(host => url.includes(host));
-    } catch { return false; }
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof Request
+            ? input.url
+            : String(input);
+      return V3_HOSTS.some((host) => url.includes(host));
+    } catch {
+      return false;
+    }
   };
 
   const rateLimitedFetch = async (input, init) => {
@@ -189,7 +194,12 @@ export function installV3RateLimitedFetch() {
       return originalFetch(input, init);
     }
 
-    const url = typeof input === 'string' ? input : (input instanceof Request ? input.url : String(input));
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof Request
+          ? input.url
+          : String(input);
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const startTime = Date.now();
@@ -201,21 +211,27 @@ export function installV3RateLimitedFetch() {
         status: response.status,
         elapsed,
         attempt,
-        url: url.length > 80 ? url.slice(0, 77) + '...' : url,
+        url: url.length > 80 ? url.slice(0, 77) + "..." : url,
       });
 
       if (response.status === 429 && attempt < maxRetries) {
         totalV3429s++;
-        const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
-        const delayMs = retryAfterMs != null
-          ? Math.min(retryAfterMs, retryAfterCapMs)
-          : Math.min(maxDelayMs, rateLimitBaseDelayMs * Math.pow(2, attempt)) + Math.floor(Math.random() * 500);
+        const retryAfterMs = parseRetryAfterMs(
+          response.headers.get("Retry-After")
+        );
+        const delayMs =
+          retryAfterMs != null
+            ? Math.min(retryAfterMs, retryAfterCapMs)
+            : Math.min(
+                maxDelayMs,
+                rateLimitBaseDelayMs * Math.pow(2, attempt)
+              ) + Math.floor(Math.random() * 500);
 
-        if (typeof globalThis.console?.warn === 'function') {
+        if (typeof globalThis.console?.warn === "function") {
           console.warn(
-            `[V3-RateLimit] 429 on ${url.length > 60 ? url.slice(0, 57) + '...' : url} ` +
-            `(attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
-            `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? ' (Retry-After)' : ' (backoff)'}`
+            `[V3-RateLimit] 429 on ${url.length > 60 ? url.slice(0, 57) + "..." : url} ` +
+              `(attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
+              `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? " (Retry-After)" : " (backoff)"}`
           );
         }
         await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -240,8 +256,14 @@ export function restoreOriginalFetch() {
 export function createAaveV3RateLimitedFetch(fetchImpl = fetch) {
   const limiter = createSlidingWindowRateLimiter(readV3MaxRequestsPerSecond());
   const maxRetries = readV3FetchMaxRetries();
-  const baseDelayMs = readNumberEnv('V3_FETCH_BASE_DELAY_MS', { defaultValue: 2000, min: 0 });
-  const maxDelayMs = readNumberEnv('V3_FETCH_MAX_DELAY_MS', { defaultValue: 10000, min: 0 });
+  const baseDelayMs = readNumberEnv("V3_FETCH_BASE_DELAY_MS", {
+    defaultValue: 2000,
+    min: 0,
+  });
+  const maxDelayMs = readNumberEnv("V3_FETCH_MAX_DELAY_MS", {
+    defaultValue: 10000,
+    min: 0,
+  });
 
   return async (input, init) => {
     await acquireV3FetchSlot();
@@ -252,15 +274,19 @@ export function createAaveV3RateLimitedFetch(fetchImpl = fetch) {
 
         if (response.status === 429 && attempt < maxRetries) {
           totalV3429s++;
-          const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
-          const delayMs = retryAfterMs != null
-            ? Math.min(retryAfterMs, maxDelayMs)
-            : Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt)) + Math.random() * 500;
+          const retryAfterMs = parseRetryAfterMs(
+            response.headers.get("Retry-After")
+          );
+          const delayMs =
+            retryAfterMs != null
+              ? Math.min(retryAfterMs, maxDelayMs)
+              : Math.min(maxDelayMs, baseDelayMs * Math.pow(2, attempt)) +
+                Math.random() * 500;
 
-          if (typeof globalThis.console?.warn === 'function') {
+          if (typeof globalThis.console?.warn === "function") {
             console.warn(
               `[V3-RateLimit] 429 received (attempt ${attempt + 1}/${maxRetries + 1}, total 429s: ${totalV3429s}), ` +
-              `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? ' (Retry-After)' : ' (exponential backoff)'}`
+                `retrying in ${Math.round(delayMs)}ms${retryAfterMs != null ? " (Retry-After)" : " (exponential backoff)"}`
             );
           }
           await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -279,8 +305,8 @@ export function createAaveV3RateLimitedFetch(fetchImpl = fetch) {
 
 export function getV3RateLimitStats() {
   const total = v3RequestLog.length;
-  const status429 = v3RequestLog.filter(r => r.status === 429).length;
-  const status200 = v3RequestLog.filter(r => r.status === 200).length;
+  const status429 = v3RequestLog.filter((r) => r.status === 429).length;
+  const status200 = v3RequestLog.filter((r) => r.status === 200).length;
   const byAttempt = {};
   for (const r of v3RequestLog) {
     byAttempt[r.attempt] = (byAttempt[r.attempt] || 0) + 1;
@@ -290,7 +316,7 @@ export function getV3RateLimitStats() {
     const minTs = v3RequestLog[0].ts;
     const maxTs = v3RequestLog[v3RequestLog.length - 1].ts;
     const spanSec = (maxTs - minTs) / 1000;
-    if (spanSec > 0) qps = Math.round(total / spanSec * 100) / 100;
+    if (spanSec > 0) qps = Math.round((total / spanSec) * 100) / 100;
   }
   return {
     total429s: totalV3429s,
@@ -323,163 +349,163 @@ const {
 // RPC order: public endpoints first, private (Infura/Alchemy/Ankr) last. Infura = mainnet HTTPS per https://docs.metamask.io/services/get-started/endpoints. Alchemy = latest mainnet v2 endpoints.
 export const AAVE_RPC_URLS_BY_CHAIN_KEY = Object.freeze({
   ethereum: Object.freeze([
-    'https://ethereum-rpc.publicnode.com',
-    'https://eth-mainnet.public.blastapi.io',
-    'https://eth.drpc.org',
-    'https://1rpc.io/eth',
+    "https://ethereum-rpc.publicnode.com",
+    "https://eth-mainnet.public.blastapi.io",
+    "https://eth.drpc.org",
+    "https://1rpc.io/eth",
     `https://mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
     `https://rpc.ankr.com/eth/${ANKR_API_KEY}`,
   ]),
   polygon: Object.freeze([
-    'https://gateway.tenderly.co/public/polygon',
-    'https://polygon-pokt.nodies.app',
-    'https://polygon-bor-rpc.publicnode.com',
-    'https://rpc-mainnet.matic.quiknode.pro',
-    'https://polygon.drpc.org',
-    'https://1rpc.io/matic',
+    "https://gateway.tenderly.co/public/polygon",
+    "https://polygon-pokt.nodies.app",
+    "https://polygon-bor-rpc.publicnode.com",
+    "https://rpc-mainnet.matic.quiknode.pro",
+    "https://polygon.drpc.org",
+    "https://1rpc.io/matic",
     `https://polygon-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://rpc.ankr.com/polygon/${ANKR_API_KEY}`,
     `https://polygon-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   avalanche: Object.freeze([
-    'https://api.avax.network/ext/bc/C/rpc',
-    'https://avalanche.drpc.org',
-    'https://1rpc.io/avax/c',
-    'https://avalanche-c-chain-rpc.publicnode.com',
+    "https://api.avax.network/ext/bc/C/rpc",
+    "https://avalanche.drpc.org",
+    "https://1rpc.io/avax/c",
+    "https://avalanche-c-chain-rpc.publicnode.com",
     `https://avalanche-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://rpc.ankr.com/avalanche/${ANKR_API_KEY}`,
     `https://avax-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   arbitrum: Object.freeze([
-    'https://arb1.arbitrum.io/rpc',
-    'https://1rpc.io/arb',
-    'https://arbitrum.drpc.org',
-    'https://arbitrum-one-rpc.publicnode.com',
+    "https://arb1.arbitrum.io/rpc",
+    "https://1rpc.io/arb",
+    "https://arbitrum.drpc.org",
+    "https://arbitrum-one-rpc.publicnode.com",
     `https://arbitrum-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
     `https://rpc.ankr.com/arbitrum/${ANKR_API_KEY}`,
   ]),
   base: Object.freeze([
-    'https://1rpc.io/base',
-    'https://base.llamarpc.com',
-    'https://base.publicnode.com',
-    'https://base-mainnet.public.blastapi.io',
-    'https://base.drpc.org',
+    "https://1rpc.io/base",
+    "https://base.llamarpc.com",
+    "https://base.publicnode.com",
+    "https://base-mainnet.public.blastapi.io",
+    "https://base.drpc.org",
     `https://base-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://rpc.ankr.com/base/${ANKR_API_KEY}`,
     `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   optimism: Object.freeze([
-    'https://public-op-mainnet.fastnode.io',
-    'https://optimism-rpc.publicnode.com',
-    'https://optimism.drpc.org',
-    'https://1rpc.io/op',
+    "https://public-op-mainnet.fastnode.io",
+    "https://optimism-rpc.publicnode.com",
+    "https://optimism.drpc.org",
+    "https://1rpc.io/op",
     `https://optimism-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://rpc.ankr.com/optimism/${ANKR_API_KEY}`,
     `https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   metis: Object.freeze([
-    'https://andromeda.metis.io/?owner=1088',
-    'https://metis-rpc.publicnode.com',
-    'https://metis.drpc.org',
-    'https://metis-andromeda.gateway.tenderly.co',
+    "https://andromeda.metis.io/?owner=1088",
+    "https://metis-rpc.publicnode.com",
+    "https://metis.drpc.org",
+    "https://metis-andromeda.gateway.tenderly.co",
     `https://rpc.ankr.com/metis/${ANKR_API_KEY}`,
     `https://metis-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   gnosis: Object.freeze([
-    'https://gnosis-rpc.publicnode.com',
-    'https://rpc.gnosischain.com',
-    'https://1rpc.io/gnosis',
-    'https://gnosis.drpc.org',
-    'https://gnosis.api.onfinality.io/public',
+    "https://gnosis-rpc.publicnode.com",
+    "https://rpc.gnosischain.com",
+    "https://1rpc.io/gnosis",
+    "https://gnosis.drpc.org",
+    "https://gnosis.api.onfinality.io/public",
     `https://rpc.ankr.com/gnosis/${ANKR_API_KEY}`,
     `https://gnosis-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   bnb: Object.freeze([
-    'https://bsc.publicnode.com',
-    'https://bsc-mainnet.public.blastapi.io',
-    'https://1rpc.io/bnb',
-    'https://bsc.drpc.org',
+    "https://bsc.publicnode.com",
+    "https://bsc-mainnet.public.blastapi.io",
+    "https://1rpc.io/bnb",
+    "https://bsc.drpc.org",
     `https://bsc-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
     `https://rpc.ankr.com/bsc/${ANKR_API_KEY}`,
   ]),
   scroll: Object.freeze([
-    'https://rpc.scroll.io',
-    'https://scroll-rpc.publicnode.com',
-    'https://scroll.drpc.org',
-    'https://1rpc.io/scroll',
+    "https://rpc.scroll.io",
+    "https://scroll-rpc.publicnode.com",
+    "https://scroll.drpc.org",
+    "https://1rpc.io/scroll",
     `https://scroll-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://rpc.ankr.com/scroll/${ANKR_API_KEY}`,
     `https://scroll-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   zksync: Object.freeze([
-    'https://mainnet.era.zksync.io',
-    'https://zksync.drpc.org',
-    'https://1rpc.io/zksync2-era',
-    'https://zksync-era.public-rpc.com',
+    "https://mainnet.era.zksync.io",
+    "https://zksync.drpc.org",
+    "https://1rpc.io/zksync2-era",
+    "https://zksync-era.public-rpc.com",
     `https://zksync-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://rpc.ankr.com/zksync_era/${ANKR_API_KEY}`,
     `https://zksync-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   linea: Object.freeze([
-    'https://1rpc.io/linea',
-    'https://linea.drpc.org',
-    'https://linea-rpc.publicnode.com',
-    'https://rpc.linea.build',
+    "https://1rpc.io/linea",
+    "https://linea.drpc.org",
+    "https://linea-rpc.publicnode.com",
+    "https://rpc.linea.build",
     `https://linea-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://rpc.ankr.com/linea/${ANKR_API_KEY}`,
     `https://linea-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   sonic: Object.freeze([
-    'https://rpc.soniclabs.com',
-    'https://sonic.drpc.org',
-    'https://sonic-rpc.publicnode.com',
+    "https://rpc.soniclabs.com",
+    "https://sonic.drpc.org",
+    "https://sonic-rpc.publicnode.com",
     `https://sonic-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
     `https://rpc.ankr.com/sonic/${ANKR_API_KEY}`,
   ]),
   celo: Object.freeze([
-    'https://celo.drpc.org',
-    'https://forno.celo.org',
-    'https://celo-mainnet.gateway.tatum.io',
+    "https://celo.drpc.org",
+    "https://forno.celo.org",
+    "https://celo-mainnet.gateway.tatum.io",
     `https://celo-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://rpc.ankr.com/celo/${ANKR_API_KEY}`,
     `https://celo-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   soneium: Object.freeze([
-    'https://soneium.drpc.org',
-    'https://rpc.soneium.org',
-    'https://soneium-rpc.publicnode.com',
-    'https://soneium.gateway.tenderly.co',
+    "https://soneium.drpc.org",
+    "https://rpc.soneium.org",
+    "https://soneium-rpc.publicnode.com",
+    "https://soneium.gateway.tenderly.co",
     `https://soneium-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   mantle: Object.freeze([
-    'https://rpc.mantle.xyz',
-    'https://mantle.publicnode.com',
-    'https://mantle.drpc.org',
-    'https://mantle.gateway.tenderly.co',
+    "https://rpc.mantle.xyz",
+    "https://mantle.publicnode.com",
+    "https://mantle.drpc.org",
+    "https://mantle.gateway.tenderly.co",
     `https://mantle-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://rpc.ankr.com/mantle/${ANKR_API_KEY}`,
     `https://mantle-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   megaeth: Object.freeze([
-    'https://mainnet.megaeth.com/rpc',
+    "https://mainnet.megaeth.com/rpc",
     `https://megaeth-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://megaeth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   plasma: Object.freeze([
-    'https://rpc.plasma.to',
+    "https://rpc.plasma.to",
     `https://plasma-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   ink: Object.freeze([
-    'https://ink.drpc.org',
+    "https://ink.drpc.org",
     `https://ink-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   blast: Object.freeze([
-    'https://rpc.blast.io',
-    'https://blast.drpc.org',
-    'https://blast-rpc.publicnode.com',
+    "https://rpc.blast.io",
+    "https://blast.drpc.org",
+    "https://blast-rpc.publicnode.com",
     `https://blast-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://rpc.ankr.com/blast/${ANKR_API_KEY}`,
     `https://blast-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
@@ -488,24 +514,22 @@ export const AAVE_RPC_URLS_BY_CHAIN_KEY = Object.freeze({
     `https://palm-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
   ]),
   opbnb: Object.freeze([
-    'https://opbnb-mainnet-rpc.bnbchain.org',
-    'https://opbnb.drpc.org',
-    'https://opbnb-rpc.publicnode.com',
+    "https://opbnb-mainnet-rpc.bnbchain.org",
+    "https://opbnb.drpc.org",
+    "https://opbnb-rpc.publicnode.com",
     `https://opbnb-mainnet.infura.io/v3/${INFURA_PROJECT_ID}`,
     `https://opbnb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
-  zkLinkNova: Object.freeze([
-    'https://rpc.zklink.io',
-  ]),
+  zkLinkNova: Object.freeze(["https://rpc.zklink.io"]),
   manta: Object.freeze([
-    'https://pacific-rpc.manta.network/http',
-    'https://manta-pacific.drpc.org',
-    'https://1rpc.io/manta',
+    "https://pacific-rpc.manta.network/http",
+    "https://manta-pacific.drpc.org",
+    "https://1rpc.io/manta",
   ]),
   berachain: Object.freeze([
-    'https://rpc.berachain.com',
-    'https://berachain.drpc.org',
-    'https://berachain-rpc.publicnode.com',
+    "https://rpc.berachain.com",
+    "https://berachain.drpc.org",
+    "https://berachain-rpc.publicnode.com",
     `https://berachain-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY}`,
   ]),
   abstract: Object.freeze([
@@ -513,97 +537,146 @@ export const AAVE_RPC_URLS_BY_CHAIN_KEY = Object.freeze({
     // `https://cosmological-solitary-uranium.abstract-mainnet.quiknode.pro/${QUICKNODE_API_KEY}`,
   ]),
   flare: Object.freeze([
-    'https://flare-api.flare.network/ext/C/rpc',
-    'https://rpc.ankr.com/flare',
+    "https://flare-api.flare.network/ext/C/rpc",
+    "https://rpc.ankr.com/flare",
     `https://rpc.ankr.com/flare/${ANKR_API_KEY}`,
   ]),
   xlayer: Object.freeze([
-    'https://rpc.xlayer.tech',
-    'https://xlayerrpc.okx.com',
-    'https://xlayer.drpc.org',
-    'https://1rpc.io/xlayer',
+    "https://rpc.xlayer.tech",
+    "https://xlayerrpc.okx.com",
+    "https://xlayer.drpc.org",
+    "https://1rpc.io/xlayer",
   ]),
   harmony: Object.freeze([
-    'https://api.harmony.one',
-    'https://rpc.ankr.com/harmony',
-    'https://harmony-0-rpc.gateway.pokt.network',
-    'https://1rpc.io/one',
+    "https://api.harmony.one",
+    "https://rpc.ankr.com/harmony",
+    "https://harmony-0-rpc.gateway.pokt.network",
+    "https://1rpc.io/one",
     `https://rpc.ankr.com/harmony/${ANKR_API_KEY}`,
   ]),
-  monad: Object.freeze([
-    'https://rpc.monad.xyz',
-    'https://rpc1.monad.xyz',
-  ]),
+  monad: Object.freeze(["https://rpc.monad.xyz", "https://rpc1.monad.xyz"]),
 });
 
 export const AAVE_CHAIN_KEY_ALIASES = Object.freeze({
-  'ethereum-etherfi': 'ethereum',
-  'ethereum-prime': 'ethereum',
-  'ethereum-horizon': 'ethereum',
-  'arbitrum-one': 'arbitrum',
-  arbitrum_one: 'arbitrum',
-  xdai: 'gnosis',
-  metis_andromeda: 'metis',
-  bsc: 'bnb',
-  binance: 'bnb',
+  "ethereum-etherfi": "ethereum",
+  "ethereum-prime": "ethereum",
+  "ethereum-horizon": "ethereum",
+  "arbitrum-one": "arbitrum",
+  arbitrum_one: "arbitrum",
+  xdai: "gnosis",
+  metis_andromeda: "metis",
+  bsc: "bnb",
+  binance: "bnb",
 });
 
 export const DEFAULT_SPOKE_HUB_TOPOLOGY = [
-  { chainId: 1, spokeAddress: '0x94e7a5dcbe816e498b89ab752661904e2f56c485', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x973a023a77420ba610f06b3858ad991df6d85a08', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x973a023a77420ba610f06b3858ad991df6d85a08', hubAddress: '0x943827dca022d0f354a8a8c332da1e5eb9f9f931' },
-  { chainId: 1, spokeAddress: '0xe1900480ac69f0b296841cd01cc37546d92f35cd', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0xbf10bdfe177de0336afd7fccf80a904e15386219', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x3131fe68c4722e726fe6b2819ed68e514395b9a4', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x58131e79531cab1d52301228d1f7b842f26b9649', hubAddress: '0x06002e9c4412cb7814a791ea3666d905871e536a' },
-  { chainId: 1, spokeAddress: '0xba1b3d55d249692b669a164024a838309b7508af', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0xba1b3d55d249692b669a164024a838309b7508af', hubAddress: '0x06002e9c4412cb7814a791ea3666d905871e536a' },
-  { chainId: 1, spokeAddress: '0xd8b93635b8c6d0ff98cbe90b5988e3f2d1cd9da1', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x65407b940966954b23dfa3caa5c0702bb42984dc', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
-  { chainId: 1, spokeAddress: '0x7ec68b5695e803e98a21a9a05d744f28b0a7753d', hubAddress: '0xcca852bc40e560adc3b1cc58ca5b55638ce826c9' },
+  {
+    chainId: 1,
+    spokeAddress: "0x94e7a5dcbe816e498b89ab752661904e2f56c485",
+    hubAddress: "0xcca852bc40e560adc3b1cc58ca5b55638ce826c9",
+  },
+  {
+    chainId: 1,
+    spokeAddress: "0x973a023a77420ba610f06b3858ad991df6d85a08",
+    hubAddress: "0xcca852bc40e560adc3b1cc58ca5b55638ce826c9",
+  },
+  {
+    chainId: 1,
+    spokeAddress: "0x973a023a77420ba610f06b3858ad991df6d85a08",
+    hubAddress: "0x943827dca022d0f354a8a8c332da1e5eb9f9f931",
+  },
+  {
+    chainId: 1,
+    spokeAddress: "0xe1900480ac69f0b296841cd01cc37546d92f35cd",
+    hubAddress: "0xcca852bc40e560adc3b1cc58ca5b55638ce826c9",
+  },
+  {
+    chainId: 1,
+    spokeAddress: "0xbf10bdfe177de0336afd7fccf80a904e15386219",
+    hubAddress: "0xcca852bc40e560adc3b1cc58ca5b55638ce826c9",
+  },
+  {
+    chainId: 1,
+    spokeAddress: "0x3131fe68c4722e726fe6b2819ed68e514395b9a4",
+    hubAddress: "0xcca852bc40e560adc3b1cc58ca5b55638ce826c9",
+  },
+  {
+    chainId: 1,
+    spokeAddress: "0x58131e79531cab1d52301228d1f7b842f26b9649",
+    hubAddress: "0x06002e9c4412cb7814a791ea3666d905871e536a",
+  },
+  {
+    chainId: 1,
+    spokeAddress: "0xba1b3d55d249692b669a164024a838309b7508af",
+    hubAddress: "0xcca852bc40e560adc3b1cc58ca5b55638ce826c9",
+  },
+  {
+    chainId: 1,
+    spokeAddress: "0xba1b3d55d249692b669a164024a838309b7508af",
+    hubAddress: "0x06002e9c4412cb7814a791ea3666d905871e536a",
+  },
+  {
+    chainId: 1,
+    spokeAddress: "0xd8b93635b8c6d0ff98cbe90b5988e3f2d1cd9da1",
+    hubAddress: "0xcca852bc40e560adc3b1cc58ca5b55638ce826c9",
+  },
+  {
+    chainId: 1,
+    spokeAddress: "0x65407b940966954b23dfa3caa5c0702bb42984dc",
+    hubAddress: "0xcca852bc40e560adc3b1cc58ca5b55638ce826c9",
+  },
+  {
+    chainId: 1,
+    spokeAddress: "0x7ec68b5695e803e98a21a9a05d744f28b0a7753d",
+    hubAddress: "0xcca852bc40e560adc3b1cc58ca5b55638ce826c9",
+  },
 ];
 
 export const AAVE_CHAIN_ID_TO_RPC_KEY = Object.freeze({
-  1: 'ethereum',
-  10: 'optimism',
-  56: 'bnb',
-  100: 'gnosis',
-  137: 'polygon',
-  146: 'sonic',
-  196: 'xlayer',
-  324: 'zksync',
-  1868: 'soneium',
-  42220: 'celo',
-  5000: 'mantle',
-  4326: 'megaeth',
-  8453: 'base',
-  9745: 'plasma',
-  1088: 'metis',
-  57073: 'ink',
-  59144: 'linea',
-  42161: 'arbitrum',
-  43114: 'avalanche',
-  534352: 'scroll',
-  1666600000: 'harmony',
-  81457: 'blast',
-  11297108109: 'palm',
-  204: 'opbnb',
-  810180: 'zkLinkNova',
-  169: 'manta',
-  80094: 'berachain',
-  2741: 'abstract',
-  14: 'flare',
-  143: 'monad',
+  1: "ethereum",
+  10: "optimism",
+  56: "bnb",
+  100: "gnosis",
+  137: "polygon",
+  146: "sonic",
+  196: "xlayer",
+  324: "zksync",
+  1868: "soneium",
+  42220: "celo",
+  5000: "mantle",
+  4326: "megaeth",
+  8453: "base",
+  9745: "plasma",
+  1088: "metis",
+  57073: "ink",
+  59144: "linea",
+  42161: "arbitrum",
+  43114: "avalanche",
+  534352: "scroll",
+  1666600000: "harmony",
+  81457: "blast",
+  11297108109: "palm",
+  204: "opbnb",
+  810180: "zkLinkNova",
+  169: "manta",
+  80094: "berachain",
+  2741: "abstract",
+  14: "flare",
+  143: "monad",
 });
 
 const normalizeHttpUrls = (urls) =>
   (Array.isArray(urls) ? urls : []).filter(
-    (url) => typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))
+    (url) =>
+      typeof url === "string" &&
+      (url.startsWith("http://") || url.startsWith("https://"))
   );
 
 export const resolveAaveRpcChainKey = (chainNameOrKey) => {
-  const normalized = String(chainNameOrKey || '').trim().toLowerCase();
-  if (!normalized) return '';
+  const normalized = String(chainNameOrKey || "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return "";
   return AAVE_CHAIN_KEY_ALIASES[normalized] ?? normalized;
 };
 
@@ -619,8 +692,8 @@ export const getAaveRpcUrlsByChainId = (chainId) => {
 };
 
 export const DEFAULT_AAVE_TYDRO_OPPORTUNITIES_QUERY = Object.freeze({
-  mainProtocolId: 'aave,tydro',
-  status: 'LIVE',
+  mainProtocolId: "aave,tydro",
+  status: "LIVE",
   campaigns: true,
   itemsPerPage: DEFAULT_ITEMS_PER_PAGE,
 });
@@ -635,7 +708,7 @@ export const resolveCacheTtlMs = (
       ? parsedFallback
       : DEFAULT_OPPORTUNITIES_SNAPSHOT_TTL_MS;
 
-  if (raw === undefined || raw === null || raw === '') {
+  if (raw === undefined || raw === null || raw === "") {
     return safeFallback;
   }
 
@@ -644,8 +717,8 @@ export const resolveCacheTtlMs = (
 };
 
 const toFiniteNumber = (value) => {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string") {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
@@ -670,7 +743,7 @@ export const normalizeMerklCampaignTotalBudget = (campaign) => {
 
   let rewardAmount = amount;
   if (decimals !== null && decimals >= 0) {
-    if (typeof amountRaw === 'string' && !amountRaw.includes('.')) {
+    if (typeof amountRaw === "string" && !amountRaw.includes(".")) {
       rewardAmount = amount / Math.pow(10, decimals);
     }
   }
@@ -709,7 +782,7 @@ const clampItemsPerPage = (value) => {
 const buildQuery = (query) => {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
-    if (value === undefined || value === null || value === '') return;
+    if (value === undefined || value === null || value === "") return;
     params.set(key, String(value));
   });
   return params;
@@ -718,9 +791,9 @@ const buildQuery = (query) => {
 const fetchJson = async ({ fetchImpl, url }) => {
   const limitedFetch = createMerklConcurrencyLimitedFetch(fetchImpl);
   const response = await limitedFetch(url, {
-    method: 'GET',
+    method: "GET",
     headers: {
-      accept: 'application/json',
+      accept: "application/json",
     },
   });
   if (!response.ok) {
@@ -730,7 +803,7 @@ const fetchJson = async ({ fetchImpl, url }) => {
 };
 
 export const fetchMerklOpportunitiesShortPage = async ({
-  baseUrl = 'https://api.merkl.xyz/v4',
+  baseUrl = "https://api.merkl.xyz/v4",
   mainProtocolId,
   status,
   campaigns,
@@ -798,7 +871,7 @@ const buildSnapshotCacheKey = ({
 };
 
 export const fetchMerklOpportunitiesSnapshot = async ({
-  baseUrl = 'https://api.merkl.xyz/v4',
+  baseUrl = "https://api.merkl.xyz/v4",
   mainProtocolId,
   status,
   campaigns,
@@ -819,7 +892,12 @@ export const fetchMerklOpportunitiesSnapshot = async ({
   const now = Date.now();
   const cached = opportunitiesSnapshotCache.get(cacheKey);
 
-  if (!forceRefresh && cached && cached.expiresAt > now && Array.isArray(cached.data)) {
+  if (
+    !forceRefresh &&
+    cached &&
+    cached.expiresAt > now &&
+    Array.isArray(cached.data)
+  ) {
     return cached.data;
   }
   if (!forceRefresh && cached?.inFlight) {
@@ -891,10 +969,10 @@ export const readNumberEnv = (key, { defaultValue, min }) => {
  */
 export const parseEnvLinesToObject = (envText) => {
   const out = {};
-  for (const rawLine of envText.split('\n')) {
+  for (const rawLine of envText.split("\n")) {
     const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    const idx = line.indexOf('=');
+    if (!line || line.startsWith("#")) continue;
+    const idx = line.indexOf("=");
     if (idx <= 0) continue;
     const key = line.slice(0, idx).trim();
     let value = line.slice(idx + 1).trim();
@@ -927,53 +1005,64 @@ export const tryLoadFromDoppler = () => {
   const dopplerToken = process.env.DOPPLER_TOKEN;
 
   if (!dopplerToken) {
-    console.log('ℹ️  DOPPLER_TOKEN not set in process environment');
-    console.log('   💡 Checking if Doppler CLI is configured...');
+    console.log("ℹ️  DOPPLER_TOKEN not set in process environment");
+    console.log("   💡 Checking if Doppler CLI is configured...");
 
     try {
-      execSync('doppler configure get token --plain', {
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'pipe'],
+      execSync("doppler configure get token --plain", {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
       });
-      console.log('   ✅ Doppler CLI is configured (using config file token)');
+      console.log("   ✅ Doppler CLI is configured (using config file token)");
     } catch {
-      console.log('   ⚠️  Doppler CLI is not configured');
-      console.log('   💡 To configure: doppler setup');
-      console.log('   💡 Or set DOPPLER_TOKEN environment variable');
+      console.log("   ⚠️  Doppler CLI is not configured");
+      console.log("   💡 To configure: doppler setup");
+      console.log("   💡 Or set DOPPLER_TOKEN environment variable");
       return false;
     }
   } else {
     const tokenPrefix = dopplerToken.substring(0, 10);
-    console.log(`✅ DOPPLER_TOKEN found in environment (prefix: ${tokenPrefix}...)`);
+    console.log(
+      `✅ DOPPLER_TOKEN found in environment (prefix: ${tokenPrefix}...)`
+    );
   }
 
   try {
-    console.log('🔍 Attempting to fetch secrets from Doppler...');
+    console.log("🔍 Attempting to fetch secrets from Doppler...");
 
-    const env = dopplerToken ? { ...process.env, DOPPLER_TOKEN: dopplerToken } : process.env;
+    const env = dopplerToken
+      ? { ...process.env, DOPPLER_TOKEN: dopplerToken }
+      : process.env;
 
-    const envText = execSync('doppler secrets download --no-file --format env', {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: env,
-    });
+    const envText = execSync(
+      "doppler secrets download --no-file --format env",
+      {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+        env: env,
+      }
+    );
     const envVars = parseEnvLinesToObject(envText);
     const envVarKeys = Object.keys(envVars);
 
     if (envVarKeys.length === 0) {
-      console.log('⚠️  Doppler returned no environment variables');
-      console.log('   💡 Check your Doppler project configuration');
+      console.log("⚠️  Doppler returned no environment variables");
+      console.log("   💡 Check your Doppler project configuration");
       return false;
     }
 
     injectEnv(envVars);
-    console.log(`✅ Successfully loaded ${envVarKeys.length} environment variable(s) from Doppler`);
-    console.log(`   Variables loaded: ${envVarKeys.join(', ')}`);
+    console.log(
+      `✅ Successfully loaded ${envVarKeys.length} environment variable(s) from Doppler`
+    );
+    console.log(`   Variables loaded: ${envVarKeys.join(", ")}`);
 
-    const criticalVars = ['CLOUDFLARE_WORKER_URL'];
-    const missingCritical = criticalVars.filter(v => !process.env[v]);
+    const criticalVars = ["CLOUDFLARE_WORKER_URL"];
+    const missingCritical = criticalVars.filter((v) => !process.env[v]);
     if (missingCritical.length > 0) {
-      console.log(`⚠️  Warning: Critical environment variables not found in Doppler: ${missingCritical.join(', ')}`);
+      console.log(
+        `⚠️  Warning: Critical environment variables not found in Doppler: ${missingCritical.join(", ")}`
+      );
       console.log(`   💡 Please add these variables to your Doppler project`);
     }
 
@@ -982,12 +1071,20 @@ export const tryLoadFromDoppler = () => {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.log(`❌ Failed to fetch secrets from Doppler: ${errorMessage}`);
 
-    if (errorMessage.includes('token') || errorMessage.includes('authentication')) {
-      console.log('   💡 This might be a token authentication issue');
-      console.log('   💡 Verify DOPPLER_TOKEN is correct and has proper permissions');
-    } else if (errorMessage.includes('project') || errorMessage.includes('config')) {
-      console.log('   💡 This might be a Doppler project configuration issue');
-      console.log('   💡 Run: doppler setup');
+    if (
+      errorMessage.includes("token") ||
+      errorMessage.includes("authentication")
+    ) {
+      console.log("   💡 This might be a token authentication issue");
+      console.log(
+        "   💡 Verify DOPPLER_TOKEN is correct and has proper permissions"
+      );
+    } else if (
+      errorMessage.includes("project") ||
+      errorMessage.includes("config")
+    ) {
+      console.log("   💡 This might be a Doppler project configuration issue");
+      console.log("   💡 Run: doppler setup");
     }
 
     return false;

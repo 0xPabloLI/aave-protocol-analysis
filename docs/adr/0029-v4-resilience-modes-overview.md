@@ -53,56 +53,57 @@ V4 数据获取路径叠加了四种独立的弹性（resilience）模式，每�
 
 ### 模式 1: Fast-fail
 
-| 属性 | 值 |
-|---|---|
-| **解决的问题** | 延迟 — `chains()` 和 `reserves()` 共用同一 GraphQL endpoint，endpoint 挂了重试无意义 |
-| **触发条件** | `chains()` 返回 `isErr()` → 抛 `V4ChainsFetchError` |
-| **行为** | 跳过 3 次重试（原 2s+4s+6s=12s 延迟），立即返回空结果 |
-| **状态模型** | 无状态 — 纯靠 error type 判别 |
-| **实现位置** | `v4-errors.ts`（V4ChainsFetchError）、`v4-retry.ts`（fast-fail catch）、`v4-fetcher.ts`（throw on chains failure） |
-| **副作用** | 无 — 其他 error type 仍走正常重试 |
+| 属性           | 值                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **解决的问题** | 延迟 — `chains()` 和 `reserves()` 共用同一 GraphQL endpoint，endpoint 挂了重试无意义                               |
+| **触发条件**   | `chains()` 返回 `isErr()` → 抛 `V4ChainsFetchError`                                                                |
+| **行为**       | 跳过 3 次重试（原 2s+4s+6s=12s 延迟），立即返回空结果                                                              |
+| **状态模型**   | 无状态 — 纯靠 error type 判别                                                                                      |
+| **实现位置**   | `v4-errors.ts`（V4ChainsFetchError）、`v4-retry.ts`（fast-fail catch）、`v4-fetcher.ts`（throw on chains failure） |
+| **副作用**     | 无 — 其他 error type 仍走正常重试                                                                                  |
 
 **为什么不用 last-known-good？** Fast-fail 判定的是"当前请求不可能成功"，不是"我记得上次长什么样"。无状态、零内存、零过期问题。
 
 ### 模式 2: Three-layer fallback
 
-| 属性 | 值 |
-|---|---|
-| **解决的问题** | 数据可用性 — V4 SDK 长时间宕机时仍能提供数据 |
-| **触发条件** | Layer 1: SDK 空集或超时 → Layer 2: SDK 失败 → Layer 3: 所有层失败 |
-| **行为** | 严格降级，每层独立 timeout（SDK 35s + RPC 15s = 50s < 60s 外层硬限制） |
-| **状态模型** | 无状态（`source: 'sdk' | 'rpc' | 'none'` 标识来源，不跨周期持久化） |
-| **实现位置** | `concurrent-fetch.ts`（协调层）、`aave-rpc-infra`（Layer 2 实现） |
-| **副作用** | Layer 2 RPC 返回 `spokeHubTopology: []`（AAV-581 决策，避免拓扑降级） |
+| 属性           | 值                                                                     |
+| -------------- | ---------------------------------------------------------------------- | ----- | ---------------------------------- |
+| **解决的问题** | 数据可用性 — V4 SDK 长时间宕机时仍能提供数据                           |
+| **触发条件**   | Layer 1: SDK 空集或超时 → Layer 2: SDK 失败 → Layer 3: 所有层失败      |
+| **行为**       | 严格降级，每层独立 timeout（SDK 35s + RPC 15s = 50s < 60s 外层硬限制） |
+| **状态模型**   | 无状态（`source: 'sdk'                                                 | 'rpc' | 'none'` 标识来源，不跨周期持久化） |
+| **实现位置**   | `concurrent-fetch.ts`（协调层）、`aave-rpc-infra`（Layer 2 实现）      |
+| **副作用**     | Layer 2 RPC 返回 `spokeHubTopology: []`（AAV-581 决策，避免拓扑降级）  |
 
 **降级路径的数据质量递减**：
+
 - Layer 1 (SDK): 完整 reserve 数据 + spokeName + 激励
 - Layer 2 (RPC): 链上合约直读，token 价格/激励缺失，spokeName 为 address-book key（如 `"MAIN_SPOKE"`）
 - Layer 3 (Stale): 上次成功快照，可能过时
 
 ### 模式 3: ProviderPool endpoint suppression
 
-| 属性 | 值 |
-|---|---|
-| **解决的问题** | RPC 端点可用性 — 避免重复请求已知故障的端点 |
-| **触发条件** | 连续失败 ≥ `failureThreshold`（默认 2）→ suppress `suppressionMs`（默认 5min） |
-| **行为** | Suppressed 端点降为最后备选；恢复后自动回到优先位 |
-| **状态模型** | 有状态 — 每个端点维护 `consecutiveFailures`、`suppressedUntil`、`lastSuccessAt` |
-| **实现位置** | `aave-rpc-infra/src/index.ts`（ProviderPool 类） |
-| **副作用** | stale provider 定期驱逐（`providerTtlMs` = 30min），防止内存泄漏 |
+| 属性           | 值                                                                              |
+| -------------- | ------------------------------------------------------------------------------- |
+| **解决的问题** | RPC 端点可用性 — 避免重复请求已知故障的端点                                     |
+| **触发条件**   | 连续失败 ≥ `failureThreshold`（默认 2）→ suppress `suppressionMs`（默认 5min）  |
+| **行为**       | Suppressed 端点降为最后备选；恢复后自动回到优先位                               |
+| **状态模型**   | 有状态 — 每个端点维护 `consecutiveFailures`、`suppressedUntil`、`lastSuccessAt` |
+| **实现位置**   | `aave-rpc-infra/src/index.ts`（ProviderPool 类）                                |
+| **副作用**     | stale provider 定期驱逐（`providerTtlMs` = 30min），防止内存泄漏                |
 
 **与 Layer 2 的关系**：ProviderPool 是 Layer 2 RPC fallback 的基础设施。当 Layer 2 触发 `fetchV4ReservesViaRpc` 时，每个 spoke 的 RPC 请求通过 `executeWithAutoRpc` 自动使用 ProviderPool 的健康排序和 suppression 逻辑。
 
 ### 模式 4: Per-side partial stale merge
 
-| 属性 | 值 |
-|---|---|
-| **解决的问题** | 数据完整性 — V3 或 V4 单边失败不应抹掉另一边的新鲜数据 |
-| **触发条件** | `fetchResult.v3.success` 或 `fetchResult.v4.success` 为 false |
-| **行为** | 失败 side 用 stale 数据补位，成功 side 保留 fresh 数据 |
-| **状态模型** | 有状态 — `staleV3Data`、`staleV4Data`、`v3FetchedAt`、`v4FetchedAt` 在 backend 内存中 |
-| **实现位置** | `backend/src/services/marketsService.ts`（mergeWithPartialStale） |
-| **副作用** | stale 受 `marketsHardTtlMs` 限制，超时后不再补位 |
+| 属性           | 值                                                                                    |
+| -------------- | ------------------------------------------------------------------------------------- |
+| **解决的问题** | 数据完整性 — V3 或 V4 单边失败不应抹掉另一边的新鲜数据                                |
+| **触发条件**   | `fetchResult.v3.success` 或 `fetchResult.v4.success` 为 false                         |
+| **行为**       | 失败 side 用 stale 数据补位，成功 side 保留 fresh 数据                                |
+| **状态模型**   | 有状态 — `staleV3Data`、`staleV4Data`、`v3FetchedAt`、`v4FetchedAt` 在 backend 内存中 |
+| **实现位置**   | `backend/src/services/marketsService.ts`（mergeWithPartialStale）                     |
+| **副作用**     | stale 受 `marketsHardTtlMs` 限制，超时后不再补位                                      |
 
 **与 Three-layer 的关系**：Per-side stale merge 是 Three-layer 的 Layer 3 实现。Layer 2 (RPC) 也失败后，`fetchResult.v4.success = false`，触发 Layer 3 stale 补位。
 
@@ -146,7 +147,7 @@ V4 数据获取路径叠加了四种独立的弹性（resilience）模式，每�
 
 AAV-580 曾提出用 in-memory `spokeAddress → spokeName` 缓存解决 RPC fallback 期间 spokeName 不一致问题（`"MAIN_SPOKE"` vs `"Main"`）。经代码验证后否决：
 
-- **激励匹配不受影响** — Merkl 用 `chainId + tokenAddress`，Merit V4 用 `chainName + tokenSymbol`，都不依赖 `marketName`
+- **激励匹配不受影响** — Merkl 用 `chainName + tokenSymbol`，不依赖 `marketName`
 - **纯展示问题** — 仅在 SDK 宕机期间用户看到 address-book 风格名称，SDK 恢复后自动正确
 - **代价不匹配** — 为极低概率的展示美化引入永久性 module 级可变状态 + 生命周期管理
 - **与 fast-fail 理念冲突** — fast-fail 的核心是"无状态、靠 error type 判断"，引入 LKG cache 是另一套完全不同的弹性哲学

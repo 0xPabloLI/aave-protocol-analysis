@@ -19,28 +19,6 @@ test("serializeReserveForApi scales ratio yield fields to HTTP percents", () => 
     tokenAddress: "0xabc",
     supplyApy: 0.052,
     borrowApy: 0.04,
-    meritSupplys: [
-      {
-        link: "https://merit.example/s",
-        breakdowns: [
-          {
-            campaignApr: 0.03,
-            campaignId: "test-base",
-            campaignStartedAt: "2025-01-01",
-            campaignEndedAt: "2025-12-31",
-            campaignType: "DUTCH_AUCTION",
-          },
-          {
-            campaignApr: 0.01,
-            campaignId: "test-self",
-            campaignStartedAt: "2025-01-01",
-            campaignEndedAt: "2025-12-31",
-            campaignType: "DUTCH_AUCTION",
-            positionCapUsd: 10000,
-          },
-        ],
-      },
-    ],
     merklSupplys: [
       {
         link: "https://merkl.example/o",
@@ -79,9 +57,6 @@ test("serializeReserveForApi scales ratio yield fields to HTTP percents", () => 
 
   assert.equal(api.supplyApy, 5.2);
   assert.equal(api.borrowApy, 4);
-  assert.equal(api.meritSupplys?.[0]?.breakdowns?.[0]?.campaignApr, 3);
-  assert.equal(api.meritSupplys?.[0]?.breakdowns?.[1]?.campaignApr, 1);
-  assert.equal(api.meritSupplys?.[0]?.breakdowns?.[1]?.positionCapUsd, 10000);
   const bd = api.merklSupplys?.[0]?.breakdowns?.[0];
   assert.equal(bd?.campaignApr, 4);
   assert.equal(bd?.aprCap, 6);
@@ -819,34 +794,6 @@ function makeFullReserve(): RuntimeReserveData {
     optimalUtilization: 80,
     baseBorrowRate: 0.5,
     aaveProReserveId: "12345",
-    meritSupplys: [
-      {
-        link: "https://test",
-        breakdowns: [
-          {
-            campaignApr: 0.01,
-            campaignId: "test-base",
-            campaignStartedAt: "2025-01-01",
-            campaignEndedAt: "2025-12-31",
-            campaignType: "DUTCH_AUCTION",
-          },
-        ],
-      },
-    ],
-    meritBorrows: [
-      {
-        link: "https://test",
-        breakdowns: [
-          {
-            campaignApr: 0.02,
-            campaignId: "test-base",
-            campaignStartedAt: "2025-01-01",
-            campaignEndedAt: "2025-12-31",
-            campaignType: "DUTCH_AUCTION",
-          },
-        ],
-      },
-    ],
     merklSupplys: [
       {
         link: "https://test",

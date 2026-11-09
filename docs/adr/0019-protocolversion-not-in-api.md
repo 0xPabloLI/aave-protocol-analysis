@@ -10,11 +10,10 @@ Accepted
 
 `protocolVersion` (`'v3' | 'v4'`) exists inside the fetcher layer as an incentive matching key:
 
-| Source | Location | Value | Purpose |
-|---|---|---|---|
-| Merkl | `deriveProtocolVersion()` (ADR-0018) | Derived from type/address | Filter campaigns by protocol version in `findMatchingMerklOpportunities()` |
-| Merit | `createIndexEntry()` L1080 | Hardcoded `'v3'` | Reserved for future V4 data from Merit |
-| Brevis | `campaignsIndex` L684 | Hardcoded `'v3'` | Reserved for future V4 data from Brevis |
+| Source | Location                             | Value                     | Purpose                                                                    |
+| ------ | ------------------------------------ | ------------------------- | -------------------------------------------------------------------------- |
+| Merkl  | `deriveProtocolVersion()` (ADR-0018) | Derived from type/address | Filter campaigns by protocol version in `findMatchingMerklOpportunities()` |
+| Brevis | `campaignsIndex` L684                | Hardcoded `'v3'`          | Reserved for future V4 data from Brevis                                    |
 
 The fetcher uses `protocolVersion` to prevent cross-version pollution (e.g. V4 Merkl campaigns matching V3 reserves), but it is **not written into `RuntimeReserveData`** and therefore absent from the API response (25 fields, no `protocolVersion`).
 
@@ -22,9 +21,9 @@ Meanwhile, the frontend independently derives protocol version from `marketName`
 
 ```ts
 // aaveapy/src/lib/protocolVersion.ts
-function getProtocolVersion(marketName: string): 'v3' | 'v4' {
-  if (marketName.toLowerCase().startsWith('aavev4')) return 'v4';
-  return 'v3';
+function getProtocolVersion(marketName: string): "v3" | "v4" {
+  if (marketName.toLowerCase().startsWith("aavev4")) return "v4";
+  return "v3";
 }
 ```
 
@@ -74,7 +73,7 @@ Rationale:
 - **Positive**: Lean API payload (no redundant field across 354+ reserves)
 - **Positive**: `protocolVersion` in incentive adapters remains an internal implementation detail with clear scope
 - **Neutral**: Frontend must continue deriving version from `marketName`; if Aave ever breaks the naming convention, both backend (fetcher L520) and frontend would need coordinated updates
-- **Neutral**: Future incentive sources (Merit/Brevis V4 campaigns) will use the same pattern — `protocolVersion` stays internal to the matching logic
+- **Neutral**: Future incentive sources (Brevis V4 campaigns) will use the same pattern — `protocolVersion` stays internal to the matching logic
 
 ## References
 

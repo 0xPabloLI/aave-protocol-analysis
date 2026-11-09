@@ -47,27 +47,13 @@ import {
   buildSymbolLookupCI,
   buildEquivLookup,
 } from "./merkl-symbol-resolver.js";
-import {
-  MeritDataItem,
-  fetchMeritData,
-  getMeritDataFromMarket,
-} from "./merit-api.js";
 import type {
   BrevisCampaignBreakdown,
   BrevisCampaignItem,
   BrevisDataItem,
 } from "./brevis-api.js";
-import {
-  pruneMeritCampaignGroup,
-  pruneMerklGroup,
-  pruneBrevisItem,
-} from "./incentive-prune.js";
-import {
-  checkAndReportSessionStatus,
-  closeBrowserInstances,
-} from "./cloudflare-browser.js";
+import { pruneMerklGroup, pruneBrevisItem } from "./incentive-prune.js";
 import { fetchV4ReservesData, bigintReplacer } from "./v4-fetcher.js";
-import { closeBrowser } from "./merit-api.js";
 import type { V4FetchResult } from "./v4-retry.js";
 import type {
   RuntimeReserveData,
@@ -402,7 +388,6 @@ async function fetchBrevisAprs(
 }
 
 export { FETCH_TIMEOUT_MS } from "./concurrent-fetch.js";
-export { closeBrowser, getMeritCacheStats } from "./merit-api.js";
 export { getTokenPriceCacheStats } from "./token-price-resolver.js";
 export { getBrevisCacheStats } from "./brevis-distributed-so-far.js";
 
@@ -449,9 +434,8 @@ export async function fetchV4ReservesWithTimeout(options?: {
   });
 }
 
-// 将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
+// 将 Merkl 和 Brevis 激励数据填充到基础数据集中
 // 类型别名：用于数据索引
-type MeritDataIndex = Record<string, MeritDataItem>;
 type MerklDataIndex = Record<string, MerklOpportunityData[]>;
 type BrevisDataIndex = Record<string, BrevisDataItem>;
 type MerklProcessedData = {
@@ -479,7 +463,6 @@ function buildReserveTokenPriceMap(
 
 async function enrichDatasetWithIncentiveData(
   baseDataset: RuntimeReserveData[],
-  meritData: MeritDataIndex,
   merklData: MerklDataIndex,
   brevisData: BrevisDataIndex,
   cachedConstraints?: Map<string, NetPositionConstraint | null>
@@ -514,40 +497,6 @@ async function enrichDatasetWithIncentiveData(
   const enrichedItems = await Promise.all(
     baseDataset.map(async (item) => {
       const isV4Reserve = item.marketName.startsWith("AaveV4");
-      const meritItemData = getMeritDataFromMarket(
-        item.marketName,
-        item.chainName,
-        item.tokenSymbol,
-        meritData
-      );
-
-      if (meritItemData) {
-        if (
-          meritItemData.meritSupplys.length > 0 ||
-          meritItemData.meritBorrows.length > 0
-        ) {
-          item.meritSupplys =
-            meritItemData.meritSupplys.length > 0
-              ? meritItemData.meritSupplys
-              : undefined;
-          item.meritBorrows =
-            meritItemData.meritBorrows.length > 0
-              ? meritItemData.meritBorrows
-              : undefined;
-          if (isV4Reserve) {
-            logger.warn(
-              "V4 reserve matched Merit incentive (expected V3-only)",
-              {
-                chainId: item.chainId,
-                tokenSymbol: item.tokenSymbol,
-                marketName: item.marketName,
-                source: "merit",
-              }
-            );
-          }
-        }
-      }
-
       const matchedOpportunities = findMatchingMerklOpportunities(
         item,
         merklData
@@ -741,10 +690,6 @@ async function enrichDatasetWithIncentiveData(
 
       if (item.aTokenAddress === null) item.aTokenAddress = undefined;
       if (item.vTokenAddress === null) item.vTokenAddress = undefined;
-      if (item.meritSupplys)
-        item.meritSupplys = item.meritSupplys.map(pruneMeritCampaignGroup);
-      if (item.meritBorrows)
-        item.meritBorrows = item.meritBorrows.map(pruneMeritCampaignGroup);
       if (item.merklSupplys)
         item.merklSupplys = item.merklSupplys.map(pruneMerklGroup);
       if (item.merklBorrows)
@@ -804,8 +749,6 @@ function generateCSV(data: RuntimeReserveData[]): string {
     "Token Address",
     "Supply APY (%)",
     "Borrow APY (%)",
-    "Merit Supplys",
-    "Merit Borrows",
     "Merkl Supplys",
     "Merkl Borrows",
     "Merkl Holds",
@@ -826,52 +769,6 @@ function generateCSV(data: RuntimeReserveData[]): string {
         `"${row.tokenAddress}"`,
         row.supplyApy !== undefined ? ratioToPercentString(row.supplyApy) : "",
         row.borrowApy !== undefined ? ratioToPercentString(row.borrowApy) : "",
-        row.meritSupplys && row.meritSupplys.length > 0
-          ? `"${row.meritSupplys
-              .map((g) => {
-                const parts: string[] = [];
-                if (g.name) parts.push(`name:${g.name}`);
-                if (g.message) parts.push(`msg:${g.message}`);
-                const breakdownStr = (g.breakdowns ?? [])
-                  .map((b) => {
-                    const fields = [
-                      ratioToPercentString(b.campaignApr),
-                      b.campaignStartedAt,
-                      b.campaignEndedAt,
-                      b.campaignId || "",
-                    ];
-                    return fields.join(":");
-                  })
-                  .join(";");
-                if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
-                parts.push(`link:${g.link}`);
-                return parts.join("|");
-              })
-              .join(";")}"`
-          : "",
-        row.meritBorrows && row.meritBorrows.length > 0
-          ? `"${row.meritBorrows
-              .map((g) => {
-                const parts: string[] = [];
-                if (g.name) parts.push(`name:${g.name}`);
-                if (g.message) parts.push(`msg:${g.message}`);
-                const breakdownStr = (g.breakdowns ?? [])
-                  .map((b) => {
-                    const fields = [
-                      ratioToPercentString(b.campaignApr),
-                      b.campaignStartedAt,
-                      b.campaignEndedAt,
-                      b.campaignId || "",
-                    ];
-                    return fields.join(":");
-                  })
-                  .join(";");
-                if (breakdownStr) parts.push(`breakdowns:${breakdownStr}`);
-                parts.push(`link:${g.link}`);
-                return parts.join("|");
-              })
-              .join(";")}"`
-          : "",
         // 格式化 Merkl Supplys：包含 name 和 message
         row.merklSupplys && row.merklSupplys.length > 0
           ? `"${row.merklSupplys
@@ -1102,20 +999,6 @@ async function fetchRawMarketData(): Promise<MarketData> {
 }
 
 export async function runMarketsFetcher(): Promise<void> {
-  logger.info("🔧 Pre-flight check: Cloudflare browser session status...");
-  await checkAndReportSessionStatus();
-
-  if (process.env.CLOSE_BROWSERS_ON_START === "true") {
-    logger.info(
-      "🔌 CLOSE_BROWSERS_ON_START=true, closing existing browser instances..."
-    );
-    await closeBrowserInstances();
-    logger.info(
-      "⏳ Waiting 30s after closing browsers for Cloudflare to release resources..."
-    );
-    await new Promise((resolve) => setTimeout(resolve, 30000));
-  }
-
   try {
     // V3/V4 并发 fetch + per-side 独立超时
     logger.info("🚀 Starting V3/V4 concurrent fetch...");
@@ -1178,29 +1061,29 @@ export async function runMarketsFetcher(): Promise<void> {
     const reserveTokenPriceByChainAndAddress =
       buildReserveTokenPriceMap(baseDataset);
 
-    // 并发获取 Merit、Merkl 和 Brevis 数据（它们之间没有依赖关系）
+    // 并发获取 Merkl 和 Brevis 数据（它们之间没有依赖关系）
     // 注意：程序是定期触发的，设置超时避免某个任务卡住导致所有数据被卡住
     // 超时时间设置较长（10分钟），因为大多数时候数据有缓存，等一等没关系
     logger.info(
-      "🚀 Starting incentive data fetching concurrently (Merit, Merkl, Brevis running simultaneously)..."
+      "🚀 Starting incentive data fetching concurrently (Merkl, Brevis running simultaneously)..."
     );
 
-    const { meritPromise, merklPromise, brevisPromise } =
-      launchIncentiveFetches(reserveTokenPriceByChainAndAddress, baseDataset);
+    const { merklPromise, brevisPromise } = launchIncentiveFetches(
+      reserveTokenPriceByChainAndAddress,
+      baseDataset
+    );
 
     const INCENTIVE_DATA_TIMEOUT_MS = 10 * 60 * 1000;
 
     const getCompletedResults = async (): Promise<{
-      merit: MeritDataIndex;
       merkl: MerklDataIndex;
       brevis: BrevisDataIndex;
     }> => {
-      const { merit, merkl, brevis } = await awaitIncentiveResults(
-        meritPromise,
+      const { merkl, brevis } = await awaitIncentiveResults(
         merklPromise,
         brevisPromise
       );
-      return { merit, merkl, brevis };
+      return { merkl, brevis };
     };
 
     // 创建超时 Promise（带取消功能）
@@ -1208,7 +1091,6 @@ export async function runMarketsFetcher(): Promise<void> {
     let mainTaskCompleted = false;
 
     const timeoutPromise = new Promise<{
-      merit: MeritDataIndex;
       merkl: MerklDataIndex;
       brevis: BrevisDataIndex;
     }>((resolve) => {
@@ -1241,8 +1123,7 @@ export async function runMarketsFetcher(): Promise<void> {
           }
         };
 
-        const [meritCheck, merklCheck, brevisCheck] = await Promise.all([
-          checkCompleted(meritPromise, {} as MeritDataIndex),
+        const [merklCheck, brevisCheck] = await Promise.all([
           checkCompleted(merklPromise, {
             index: {} as MerklDataIndex,
           } as MerklProcessedData),
@@ -1252,9 +1133,6 @@ export async function runMarketsFetcher(): Promise<void> {
           } as BrevisProcessedData),
         ]);
 
-        const meritData: MeritDataIndex = meritCheck.completed
-          ? meritCheck.value
-          : {};
         const merklData: MerklDataIndex = merklCheck.completed
           ? merklCheck.value.index
           : {};
@@ -1262,9 +1140,6 @@ export async function runMarketsFetcher(): Promise<void> {
           ? brevisCheck.value.index
           : {};
 
-        logger.warn(
-          `   • Merit: ${meritCheck.completed ? "completed" : "timeout/empty"}`
-        );
         logger.warn(
           `   • Merkl: ${merklCheck.completed ? "completed" : "timeout/empty"}`
         );
@@ -1275,16 +1150,12 @@ export async function runMarketsFetcher(): Promise<void> {
           `   • Using available results, unfinished tasks continue in background`
         );
 
-        resolve({ merit: meritData, merkl: merklData, brevis: brevisData });
+        resolve({ merkl: merklData, brevis: brevisData });
       }, INCENTIVE_DATA_TIMEOUT_MS);
     });
 
     // 使用 Promise.race，取先完成的（任务完成或超时）
-    const {
-      merit: meritData,
-      merkl: merklData,
-      brevis: brevisData,
-    } = await Promise.race([
+    const { merkl: merklData, brevis: brevisData } = await Promise.race([
       getCompletedResults().then((result) => {
         mainTaskCompleted = true;
         if (timeoutId) clearTimeout(timeoutId);
@@ -1297,13 +1168,10 @@ export async function runMarketsFetcher(): Promise<void> {
       "✅ Using available incentive data (some tasks may still be running in background)"
     );
 
-    // 第二步：将 Merit、Merkl 和 Brevis 激励数据填充到基础数据集中
-    logger.info(
-      "💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)..."
-    );
+    // 第二步：将 Merkl 和 Brevis 激励数据填充到基础数据集中
+    logger.info("💾 Enriching dataset with incentive data (Merkl & Brevis)...");
     const enrichedData = await enrichDatasetWithIncentiveData(
       baseDataset,
-      meritData,
       merklData,
       brevisData,
       undefined
@@ -1382,7 +1250,6 @@ export async function runMarketsFetcher(): Promise<void> {
 }
 
 interface IncentiveResults {
-  merit: MeritDataIndex;
   merkl: MerklDataIndex;
   brevis: BrevisDataIndex;
   merklResult: MerklProcessedData;
@@ -1390,43 +1257,30 @@ interface IncentiveResults {
 }
 
 async function awaitIncentiveResults(
-  meritPromise: Promise<MeritDataIndex>,
   merklPromise: Promise<MerklProcessedData>,
   brevisPromise: Promise<BrevisProcessedData>
 ): Promise<IncentiveResults> {
-  const results = await Promise.allSettled([
-    meritPromise,
-    merklPromise,
-    brevisPromise,
-  ]);
-  const merit: MeritDataIndex =
-    results[0].status === "fulfilled" ? results[0].value : {};
+  const results = await Promise.allSettled([merklPromise, brevisPromise]);
   const merklResult: MerklProcessedData =
-    results[1].status === "fulfilled"
-      ? (results[1].value as MerklProcessedData)
+    results[0].status === "fulfilled"
+      ? (results[0].value as MerklProcessedData)
       : { index: {} as MerklDataIndex };
   const merkl: MerklDataIndex = merklResult.index;
   const brevisResult: BrevisProcessedData =
-    results[2].status === "fulfilled"
-      ? results[2].value
+    results[1].status === "fulfilled"
+      ? results[1].value
       : {
           index: {} as BrevisDataIndex,
           brevisDistributedSoFar: new Map<string, number | undefined>(),
         };
   const brevis: BrevisDataIndex = brevisResult.index;
-  return { merit, merkl, brevis, merklResult, brevisResult };
+  return { merkl, brevis, merklResult, brevisResult };
 }
 
 function launchIncentiveFetches(
   reserveTokenPriceByChainAndAddress: Map<string, number>,
   baseDataset: RuntimeReserveData[]
 ) {
-  const meritPromise = fetchMeritData().catch((error) => {
-    logger.error(
-      `❌ Merit data fetching failed: ${error instanceof Error ? error.message : String(error)}`
-    );
-    return {} as MeritDataIndex;
-  });
   const reserveIdSet = new Set<string>();
   for (const r of baseDataset) {
     reserveIdSet.add(r.reserveId);
@@ -1450,7 +1304,7 @@ function launchIncentiveFetches(
       brevisDistributedSoFar: new Map<string, number | undefined>(),
     } as BrevisProcessedData;
   });
-  return { meritPromise, merklPromise, brevisPromise };
+  return { merklPromise, brevisPromise };
 }
 
 // 导出数据获取函数供 backend 内化使用（cron-write/API-read-only 模式）
@@ -1461,12 +1315,6 @@ export async function fetchMarketsData(options?: {
 }): Promise<MarketsPayload> {
   const _t0 = Date.now();
   const _elapsed = () => `${Date.now() - _t0}ms`;
-
-  // 🧹 启动时检查并清理 Cloudflare browser sessions
-  logger.info(
-    `🔧 Pre-flight check: Cloudflare browser session status... [${_elapsed()}]`
-  );
-  await checkAndReportSessionStatus();
 
   // V3/V4 并发 fetch + per-side 独立超时
   logger.info(`🚀 Starting V3/V4 concurrent fetch... [${_elapsed()}]`);
@@ -1528,36 +1376,34 @@ export async function fetchMarketsData(options?: {
     `Formatting done: ${baseDataset.length} reserves (V3=${v3Count}, V4=${v4Count}) [${_elapsed()}]`
   );
 
-  // 并发获取 Merit、Merkl 和 Brevis 数据
+  // 并发获取 Merkl 和 Brevis 数据
   logger.info(
     `🚀 Starting incentive data fetching concurrently... [${_elapsed()}]`
   );
 
-  const { meritPromise, merklPromise, brevisPromise } = launchIncentiveFetches(
+  const { merklPromise, brevisPromise } = launchIncentiveFetches(
     reserveTokenPriceByChainAndAddress,
     baseDataset
   );
 
   const {
-    merit: meritData,
     merkl: merklData,
     brevis: brevisData,
     merklResult,
     brevisResult,
-  } = await awaitIncentiveResults(meritPromise, merklPromise, brevisPromise);
+  } = await awaitIncentiveResults(merklPromise, brevisPromise);
 
   logger.info(
-    `Incentive data fetched (Merit keys=${Object.keys(meritData).length}, Merkl keys=${Object.keys(merklData).length}, Brevis keys=${Object.keys(brevisData).length}) [${_elapsed()}]`
+    `Incentive data fetched (Merkl keys=${Object.keys(merklData).length}, Brevis keys=${Object.keys(brevisData).length}) [${_elapsed()}]`
   );
 
   // Enrich with incentive data
   const _enrichStart = Date.now();
   logger.info(
-    `💾 Enriching dataset with incentive data (Merit, Merkl & Brevis)... [${_elapsed()}]`
+    `💾 Enriching dataset with incentive data (Merkl & Brevis)... [${_elapsed()}]`
   );
   const runtimeData = await enrichDatasetWithIncentiveData(
     baseDataset,
-    meritData,
     merklData,
     brevisData,
     options?.cachedConstraints

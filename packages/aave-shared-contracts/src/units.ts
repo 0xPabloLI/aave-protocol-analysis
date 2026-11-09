@@ -161,8 +161,6 @@ export const FIELD_UNITS = {
   spokeAddress: "string",
   // Incentive campaign arrays — nested objects with ratio fields inside
   // (campaignApr, aprCap are ratio in memory; serializer applies ×100 per breakdown)
-  meritSupplys: "campaignArray",
-  meritBorrows: "campaignArray",
   merklSupplys: "campaignArray",
   merklBorrows: "campaignArray",
   merklHolds: "campaignArray",

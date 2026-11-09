@@ -17,31 +17,57 @@ permissions:
   contents: write
   issues: write
 
+# Fast CI feedback: cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-prune:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
 
+      - name: Pin npm (lockfile validated with 11.6.2)
+        run: npm install -g npm@11.6.2
+
       - name: CI (root + backend)
-        run: npm run ci
+        id: ci
+        run: |
+          echo "start=$(date +%s)" >> "$GITHUB_OUTPUT"
+          npm run ci
+
+      - name: Record CI duration (build perf tracking)
+        if: always() && steps.ci.outputs.start != ''
+        run: |
+          DUR=$(( $(date +%s) - ${{ steps.ci.outputs.start }} ))
+          {
+            echo "# CI duration — \`${{ github.sha }}\`"
+            echo ""
+            echo "| Job | Duration |"
+            echo "| --- | -------- |"
+            echo "| build-and-prune (\`npm run ci\`) | ${DUR}s |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   security-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
+
+      - name: Pin npm (lockfile validated with 11.6.2)
+        run: npm install -g npm@11.6.2
 
       - name: Install dependencies
         run: npm ci
@@ -63,14 +89,17 @@ jobs:
   socket-firewall:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup Node
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: package-lock.json
+
+      - name: Pin npm (lockfile validated with 11.6.2)
+        run: npm install -g npm@11.6.2
 
       - name: Install Socket Firewall
         uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
@@ -80,12 +109,53 @@ jobs:
       - name: Install dependencies via Socket Firewall (root workspace)
         run: sfw npm ci
 
+  quality-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Pin npm (lockfile validated with 11.6.2)
+        run: npm install -g npm@11.6.2
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Lint (ESLint, ratcheted warnings)
+        run: npm run lint
+
+      - name: Dependency version drift (syncpack)
+        run: npm run check:syncpack
+
+      - name: Tech-debt markers (TODO/FIXME issue refs)
+        run: npm run check:todos
+
+      - name: Duplicate code (jscpd, 5% threshold)
+        run: npm run check:duplicates
+
+      - name: Unused dependencies and files (knip)
+        run: npm run check:knip
+
+      - name: Test naming convention
+        run: npm run check:test-naming
+
+      - name: Feature-flag registry (dead flag detection)
+        run: npm run check:feature-flags
+
+      - name: AGENTS.md drift (stale file/script references)
+        run: npm run check:agents-drift
+
   # Auto-revert: when CI fails on a direct push (not PR), revert the commit.
   # This is the safety net for `git push --no-verify` which bypasses the
   # local pre-push hook. The broken commit gets pushed, CI catches it,
   # and this job reverts it so the remote branch stays green.
   auto-revert-on-failure:
-    needs: [build-and-prune, security-audit]
+    needs: [build-and-prune, security-audit, quality-gates]
     if: failure() && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -93,7 +163,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout target branch (full history for git revert)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.ref_name }}
           token: ${{ secrets.CODEX_BOT_TOKEN != '' && secrets.CODEX_BOT_TOKEN || github.token }}
@@ -127,13 +197,13 @@ jobs:
             const reverted = '${{ steps.revert.outputs.reverted }}' === 'true';
             const title = `CI failed on push to ${branch} — ${sha}`;
             const body = [
-              `## CI failed on direct push to \\`${branch}\``,
+              `## CI failed on direct push to ${branch}`,
               '',
-              `**Commit**: \`${sha}\``,
+              `**Commit**: ${sha}`,
               `**CI run**: ${runUrl}`,
               '',
               reverted
-                ? `✅ The commit has been **auto-reverted** on \`${branch}\`. Fix the issue and push again.`
+                ? `✅ The commit has been **auto-reverted** on ${branch}. Fix the issue and push again.`
                 : `⚠️ Could not auto-revert (merge commit or conflict). **Manual intervention required.**`,
               '',
               '### How to prevent this',

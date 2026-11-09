@@ -19,6 +19,10 @@
 >
 > **2026-08-06 更新**：修复 `usePortfolioToggle.ts` 中 useMemo key 不匹配 bug（commit `45675516` on `aaveapy/lovable`）。根因：`useMemo` 返回对象 key 为 `portfolioHealthFactors`，但解构语法 `healthFactors: portfolioHealthFactors` 期望 key `healthFactors`，导致 `portfolioHealthFactors` 始终为 `undefined`。虽然 P4-P7 的 HF 计算逻辑全部正确（`computeHealthFactors` 正确产出 `healthFactor: 1.56`），但 HF 数据从未传递到 `PortfolioSummaryBar`，UI 始终显示 "—"。全代码库审查确认仅此一处。回归测试已添加（断言 `portfolioHealthFactors` 为 defined 且 `healthFactor > 0`）。同时创建 `docs/conventions/wallet-js-injection-testing.md`（前端），归档 wallet JS 注入 E2E 测试模式。
 >
+> **2026-08-08 更新 3**：AAV-1024（Shared scenario 通用 note）+ AAV-1023（Reserve table 验证）均已完成。AAV-1024 commit `db2e5fd4` on `aaveapy/lovable`：在 `merklCrossReserveNote()` 中增加 `crossReservePositions == null` 分支，NPC/CAP 分别显示通用提示 note。5 个 TDD 测试，3496 测试通过，0 回归。AAV-1023 确认为 no-op：4 项验证全部通过（offset 已正确实现，note 已附加，归零展示正常，数值一致性由同一 `simulationsById` 保证）。Offset 体系对齐（AAV-1022/1023/1024）全部完成。
+>
+> **2026-08-08 更新 2**：AAV-1022（offset 对齐规则定义）已完成。Spec: `docs/plans/aav-1022-offset-alignment-rules-spec.md`。方案 C 形式化：4 个上下文的 offset 行为定义 + 16 场景 Scenario Matrix + 通用/精确 note 文案。代码验证结论：Portfolio mode offset 已正确实现，Shared scenario 唯一 gap 是通用 note（AAV-1024 scope）。AAV-1023 预期为 no-op 或 minor display improvement。
+>
 > **2026-08-02 Grill 更新**：AAV-756 已拆分为 P2-P7 六个子步骤（见下方 AAV-756 拆分详情）。确认 HF 按 per-pool/spoke 隔离边界计算，非全局。先做 simulation 逻辑，后接 on-chain HF baseline。
 
 ## 本轮操作汇总
@@ -140,13 +144,13 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ## Phase 1: Urgent / High — 最高优先级
 
-| Issue        | 标题                                                           | 状态        | 领域      | 优先级   | 说明                                                                                   |
-| ------------ | -------------------------------------------------------------- | ----------- | --------- | -------- | -------------------------------------------------------------------------------------- |
-| **AAV-756**  | Portfolio LTV constraint + Net Effective APY + Health Factor   | Todo        | 前端      | Urgent   | **完全 unblocked**。已拆分 P2-P7（见下方详情）                                         |
-| ~~AAV-1222~~ | ~~[Backend] GET /markets API 增加 ltv + liquidationThreshold~~ | **Done** ✅ | 后端      | ~~High~~ | 2026-08-02 完成。fingerprint: 2d1059421baf                                             |
-| **AAV-895**  | Borrow ETH with cbETH collateral — cross-asset offset formula  | In Progress | 后端+前端 | High     | 后端完成 (commit a5eb421)，前端完成 (commit e3a14833 on lovable)。待后端部署后验证 E2E |
-| **AAV-1036** | Data layer: separate offsetNote from capNote                   | Backlog     | 后端      | High     | 父 issue，AAV-1038 已 Done                                                             |
-| **AAV-364**  | [EPIC] 市场宏观指标聚合                                        | Todo        | 全栈      | High     | deficit 已实现，其他指标待做                                                           |
+| Issue        | 标题                                                           | 状态        | 领域      | 优先级   | 说明                                                                                                                                                                              |
+| ------------ | -------------------------------------------------------------- | ----------- | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **AAV-756**  | Portfolio LTV constraint + Net Effective APY + Health Factor   | Todo        | 前端      | Urgent   | **完全 unblocked**。已拆分 P2-P7（见下方详情）                                                                                                                                    |
+| ~~AAV-1222~~ | ~~[Backend] GET /markets API 增加 ltv + liquidationThreshold~~ | **Done** ✅ | 后端      | ~~High~~ | 2026-08-02 完成。fingerprint: 2d1059421baf                                                                                                                                        |
+| ~~AAV-895~~  | Borrow ETH with cbETH collateral — cross-asset offset formula  | **Done** ✅ | 后端+前端 | ~~High~~ | 后端完成 (commit a5eb421)，staging 自动部署成功。前端完成 (commit e3a14833 on lovable)。E2E 测试已添加 (commit 58aa1542)，当前 Merkl 无活跃 min(1,2) campaign，测试 graceful skip |
+| **AAV-1036** | Data layer: separate offsetNote from capNote                   | Backlog     | 后端      | High     | 父 issue，AAV-1038 已 Done                                                                                                                                                        |
+| **AAV-364**  | [EPIC] 市场宏观指标聚合                                        | Todo        | 全栈      | High     | deficit 已实现，其他指标待做                                                                                                                                                      |
 
 ## AAV-756 拆分详情 — Portfolio LTV + HF + Net Effective APY
 
@@ -211,13 +215,13 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 **代码验证**: `rateSimulationCalculator.ts` 中 offset 由 `crossReservePositions` 参数控制。Shared scenario 不传入则不应用。
 
-| Issue        | 标题                                 | 状态            | 领域      | 优先级        | 说明                        |
-| ------------ | ------------------------------------ | --------------- | --------- | ------------- | --------------------------- |
-| **AAV-832**  | Portfolio simulation offset 对齐规则 | Backlog         | 产品决策  | Low           | 父 issue，决策已定          |
-| **AAV-1022** | 定义 offset 对齐规则                 | Ready for agent | 前端+产品 | Medium        | 可执行                      |
-| **AAV-1023** | 改造 Reserve table 展示逻辑          | Ready for agent | 前端      | Medium        | 依赖 AAV-1022               |
-| **AAV-1024** | 同步 Shared scenario                 | Ready for agent | 前端      | Medium        | 依赖 AAV-1022，仅 note 展示 |
-| **AAV-1025** | offset 扣减时给用户提醒              | Backlog         | 前端      | No priority⚠️ | 独立增强，未批量更新        |
+| Issue        | 标题                                 | 状态        | 领域      | 优先级        | 说明                                                               |
+| ------------ | ------------------------------------ | ----------- | --------- | ------------- | ------------------------------------------------------------------ |
+| **AAV-832**  | Portfolio simulation offset 对齐规则 | Backlog     | 产品决策  | Low           | 父 issue，决策已定                                                 |
+| ~~AAV-1022~~ | ~~定义 offset 对齐规则~~             | **Done** ✅ | 前端+产品 | ~~Medium~~    | Spec 完成，见 `docs/plans/aav-1022-offset-alignment-rules-spec.md` |
+| ~~AAV-1023~~ | ~~改造 Reserve table 展示逻辑~~      | **Done** ✅ | 前端      | ~~Medium~~    | No-op。验证 4 项全部已实现，无代码变更                             |
+| ~~AAV-1024~~ | ~~同步 Shared scenario~~             | **Done** ✅ | 前端      | ~~Medium~~    | commit `db2e5fd4`。Shared scenario 通用 note 已实现                |
+| **AAV-1025** | offset 扣减时给用户提醒              | Backlog     | 前端      | No priority⚠️ | 独立增强，未批量更新                                               |
 
 ## Phase 2B: Borrow Blacklist 体系
 
@@ -231,12 +235,12 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 ## Phase 2C: Campaign Type 统一
 
-| Issue       | 标题                                              | 状态            | 领域 | 优先级     | 说明                                                             |
-| ----------- | ------------------------------------------------- | --------------- | ---- | ---------- | ---------------------------------------------------------------- |
-| **AAV-862** | 统一 normalize campaignType 逻辑                  | Ready for agent | 后端 | Medium     | 父 issue。子 issue 全部 Done。scope 1-2（统一函数+重命名）未完成 |
-| ~~AAV-868~~ | ~~resolveCampaignApr 复用 normalize 函数链~~      | **Done** ✅     | 后端 | ~~Medium~~ | 2026-08-02 验证。已改用 normalize 函数链                         |
-| ~~AAV-870~~ | ~~AMOUNT_PER_AMOUNT 无 TVL 数据~~                 | **Done** ✅     | 后端 | ~~Medium~~ | 2026-08-02 验证。opportunity TVL + targetTokenPrice 转换         |
-| ~~AAV-866~~ | ~~forecast endTimestamp 与 campaignEndedAt 冗余~~ | **Done** ✅     | 后端 | ~~Medium~~ | 2026-08-02 验证。调查结论：不冗余，保留两者                      |
+| Issue       | 标题                                              | 状态        | 领域 | 优先级     | 说明                                                                         |
+| ----------- | ------------------------------------------------- | ----------- | ---- | ---------- | ---------------------------------------------------------------------------- |
+| ~~AAV-862~~ | ~~统一 normalize campaignType 逻辑~~              | **Done** ✅ | 后端 | ~~Medium~~ | Scope 1 Done (commit `0cb09a2`)。统一到 shared-contracts。Scope 2+3 deferred |
+| ~~AAV-868~~ | ~~resolveCampaignApr 复用 normalize 函数链~~      | **Done** ✅ | 后端 | ~~Medium~~ | 2026-08-02 验证。已改用 normalize 函数链                                     |
+| ~~AAV-870~~ | ~~AMOUNT_PER_AMOUNT 无 TVL 数据~~                 | **Done** ✅ | 后端 | ~~Medium~~ | 2026-08-02 验证。opportunity TVL + targetTokenPrice 转换                     |
+| ~~AAV-866~~ | ~~forecast endTimestamp 与 campaignEndedAt 冗余~~ | **Done** ✅ | 后端 | ~~Medium~~ | 2026-08-02 验证。调查结论：不冗余，保留两者                                  |
 
 ## Phase 3: Medium — 架构改进 / 功能扩展
 
@@ -391,22 +395,83 @@ packages/aave-shared-config/schema-fingerprint.ts
 
 > AAV-756 全部子步骤完成。
 
-### 其他 issue（按优先级排序）
+### 活跃 issue 主跟踪表（2026-08-10 全面 re-triage）
 
-| 顺序 | Issue         | 优先级 | 状态            | 说明                                                                       |
-| ---- | ------------- | ------ | --------------- | -------------------------------------------------------------------------- |
-| 1    | AAV-1253 (P7) | Urgent | Done            | on-chain HF baseline 接入 ✅                                               |
-| 2    | AAV-895       | High   | Frontend Done   | 跨资产 offset 后端完成 (a5eb421) + 前端完成 (e3a14833)。待后端部署验证 E2E |
-| 3    | AAV-1036      | High   | Backlog         | offsetNote 与 capNote 分离（与 AAV-895 相关，需先 refine）                 |
-| 4    | AAV-1022      | Medium | Ready for agent | 定义 offset 对齐规则（AAV-1023/1024 前置）                                 |
-| 5    | AAV-862       | Medium | Ready for agent | normalize campaignType 统一 + 重命名（`done-candidate` 标签）              |
-| 6    | AAV-864       | Medium | Backlog         | 单 cron + 缓存 TTL 重构                                                    |
-| 7    | AAV-1071      | Low    | Backlog         | hookType=17 HF 排除条件展示（后端 `healthFactorHooks` 未透传）             |
+> **Canonical source of truth**：此表是"下一步做什么"的唯一参考。Phase 专节表格保留作为历史参考，如有冲突以本表为准。
 
-> ⚠️ Linear issue 之间未设置 native blocking link。上述依赖关系通过 issue description 中的 "Blocked by" 和 comment 标注。
+#### High 优先级
+
+| Issue        | 状态        | 领域      | 说明                                                                                                                                                                            |
+| ------------ | ----------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ~~AAV-1036~~ | ~~Done~~ ✅ | 前端      | offsetNote 与 capNote 分离 + 删除 `hideAggregateWhenCampaigns` 简化。Runtime verified: Portfolio mode offset note 正确渲染 `$500 of $1,000 net eligible`。PR #574 merged to dev |
+| AAV-1274     | Backlog     | 后端+前端 | RENAME campaignType→distributionType（AAV-862 Scope 2）。跨仓库 API breaking，需前端协调                                                                                        |
+| AAV-364      | Todo        | 后端      | [EPIC] 市场宏观指标聚合 — market size / liquidity / utilization / 全局 deficit                                                                                                  |
+| AAV-482      | Needs Info  | 前端      | Risk Premium Simulation。High 但 blocked on info                                                                                                                                |
+
+#### Medium 优先级
+
+| Issue    | 状态            | 领域      | 说明                                                                                |
+| -------- | --------------- | --------- | ----------------------------------------------------------------------------------- |
+| AAV-1275 | Backlog         | 后端      | DESIGN AMOUNT variant APR display（AAV-862 Scope 3）。需产品决策                    |
+| AAV-1245 | Backlog         | 后端      | V4 RPC Fallback 架构优化：per-chain Multicall3 超批 + ltv/liquidationThreshold 补全 |
+| AAV-726  | Ready for agent | 后端      | Refactor: flatten monorepo to single-package backend                                |
+| AAV-781  | Ready for agent | 后端      | Unify endDate semantics and data directory paths in Merit cache                     |
+| AAV-782  | Ready for agent | 后端      | Distinguish "extraction failed" vs "not target incentive type" in Merit cache       |
+| AAV-843  | Ready for agent | 后端      | Brevis per-user API 接入：个人 Dashboard + Claim                                    |
+| AAV-333  | Todo            | 前端+后端 | V4 Risk Premium Simulation（per-user portfolio 级别）                               |
+
+#### Low 优先级
+
+| Issue    | 状态            | 领域      | 说明                                                                     |
+| -------- | --------------- | --------- | ------------------------------------------------------------------------ |
+| AAV-1071 | Backlog         | 前端+后端 | hookType=17 HF 排除条件展示（`healthFactorHooks` 未透传）                |
+| AAV-449  | Ready for agent | 后端      | 移除 spokeName 字段 — 语义与 marketName 冗余                             |
+| AAV-829  | Ready for agent | 后端      | Unify ~35 `toLowerCase()` → `normalizeAddress()`                         |
+| AAV-830  | Ready for agent | 后端      | Migrate merit-api raw RPC fetch to ProviderPool                          |
+| AAV-517  | Ready for agent | 后端      | onchain 查询 spokeAddress 从 reserveId 解析替代 address-book             |
+| AAV-1269 | Backlog         | 后端      | LOCF 查询实现（`/api/markets/history` 历史回放）                         |
+| AAV-1270 | Backlog         | 后端      | `incentive_details` 列级 NULL 命中率测试 + 决策                          |
+| AAV-1271 | Backlog         | DevOps    | Aave UI ↔ API 对比工具 Phase 3（自动化 + 告警）                          |
+| AAV-900  | Backlog         | 后端      | Pendle PT token targetTokenPrice（3 个非 Aave campaign）                 |
+| AAV-365  | Backlog         | 后端      | side-data endpoints ETag + 前端 304 节流                                 |
+| AAV-800  | Backlog         | 前端      | PortfolioPanel 重复计算路径统一                                          |
+| AAV-1247 | Backlog         | 跨领域    | Code quality: self-documenting code (JSDoc, TODO cleanup, magic numbers) |
+| AAV-534  | Todo            | 后端      | addressBookRegistry 其他字段动态化（spokeKey, oracleAddress 等）         |
+| AAV-586  | Todo            | DevOps    | Prometheus counter for new chain RPC detection                           |
+| AAV-587  | Todo            | DevOps    | 主动通知（Slack/Telegram）新链 RPC 检测                                  |
+| AAV-512  | Todo            | DevOps    | SEO: GSC URL 收录（27 个）                                               |
+| AAV-135  | Todo            | 文档      | [Docs] V4 SDK Embedded Rewards — Intentionally Skipped                   |
+| AAV-329  | Todo            | DevOps    | 建立自动告警 issue 管理 SOP                                              |
+| AAV-1227 | Ready for agent | 前端      | Spec: Inline Widget Embedding System for Article Pages                   |
+
+#### No priority / Needs Info（阻塞）
+
+| Issue    | 优先级      | 状态       | 领域      | 说明                                                                  |
+| -------- | ----------- | ---------- | --------- | --------------------------------------------------------------------- |
+| AAV-1272 | No priority | Backlog    | DevOps    | Dependabot security updates（`open-pull-requests-limit: 0` 可能阻塞） |
+| AAV-1254 | No priority | Backlog    | 前端      | 增加对 eMode 的处理                                                   |
+| AAV-387  | Low         | Needs Info | 后端+前端 | 前后端 API 字段对比，用不上的是否可以节省掉                           |
+| AAV-891  | No priority | Needs Info | DevOps    | Aave 官方前端 repo 修改时自动检测差异                                 |
+| AAV-892  | No priority | Needs Info | DevOps    | Merkl 新 campaign type 预警机制                                       |
+
+#### 已完成 / 已取消（历史参考）
+
+| Issue             | 优先级     | 状态         | 说明                                                                                          |
+| ----------------- | ---------- | ------------ | --------------------------------------------------------------------------------------------- |
+| ~~AAV-1253~~ (P7) | ~~Urgent~~ | ~~Done~~     | on-chain HF baseline 接入 ✅                                                                  |
+| ~~AAV-895~~       | ~~High~~   | ~~Done~~     | 跨资产 offset 完成 (a5eb421) + 前端 (e3a14833) + E2E (58aa1542) ✅                            |
+| ~~AAV-1022~~      | ~~Medium~~ | ~~Done~~     | 定义 offset 对齐规则 ✅                                                                       |
+| ~~AAV-862~~       | ~~Medium~~ | ~~Done~~     | normalize campaignType 统一 ✅ Scope 1 (commit `0cb09a2`)。Scope 2→AAV-1274, Scope 3→AAV-1275 |
+| ~~AAV-864~~       | ~~Medium~~ | ~~Canceled~~ | 单 cron + TTL 重构。字段迁移不可行，cron 合并收益边际                                         |
+
+> ⚠️ Linear issue 之间未设置 native blocking link。依赖关系通过 issue description 中的 "Blocked by" 和 comment 标注。
 >
-> **排序逻辑**：~~Urgent（AAV-756 P7）~~ ✅ 全部完成 → High（AAV-895、AAV-1036）→ Medium（AAV-1022、AAV-862、AAV-864）→ Low（AAV-1071）。同优先级内 Ready for agent 优先于 Backlog。
+> **排序逻辑**：Ready for agent > Backlog > Todo（同优先级内）；High > Medium > Low > No priority。
 >
-> **下一步**：AAV-1036（offsetNote 与 capNote 分离）或 AAV-1022（offset 对齐规则定义）。AAV-895 前端已完成 (commit e3a14833 on lovable)，待后端部署到 staging 后验证 E2E。
+> **下一步**：~~AAV-1036~~ ✅ Done (runtime verified) → AAV-1274（重命名，High Backlog，需前端协调）→ AAV-364（宏观指标 EPIC，High Todo）→ Medium 优先级 Ready for agent 批次（AAV-726, AAV-781, AAV-782, AAV-843）。
+>
+> **2026-08-10 全面 re-triage**：主跟踪表从 9 行扩展到完整 37 个活跃 issue。新增：AAV-1245（V4 RPC Fallback, Medium）、AAV-726（flatten monorepo, Medium）、AAV-781/782（Merit cache, Medium）、AAV-843（Brevis per-user, Medium）、AAV-449/829/830/517（后端 Ready for agent, Low）、AAV-534/586/587/512/135/329（Todo, Low）、AAV-1227（Widget, Low）、AAV-1272（Dependabot）、AAV-1254（eMode）、AAV-387/891/892（Needs Info）、AAV-364（宏观指标 EPIC, High）、AAV-482（Risk Premium, High）、AAV-333（V4 RP Sim, Medium）。Phase 专节表格保留作为历史参考。
+>
+> **2026-08-10 更新**：AAV-862 Scope 1 完成（commit `0cb09a2`）。AAV-864 Canceled。AAV-1274 + AAV-1275 创建为 deferred follow-up。
 >
 > **已创建 Linear issue**：AAV-1269（LOCF 查询）+ AAV-1270（列级 NULL 命中率测试）。见上方专节。

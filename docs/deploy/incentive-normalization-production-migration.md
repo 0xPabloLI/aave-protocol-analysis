@@ -6,12 +6,12 @@
 
 ## 1. 前置条件
 
-| 条件 | 验证方法 |
-|------|----------|
-| Staging 已全量验证通过 | `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}` |
-| 最新代码已推送到 main | `git log --oneline -1` 确认包含 Dockerfile 修复和 code review fixes |
-| Railway CLI 已登录 | `railway status` |
-| Production DB 可连接 | `psql "$DATABASE_URL" -c "SELECT 1"` |
+| 条件                   | 验证方法                                                            |
+| ---------------------- | ------------------------------------------------------------------- |
+| Staging 已全量验证通过 | `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}`   |
+| 最新代码已推送到 main  | `git log --oneline -1` 确认包含 Dockerfile 修复和 code review fixes |
+| Railway CLI 已登录     | `railway status`                                                    |
+| Production DB 可连接   | `psql "$DATABASE_URL" -c "SELECT 1"`                                |
 
 ## 2. 执行步骤
 
@@ -48,6 +48,7 @@ print(f'reserves with legacy fields: {has_legacy} (should be 0)')
 ```
 
 **预期输出**：
+
 - `status=ok`
 - `Total reserves: ~354+`
 - `reserves with legacy fields: 0`
@@ -125,7 +126,6 @@ import sys, json
 data = json.load(sys.stdin)
 reserves = data.get('reserves', [])
 print(f'Reserves: {len(reserves)}')
-print(f'With meritSupplys: {sum(1 for r in reserves if r.get(\"meritSupplys\"))}')
 print(f'With merklSupplys: {sum(1 for r in reserves if r.get(\"merklSupplys\"))}')
 print(f'With brevisSupplys: {sum(1 for r in reserves if r.get(\"brevisSupplys\"))}')
 "
@@ -133,21 +133,21 @@ print(f'With brevisSupplys: {sum(1 for r in reserves if r.get(\"brevisSupplys\")
 
 ## 3. 回退方案
 
-| 场景 | 回退方法 |
-|------|----------|
-| Step 1-2: 新代码异常 | `railway rollback` 回退到上一版本 |
+| 场景                  | 回退方法                                                                                                                           |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Step 1-2: 新代码异常  | `railway rollback` 回退到上一版本                                                                                                  |
 | Step 5: DROP 后需回退 | **只能从备份恢复**：`pg_restore --clean --dbname="$DATABASE_URL" backup_before_migration_*.dump`，然后 `railway rollback` 回退代码 |
-| Step 6: API 异常 | 检查日志：`railway logs --service aave-protocol-analysis` |
+| Step 6: API 异常      | 检查日志：`railway logs --service aave-protocol-analysis`                                                                          |
 
 ## 4. 监控清单（24h）
 
-| 指标 | 检查方法 | 告警阈值 |
-|------|----------|----------|
-| API health | `curl /health` | 非 200 |
-| Reserve count | `curl /api/markets` → `len(reserves)` | < 300 |
-| Cron tick 频率 | Railway deploy logs | 间隔 > 5min |
-| DB disk usage | Railway metrics | > 80% |
-| SUM 推导 APR 正确 | 对比前端展示 vs 手动 SUM | 偏差 > 0.01% |
+| 指标              | 检查方法                              | 告警阈值     |
+| ----------------- | ------------------------------------- | ------------ |
+| API health        | `curl /health`                        | 非 200       |
+| Reserve count     | `curl /api/markets` → `len(reserves)` | < 300        |
+| Cron tick 频率    | Railway deploy logs                   | 间隔 > 5min  |
+| DB disk usage     | Railway metrics                       | > 80%        |
+| SUM 推导 APR 正确 | 对比前端展示 vs 手动 SUM              | 偏差 > 0.01% |
 
 ## 5. 关键注意事项
 
@@ -158,11 +158,11 @@ print(f'With brevisSupplys: {sum(1 for r in reserves if r.get(\"brevisSupplys\")
 
 ## 6. Staging 执行记录（2026-05-20）
 
-| Step | 结果 | 备注 |
-|------|------|------|
-| 1 部署 | ✅ | Dockerfile 修复 `COPY backend/scripts/` |
-| 2 验证 | ✅ | 354 reserves |
-| 3 cron tick | ✅ | 自动执行 |
-| 4 备份 | — | Staging 未做备份（可接受） |
-| 5 Migration 012 | ✅ | 列/表已 DROP |
-| 6 验证 | ✅ | /health ok, 354 reserves, legacy 字段不存在 |
+| Step            | 结果 | 备注                                        |
+| --------------- | ---- | ------------------------------------------- |
+| 1 部署          | ✅   | Dockerfile 修复 `COPY backend/scripts/`     |
+| 2 验证          | ✅   | 354 reserves                                |
+| 3 cron tick     | ✅   | 自动执行                                    |
+| 4 备份          | —    | Staging 未做备份（可接受）                  |
+| 5 Migration 012 | ✅   | 列/表已 DROP                                |
+| 6 验证          | ✅   | /health ok, 354 reserves, legacy 字段不存在 |

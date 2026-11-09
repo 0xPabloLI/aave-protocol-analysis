@@ -9,7 +9,7 @@ Universal patterns for integrating external APIs. Apply to any service consuming
 ```typescript
 // ❌ Caches entire merged result
 const allData = await fetchAndMergeAllSources();
-cache.set('all-data', allData, TTL);
+cache.set("all-data", allData, TTL);
 ```
 
 Problem: One stale source invalidates entire cache.
@@ -18,9 +18,13 @@ Problem: One stale source invalidates entire cache.
 
 ```typescript
 // ✅ Cache each source independently
-const marketData = await cachedFetch('markets', fetchMarkets, MARKET_TTL);
-const incentives = await cachedFetch('incentives', fetchIncentives, INCENTIVE_TTL);
-const metadata = await cachedFetch('metadata', fetchMetadata, METADATA_TTL);
+const marketData = await cachedFetch("markets", fetchMarkets, MARKET_TTL);
+const incentives = await cachedFetch(
+  "incentives",
+  fetchIncentives,
+  INCENTIVE_TTL
+);
+const metadata = await cachedFetch("metadata", fetchMetadata, METADATA_TTL);
 
 const merged = mergeData(marketData, incentives, metadata);
 ```
@@ -43,17 +47,17 @@ async function cachedFetch<T>(
   options: CachedFetchOptions
 ): Promise<{ data: T; fromCache: boolean }> {
   const { ttlMs, cacheKey, bypassCache = false } = options;
-  
+
   if (!bypassCache) {
     const cached = cache.get<T>(cacheKey);
     if (cached && !isExpired(cached, ttlMs)) {
       return { data: cached.data, fromCache: true };
     }
   }
-  
+
   const response = await fetch(url);
   const data = await response.json();
-  
+
   cache.set(cacheKey, { data, fetchedAt: Date.now() });
   return { data, fromCache: false };
 }
@@ -65,7 +69,7 @@ async function cachedFetch<T>(
 // Generic fetch
 const { data: rawOpportunities } = await cachedFetch<RawOpportunity[]>(
   MERKL_API_URL,
-  { ttlMs: MERKL_TTL, cacheKey: 'merkl-opportunities' }
+  { ttlMs: MERKL_TTL, cacheKey: "merkl-opportunities" }
 );
 
 // Business indexing (outside fetch utility)
@@ -104,7 +108,7 @@ interface RawSnapshot<T> {
 ```typescript
 // When debugging, always verify:
 if (snapshot._debug.hitCacheOnly && snapshot._debug.pagesScanned === 0) {
-  console.warn('No upstream scan happened - data may be stale');
+  console.warn("No upstream scan happened - data may be stale");
 }
 ```
 
@@ -119,25 +123,28 @@ API docs say `order=desc` but don't specify the sort field. You assume it's "new
 ```typescript
 interface Opportunity {
   id: string;
-  createdAt: string;  // Actual timestamp
+  createdAt: string; // Actual timestamp
 }
 
 async function fetchLatestOpportunities(): Promise<Opportunity[]> {
-  const data = await fetchWithSort({ order: 'desc' });
-  
+  const data = await fetchWithSort({ order: "desc" });
+
   // Don't trust upstream sort - verify timestamps
-  const sorted = data.sort((a, b) => 
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  const sorted = data.sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
-  
+
   // Log if upstream order differs from timestamp order
-  if (JSON.stringify(data.map(d => d.id)) !== JSON.stringify(sorted.map(d => d.id))) {
-    logger.warn('Upstream sort differs from timestamp sort', {
+  if (
+    JSON.stringify(data.map((d) => d.id)) !==
+    JSON.stringify(sorted.map((d) => d.id))
+  ) {
+    logger.warn("Upstream sort differs from timestamp sort", {
       upstreamFirst: data[0]?.id,
       timestampFirst: sorted[0]?.id,
     });
   }
-  
+
   return sorted;
 }
 ```
@@ -173,16 +180,16 @@ const data = await fetchMerkl({
 When upstream lacks reliable time-based filtering:
 
 ```typescript
-const CHAINS_TO_SCAN = [1, 137, 42161, 10];  // Known relevant chains
+const CHAINS_TO_SCAN = [1, 137, 42161, 10]; // Known relevant chains
 
 async function scanAllChains(): Promise<Record<number, ScanResult>> {
   const results: Record<number, ScanResult> = {};
-  
+
   for (const chainId of CHAINS_TO_SCAN) {
     const start = Date.now();
     const data = await scanChain(chainId);
     const elapsed = Date.now() - start;
-    
+
     results[chainId] = {
       data,
       _scanMeta: {
@@ -192,7 +199,7 @@ async function scanAllChains(): Promise<Record<number, ScanResult>> {
       },
     };
   }
-  
+
   return results;
 }
 ```
@@ -213,7 +220,7 @@ const data = await fetch(`${API_URL}?status=LIVE&chain=1&creator=aave`);
 
 // Less good: Fetch all, filter client-side
 const all = await fetch(`${API_URL}?status=LIVE`);
-const filtered = all.filter(x => x.chain === 1 && x.creator === 'aave');
+const filtered = all.filter((x) => x.chain === 1 && x.creator === "aave");
 ```
 
 ### Validate Filters Work
@@ -224,7 +231,7 @@ const withFilter = await fetch(`${API_URL}?creatorSlug=aave`);
 const withoutFilter = await fetch(`${API_URL}`);
 
 if (withFilter.length >= withoutFilter.length * 0.9) {
-  logger.warn('Filter may not be working as expected', {
+  logger.warn("Filter may not be working as expected", {
     withFilter: withFilter.length,
     withoutFilter: withoutFilter.length,
   });
@@ -247,11 +254,11 @@ interface FetchOptions {
 async function testApiSort(): Promise<void> {
   // ALWAYS bypass cache when testing API behavior
   const result = await cachedFetch(url, {
-    bypassCache: true,  // Critical!
-    cacheKey: 'test',
+    bypassCache: true, // Critical!
+    cacheKey: "test",
     ttlMs: 0,
   });
-  
+
   // Now verify sort order...
 }
 ```
@@ -259,7 +266,7 @@ async function testApiSort(): Promise<void> {
 Log cache bypass status in debug output:
 
 ```typescript
-logger.debug('API test result', {
+logger.debug("API test result", {
   bypassedCache: options.bypassCache,
   fromCache: result.fromCache,
   itemCount: result.data.length,
@@ -277,44 +284,55 @@ interface RetryOptions {
 
 async function fetchWithRetry<T>(
   url: string,
-  options: RetryOptions = { maxRetries: 3, baseDelayMs: 1000, maxDelayMs: 30000 }
+  options: RetryOptions = {
+    maxRetries: 3,
+    baseDelayMs: 1000,
+    maxDelayMs: 30000,
+  }
 ): Promise<T> {
   let lastError: Error | null = null;
-  
+
   for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
     try {
       const response = await fetch(url);
-      
+
       if (response.status === 429) {
-        const retryAfter = response.headers.get('Retry-After');
-        const delay = retryAfter 
-          ? parseInt(retryAfter) * 1000 
-          : Math.min(options.baseDelayMs * Math.pow(2, attempt), options.maxDelayMs);
-        
-        logger.warn('Rate limited, waiting', { delay, attempt });
+        const retryAfter = response.headers.get("Retry-After");
+        const delay = retryAfter
+          ? parseInt(retryAfter) * 1000
+          : Math.min(
+              options.baseDelayMs * Math.pow(2, attempt),
+              options.maxDelayMs
+            );
+
+        logger.warn("Rate limited, waiting", { delay, attempt });
         await sleep(delay);
         continue;
       }
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      
+
       return await response.json();
     } catch (error) {
       lastError = error as Error;
-      
+
       if (attempt < options.maxRetries) {
         const delay = Math.min(
           options.baseDelayMs * Math.pow(2, attempt),
           options.maxDelayMs
         );
-        logger.warn('Fetch failed, retrying', { attempt, delay, error: lastError.message });
+        logger.warn("Fetch failed, retrying", {
+          attempt,
+          delay,
+          error: lastError.message,
+        });
         await sleep(delay);
       }
     }
   }
-  
+
   throw lastError;
 }
 ```
@@ -326,13 +344,12 @@ Different APIs use different identifiers. Document your matching strategy:
 ```typescript
 /**
  * Identifier matching strategy per API:
- * 
+ *
  * | API    | Identifier Format          | Example                                    |
  * |--------|----------------------------|--------------------------------------------|
- * | Merit  | `chainId-tokenAddress`     | `1-0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` |
  * | Merkl  | chain name + symbol        | `ethereum` + `USDC` (case-insensitive)     |
  * | Brevis | `chainId-tokenAddress`     | `59144-0x...` (Linea)                      |
- * 
+ *
  * Normalization:
  * - All addresses lowercase
  * - Chain names mapped to chainId at boundaries
@@ -343,15 +360,6 @@ Different APIs use different identifiers. Document your matching strategy:
 Create index builders for each API:
 
 ```typescript
-function buildMeritIndex(data: MeritData[]): Map<string, MeritData> {
-  const index = new Map<string, MeritData>();
-  for (const item of data) {
-    const key = `${item.chainId}-${item.tokenAddress.toLowerCase()}`;
-    index.set(key, item);
-  }
-  return index;
-}
-
 function buildMerklIndex(data: MerklData[]): Map<string, MerklData> {
   const index = new Map<string, MerklData>();
   for (const item of data) {

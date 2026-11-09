@@ -16,8 +16,13 @@ import { startUpdateScheduler } from "./services/updateScheduler.js";
 import {
   warmCoingeckoCategoriesCache,
   warmCoingeckoFdvCache,
+  restoreCategoriesFromDb,
+  restoreFdvFromDb,
 } from "./controllers/coingeckoController.js";
-import { warmCampaignForecastStatesCache } from "./controllers/merklForecastController.js";
+import {
+  warmCampaignForecastStatesCache,
+  restoreForecastFromDb,
+} from "./controllers/merklForecastController.js";
 import { getMerklForecastCacheStats } from "./services/merklForecastService.js";
 import { warmMarketsCache, getMarketsData } from "./services/marketsService.js";
 import {
@@ -31,7 +36,6 @@ import {
 import { logger } from "./logger.js";
 import { providerPool } from "@internal/aave-rpc-infra";
 import {
-  getMeritCacheStats,
   getTokenPriceCacheStats,
   getBrevisCacheStats,
 } from "@internal/aave-fetcher";
@@ -43,6 +47,17 @@ import {
   warmConfigHashes,
 } from "./services/persistenceService.js";
 import { runMigrations } from "./services/autoMigrate.js";
+import { warmSideDataFromDb } from "./services/sideDataPersistenceService.js";
+import { requestIdMiddleware } from "./middleware/requestId.js";
+import { metricsMiddleware, metricsHandler } from "./middleware/metrics.js";
+import { flags } from "./flags.js";
+import { initSentry, tagRequestScope } from "./instrumentation.js";
+
+// Sentry error tracking — dormant unless SENTRY_DSN is set.
+const sentryActive = flags.sentryEnabled ? initSentry() : false;
+if (sentryActive) {
+  logger.info("Sentry error tracking initialized");
+}
 
 // Limit undici globalDispatcher connection pool to cap native memory (TLS buffers)
 // consumed by Node.js built-in fetch. Without this, each fetchMarketsData call
@@ -124,6 +139,9 @@ const PORT: number = (() => {
 })();
 
 // Middleware
+// X-Request-ID propagation first so every later layer (logs, metrics, Sentry)
+// can correlate to the same request id.
+app.use(requestIdMiddleware);
 app.use(corsMiddleware);
 app.use(express.json({ limit: "256kb" }));
 app.use(
@@ -133,6 +151,13 @@ app.use(
   })
 );
 app.use(apiCacheHeadersMiddleware);
+if (flags.metricsEnabled) {
+  app.use((req, res, next) => {
+    tagRequestScope(req);
+    metricsMiddleware(req, res, next);
+  });
+  app.get("/metrics", metricsHandler);
+}
 
 const apiRateLimit = rateLimitMiddleware(60_000, 120);
 app.use("/api/markets", apiRateLimit);
@@ -281,14 +306,12 @@ app.use((req, res) => {
     { method, path, ip, ua },
     "404"
   );
-  res
-    .status(404)
-    .json({
-      error: "Not found",
-      message: `No route for ${method} ${rawPath}`,
-      path: rawPath,
-      method,
-    });
+  res.status(404).json({
+    error: "Not found",
+    message: `No route for ${method} ${rawPath}`,
+    path: rawPath,
+    method,
+  });
 });
 
 // Persistence diagnostics — exposes whether DB writes are happening on schedule.
@@ -311,6 +334,29 @@ async function runMigrationWithWarmup(): Promise<void> {
   // doesn't trigger unnecessary re-migration on the next retry.
   migrationReady = true;
   await warmConfigHashes();
+  // Load side-data snapshots from DB and populate in-memory caches.
+  // This must happen BEFORE the warmup Phase 1 so that hasReusableCache()
+  // checks in the warmup functions find the DB-restored data and skip
+  // unnecessary external API calls.
+  try {
+    const sideDataMap = await warmSideDataFromDb();
+    if (sideDataMap.size > 0) {
+      const cats = sideDataMap.get("categories");
+      if (cats) restoreCategoriesFromDb(cats.data, cats.fetchedAt);
+      const fdv = sideDataMap.get("fdv");
+      if (fdv) restoreFdvFromDb(fdv.data, fdv.fetchedAt);
+      const fc = sideDataMap.get("forecast");
+      if (fc) restoreForecastFromDb(fc.data, fc.fetchedAt);
+      logger.info(
+        `💾 Side-data restored from DB: ${sideDataMap.size}/3 sources`
+      );
+    }
+  } catch (error) {
+    logger.warn(
+      "⚠️ warmSideDataFromDb failed — falling back to external API warmup:",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
 }
 
 if (isPersistenceEnabled()) {
@@ -415,7 +461,6 @@ setInterval(() => {
   const merklStats = getMerklForecastCacheStats();
   const onchainStats = getOnchainCacheStatus();
   const oracleStats = getOracleCacheStats();
-  const meritStats = getMeritCacheStats();
   const tokenPriceStats = getTokenPriceCacheStats();
   const brevisStats = getBrevisCacheStats();
   const hashSizes = getHashMapSizes();
@@ -451,12 +496,10 @@ setInterval(() => {
       `onchain=${onchainStats.poolCount}pools/${onchainStats.reserveCount}res ` +
       `oracle=${oracleStats.leanPrice}+${oracleStats.v4ReserveToken} ` +
       `merkl=${merklStats.metricsCacheSize}+${merklStats.zeroBaselineCacheSize}z+${merklStats.inFlightSize}f ` +
-      `merit=${meritStats.roundEstimateCache}r+${meritStats.campaignMetadataCache}m+${meritStats.blockNumberCache}b+${meritStats.redirectAliases}a ` +
       `tokenPrice=${tokenPriceStats.priceCache}+${tokenPriceStats.inFlight}f ` +
       `brevis=${brevisStats.chainCallCache} ` +
       `hashes=${hashSizes.marketRow}+${hashSizes.marketConfig}+${hashSizes.oraclePrice} ` +
       `rpc=${providerStats.providers}p+${providerStats.endpoints}e+${providerStats.rpcUrls}u ` +
-      `browser=${meritStats.browserActive} ` +
       `undici=[${undiciSummary}] ` +
       `nodeAgent=https:${(https.globalAgent as any).totalSocketCount ?? "?"}/${Object.keys((https.globalAgent as any).sockets ?? {}).length}act/${Object.keys((https.globalAgent as any).freeSockets ?? {}).length}free http:${(http.globalAgent as any).totalSocketCount ?? "?"}/${Object.keys((http.globalAgent as any).sockets ?? {}).length}act/${Object.keys((http.globalAgent as any).freeSockets ?? {}).length}free`
   );

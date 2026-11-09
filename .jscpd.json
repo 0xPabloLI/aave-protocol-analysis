@@ -1,0 +1,15 @@
+{
+  "min-tokens": 70,
+  "threshold": 5,
+  "include": ["src/**/*", "packages/*/src/**/*", "backend/src/**/*"],
+  "exclude": [
+    "**/generated/**",
+    "**/*.test.ts",
+    "**/abis/**",
+    "**/dist/**",
+    "**/node_modules/**"
+  ],
+  "format": ["typescript", "javascript"],
+  "reporters": ["console"],
+  "output": "./reports/jscpd"
+}

@@ -2,9 +2,10 @@
 
 ## Project Snapshot
 
+- **Agent harness 总览**: `docs/agents/harness.md` — 本地改编登记（相对 agent-harness core 的偏离与刻意不搬项，含 git 纪律刻意差异）。
 - Monorepo (npm workspaces) with four packages + backend:
   - `packages/aave-shared-contracts` — shared type definitions (`RuntimeReserveData`, `MarketsPayload`, `NetPositionConstraint`), field registry, validation
-  - `packages/aave-fetcher` — data aggregation (`fetchMarketsData`): Aave SDK + Merit + Merkl + Brevis
+  - `packages/aave-fetcher` — data aggregation (`fetchMarketsData`): Aave SDK + Merkl + Brevis
   - `packages/aave-shared-config` — static config constants
   - `packages/aave-rpc-infra` — RPC infrastructure (ProviderPool, Multicall3, V4 reserve fetch)
   - `backend/` — API server, in-memory snapshots (cron-write / API-read-only), DB is pure archive (0 SELECT)
@@ -18,6 +19,53 @@
 - `npm run dev` — run fetcher CLI
 - `npm run build` — build shared-contracts → fetcher → root (ordered)
 - `npm run ci:remote` — full CI-equivalent local gate
+- `npm run check:quality` — quality gates: ESLint + syncpack + TODO scan + jscpd + knip + test-naming + feature-flags + AGENTS.md drift (CI job `quality-gates` runs the same set)
+
+### Quality gates (CI `quality-gates` job)
+
+| Gate                     | Command                       | Policy                                                                                                                               |
+| ------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| ESLint                   | `npm run lint`                | 0 errors; warnings ratcheted via `--max-warnings` — **lower over time, never raise**                                                 |
+| Version drift (syncpack) | `npm run check:syncpack`      | Same dependency must use the same specifier in every workspace; `ethers` pinned exact `5.8.0`                                        |
+| Tech-debt markers        | `npm run check:todos`         | `TODO`/`FIXME` must reference an issue key: `TODO(AAV-123)`                                                                          |
+| Duplicate code (jscpd)   | `npm run check:duplicates`    | Fails above 5% duplicated lines (`min-tokens: 70`); lower the threshold as debt shrinks                                              |
+| Unused deps/files (knip) | `npm run check:knip`          | Root workspace; config in `knip.json`; exports checked by `ts-prune` gates                                                           |
+| Test naming              | `npm run check:test-naming`   | Every test lives in a `tests/` dir, named `*.test.ts`                                                                                |
+| Feature flags            | `npm run check:feature-flags` | Flags defined in `backend/src/flags.ts` must have at least one consumer (dead-flag detection)                                        |
+| AGENTS.md drift          | `npm run check:agents-drift`  | Every file/workflow/script this file names must exist; cross-repo refs need a reasoned exemption in `scripts/check-agents-drift.mjs` |
+
+Quality gates are run by `npm run check:quality`. The drift check resolves against the **git-tracked** tree, so a path that exists only locally (gitignored, or a symlink out of the work tree) is reported rather than accepted — a reference is only satisfied by a file a fresh clone would have. `npm run check:agents-drift -- --verbose` lists those local-only entries and the deliberate cross-repo exemptions.
+
+Workspace-boundary rules (dependency direction, no dist imports) are enforced by `eslint.config.js` (`import/no-restricted-paths` zones + `no-restricted-imports` patterns).
+
+### Testing gates (in `npm run ci`)
+
+- All suites run in CI: root `tests/`, `@internal/aave-fetcher` (`test:ci`), `@internal/aave-rpc-infra`, `@internal/aave-shared-contracts`, backend (`test:coverage`).
+- Backend coverage thresholds (c8, ratchet — **raise over time, never lower**): lines 53 / statements 53 / functions 60 / branches 80.
+- Fetcher tests run identically in CI and locally: `npm run test -w @internal/aave-fetcher` (no browser e2e suite remains after the Merit teardown, AAV-1289).
+- Flaky detection: weekly canary `.github/workflows/test-canary.yml` runs all suites with `RUN_API_FIELDS_TESTS=true` and records suite durations in the step summary. A canary failure that passes in hot-path CI = flaky signal.
+- Test file naming enforced by `npm run check:test-naming` (in `check:quality`): every test must live in a `tests/` dir and be named `*.test.ts`. The check collects **every** test-like extension (`.mjs`, `.cjs`, `.js`, `.tsx`, …), so a test file the runner globs would never pick up is a violation rather than a silent no-op.
+
+## Observability
+
+- **Request tracing**: backend stamps `X-Request-ID` (middleware `requestId.ts`) on responses, logs and Sentry scope.
+- **Metrics**: `GET /metrics` (Prometheus, `aave_backend_` prefix; gate `METRICS_ENABLED`) — HTTP counters/durations + DB query durations with slow-query warn logs (`DB_SLOW_QUERY_MS`).
+- **Errors**: Sentry, env-gated by `SENTRY_DSN` (`instrumentation.ts`) — dormant locally.
+- **Analytics**: structured API usage events → `backend/logs/analytics.log` (`analytics.ts`, gate `ANALYTICS_ENABLED`). Same scrub gate as the main logger since AAV-1290.
+- **PII boundary**: `docs/operations/pii-handling-policy.md` — per-channel data inventory, the rules callers must follow, where the guarantees are enforced, and the residual risks (IP in the 404 access log is the only routine PII that reaches disk).
+- **Alerting**: `uptime-alert.yml` probes backend `/health` and opens/updates a labeled issue on failure. ⚠️ **Verified 2026-09-17: this has never run.** Scheduled workflows only fire when the file exists on the _default_ branch (`main`); this file exists only on `railway`, so the Actions API does not even resolve it by name. The same applies to `test-canary.yml` and `dast-baseline.yml`.
+- **Runbooks**: `docs/runbooks/` (app deploy failure, backend outage) — incident procedures start here.
+- **Profiling**: `npm run profile:cpu -w aave-dashboard-backend` (`node --prof`), then `npm run profile:report -w aave-dashboard-backend` — V8 isolate log → flame summary; see docs/runbooks/backend-outage.md for when to use.
+
+## Dependency Update Policy
+
+- Non-security dependency bumps must wait **≥ 7 days** after the version's release date before merging (supply-chain cool-down). Security/CVE fixes are exempt and merge as soon as green.
+- Renovate opens the PRs (`renovate.json` + Renovate GitHub App, targeting `railway`); `scripts/verify-doppler.sh` / audit gate still apply. Non-security bumps wait ≥ 7 days via `minimumReleaseAge`; security (OSV alert) fixes merge as soon as green. When updating manually, check the release date before merging.
+
+### Releases
+
+- Tag `vX.Y.Z` on the deploy branch and push the tag → `.github/workflows/release.yml` creates a GitHub Release with auto-generated notes for that commit.
+- Pushing a tag does **not** deploy anything. Deployment is driven by the branch push (see Deployment) — the tag only records what shipped.
 
 ### Packages
 
@@ -33,50 +81,59 @@
 - `npm run test -w aave-dashboard-backend` — backend tests
 - Log files: `backend/logs/error.log` (errors only), `backend/logs/combined.log` (all levels), rotated with suffixes (`error1.log`, `combined1.log`, etc.)
 
-## Deployment (Hard Safety Gate)
+## Deployment
 
-### ⛔ Before ANY deploy command, you MUST run `railway status` and verify:
+Deploys are **automatic**. Both environments are wired to Railway's GitHub app
+(`railway-app[bot]`); `railway up` is _not_ part of the normal flow.
 
-- The **linked service** is the one you intend to deploy to
-- If deploying the app → linked service MUST be `aave-protocol-analysis`
-- If the linked service is `Postgres-mDWG` → **STOP. Do NOT deploy.**
+| Branch push | Environment | Railway environment name | Public API                        |
+| ----------- | ----------- | ------------------------ | --------------------------------- |
+| `railway`   | staging     | `aaveapy / staging`      | `https://staging-api.aaveapy.com` |
+| `main`      | production  | `aaveapy / production`   | `https://api.aaveapy.com`         |
 
-### Two-service topology
+Chain: push → CI passes → Railway's "Wait for CI" releases the deploy → Railway
+deploys → `deployment_status` comes back → `.github/workflows/deployment-smoke-test.yml`
+runs as post-deploy verification (health, `/api/markets`, `/api/meta/side-data`,
+frontend), and rolls the deployment back via the Railway GraphQL API if a check
+fails.
 
-| Service                  | Type                  | Builder        | Deploy method                    |
-| ------------------------ | --------------------- | -------------- | -------------------------------- |
-| `aave-protocol-analysis` | App (Node.js)         | Dockerfile     | `railway up`                     |
-| `Postgres-mDWG`          | Database (PostgreSQL) | Template image | `railway redeploy --from-source` |
+- **Pushing to `railway` ships to staging.** A passing CI run is the only gate — there is no separate approval step.
+- **Pushing to `main` ships to production.** Verified 2026-09-19: all 15 production deployments in the repo's history are authored by `railway-app[bot]` and point at commits on `main`.
+- The `railway` CLI **is** installed on the dev machine (v4.61.1) but none of the above needs it. Verify a deploy by polling the public hosts (`/health` returns the deployed `commitSha`), not by running `railway status` — polling works even when the CLI session is stale.
+- `deployment_smoke` never verifying anything was a long-standing silent failure: the resolver matched `ref` against a branch name and `environment` against a bare `staging`/`production`, but Railway sends a commit SHA and `"<project> / <environment>"`. All 100 historical deployments resolved to "skip" while the job reported success (AAV-1294, fixed 2026-09-19). The skip path now emits a warning and a step summary, so a resolver miss can never look like a pass again.
 
-### App deploy
+### Manual `railway` CLI use (exceptional)
 
-```bash
-railway up --detach --service aave-protocol-analysis -m "commit message"
-```
+Only needed for out-of-band work — the normal path is a branch push. The
+two-service topology still applies:
 
-### DB redeploy (only when needed, e.g., after config change)
+| Service                  | Type                  | Builder        |
+| ------------------------ | --------------------- | -------------- |
+| `aave-protocol-analysis` | App (Node.js)         | Dockerfile     |
+| `Postgres-15fr`          | Database (PostgreSQL) | Template image |
 
-```bash
-railway redeploy --service Postgres-mDWG --from-source -y
-```
+Before any manual deploy command, confirm the linked service is the one you
+intend — a stale or wrong link sends app code to the database. If the linked
+service is `Postgres-15fr` → **STOP.**
 
-Do NOT use `railway up` for the database — it will push the app's Dockerfile build
-to the DB service, replacing PostgreSQL with a Node.js container.
+### ⚠️ Consequences of pushing app code to `Postgres-15fr`
 
-### ⚠️ Consequences of deploying app code to Postgres-mDWG
-
-Service outage (DB replaced by Node.js container), recoverable via `railway redeploy --service Postgres-mDWG --from-source -y`. Data persists on the volume.
+Service outage (DB replaced by a Node.js container), recoverable via
+`railway redeploy --service Postgres-15fr --from-source -y`. Data persists on the volume.
 
 ### Post-deploy verification
 
-- App healthcheck needs ~3min to warm up (oracle prices + market data fetch)
-- Verify: `railway status` → app should show `● Online`, DB should show `● Online`
-- Verify: `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}`
+- App healthcheck needs ~3min to warm up (oracle prices + market data fetch).
+- `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}` — the payload's `commitSha` tells you which commit is live.
+- `deployment-smoke-test.yml` runs the same checks automatically and opens a
+  `smoke-test-failure` issue if they fail.
 
 ## Session Workflow
 
 1. **Web access**: Prefer the `web-access` skill (`.cursor/skills/web-access/SKILL.md`) for any web browsing — it uses Chrome CDP to access real browser content (Twitter, SPAs, login-walled pages). Only use `web_fetch` for simple static URL content. Run `node ~/.agents/skills/web-access/scripts/check-deps.mjs` to verify availability.
-2. **Bootstrap when needed**: For substantial implementation, debugging, or design sessions, load `using-superpowers` via skill tool. Load `brainstorming` only for feature design, behavior changes, or solution exploration — skip for lightweight inspection, explanation, and routine work.
+2. **Decision: Lightweight or Substantial?**
+   - **Lightweight**（检查、解释、常规工作）：直接进行，不需要加载额外 skill。
+   - **Substantial implementation**: 按以下 Mandatory Implementation Workflow 执行。
 3. **Hook policy**: Husky hooks have auto-fix capability. `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged). `pre-push` → `scripts/hook-autofix.sh pre-push` which runs `ci` (build+test, non-fixable) then auto-fixable checks (bin-paths, globstar, audit). If auto-fix changes files in pre-push, the commit is amended and you must push again. Do not bypass with `--no-verify` unless the user explicitly confirms. CI auto-reverts direct pushes that fail CI.
 4. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
 5. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`. Before creating a PR, always `git merge origin/main` (or the target branch) to resolve conflicts locally, then push. Never create a PR with unresolved merge conflicts.
@@ -101,6 +158,7 @@ Service outage (DB replaced by Node.js container), recoverable via `railway rede
       - [ ] Step 6 Runtime Verify 完成（有运行时验证证据：截图 / DOM 检查 / API 响应）
       - [ ] Step 7 Commit & Push 完成（有 commit hash + push 成功）
       - [ ] Step 8 文档及 Issue 更新完成（Linear 状态已更新）
+      - [ ] 产品视角结论完成（汇报先讲清 issue/feature 原本要什么、用户现在看到什么，再列 Step 1-8 完成情况与证据）
       - 如有任何步骤跳过，必须在向用户汇报时**显式列出**跳过的步骤和原因，不得遗漏
 10. **每次修改都用最佳实践**: 改代码前先考虑最佳实践的改法是什么，再动手实施。
 
@@ -172,7 +230,7 @@ Adding/modifying in-memory caches, Maps, Sets, long-lived closures, or external 
 2. Add to `EXPECTED_RUNTIME_FIELDS` in the same file.
 3. Add to `FIELD_UNITS` in `shared-contracts/src/units.ts` with the correct unit.
 4. Update `marketsApiSerialize.ts` — check `SERIALIZER_RULES` matches actual serializer behavior.
-5. The invariant test (`tests/units.test.ts`) will fail if you forget step 3.
+5. The invariant test (`packages/aave-shared-contracts/tests/units.test.ts`) will fail if you forget step 3.
 6. The backend consistency test (`backend/tests/unitsConsistency.test.ts`) will fail if serializer behavior doesn't match `SERIALIZER_RULES`.
 
 ## Automated Checks (No Manual Checklist Needed)
@@ -194,7 +252,6 @@ When touching one area, check its pair:
 - Root output schema ↔ `backend/src/services/marketsApiSerialize.ts`
 - `backend/src/cacheTtl.ts` ↔ `backend/src/services/updateScheduler.ts`
 - Chain/platform mapping ↔ `packages/aave-fetcher/src/generated/coingecko-platform-by-chain-id.ts`
-- `scripts/sync-oracle-pool-configs.ts` ↔ `backend/src/generated/oracle-pool-configs.ts`
 - `packages/aave-shared-contracts/src/units.ts` (FIELD_UNITS) ↔ `backend/src/services/marketsApiSerialize.ts` (serializer behavior)
 
 ### Shared Package Boundaries (Non-Negotiable)
@@ -226,12 +283,7 @@ When touching one area, check its pair:
 ## High-Risk Areas (Coordinate Carefully)
 
 - Fetch orchestration: `packages/aave-fetcher/src/index.ts`
-- Incentive adapters: `packages/aave-fetcher/src/merit-api.ts`, `merkl-api.ts`, `brevis-api.ts`, `brevis-distributed-so-far.ts`
-- Merit dynamic info fallback chain: Render (CDP) → Worker → Playwright (local) → null
-  - `RENDER_SERVICE_URL` env var enables Render browserless fallback (free tier: ~90s cold start, 750h/month)
-  - `MERIT_ALLOW_LOCAL_PLAYWRIGHT` — default `true`; set to `"false"` in production to prevent Chromium OOM on Railway
-  - Shared helpers: `extractCampaignInfoFromPage()`, `extractSelfAuthFromPage()`, `createMeritPage()`
-  - Source type: `'worker' | 'render' | 'playwright'`
+- Incentive adapters: `packages/aave-fetcher/src/merkl-api.ts`, `brevis-api.ts`, `brevis-distributed-so-far.ts`
 - Token pricing + chain mapping: `packages/aave-fetcher/src/token-price-resolver.ts`, `generated/coingecko-platform-by-chain-id.ts`
 - Backend freshness/caching: `backend/src/services/marketsService.ts`, `onchainDataService.ts`, `merklForecastService.ts`, `cacheTtl.ts`
 - Shared contracts: `packages/aave-shared-contracts/src/index.ts` (source of truth for `RuntimeReserveData` and `EXPECTED_RUNTIME_FIELDS`)
@@ -278,6 +330,8 @@ Canonical source for knowledge spanning frontend AND backend, or Aave protocol f
 - **SDK 内部状态泄漏不只看 queryRegistry**：V3 AaveClient 不继承 GqlClient（无 queryRegistry），之前注释说"safe as singleton"。但 urql 的 fetchExchange 和 Client 内部也保留 Operation/Response 引用。`.toPromise()` 不触发 urql teardown，导致 Response 对象链无法 GC。**任何使用 urql 的 SDK 在长期运行进程中都应 per-fetch 创建 client**，而非依赖"不继承 GqlClient"的假设。
 - **V3/V4 SDK 修复必须同步**：V4 AaveClient 已在 Session 4 修复为 per-fetch 创建，但 V3 AaveClient 的单例泄漏被 V4 的更大泄漏掩盖。修完 V4 后，V3 的泄漏才变得可见。**修复 SDK 类泄漏时，必须检查同一依赖的所有入口**。
 - **单位转换必须走统一入口**：`rayToPercent`/`rayToRatio` 等转换函数散落在多个包中（onchainDataService 本地定义、aave-rpc-infra 本地定义），导致 V4 RPC fallback 用 `rayToPercent` 给 ratio 字段 `borrowApy` 赋值，序列化器再 ×100 → 400%。**所有转换函数必须 import 自 `@internal/aave-shared-contracts/units.ts`**，新增字段必须注册到 `FIELD_UNITS`，invariant 测试会自动验证注册表完整性。
+- **新 CI 检查必须在干净 checkout 上首验**：quality-gates 上线后连挂七个 push 才绿——每个失败层（锁文件 npm 版本差异、扫描器自指、gitignore 数据、未跟踪脚本、wrangler Node 版本）在开发机上都不可见。本地"绿"可能依赖未跟踪文件/旧 node_modules/更宽松的本地工具链。新 gate 落地前用 `git stash` 无关文件 + fresh clone 或至少 `git clean -xdn` 自查依赖面。
+- **npm 锁文件校验跨小版本不稳定**：npm 11 的 `install` 会丢弃 `@emnapi/*` 等可选链条目，而 `ci` 又要求它们；不同 minor 版本校验严格度也不同。**CI 和 Dockerfile 里的 npm 版本必须钉死**（`npm install -g npm@11.6.2`），锁文件只由该版本生成和验证。
 
 ## Agent skills
 

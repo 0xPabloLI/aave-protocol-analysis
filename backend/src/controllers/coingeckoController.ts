@@ -1,9 +1,11 @@
-import { logger } from '../logger.js';
-import { coingeckoFetchConfig } from '../config.js';
-import { BACKEND_CACHE_TTL_MS, COINGECKO_TTL } from '../cacheTtl.js';
+import { logger } from "../logger.js";
+import { coingeckoFetchConfig } from "../config.js";
+import { BACKEND_CACHE_TTL_MS, COINGECKO_TTL } from "../cacheTtl.js";
+import { persistSideData } from "../services/sideDataPersistenceService.js";
 
-const CG_ENDPOINT = 'https://api.coingecko.com/api/v3/coins/markets';
-const CMC_QUOTES_ENDPOINT = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest';
+const CG_ENDPOINT = "https://api.coingecko.com/api/v3/coins/markets";
+const CMC_QUOTES_ENDPOINT =
+  "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest";
 const COINGECKO_LONG_DATA_TTL_MS = BACKEND_CACHE_TTL_MS.coingeckoLongDataTtlMs;
 const CATEGORIES_SOFT_TTL_MS = COINGECKO_TTL.categoriesSoftTtlMs;
 /** Matches FDV warm cron interval (15 min); cron and request both respect this TTL. */
@@ -13,15 +15,15 @@ const FDV_DIFF_ALERT_THRESHOLD_PCT = 5;
 const CATEGORIES_HARD_TTL_MS = COINGECKO_TTL.categoriesHardTtlMs;
 const FDV_HARD_TTL_MS = COINGECKO_TTL.fdvHardTtlMs;
 const FDV_COINS = [
-  { id: 'crypto-com-chain', cmcSymbol: 'CRO' },
-  { id: 'gatechain-token', cmcSymbol: 'GT' },
-  { id: 'okb', cmcSymbol: 'OKB' },
-  { id: 'mantle', cmcSymbol: 'MNT' },
-  { id: 'bitget-token', cmcSymbol: 'BGB' },
-  { id: 'binancecoin', cmcSymbol: 'BNB' },
+  { id: "crypto-com-chain", cmcSymbol: "CRO" },
+  { id: "gatechain-token", cmcSymbol: "GT" },
+  { id: "okb", cmcSymbol: "OKB" },
+  { id: "mantle", cmcSymbol: "MNT" },
+  { id: "bitget-token", cmcSymbol: "BGB" },
+  { id: "binancecoin", cmcSymbol: "BNB" },
 ] as const;
 
-type FdvSource = 'coinmarketcap' | 'coingecko_fallback';
+type FdvSource = "coinmarketcap" | "coingecko_fallback";
 
 interface FdvItem {
   id: string;
@@ -66,15 +68,21 @@ export interface CoingeckoCategoriesData {
   uniqueSymbolsEth: string[];
 }
 
-let cachedResponse: { data: { uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[] }; fetchedAt: number } | null =
-  null;
+let cachedResponse: {
+  data: { uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[] };
+  fetchedAt: number;
+} | null = null;
 let cachedFdvResponse: {
   data: { items: FdvItem[]; fetchedAt: string };
   fetchedAt: number;
 } | null = null;
 // 跟踪正在进行的 fetch，防止并发请求触发重复的 API 调用
-let inFlightFetch: Promise<{ uniqueSymbolsStablecoins: string[]; uniqueSymbolsEth: string[] }> | null = null;
-let inFlightFdvFetch: Promise<{ items: FdvItem[]; fetchedAt: string }> | null = null;
+let inFlightFetch: Promise<{
+  uniqueSymbolsStablecoins: string[];
+  uniqueSymbolsEth: string[];
+}> | null = null;
+let inFlightFdvFetch: Promise<{ items: FdvItem[]; fetchedAt: string }> | null =
+  null;
 // 跟踪最后一次 API 请求的时间，用于 rate limit 控制（Free tier: 30 次/分钟 = 每 2 秒一次）
 let lastApiRequestTime: number = 0;
 let lastFdvMonitorCheckTime = 0;
@@ -85,10 +93,10 @@ function isWithinHardTtl(fetchedAt: number, hardTtlMs: number): boolean {
 }
 
 const getHeaders = (): Record<string, string> => {
-  const headers: Record<string, string> = { accept: 'application/json' };
+  const headers: Record<string, string> = { accept: "application/json" };
   const apiKey = process.env.COINGECKO_API_KEY;
   if (apiKey) {
-    headers['x-cg-demo-api-key'] = apiKey;
+    headers["x-cg-demo-api-key"] = apiKey;
   }
   return headers;
 };
@@ -96,11 +104,11 @@ const getHeaders = (): Record<string, string> => {
 const getCoinMarketCapHeaders = (): Record<string, string> => {
   const apiKey = process.env.COINMARKETCAP_API_KEY;
   if (!apiKey) {
-    throw new Error('COINMARKETCAP_API_KEY is missing');
+    throw new Error("COINMARKETCAP_API_KEY is missing");
   }
   return {
-    Accept: 'application/json',
-    'X-CMC_PRO_API_KEY': apiKey,
+    Accept: "application/json",
+    "X-CMC_PRO_API_KEY": apiKey,
   };
 };
 
@@ -109,7 +117,13 @@ function sleep(ms: number): Promise<void> {
 }
 
 function isRetryableError(error: unknown): boolean {
-  const retryableCodes = new Set(['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETRESET', 'ECONNREFUSED']);
+  const retryableCodes = new Set([
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "EAI_AGAIN",
+    "ENETRESET",
+    "ECONNREFUSED",
+  ]);
   const code = (error as any)?.code || (error as any)?.cause?.code;
   return Boolean(code && retryableCodes.has(String(code)));
 }
@@ -119,7 +133,7 @@ function isRetryableError(error: unknown): boolean {
  * 优先使用响应头中的 Retry-After，否则使用配置的最小等待时间
  */
 function getRetryAfterMs(response: globalThis.Response): number {
-  const retryAfter = response.headers.get('Retry-After');
+  const retryAfter = response.headers.get("Retry-After");
   if (retryAfter) {
     const seconds = Number.parseInt(retryAfter, 10);
     if (!Number.isNaN(seconds) && seconds > 0) {
@@ -134,17 +148,14 @@ function getRetryAfterMs(response: globalThis.Response): number {
  * 带重试机制的 CoinGecko API 请求
  * 处理 429 (Rate Limit) 和 5xx 错误，使用指数退避
  */
-async function fetchJsonWithRetry<T>(
-  url: string,
-  label: string
-): Promise<T> {
+async function fetchJsonWithRetry<T>(url: string, label: string): Promise<T> {
   let attempt = 0;
   let lastError: unknown;
   const headers = getHeaders();
 
   while (attempt <= coingeckoFetchConfig.maxRetries) {
     try {
-      const response = await fetch(url, { method: 'GET', headers });
+      const response = await fetch(url, { method: "GET", headers });
 
       if (response.ok) {
         // 必须 await JSON 解析，以便解析错误能被 try-catch 捕获并触发重试
@@ -163,15 +174,23 @@ async function fetchJsonWithRetry<T>(
           continue;
         }
         // 最后一次重试也失败，抛出错误
-        throw new Error(`CoinGecko rate limit exceeded after ${coingeckoFetchConfig.maxRetries} retries`);
+        throw new Error(
+          `CoinGecko rate limit exceeded after ${coingeckoFetchConfig.maxRetries} retries`
+        );
       }
 
       // 处理 5xx 服务器错误（可重试）
-      if (response.status >= 500 && response.status < 600 && attempt < coingeckoFetchConfig.maxRetries) {
-        const delay = Math.min(
-          coingeckoFetchConfig.maxDelayMs,
-          coingeckoFetchConfig.baseDelayMs * Math.pow(2, attempt)
-        ) + Math.random() * 250; // 添加随机抖动避免雷群效应
+      if (
+        response.status >= 500 &&
+        response.status < 600 &&
+        attempt < coingeckoFetchConfig.maxRetries
+      ) {
+        const delay =
+          Math.min(
+            coingeckoFetchConfig.maxDelayMs,
+            coingeckoFetchConfig.baseDelayMs * Math.pow(2, attempt)
+          ) +
+          Math.random() * 250; // 添加随机抖动避免雷群效应
         logger.warn(
           `⚠️ CoinGecko ${label} HTTP ${response.status}, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${coingeckoFetchConfig.maxRetries})`
         );
@@ -181,16 +200,23 @@ async function fetchJsonWithRetry<T>(
       }
 
       // 其他 HTTP 错误（4xx 等）不重试
-      throw new Error(`CoinGecko request failed: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `CoinGecko request failed: ${response.status} ${response.statusText}`
+      );
     } catch (error) {
       lastError = error;
 
       // 如果是网络错误且可重试
-      if (isRetryableError(error) && attempt < coingeckoFetchConfig.maxRetries) {
-        const delay = Math.min(
-          coingeckoFetchConfig.maxDelayMs,
-          coingeckoFetchConfig.baseDelayMs * Math.pow(2, attempt)
-        ) + Math.random() * 250;
+      if (
+        isRetryableError(error) &&
+        attempt < coingeckoFetchConfig.maxRetries
+      ) {
+        const delay =
+          Math.min(
+            coingeckoFetchConfig.maxDelayMs,
+            coingeckoFetchConfig.baseDelayMs * Math.pow(2, attempt)
+          ) +
+          Math.random() * 250;
         logger.warn(
           `⚠️ CoinGecko ${label} network error (${(error as Error).message}), retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${coingeckoFetchConfig.maxRetries})`
         );
@@ -208,11 +234,17 @@ async function fetchJsonWithRetry<T>(
 }
 
 // 保持向后兼容的简单函数（内部使用重试版本）
-const fetchCategoryPageWithRetry = async (url: string, label: string): Promise<CoinGeckoCoin[]> => {
+const fetchCategoryPageWithRetry = async (
+  url: string,
+  label: string
+): Promise<CoinGeckoCoin[]> => {
   return fetchJsonWithRetry<CoinGeckoCoin[]>(url, label);
 };
 
-const fetchMarkets = async (url: string, label: string): Promise<CoinGeckoMarket[]> => {
+const fetchMarkets = async (
+  url: string,
+  label: string
+): Promise<CoinGeckoMarket[]> => {
   return fetchJsonWithRetry<CoinGeckoMarket[]>(url, label);
 };
 
@@ -222,7 +254,9 @@ async function waitForCoingeckoRateLimit(): Promise<void> {
   const timeSinceLastRequest = now - lastApiRequestTime;
   if (timeSinceLastRequest < minIntervalMs) {
     const waitMs = minIntervalMs - timeSinceLastRequest;
-    logger.debug(`⏳ CoinGecko rate limit: waiting ${waitMs}ms before next request`);
+    logger.debug(
+      `⏳ CoinGecko rate limit: waiting ${waitMs}ms before next request`
+    );
     await sleep(waitMs);
   }
   lastApiRequestTime = Date.now();
@@ -230,9 +264,11 @@ async function waitForCoingeckoRateLimit(): Promise<void> {
 
 async function fetchCoingeckoFdvItems(source: FdvSource): Promise<FdvItem[]> {
   await waitForCoingeckoRateLimit();
-  const idsParam = encodeURIComponent(FDV_COINS.map((coin) => coin.id).join(','));
+  const idsParam = encodeURIComponent(
+    FDV_COINS.map((coin) => coin.id).join(",")
+  );
   const url = `${CG_ENDPOINT}?vs_currency=usd&ids=${idsParam}&per_page=250&page=1`;
-  const markets = await fetchMarkets(url, 'fdv-coins');
+  const markets = await fetchMarkets(url, "fdv-coins");
   const marketById = new Map(markets.map((coin) => [coin.id, coin]));
 
   return FDV_COINS.map(({ id }) => {
@@ -247,7 +283,9 @@ async function fetchCoingeckoFdvItems(source: FdvSource): Promise<FdvItem[]> {
   });
 }
 
-function normalizeCmcQuote(quote: CoinMarketCapQuote | CoinMarketCapQuote[] | undefined): CoinMarketCapQuote | null {
+function normalizeCmcQuote(
+  quote: CoinMarketCapQuote | CoinMarketCapQuote[] | undefined
+): CoinMarketCapQuote | null {
   if (!quote) {
     return null;
   }
@@ -258,16 +296,23 @@ function normalizeCmcQuote(quote: CoinMarketCapQuote | CoinMarketCapQuote[] | un
 }
 
 async function fetchCoinMarketCapFdvItems(): Promise<FdvItem[]> {
-  const symbols = FDV_COINS.map((coin) => coin.cmcSymbol).join(',');
+  const symbols = FDV_COINS.map((coin) => coin.cmcSymbol).join(",");
   const url = `${CMC_QUOTES_ENDPOINT}?symbol=${encodeURIComponent(symbols)}&convert=USD`;
-  const response = await fetch(url, { method: 'GET', headers: getCoinMarketCapHeaders() });
+  const response = await fetch(url, {
+    method: "GET",
+    headers: getCoinMarketCapHeaders(),
+  });
   if (!response.ok) {
-    throw new Error(`CoinMarketCap request failed: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `CoinMarketCap request failed: ${response.status} ${response.statusText}`
+    );
   }
 
   const payload = (await response.json()) as CoinMarketCapQuotesResponse;
   if ((payload.status?.error_code ?? 0) !== 0) {
-    throw new Error(`CoinMarketCap API error: ${payload.status?.error_message ?? 'unknown error'}`);
+    throw new Error(
+      `CoinMarketCap API error: ${payload.status?.error_message ?? "unknown error"}`
+    );
   }
 
   const data = payload.data ?? {};
@@ -278,7 +323,7 @@ async function fetchCoinMarketCapFdvItems(): Promise<FdvItem[]> {
       symbol: quote?.symbol ?? null,
       name: quote?.name ?? null,
       fdvUsd: quote?.quote?.USD?.fully_diluted_market_cap ?? null,
-      source: 'coinmarketcap' as const,
+      source: "coinmarketcap" as const,
     };
   });
 }
@@ -293,14 +338,20 @@ function monitorFdvParity(cmcItems: FdvItem[]): void {
   // Non-blocking parity check: one CoinGecko request every 6 hours.
   void (async () => {
     try {
-      const cgItems = await fetchCoingeckoFdvItems('coingecko_fallback');
+      const cgItems = await fetchCoingeckoFdvItems("coingecko_fallback");
       const cgById = new Map(cgItems.map((item) => [item.id, item]));
       for (const cmcItem of cmcItems) {
         const cgItem = cgById.get(cmcItem.id);
-        if (!cgItem || cgItem.fdvUsd === null || cgItem.fdvUsd === 0 || cmcItem.fdvUsd === null) {
+        if (
+          !cgItem ||
+          cgItem.fdvUsd === null ||
+          cgItem.fdvUsd === 0 ||
+          cmcItem.fdvUsd === null
+        ) {
           continue;
         }
-        const diffPct = ((cmcItem.fdvUsd - cgItem.fdvUsd) / cgItem.fdvUsd) * 100;
+        const diffPct =
+          ((cmcItem.fdvUsd - cgItem.fdvUsd) / cgItem.fdvUsd) * 100;
         if (Math.abs(diffPct) >= FDV_DIFF_ALERT_THRESHOLD_PCT) {
           logger.warn(
             `⚠️ FDV parity alert for ${cmcItem.id}: CMC=${cmcItem.fdvUsd}, CoinGecko=${cgItem.fdvUsd}, diff=${diffPct.toFixed(2)}%`
@@ -308,7 +359,7 @@ function monitorFdvParity(cmcItems: FdvItem[]): void {
         }
       }
     } catch (error) {
-      logger.warn('FDV parity monitor skipped due to CoinGecko error:', error);
+      logger.warn("FDV parity monitor skipped due to CoinGecko error:", error);
     }
   })();
 }
@@ -318,7 +369,9 @@ function hasReusableCategoriesCache(): boolean {
   return Date.now() - cachedResponse.fetchedAt < CATEGORIES_SOFT_TTL_MS;
 }
 
-async function getOrRefreshCoingeckoCategoriesData(source: 'request' | 'startup'): Promise<CoingeckoCategoriesData> {
+async function getOrRefreshCoingeckoCategoriesData(
+  source: "request" | "startup"
+): Promise<CoingeckoCategoriesData> {
   if (hasReusableCategoriesCache() && cachedResponse) {
     logger.debug(`✅ Coingecko categories cache hit (${source})`);
     return cachedResponse.data;
@@ -340,7 +393,9 @@ async function getOrRefreshCoingeckoCategoriesData(source: 'request' | 'startup'
     const timeSinceLastRequest = now - lastApiRequestTime;
     if (timeSinceLastRequest < minIntervalMs) {
       const waitMs = minIntervalMs - timeSinceLastRequest;
-      logger.debug(`⏳ CoinGecko rate limit: waiting ${waitMs}ms before next request`);
+      logger.debug(
+        `⏳ CoinGecko rate limit: waiting ${waitMs}ms before next request`
+      );
       await sleep(waitMs);
     }
 
@@ -349,35 +404,35 @@ async function getOrRefreshCoingeckoCategoriesData(source: 'request' | 'startup'
     lastApiRequestTime = Date.now();
     const dataStable1 = await fetchCategoryPageWithRetry(
       `${CG_ENDPOINT}?vs_currency=usd&category=stablecoins&per_page=250&page=1`,
-      'stablecoins-page-1'
+      "stablecoins-page-1"
     );
 
     await sleep(minIntervalMs);
     lastApiRequestTime = Date.now();
     const dataStable2 = await fetchCategoryPageWithRetry(
       `${CG_ENDPOINT}?vs_currency=usd&category=stablecoins&per_page=250&page=2`,
-      'stablecoins-page-2'
+      "stablecoins-page-2"
     );
 
     await sleep(minIntervalMs);
     lastApiRequestTime = Date.now();
     const dataEth1 = await fetchCategoryPageWithRetry(
       `${CG_ENDPOINT}?vs_currency=usd&category=liquid-staked-eth&per_page=250&page=1`,
-      'liquid-staked-eth'
+      "liquid-staked-eth"
     );
 
     await sleep(minIntervalMs);
     lastApiRequestTime = Date.now();
     const dataEth2 = await fetchCategoryPageWithRetry(
       `${CG_ENDPOINT}?vs_currency=usd&category=ether-fi-ecosystem&per_page=250&page=1`,
-      'ether-fi-ecosystem'
+      "ether-fi-ecosystem"
     );
 
     await sleep(minIntervalMs);
     lastApiRequestTime = Date.now();
     const dataEth3 = await fetchCategoryPageWithRetry(
       `${CG_ENDPOINT}?vs_currency=usd&category=liquid-staking-tokens&per_page=250&page=1`,
-      'liquid-staking-tokens'
+      "liquid-staking-tokens"
     );
 
     const combinedStable = [...dataStable1, ...dataStable2];
@@ -386,52 +441,114 @@ async function getOrRefreshCoingeckoCategoriesData(source: 'request' | 'startup'
       .filter((symbol): symbol is string => Boolean(symbol));
     const uniqueSymbolsStablecoins = Array.from(new Set(stableSymbols)).sort();
 
-    const filteredEth3 = dataEth3.filter((coin) => (coin.symbol?.toUpperCase() ?? '').includes('ETH'));
+    const filteredEth3 = dataEth3.filter((coin) =>
+      (coin.symbol?.toUpperCase() ?? "").includes("ETH")
+    );
     const combinedEth = [...dataEth1, ...dataEth2, ...filteredEth3];
     const ethSymbols = combinedEth
       .map((coin) => coin.symbol?.toUpperCase())
       .filter((symbol): symbol is string => Boolean(symbol));
-    const uniqueSymbolsEth = Array.from(new Set([...ethSymbols, 'WETH'])).sort();
+    const uniqueSymbolsEth = Array.from(
+      new Set([...ethSymbols, "WETH"])
+    ).sort();
 
     const result = { uniqueSymbolsStablecoins, uniqueSymbolsEth };
 
-    const isEmpty = result.uniqueSymbolsStablecoins.length === 0 && result.uniqueSymbolsEth.length === 0;
+    const isEmpty =
+      result.uniqueSymbolsStablecoins.length === 0 &&
+      result.uniqueSymbolsEth.length === 0;
     if (isEmpty) {
-        if (previous && isWithinHardTtl(previous.fetchedAt, CATEGORIES_HARD_TTL_MS)) {
-          logger.warn(
-            `⚠️ Coingecko categories refresh returned empty; keeping previous cache (age=${Math.round(
-              (Date.now() - previous.fetchedAt) / 1000
-            )}s, max=${Math.round(CATEGORIES_HARD_TTL_MS / 1000)}s)`
-          );
-          return previous.data;
-        }
-      throw new Error('Coingecko categories refresh returned empty and no fresh fallback cache is available');
+      if (
+        previous &&
+        isWithinHardTtl(previous.fetchedAt, CATEGORIES_HARD_TTL_MS)
+      ) {
+        logger.warn(
+          `⚠️ Coingecko categories refresh returned empty; keeping previous cache (age=${Math.round(
+            (Date.now() - previous.fetchedAt) / 1000
+          )}s, max=${Math.round(CATEGORIES_HARD_TTL_MS / 1000)}s)`
+        );
+        return previous.data;
+      }
+      throw new Error(
+        "Coingecko categories refresh returned empty and no fresh fallback cache is available"
+      );
     }
 
     cachedResponse = { data: result, fetchedAt: Date.now() };
+    void persistSideData("categories", result, cachedResponse.fetchedAt);
     logger.info(`✅ Coingecko categories refreshed (${source})`);
     return result;
   })();
 
   inFlightFetch = fetchPromise;
-  fetchPromise.finally(() => {
-    if (inFlightFetch === fetchPromise) {
-      inFlightFetch = null;
-    }
-  }).catch(() => undefined);
+  fetchPromise
+    .finally(() => {
+      if (inFlightFetch === fetchPromise) {
+        inFlightFetch = null;
+      }
+    })
+    .catch(() => undefined);
 
   const data = await fetchPromise;
   return cachedResponse?.data || data;
 }
 
+/**
+ * Restore categories cache from DB snapshot (startup warm).
+ * If the data is within soft TTL, the cache is considered fresh and
+ * warmCoingeckoCategoriesCache will be a no-op.
+ */
+export function restoreCategoriesFromDb(
+  data: unknown,
+  fetchedAt: number
+): void {
+  const cats = data as {
+    uniqueSymbolsStablecoins: string[];
+    uniqueSymbolsEth: string[];
+  } | null;
+  if (
+    !cats ||
+    !Array.isArray(cats.uniqueSymbolsStablecoins) ||
+    !Array.isArray(cats.uniqueSymbolsEth)
+  ) {
+    logger.warn("⚠️ restoreCategoriesFromDb: invalid data shape, skipping");
+    return;
+  }
+  cachedResponse = { data: cats, fetchedAt };
+  logger.info(
+    `💾 Categories cache restored from DB (age=${Math.round((Date.now() - fetchedAt) / 1000)}s)`
+  );
+}
+
+/**
+ * Restore FDV cache from DB snapshot (startup warm).
+ */
+export function restoreFdvFromDb(data: unknown, fetchedAt: number): void {
+  const fdv = data as { items: FdvItem[]; fetchedAt: string } | null;
+  if (!fdv || !Array.isArray(fdv.items)) {
+    logger.warn("⚠️ restoreFdvFromDb: invalid data shape, skipping");
+    return;
+  }
+  cachedFdvResponse = { data: fdv, fetchedAt };
+  logger.info(
+    `💾 FDV cache restored from DB (age=${Math.round((Date.now() - fetchedAt) / 1000)}s)`
+  );
+}
+
 export async function warmCoingeckoCategoriesCache(): Promise<void> {
-  await getOrRefreshCoingeckoCategoriesData('startup');
+  await getOrRefreshCoingeckoCategoriesData("startup");
 }
 
 export async function getCoingeckoCategoriesSnapshot(
-  source: 'request' | 'startup' | 'meta' = 'request'
-): Promise<{ data: CoingeckoCategoriesData; fetchedAt: string; staleTimeMs: number }> {
-  const data = await getOrRefreshCoingeckoCategoriesData(source === 'meta' ? 'request' : source);
+  source: "request" | "startup" | "meta" = "request"
+): Promise<{
+  data: CoingeckoCategoriesData;
+  fetchedAt: string;
+  staleTimeMs: number;
+}> {
+  const data = await getOrRefreshCoingeckoCategoriesData(
+    source === "meta" ? "request" : source
+  );
   const fetchedAtMs = cachedResponse?.fetchedAt ?? Date.now();
   return {
     data,
@@ -443,12 +560,14 @@ export async function getCoingeckoCategoriesSnapshot(
 function hasReusableFdvCache(): boolean {
   if (!cachedFdvResponse) return false;
   if (Date.now() - cachedFdvResponse.fetchedAt >= FDV_SOFT_TTL_MS) return false;
-  const hasNullFdv = cachedFdvResponse.data.items.some((item) => item.fdvUsd === null);
+  const hasNullFdv = cachedFdvResponse.data.items.some(
+    (item) => item.fdvUsd === null
+  );
   return !hasNullFdv;
 }
 
 async function getOrRefreshFdvData(
-  source: 'request' | 'cron'
+  source: "request" | "cron"
 ): Promise<{ items: FdvItem[]; fetchedAt: string }> {
   if (hasReusableFdvCache() && cachedFdvResponse) {
     logger.debug(`✅ FDV cache hit (${source})`);
@@ -456,7 +575,7 @@ async function getOrRefreshFdvData(
   }
 
   if (cachedFdvResponse) {
-    logger.warn('⚠️ FDV cache is stale or has null values, refreshing');
+    logger.warn("⚠️ FDV cache is stale or has null values, refreshing");
   }
 
   if (inFlightFdvFetch !== null) {
@@ -464,57 +583,74 @@ async function getOrRefreshFdvData(
     return cachedFdvResponse?.data || data;
   }
 
-  const fetchPromise: Promise<{ items: FdvItem[]; fetchedAt: string }> = (async () => {
-    const previous = cachedFdvResponse;
-    let items: FdvItem[];
-    try {
-      items = await fetchCoinMarketCapFdvItems();
-      logger.info(`✅ FDV refreshed via CoinMarketCap (${FDV_COINS.length} coins)`);
-      monitorFdvParity(items);
-    } catch (cmcError) {
-      logger.warn(`⚠️ CoinMarketCap FDV fetch failed, falling back to CoinGecko: ${String(cmcError)}`);
-      items = await fetchCoingeckoFdvItems('coingecko_fallback');
-      logger.info(`✅ FDV refreshed via CoinGecko fallback (${FDV_COINS.length} coins)`);
-    }
-
-    const result = { items, fetchedAt: new Date().toISOString() };
-
-    if (result.items.length === 0) {
-      if (previous && isWithinHardTtl(previous.fetchedAt, FDV_HARD_TTL_MS)) {
-        logger.warn(
-          `⚠️ FDV refresh returned empty items; keeping previous cache (age=${Math.round(
-            (Date.now() - previous.fetchedAt) / 1000
-          )}s, max=${Math.round(FDV_HARD_TTL_MS / 1000)}s)`
+  const fetchPromise: Promise<{ items: FdvItem[]; fetchedAt: string }> =
+    (async () => {
+      const previous = cachedFdvResponse;
+      let items: FdvItem[];
+      try {
+        items = await fetchCoinMarketCapFdvItems();
+        logger.info(
+          `✅ FDV refreshed via CoinMarketCap (${FDV_COINS.length} coins)`
         );
-        return previous.data;
+        monitorFdvParity(items);
+      } catch (cmcError) {
+        logger.warn(
+          `⚠️ CoinMarketCap FDV fetch failed, falling back to CoinGecko: ${String(cmcError)}`
+        );
+        items = await fetchCoingeckoFdvItems("coingecko_fallback");
+        logger.info(
+          `✅ FDV refreshed via CoinGecko fallback (${FDV_COINS.length} coins)`
+        );
       }
-      throw new Error('FDV refresh returned empty items and no fresh fallback cache is available');
-    }
 
-    cachedFdvResponse = { data: result, fetchedAt: Date.now() };
-    logger.info(`✅ FDV cache updated at ${result.fetchedAt}`);
-    return result;
-  })();
+      const result = { items, fetchedAt: new Date().toISOString() };
+
+      if (result.items.length === 0) {
+        if (previous && isWithinHardTtl(previous.fetchedAt, FDV_HARD_TTL_MS)) {
+          logger.warn(
+            `⚠️ FDV refresh returned empty items; keeping previous cache (age=${Math.round(
+              (Date.now() - previous.fetchedAt) / 1000
+            )}s, max=${Math.round(FDV_HARD_TTL_MS / 1000)}s)`
+          );
+          return previous.data;
+        }
+        throw new Error(
+          "FDV refresh returned empty items and no fresh fallback cache is available"
+        );
+      }
+
+      cachedFdvResponse = { data: result, fetchedAt: Date.now() };
+      void persistSideData("fdv", result, cachedFdvResponse.fetchedAt);
+      logger.info(`✅ FDV cache updated at ${result.fetchedAt}`);
+      return result;
+    })();
 
   inFlightFdvFetch = fetchPromise;
-  fetchPromise.finally(() => {
-    if (inFlightFdvFetch === fetchPromise) {
-      inFlightFdvFetch = null;
-    }
-  }).catch(() => undefined);
+  fetchPromise
+    .finally(() => {
+      if (inFlightFdvFetch === fetchPromise) {
+        inFlightFdvFetch = null;
+      }
+    })
+    .catch(() => undefined);
 
   const data = await fetchPromise;
   return cachedFdvResponse?.data || data;
 }
 
 export async function warmCoingeckoFdvCache(): Promise<void> {
-  await getOrRefreshFdvData('cron');
+  await getOrRefreshFdvData("cron");
 }
 
 export async function getCoingeckoFdvSnapshot(
-  source: 'request' | 'cron' | 'meta' = 'request'
-): Promise<{ data: { items: FdvItem[]; fetchedAt: string }; staleTimeMs: number }> {
-  const data = await getOrRefreshFdvData(source === 'meta' ? 'request' : source);
+  source: "request" | "cron" | "meta" = "request"
+): Promise<{
+  data: { items: FdvItem[]; fetchedAt: string };
+  staleTimeMs: number;
+}> {
+  const data = await getOrRefreshFdvData(
+    source === "meta" ? "request" : source
+  );
   return {
     data,
     staleTimeMs: FDV_SOFT_TTL_MS,

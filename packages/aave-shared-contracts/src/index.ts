@@ -31,6 +31,9 @@ export {
 } from "./units.js";
 export type { FieldUnit } from "./units.js";
 
+export { normalizeCampaignType } from "./campaign-type.js";
+export type { NormalizeCampaignTypeInput } from "./campaign-type.js";
+
 export function fifoEvict<K>(map: Map<K, unknown>, maxEntries: number): void {
   while (map.size > maxEntries) {
     const { value: oldestKey, done } = map.keys().next();
@@ -82,18 +85,6 @@ export function isWithinLookbackWindow(
 // Incentive types
 // ============================================================
 
-export interface MeritCampaignBreakdown extends BaseCampaignBreakdown {
-  campaignId: string;
-  campaignType?: ForecastCampaignTypeLite;
-  message?: string;
-  aprCap?: number;
-  rewardTokenSymbol?: string;
-  totalBudget?: number;
-  latestTvl?: number;
-}
-
-export type MeritCampaignGroup = CampaignGroup<MeritCampaignBreakdown>;
-
 export type ForecastCampaignTypeLite =
   | "MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE"
   | "DUTCH_AUCTION"
@@ -143,7 +134,7 @@ export interface BrevisCampaignBreakdown extends BaseCampaignBreakdown {
   rewardTokenSymbol?: string;
 }
 
-export interface BrevisCampaignItem extends CampaignGroup<BrevisCampaignBreakdown> {}
+export type BrevisCampaignItem = CampaignGroup<BrevisCampaignBreakdown>;
 
 export interface MerklBorrowHookProtocol {
   protocol: number;
@@ -211,8 +202,6 @@ export interface RuntimeReserveData {
   optimalUtilization?: number;
   baseBorrowRate?: number;
   aaveProReserveId?: string;
-  meritSupplys?: MeritCampaignGroup[];
-  meritBorrows?: MeritCampaignGroup[];
   merklSupplys?: MerklOpportunityGroup[];
   merklBorrows?: MerklOpportunityGroup[];
   merklHolds?: MerklOpportunityGroup[];
@@ -234,25 +223,6 @@ export interface RuntimeReserveData {
 // ============================================================
 // API layer types (derived from runtime types)
 // ============================================================
-
-export type ApiMeritCampaignBreakdown = Pick<
-  MeritCampaignBreakdown,
-  | "campaignApr"
-  | "campaignStartedAt"
-  | "campaignEndedAt"
-  | "campaignId"
-  | "campaignType"
-  | "positionCapNative"
-  | "positionCapUsd"
-  | "isCombineCap"
-  | "message"
-  | "aprCap"
-  | "rewardTokenSymbol"
-  | "totalBudget"
-  | "latestTvl"
->;
-
-export type ApiMeritCampaignGroup = CampaignGroup<ApiMeritCampaignBreakdown>;
 
 export type ApiMerklBreakdown = MerklCampaignBreakdown;
 
@@ -374,8 +344,6 @@ export const EXPECTED_RUNTIME_FIELDS = [
   "optimalUtilization",
   "baseBorrowRate",
   "aaveProReserveId",
-  "meritSupplys",
-  "meritBorrows",
   "merklSupplys",
   "merklBorrows",
   "merklHolds",
