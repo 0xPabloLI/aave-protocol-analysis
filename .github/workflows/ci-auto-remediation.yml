@@ -23,6 +23,11 @@ concurrency:
 permissions:
   actions: read
   contents: write
+  # The escalation step opens/updates an issue when remediation cannot produce a
+  # fix. Without this scope that call fails with 403 "Resource not accessible by
+  # integration", and — because the step tolerates failure — the escalation would
+  # go missing silently (observed 2026-11-09).
+  issues: write
   pull-requests: write
 
 jobs:

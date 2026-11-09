@@ -69,6 +69,22 @@ test("remediation job cannot fail the workflow run", () => {
   );
 });
 
+test("workflow may write issues (escalation path)", () => {
+  const yaml = readConfig(REMEDIATION_WORKFLOW);
+  const permissions = yaml.slice(
+    yaml.indexOf("permissions:"),
+    yaml.indexOf("jobs:")
+  );
+  // Declaring `permissions:` sets every unlisted scope to none, so omitting
+  // issues: write makes the escalation step fail with 403 — silently, because
+  // that step tolerates failure.
+  assert.match(
+    permissions,
+    /^ {2}issues: write$/m,
+    "escalation opens an issue, so the workflow needs issues: write"
+  );
+});
+
 test("every npm command in the remediation workflow tolerates failure", () => {
   const offenders = stepBlocks(readConfig(REMEDIATION_WORKFLOW))
     .filter((block) => block.split("\n").some((line) => NPM_COMMAND.test(line)))
