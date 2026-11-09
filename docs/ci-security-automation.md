@@ -210,6 +210,8 @@ This prevents:
 - `jobs.remediate.continue-on-error: true`, so the run passes even when the job fails.
 - The steps that can fail on their own (`npm ci`, `npm audit fix`) carry step-level `continue-on-error`, so the job still reaches the escalation step instead of aborting. Downstream steps gate on `steps.install.outcome`/`steps.reinstall.outcome`.
 
+⚠️ **A `workflow_run` workflow always runs the file from the default branch.** Editing this workflow on `railway` changes nothing until the change reaches `main` — verified 2026-11-09, when a fix already on `railway` was ignored and the old `main` version failed anyway. Plan a `workflow_run` fix as: land it on `main`, then re-check the next trigger.
+
 Its npm is pinned to the same version as `ci.yml` (`npm install -g npm@11.6.2`). The lockfile is only valid for the npm version that generated it: an unpinned npm rejects the `@emnapi/*` entries with `EUSAGE`, which is what failed this job on 2026-11-09 and skipped the production deploy for `0a8e8c7`.
 
 The workflow also declares `issues: write`. Because it sets `permissions:`, every unlisted scope is `none`, and without that scope the escalation call returns 403 — silently, since the escalation step tolerates failure. Verified 2026-11-09: escalation had never once succeeded.

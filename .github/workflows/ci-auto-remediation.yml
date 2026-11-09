@@ -260,15 +260,21 @@ jobs:
         if: steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true'
         id: audit-out
         run: |
+          # `cat <missing> | tail` exits 0, so a `|| echo` fallback never fires.
+          # Test the file instead, so a skipped audit gate says so instead of
+          # rendering an empty section.
+          show() {
+            if [ -s "$1" ]; then tail -60 "$1"; else echo "(no $2 audit output — the audit gate did not run)"; fi
+          }
           {
             echo 'report<<AUDIT_EOF'
             echo '## Root audit (audit-level=high)'
             echo '```'
-            cat /tmp/_audit1 2>/dev/null | tail -60 || echo '(no root audit output)'
+            show /tmp/_audit1 root
             echo '```'
             echo '## Backend audit (audit-level=moderate)'
             echo '```'
-            cat /tmp/_audit2 2>/dev/null | tail -60 || echo '(no backend audit output)'
+            show /tmp/_audit2 backend
             echo '```'
             echo AUDIT_EOF
           } >> "$GITHUB_OUTPUT"
