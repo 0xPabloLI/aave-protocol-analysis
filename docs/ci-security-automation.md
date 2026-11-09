@@ -205,6 +205,13 @@ This prevents:
 - Runs on successful CI (no remediation needed)
 - Infinite loops (remediation branches start with `bot/ci-auto-remediation-`)
 
+**This workflow must never conclude in `failure`.** A `workflow_run` run is attributed to the _default branch's_ HEAD regardless of which branch triggered it, so a hard failure while remediating a `renovate/**` branch is indistinguishable from a failure on `main` — and Railway skips the next production deploy (see "A failed check suite does not hold the deploy" above). Two things keep it safe:
+
+- `jobs.remediate.continue-on-error: true`, so the run passes even when the job fails.
+- The steps that can fail on their own (`npm ci`, `npm audit fix`) carry step-level `continue-on-error`, so the job still reaches the escalation step instead of aborting. Downstream steps gate on `steps.install.outcome`/`steps.reinstall.outcome`.
+
+Its npm is pinned to the same version as `ci.yml` (`npm install -g npm@11.6.2`). The lockfile is only valid for the npm version that generated it: an unpinned npm rejects the `@emnapi/*` entries with `EUSAGE`, which is what failed this job on 2026-11-09 and skipped the production deploy for `0a8e8c7`. `backend/tests/ciAutoRemediationWorkflow.test.ts` guards both invariants.
+
 ### Security Audit Layered Architecture
 
 The `continue-on-error: true` on `security-audit` in `ci.yml` is a **hard constraint** — see ADR-0037. Removing it reintroduces the auto-revert loop. Audit remediation is handled by a layered system:

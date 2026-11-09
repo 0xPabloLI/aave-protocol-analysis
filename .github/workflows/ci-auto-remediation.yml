@@ -32,6 +32,13 @@ jobs:
       (github.event.workflow_run.conclusion == 'failure' &&
        (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'pull_request'))
     runs-on: ubuntu-latest
+    # Railway's "Wait for CI" skips a deployment as soon as any workflow run on the
+    # commit concludes in `failure`, and a `workflow_run` run is attributed to the
+    # default branch's HEAD regardless of which branch actually triggered it. This
+    # job therefore must never fail the run: remediation is best-effort, and
+    # anything it cannot fix is escalated through an issue (see the last step).
+    # https://docs.github.com/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idcontinue-on-error
+    continue-on-error: true
     steps:
       - name: Check if CI failure is ERESOLVE (unfixable by audit)
         id: skip-check
@@ -95,21 +102,36 @@ jobs:
           node-version: "24"
           cache: "npm"
 
-      - name: Install dependencies
+      # Same pin as ci.yml. The lockfile is only valid for the npm version that
+      # generated it: an unpinned npm rejects the @emnapi/* entries with EUSAGE
+      # and fails this job (observed 2026-11-09).
+      - name: Pin npm (lockfile validated with 11.6.2)
         if: steps.skip-check.outputs.skip != 'true'
+        run: npm install -g npm@11.6.2
+
+      # continue-on-error keeps the job alive past a failed install so the
+      # escalation path below still runs; the `if` gates downstream steps on it,
+      # since they are meaningless without node_modules.
+      - name: Install dependencies
+        id: install
+        if: steps.skip-check.outputs.skip != 'true'
+        continue-on-error: true
         run: npm ci
 
       - name: Attempt dependency remediation
-        if: steps.skip-check.outputs.skip != 'true'
+        if: steps.skip-check.outputs.skip != 'true' && steps.install.outcome == 'success'
+        continue-on-error: true
         run: |
           npm audit fix --omit=dev || true
 
       - name: Reinstall dependencies for build verification
-        if: steps.skip-check.outputs.skip != 'true'
+        id: reinstall
+        if: steps.skip-check.outputs.skip != 'true' && steps.install.outcome == 'success'
+        continue-on-error: true
         run: npm ci
 
       - name: Validate build after remediation
-        if: steps.skip-check.outputs.skip != 'true'
+        if: steps.skip-check.outputs.skip != 'true' && steps.reinstall.outcome == 'success'
         id: verify
         run: |
           set +e
@@ -130,7 +152,7 @@ jobs:
           exit 0
 
       - name: Check for generated changes
-        if: steps.skip-check.outputs.skip != 'true'
+        if: steps.skip-check.outputs.skip != 'true' && steps.reinstall.outcome == 'success'
         id: diff
         run: |
           if git diff --quiet; then
@@ -211,6 +233,24 @@ jobs:
       # B2: When automated remediation cannot produce a passing fix (verify failed),
       # `npm audit fix` is the wrong tool for this repo's override-based vuln pattern.
       # Escalate to a human/agent via an issue instead of silently doing nothing.
+      # A dependency install that never got off the ground is escalated the same way,
+      # with a message that names the real failure.
+      - name: Classify remediation failure
+        if: steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true'
+        id: failure
+        run: |
+          if [ "${{ steps.install.outcome }}" != "success" ] || [ "${{ steps.reinstall.outcome }}" != "success" ]; then
+            {
+              echo 'summary=Dependency install (`npm ci`) failed, so remediation never ran.'
+              echo 'advice=The lockfile does not satisfy `package.json` for the pinned npm version (or a registry fetch failed). Regenerate it with npm 11.6.2 and commit the result.'
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo 'summary=`npm audit fix` did not produce a change that passes the canonical `npm run audit` gate.'
+              echo 'advice=This repo fixes transitive vulnerabilities via `overrides` in `package.json`, which `npm audit fix` cannot do correctly. A human or agent should bump the relevant `overrides` (root and/or `backend`) to safe versions, as in PR #136.'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Read audit output for escalation
         if: steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true'
         id: audit-out
@@ -230,25 +270,33 @@ jobs:
 
       - name: Escalate via issue when remediation fails
         if: steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true'
+        continue-on-error: true
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          # Passed through the environment instead of being interpolated into the
+          # script: these values contain backticks, which would terminate a JS
+          # template literal and make this step fail.
+          FAILURE_SUMMARY: ${{ steps.failure.outputs.summary }}
+          FAILURE_ADVICE: ${{ steps.failure.outputs.advice }}
+          AUDIT_REPORT: ${{ steps.audit-out.outputs.report }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const branch = '${{ steps.branch.outputs.name }}';
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
-            const title = `Auto-remediation could not fix CI security audit on \`${branch}\``;
+            const title = `Auto-remediation could not resolve the CI failure on \`${branch}\``;
             const marker = '<!-- ci-auto-remediation-failed -->';
             const body = [
               marker,
-              `Automated \`npm audit fix\` could not produce a fix that passes the canonical \`npm run audit\` gate on \`${branch}\`.`,
+              `${process.env.FAILURE_SUMMARY} (branch \`${branch}\`).`,
               '',
-              'This repo fixes transitive vulnerabilities via `overrides` in `package.json`, which `npm audit fix` cannot do correctly. A human or agent should bump the relevant `overrides` (root and/or `backend`) to safe versions, as in PR #136.',
+              process.env.FAILURE_ADVICE,
               '',
               `Remediation run: ${runUrl}`,
               '',
               '<details><summary>Audit output</summary>',
               '',
-              `${{ steps.audit-out.outputs.report }}`,
+              process.env.AUDIT_REPORT,
               '',
               '</details>',
             ].join('\n');
