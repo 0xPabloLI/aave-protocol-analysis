@@ -250,7 +250,7 @@ Before 2026-11-09 nothing merged at all. `auto-merge-bot-prs.yml` approved every
 
 So the Renovate job in `auto-merge-bot-prs.yml` now approves and stops; Renovate merges its own PRs after waiting for green checks itself.
 
-### Required status checks on `railway` (added 2026-11-09)
+### Required status checks on `main` and `railway` (added 2026-11-09)
 
 The hazard above had a second half that the workflow change could not fix. `railway` declared `required_status_checks` with **empty** `contexts`, so GitHub's merge gate had nothing to wait for — arming native auto-merge was enough to merge a red PR, by any actor, not just the retry loop. That is a repo setting, not a file, so it is fixed by configuration:
 
@@ -260,13 +260,22 @@ required_status_checks.contexts = [
 ]
 ```
 
-All four are jobs in `ci.yml` that run unconditionally on every PR to `railway` or `main`. `auto-revert-on-failure` is deliberately **not** in the list: it is gated on `if: failure() && github.event_name == 'push'`, so it reports `skipped` on PRs, and a required check that never reports blocks merges forever.
+All four are jobs in `ci.yml` that run unconditionally on every PR to `railway` **or** `main` — confirmed on three historical `main`-targeted PRs (#201, #202, #204), not assumed from the `railway` result. `auto-revert-on-failure` is deliberately **not** in the list: it is gated on `if: failure() && github.event_name == 'push'`, so it reports `skipped` on PRs, and a required check that never reports blocks merges forever.
 
 `security-audit` is worth including even though its audit step carries `continue-on-error: true` (ADR-0037): the job still fails if its `npm ci` fails, which is precisely the #186 failure mode (a lockfile `npm ci` rejects).
 
 Verified the same day: PRs #190 and #195, whose `build-and-prune`/`quality-gates` had failed, went from mergeable-by-arming to `mergeable_state: blocked`. With `required_pull_request_reviews` unset, the required checks are the only possible blocker. PRs with green checks stayed `clean`.
 
-⚠️ **This setting is load-bearing and lives outside the repository.** Clearing `required_status_checks.contexts` silently reopens the hole — `approve-github-actions-pr` in `auto-merge-bot-prs.yml` arms native auto-merge for `bot/ci-auto-remediation-*`, `bot/subgraph-sync-*` and `bot/sync-coingecko-platform-map-*` PRs, and that arming is only safe because GitHub now waits for these four checks. No test can assert it (reading branch protection needs admin scope, which `GITHUB_TOKEN` cannot request), so it is documented here and in `AGENTS.md` instead.
+**`main` was worse than `railway`:** its `required_status_checks` was entirely absent (`null`, not an empty list), so the protection had to be enabled through the top-level branch-protection `PUT`, with every existing field sent explicitly to avoid silently resetting `allow_force_pushes`/`allow_deletions`. The repository ruleset (`protection`, id 13445333 — `deletion` + `non_fast_forward` on `main` and `railway`) is a separate mechanism and was unaffected.
+
+Why `main` needed it: `coingecko-platform-sync` checks out the default branch and calls `peter-evans/create-pull-request` without a `base`, so its PRs target **`main`** — #148 and #162 confirm it, and #162 merged. `approve-github-actions-pr` matches that branch prefix and arms native auto-merge, so before this change a `bot/sync-coingecko-platform-map-*` PR could reach production with failing CI, through exactly the #186 mechanism.
+
+Two settings on `main` are deliberately **left off**:
+
+- **`required_pull_request_reviews`** — the repository has one human collaborator, and GitHub does not let you approve your own PR. Enabling it would block production permanently. Every historical `railway` → `main` PR (#201, #202, #204) carries `COMMENTED` reviews only, never an `APPROVED`. So required checks here constrain **bots**, not the owner.
+- **A "require a pull request before merging" rule** — `ci.yml`'s `auto-revert-on-failure` job reverts a failing direct push with `git push origin "${{ github.ref_name }}"`. Forbidding direct pushes would break that safety net. Required status checks do not block direct pushes (GitHub documents direct push as a valid path once checks pass), verified here: `b01e3c1` was pushed straight to `railway` after its checks were set.
+
+⚠️ **This setting is load-bearing and lives outside the repository.** Clearing `required_status_checks.contexts` silently reopens the hole — `approve-github-actions-pr` in `auto-merge-bot-prs.yml` arms native auto-merge for `bot/ci-auto-remediation-*`, `bot/subgraph-sync-*` and `bot/sync-coingecko-platform-map-*` PRs, and that arming is only safe because GitHub now waits for these four checks. On `main` that path is production. No test can assert it (reading branch protection needs admin scope, which `GITHUB_TOKEN` cannot request), so it is documented here and in `AGENTS.md` instead.
 
 Four config invariants hold this together:
 
