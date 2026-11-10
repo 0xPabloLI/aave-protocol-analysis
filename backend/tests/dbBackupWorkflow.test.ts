@@ -75,6 +75,26 @@ test("prune step titles carry the constants, never a stale literal", () => {
   );
 });
 
+test("db-backup retries a failed upload before discarding the dump", () => {
+  // 2026-11-08: CompleteMultipartUpload answered InvalidPart — a 4xx, which
+  // aws-cli will not retry — so the run gave up on the only copy of the dump
+  // and the runner took it to the grave. One retry would have saved it.
+  const yaml = readWorkflow("db-backup.yml");
+
+  assert.ok(
+    /for attempt in 1 2 3; do/.test(yaml),
+    "the upload step must retry instead of stopping at the first failure"
+  );
+  assert.ok(
+    yaml.includes('if aws s3 cp "$BACKUP_FILE"'),
+    "the retry must wrap the aws s3 cp call itself"
+  );
+  assert.ok(
+    yaml.includes("R2_KEY=$R2_KEY"),
+    "the attempt that succeeds must still export R2_KEY for the verify step"
+  );
+});
+
 test("db-backup reports a failed run as an issue", () => {
   const yaml = readWorkflow("db-backup.yml");
 

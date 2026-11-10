@@ -7,7 +7,7 @@ name: R2 Cleanup & Audit
 #
 # Retention when deleting:
 #   daily/   keep 7 most recent  (matches db-backup.yml's post-upload prune)
-#   archive/ keep 12 most recent (matches db-backup.yml's post-upload prune)
+#   archive/ keep 20 most recent (matches db-backup.yml's post-upload prune)
 #
 # This workflow is a weekly safety net for db-backup.yml, so it must never be
 # stricter than that workflow. backend/tests/dbBackupWorkflow.test.ts fails if
@@ -50,7 +50,7 @@ jobs:
       ACTION: ${{ github.event_name == 'schedule' && 'delete' || github.event.inputs.action }}
       # Must match db-backup.yml — see the retention note at the top of this file.
       KEEP_DAILY: 7
-      KEEP_ARCHIVE: 12
+      KEEP_ARCHIVE: 20
     steps:
       - name: List all R2 objects
         run: |

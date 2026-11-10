@@ -8,11 +8,14 @@ name: Database Backup to Cloudflare R2
 #
 # Retention:
 #   daily/   keeps the 7 most recent backups, older ones auto-deleted after each upload
-#   archive/ keeps the 12 most recent backups, older ones auto-deleted after each upload
+#   archive/ keeps the 20 most recent backups, older ones auto-deleted after each upload
 #            also clears daily/ on success (daily snapshots superseded by archive)
 #            Archive runs fire when the DB crosses ARCHIVE_THRESHOLD_BYTES (3 GB,
-#            roughly monthly), so 12 slots ≈ a year of monthly restore points,
-#            each one carrying the ~month of rows it held at that moment.
+#            roughly monthly), so 20 slots ≈ 20 months of monthly restore points,
+#            each one carrying the ~month of rows it held at that moment. Worst
+#            case that is 20 × 274 MB + 7 × 267 MB ≈ 7.4 GB, still inside the
+#            10 GB free tier. Crossing r2-cleanup.yml's 8 GB line only files an
+#            issue — nothing is ever deleted early.
 #
 # Backs up staging database only (production DB not deployed).
 #
@@ -47,7 +50,7 @@ permissions:
 # drift apart.
 env:
   KEEP_DAILY: 7
-  KEEP_ARCHIVE: 12
+  KEEP_ARCHIVE: 20
 
 jobs:
   backup:
@@ -102,11 +105,26 @@ jobs:
         run: |
           set -euo pipefail
           R2_KEY="${MODE}/${BACKUP_FILE}"
-          aws s3 cp "$BACKUP_FILE" "s3://${R2_BUCKET}/${R2_KEY}" \
-            --endpoint-url "$R2_ENDPOINT" \
-            --region auto \
-            --no-progress
-          echo "R2_KEY=$R2_KEY" >> "$GITHUB_ENV"
+          # R2 intermittently rejects CompleteMultipartUpload with InvalidPart —
+          # a part ETag it no longer recognises. That is a 4xx, so aws-cli does
+          # not retry it, and the whole dump is discarded while the file on the
+          # runner dies with the job: 2026-11-08 left a permanent gap that way.
+          # Retrying starts a fresh multipart upload id, so a stale part list
+          # cannot survive into the next attempt.
+          for attempt in 1 2 3; do
+            if aws s3 cp "$BACKUP_FILE" "s3://${R2_BUCKET}/${R2_KEY}" \
+                 --endpoint-url "$R2_ENDPOINT" \
+                 --region auto \
+                 --no-progress; then
+              echo "Upload succeeded on attempt ${attempt}"
+              echo "R2_KEY=$R2_KEY" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "::warning::Upload attempt ${attempt}/3 failed; retrying in $((attempt * 15))s"
+            sleep "$((attempt * 15))"
+          done
+          echo "::error::Upload to s3://${R2_BUCKET}/${R2_KEY} failed after 3 attempts"
+          exit 1
 
       - name: Verify upload
         env:
