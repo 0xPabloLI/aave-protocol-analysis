@@ -110,16 +110,22 @@ jobs:
       # Same pin as ci.yml. The lockfile is only valid for the npm version that
       # generated it: an unpinned npm rejects the @emnapi/* entries with EUSAGE
       # and fails this job (observed 2026-11-09).
+      # continue-on-error: a registry outage here must not abort the job before
+      # the escalation steps run — they are the only signal that remediation
+      # never happened.
       - name: Pin npm (lockfile validated with 11.6.2)
+        id: npm-pin
         if: steps.skip-check.outputs.skip != 'true'
+        continue-on-error: true
         run: npm install -g npm@11.6.2
 
       # continue-on-error keeps the job alive past a failed install so the
       # escalation path below still runs; the `if` gates downstream steps on it,
-      # since they are meaningless without node_modules.
+      # since they are meaningless without node_modules. Gating on npm-pin too:
+      # a wrong npm version can only produce a doomed `npm ci`.
       - name: Install dependencies
         id: install
-        if: steps.skip-check.outputs.skip != 'true'
+        if: steps.skip-check.outputs.skip != 'true' && steps.npm-pin.outcome == 'success'
         continue-on-error: true
         run: npm ci
 
@@ -240,11 +246,22 @@ jobs:
       # Escalate to a human/agent via an issue instead of silently doing nothing.
       # A dependency install that never got off the ground is escalated the same way,
       # with a message that names the real failure.
+      # Every step below uses `${{ !cancelled() && ... }}` rather than a bare
+      # condition. GitHub implicitly ANDs a bare `if` with `success()`, so any
+      # earlier step that fails without its own `continue-on-error` would skip
+      # this whole path — and job-level `continue-on-error` still reports the
+      # run as successful, making the lost escalation invisible. `!cancelled()`
+      # keeps the escalation reachable no matter which step broke.
       - name: Classify remediation failure
-        if: steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true'
+        if: ${{ !cancelled() && steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true' }}
         id: failure
         run: |
-          if [ "${{ steps.install.outcome }}" != "success" ] || [ "${{ steps.reinstall.outcome }}" != "success" ]; then
+          if [ "${{ steps.npm-pin.outcome }}" != "success" ]; then
+            {
+              echo 'summary=Pinning npm (`npm install -g npm@11.6.2`) did not complete, so remediation never ran.'
+              echo 'advice=Either the npm registry was unreachable, or an earlier step failed and skipped this one. Re-run the workflow; if it repeats, read the run log for the first failing step.'
+            } >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.install.outcome }}" != "success" ] || [ "${{ steps.reinstall.outcome }}" != "success" ]; then
             {
               echo 'summary=Dependency install (`npm ci`) failed, so remediation never ran.'
               echo 'advice=The lockfile does not satisfy `package.json` for the pinned npm version (or a registry fetch failed). Regenerate it with npm 11.6.2 and commit the result.'
@@ -257,7 +274,7 @@ jobs:
           fi
 
       - name: Read audit output for escalation
-        if: steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true'
+        if: ${{ !cancelled() && steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true' }}
         id: audit-out
         run: |
           # `cat <missing> | tail` exits 0, so a `|| echo` fallback never fires.
@@ -280,7 +297,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Escalate via issue when remediation fails
-        if: steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true'
+        if: ${{ !cancelled() && steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true' }}
         continue-on-error: true
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
