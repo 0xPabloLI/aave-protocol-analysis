@@ -47,7 +47,7 @@ const v4Succeeded = payload._metadata._v4Succeeded ?? true;
 
 ```typescript
 // packages/aave-shared-contracts/src/index.ts (new)
-export type FetchSource = 'sdk' | 'rpc' | 'stale' | 'none';
+export type FetchSource = "sdk" | "rpc" | "stale" | "none";
 
 export interface SideFetchResult {
   /** Whether this side has any data in the final dataset (regardless of source). */
@@ -74,12 +74,12 @@ export interface MarketsPayload {
 
 ### 字段语义约束
 
-| `success` | `source` | 含义 |
-|---|---|---|
-| `true` | `'sdk'` | SDK 主路径成功 |
-| `true` | `'rpc'` | SDK 失败，RPC inline fallback 成功（V4 only，参见 ADR-0021） |
-| `true` | `'stale'` | SDK + RPC 均失败，backend per-side stale 兜底成功 |
-| `false` | `'none'` | 该 side 所有兜底层均失败，data 中无该 side reserve |
+| `success` | `source`  | 含义                                                         |
+| --------- | --------- | ------------------------------------------------------------ |
+| `true`    | `'sdk'`   | SDK 主路径成功                                               |
+| `true`    | `'rpc'`   | SDK 失败，RPC inline fallback 成功（V4 only，参见 ADR-0021） |
+| `true`    | `'stale'` | SDK + RPC 均失败，backend per-side stale 兜底成功            |
+| `false`   | `'none'`  | 该 side 所有兜底层均失败，data 中无该 side reserve           |
 
 **注**：Fetcher 只产出 `source ∈ {'sdk', 'rpc', 'none'}`。`source === 'stale'` 由 backend 层 `correctFetchResult()` 在 stale merge 后覆写。stale 层的可见性也通过 `v4FallbackReserveIds` 表达。
 
@@ -93,10 +93,12 @@ source  = v3Fresh ? fetchResult.v3.source : (v3Present ? 'stale' : 'none')
 ```
 
 Where:
+
 - `v3Fresh` / `v4Fresh` — from `mergeWithPartialStale` output (side data came from fresh fetch)
 - `v3Present` / `v4Present` — from `mergeWithPartialStale` output (side has data in merged dataset, regardless of source)
 
 This ensures:
+
 - Fresh path preserves the original source (e.g., `'sdk'` or future `'rpc'`)
 - Stale fallback path writes `{ success: true, source: 'stale' }`
 - Total failure writes `{ success: false, source: 'none' }`
@@ -107,8 +109,14 @@ The outer catch path (entire `fetchMarketsData()` throws) delegates stale select
 
 - 旧版 fetcher 仍可能产出无 `fetchResult` 的 payload（如启动期、回滚场景）。backend 读时：
   ```typescript
-  const v3 = payload._metadata.fetchResult?.v3 ?? { success: true, source: 'sdk' };
-  const v4 = payload._metadata.fetchResult?.v4 ?? { success: true, source: 'sdk' };
+  const v3 = payload._metadata.fetchResult?.v3 ?? {
+    success: true,
+    source: "sdk",
+  };
+  const v4 = payload._metadata.fetchResult?.v4 ?? {
+    success: true,
+    source: "sdk",
+  };
   ```
 - 一次性弃用 `_v3Succeeded` / `_v4Succeeded`：删除字段定义和所有 reader。grep 跨仓确认零引用。
 

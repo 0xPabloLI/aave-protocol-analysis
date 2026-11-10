@@ -1,5 +1,5 @@
-import type { RuntimeReserveData } from './marketsService.js';
-import type { ForecastResponseItem } from '../controllers/merklForecastController.js';
+import type { RuntimeReserveData } from "./marketsService.js";
+import type { ForecastResponseItem } from "../controllers/merklForecastController.js";
 
 interface BrevisForecastEntry {
   distributedSoFar: number | undefined;
@@ -7,7 +7,9 @@ interface BrevisForecastEntry {
 
 let entries: Map<string, BrevisForecastEntry> = new Map();
 
-export function setBrevisForecastEntries(newEntries: Map<string, number | undefined>): void {
+export function setBrevisForecastEntries(
+  newEntries: Map<string, number | undefined>
+): void {
   const mapped = new Map<string, BrevisForecastEntry>();
   for (const [campaignId, value] of newEntries) {
     mapped.set(campaignId, { distributedSoFar: value });
@@ -15,10 +17,15 @@ export function setBrevisForecastEntries(newEntries: Map<string, number | undefi
   entries = mapped;
 }
 
-function collectBrevisCampaignEndTimestamps(markets: RuntimeReserveData[]): Map<string, number> {
+function collectBrevisCampaignEndTimestamps(
+  markets: RuntimeReserveData[]
+): Map<string, number> {
   const map = new Map<string, number>();
   for (const market of markets) {
-    for (const group of [...(market.brevisSupplys ?? []), ...(market.brevisBorrows ?? [])]) {
+    for (const group of [
+      ...(market.brevisSupplys ?? []),
+      ...(market.brevisBorrows ?? []),
+    ]) {
       for (const bd of group.breakdowns) {
         const id = bd.campaignId?.trim();
         if (id && bd.campaignEndedAt) {
@@ -33,7 +40,9 @@ function collectBrevisCampaignEndTimestamps(markets: RuntimeReserveData[]): Map<
   return map;
 }
 
-export function getBrevisForecastItems(markets: RuntimeReserveData[]): ForecastResponseItem[] {
+export function getBrevisForecastItems(
+  markets: RuntimeReserveData[]
+): ForecastResponseItem[] {
   if (entries.size === 0) return [];
 
   const endTimestamps = collectBrevisCampaignEndTimestamps(markets);

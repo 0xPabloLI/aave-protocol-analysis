@@ -17,44 +17,45 @@
 
 **按 V8 节点类型：**
 
-| 类型 | 大小 | 占比 |
-|---|---|---|
+| 类型       | 大小        | 占比      |
+| ---------- | ----------- | --------- |
 | **string** | **54.46MB** | **45.0%** |
-| code | 21.70MB | 17.9% |
-| array | 16.56MB | 13.7% |
-| object | 10.00MB | 8.3% |
-| obj_shape | 6.99MB | 5.8% |
-| closure | 4.74MB | 3.9% |
-| 其他 | 6.45MB | 5.3% |
+| code       | 21.70MB     | 17.9%     |
+| array      | 16.56MB     | 13.7%     |
+| object     | 10.00MB     | 8.3%      |
+| obj_shape  | 6.99MB      | 5.8%      |
+| closure    | 4.74MB      | 3.9%      |
+| 其他       | 6.45MB      | 5.3%      |
 
 **字符串按内容分类：**
 
-| 字符串类别 | 大小 | 占字符串比 |
-|---|---|---|
-| **googleapis 源码** | **31.26MB** | **57.3%** |
-| 很长字符串 (>100 chars) | 11.05MB | 20.3% |
-| 中等长度字符串 (21-100 chars) | 3.44MB | 6.3% |
-| 短字符串 (4-20 chars) | 2.58MB | 4.7% |
-| JS 源码 (非 googleapis) | 2.26MB | 4.1% |
-| hex 地址/tx 数据 | 1.33MB | 2.4% |
-| JSON 数据 | 1.02MB | 1.9% |
-| GraphQL | 0.81MB | 1.5% |
-| 其他 | 0.61MB | 1.1% |
+| 字符串类别                    | 大小        | 占字符串比 |
+| ----------------------------- | ----------- | ---------- |
+| **googleapis 源码**           | **31.26MB** | **57.3%**  |
+| 很长字符串 (>100 chars)       | 11.05MB     | 20.3%      |
+| 中等长度字符串 (21-100 chars) | 3.44MB      | 6.3%       |
+| 短字符串 (4-20 chars)         | 2.58MB      | 4.7%       |
+| JS 源码 (非 googleapis)       | 2.26MB      | 4.1%       |
+| hex 地址/tx 数据              | 1.33MB      | 2.4%       |
+| JSON 数据                     | 1.02MB      | 1.9%       |
+| GraphQL                       | 0.81MB      | 1.5%       |
+| 其他                          | 0.61MB      | 1.1%       |
 
 ### 模块加载内存开销
 
-| 组件 | Heap 增量 |
-|---|---|
-| ethers.js v5 | 12 MB |
-| hono | 2 MB |
-| pg | 1 MB |
-| rpc-infra (不含 ethers) | 6 MB |
-| fetcher (不含 ethers/rpc-infra) | 20 MB |
-| **模块加载合计** | **44 MB** |
+| 组件                            | Heap 增量 |
+| ------------------------------- | --------- |
+| ethers.js v5                    | 12 MB     |
+| hono                            | 2 MB      |
+| pg                              | 1 MB      |
+| rpc-infra (不含 ethers)         | 6 MB      |
+| fetcher (不含 ethers/rpc-infra) | 20 MB     |
+| **模块加载合计**                | **44 MB** |
 
 ### 6月13日 vs 6月15日差异解释
 
 6月13日 heap 281-321MB vs 当前 113MB。差异约 168MB，归因：
+
 1. **googleapis 源码**：31MB（两边都有，不是差异来源）
 2. **V8 GC 时间差异**：6月13日只运行~13分钟，GC 未回收 warmup 临时对象
 3. **后续 commit 改善**：memory leak fix + hono 升级 + Missing APR cap 修复
@@ -73,11 +74,11 @@
 
 ### 内存对比
 
-| 部署日期 | RSS 范围 | Heap 范围 | External | SIGTERM | 备注 |
-|----------|----------|----------|----------|---------|------|
-| 6月10日 | 453-510MB | 269-325MB | 32-42MB | ✅ 收到 | Cloudflare Browser 429 → Puppeteer fallback 每分钟触发 |
-| 6月13日 | 466-517MB | 281-321MB | 31-40MB | ✅ 收到 | Cloudflare Browser session=0，无 Puppeteer fallback |
-| **6月15日(当前)** | **270-302MB** | **133-162MB** | **9-20MB** | 无 | 稳定运行 |
+| 部署日期          | RSS 范围      | Heap 范围     | External   | SIGTERM | 备注                                                   |
+| ----------------- | ------------- | ------------- | ---------- | ------- | ------------------------------------------------------ |
+| 6月10日           | 453-510MB     | 269-325MB     | 32-42MB    | ✅ 收到 | Cloudflare Browser 429 → Puppeteer fallback 每分钟触发 |
+| 6月13日           | 466-517MB     | 281-321MB     | 31-40MB    | ✅ 收到 | Cloudflare Browser session=0，无 Puppeteer fallback    |
+| **6月15日(当前)** | **270-302MB** | **133-162MB** | **9-20MB** | 无      | 稳定运行                                               |
 
 当前部署比之前低约 **200MB RSS / 150MB heap / 25MB external**。
 
@@ -99,6 +100,7 @@
 ## 未解释的 heap 差异
 
 6月13日 vs 6月15日 heap 差异（281-321MB vs 133-162MB）约 **150MB**，但数据量完全相同（354 reserves, 35 opportunities, 11 forecast campaigns），且6月13日版本：
+
 - 没有 AMOUNT variant 并发 price resolve 代码（那是 `9ef5779` 后加的）
 - 没有 Puppeteer fallback（Cloudflare Browser 正常运行，session=0）
 - `Missing APR cap` 只失败了 3/11 个 campaign（`fulfilled=8, failed=3`），不足以解释 150MB
@@ -130,6 +132,7 @@ Puppeteer 的 Chromium 子进程占约 50-100MB 容器 RSS（不在 `process.mem
 **ProviderPool 的淘汰机制 vs destroy**：ProviderPool 用 `StaticJsonRpcProvider`（无状态、无内部轮询、无长连接），**不需要 destroy**。通过 TTL 淘汰（30min 未用就从 Map 中删除）就够了。而 `JsonRpcProvider` 有内部 detectNetwork 轮询（每次创建多发一个 RPC 请求），ethers v5 也没有 `destroy()` 方法（v6 才有）。所以问题不是"该不该 destroy"，而是**根本不该用 `JsonRpcProvider`**——应该跟 ProviderPool 一样用 `StaticJsonRpcProvider`，通过 ProviderPool 获取，自然享受淘汰 + failover + 复用。
 
 **修复方向**：Brevis chain call 复用 `ProviderPool`：
+
 1. `fetchBrevisDistributedSoFar` 接收 `ProviderPool` 实例（或一个 `(chainId, exec) => Promise<T>` 回调函数）
 2. 对每个 chain，调用 `providerPool.executeWithAutoRpc(chainId, { primary: (provider) => executeMulticall3(provider, calls, ...) })`
 3. 删除自己创建 `JsonRpcProvider` 的逻辑
@@ -145,6 +148,7 @@ Puppeteer 的 Chromium 子进程占约 50-100MB 容器 RSS（不在 `process.mem
 当前的并发代码路径：`processMerklData` 中 `oppCampaignPromises` 对每个 campaign 并发调用 `resolveUsdPriceWithPriority`。如果 snapshot/reserve 未命中，就会打到 CoinGecko。但当前 AMOUNT variant 的 campaign 数量很少，实际触发的并发数远低于 35。
 
 **修复方向**：作为防御性措施，可以改为先批量去重 resolve token price，再在循环内查 Map：
+
 1. 循环前收集所有需要 price resolve 的 token（去重）
 2. 串行或限流 resolve（5 个并发），build `chainId:tokenAddress → price` Map
 3. 循环内直接查 Map，不再每个 campaign 独立调
@@ -156,6 +160,7 @@ Puppeteer 的 Chromium 子进程占约 50-100MB 容器 RSS（不在 `process.mem
 **Q: 抛错归抛错，不要导致内存泄露？**
 
 6月13日的 `buildForecastState`（`merklForecastModel.ts:132-135`）对 `TARGET_TOTAL_APR` 类型 campaign 要求必须有 APR cap，没有就 throw。这导致：
+
 - 11 个 forecast campaign 中 3 个失败（`fulfilled=8, failed=3`）
 - `refreshForecastSnapshotCache` 中 `Promise.allSettled` 捕获错误，失败的 campaign 仍然消耗了网络请求资源（`getMerklForecastState` 内部已经 fetch 了 metrics + campaign 数据）
 
@@ -169,14 +174,14 @@ Puppeteer 的 Chromium 子进程占约 50-100MB 容器 RSS（不在 `process.mem
 
 ## 根因排序
 
-| 排名 | 根因 | 影响 | 当前状态 |
-|------|------|------|---------|
-| 1 | **`googleapis` 整包导入** — 31.26MB heap 字符串（128 个 API 子模块源码） | **25.8% heap 占用** | ✅ Fix D 已实施（`4457fc5`，子路径导入节省 ~64MB） |
-| 2 | 6月10日/13日代码版本的稳态 heap 本身高于当前 | ~150MB heap | ✅ 已由后续多个 commit 改善 |
-| 3 | Puppeteer fallback 被 Cloudflare 429 触发 → 额外 70-130MB 容器 RSS | 6月10日主因 | ⚠️ 风险仍在（429 可能再次发生，AAV-888） |
-| 4 | Merkl AMOUNT variant 并发 CoinGecko 调用 | 当前 AMOUNT campaign 少，影响小 | ✅ Fix B 已实施 |
-| 5 | Brevis chain call 未复用 ProviderPool | ~1-5MB（1-2 个 chain） | ✅ Fix A 已实施 |
-| 6 | `Missing APR cap` 抛错跳过缓存 → 重复 fetch | ~10-30MB（3 个 campaign） | ✅ 已由 `46fbd5a` 修复 |
+| 排名 | 根因                                                                     | 影响                            | 当前状态                                           |
+| ---- | ------------------------------------------------------------------------ | ------------------------------- | -------------------------------------------------- |
+| 1    | **`googleapis` 整包导入** — 31.26MB heap 字符串（128 个 API 子模块源码） | **25.8% heap 占用**             | ✅ Fix D 已实施（`4457fc5`，子路径导入节省 ~64MB） |
+| 2    | 6月10日/13日代码版本的稳态 heap 本身高于当前                             | ~150MB heap                     | ✅ 已由后续多个 commit 改善                        |
+| 3    | Puppeteer fallback 被 Cloudflare 429 触发 → 额外 70-130MB 容器 RSS       | 6月10日主因                     | ⚠️ 风险仍在（429 可能再次发生，AAV-888）           |
+| 4    | Merkl AMOUNT variant 并发 CoinGecko 调用                                 | 当前 AMOUNT campaign 少，影响小 | ✅ Fix B 已实施                                    |
+| 5    | Brevis chain call 未复用 ProviderPool                                    | ~1-5MB（1-2 个 chain）          | ✅ Fix A 已实施                                    |
+| 6    | `Missing APR cap` 抛错跳过缓存 → 重复 fetch                              | ~10-30MB（3 个 campaign）       | ✅ 已由 `46fbd5a` 修复                             |
 
 ## 已实施修复
 

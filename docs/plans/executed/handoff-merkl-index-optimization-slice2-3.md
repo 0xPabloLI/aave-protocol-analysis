@@ -8,17 +8,17 @@
 
 ## 完成状态总览
 
-| Handoff 项目 | 原始方案 | 实际实现 | 状态 |
-|---|---|---|---|
-| tokenAddrToReserveId 多值映射 | `Map<string, string[]>` | 删除 tokenAddrToReserveId，匹配用索引直接查找 | ✅ AAV-927 Canceled |
-| 索引 key 加入 hub 维度 | 改 indexKey 为 `chainId:token:hub` | 不改 indexKey，在 `findMatchingMerklOpportunities` 中用 reserveId 精确匹配 | ✅ AAV-926 Done |
-| offsetLevel 默认值改 'spoke' | 默认值 `'hub'→'spoke'` | 类型改为 `'reserve'|'hub-cross-spoke'`，按 opportunityType 确定性映射 | ✅ ADR-0032 |
-| Hub/Spoke 去重 | 未提及 | `deduplicateHubSpokeBreakdowns` 用 `parentCampaignId` breakdown 级去重 | ✅ AAV-1004 |
-| BORROW_BL 检测 | 未提及 | `borrowBlacklist` 字段 + 双路径检测（identifier + hookType=14） | ✅ AAV-958 |
-| V4 Spoke 索引用 underlying | 未提及 | `isV4Spoke && opp.tokens[0].address` 替代 spoke pool address | ✅ 578597a |
-| filterByCampaignContext | 新函数 | 不需要 — 用 reserve ID 精确匹配替代 | ❌ 不需要 |
-| enrichDataset 简化 | `merklData[reserveId]` | 不需要 — `findMatchingMerklOpportunities` 内部做了精确过滤 | ❌ 不需要 |
-| composedMultiplier | 未提及 | 先实现后移除 (YAGNI) | ✅ AAV-948 |
+| Handoff 项目                  | 原始方案                           | 实际实现                                                                   | 状态                                              |
+| ----------------------------- | ---------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------- |
+| tokenAddrToReserveId 多值映射 | `Map<string, string[]>`            | 删除 tokenAddrToReserveId，匹配用索引直接查找                              | ✅ AAV-927 Canceled                               |
+| 索引 key 加入 hub 维度        | 改 indexKey 为 `chainId:token:hub` | 不改 indexKey，在 `findMatchingMerklOpportunities` 中用 reserveId 精确匹配 | ✅ AAV-926 Done                                   |
+| offsetLevel 默认值改 'spoke'  | 默认值 `'hub'→'spoke'`             | 类型改为 `'reserve'                                                        | 'hub-cross-spoke'`，按 opportunityType 确定性映射 | ✅ ADR-0032 |
+| Hub/Spoke 去重                | 未提及                             | `deduplicateHubSpokeBreakdowns` 用 `parentCampaignId` breakdown 级去重     | ✅ AAV-1004                                       |
+| BORROW_BL 检测                | 未提及                             | `borrowBlacklist` 字段 + 双路径检测（identifier + hookType=14）            | ✅ AAV-958                                        |
+| V4 Spoke 索引用 underlying    | 未提及                             | `isV4Spoke && opp.tokens[0].address` 替代 spoke pool address               | ✅ 578597a                                        |
+| filterByCampaignContext       | 新函数                             | 不需要 — 用 reserve ID 精确匹配替代                                        | ❌ 不需要                                         |
+| enrichDataset 简化            | `merklData[reserveId]`             | 不需要 — `findMatchingMerklOpportunities` 内部做了精确过滤                 | ❌ 不需要                                         |
+| composedMultiplier            | 未提及                             | 先实现后移除 (YAGNI)                                                       | ✅ AAV-948                                        |
 
 ## 关键实现细节
 
@@ -27,14 +27,23 @@
 ```typescript
 // merkl-api.ts L1981-1991
 if (isV4 && item.reserveId) {
-  if (opp.spokePoolAddress && opp.underlyingTokenAddress && opp.hubContractAddress) {
+  if (
+    opp.spokePoolAddress &&
+    opp.underlyingTokenAddress &&
+    opp.hubContractAddress
+  ) {
     // Spoke: 构造完整 4-segment reserveId 比对
     const constructedReserveId = `${item.chainId}:${opp.spokePoolAddress}:${opp.underlyingTokenAddress}:${opp.hubContractAddress}`;
     if (constructedReserveId !== item.reserveId) continue;
   } else if (opp.underlyingTokenAddress && opp.hubContractAddress) {
     // Hub: 匹配 underlyingToken + hubAddress
-    if (opp.underlyingTokenAddress !== item.tokenAddress.toLowerCase()) continue;
-    if (item.hubAddress && opp.hubContractAddress !== item.hubAddress.toLowerCase()) continue;
+    if (opp.underlyingTokenAddress !== item.tokenAddress.toLowerCase())
+      continue;
+    if (
+      item.hubAddress &&
+      opp.hubContractAddress !== item.hubAddress.toLowerCase()
+    )
+      continue;
   }
 }
 ```
@@ -43,22 +52,28 @@ if (isV4 && item.reserveId) {
 
 ```typescript
 // merkl-api.ts L1553-1559
-const underlyingTokenAddress = typeof firstParams?.underlyingToken === 'string'
-  ? firstParams.underlyingToken.toLowerCase() : undefined;
-const spokePoolAddress = typeof firstParams?.spokeAddress === 'string'
-  ? firstParams.spokeAddress.toLowerCase() : undefined;
-const hubContractAddress = typeof firstParams?.hubAddress === 'string'
-  ? firstParams.hubAddress.toLowerCase() : undefined;
+const underlyingTokenAddress =
+  typeof firstParams?.underlyingToken === "string"
+    ? firstParams.underlyingToken.toLowerCase()
+    : undefined;
+const spokePoolAddress =
+  typeof firstParams?.spokeAddress === "string"
+    ? firstParams.spokeAddress.toLowerCase()
+    : undefined;
+const hubContractAddress =
+  typeof firstParams?.hubAddress === "string"
+    ? firstParams.hubAddress.toLowerCase()
+    : undefined;
 ```
 
 ### OffsetLevel 确定性映射（ADR-0032）
 
-| opportunityType | offsetLevel | Reason |
-|---|---|---|
-| `AAVE_V4_SPOKE_SUPPLY` | `'reserve'` | 有全部 4 段，offset 精确匹配 |
-| `AAVE_V4_HUB_SUPPLY` | `'hub-cross-spoke'` | 缺 spokeAddress，跨 spoke 匹配 |
-| `AAVE_NET_*` (V3) | `'reserve'` | pool 内精确匹配 |
-| `AAVE_V4_NET_APR` | `'hub-cross-spoke'` | 同 HUB_SUPPLY |
+| opportunityType        | offsetLevel         | Reason                         |
+| ---------------------- | ------------------- | ------------------------------ |
+| `AAVE_V4_SPOKE_SUPPLY` | `'reserve'`         | 有全部 4 段，offset 精确匹配   |
+| `AAVE_V4_HUB_SUPPLY`   | `'hub-cross-spoke'` | 缺 spokeAddress，跨 spoke 匹配 |
+| `AAVE_NET_*` (V3)      | `'reserve'`         | pool 内精确匹配                |
+| `AAVE_V4_NET_APR`      | `'hub-cross-spoke'` | 同 HUB_SUPPLY                  |
 
 ### deduplicateHubSpokeBreakdowns 去重逻辑
 
@@ -69,6 +84,7 @@ const hubContractAddress = typeof firstParams?.hubAddress === 'string'
 ## BorrowBL 调查结论（已实现）
 
 5 个 Merkl opportunity 包含 `BORROW_BL`，已通过 `borrowBlacklist: boolean` 字段实现。检测双路径：
+
 1. `identifier.includes('BORROW_BL')` — 从 Merkl identifier 后缀检测
 2. `hasBlacklistWithBorrowHook(opp)` — 从 `params.blacklist + hookType=14` 组合语义检测
 

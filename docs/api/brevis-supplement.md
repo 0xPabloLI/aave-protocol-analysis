@@ -16,7 +16,7 @@ export interface BrevisCampaignInfo {
   poolAddress: string;
   tokenAddress: string | null;
   action: number;
-  actionType: 'supply' | 'borrow' | 'both' | 'unknown';
+  actionType: "supply" | "borrow" | "both" | "unknown";
   campaignId: string;
   campaignName: string;
   startTime: number;
@@ -40,14 +40,14 @@ export interface BrevisCampaignInfo {
 
 旧客户端曾用下列映射生成可读 `status` 字符串；**该映射已从源码删除**，下表仅供对照 REST/gRPC raw 或自建脚本时使用。
 
-| 数值 | 标签 |
-|------|------|
-| 1 | DEPLOYING |
-| 2 | CREATING_FAILED |
-| 3 | INACTIVE |
-| 4 | ACTIVE |
-| 5 | ENDED |
-| 6 | DEACTIVATED |
+| 数值 | 标签            |
+| ---- | --------------- |
+| 1    | DEPLOYING       |
+| 2    | CREATING_FAILED |
+| 3    | INACTIVE        |
+| 4    | ACTIVE          |
+| 5    | ENDED           |
+| 6    | DEACTIVATED     |
 
 ### 曾有的方法语义：`getCampaignDetailByPool({ chainId?, type?, poolId? })`
 
@@ -70,38 +70,38 @@ export interface BrevisCampaignInfo {
 
 > Source: Incentra docs `Get Campaigns` / 各协议 campaign API / reward batch API（见下文链接）。
 
-| Type code | 语义 | 证据等级 | 证据来源 |
-|---|---|---|---|
-| `1` | Liquidity campaign (Uniswap v3) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `2` | Liquidity campaign (Uniswap v4) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `3` | Liquidity campaign (PancakeSwap v3) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `4` | Liquidity campaign (PancakeSwap v4) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `5` | Liquidity campaign (QuickSwap v3) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `6` | Liquidity campaign (KoalaSwap) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `8` | Liquidity campaign (Pancake v4 CL) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `9` | Liquidity campaign (Pancake v4 BIN) | 官方文档 | Incentra docs: Get Campaigns / Liquidity |
-| `1001` | Token holding campaign | 官方文档 | Incentra docs: reward batch APIs (`types`) |
-| `2001` | Euler borrow action | 官方文档 | Incentra docs: Euler campaigns (`action`) |
-| `2002` | Euler lend action | 官方文档 | Incentra docs: Euler campaigns (`action`) |
-| `5001` | Aave lend action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
-| `5002` | Aave borrow action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
-| `5003` | Aave lend_net action | 官方文档 | Incentra docs: Aave campaigns (`action`) |
-| `6001` | Morpho lend action | 官方文档 | Incentra docs: Morpho campaigns (`action`) |
-| `3001` | Aave campaign（gRPC 实测为 both, positionCapScope=combined） | 外部接口实测 + 项目代码映射 | gRPC 运行时数据 + `packages/aave-fetcher/src/brevis-api.ts`（`mapActionType`） |
+| Type code | 语义                                                         | 证据等级                    | 证据来源                                                                       |
+| --------- | ------------------------------------------------------------ | --------------------------- | ------------------------------------------------------------------------------ |
+| `1`       | Liquidity campaign (Uniswap v3)                              | 官方文档                    | Incentra docs: Get Campaigns / Liquidity                                       |
+| `2`       | Liquidity campaign (Uniswap v4)                              | 官方文档                    | Incentra docs: Get Campaigns / Liquidity                                       |
+| `3`       | Liquidity campaign (PancakeSwap v3)                          | 官方文档                    | Incentra docs: Get Campaigns / Liquidity                                       |
+| `4`       | Liquidity campaign (PancakeSwap v4)                          | 官方文档                    | Incentra docs: Get Campaigns / Liquidity                                       |
+| `5`       | Liquidity campaign (QuickSwap v3)                            | 官方文档                    | Incentra docs: Get Campaigns / Liquidity                                       |
+| `6`       | Liquidity campaign (KoalaSwap)                               | 官方文档                    | Incentra docs: Get Campaigns / Liquidity                                       |
+| `8`       | Liquidity campaign (Pancake v4 CL)                           | 官方文档                    | Incentra docs: Get Campaigns / Liquidity                                       |
+| `9`       | Liquidity campaign (Pancake v4 BIN)                          | 官方文档                    | Incentra docs: Get Campaigns / Liquidity                                       |
+| `1001`    | Token holding campaign                                       | 官方文档                    | Incentra docs: reward batch APIs (`types`)                                     |
+| `2001`    | Euler borrow action                                          | 官方文档                    | Incentra docs: Euler campaigns (`action`)                                      |
+| `2002`    | Euler lend action                                            | 官方文档                    | Incentra docs: Euler campaigns (`action`)                                      |
+| `5001`    | Aave lend action                                             | 官方文档                    | Incentra docs: Aave campaigns (`action`)                                       |
+| `5002`    | Aave borrow action                                           | 官方文档                    | Incentra docs: Aave campaigns (`action`)                                       |
+| `5003`    | Aave lend_net action                                         | 官方文档                    | Incentra docs: Aave campaigns (`action`)                                       |
+| `6001`    | Morpho lend action                                           | 官方文档                    | Incentra docs: Morpho campaigns (`action`)                                     |
+| `3001`    | Aave campaign（gRPC 实测为 both, positionCapScope=combined） | 外部接口实测 + 项目代码映射 | gRPC 运行时数据 + `packages/aave-fetcher/src/brevis-api.ts`（`mapActionType`） |
 
 ### Action type 完整映射（2026-06-16 更新）
 
 本项目 `mapActionType` 映射为：
 
-| Type code | 协议 | actionType | 证据来源 |
-|---|---|---|---|
-| `2001` | Euler | `borrow` | 官方文档 Incentra docs: Euler campaigns |
-| `2002` | Euler | `supply` | 官方文档 Incentra docs: Euler campaigns |
-| `3001` | Aave (gRPC 实测) | `both` | gRPC 运行时数据 + 项目代码映射 |
-| `5001` | Aave | `supply` | 官方文档 Incentra docs: Aave campaigns |
-| `5002` | Aave | `borrow` | 官方文档 Incentra docs: Aave campaigns |
-| `5003` | Aave (lend_net) | `supply` | 官方文档 Incentra docs: Aave campaigns |
-| `6001` | Morpho | `supply` | 官方文档 Incentra docs: Morpho campaigns |
+| Type code | 协议             | actionType | 证据来源                                 |
+| --------- | ---------------- | ---------- | ---------------------------------------- |
+| `2001`    | Euler            | `borrow`   | 官方文档 Incentra docs: Euler campaigns  |
+| `2002`    | Euler            | `supply`   | 官方文档 Incentra docs: Euler campaigns  |
+| `3001`    | Aave (gRPC 实测) | `both`     | gRPC 运行时数据 + 项目代码映射           |
+| `5001`    | Aave             | `supply`   | 官方文档 Incentra docs: Aave campaigns   |
+| `5002`    | Aave             | `borrow`   | 官方文档 Incentra docs: Aave campaigns   |
+| `5003`    | Aave (lend_net)  | `supply`   | 官方文档 Incentra docs: Aave campaigns   |
+| `6001`    | Morpho           | `supply`   | 官方文档 Incentra docs: Morpho campaigns |
 
 补充说明：
 
@@ -125,16 +125,19 @@ export interface BrevisCampaignInfo {
 ### 证据
 
 **1. Brevis 官方博客** (2025-08-13)：
+
 > "you will earn a passive 2.4% fixed APR in rewards by lending or borrowing USDC on Aave's Linea market—**up to a combined collateral and debt cap of 5,000 USDC**."
 >
 > 来源：https://blog.brevis.network/2025/08/13/setting-a-new-standard-for-on-chain-incentives-with-metamask-linea-and-brevis/
 
 **2. Linea 官方活动页**：
+
 > "These incentives are limited to **$5,000 combined balance per user (supply + borrow)**."
 >
 > 来源：https://linea.build/hub/events/boosted-yield-on-aave
 
 **3. 多家媒体报道**（均引用 Brevis 官方公告）：
+
 > "Rewards are limited to a **combined cap of 5,000 USDC in collateral and debt**."
 >
 > 来源：MEXC, BitcoinEthereumNews, CryptoDataSpace 等多家媒体，原文均来自 Brevis 2025-08-13 公告
@@ -147,10 +150,10 @@ export interface BrevisCampaignInfo {
 
 ### positionCapScope 语义
 
-| scope | 含义 | 前端计算 |
-|---|---|---|
-| `supply` | cap 只约束 supply 持仓 | `eligiblePosition = min(supplyPosition, positionCap)` |
-| `borrow` | cap 只约束 borrow 持仓 | `eligiblePosition = min(borrowPosition, positionCap)` |
+| scope      | 含义                                | 前端计算                                                               |
+| ---------- | ----------------------------------- | ---------------------------------------------------------------------- |
+| `supply`   | cap 只约束 supply 持仓              | `eligiblePosition = min(supplyPosition, positionCap)`                  |
+| `borrow`   | cap 只约束 borrow 持仓              | `eligiblePosition = min(borrowPosition, positionCap)`                  |
 | `combined` | supply + borrow 合计持仓受 cap 约束 | `eligiblePosition = min(supplyPosition + borrowPosition, positionCap)` |
 
 ### Shared cap 处理（已解决）
@@ -163,14 +166,14 @@ export interface BrevisCampaignInfo {
 
 生产路径在 `getAaveCampaignsData` 中**仅保留 `campaign.status === 4`（ACTIVE）**；下列全表用于解读 debug/raw 或其它协议 REST 响应，**不再由 `brevis-api` 导出字符串标签**。
 
-| Status code | 标签 | 证据等级 | 证据来源 |
-|---|---|---|---|
-| `1` | `DEPLOYING` | 定向补证未观察到活样本 + 归档映射表 | 见下文「定向补证」 |
-| `2` | `CREATING_FAILED` | 外部接口实测 + 归档映射（暂无官方数字佐证） | Brevis REST `/sdk/v1/{liquidityCampaigns,tokenholdingCampaigns,eulerCampaigns}` |
-| `3` | `INACTIVE` | 官方文档 + 归档映射 | Incentra docs |
-| `4` | `ACTIVE` | 官方文档 + 归档映射 | Incentra docs |
-| `5` | `ENDED` | 官方文档 + 归档映射 | Incentra docs |
-| `6` | `DEACTIVATED` | 定向补证未观察到活样本 + 归档映射 | 见下文「定向补证」；官方仅列标签未给数字 |
+| Status code | 标签              | 证据等级                                    | 证据来源                                                                        |
+| ----------- | ----------------- | ------------------------------------------- | ------------------------------------------------------------------------------- |
+| `1`         | `DEPLOYING`       | 定向补证未观察到活样本 + 归档映射表         | 见下文「定向补证」                                                              |
+| `2`         | `CREATING_FAILED` | 外部接口实测 + 归档映射（暂无官方数字佐证） | Brevis REST `/sdk/v1/{liquidityCampaigns,tokenholdingCampaigns,eulerCampaigns}` |
+| `3`         | `INACTIVE`        | 官方文档 + 归档映射                         | Incentra docs                                                                   |
+| `4`         | `ACTIVE`          | 官方文档 + 归档映射                         | Incentra docs                                                                   |
+| `5`         | `ENDED`           | 官方文档 + 归档映射                         | Incentra docs                                                                   |
+| `6`         | `DEACTIVATED`     | 定向补证未观察到活样本 + 归档映射           | 见下文「定向补证」；官方仅列标签未给数字                                        |
 
 补充说明：
 

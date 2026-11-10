@@ -2,15 +2,16 @@
 
 ## Shared Package Boundaries (Non-Negotiable)
 
-| Package | Contains | Must NOT contain |
-|---|---|---|
-| `@internal/aave-shared-contracts` | Types, field registry, validation | Runtime fetch logic, serialization |
-| `@internal/aave-fetcher` | `fetchMarketsData`, SDK clients, adapters | Backend API types (`MarketWithSpread`) |
-| `backend` | API server, serialization (`marketsApiSerialize.ts`) | `fetchMarketsData` definition (imports it) |
+| Package                           | Contains                                             | Must NOT contain                           |
+| --------------------------------- | ---------------------------------------------------- | ------------------------------------------ |
+| `@internal/aave-shared-contracts` | Types, field registry, validation                    | Runtime fetch logic, serialization         |
+| `@internal/aave-fetcher`          | `fetchMarketsData`, SDK clients, adapters            | Backend API types (`MarketWithSpread`)     |
+| `backend`                         | API server, serialization (`marketsApiSerialize.ts`) | `fetchMarketsData` definition (imports it) |
 
 ## Required Coupled Changes
 
 When touching one area, check its pair:
+
 - `packages/aave-shared-contracts/src/index.ts` (types) ↔ `backend/src/types/index.ts` (backend types)
 - `packages/aave-fetcher/src/index.ts` (pruneReserveForRuntime) ↔ `backend/src/types/index.ts`
 - Root output schema ↔ `backend/src/services/marketsApiSerialize.ts`
@@ -26,6 +27,7 @@ Adding new reserve fields to the single `RuntimeReserveData` type requires:
 3. **Field Registry**: `packages/aave-shared-contracts/src/index.ts` maintains `EXPECTED_RUNTIME_FIELDS` as source of truth
 
 **Run tests to verify:**
+
 ```bash
 npm run build && npm run test -w aave-dashboard-backend
 ```

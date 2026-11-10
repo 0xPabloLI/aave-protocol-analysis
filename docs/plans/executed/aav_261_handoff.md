@@ -28,7 +28,9 @@
 - `coingeckoController.ts:303-306` 已有 FDV diff 告警模式：
   ```typescript
   if (Math.abs(diffPct) >= FDV_DIFF_ALERT_THRESHOLD_PCT) {
-    logger.warn(`⚠️ FDV parity alert for ${cmcItem.id}: CMC=..., CoinGecko=..., diff=...%`);
+    logger.warn(
+      `⚠️ FDV parity alert for ${cmcItem.id}: CMC=..., CoinGecko=..., diff=...%`
+    );
   }
   ```
 
@@ -53,7 +55,7 @@ if (diff > 0.01) {
       sdkPrice,
       diffPct: (diff * 100).toFixed(2),
     },
-    'oracle price anomaly'
+    "oracle price anomaly"
   );
   reserve.tokenPrice = oraclePrice;
   oracleOverrideCount++;
@@ -90,7 +92,7 @@ oracleDiffThreshold: Number(process.env.ORACLE_DIFF_THRESHOLD) || 0.01,
 name: Daily Price Anomaly Summary
 on:
   schedule:
-    - cron: '0 8 * * *'  # 每天 UTC 8:00
+    - cron: "0 8 * * *" # 每天 UTC 8:00
 jobs:
   summary:
     runs-on: ubuntu-latest
@@ -130,13 +132,13 @@ jobs:
 
 ## 关键文件路径
 
-| 文件 | 说明 |
-|------|------|
-| `backend/src/services/marketsService.ts:338-363` | oracle diff 对比逻辑，**改动点** |
-| `backend/src/services/oracleService.ts` | oracle 价格缓存服务（只读，不改动） |
-| `backend/src/logger.ts` | Winston logger 单例（不改动） |
-| `backend/src/config.ts` | 配置文件，**可选改动**（提取阈值） |
-| `backend/src/cacheTtl.ts` | oracleTtlMs = 60_000（参考，不改动） |
+| 文件                                             | 说明                                 |
+| ------------------------------------------------ | ------------------------------------ |
+| `backend/src/services/marketsService.ts:338-363` | oracle diff 对比逻辑，**改动点**     |
+| `backend/src/services/oracleService.ts`          | oracle 价格缓存服务（只读，不改动）  |
+| `backend/src/logger.ts`                          | Winston logger 单例（不改动）        |
+| `backend/src/config.ts`                          | 配置文件，**可选改动**（提取阈值）   |
+| `backend/src/cacheTtl.ts`                        | oracleTtlMs = 60_000（参考，不改动） |
 
 ---
 

@@ -1,6 +1,6 @@
-import { COINGECKO_PLATFORM_BY_CHAIN_ID_SYNCED } from './generated/coingecko-platform-by-chain-id.js';
-import { toFiniteNumber } from './utils/number.js';
-import { fifoEvict } from '@internal/aave-shared-contracts';
+import { COINGECKO_PLATFORM_BY_CHAIN_ID_SYNCED } from "./generated/coingecko-platform-by-chain-id.js";
+import { toFiniteNumber } from "./utils/number.js";
+import { fifoEvict } from "@internal/aave-shared-contracts";
 
 type AssetPlatform = { id?: string; chain_identifier?: number | null };
 
@@ -11,7 +11,7 @@ interface ResolveTokenPriceWithBackupParams {
   snapshotPrice?: unknown;
 }
 
-export type UsdPriceSource = 'snapshot' | 'reserve' | 'coingecko' | 'missing';
+export type UsdPriceSource = "snapshot" | "reserve" | "coingecko" | "missing";
 
 interface ResolveUsdPriceWithPriorityParams {
   chainId: number;
@@ -21,33 +21,33 @@ interface ResolveUsdPriceWithPriorityParams {
   reservePrice?: number;
 }
 
-const COINGECKO_API_BASE = 'https://api.coingecko.com/api/v3';
+const COINGECKO_API_BASE = "https://api.coingecko.com/api/v3";
 const COINGECKO_PLATFORM_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** Use only when synced map or live /asset_platforms is wrong for `simple/token_price/{platform}`. */
-const COINGECKO_PLATFORM_BY_CHAIN_ID_OVERRIDES: Partial<Record<number, string>> = {};
+const COINGECKO_PLATFORM_BY_CHAIN_ID_OVERRIDES: Partial<
+  Record<number, string>
+> = {};
 const COINGECKO_COIN_ID_BY_SYMBOL: Record<string, string> = {
-  usdt: 'tether',
-  usdc: 'usd-coin',
-  dai: 'dai',
-  gho: 'gho',
-  pyusd: 'paypal-usd',
-  usde: 'ethena-usde',
-  susde: 'ethena-staked-usde',
-  usds: 'usds',
-  eth: 'ethereum',
-  weth: 'weth',
-  btc: 'bitcoin',
-  wbtc: 'wrapped-bitcoin',
-  eurc: 'euro-coin',
+  usdt: "tether",
+  usdc: "usd-coin",
+  dai: "dai",
+  gho: "gho",
+  pyusd: "paypal-usd",
+  usde: "ethena-usde",
+  susde: "ethena-staked-usde",
+  usds: "usds",
+  eth: "ethereum",
+  weth: "weth",
+  btc: "bitcoin",
+  wbtc: "wrapped-bitcoin",
+  eurc: "euro-coin",
 };
 
-let coingeckoPlatformCache:
-  | {
-      map: Map<number, string>;
-      expiresAt: number;
-    }
-  | null = null;
+let coingeckoPlatformCache: {
+  map: Map<number, string>;
+  expiresAt: number;
+} | null = null;
 
 let coingeckoPlatformInFlight: Promise<Map<number, string>> | null = null;
 
@@ -64,7 +64,10 @@ type TokenPriceCacheEntry = {
 const tokenPriceResolveCache = new Map<string, TokenPriceCacheEntry>();
 
 // In-flight de-dupe: concurrent requests for the same key share one promise.
-const tokenPriceResolveInFlight = new Map<string, Promise<number | undefined>>();
+const tokenPriceResolveInFlight = new Map<
+  string,
+  Promise<number | undefined>
+>();
 
 function pruneTokenPriceCache(now: number): void {
   for (const [key, entry] of tokenPriceResolveCache.entries()) {
@@ -75,9 +78,15 @@ function pruneTokenPriceCache(now: number): void {
   fifoEvict(tokenPriceResolveCache, MAX_TOKEN_PRICE_CACHE_ENTRIES);
 }
 
-async function getCoingeckoAssetPlatformMap(forceRefresh = false): Promise<Map<number, string>> {
+async function getCoingeckoAssetPlatformMap(
+  forceRefresh = false
+): Promise<Map<number, string>> {
   const now = Date.now();
-  if (!forceRefresh && coingeckoPlatformCache && coingeckoPlatformCache.expiresAt > now) {
+  if (
+    !forceRefresh &&
+    coingeckoPlatformCache &&
+    coingeckoPlatformCache.expiresAt > now
+  ) {
     return coingeckoPlatformCache.map;
   }
 
@@ -98,11 +107,11 @@ async function getCoingeckoAssetPlatformMap(forceRefresh = false): Promise<Map<n
         const chainId = item.chain_identifier;
         const platformId = item.id;
         if (
-          typeof chainId === 'number' &&
+          typeof chainId === "number" &&
           Number.isFinite(chainId) &&
           chainId > 0 &&
-          typeof platformId === 'string' &&
-          platformId.trim() !== ''
+          typeof platformId === "string" &&
+          platformId.trim() !== ""
         ) {
           map.set(chainId, platformId);
         }
@@ -124,7 +133,10 @@ async function getCoingeckoAssetPlatformMap(forceRefresh = false): Promise<Map<n
   }
 }
 
-function resolveCoingeckoPlatformId(chainId: number, map: Map<number, string>): string | undefined {
+function resolveCoingeckoPlatformId(
+  chainId: number,
+  map: Map<number, string>
+): string | undefined {
   return (
     COINGECKO_PLATFORM_BY_CHAIN_ID_OVERRIDES[chainId] ??
     COINGECKO_PLATFORM_BY_CHAIN_ID_SYNCED[chainId] ??
@@ -155,7 +167,7 @@ function flushBatch(platformId: string, batch: PendingBatch): void {
 
   const url =
     `${COINGECKO_API_BASE}/simple/token_price/${platformId}` +
-    `?contract_addresses=${encodeURIComponent(addresses.join(','))}` +
+    `?contract_addresses=${encodeURIComponent(addresses.join(","))}` +
     `&vs_currencies=usd`;
 
   fetch(url)
@@ -168,7 +180,8 @@ function flushBatch(platformId: string, batch: PendingBatch): void {
       for (const addr of addresses) {
         const hit = payload[addr];
         const usd = hit?.usd;
-        results[addr] = typeof usd === 'number' && Number.isFinite(usd) ? usd : undefined;
+        results[addr] =
+          typeof usd === "number" && Number.isFinite(usd) ? usd : undefined;
       }
       for (const [addr, cbs] of batch.listeners) {
         const price = results[addr];
@@ -176,11 +189,15 @@ function flushBatch(platformId: string, batch: PendingBatch): void {
       }
     })
     .catch(() => {
-      for (const [, cbs] of batch.listeners) for (const cb of cbs) cb(undefined);
+      for (const [, cbs] of batch.listeners)
+        for (const cb of cbs) cb(undefined);
     });
 }
 
-function joinBatch(platformId: string, normalizedAddress: string): Promise<number | undefined> {
+function joinBatch(
+  platformId: string,
+  normalizedAddress: string
+): Promise<number | undefined> {
   let batch = pendingBatches.get(platformId);
   if (!batch) {
     batch = { addresses: new Set(), listeners: new Map(), timer: null };
@@ -205,12 +222,18 @@ function joinBatch(platformId: string, normalizedAddress: string): Promise<numbe
   return price;
 }
 
-async function fetchCoingeckoTokenPriceUsd(chainId: number, tokenAddress: string): Promise<number | undefined> {
+async function fetchCoingeckoTokenPriceUsd(
+  chainId: number,
+  tokenAddress: string
+): Promise<number | undefined> {
   if (!isValidEvmAddress(tokenAddress)) return undefined;
 
   const normalizedAddress = tokenAddress.toLowerCase();
 
-  const cachedPlatformId = resolveCoingeckoPlatformId(chainId, coingeckoPlatformCache?.map ?? new Map());
+  const cachedPlatformId = resolveCoingeckoPlatformId(
+    chainId,
+    coingeckoPlatformCache?.map ?? new Map()
+  );
   if (cachedPlatformId) {
     return joinBatch(cachedPlatformId, normalizedAddress);
   }
@@ -226,7 +249,9 @@ async function fetchCoingeckoTokenPriceUsd(chainId: number, tokenAddress: string
   return joinBatch(platformId, normalizedAddress);
 }
 
-async function fetchCoingeckoCoinPriceBySymbolUsd(symbol?: string): Promise<number | undefined> {
+async function fetchCoingeckoCoinPriceBySymbolUsd(
+  symbol?: string
+): Promise<number | undefined> {
   if (!symbol) return undefined;
   const coinId = COINGECKO_COIN_ID_BY_SYMBOL[symbol.trim().toLowerCase()];
   if (!coinId) return undefined;
@@ -237,7 +262,7 @@ async function fetchCoingeckoCoinPriceBySymbolUsd(symbol?: string): Promise<numb
 
   const payload = (await response.json()) as Record<string, { usd?: number }>;
   const usd = payload?.[coinId]?.usd;
-  return typeof usd === 'number' && Number.isFinite(usd) ? usd : undefined;
+  return typeof usd === "number" && Number.isFinite(usd) ? usd : undefined;
 }
 
 function isValidEvmAddress(address: string): boolean {
@@ -256,10 +281,12 @@ export async function resolveTokenPriceWithBackup({
     return normalizedSnapshotPrice;
   }
 
-  const rawNormalizedAddress = tokenAddress?.trim().toLowerCase() ?? '';
+  const rawNormalizedAddress = tokenAddress?.trim().toLowerCase() ?? "";
   // If invalid, skip contract-based lookup and fall back to symbol-based lookup.
-  const normalizedAddress = isValidEvmAddress(rawNormalizedAddress) ? rawNormalizedAddress : '';
-  const normalizedSymbol = tokenSymbol?.trim().toLowerCase() ?? '';
+  const normalizedAddress = isValidEvmAddress(rawNormalizedAddress)
+    ? rawNormalizedAddress
+    : "";
+  const normalizedSymbol = tokenSymbol?.trim().toLowerCase() ?? "";
   const cacheKey = `${chainId}:${normalizedAddress}:${normalizedSymbol}`;
   const now = Date.now();
   const existing = tokenPriceResolveCache.get(cacheKey);
@@ -278,7 +305,10 @@ export async function resolveTokenPriceWithBackup({
     let contractPrice: number | undefined;
     if (normalizedAddress) {
       try {
-        contractPrice = await fetchCoingeckoTokenPriceUsd(chainId, normalizedAddress);
+        contractPrice = await fetchCoingeckoTokenPriceUsd(
+          chainId,
+          normalizedAddress
+        );
       } catch {
         // Contract lookup errors should not block symbol fallback.
         contractPrice = undefined;
@@ -297,7 +327,9 @@ export async function resolveTokenPriceWithBackup({
     }
 
     const cacheTtlMs =
-      resolvedPrice === undefined ? COINGECKO_FAILURE_CACHE_TTL_MS : COINGECKO_SUCCESS_CACHE_TTL_MS;
+      resolvedPrice === undefined
+        ? COINGECKO_FAILURE_CACHE_TTL_MS
+        : COINGECKO_SUCCESS_CACHE_TTL_MS;
     const expiresAt = Date.now() + cacheTtlMs;
     pruneTokenPriceCache(Date.now());
 
@@ -323,14 +355,21 @@ export async function resolveUsdPriceWithPriority({
   tokenSymbol,
   snapshotPrice,
   reservePrice,
-}: ResolveUsdPriceWithPriorityParams): Promise<{ price?: number; source: UsdPriceSource }> {
+}: ResolveUsdPriceWithPriorityParams): Promise<{
+  price?: number;
+  source: UsdPriceSource;
+}> {
   const normalizedSnapshot = toFiniteNumber(snapshotPrice);
   if (normalizedSnapshot !== null && normalizedSnapshot > 0) {
-    return { price: normalizedSnapshot, source: 'snapshot' };
+    return { price: normalizedSnapshot, source: "snapshot" };
   }
 
-  if (typeof reservePrice === 'number' && Number.isFinite(reservePrice) && reservePrice > 0) {
-    return { price: reservePrice, source: 'reserve' };
+  if (
+    typeof reservePrice === "number" &&
+    Number.isFinite(reservePrice) &&
+    reservePrice > 0
+  ) {
+    return { price: reservePrice, source: "reserve" };
   }
 
   const coingeckoPrice = await resolveTokenPriceWithBackup({
@@ -341,12 +380,16 @@ export async function resolveUsdPriceWithPriority({
   });
 
   if (coingeckoPrice !== undefined && coingeckoPrice > 0) {
-    return { price: coingeckoPrice, source: 'coingecko' };
+    return { price: coingeckoPrice, source: "coingecko" };
   }
-  return { source: 'missing' };
+  return { source: "missing" };
 }
 
-export function getTokenPriceCacheStats(): { priceCache: number; inFlight: number; platformCache: boolean } {
+export function getTokenPriceCacheStats(): {
+  priceCache: number;
+  inFlight: number;
+  platformCache: boolean;
+} {
   return {
     priceCache: tokenPriceResolveCache.size,
     inFlight: tokenPriceResolveInFlight.size,

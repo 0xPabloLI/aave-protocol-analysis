@@ -149,6 +149,7 @@ Spoke #2 (CHILD, ERC20LOGPROCESSOR — not AAVE_V4_SPOKE_SUPPLY!):
 ```
 
 **Hub children are NOT both SPOKE_SUPPLY — one is ERC20LOGPROCESSOR:**
+
 - Child #1: `AAVE_V4_SPOKE_SUPPLY` (4,167.57 USDG/day) — spoke pool depositors
 - Child #2: `ERC20LOGPROCESSOR` (0.44 USDG/day) — waCoreUSDG token holders
 
@@ -161,17 +162,20 @@ Hub incentive dailyRewards = min(budget/duration, TVL × (targetAPR - nativeAPR)
 ```
 
 Evidence from USDm (chain 4326, AAVE_NET_LENDING):
+
 ```
 targetAPR = 4.5%, nativeAPR = 1.83%, incentiveAPR = 2.67%
 dailyRewards = TVL × 2.67% / 365 = 41,343.30 ✓ (matches actual)
 ```
 
 For USDG, nativeAPR ≈ 0% (new asset, low utilization), so incentiveAPR ≈ targetAPR:
+
 ```
 Hub incentive dailyRewards = min(6,346.21, 20,996,602.63 × (7.7% - 0%) / 365) = 4,429.42 ← capped
 ```
 
 **Hub dailyRewards vs sum of children:**
+
 ```
 Hub dailyRewards:        4,429.42 USDG/day
 Spoke1 dailyRewards:     4,167.57 USDG/day
@@ -195,12 +199,14 @@ targetAPR - nativeAPR → Hub incentive budget cap → budget allocated to Spoke
 Spoke's Dutch auction is **indirectly** constrained by targetAPR via budget allocation, but **not directly**. Early in a campaign (low TVL), Dutch auction APR can exceed Hub targetAPR. As TVL grows, Dutch auction decays and Spoke APR converges toward ≤ Hub targetAPR.
 
 The `nativeAPR` component is dynamic (changes with Aave utilization), so the Hub's daily incentive budget also changes daily:
+
 - nativeAPR rises → incentive budget falls → less for Spokes
 - nativeAPR falls → incentive budget rises → more for Spokes
 
 ### "Parent and child rewards are not cumulative" — RESOLVED
 
 Merkl app displays:
+
 - On child opp: "Liquidity supplied here earns rewards from a parent opportunity"
 - On parent opp: "Supplying to a child opportunity may earn you higher rewards than supplying to the parent"
 
@@ -209,6 +215,7 @@ Merkl app displays:
 ### Hub `amount` Field Interpretation — RESOLVED
 
 Hub `amount` = total reward budget for campaign duration (max possible distribution). Actual distribution is capped by `targetAPR - nativeAPR`:
+
 - Hub amount: 44,423.50 USDG / 7 days = 6,346.21/day (max possible)
 - Actual: 4,429.42/day (capped by `TVL × (targetAPR - nativeAPR) / 365`)
 - Undistributed budget remains in campaign
@@ -244,6 +251,7 @@ Hub amount ≠ Spoke1 amount + Spoke2 amount. The diff (15,309 USDG) is: (a) bud
 **Key insight from `reward-forwarding.md`**: Merkl has a **forwarder** mechanism. When a smart contract (like a Spoke pool) holds incentivized assets on behalf of users, Merkl automatically creates **subcampaigns** (linked opportunities) and forwards rewards to the end users.
 
 **Hub/Spoke flow (verified with USDG V4 data)**:
+
 1. Creator creates Hub campaign on-chain via `DistributionCreator.sol`, deposits total budget (42,377.66 USDG)
 2. Merkl engine detects Spoke contract holding Hub aTokens → automatically creates Spoke subcampaign in its internal database (NOT on-chain)
 3. Merkl engine allocates sub-budget from Hub's total budget to Spoke (33,168.59 USDG), leaving Hub self-retained budget (9,209.07 USDG)
@@ -254,24 +262,29 @@ Hub amount ≠ Spoke1 amount + Spoke2 amount. The diff (15,309 USDG) is: (a) bud
 8. Hub self-retained budget (9,209.07 USDG) is for direct Hub depositors, but in practice nearly zero direct depositors exist (TVL_hub ≈ TVL_spoke)
 
 **Evidence that Spoke is NOT an on-chain campaign**:
+
 - Hub `onChainCampaignId` = `0x1e20...abc7` (bytes32 keccak256 hash — standard DistributionCreator output)
 - Spoke `onChainCampaignId` = `10615816937644305100` (small integer, NOT a hash)
 - This proves Spoke is a Merkl-engine-internal subcampaign, not created via `DistributionCreator.sol`
 
 **Why Hub dailyRewards > Spoke dailyRewards**:
+
 ```
 Hub dailyRewards = min(42,377.66/7, 26,540,445 × 0.0677 / 365) = 4,922.71 (targetAPR cap)
 Spoke dailyRewards = 33,168.59 / 7 = 4,738.37 (constant rate)
 Diff = 184.34 USDG/day
 ```
+
 Hub dailyRewards is a **virtual cap value** — it represents the theoretical maximum if all TVL were claimed at the Hub level. But since nearly all TVL goes through Spoke, Hub's actual distribution to direct depositors is ~0.02 USDG/day.
 
 **Why Spoke APR < Hub targetAPR**:
+
 ```
 Spoke budget needed to reach targetAPR = TVL × targetAPR / 365 × 7 = 34,458.82 USDG
 Spoke actual budget = 33,168.59 USDG
 Deficit = 1,290.23 USDG
 ```
+
 Merkl engine allocates less budget to Spoke than what's needed to reach targetAPR, because it reserves budget for Hub's direct depositors. This means Spoke depositors always get slightly less APR than Hub's targetAPR.
 
 **No double-counting at Merkl engine level**: The engine constructs a single Merkle tree where each `(user, token)` leaf contains the cumulative reward from ALL campaigns. A user's leaf = `sum(breakdown amounts from all campaigns for that token)`. The Merkl API breakdowns attribute rewards to the originating campaign — for V4, all breakdowns point to Hub campaigns, confirming that Hub budget is the source of all V4 incentive rewards.
@@ -285,6 +298,7 @@ From `distributions.md`:
 > **Capped Reward Rate Campaigns**: Rewards are fully distributed across the entire campaign duration. APR adjusts according to TVL. APR cannot exceed the maximum set by the campaign creator.
 
 This is exactly `AAVE_V4_NET_APR` / `MAX_APR`:
+
 - `targetAPR` = the maximum APR cap
 - Daily rewards = `min(budget/remaining_days, TVL × targetAPR / 365)`
 - When `nativeAPR > 0`: effective incentive cap = `TVL × (targetAPR - nativeAPR) / 365`
@@ -296,6 +310,7 @@ From `distributions.md`:
 > **Variable Reward Rate Campaigns**: A fixed amount of tokens is distributed per second, regardless of liquidity changes. Variable APR for participants: As more users join, rewards per user decrease.
 
 This is `DUTCH_AUCTION`:
+
 - Constant reward rate per second (= `budget / duration`)
 - APR = `(daily_rewards / TVL) × 365 × 100`
 - TVL↑ → APR↓, TVL↓ → APR↑ (inverse TVL relationship, NOT time decay)
@@ -307,16 +322,17 @@ This is `DUTCH_AUCTION`:
 
 19 sub-campaigns have non-1.0x `composedMultiplier`. All belong to `MULTILOG_DUTCH` campaigns:
 
-| Opp | Chain | Compute | Sub Multipliers | APR |
-|---|---|---|---|---|
-| Lend sUSDe/USDe | Plasma | min(1,2) | 1.196x, 1.0x | 3.50% |
-| Lend sUSDe/USDe | Ethereum | min(1,2) | 1.196x, 1.0x | 3.50% |
-| Lend sUSDe/USDe | Mantle | min(1,2) | 1.196x, 1.0x | 3.50% |
-| Borrow cbETH/ETH | Base | min(1,2) | 0.823x, 1.0x | 0.86% |
+| Opp              | Chain    | Compute  | Sub Multipliers | APR   |
+| ---------------- | -------- | -------- | --------------- | ----- |
+| Lend sUSDe/USDe  | Plasma   | min(1,2) | 1.196x, 1.0x    | 3.50% |
+| Lend sUSDe/USDe  | Ethereum | min(1,2) | 1.196x, 1.0x    | 3.50% |
+| Lend sUSDe/USDe  | Mantle   | min(1,2) | 1.196x, 1.0x    | 3.50% |
+| Borrow cbETH/ETH | Base     | min(1,2) | 0.823x, 1.0x    | 0.86% |
 
 **Resolution**: Merkl API returns `opp.apr` and `campaign.apr` as **already-computed final values** that include both `composedCampaignsCompute` and `composedMultiplier` effects. Our code correctly uses `campaign.apr / 100` — no modification to APR calculation logic is needed.
 
 **Evidence**:
+
 1. Compared all 6 LIVE composed opportunities: `opp.apr === campaign.apr` (100% match)
 2. Sub-campaign objects in `composedCampaigns[]` have no independent `apr`/`rate` field — only `composedMultiplier` and `rewardToken`
 3. Merkl app displayed APR matches API returned APR (e.g., cbETH/ETH = 0.86%)
@@ -339,6 +355,7 @@ Refs: AAV-948, AAV-1005, AAV-1006
 5. **Result**: USDG V4 Merkl incentive = Hub APR (7.70%) + Spoke APR (7.23%) = **14.93%** instead of the correct ~7.23%
 
 **Code path**:
+
 ```
 merkl-api.ts:1799-1801 → tokenAddressesToCheck = [tokenAddress, spokeAddress]
 merkl-api.ts:1803-1815 → for each addr, lookup merklData[indexKey]
@@ -346,16 +363,19 @@ merkl-api.ts:1809-1812 → if (!seenOpportunities.has(opp)) → adds both Hub an
 ```
 
 **Why Hub and Spoke use different explorerAddresses**:
+
 - Hub `explorerAddress` = underlying token (USDG) — because Hub tracks deposits at the token level
 - Spoke `explorerAddress` = Spoke pool contract — because Spoke tracks deposits at the pool level
 - These are genuinely different addresses, so the Merkl index stores them under different keys
 
 **Mitigation options**:
+
 1. **Filter out `AAVE_V4_SPOKE_*` opportunities entirely** — simplest approach, Spoke is a subset of Hub
 2. **Deduplicate by reserve + parent-child relationship** — when Hub and Spoke map to same reserve, prefer Hub
 3. **Use only Hub opportunities for V4** — more targeted than option 1
 
 **Recommended**: Option 1 (filter out `AAVE_V4_SPOKE_*`) because:
+
 - Hub APR (6.77% = targetAPR) is the TRUE total incentive APR that users actually receive
 - User reward breakdowns in Merkl API all attribute to Hub campaigns, not Spoke campaigns
 - Hub dailyRewards = TVL × targetAPR / 365 includes both Hub-direct and Spoke-forwarded portions
@@ -380,6 +400,7 @@ Research phase complete. Key findings:
 ### Implementation: Spoke-Priority Dedup via parentCampaignId (2026-06-25, REVISED from filter-Spoke)
 
 **Previous approach (filter Spoke, keep Hub) replaced because**:
+
 1. Hub `campaignType = TARGET_TOTAL_APR` → backend `scaleMerklBreakdown` converts targetAPR to incentiveAPR via `computeTargetTotalAprIncentiveApr(targetAPR, nativeAPY, side)`. This conversion depends on `reserve.supplyApy` (nativeAPY).
 2. RPC fallback (SDK failure) does not provide `supplyApy` → conversion falls to `campaignApr × 100` = targetAPR (too high by nativeAPY).
 3. Spoke `campaignType = DUTCH_AUCTION` → `scaleMerklBreakdown` directly passes through `campaignApr × 100` = incentiveAPR. No `supplyApy` dependency.
@@ -410,14 +431,15 @@ A single Hub opportunity (explorerAddress = underlying token) can aggregate camp
 
 **Verified with live Merkl API data**:
 
-| Asset | Hub APR (targetAPR) | Spoke APR (incentiveAPR) | Before (double) | After (Spoke-priority) |
-|---|---|---|---|---|
-| USDG | 6.77% | 6.48% | 13.25% | 6.48% |
-| frxUSD | 5.36% | 4.87% | 10.23% | 4.87% |
+| Asset  | Hub APR (targetAPR) | Spoke APR (incentiveAPR) | Before (double) | After (Spoke-priority) |
+| ------ | ------------------- | ------------------------ | --------------- | ---------------------- |
+| USDG   | 6.77%               | 6.48%                    | 13.25%          | 6.48%                  |
+| frxUSD | 5.36%               | 4.87%                    | 10.23%          | 4.87%                  |
 
 **Forecast**: DUTCH_AUCTION is not in `needsAprCap` list → `aprCap = null`. Forecast uses Spoke's own parameters (totalBudget = Spoke budget, plannedDaily = budget/duration). No forecast code changes needed.
 
 Issues filed:
+
 - AAV-947: Parent-child relationship research (completed → this ADR)
 - AAV-948: composedMultiplier correction (updated with 6-opportunity full data)
 - AAV-959: Hub/Spoke double-counting fix (Done — filter-Spoke approach, superseded)
@@ -432,6 +454,7 @@ Issues filed:
 **Fallback**: If `rawParentId` has no mapping in `dbIdToHashId` (parent campaign not in live opportunities), the raw value is kept as-is. This means dedup won't fire for that pair — equivalent to the pre-fix behavior, not a regression.
 
 **Code changes**:
+
 1. `packages/aave-fetcher/src/merkl-api.ts` — `dbIdToHashId` construction moved before cache population; `parentCampaignId` resolved at assignment time in both main path and fallback path
 2. `packages/aave-fetcher/tests/deduplicateHubSpokeBreakdowns.test.ts` — added scenario 10 (hash ID format matching) and scenario 11 (unresolved db ID fallback, later revised to databaseId match)
 
@@ -442,11 +465,13 @@ Issues filed:
 **Fix**: Added `...(opp.opportunityType && { opportunityType: opp.opportunityType })` to `oppBase` in `index.ts:449`. Also added `bd.databaseId` as a secondary match key in `deduplicateHubSpokeBreakdowns` filter (line 2131), so Hub breakdowns can be matched by either `campaignId` (hash ID) or `databaseId` (db ID).
 
 **Code changes**:
+
 1. `packages/aave-fetcher/src/index.ts` — `oppBase` now includes `opportunityType`
 2. `packages/aave-fetcher/src/merkl-api.ts` — `deduplicateHubSpokeBreakdowns` filter checks both `bd.campaignId` and `bd.databaseId` against `replacedHubIds`
 3. `packages/aave-fetcher/tests/deduplicateHubSpokeBreakdowns.test.ts` — scenario 11 revised from "no dedup fallback" to "dedup via databaseId match"
 
 Open items:
+
 - ~~Composed multiplier decay formula still unknown (engine is proprietary)~~ RESOLVED: Merkl API returns final APR, no client-side multiplier calculation needed
 - ~~Need to verify if Merkl's returned `apr` at opportunity level already accounts for composed compute/multiplier~~ RESOLVED: Verified `opp.apr === campaign.apr`, Merkl engine handles compute+multiplier internally
 
@@ -457,6 +482,7 @@ Open items:
 **Root cause**: `findMatchingMerklOpportunities` used a coarse `chainId-explorerAddress` index. All V4 Spoke opps on the same spoke pool shared one index key, so every reserve on that spoke matched every Spoke opp regardless of token.
 
 **Fix**: Replaced the coarse index with precise 4-component reserve ID matching, same mechanism as the NPC `resolveOffsetReserveIds` code. Campaign params (`underlyingToken`, `spokeAddress`, `hubAddress`) from `opp.campaigns[0].params` are pre-computed into:
+
 - `campaignReserveId` (Spoke, full 4-component via `v4ReserveId`) — compared against `item.reserveId`
 - `hubScopeKey` (Hub, 3-component via `v4HubScopeKey`) — compared against reserve's `chainId:token:hub`
 
@@ -465,6 +491,7 @@ Index reverted to `explorerAddress` (broad lookup); the reserve ID filter provid
 **Shared utilities**: Uses `v4ReserveId` and new `v4HubScopeKey` from `keys.ts` (shared-contracts), centralizing reserve ID construction. Hub opps filtered even when `item.hubAddress` is missing (uses `item.hubAddress ?? ''`).
 
 **Code review fixes** (P2):
+
 - Hub opp filter: removed `item.hubAddress` guard so Hub opps are always filtered (previously bypassed when reserve lacked `hubAddress` field)
 - Added `v4HubScopeKey` unit tests in `keys.test.ts` (format, normalization, per-parameter distinctness)
 

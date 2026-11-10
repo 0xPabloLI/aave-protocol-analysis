@@ -17,9 +17,9 @@
 
 ### 3.1 hubName 值域不一致
 
-| 数据源 | reserveId/onchainKey 第四段 | 值域 |
-|--------|---------------------------|------|
-| v4-fetcher（SDK） | `r.asset.hub.name` | "Core", "Prime", "Plus" |
+| 数据源                             | reserveId/onchainKey 第四段        | 值域                                |
+| ---------------------------------- | ---------------------------------- | ----------------------------------- |
+| v4-fetcher（SDK）                  | `r.asset.hub.name`                 | "Core", "Prime", "Plus"             |
 | onchainDataService（address-book） | `V4SpokeConfig.hubName` (= hubKey) | "CORE_HUB", "PRIME_HUB", "PLUS_HUB" |
 
 结果：`onchainMap.get(reserve.reserveId)` 无法直接命中，需要 `SDK_HUB_TO_HUBKEY` 运行时映射。
@@ -29,9 +29,9 @@
 ```typescript
 // marketsService.ts:289-293
 const SDK_HUB_TO_HUBKEY: Record<string, string> = {
-  Core: 'CORE_HUB',
-  Prime: 'PRIME_HUB',
-  Plus: 'PLUS_HUB',
+  Core: "CORE_HUB",
+  Prime: "PRIME_HUB",
+  Plus: "PLUS_HUB",
 };
 ```
 
@@ -40,6 +40,7 @@ const SDK_HUB_TO_HUBKEY: Record<string, string> = {
 ### 3.3 hubAddress 天然一致
 
 SDK 和 address-book 都包含同一个 Hub 合约的链上地址：
+
 - SDK: `r.asset.hub.address` = `"0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9"`
 - address-book: `AaveAddressBook.HUBS.CORE_HUB` = `"0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9"`
 
@@ -48,6 +49,7 @@ SDK 和 address-book 都包含同一个 Hub 合约的链上地址：
 ### 3.4 API 字段冗余
 
 当前 API 返回 `hubAddress` 和 `spokeAddress`，而这两个值已编码在 reserveId 中：
+
 - V4 reserveId = `{chainId}:{spokeAddress}:{tokenAddress}:{hubAddress}`
 - 第二段 = spokeAddress，第四段 = hubAddress
 
@@ -57,10 +59,10 @@ SDK 和 address-book 都包含同一个 Hub 合约的链上地址：
 
 ### 4.1 reserveId/onchainKey 格式变更
 
-| 版本 | 新 reserveId | 段数 | 示例 |
-|------|-------------|------|------|
-| V3 | `${chainId}:${poolAddress}:${tokenAddr}` | 3 | `1:0x87870bca...:0xbe989514...` |
-| V4 | `${chainId}:${spokeAddress}:${tokenAddr}:${hubAddress}` | 4 | `1:0x1234...7890:0xa0b8...eb48:0xCca8...26c9` |
+| 版本 | 新 reserveId                                            | 段数 | 示例                                          |
+| ---- | ------------------------------------------------------- | ---- | --------------------------------------------- |
+| V3   | `${chainId}:${poolAddress}:${tokenAddr}`                | 3    | `1:0x87870bca...:0xbe989514...`               |
+| V4   | `${chainId}:${spokeAddress}:${tokenAddr}:${hubAddress}` | 4    | `1:0x1234...7890:0xa0b8...eb48:0xCca8...26c9` |
 
 变更点：V4 第四段从 hubName（"Core"）改为 hubAddress（"0xCca8...26c9"）。
 
@@ -73,6 +75,7 @@ onchainDataService 当前 V4_SPOKE_CONFIGS 中 hubName = hubKey（"CORE_HUB"）�
 ### 4.3 消除 SDK_HUB_TO_HUBKEY fallback
 
 marketsService 中删除：
+
 - `SDK_HUB_TO_HUBKEY` 映射表
 - V4 fallback lookup 逻辑
 
@@ -80,14 +83,14 @@ marketsService 中删除：
 
 ### 4.4 API 字段调整
 
-| 字段 | 当前 | 变更后 | 原因 |
-|------|------|--------|------|
-| hubAddress | 返回 | **去除** | reserveId 第四段可解析 |
-| spokeAddress | 返回 | **去除** | reserveId 第二段可解析 |
-| hubName | 返回 | 保留 | 前端显示用，无法从 reserveId 解析 |
-| hubId | 返回 | 保留 | 前端需要 |
-| spokeName | 返回 | 保留 | 前端显示用 |
-| spokeId | 返回 | 保留 | 前端需要 |
+| 字段         | 当前 | 变更后   | 原因                              |
+| ------------ | ---- | -------- | --------------------------------- |
+| hubAddress   | 返回 | **去除** | reserveId 第四段可解析            |
+| spokeAddress | 返回 | **去除** | reserveId 第二段可解析            |
+| hubName      | 返回 | 保留     | 前端显示用，无法从 reserveId 解析 |
+| hubId        | 返回 | 保留     | 前端需要                          |
+| spokeName    | 返回 | 保留     | 前端显示用                        |
+| spokeId      | 返回 | 保留     | 前端需要                          |
 
 ### 4.5 RuntimeReserveData 类型变更
 
@@ -97,6 +100,7 @@ marketsService 中删除：
 ### 4.6 前端同步
 
 前端从 reserveId 解析字段时：
+
 - 3 段 = V3: `[chainId, poolAddress, tokenAddress]`
 - 4 段 = V4: `[chainId, spokeAddress, tokenAddress, hubAddress]`
 
@@ -106,13 +110,13 @@ marketsService 中删除：
 
 ### 后端
 
-| 文件 | 改动 |
-|------|------|
-| `packages/aave-fetcher/src/v4-fetcher.ts` | reserveId 第四段从 `hub.name` 改为 `hub.address`（toLowerCase） |
-| `backend/src/services/onchainDataService.ts` | V4SpokeConfig.hubName 改为 hubAddress；onchainKey 第四段改为 hubAddress；v4SpokeCache key 改为 `${spokeAddress}:${hubAddress}` |
-| `backend/src/services/marketsService.ts` | 删除 `SDK_HUB_TO_HUBKEY` 映射表和 V4 fallback lookup |
-| `backend/src/services/marketsApiSerialize.ts` | 从 `PASSTHROUGH_FIELDS` 移除 `hubAddress` 和 `spokeAddress` |
-| `backend/src/services/oracleService.ts` | V4SpokeConfig.hubName 改为 hubAddress（如适用） |
+| 文件                                          | 改动                                                                                                                           |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/aave-fetcher/src/v4-fetcher.ts`     | reserveId 第四段从 `hub.name` 改为 `hub.address`（toLowerCase）                                                                |
+| `backend/src/services/onchainDataService.ts`  | V4SpokeConfig.hubName 改为 hubAddress；onchainKey 第四段改为 hubAddress；v4SpokeCache key 改为 `${spokeAddress}:${hubAddress}` |
+| `backend/src/services/marketsService.ts`      | 删除 `SDK_HUB_TO_HUBKEY` 映射表和 V4 fallback lookup                                                                           |
+| `backend/src/services/marketsApiSerialize.ts` | 从 `PASSTHROUGH_FIELDS` 移除 `hubAddress` 和 `spokeAddress`                                                                    |
+| `backend/src/services/oracleService.ts`       | V4SpokeConfig.hubName 改为 hubAddress（如适用）                                                                                |
 
 ### 前端
 

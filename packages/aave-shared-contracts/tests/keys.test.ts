@@ -1,5 +1,5 @@
-import { describe, test } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, test } from "node:test";
+import assert from "node:assert/strict";
 import {
   normalizeAddress,
   spokeKey,
@@ -14,253 +14,288 @@ import {
   v4ReserveId,
   v4HubScopeKey,
   aaveProReserveIdBase64,
-} from '../src/keys.js';
+} from "../src/keys.js";
 
-describe('normalizeAddress', () => {
-  test('lowercases and trims address', () => {
-    assert.equal(normalizeAddress('0xABCDEF'), '0xabcdef');
-    assert.equal(normalizeAddress(' 0xABCDEF '), '0xabcdef');
+describe("normalizeAddress", () => {
+  test("lowercases and trims address", () => {
+    assert.equal(normalizeAddress("0xABCDEF"), "0xabcdef");
+    assert.equal(normalizeAddress(" 0xABCDEF "), "0xabcdef");
   });
 
-  test('equivalent to toLowerCase() for compliant addresses (no whitespace)', () => {
-    const addr = '0x1234567890AbCdEf1234567890aBcDeF12345678';
+  test("equivalent to toLowerCase() for compliant addresses (no whitespace)", () => {
+    const addr = "0x1234567890AbCdEf1234567890aBcDeF12345678";
     assert.equal(normalizeAddress(addr), addr.toLowerCase());
   });
 
-  test('handles empty string', () => {
-    assert.equal(normalizeAddress(''), '');
+  test("handles empty string", () => {
+    assert.equal(normalizeAddress(""), "");
   });
 
-  test('trims leading/trailing whitespace', () => {
-    assert.equal(normalizeAddress('\t0xABC \n'), '0xabc');
-  });
-});
-
-describe('spokeKey', () => {
-  test('produces chainId:normalizedSpokeAddress format', () => {
-    assert.equal(spokeKey(1, '0xABC'), '1:0xabc');
-    assert.equal(spokeKey(42161, '0xDef'), '42161:0xdef');
-  });
-
-  test('different chainIds produce different keys', () => {
-    assert.notEqual(spokeKey(1, '0xabc'), spokeKey(2, '0xabc'));
-  });
-
-  test('different spokeAddresses produce different keys', () => {
-    assert.notEqual(spokeKey(1, '0xaaa'), spokeKey(1, '0xbbb'));
-  });
-
-  test('case-insensitive for spokeAddress', () => {
-    assert.equal(spokeKey(1, '0xABC'), spokeKey(1, '0xabc'));
+  test("trims leading/trailing whitespace", () => {
+    assert.equal(normalizeAddress("\t0xABC \n"), "0xabc");
   });
 });
 
-describe('v4SpokeCacheKey', () => {
-  test('produces normalizedSpoke:normalizedHub format', () => {
-    assert.equal(v4SpokeCacheKey('0xSpoke', '0xHub'), '0xspoke:0xhub');
+describe("spokeKey", () => {
+  test("produces chainId:normalizedSpokeAddress format", () => {
+    assert.equal(spokeKey(1, "0xABC"), "1:0xabc");
+    assert.equal(spokeKey(42161, "0xDef"), "42161:0xdef");
   });
 
-  test('different spoke or hub addresses produce different keys', () => {
-    assert.notEqual(v4SpokeCacheKey('0xA', '0xB'), v4SpokeCacheKey('0xA', '0xC'));
-    assert.notEqual(v4SpokeCacheKey('0xA', '0xB'), v4SpokeCacheKey('0xD', '0xB'));
+  test("different chainIds produce different keys", () => {
+    assert.notEqual(spokeKey(1, "0xabc"), spokeKey(2, "0xabc"));
   });
 
-  test('case-insensitive for both addresses', () => {
-    assert.equal(v4SpokeCacheKey('0xSPOKE', '0xHUB'), v4SpokeCacheKey('0xspoke', '0xhub'));
+  test("different spokeAddresses produce different keys", () => {
+    assert.notEqual(spokeKey(1, "0xaaa"), spokeKey(1, "0xbbb"));
+  });
+
+  test("case-insensitive for spokeAddress", () => {
+    assert.equal(spokeKey(1, "0xABC"), spokeKey(1, "0xabc"));
   });
 });
 
-describe('v3PriceKey', () => {
-  test('produces chainId:normalizedTokenAddress format', () => {
-    assert.equal(v3PriceKey(1, '0xToken'), '1:0xtoken');
+describe("v4SpokeCacheKey", () => {
+  test("produces normalizedSpoke:normalizedHub format", () => {
+    assert.equal(v4SpokeCacheKey("0xSpoke", "0xHub"), "0xspoke:0xhub");
   });
 
-  test('different chainIds or tokenAddresses produce different keys', () => {
-    assert.notEqual(v3PriceKey(1, '0xA'), v3PriceKey(2, '0xA'));
-    assert.notEqual(v3PriceKey(1, '0xA'), v3PriceKey(1, '0xB'));
+  test("different spoke or hub addresses produce different keys", () => {
+    assert.notEqual(
+      v4SpokeCacheKey("0xA", "0xB"),
+      v4SpokeCacheKey("0xA", "0xC")
+    );
+    assert.notEqual(
+      v4SpokeCacheKey("0xA", "0xB"),
+      v4SpokeCacheKey("0xD", "0xB")
+    );
   });
 
-  test('lookup key matches write key format', () => {
-    const writeKey = v3PriceKey(1, '0xABC');
-    const lookupKey = v3PriceKey(1, '0xabc');
+  test("case-insensitive for both addresses", () => {
+    assert.equal(
+      v4SpokeCacheKey("0xSPOKE", "0xHUB"),
+      v4SpokeCacheKey("0xspoke", "0xhub")
+    );
+  });
+});
+
+describe("v3PriceKey", () => {
+  test("produces chainId:normalizedTokenAddress format", () => {
+    assert.equal(v3PriceKey(1, "0xToken"), "1:0xtoken");
+  });
+
+  test("different chainIds or tokenAddresses produce different keys", () => {
+    assert.notEqual(v3PriceKey(1, "0xA"), v3PriceKey(2, "0xA"));
+    assert.notEqual(v3PriceKey(1, "0xA"), v3PriceKey(1, "0xB"));
+  });
+
+  test("lookup key matches write key format", () => {
+    const writeKey = v3PriceKey(1, "0xABC");
+    const lookupKey = v3PriceKey(1, "0xabc");
     assert.equal(writeKey, lookupKey);
   });
 });
 
-describe('v4PriceKey', () => {
-  test('produces chainId:normalizedSpoke:normalizedToken format', () => {
-    assert.equal(v4PriceKey(1, '0xSpoke', '0xToken'), '1:0xspoke:0xtoken');
+describe("v4PriceKey", () => {
+  test("produces chainId:normalizedSpoke:normalizedToken format", () => {
+    assert.equal(v4PriceKey(1, "0xSpoke", "0xToken"), "1:0xspoke:0xtoken");
   });
 
-  test('different any-parameter produces different key', () => {
-    const k1 = v4PriceKey(1, '0xA', '0xB');
-    const k2 = v4PriceKey(2, '0xA', '0xB');
-    const k3 = v4PriceKey(1, '0xC', '0xB');
-    const k4 = v4PriceKey(1, '0xA', '0xD');
+  test("different any-parameter produces different key", () => {
+    const k1 = v4PriceKey(1, "0xA", "0xB");
+    const k2 = v4PriceKey(2, "0xA", "0xB");
+    const k3 = v4PriceKey(1, "0xC", "0xB");
+    const k4 = v4PriceKey(1, "0xA", "0xD");
     assert.notEqual(k1, k2);
     assert.notEqual(k1, k3);
     assert.notEqual(k1, k4);
   });
 
-  test('lookup key matches write key format (case-insensitive)', () => {
-    const writeKey = v4PriceKey(1, '0xSPOKE', '0xTOKEN');
-    const lookupKey = v4PriceKey(1, '0xspoke', '0xtoken');
+  test("lookup key matches write key format (case-insensitive)", () => {
+    const writeKey = v4PriceKey(1, "0xSPOKE", "0xTOKEN");
+    const lookupKey = v4PriceKey(1, "0xspoke", "0xtoken");
     assert.equal(writeKey, lookupKey);
   });
 });
 
-describe('v3OnchainKey', () => {
-  test('produces chainId:normalizedPool:normalizedToken format', () => {
-    assert.equal(v3OnchainKey(1, '0xPool', '0xToken'), '1:0xpool:0xtoken');
+describe("v3OnchainKey", () => {
+  test("produces chainId:normalizedPool:normalizedToken format", () => {
+    assert.equal(v3OnchainKey(1, "0xPool", "0xToken"), "1:0xpool:0xtoken");
   });
 
-  test('different parameters produce different keys', () => {
-    assert.notEqual(v3OnchainKey(1, '0xA', '0xB'), v3OnchainKey(2, '0xA', '0xB'));
-    assert.notEqual(v3OnchainKey(1, '0xA', '0xB'), v3OnchainKey(1, '0xC', '0xB'));
-    assert.notEqual(v3OnchainKey(1, '0xA', '0xB'), v3OnchainKey(1, '0xA', '0xD'));
+  test("different parameters produce different keys", () => {
+    assert.notEqual(
+      v3OnchainKey(1, "0xA", "0xB"),
+      v3OnchainKey(2, "0xA", "0xB")
+    );
+    assert.notEqual(
+      v3OnchainKey(1, "0xA", "0xB"),
+      v3OnchainKey(1, "0xC", "0xB")
+    );
+    assert.notEqual(
+      v3OnchainKey(1, "0xA", "0xB"),
+      v3OnchainKey(1, "0xA", "0xD")
+    );
   });
 
-  test('poolAddress and tokenAddress are normalized', () => {
-    const k1 = v3OnchainKey(1, '0xPOOL', '0xTOKEN');
-    const k2 = v3OnchainKey(1, '0xpool', '0xtoken');
+  test("poolAddress and tokenAddress are normalized", () => {
+    const k1 = v3OnchainKey(1, "0xPOOL", "0xTOKEN");
+    const k2 = v3OnchainKey(1, "0xpool", "0xtoken");
     assert.equal(k1, k2);
   });
 });
 
-describe('v4OnchainKey', () => {
-  test('produces chainId:normalizedSpoke:normalizedToken:normalizedHub format', () => {
-    assert.equal(v4OnchainKey(1, '0xSpoke', '0xToken', '0xHub'), '1:0xspoke:0xtoken:0xhub');
+describe("v4OnchainKey", () => {
+  test("produces chainId:normalizedSpoke:normalizedToken:normalizedHub format", () => {
+    assert.equal(
+      v4OnchainKey(1, "0xSpoke", "0xToken", "0xHub"),
+      "1:0xspoke:0xtoken:0xhub"
+    );
   });
 
-  test('all address parameters are normalized', () => {
-    const k1 = v4OnchainKey(1, '0xSPOKE', '0xTOKEN', '0xHUB');
-    const k2 = v4OnchainKey(1, '0xspoke', '0xtoken', '0xhub');
+  test("all address parameters are normalized", () => {
+    const k1 = v4OnchainKey(1, "0xSPOKE", "0xTOKEN", "0xHUB");
+    const k2 = v4OnchainKey(1, "0xspoke", "0xtoken", "0xhub");
     assert.equal(k1, k2);
   });
 
-  test('consistent with v4ReserveId prefix (chainId:spoke:token:hub)', () => {
-    const onchainKey = v4OnchainKey(1, '0xabc', '0xtoken', '0xdef');
-    const reserveIdKey = v4ReserveId(1, '0xabc', '0xtoken', '0xdef');
+  test("consistent with v4ReserveId prefix (chainId:spoke:token:hub)", () => {
+    const onchainKey = v4OnchainKey(1, "0xabc", "0xtoken", "0xdef");
+    const reserveIdKey = v4ReserveId(1, "0xabc", "0xtoken", "0xdef");
     assert.equal(onchainKey, reserveIdKey);
   });
 });
 
-describe('chainTokenKey', () => {
-  test('produces chainId:normalizedTokenAddress format', () => {
-    assert.equal(chainTokenKey(1, '0xToken'), '1:0xtoken');
+describe("chainTokenKey", () => {
+  test("produces chainId:normalizedTokenAddress format", () => {
+    assert.equal(chainTokenKey(1, "0xToken"), "1:0xtoken");
   });
 
-  test('different parameters produce different keys', () => {
-    assert.notEqual(chainTokenKey(1, '0xA'), chainTokenKey(2, '0xA'));
-    assert.notEqual(chainTokenKey(1, '0xA'), chainTokenKey(1, '0xB'));
+  test("different parameters produce different keys", () => {
+    assert.notEqual(chainTokenKey(1, "0xA"), chainTokenKey(2, "0xA"));
+    assert.notEqual(chainTokenKey(1, "0xA"), chainTokenKey(1, "0xB"));
   });
 
-  test('case-insensitive for tokenAddress', () => {
-    assert.equal(chainTokenKey(1, '0xABC'), chainTokenKey(1, '0xabc'));
-  });
-});
-
-describe('chainSymbolKey', () => {
-  test('produces chainId:symbol format (no normalization)', () => {
-    assert.equal(chainSymbolKey(1, 'USDC'), '1:USDC');
-    assert.equal(chainSymbolKey(42161, 'ETH'), '42161:ETH');
-  });
-
-  test('different chainIds or symbols produce different keys', () => {
-    assert.notEqual(chainSymbolKey(1, 'USDC'), chainSymbolKey(2, 'USDC'));
-    assert.notEqual(chainSymbolKey(1, 'USDC'), chainSymbolKey(1, 'DAI'));
-  });
-
-  test('case-sensitive for symbol', () => {
-    assert.notEqual(chainSymbolKey(1, 'USDC'), chainSymbolKey(1, 'usdc'));
+  test("case-insensitive for tokenAddress", () => {
+    assert.equal(chainTokenKey(1, "0xABC"), chainTokenKey(1, "0xabc"));
   });
 });
 
-describe('topologySortKey', () => {
-  test('produces chainId:normalizedSpoke:normalizedHub format', () => {
-    assert.equal(topologySortKey(1, '0xSpoke', '0xHub'), '1:0xspoke:0xhub');
+describe("chainSymbolKey", () => {
+  test("produces chainId:symbol format (no normalization)", () => {
+    assert.equal(chainSymbolKey(1, "USDC"), "1:USDC");
+    assert.equal(chainSymbolKey(42161, "ETH"), "42161:ETH");
   });
 
-  test('consistent with v4-topology seen set format', () => {
+  test("different chainIds or symbols produce different keys", () => {
+    assert.notEqual(chainSymbolKey(1, "USDC"), chainSymbolKey(2, "USDC"));
+    assert.notEqual(chainSymbolKey(1, "USDC"), chainSymbolKey(1, "DAI"));
+  });
+
+  test("case-sensitive for symbol", () => {
+    assert.notEqual(chainSymbolKey(1, "USDC"), chainSymbolKey(1, "usdc"));
+  });
+});
+
+describe("topologySortKey", () => {
+  test("produces chainId:normalizedSpoke:normalizedHub format", () => {
+    assert.equal(topologySortKey(1, "0xSpoke", "0xHub"), "1:0xspoke:0xhub");
+  });
+
+  test("consistent with v4-topology seen set format", () => {
     const chainId = 1;
-    const spokeAddress = '0xabc';
-    const hubAddress = '0xdef';
+    const spokeAddress = "0xabc";
+    const hubAddress = "0xdef";
     const inlineKey = `${chainId}:${spokeAddress}:${hubAddress}`;
     const namedKey = topologySortKey(chainId, spokeAddress, hubAddress);
     assert.equal(namedKey, inlineKey);
   });
 });
 
-describe('v4ReserveId', () => {
-  test('produces chainId:normalizedSpoke:normalizedToken:normalizedHub format', () => {
-    assert.equal(v4ReserveId(1, '0xSpoke', '0xToken', '0xHub'), '1:0xspoke:0xtoken:0xhub');
+describe("v4ReserveId", () => {
+  test("produces chainId:normalizedSpoke:normalizedToken:normalizedHub format", () => {
+    assert.equal(
+      v4ReserveId(1, "0xSpoke", "0xToken", "0xHub"),
+      "1:0xspoke:0xtoken:0xhub"
+    );
   });
 
-  test('different any-parameter produces different key', () => {
-    const k1 = v4ReserveId(1, '0xA', '0xB', '0xC');
-    const k2 = v4ReserveId(2, '0xA', '0xB', '0xC');
-    const k3 = v4ReserveId(1, '0xD', '0xB', '0xC');
-    const k4 = v4ReserveId(1, '0xA', '0xE', '0xC');
-    const k5 = v4ReserveId(1, '0xA', '0xB', '0xF');
+  test("different any-parameter produces different key", () => {
+    const k1 = v4ReserveId(1, "0xA", "0xB", "0xC");
+    const k2 = v4ReserveId(2, "0xA", "0xB", "0xC");
+    const k3 = v4ReserveId(1, "0xD", "0xB", "0xC");
+    const k4 = v4ReserveId(1, "0xA", "0xE", "0xC");
+    const k5 = v4ReserveId(1, "0xA", "0xB", "0xF");
     assert.notEqual(k1, k2);
     assert.notEqual(k1, k3);
     assert.notEqual(k1, k4);
     assert.notEqual(k1, k5);
   });
 
-  test('consistent with onchainDataService V4 lookup key format', () => {
-    const reserveId = v4ReserveId(1, '0xspoke', '0xtoken', '0xhub');
-    const onchainKey = v4OnchainKey(1, '0xspoke', '0xtoken', '0xhub');
+  test("consistent with onchainDataService V4 lookup key format", () => {
+    const reserveId = v4ReserveId(1, "0xspoke", "0xtoken", "0xhub");
+    const onchainKey = v4OnchainKey(1, "0xspoke", "0xtoken", "0xhub");
     assert.equal(reserveId, onchainKey);
   });
 });
 
-describe('v4HubScopeKey', () => {
-  test('produces chainId:normalizedToken:normalizedHub format', () => {
-    assert.equal(v4HubScopeKey(1, '0xToken', '0xHub'), '1:0xtoken:0xhub');
+describe("v4HubScopeKey", () => {
+  test("produces chainId:normalizedToken:normalizedHub format", () => {
+    assert.equal(v4HubScopeKey(1, "0xToken", "0xHub"), "1:0xtoken:0xhub");
   });
 
-  test('normalizes mixed-case addresses to lowercase', () => {
-    assert.equal(v4HubScopeKey(1, '0xTOKEN', '0xHUB'), '1:0xtoken:0xhub');
+  test("normalizes mixed-case addresses to lowercase", () => {
+    assert.equal(v4HubScopeKey(1, "0xTOKEN", "0xHUB"), "1:0xtoken:0xhub");
   });
 
-  test('different any-parameter produces different key', () => {
-    const k1 = v4HubScopeKey(1, '0xA', '0xB');
-    const k2 = v4HubScopeKey(2, '0xA', '0xB');
-    const k3 = v4HubScopeKey(1, '0xC', '0xB');
-    const k4 = v4HubScopeKey(1, '0xA', '0xD');
+  test("different any-parameter produces different key", () => {
+    const k1 = v4HubScopeKey(1, "0xA", "0xB");
+    const k2 = v4HubScopeKey(2, "0xA", "0xB");
+    const k3 = v4HubScopeKey(1, "0xC", "0xB");
+    const k4 = v4HubScopeKey(1, "0xA", "0xD");
     assert.notEqual(k1, k2);
     assert.notEqual(k1, k3);
     assert.notEqual(k1, k4);
   });
 });
 
-describe('aaveProReserveIdBase64', () => {
-  test('produces base64-encoded chainId::hubAddress::onChainId', () => {
-    const id = aaveProReserveIdBase64(43214, '0xCcA8ce6E6D9D79f82A38954693F7670b0Aa86c9E', 7);
-    const decoded = Buffer.from(id, 'base64').toString();
-    assert.equal(decoded, '43214::0xcca8ce6e6d9d79f82a38954693f7670b0aa86c9e::7');
+describe("aaveProReserveIdBase64", () => {
+  test("produces base64-encoded chainId::hubAddress::onChainId", () => {
+    const id = aaveProReserveIdBase64(
+      43214,
+      "0xCcA8ce6E6D9D79f82A38954693F7670b0Aa86c9E",
+      7
+    );
+    const decoded = Buffer.from(id, "base64").toString();
+    assert.equal(
+      decoded,
+      "43214::0xcca8ce6e6d9d79f82a38954693f7670b0aa86c9e::7"
+    );
   });
 
-  test('normalizes hubAddress to lowercase', () => {
-    const upper = aaveProReserveIdBase64(1, '0xHUB', 3);
-    const lower = aaveProReserveIdBase64(1, '0xhub', 3);
+  test("normalizes hubAddress to lowercase", () => {
+    const upper = aaveProReserveIdBase64(1, "0xHUB", 3);
+    const lower = aaveProReserveIdBase64(1, "0xhub", 3);
     assert.equal(upper, lower);
   });
 
-  test('different parameters produce different keys', () => {
-    const k1 = aaveProReserveIdBase64(1, '0xHub', 1);
-    const k2 = aaveProReserveIdBase64(2, '0xHub', 1);
-    const k3 = aaveProReserveIdBase64(1, '0xAAA', 1);
-    const k4 = aaveProReserveIdBase64(1, '0xHub', 2);
+  test("different parameters produce different keys", () => {
+    const k1 = aaveProReserveIdBase64(1, "0xHub", 1);
+    const k2 = aaveProReserveIdBase64(2, "0xHub", 1);
+    const k3 = aaveProReserveIdBase64(1, "0xAAA", 1);
+    const k4 = aaveProReserveIdBase64(1, "0xHub", 2);
     assert.notEqual(k1, k2);
     assert.notEqual(k1, k3);
     assert.notEqual(k1, k4);
   });
 
-  test('matches Aave Pro GraphQL id format', () => {
-    const id = aaveProReserveIdBase64(43214, '0x06009E20B7B3eCBeDaCfFDd48F98D1Ea06a06c536A', 4);
+  test("matches Aave Pro GraphQL id format", () => {
+    const id = aaveProReserveIdBase64(
+      43214,
+      "0x06009E20B7B3eCBeDaCfFDd48F98D1Ea06a06c536A",
+      4
+    );
     assert.ok(id.length > 0);
-    assert.equal(Buffer.from(id, 'base64').toString().split('::').length, 3);
+    assert.equal(Buffer.from(id, "base64").toString().split("::").length, 3);
   });
 });

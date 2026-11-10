@@ -7,6 +7,7 @@
 当前代码（ADR-0030）过滤 Spoke、保留 Hub，然后后端通过 `computeTargetTotalAprIncentiveApr(targetAPR, nativeAPY, side)` 将 Hub 的 targetAPR 转换为 incentiveAPR。
 
 **问题**：
+
 1. 转换依赖 `reserve.supplyApy`（nativeAPY），但 V4 的 supplyApy 来自 SDK，**RPC fallback 不提供 supplyApy**
 2. SDK 故障走 RPC fallback 时，所有 V4 reserve 的 supplyApy = undefined → `scaleMerklBreakdown` 走 fallback 分支，显示 targetAPR（偏高 nativeAPY）
 3. 转换逻辑是间接的、脆弱的——Spoke 的 apr 本身就是 incentiveAPR，无需转换
@@ -35,11 +36,11 @@ GET /v4/campaigns/11526583104559356735 (Hub):
 
 ### APR 语义
 
-| 字段 | Hub | Spoke |
-|------|-----|-------|
-| `apr` | 6.77% = targetAPR（含 nativeAPY） | 6.48% = incentiveAPR（纯 Merkl reward） |
-| `campaignType` (normalized) | TARGET_TOTAL_APR | DUTCH_AUCTION |
-| `scaleMerklBreakdown` 行为 | 需转换（依赖 nativeAPY） | 直接透传 `campaignApr × 100` |
+| 字段                        | Hub                               | Spoke                                   |
+| --------------------------- | --------------------------------- | --------------------------------------- |
+| `apr`                       | 6.77% = targetAPR（含 nativeAPY） | 6.48% = incentiveAPR（纯 Merkl reward） |
+| `campaignType` (normalized) | TARGET_TOTAL_APR                  | DUTCH_AUCTION                           |
+| `scaleMerklBreakdown` 行为  | 需转换（依赖 nativeAPY）          | 直接透传 `campaignApr × 100`            |
 
 ### Forecast 行为
 
@@ -79,17 +80,17 @@ GET /v4/campaigns/11526583104559356735 (Hub):
 
 ## 实现范围
 
-| 步骤 | 文件 | 变更 |
-|------|------|------|
-| 1 | `packages/aave-shared-contracts/src/index.ts` | `MerklCampaignBreakdown` 新增 `parentCampaignId?: string` |
-| 2 | `packages/aave-fetcher/src/merkl-api.ts` | `MerklCampaignDetails` 新增 `parentCampaignId?: string` |
-| 3 | `packages/aave-fetcher/src/merkl-api.ts` | `fetchMerklCampaignDetails` 提取 `campaign.parentCampaignId`（top-level） |
-| 4 | `packages/aave-fetcher/src/merkl-api.ts` | 构建 breakdown 时填充 `parentCampaignId: campaignDetails.parentCampaignId` |
-| 5 | `packages/aave-fetcher/src/merkl-api.ts` | 移除 Spoke 过滤块（`isV4SpokeOpportunity` continue） |
-| 6 | `packages/aave-fetcher/src/index.ts` | 在 `matchedOpportunities` 循环后新增 `deduplicateHubSpokeBreakdowns` |
-| 7 | 测试 | 去重逻辑单元测试（4 场景） |
-| 8 | 测试 | 更新 `findMatchingMerklOpportunities.test.ts`（Spoke 不再被过滤） |
-| 9 | `docs/adr/0030-merkl-campaign-parent-child-relationships.md` | 修正 Decision 和 Implementation 段 |
+| 步骤 | 文件                                                         | 变更                                                                       |
+| ---- | ------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| 1    | `packages/aave-shared-contracts/src/index.ts`                | `MerklCampaignBreakdown` 新增 `parentCampaignId?: string`                  |
+| 2    | `packages/aave-fetcher/src/merkl-api.ts`                     | `MerklCampaignDetails` 新增 `parentCampaignId?: string`                    |
+| 3    | `packages/aave-fetcher/src/merkl-api.ts`                     | `fetchMerklCampaignDetails` 提取 `campaign.parentCampaignId`（top-level）  |
+| 4    | `packages/aave-fetcher/src/merkl-api.ts`                     | 构建 breakdown 时填充 `parentCampaignId: campaignDetails.parentCampaignId` |
+| 5    | `packages/aave-fetcher/src/merkl-api.ts`                     | 移除 Spoke 过滤块（`isV4SpokeOpportunity` continue）                       |
+| 6    | `packages/aave-fetcher/src/index.ts`                         | 在 `matchedOpportunities` 循环后新增 `deduplicateHubSpokeBreakdowns`       |
+| 7    | 测试                                                         | 去重逻辑单元测试（4 场景）                                                 |
+| 8    | 测试                                                         | 更新 `findMatchingMerklOpportunities.test.ts`（Spoke 不再被过滤）          |
+| 9    | `docs/adr/0030-merkl-campaign-parent-child-relationships.md` | 修正 Decision 和 Implementation 段                                         |
 
 ### 去重逻辑伪代码（步骤 6）
 
@@ -99,7 +100,7 @@ function deduplicateHubSpokeBreakdowns(
   supplyBreakdowns: MerklCampaignBreakdown[],
   borrowBreakdowns: MerklCampaignBreakdown[],
   supplyGroups: MerklOpportunityGroup[],
-  borrowGroups: MerklOpportunityGroup[],
+  borrowGroups: MerklOpportunityGroup[]
 ): void {
   // 1. 收集所有 Spoke breakdown 的 parentCampaignId
   const spokeParentIds = new Set<string>();

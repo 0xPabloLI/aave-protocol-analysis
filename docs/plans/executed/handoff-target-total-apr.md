@@ -28,15 +28,15 @@
 
 ### 2.2 7 种 Target Total APR 子类型
 
-| # | distributionMethod | APR 公式 | 额外字段 | budget-bound mode |
-|---|---|---|---|---|
-| 1 | `AAVE_NET_APR` | `max(targetAPR - aaveNativeAPR, 0)` | `assetId` | `MAX_APR` |
-| 2 | `AAVE_V4_NET_APR` | `max(targetAPR - aaveV4NativeAPR, 0)` | `assetId`, `hubAddress`, `side` | `MAX_APR` |
-| 3 | `ERC4626_APR` | `max(targetAPR - vaultAPR, 0)` | - | `MAX_APR` |
-| 4 | `ERC4626_SPREAD_CAPPED` | `min(max(targetAPR - vaultAPR, 0), cap)` | `cap` | `FIX_APR` |
-| 5 | `ERC4626_TARGET_APR_WITH_MERKL` | `max(targetAPR - vaultAPR - merklOppAPR, 0)` | - | 待验证 |
-| 6 | `SOFR_SPREAD_RATCHET` | `max(SOFR + spread(maxTVL) - vaultAPR, 0)` | spread tier table | 待验证 |
-| 7 | `DEEL_DISTRIBUTION` | `max(0.025 - vaultAPR - merklOppAPR, 0)` | treasury address | 待验证 |
+| #   | distributionMethod              | APR 公式                                     | 额外字段                        | budget-bound mode |
+| --- | ------------------------------- | -------------------------------------------- | ------------------------------- | ----------------- |
+| 1   | `AAVE_NET_APR`                  | `max(targetAPR - aaveNativeAPR, 0)`          | `assetId`                       | `MAX_APR`         |
+| 2   | `AAVE_V4_NET_APR`               | `max(targetAPR - aaveV4NativeAPR, 0)`        | `assetId`, `hubAddress`, `side` | `MAX_APR`         |
+| 3   | `ERC4626_APR`                   | `max(targetAPR - vaultAPR, 0)`               | -                               | `MAX_APR`         |
+| 4   | `ERC4626_SPREAD_CAPPED`         | `min(max(targetAPR - vaultAPR, 0), cap)`     | `cap`                           | `FIX_APR`         |
+| 5   | `ERC4626_TARGET_APR_WITH_MERKL` | `max(targetAPR - vaultAPR - merklOppAPR, 0)` | -                               | 待验证            |
+| 6   | `SOFR_SPREAD_RATCHET`           | `max(SOFR + spread(maxTVL) - vaultAPR, 0)`   | spread tier table               | 待验证            |
+| 7   | `DEEL_DISTRIBUTION`             | `max(0.025 - vaultAPR - merklOppAPR, 0)`     | treasury address                | 待验证            |
 
 **DEEL_DISTRIBUTION** 是 ERC4626_TARGET_APR_WITH_MERKL 的特化版（target 固定 2.5% + SOFR treasury skim）。treasury skim 精确公式 Merkl 未公开。
 
@@ -58,15 +58,16 @@
 
 ### 2.5 Forecast Simulation 需要的额外字段
 
-| distributionMethod | APR cap 来源 | 额外字段 | 字段路径 |
-|---|---|---|---|
-| `MAX_APR` | `distributionSettings.apr` | 无 | - |
-| `FIX_APR` | `distributionSettings.apr` | 无 | - |
-| `DUTCH_AUCTION` | 无 | 无 | - |
-| 所有 Target Total APR | `distributionSettings.targetAPR` | 见各子类型 | - |
-| `ERC4626_SPREAD_CAPPED` | 同上 | `cap` | `distributionSettings.cap` |
+| distributionMethod      | APR cap 来源                     | 额外字段   | 字段路径                   |
+| ----------------------- | -------------------------------- | ---------- | -------------------------- |
+| `MAX_APR`               | `distributionSettings.apr`       | 无         | -                          |
+| `FIX_APR`               | `distributionSettings.apr`       | 无         | -                          |
+| `DUTCH_AUCTION`         | 无                               | 无         | -                          |
+| 所有 Target Total APR   | `distributionSettings.targetAPR` | 见各子类型 | -                          |
+| `ERC4626_SPREAD_CAPPED` | 同上                             | `cap`      | `distributionSettings.cap` |
 
 **单位差异**：
+
 - `targetAPR` / `distributionSettings.apr` = decimal（0.047 = 4.7%）
 - top-level `apr` = percentage（4.7 = 4.7%）
 
@@ -89,12 +90,14 @@
 ### 决策 2：APR cap 读取策略
 
 **根据 type 选择字段路径**（type 决定读 `targetAPR` 还是 `apr`）：
+
 - `TARGET_TOTAL_APR` → 读 `distributionSettings.targetAPR`
 - `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` → 读 `distributionSettings.apr`
 - `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` → 读 `distributionSettings.apr`
 - `DUTCH_AUCTION` → 不需要 APR cap
 
 **`aprCap` 语义差异**（前端按 `campaignType` 区分）：
+
 - MAX/FIX 时：aprCap 是 Merkl 实付 APR 上限
 - TARGET_TOTAL_APR 时：aprCap 是总 APR 目标（targetAPR），前端自行减去 nativeAPR 得到实付 APR
 
@@ -128,6 +131,7 @@ Aave 当前 3 个 failing campaign 都是 `AAVE_NET_APR` / `AAVE_V4_NET_APR`，�
 在 ADR-0024 中更新映射表。关键修正：**删除 L3 (mode) 映射**——`mode` 是 budget-bound 策略，不是类型判断信号。原来 L3 把 `mode=MAX_APR` 映射到 `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` 是概念错误。
 
 更新后的映射：
+
 - **L1 (distributionMethod)**: 新增 7 条 Target Total APR 映射
 - **L2 (distributionType)**: 新增 7 条 Target Total APR 映射（防御性，处理 distributionMethod 为空的情况）
 - **L3 (mode)**: 删除。mode 不再作为类型判断信号
@@ -139,6 +143,7 @@ Aave 当前 3 个 failing campaign 都是 `AAVE_NET_APR` / `AAVE_V4_NET_APR`，�
 ### 决策 7：双侧对等修改
 
 Fetcher 和 Backend 两侧的 aprCap 提取逻辑都需要修改：
+
 - Fetcher: `buildCampaignSnapshotLiteForForecastFile` 序列化 `targetAPR`，`buildForecastFieldsFromOpportunity` 对 TARGET_TOTAL_APR 读 `targetAPR`
 - Backend: `extractMaxApr` 改为根据 campaignType 选择读 `targetAPR` vs `apr`，`buildCampaignSnapshotLite` 序列化 `targetAPR`
 
@@ -149,12 +154,14 @@ Fetcher 和 Backend 两侧的 aprCap 提取逻辑都需要修改：
 ### 4.1 共享类型（`@internal/aave-shared-contracts`）
 
 **文件**: `packages/aave-shared-contracts/src/index.ts`
+
 - `ForecastCampaignTypeLite` 新增 `'TARGET_TOTAL_APR'` 值
 - `MerklCampaignBreakdown` 新增 `budgetBoundMode?: string` 字段
 
 ### 4.2 Fetcher（`@internal/aave-fetcher`）
 
 **文件**: `packages/aave-fetcher/src/merkl-api.ts`
+
 - `FORECAST_LITE_METHOD_MAP` 新增 7 个 Target Total APR 映射 → `TARGET_TOTAL_APR`
 - `FORECAST_LITE_DISTRIBUTION_TYPE_PATTERNS`:
   - 移除 `AAVE_NET_APR`/`AAVE_V4_NET_APR`/`ERC4626_APR` 的旧映射
@@ -168,6 +175,7 @@ Fetcher 和 Backend 两侧的 aprCap 提取逻辑都需要修改：
 ### 4.3 Backend 运行时
 
 **文件**: `backend/src/services/merklForecastModel.ts`
+
 - `CampaignForecastType` 新增 `'TARGET_TOTAL_APR'`
 - `METHOD_TYPE_MAP` 新增 7 个映射
 - `DISTRIBUTION_TYPE_PATTERNS`: 移除 `AAVE_NET_APR`/`AAVE_V4_NET_APR`/`ERC4626_APR` 旧映射，新增 7 条防御性映射
@@ -176,6 +184,7 @@ Fetcher 和 Backend 两侧的 aprCap 提取逻辑都需要修改：
 - `buildForecastState`: aprCap 守卫扩展到三种类型（MAX/FIX/TARGET_TOTAL_APR）
 
 **文件**: `backend/src/services/merklForecastService.ts`
+
 - `extractMaxApr` → 改为 `extractAprCap(campaign, campaignType)`: 根据 campaignType 选择读 `targetAPR` 还是 `apr`
 - `CampaignSnapshotLite` interface: `distributionSettings` 新增 `targetAPR?` 和 `spreadCap?` 字段
 - `buildCampaignSnapshotLite` (line ~208): 序列化 `targetAPR` 和 `cap`（作为 `spreadCap`）
@@ -183,17 +192,20 @@ Fetcher 和 Backend 两侧的 aprCap 提取逻辑都需要修改：
 - `buildForecastFieldsFromOpportunity` 对应逻辑（如果 backend 有 lite file 读取路径）
 
 **文件**: `backend/src/types/index.ts`
+
 - `MarketWithSpread` 同步新增 `budgetBoundMode` 字段（如需在 API 输出）
 
 ### 4.4 Backend 序列化
 
 **文件**: `backend/src/services/marketsApiSerialize.ts`
+
 - `MerklCampaignBreakdown` 的 `aprCap` 序列化：TARGET_TOTAL_APR 时 `aprCap = targetAPR × 100`（decimal → percentage），和 MAX/FIX 的 `distributionSettings.apr × 100` 格式一致
 - `budgetBoundMode` / `spreadCap` 序列化规则
 
 ### 4.5 ADR
 
 **文件**: `docs/adr/0024-merkl-campaign-type-multi-level-mapping.md`
+
 - L1 新增 7 条映射
 - L2 新增 7 条映射（防御性）
 - **删除 L3** — 补充修正说明：mode 是 budget-bound 策略，不是类型判断信号

@@ -4,16 +4,16 @@
 
 ## 部署架构选择
 
-| 架构 | 适用场景 | 说明 |
-|------|----------|------|
-| **单服务**（本文档） | 自建服务器、Railway 常驻模式 | 简单直接，一个进程包含 API + 定时任务 |
+| 架构                                                                | 适用场景                          | 说明                                       |
+| ------------------------------------------------------------------- | --------------------------------- | ------------------------------------------ |
+| **单服务**（本文档）                                                | 自建服务器、Railway 常驻模式      | 简单直接，一个进程包含 API + 定时任务      |
 | **三服务**（[详见此文档](./railway-three-service-architecture.md)） | Railway Serverless / App Sleeping | API + 更新服务 + Redis 分离，支持 API 休眠 |
 
 若计划在 Railway 使用 Serverless（App Sleeping）模式，推荐阅读 [三服务架构方案](./railway-three-service-architecture.md)。
 
 ## 前置要求
 
-- Node.js 20+ 
+- Node.js 20+
 - npm 或 yarn
 - （可选）PM2 - 用于进程管理
 
@@ -175,11 +175,11 @@ curl http://localhost:3001/health
 
 `railway.json` 中 `healthcheckTimeout` 设为 360s（覆盖约 4 分钟冷启动）。关键设计：
 
-| 组件 | 角色 |
-|------|------|
-| `app.listen()` 在预热之前 | 确保 healtcheck 拿到 HTTP 响应而非 connection refused |
-| `startUpdateScheduler()` 独立启动 | 即使预热失败，cron 也会自愈重试，避免僵尸服务 |
-| `/health` 返回 503 → 200 | 预热期间返回 degraded，完成后返回 ok |
+| 组件                              | 角色                                                  |
+| --------------------------------- | ----------------------------------------------------- |
+| `app.listen()` 在预热之前         | 确保 healtcheck 拿到 HTTP 响应而非 connection refused |
+| `startUpdateScheduler()` 独立启动 | 即使预热失败，cron 也会自愈重试，避免僵尸服务         |
+| `/health` 返回 503 → 200          | 预热期间返回 degraded，完成后返回 ok                  |
 
 ## API 端点
 
@@ -222,6 +222,7 @@ curl http://localhost:3001/health
 **原因**：冷启动约 4 分钟（onchain RPC + oracle + markets + coingecko + forecast），但 Railway healthcheck 重试窗口内服务器还没开始监听（`app.listen()` 在预热之后），导致 connection refused。
 
 **修复**（已实施）：
+
 1. `app.listen()` 移到预热之前 → healthcheck 立即拿到 HTTP 响应
 2. `healthcheckTimeout` 从 120s → 360s
 3. `startUpdateScheduler()` 独立于预热启动 → 预热失败也能自愈
@@ -229,6 +230,7 @@ curl http://localhost:3001/health
 ### 服务无法启动
 
 1. 检查端口是否被占用：
+
    ```bash
    lsof -i :3001
    ```

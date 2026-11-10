@@ -17,16 +17,21 @@
  *   node scripts/validate-sdk-onchain-reserve-match.mjs
  */
 
-import { fetchMarketsPayload } from '../../dist/index.js';
-import { refreshOnchainCache, getOnchainDataFromCache } from '../dist/services/onchainDataService.js';
+import { fetchMarketsPayload } from "../../dist/index.js";
+import {
+  refreshOnchainCache,
+  getOnchainDataFromCache,
+} from "../dist/services/onchainDataService.js";
 
 async function main() {
-  console.log('Fetching markets payload (Aave SDK)...');
+  console.log("Fetching markets payload (Aave SDK)...");
   const payload = await fetchMarketsPayload();
   const sdkReserves = payload.data ?? [];
   const sdkKeys = new Set(sdkReserves.map((r) => r.reserveId));
 
-  console.log('Refreshing on-chain cache (UiPoolDataProvider.getReservesHumanized, all pools)...');
+  console.log(
+    "Refreshing on-chain cache (UiPoolDataProvider.getReservesHumanized, all pools)..."
+  );
   await refreshOnchainCache();
   const onchainMap = getOnchainDataFromCache();
   const onchainKeys = new Set(onchainMap.keys());
@@ -36,17 +41,19 @@ async function main() {
 
   const sdkByKey = new Map(sdkReserves.map((r) => [r.reserveId, r]));
 
-  console.log('\n--- Reserve entry match (SDK vs on-chain, by reserveId) ---');
-  console.log('SDK reserves (payload.data):', sdkKeys.size);
-  console.log('On-chain reserves (cache):', onchainKeys.size);
-  console.log('In SDK only (no on-chain entry):', inSdkNotOnchain.length);
-  console.log('In on-chain only (no SDK entry):', inOnchainNotSdk.length);
+  console.log("\n--- Reserve entry match (SDK vs on-chain, by reserveId) ---");
+  console.log("SDK reserves (payload.data):", sdkKeys.size);
+  console.log("On-chain reserves (cache):", onchainKeys.size);
+  console.log("In SDK only (no on-chain entry):", inSdkNotOnchain.length);
+  console.log("In on-chain only (no SDK entry):", inOnchainNotSdk.length);
 
   if (inSdkNotOnchain.length > 0) {
-    console.log('\n--- In SDK but NOT in on-chain ---');
+    console.log("\n--- In SDK but NOT in on-chain ---");
     inSdkNotOnchain.slice(0, 50).forEach((reserveId, i) => {
       const r = sdkByKey.get(reserveId);
-      const label = r ? `${r.tokenSymbol} (${r.marketName}, ${r.chainId})` : reserveId;
+      const label = r
+        ? `${r.tokenSymbol} (${r.marketName}, ${r.chainId})`
+        : reserveId;
       console.log(`  ${i + 1}. ${label}`);
     });
     if (inSdkNotOnchain.length > 50) {
@@ -55,7 +62,7 @@ async function main() {
   }
 
   if (inOnchainNotSdk.length > 0) {
-    console.log('\n--- In on-chain but NOT in SDK ---');
+    console.log("\n--- In on-chain but NOT in SDK ---");
     inOnchainNotSdk.slice(0, 50).forEach((reserveId, i) => {
       console.log(`  ${i + 1}. ${reserveId}`);
     });
@@ -64,19 +71,32 @@ async function main() {
     }
   }
 
-  const { writeFileSync, existsSync, mkdirSync } = await import('fs');
-  const { dirname, join } = await import('path');
-  const { fileURLToPath } = await import('url');
+  const { writeFileSync, existsSync, mkdirSync } = await import("fs");
+  const { dirname, join } = await import("path");
+  const { fileURLToPath } = await import("url");
   const scriptDir = dirname(fileURLToPath(import.meta.url));
-  const reportPath = join(scriptDir, '../../data/debug/sdk-onchain-reserve-match-report.json');
+  const reportPath = join(
+    scriptDir,
+    "../../data/debug/sdk-onchain-reserve-match-report.json"
+  );
   const outDir = dirname(reportPath);
   if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 
   const inSdkNotOnchainDetails = inSdkNotOnchain.map((reserveId) => {
     const r = sdkByKey.get(reserveId);
-    return r ? { reserveId, chainId: r.chainId, tokenAddress: r.tokenAddress, tokenSymbol: r.tokenSymbol, marketName: r.marketName } : { reserveId };
+    return r
+      ? {
+          reserveId,
+          chainId: r.chainId,
+          tokenAddress: r.tokenAddress,
+          tokenSymbol: r.tokenSymbol,
+          marketName: r.marketName,
+        }
+      : { reserveId };
   });
-  const inOnchainNotSdkDetails = inOnchainNotSdk.map((reserveId) => ({ reserveId }));
+  const inOnchainNotSdkDetails = inOnchainNotSdk.map((reserveId) => ({
+    reserveId,
+  }));
 
   writeFileSync(
     reportPath,
@@ -95,7 +115,9 @@ async function main() {
       2
     )
   );
-  console.log('\nReport written to data/debug/sdk-onchain-reserve-match-report.json');
+  console.log(
+    "\nReport written to data/debug/sdk-onchain-reserve-match-report.json"
+  );
 
   const hasMismatch = inSdkNotOnchain.length > 0 || inOnchainNotSdk.length > 0;
   process.exit(hasMismatch ? 1 : 0);

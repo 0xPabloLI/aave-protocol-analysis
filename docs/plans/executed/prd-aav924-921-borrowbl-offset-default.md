@@ -16,15 +16,16 @@ V4 合约层 collateral 按 spoke 维度计算（跨 hub 但不跨 spoke），�
 
 5 个 LIVE opp 包含 `BORROW_BL`：
 
-| Chain | Token | opportunityType | action | offset tokens | hooks |
-|---|---|---|---|---|---|
-| Ethereum | USDtb | AAVE_SUPPLY | LEND | 无 | hookType=14 (protocol 0,1,2,3) |
-| Ethereum | USDe | MULTILOG_DUTCH | LEND | 无 | hookType=14 (protocol 2) + hookType=17 |
-| Plasma | USDe | MULTILOG_DUTCH | LEND | 无 | hookType=14 (protocol 2) + hookType=17 |
-| Mantle | USDe | MULTILOG_DUTCH | LEND | 无 | hookType=14 (protocol 2) + hookType=17 |
-| MegaETH | USDe | AAVE_SUPPLY | LEND | 无 | hookType=14 (protocol 2) + hookType=17 |
+| Chain    | Token | opportunityType | action | offset tokens | hooks                                  |
+| -------- | ----- | --------------- | ------ | ------------- | -------------------------------------- |
+| Ethereum | USDtb | AAVE_SUPPLY     | LEND   | 无            | hookType=14 (protocol 0,1,2,3)         |
+| Ethereum | USDe  | MULTILOG_DUTCH  | LEND   | 无            | hookType=14 (protocol 2) + hookType=17 |
+| Plasma   | USDe  | MULTILOG_DUTCH  | LEND   | 无            | hookType=14 (protocol 2) + hookType=17 |
+| Mantle   | USDe  | MULTILOG_DUTCH  | LEND   | 无            | hookType=14 (protocol 2) + hookType=17 |
+| MegaETH  | USDe  | AAVE_SUPPLY     | LEND   | 无            | hookType=14 (protocol 2) + hookType=17 |
 
 关键事实：
+
 - **不存在 SUPPLY_BL** — 0 个 borrow opp 带 `_BL` 后缀
 - **BORROW_BL 只影响 supply 侧 incentive**
 - **所有 BORROW_BL opp 都没有 offset tokens**
@@ -35,6 +36,7 @@ V4 合约层 collateral 按 spoke 维度计算（跨 hub 但不跨 spoke），�
 ### D1: `borrowBlacklist` 放在 CampaignGroup 级（非 breakdown 级）
 
 理由：
+
 1. BORROW_BL 是 opportunity 级属性，与 `netPositionConstraint` 同级
 2. 前端 simulation 先检查 `borrowBlacklist`（短路归零），再检查 `netPositionConstraint`（按比例抵消）
 3. 一个 opportunity 下所有 breakdown 共享此约束，放 breakdown 级冗余
@@ -46,6 +48,7 @@ V4 合约层 collateral 按 spoke 维度计算（跨 hub 但不跨 spoke），�
 ### D3: offsetLevel 默认值从 `'hub'` 改为 `'spoke'`
 
 理由：
+
 - V4 合约层 collateral 按 spoke 维度计算（`_userPositions` 和 `_positionStatus` 按 Spoke 存储）
 - normalizeOffsetLevel('hub') = 'reserve'（仅精确匹配），过于严格
 - normalizeOffsetLevel('spoke') = 'spoke-cross-hub'（3 段前缀匹配），与合约语义一致
@@ -54,15 +57,16 @@ V4 合约层 collateral 按 spoke 维度计算（跨 hub 但不跨 spoke），�
 ### D4: 调用方三元链简化
 
 当前 `index.ts:429` 的 fallback 是 `'hub'`，改为 `'spoke'`：
+
 ```typescript
 // 改后
 const oppOffsetLevel: OffsetLevel = opp.hasCrossMarketNpc
-  ? 'cross-market'
-  : opp.opportunityType?.includes('SPOKE_SUPPLY')
-    ? 'spoke'
-    : opp.opportunityType?.includes('HUB_SUPPLY')
-      ? 'hub-cross-spoke'
-      : 'spoke';  // 原 'hub'
+  ? "cross-market"
+  : opp.opportunityType?.includes("SPOKE_SUPPLY")
+    ? "spoke"
+    : opp.opportunityType?.includes("HUB_SUPPLY")
+      ? "hub-cross-spoke"
+      : "spoke"; // 原 'hub'
 ```
 
 ### D5: 不复用 netPositionConstraint
@@ -73,23 +77,23 @@ BORROW_BL 语义（二元排除）与 NET（按比例抵消）不同。新增独
 
 ### Part 1: BORROW_BL 检测（AAV-924）
 
-| 步骤 | 文件 | 变更 |
-|---|---|---|
-| 1.1 | `packages/aave-shared-config/index.d.ts` | `CampaignGroup` 新增 `borrowBlacklist?: boolean` |
-| 1.2 | `packages/aave-fetcher/src/merkl-api.ts` | `MerklOpportunityData` 新增 `borrowBlacklist?: boolean` |
-| 1.3 | `packages/aave-fetcher/src/merkl-api.ts` | `processMerklData` 中新增 `isBorrowBl` 检测逻辑 |
-| 1.4 | `packages/aave-fetcher/src/index.ts` | `enrichDatasetWithIncentiveData` 中传递 `borrowBlacklist` 到 CampaignGroup |
-| 1.5 | 测试 | 新增 BORROW_BL 检测测试 |
+| 步骤 | 文件                                     | 变更                                                                       |
+| ---- | ---------------------------------------- | -------------------------------------------------------------------------- |
+| 1.1  | `packages/aave-shared-config/index.d.ts` | `CampaignGroup` 新增 `borrowBlacklist?: boolean`                           |
+| 1.2  | `packages/aave-fetcher/src/merkl-api.ts` | `MerklOpportunityData` 新增 `borrowBlacklist?: boolean`                    |
+| 1.3  | `packages/aave-fetcher/src/merkl-api.ts` | `processMerklData` 中新增 `isBorrowBl` 检测逻辑                            |
+| 1.4  | `packages/aave-fetcher/src/index.ts`     | `enrichDatasetWithIncentiveData` 中传递 `borrowBlacklist` 到 CampaignGroup |
+| 1.5  | 测试                                     | 新增 BORROW_BL 检测测试                                                    |
 
 ### Part 2: offsetLevel 默认值修正（AAV-921）
 
-| 步骤 | 文件 | 变更 |
-|---|---|---|
-| 2.1 | `packages/aave-fetcher/src/merkl-api.ts` | 4 个函数默认值 `'hub'` → `'spoke'` |
-| 2.2 | `packages/aave-fetcher/src/index.ts` | 调用方 fallback `'hub'` → `'spoke'` |
-| 2.3 | 测试 | 更新 `resolveOffsetReserveIds-hub-aware.test.ts` 默认场景期望值 |
-| 2.4 | 测试 | 更新 `netPositionConstraint.test.ts` V4 默认场景 |
-| 2.5 | 测试 | 更新 `detectNetPositionConstraint.test.ts` V4 默认场景 |
+| 步骤 | 文件                                     | 变更                                                            |
+| ---- | ---------------------------------------- | --------------------------------------------------------------- |
+| 2.1  | `packages/aave-fetcher/src/merkl-api.ts` | 4 个函数默认值 `'hub'` → `'spoke'`                              |
+| 2.2  | `packages/aave-fetcher/src/index.ts`     | 调用方 fallback `'hub'` → `'spoke'`                             |
+| 2.3  | 测试                                     | 更新 `resolveOffsetReserveIds-hub-aware.test.ts` 默认场景期望值 |
+| 2.4  | 测试                                     | 更新 `netPositionConstraint.test.ts` V4 默认场景                |
+| 2.5  | 测试                                     | 更新 `detectNetPositionConstraint.test.ts` V4 默认场景          |
 
 ## 不做的事
 

@@ -397,10 +397,7 @@ export type SpokeHubTopology = SpokeHubTopologyEntry[];
 
 /** Sub-sources of the side-data endpoint, used for structured error reporting. */
 export type SideDataSubSource =
-  | "categories"
-  | "fdv"
-  | "forecast"
-  | "campaignAccess";
+  "categories" | "fdv" | "forecast" | "campaignAccess";
 
 /** Structured per-sub-source errors, replacing the removed `partial: boolean` field. */
 export type SideDataSubSourceErrors = Partial<

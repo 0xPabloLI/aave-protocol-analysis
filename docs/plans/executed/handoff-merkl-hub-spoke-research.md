@@ -18,6 +18,7 @@
 **早期错误结论**：Hub 的 targetAPR 只在创建时起作用，后面不执行。
 
 **修正**：Merkl 官方文档明确说明 Target Total APR "automatically adapts each engine run based on live external yield data"。Hub 的 `dailyRewardsBreakdown.amount` < `maxAmount` 也证明动态计算在执行：
+
 - `maxAmount` = targetAPR × TVL / 365（nativeAPY=0 时的最大消耗）
 - `amount` = (targetAPR - nativeAPY) × TVL / 365（实际消耗）
 - Period 5: amount/maxAmount = 80.96% → nativeAPY 覆盖了 ~19% 的 target
@@ -27,6 +28,7 @@
 **早期错误结论**：Hub APR (6.77% = targetAPR) 是用户实际收到的 incentive APR。
 
 **修正**：
+
 - **Hub apr (6.77%) = targetAPR** = 总 APR 目标（含 nativeAPY）
 - **Spoke apr (6.48%) = 实际 Merkl incentive APR** = 用户从 Merkl 实际收到的 reward APR
 - **nativeAPY = Hub apr - Spoke apr = 0.29%**（非 Merkl reward，链上自动获得）
@@ -36,12 +38,12 @@
 
 **已验证公式**：`Hub_budget = Spoke_actual_user_rewards + end_campaign_refund`
 
-| Period | Hub Budget | Spoke Actual (用户收到) | end_campaign (退款) | 验证 |
-|--------|-----------|----------------------|-------------------|------|
-| 1 | $15,908.00 | $12,060.23 | $3,847.77 | ✅ diff=0 |
-| 2 | $30,769.43 | $25,120.07 | $5,649.36 | ✅ diff=0 |
-| 3 | $44,423.50 | $29,434.03 | $14,989.00 | ✅ diff<$0.50 |
-| 4 | $44,423.50 | $29,756.46 | $14,666.91 | ✅ diff<$0.50 |
+| Period | Hub Budget | Spoke Actual (用户收到) | end_campaign (退款) | 验证          |
+| ------ | ---------- | ----------------------- | ------------------- | ------------- |
+| 1      | $15,908.00 | $12,060.23              | $3,847.77           | ✅ diff=0     |
+| 2      | $30,769.43 | $25,120.07              | $5,649.36           | ✅ diff=0     |
+| 3      | $44,423.50 | $29,434.03              | $14,989.00          | ✅ diff<$0.50 |
+| 4      | $44,423.50 | $29,756.46              | $14,666.91          | ✅ diff<$0.50 |
 
 end_campaign 退款给 campaign creator (0x89587e...)，不给用户。
 
@@ -50,18 +52,19 @@ end_campaign 退款给 campaign creator (0x89587e...)，不给用户。
 **全量 leaderboard 验证**：同一用户在 Hub 和 Spoke 的 reward amount 精确到 wei 完全一致。
 
 | Period | Hub 用户数 | Spoke 用户数 | 精确匹配 | 匹配率 |
-|--------|----------|-----------|---------|-------|
-| 1 | 42 | 41 | 41 | 100% |
-| 2 | 107 | 106 | 106 | 100% |
-| 3 | 134 | 133 | 132 | 99.2% |
-| 4 | 137 | 134 | 133 | 99.3% |
-| 5 | 147 | 144 | 143 | 99.3% |
+| ------ | ---------- | ------------ | -------- | ------ |
+| 1      | 42         | 41           | 41       | 100%   |
+| 2      | 107        | 106          | 106      | 100%   |
+| 3      | 134        | 133          | 132      | 99.2%  |
+| 4      | 137        | 134          | 133      | 99.3%  |
+| 5      | 147        | 144          | 143      | 99.3%  |
 
 Hub leaderboard 比 Spoke 多出的 1-3 个用户是 end_campaign 退款接收者 + ERC20LOGPROCESSOR 小额分发。
 
 ### 修正 5: Spoke 的 distributionSettings 为空 = Hub 控制的执行壳
 
 **所有 5 个 period 的 Spoke campaign** 的 `distributionSettings` 都是 `{}`（空）：
+
 - Hub: `distributionSettings: { mode: "MAX_APR", targetAPR: "0.0677", ... }`
 - Spoke: `distributionSettings: {}` ← 空，参数由 Hub 通过 forwarding 注入
 
@@ -69,16 +72,17 @@ Spoke 不是独立配置的 campaign，而是 Hub 的执行壳。
 
 ### 修正 6: V3 vs V4 机制完全不同
 
-| 维度 | V3 (AAVE_NET_APR) | V4 (Hub/Spoke) |
-|------|-------------------|----------------|
-| 结构 | 单 campaign | Hub + Spoke 双 campaign |
-| 分发方法 | MAX_APR | Hub: AAVE_V4_NET_APR, Spoke: DUTCH_AUCTION |
-| distributionSettings | 完整配置 | Spoke 为 `{}`（Hub 注入） |
-| 动态调整 | 是（单 campaign 直接执行） | Spoke 固定 Dutch auction（创建时定预算） |
+| 维度                 | V3 (AAVE_NET_APR)          | V4 (Hub/Spoke)                             |
+| -------------------- | -------------------------- | ------------------------------------------ |
+| 结构                 | 单 campaign                | Hub + Spoke 双 campaign                    |
+| 分发方法             | MAX_APR                    | Hub: AAVE_V4_NET_APR, Spoke: DUTCH_AUCTION |
+| distributionSettings | 完整配置                   | Spoke 为 `{}`（Hub 注入）                  |
+| 动态调整             | 是（单 campaign 直接执行） | Spoke 固定 Dutch auction（创建时定预算）   |
 
 ### 对 ADR-0030 的影响
 
 ADR-0030 的核心决策（过滤 Spoke 保留 Hub 避免 double-counting）仍然正确。但 ADR 中 "Hub APR is the TRUE total incentive APR" 的表述需要修正：
+
 - Hub APR = targetAPR = 总 APR 目标（含 native）
 - 用户从 Merkl 实际收到的 reward APR = Spoke APR = targetAPR - nativeAPY
 - 如果前端展示的是 "Merkl reward APR"，应该用 Spoke APR；如果展示 "总回报 APR"，Hub APR 正确
@@ -93,12 +97,14 @@ ADR-0030 的核心决策（过滤 Spoke 保留 Hub 避免 double-counting）仍�
 **Spoke reward = Spoke-forwarded reward only（仅 Spoke 用户）**
 
 **核心证据**：
+
 1. Period 4: Hub leaderboard top1 = Spoke top1 = $4,870 → 同一用户在两边显示相同金额 → Hub 包含了 Spoke 部分
 2. Period 3: Hub top1 ($3,240) > Spoke top1 ($1,040) → 同一用户 Hub 显示总量，Spoke 仅显示 Spoke 部分
 3. Spoke Budget 占 Hub Budget 的 65~77% → Spoke budget 是 Hub budget 的预分配份额
 4. Spoke distributed 可以超过 Spoke budget（Period 4 API: $29,756 > $29,121）→ `/v4/rewards/total` 对已结束 campaign 返回 budget 值，不是实际消耗量
 
 **分发机制详解**：
+
 ```
 Hub budget ($44,423.50 for Period 4)
   ├── Spoke 份额 ($29,121.45 = 65.5%) → 通过 Spoke child campaign 分发给 spoke 用户
@@ -116,6 +122,7 @@ Hub 实际消耗 = TVL × incentiveAPR / 365（= targetAPR - nativeAPY）
 ```
 
 **一个 deposit 既符合 spoke 又符合 hub，拿哪份？**
+
 - 只拿一份，不是两份
 - Hub 和 Spoke 是同一个 reward 的两个视角
 - Hub leaderboard = 所有用户的 reward 全景（hub-direct + spoke-forwarded）
@@ -155,12 +162,14 @@ Hub 实际消耗 = TVL × incentiveAPR / 365（= targetAPR - nativeAPY）
 ### ADR-0030 决策确认 ✅（2026-06-21 修正）
 
 过滤 Spoke 保留 Hub 的决策正确（避免 double-counting）：
+
 1. Hub + Spoke = double-counting → 必须只选一个 ✅
 2. Hub 是源 campaign，有完整 budget/targetAPR 元数据 ✅
 3. Hub 的 AAVE_V4_NET_APR 类型可被后端 scaleMerklBreakdown 正确处理 ✅
 4. Hub reward 已包含 Spoke 用户的全部 incentive（forwarding 镜像，97%+ 精确匹配）✅
 
 **⚠️ 需要注意的偏差**：
+
 - ADR 中 "Hub APR is the TRUE total incentive APR" 表述不准确
 - Hub APR = targetAPR = 总 APR 目标（含 nativeAPY）
 - 用户从 Merkl 实际收到的 reward APR = Spoke APR = targetAPR - nativeAPY
@@ -184,6 +193,7 @@ Hub 实际消耗 = TVL × incentiveAPR / 365（= targetAPR - nativeAPY）
 ### 1.3 Duration 字段的精确含义
 
 **已解决**：
+
 - **Hub duration (604800s = 7天)** = Campaign 的总运行时长（1 epoch = 1 week），Budget 按此时长线性分发
 - **Spoke duration (1225~3551s ≈ 20-60分钟)** = Dutch Auction 的重新定价间隔，即 Merkl engine 每次 run 重新计算 rate 的间隔。不等于 campaign 总时长（Spoke endTs 与 Hub endTs 对齐）
 
@@ -193,32 +203,33 @@ Hub 实际消耗 = TVL × incentiveAPR / 365（= targetAPR - nativeAPY）
 
 ### 2.1 USDG V4 Supply Opportunities
 
-| 属性 | Hub | Spoke |
-|---|---|---|
-| Opportunity ID | 13732557426013257809 | 10461268836244172547 |
-| Type | AAVE_V4_HUB_SUPPLY | AAVE_V4_SPOKE_SUPPLY |
-| Name | Supply USDG to the Aave V4 Core Hub | Supply USDG to the Aave V4 Main Spoke |
-| Explorer Address | 0xe343167631d89B6Ffc58B88d6b7fB0228795491D | 0x44E12914eBFB4e4b5bcB4afb359eCca7D51e5E8a |
-| APR | 6.77% | 6.45% |
-| Distribution Type | AAVE_V4_NET_APR | DUTCH_AUCTION |
-| Daily Rewards | $4,899.94 | $4,654.19 |
-| Max Daily Rewards | $6,052.98 | $4,654.19 |
-| TVL | $26,417,704.80 | $26,342,035.71 |
-| Campaign Total Budget | $42,377.65 | $32,584.55 |
-| forwardingEnabled | true | N/A |
-| targetAPR | 0.0677 (6.77%) | N/A |
+| 属性                  | Hub                                        | Spoke                                      |
+| --------------------- | ------------------------------------------ | ------------------------------------------ |
+| Opportunity ID        | 13732557426013257809                       | 10461268836244172547                       |
+| Type                  | AAVE_V4_HUB_SUPPLY                         | AAVE_V4_SPOKE_SUPPLY                       |
+| Name                  | Supply USDG to the Aave V4 Core Hub        | Supply USDG to the Aave V4 Main Spoke      |
+| Explorer Address      | 0xe343167631d89B6Ffc58B88d6b7fB0228795491D | 0x44E12914eBFB4e4b5bcB4afb359eCca7D51e5E8a |
+| APR                   | 6.77%                                      | 6.45%                                      |
+| Distribution Type     | AAVE_V4_NET_APR                            | DUTCH_AUCTION                              |
+| Daily Rewards         | $4,899.94                                  | $4,654.19                                  |
+| Max Daily Rewards     | $6,052.98                                  | $4,654.19                                  |
+| TVL                   | $26,417,704.80                             | $26,342,035.71                             |
+| Campaign Total Budget | $42,377.65                                 | $32,584.55                                 |
+| forwardingEnabled     | true                                       | N/A                                        |
+| targetAPR             | 0.0677 (6.77%)                             | N/A                                        |
 
 ### 2.2 frxUSD V4 Supply Opportunities
 
-| 属性 | Hub | Spoke |
-|---|---|---|
-| Opportunity ID | 5589740163449212193 | 7860375496856797543 |
-| Type | AAVE_V4_HUB_SUPPLY | AAVE_V4_SPOKE_SUPPLY |
-| APR | 5.36% | 4.89% |
+| 属性           | Hub                 | Spoke                |
+| -------------- | ------------------- | -------------------- |
+| Opportunity ID | 5589740163449212193 | 7860375496856797543  |
+| Type           | AAVE_V4_HUB_SUPPLY  | AAVE_V4_SPOKE_SUPPLY |
+| APR            | 5.36%               | 4.89%                |
 
 ### 2.3 Hub Campaign 详情 (当前 period)
 
 Campaign ID: `11526583104559356735`
+
 ```json
 {
   "distributionType": "AAVE_V4_NET_APR",
@@ -252,6 +263,7 @@ Campaign ID: `11526583104559356735`
 ### 2.4 Spoke Campaign 详情 (当前 period)
 
 Campaign ID: `5055509984402346017`
+
 ```json
 {
   "distributionType": "DUTCH_AUCTION",
@@ -265,13 +277,13 @@ Campaign ID: `5055509984402346017`
 
 ### 2.5 Hub 历史所有 Campaigns (from raw data)
 
-| Campaign ID | targetAPR | Period |
-|---|---|---|
-| 11526583104559356735 | 6.77% | 当前 (Period 5?) |
-| 8647796357084493685 | 7.70% | Period 4? |
-| 16480846617225364900 | 7.70% | Period 3? |
-| 12629342796274257722 | 8.00% | Period 2? |
-| 558840222117031613 | 8.40% | Period 1? |
+| Campaign ID          | targetAPR | Period           |
+| -------------------- | --------- | ---------------- |
+| 11526583104559356735 | 6.77%     | 当前 (Period 5?) |
+| 8647796357084493685  | 7.70%     | Period 4?        |
+| 16480846617225364900 | 7.70%     | Period 3?        |
+| 12629342796274257722 | 8.00%     | Period 2?        |
+| 558840222117031613   | 8.40%     | Period 1?        |
 
 ---
 
@@ -285,14 +297,14 @@ Campaign ID: `5055509984402346017`
 Hub leaderboard URL: https://app.merkl.xyz/opportunities/13732557426013257809/campaigns/0xbfe68f7d938f096f519adeb1dbc3e2532b36bda09624f2fac2c5a7270a769c1e/leaderboard
 Spoke leaderboard URL: https://app.merkl.xyz/opportunities/10461268836244172547/campaigns/12893990290143601795/leaderboard
 
-| Rank | Hub | Spoke |
-|---|---|---|
-| 1 | $4,870 | $4,870 |
-| 2 | $3,860 | $3,860 |
-| 3 | $2,750 | $2,750 |
-| 4 | $2,270 | $2,270 |
-| 5 | $1,710 | $1,710 |
-| 6 | $946.67 | $946.67 |
+| Rank | Hub     | Spoke   |
+| ---- | ------- | ------- |
+| 1    | $4,870  | $4,870  |
+| 2    | $3,860  | $3,860  |
+| 3    | $2,750  | $2,750  |
+| 4    | $2,270  | $2,270  |
+| 5    | $1,710  | $1,710  |
+| 6    | $946.67 | $946.67 |
 
 **观察**：Hub = Spoke（金额完全相同）
 
@@ -304,13 +316,13 @@ Spoke leaderboard URL: https://app.merkl.xyz/opportunities/10461268836244172547/
 Hub leaderboard URL: https://app.merkl.xyz/opportunities/13732557426013257809/campaigns/0x034aec680b3642257ef5263d6c8d4d6a0e8d42e7209c0d50fbeff0f566998056/leaderboard
 Spoke leaderboard URL: https://app.merkl.xyz/opportunities/10461268836244172547/campaigns/10615816937644305100/leaderboard
 
-| Rank | Hub | Spoke | Hub/Spoke |
-|---|---|---|---|
-| 1 | $3,240 | $1,040 | 3.12x |
-| 2 | $3,020 | $934.22 | 3.23x |
-| 3 | $2,910 | $914.71 | 3.18x |
-| 4 | $2,830 | $623.61 | 4.54x |
-| 5 | $2,220 | $615.28 | 3.61x |
+| Rank | Hub    | Spoke   | Hub/Spoke |
+| ---- | ------ | ------- | --------- |
+| 1    | $3,240 | $1,040  | 3.12x     |
+| 2    | $3,020 | $934.22 | 3.23x     |
+| 3    | $2,910 | $914.71 | 3.18x     |
+| 4    | $2,830 | $623.61 | 4.54x     |
+| 5    | $2,220 | $615.28 | 3.61x     |
 
 **观察**：Hub >> Spoke，比例不固定（3x~4.5x）
 
@@ -347,15 +359,16 @@ Spoke leaderboard 数据极少（只有 2 个 entry = TVL/daily），Hub 有数�
 
 ### 4.4 全量分发数据对比（已验证）
 
-| Period | Hub Budget | Hub Dist | Spoke Budget | Spoke Dist | Hub Dist / Hub Budget | Spoke Dist / Hub Budget |
-|---|---|---|---|---|---|---|
-| 5 (LIVE) | $42,377.65 | $9,903.58 | $32,749.20 | $9,903.55 | 0.23x (in progress) | 0.23x |
-| 4 | $44,423.50 | $44,423.50 | $29,124.55 | $29,756.55 | 1.00x | 0.67x |
-| 3 | $44,423.50 | $44,423.50 | $30,546.62 | $9,897.26 | 1.00x | 0.22x |
-| 2 | $30,769.43 | $30,769.43 | $23,530.93 | $0.09 | 1.00x | 0.00x |
-| 1 | $15,908.00 | $15,908.00 | $12,033.51 | N/A | 1.00x | N/A |
+| Period   | Hub Budget | Hub Dist   | Spoke Budget | Spoke Dist | Hub Dist / Hub Budget | Spoke Dist / Hub Budget |
+| -------- | ---------- | ---------- | ------------ | ---------- | --------------------- | ----------------------- |
+| 5 (LIVE) | $42,377.65 | $9,903.58  | $32,749.20   | $9,903.55  | 0.23x (in progress)   | 0.23x                   |
+| 4        | $44,423.50 | $44,423.50 | $29,124.55   | $29,756.55 | 1.00x                 | 0.67x                   |
+| 3        | $44,423.50 | $44,423.50 | $30,546.62   | $9,897.26  | 1.00x                 | 0.22x                   |
+| 2        | $30,769.43 | $30,769.43 | $23,530.93   | $0.09      | 1.00x                 | 0.00x                   |
+| 1        | $15,908.00 | $15,908.00 | $12,033.51   | N/A        | 1.00x                 | N/A                     |
 
 **关键观察**：
+
 1. **Hub 始终分发 100% budget** — 所有已结束 campaign 的 Hub 分发 = budget
 2. **Spoke 分发 ≤ Hub 分发** — Period 4: 67%, Period 3: 22%, Period 2: ~0%
 3. **Spoke 分发是 Hub 分发的子集** — 见下方 "分发规则详解"
@@ -380,10 +393,12 @@ Spoke 的 distribution 是 Hub 的子集，不是额外的 token
 ```
 
 **证据**：
+
 - Period 4 top user: Hub $4,870 = Spoke $4,870 → 同一用户在两边看到相同金额 → Hub 包含 Spoke 部分
 - Period 3 top user: Hub $3,240 = Hub-direct $2,200 + Spoke-forwarded $1,040 → Hub 显示总量
 
 **Child Campaign 结构**：
+
 - Period 4-5: 1 个 AAVE_V4_SPOKE_SUPPLY + 1 个 ERC20LOGPROCESSOR
 - Period 2-3: 1 个 AAVE_V4_SPOKE_SUPPLY（主要分发者）
 - ERC20LOGPROCESSOR child 分发极少（$0.09-$6.76），可能是辅助 tracking campaign
@@ -398,19 +413,21 @@ Spoke 的 distribution 是 Hub 的子集，不是额外的 token
 
 ```javascript
 // 在 Playwright 中
-page.on('request', req => {
-  if (req.url().includes('merkl')) console.log(req.url());
+page.on("request", (req) => {
+  if (req.url().includes("merkl")) console.log(req.url());
 });
 ```
 
 或者直接在浏览器 DevTools Network tab 中观察。
 
 已知从 leaderboard 页面截获的 API：
+
 - `https://api.merkl.xyz/v4/rewards/total?chainId=1&campaignId={id}` → 404（可能已下线的 period）
 
 ### 5.2 全量用户 reward 汇总
 
 对每个 period 的 Hub 和 Spoke leaderboard：
+
 1. 爬取所有用户的 reward 金额（不仅是 top 5）
 2. 汇总总 reward
 3. 与该 period campaign 的 `amount`（budget / 7 天的理论分发量）对比
@@ -433,6 +450,7 @@ page.on('request', req => {
 `packages/aave-fetcher/scripts/scrape_merkl_leaderboard.mjs` — Playwright 脚本，可爬取 leaderboard 页面数据。
 
 用法示例：
+
 ```bash
 node packages/aave-fetcher/scripts/scrape_merkl_leaderboard.mjs \
   "https://app.merkl.xyz/opportunities/13732557426013257809/campaigns/0xbfe68f7d938f096f519adeb1dbc3e2532b36bda09624f2fac2c5a7270a769c1e/leaderboard"
@@ -445,12 +463,14 @@ node packages/aave-fetcher/scripts/scrape_merkl_leaderboard.mjs \
 ### 7.1 已实现的代码变更
 
 commit `4138e59`: 过滤 Spoke，保留 Hub
+
 - `packages/aave-fetcher/src/merkl-api.ts` L318: `isV4SpokeOpportunity()` 函数
 - `packages/aave-fetcher/src/merkl-api.ts` L1421-1427: 过滤逻辑
 
 ### 7.2 过滤方向的技术论证 — ✅ 已确认正确
 
 **保留 Hub 的理由（全部已验证）**：
+
 1. Hub campaign 有 `campaignType=TARGET_TOTAL_APR` → 后端 `scaleMerklBreakdown` 自动将 targetAPR 转换为 incentive APR（减去 nativeAPY）
 2. Hub 有 `aprCap`、`totalBudget`、`latestTvl`、`plannedDaily` 等 forecast 元数据
 3. Hub 是源 campaign（forwardingEnabled=true），Spoke 是衍生 campaign
@@ -458,6 +478,7 @@ commit `4138e59`: 过滤 Spoke，保留 Hub
 5. **Hub reward 已包含 Spoke 用户的全部 incentive** → 过滤 Spoke 不丢失任何用户的 reward 信息
 
 **保留 Spoke 的理由**：
+
 1. Spoke APR 已经是纯 incentive（不需要后端转换）
 2. 用户实际从 Spoke claim reward（但这对 APR 显示没有影响）
 
@@ -486,24 +507,24 @@ commit `4138e59`: 过滤 Spoke，保留 Hub
 
 ## 8. Merkl API Endpoints 速查
 
-| Endpoint | 用途 | 备注 |
-|---|---|---|
-| `GET /v4/opportunities` | 列表 | 支持 chainId, test, status 参数 |
-| `GET /v4/opportunities/{id}` | 详情 | 含 dailyRewards, maxDailyRewards, campaigns |
-| `GET /v4/campaigns/{id}` | 单个 campaign | 含 distributionType, params, rewardToken |
-| `GET /v4/users/{address}/rewards` | 用户 rewards | 支持 chainId 过滤 |
-| `GET /v4/rewards/total?chainId=1&campaignId={id}` | campaign 总分发 | 从 leaderboard 页面截获，部分 campaign 404 |
-| `GET /v4/campaigns/{id}/distributions` | 历史 distribution | 404 |
-| `GET /v4/distributions` | distribution 列表 | 404 |
-| `GET /v4/merkle-roots` | Merkle root 历史 | 404 |
+| Endpoint                                          | 用途              | 备注                                        |
+| ------------------------------------------------- | ----------------- | ------------------------------------------- |
+| `GET /v4/opportunities`                           | 列表              | 支持 chainId, test, status 参数             |
+| `GET /v4/opportunities/{id}`                      | 详情              | 含 dailyRewards, maxDailyRewards, campaigns |
+| `GET /v4/campaigns/{id}`                          | 单个 campaign     | 含 distributionType, params, rewardToken    |
+| `GET /v4/users/{address}/rewards`                 | 用户 rewards      | 支持 chainId 过滤                           |
+| `GET /v4/rewards/total?chainId=1&campaignId={id}` | campaign 总分发   | 从 leaderboard 页面截获，部分 campaign 404  |
+| `GET /v4/campaigns/{id}/distributions`            | 历史 distribution | 404                                         |
+| `GET /v4/distributions`                           | distribution 列表 | 404                                         |
+| `GET /v4/merkle-roots`                            | Merkle root 历史  | 404                                         |
 
 ### 链上合约
 
-| 名称 | 地址 |
-|---|---|
-| Hub | 0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9 |
-| Spoke | 0x94e7A5dCbE816e498b89aB752661904E2F56c485 |
-| USDG token | 0xe343167631d89B6Ffc58B88d6b7fB0228795491D |
+| 名称                        | 地址                                       |
+| --------------------------- | ------------------------------------------ |
+| Hub                         | 0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9 |
+| Spoke                       | 0x94e7A5dCbE816e498b89aB752661904E2F56c485 |
+| USDG token                  | 0xe343167631d89B6Ffc58B88d6b7fB0228795491D |
 | USDG reward token (wrapped) | 0xDF464440FC5E93B44998C0A7444e5211eFdf2B1E |
 
 ### Merkl 官方文档
@@ -528,11 +549,11 @@ commit `4138e59`: 过滤 Spoke，保留 Hub
 
 从 Merkl API 数据直接确认：
 
-| 字段 | Hub Campaign | Spoke Campaign |
-|---|---|---|
-| `parentCampaignId` | `null` | `11526583104559356735` (= Hub 的 id) |
-| `rootCampaignId` | `null` | `11526583104559356735` (= Hub 的 id) |
-| `childCampaignIds` | `["5055509984402346017", "13451611881162841856"]` | `[]` |
+| 字段               | Hub Campaign                                      | Spoke Campaign                       |
+| ------------------ | ------------------------------------------------- | ------------------------------------ |
+| `parentCampaignId` | `null`                                            | `11526583104559356735` (= Hub 的 id) |
+| `rootCampaignId`   | `null`                                            | `11526583104559356735` (= Hub 的 id) |
+| `childCampaignIds` | `["5055509984402346017", "13451611881162841856"]` | `[]`                                 |
 
 → Spoke 是 Hub 的 child campaign，由 Merkl 引擎从 Hub 自动创建。
 
@@ -543,32 +564,32 @@ Hub budget = maxAmount × 7 = $6,053.95 × 7 = $42,377.65  (按 targetAPR 算的
 Spoke budget = amount × 7 = $4,665.06 × 7 = $32,655.40   (按 incentiveAPR 算的 7 天预算)
 ```
 
-| 字段 | Hub | Spoke |
-|---|---|---|
-| `dailyRewardsBreakdown[0].amount` | $4,901.10 (= TVL × targetAPR / 365) | $4,665.06 (= TVL × incentiveAPR / 365) |
-| `dailyRewardsBreakdown[0].maxAmount` | $6,053.95 (= budget / 7) | $4,665.06 (= budget / 7, 同 amount) |
+| 字段                                 | Hub                                 | Spoke                                  |
+| ------------------------------------ | ----------------------------------- | -------------------------------------- |
+| `dailyRewardsBreakdown[0].amount`    | $4,901.10 (= TVL × targetAPR / 365) | $4,665.06 (= TVL × incentiveAPR / 365) |
+| `dailyRewardsBreakdown[0].maxAmount` | $6,053.95 (= budget / 7)            | $4,665.06 (= budget / 7, 同 amount)    |
 
 - Hub 的 `amount` ≠ `maxAmount` → 因为 nativeAPY > 0, 实际消耗 < 最大消耗
 - Spoke 的 `amount` = `maxAmount` → Dutch Auction 无 native offset, 实际 = 最大
 
 ### 9.3 Hub 字段精确含义
 
-| 字段 | 值 | 含义 |
-|---|---|---|
-| `apr` | 6.77% | **targetAPR** (含 native, 用户看到的 total APR) |
-| `dailyRewards` | $4,900.12 | TVL × targetAPR / 365 (展示用, 含 native) |
-| `maxDailyRewards` | $6,052.75 | budget / 7 (理论最大日消耗, 当 native=0) |
-| `maxApr` | 6.77% | 同 targetAPR |
+| 字段              | 值        | 含义                                            |
+| ----------------- | --------- | ----------------------------------------------- |
+| `apr`             | 6.77%     | **targetAPR** (含 native, 用户看到的 total APR) |
+| `dailyRewards`    | $4,900.12 | TVL × targetAPR / 365 (展示用, 含 native)       |
+| `maxDailyRewards` | $6,052.75 | budget / 7 (理论最大日消耗, 当 native=0)        |
+| `maxApr`          | 6.77%     | 同 targetAPR                                    |
 
 **关键**: Hub 的 `dailyRewards` 按 targetAPR 算, 但 Merkl 实际只支付 incentiveAPR (= targetAPR - nativeAPY)。`dailyRewards` 是"展示给用户看的等效日收益", 不是 Merkl 从 budget 中消耗的金额。
 
 ### 9.4 Spoke 字段精确含义
 
-| 字段 | 值 | 含义 |
-|---|---|---|
-| `apr` | 6.46% | **incentiveAPR** (Dutch Auction rate ≈ targetAPR - nativeAPY) |
-| `dailyRewards` | $4,664.13 | TVL × incentiveAPR / 365 (Merkl 实际日支付) |
-| `maxDailyRewards` | $4,664.13 | = dailyRewards (Dutch Auction 无差异) |
+| 字段              | 值        | 含义                                                          |
+| ----------------- | --------- | ------------------------------------------------------------- |
+| `apr`             | 6.46%     | **incentiveAPR** (Dutch Auction rate ≈ targetAPR - nativeAPY) |
+| `dailyRewards`    | $4,664.13 | TVL × incentiveAPR / 365 (Merkl 实际日支付)                   |
+| `maxDailyRewards` | $4,664.13 | = dailyRewards (Dutch Auction 无差异)                         |
 
 ### 9.5 nativeAPY 精确推导
 
@@ -579,12 +600,14 @@ nativeAPY = targetAPR - Spoke APR = 6.77% - 6.46% ≈ 0.31%
 ```
 
 验证:
+
 - 从 Aave V4 链上 supplyApy = 0.3172% → 与反推值接近 ✅
 - Hub daily - Spoke daily = $4,900 - $4,664 = $236 ≈ Hub daily × nativeAPY / targetAPR = $230 ✅
 
 ### 9.6 用户 Reward 计算公式（2026-06-21 修正）
 
 **用户从 Merkl 收到的 reward**（不含 native）：
+
 ```
 Merkl reward = 用户 time-weighted balance / 总 TVL × Spoke_budget
              = 用户 TVL × Spoke APR / 365
@@ -592,11 +615,13 @@ Merkl reward = 用户 time-weighted balance / 总 TVL × Spoke_budget
 ```
 
 **用户总回报**（含 native）：
+
 ```
 Total return = nativeAPY (链上自动) + incentiveAPR (Merkl) = targetAPR
 ```
 
 **⚠️ 关键修正**：
+
 - 用户从 Merkl 收到的 reward 按 **Spoke APR (incentiveAPR)** 计算，NOT Hub APR (targetAPR)
 - 当前代码用 Hub APR 作为 `campaignApr`，展示的是 targetAPR（含 native），不是纯 Merkl reward APR
 - 如果 `campaignApr` 的语义是 "Merkl reward APR"，应改用 Spoke APR
@@ -621,6 +646,7 @@ Hub budget = maxAmount × 7 = TVL × targetAPR / 365 × 7  (预存)
 ```
 
 验证 (Period 5 当前):
+
 - Hub budget = $42,377.65
 - Spoke budget = $32,655.40
 - 退回 ≈ $9,722.25 ≈ Hub budget × (1 - Spoke budget / Hub budget) = 22.9%
@@ -628,12 +654,12 @@ Hub budget = maxAmount × 7 = TVL × targetAPR / 365 × 7  (预存)
 
 ### 9.9 完整数据验证
 
-| Period | Hub Budget | Spoke Budget | Hub Dist | Spoke Dist | Spoke/Hub Dist | Spoke Budget/Hub Budget |
-|---|---|---|---|---|---|---|
-| 5 (LIVE) | $42,377.65 | $32,658.66 | $9,131.19 | $8,436.45 | 0.92x | 77.1% |
-| 4 | $44,423.50 | $29,121.45 | $44,423.50* | $29,756.46 | 0.67x | 65.6% |
-| 3 | $44,423.50 | $30,500.06 | $44,423.50* | $29,434.03 | 0.66x | 68.7% |
-| 2 | $30,769.43 | $23,530.93 | $30,769.43* | $25,120.07 | 0.82x | 76.5% |
-| 1 | $15,908.00 | $12,033.51 | $15,908.00* | $12,060.23 | 0.76x | 75.6% |
+| Period   | Hub Budget | Spoke Budget | Hub Dist    | Spoke Dist | Spoke/Hub Dist | Spoke Budget/Hub Budget |
+| -------- | ---------- | ------------ | ----------- | ---------- | -------------- | ----------------------- |
+| 5 (LIVE) | $42,377.65 | $32,658.66   | $9,131.19   | $8,436.45  | 0.92x          | 77.1%                   |
+| 4        | $44,423.50 | $29,121.45   | $44,423.50* | $29,756.46 | 0.67x          | 65.6%                   |
+| 3        | $44,423.50 | $30,500.06   | $44,423.50* | $29,434.03 | 0.66x          | 68.7%                   |
+| 2        | $30,769.43 | $23,530.93   | $30,769.43* | $25,120.07 | 0.82x          | 76.5%                   |
+| 1        | $15,908.00 | $12,033.51   | $15,908.00* | $12,060.23 | 0.76x          | 75.6%                   |
 
 \* 已结束 campaign 的 `rewards/total` 返回 = budget 值, 不代表实际消耗量

@@ -1,8 +1,8 @@
-import { webmasters_v3 } from 'googleapis/build/src/apis/webmasters/v3.js';
-import { JWT } from 'google-auth-library/build/src/auth/jwtclient.js';
-import dayjs from 'dayjs';
-import type { Pool } from 'pg';
-import { logger } from '../logger.js';
+import { webmasters_v3 } from "googleapis/build/src/apis/webmasters/v3.js";
+import { JWT } from "google-auth-library/build/src/auth/jwtclient.js";
+import dayjs from "dayjs";
+import type { Pool } from "pg";
+import { logger } from "../logger.js";
 
 const ROW_LIMIT = 25000;
 const MAX_RETRIES = 3;
@@ -23,14 +23,18 @@ function getGscClient() {
   if (cachedClient) return cachedClient;
   const auth = new JWT({
     email: process.env.GSC_SA_EMAIL,
-    key: process.env.GSC_SA_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    scopes: ['https://www.googleapis.com/auth/webmasters.readonly'],
+    key: process.env.GSC_SA_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
   });
   cachedClient = new webmasters_v3.Webmasters({ auth });
   return cachedClient;
 }
 
-async function fetchGscRows(targetDate: string, dataState: 'final' | 'all' = 'final', siteUrl?: string): Promise<GscRow[]> {
+async function fetchGscRows(
+  targetDate: string,
+  dataState: "final" | "all" = "final",
+  siteUrl?: string
+): Promise<GscRow[]> {
   const webmasters = getGscClient();
   const allRows: GscRow[] = [];
   let startRow = 0;
@@ -42,7 +46,7 @@ async function fetchGscRows(targetDate: string, dataState: 'final' | 'all' = 'fi
       requestBody: {
         startDate: targetDate,
         endDate: targetDate,
-        dimensions: ['country', 'page', 'query'],
+        dimensions: ["country", "page", "query"],
         rowLimit: ROW_LIMIT,
         startRow,
         dataState,
@@ -59,7 +63,7 @@ async function fetchGscRows(targetDate: string, dataState: 'final' | 'all' = 'fi
         const status = (err as { code?: number }).code ?? 0;
         if ((status === 429 || status >= 500) && attempt < MAX_RETRIES) {
           const delayMs = Math.pow(2, attempt) * 1000;
-          await new Promise(resolve => setTimeout(resolve, delayMs));
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
         }
         throw err;
@@ -75,12 +79,18 @@ async function fetchGscRows(targetDate: string, dataState: 'final' | 'all' = 'fi
   return allRows;
 }
 
-async function upsertGscRows(pool: Pool, targetDate: string, rows: GscRow[]): Promise<number> {
+async function upsertGscRows(
+  pool: Pool,
+  targetDate: string,
+  rows: GscRow[]
+): Promise<number> {
   if (rows.length === 0) return 0;
 
-  const validRows = rows.filter(row => {
+  const validRows = rows.filter((row) => {
     if (row.keys.length < 3) {
-      logger.warn(`GSC row skipped: keys.length=${row.keys.length}, expected 3`);
+      logger.warn(
+        `GSC row skipped: keys.length=${row.keys.length}, expected 3`
+      );
       return false;
     }
     return true;
@@ -113,19 +123,19 @@ async function upsertGscRows(pool: Pool, targetDate: string, rows: GscRow[]): Pr
 
     const client = await pool.connect();
     try {
-      await client.query('BEGIN');
+      await client.query("BEGIN");
       const result = await client.query(
         `INSERT INTO gsc_daily (date, country, page, query, clicks, impressions, ctr, position)
          SELECT * FROM UNNEST($1::date[], $2::text[], $3::text[], $4::text[], $5::int[], $6::int[], $7::numeric[], $8::numeric[])
          ON CONFLICT (date, country, page, query) DO UPDATE SET
            clicks = EXCLUDED.clicks, impressions = EXCLUDED.impressions,
            ctr = EXCLUDED.ctr, position = EXCLUDED.position, fetched_at = now()`,
-        [dates, countries, pages, queries, clicks, impressions, ctrs, positions],
+        [dates, countries, pages, queries, clicks, impressions, ctrs, positions]
       );
-      await client.query('COMMIT');
+      await client.query("COMMIT");
       totalUpserted += result.rowCount ?? 0;
     } catch (dbError) {
-      await client.query('ROLLBACK');
+      await client.query("ROLLBACK");
       throw dbError;
     } finally {
       client.release();
@@ -135,11 +145,20 @@ async function upsertGscRows(pool: Pool, targetDate: string, rows: GscRow[]): Pr
   return totalUpserted;
 }
 
-export async function fetchAndPersistGscDaily(pool: Pool, targetDateOverride?: string, dataState: 'final' | 'all' = 'final', siteUrl?: string): Promise<{ targetDate: string; rowsUpserted: number }> {
-  const targetDate = targetDateOverride ?? dayjs().subtract(GSC_DELAY_DAYS, 'day').format('YYYY-MM-DD');
+export async function fetchAndPersistGscDaily(
+  pool: Pool,
+  targetDateOverride?: string,
+  dataState: "final" | "all" = "final",
+  siteUrl?: string
+): Promise<{ targetDate: string; rowsUpserted: number }> {
+  const targetDate =
+    targetDateOverride ??
+    dayjs().subtract(GSC_DELAY_DAYS, "day").format("YYYY-MM-DD");
   const rows = await fetchGscRows(targetDate, dataState, siteUrl);
   const rowsUpserted = await upsertGscRows(pool, targetDate, rows);
-  logger.info(`GSC fetch: date=${targetDate}, rows=${rows.length}, upserted=${rowsUpserted}`);
+  logger.info(
+    `GSC fetch: date=${targetDate}, rows=${rows.length}, upserted=${rowsUpserted}`
+  );
   return { targetDate, rowsUpserted };
 }
 

@@ -27,6 +27,7 @@ Single-context repo:
 When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
 
 Key distinctions enforced by CONTEXT.md:
+
 - **Market** = logical deployment unit (V3 Pool / V4 Spoke), NOT "pool"
 - **Reserve** = per-Market per-token lending state, NOT "asset" (V4 Asset is Hub-level)
 - **reserveId** = project's global composite key (string), NOT contract's uint256 local ID

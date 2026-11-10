@@ -14,12 +14,12 @@ Two related issues in Merkl incentive processing:
 
 The offset scope depends on **Merkl's own reward calculation logic**, not Aave V4's health factor isolation. Each opportunityType has a fixed set of anchorable dimensions, which determines the offset level:
 
-| opportunityType | Anchorable dimensions | offsetLevel | Reason |
-|---|---|---|---|
-| `AAVE_V4_SPOKE_SUPPLY` | chainId + spoke + token + hub (4 segments) | `'reserve'` | Has all 4 segments, offset also exact match |
-| `AAVE_V4_HUB_SUPPLY` | Missing spokeAddress | `'hub-cross-spoke'` | Can only resolve to hub dimension |
-| `AAVE_NET_*` (V3) | pool + token | `'reserve'` | Same pool exact match |
-| `AAVE_V4_NET_APR` | Missing spokeAddress | `'hub-cross-spoke'` | Same as HUB_SUPPLY |
+| opportunityType        | Anchorable dimensions                      | offsetLevel         | Reason                                      |
+| ---------------------- | ------------------------------------------ | ------------------- | ------------------------------------------- |
+| `AAVE_V4_SPOKE_SUPPLY` | chainId + spoke + token + hub (4 segments) | `'reserve'`         | Has all 4 segments, offset also exact match |
+| `AAVE_V4_HUB_SUPPLY`   | Missing spokeAddress                       | `'hub-cross-spoke'` | Can only resolve to hub dimension           |
+| `AAVE_NET_*` (V3)      | pool + token                               | `'reserve'`         | Same pool exact match                       |
+| `AAVE_V4_NET_APR`      | Missing spokeAddress                       | `'hub-cross-spoke'` | Same as HUB_SUPPLY                          |
 
 ### Dead paths removed
 
@@ -38,11 +38,13 @@ The interpretation of hookType=14 as "BORROW_BL" (borrowers on any market are ex
 Place `borrowBlacklist?: boolean` on `CampaignGroup` (same level as `netPositionConstraint`), not on `MerklCampaignBreakdown`.
 
 Rationale:
+
 - BORROW_BL is an opportunity-level property affecting all breakdowns in the group
 - Frontend simulation checks `borrowBlacklist` first (short-circuit to zero), then `netPositionConstraint` (proportional offset)
 - Consistent with `netPositionConstraint` placement
 
 Alternatives considered:
+
 - **breakdown level**: Redundant (same constraint repeated per breakdown)
 - **reuse `netPositionConstraint`**: Semantically different (binary exclusion vs proportional offset)
 

@@ -2,20 +2,20 @@
 
 ## Data Sources
 
-| Source | Method | Fields | Version |
-|--------|--------|--------|---------|
-| **V3 SDK** | `@aave/client` GraphQL API | Most market data (rates, caps, balances, etc.) | V3 only |
-| **V4 SDK** | `@aave/client` GraphQL API + HubAsset settings | Most market data + `baseVariableBorrowRate` from HubAsset | V4 only |
-| **On-chain RPC** | `UiPoolDataProvider.getReservesHumanized()` | `deficit`, `baseVariableBorrowRate` | V3 only |
+| Source           | Method                                         | Fields                                                    | Version |
+| ---------------- | ---------------------------------------------- | --------------------------------------------------------- | ------- |
+| **V3 SDK**       | `@aave/client` GraphQL API                     | Most market data (rates, caps, balances, etc.)            | V3 only |
+| **V4 SDK**       | `@aave/client` GraphQL API + HubAsset settings | Most market data + `baseVariableBorrowRate` from HubAsset | V4 only |
+| **On-chain RPC** | `UiPoolDataProvider.getReservesHumanized()`    | `deficit`, `baseVariableBorrowRate`                       | V3 only |
 
 ### Data Merge Priority (on-chain merge in `refreshMarketsSnapshot`)
 
 For each field, the priority chain is: **SDK value > on-chain RPC > fallback/default**.
 
-| Field | V3 reserve | V4 reserve |
-|-------|-----------|-----------|
-| `deficit` | absent in SDK → RPC → default `'0'` | absent in SDK → RPC (`Hub.getSpokeDeficitRay(assetId, spoke)` via Multicall3 batch) → RAY→token units |
-| `baseVariableBorrowRate` | absent in SDK → RPC → fallback calculation | **provided by SDK** (HubAsset settings) → kept |
+| Field                    | V3 reserve                                 | V4 reserve                                                                                            |
+| ------------------------ | ------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `deficit`                | absent in SDK → RPC → default `'0'`        | absent in SDK → RPC (`Hub.getSpokeDeficitRay(assetId, spoke)` via Multicall3 batch) → RAY→token units |
+| `baseVariableBorrowRate` | absent in SDK → RPC → fallback calculation | **provided by SDK** (HubAsset settings) → kept                                                        |
 
 SDK data is fetched every 1 minute (cron at second :00) and replaces the entire payload.
 On-chain RPC has its own cron (second :10) with 30-min per-pool TTL.
@@ -42,17 +42,17 @@ V3 uses RAY (`decimals=27`) for the same fields.
 
 以下字段以前从链上（UiPoolDataProvider / Pool 合约）读取，现在除 `deficit`、`baseVariableBorrowRate` 外均改为从 Aave SDK 获取。精度与单位是否一致见下表。
 
-| 字段 | 原 On-chain 精度/单位 | 现 Aave SDK 精度/单位 | 是否对齐 |
-|------|------------------------|------------------------|----------|
-| `decimals` | `uint8`，整数 | `number`，整数 | ✅ 一致 |
-| `availableLiquidity` | `uint256`，raw 代币单位（与 token decimals 一致） | `string`，raw 代币单位（GraphQL `amount.raw`） | ✅ 一致 |
-| `totalVariableDebt` | 链上为 `totalScaledVariableDebt`（scaled）× `variableBorrowIndex`（RAY）算出实际值，raw | `string`，`borrowInfo.total.amount.raw`，已是实际债务 raw | ✅ 一致（SDK 直接给实际值） |
-| `reserveFactor` | `uint256`，BPS（10000 = 100%） | `string`，BPS（如 `"2000"` = 20%，API 里 `decimals: 4`） | ✅ 一致 |
-| `variableRateSlope1` | `uint256`，RAY（10²⁷） | `string`，RAY（如 `"90000000000000000000000000"` = 9%，API 里 `decimals: 27`） | ✅ 一致 |
-| `variableRateSlope2` | `uint256`，RAY（10²⁷） | `string`，RAY，`decimals: 27` | ✅ 一致 |
-| `optimalUsageRate` | `uint256`，RAY（10²⁷） | `string`，RAY，`decimals: 27` | ✅ 一致 |
-| `baseVariableBorrowRate` | `uint256`，RAY（10²⁷），链上读 | V3: On-chain RPC / fallback；V4: **SDK HubAsset settings**（RAY，经 `percentOnChainValueToRay` 转换） | ✅ 精度一致 |
-| `deficit` | `uint256`，raw 代币单位，链上读 | V3: On-chain RPC；V4: On-chain RPC (`Hub.getSpokeDeficitRay(assetId, spoke)` via Multicall3 → RAY→token units) | ✅ 精度一致 |
+| 字段                     | 原 On-chain 精度/单位                                                                   | 现 Aave SDK 精度/单位                                                                                          | 是否对齐                    |
+| ------------------------ | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `decimals`               | `uint8`，整数                                                                           | `number`，整数                                                                                                 | ✅ 一致                     |
+| `availableLiquidity`     | `uint256`，raw 代币单位（与 token decimals 一致）                                       | `string`，raw 代币单位（GraphQL `amount.raw`）                                                                 | ✅ 一致                     |
+| `totalVariableDebt`      | 链上为 `totalScaledVariableDebt`（scaled）× `variableBorrowIndex`（RAY）算出实际值，raw | `string`，`borrowInfo.total.amount.raw`，已是实际债务 raw                                                      | ✅ 一致（SDK 直接给实际值） |
+| `reserveFactor`          | `uint256`，BPS（10000 = 100%）                                                          | `string`，BPS（如 `"2000"` = 20%，API 里 `decimals: 4`）                                                       | ✅ 一致                     |
+| `variableRateSlope1`     | `uint256`，RAY（10²⁷）                                                                  | `string`，RAY（如 `"90000000000000000000000000"` = 9%，API 里 `decimals: 27`）                                 | ✅ 一致                     |
+| `variableRateSlope2`     | `uint256`，RAY（10²⁷）                                                                  | `string`，RAY，`decimals: 27`                                                                                  | ✅ 一致                     |
+| `optimalUsageRate`       | `uint256`，RAY（10²⁷）                                                                  | `string`，RAY，`decimals: 27`                                                                                  | ✅ 一致                     |
+| `baseVariableBorrowRate` | `uint256`，RAY（10²⁷），链上读                                                          | V3: On-chain RPC / fallback；V4: **SDK HubAsset settings**（RAY，经 `percentOnChainValueToRay` 转换）          | ✅ 精度一致                 |
+| `deficit`                | `uint256`，raw 代币单位，链上读                                                         | V3: On-chain RPC；V4: On-chain RPC (`Hub.getSpokeDeficitRay(assetId, spoke)` via Multicall3 → RAY→token units) | ✅ 精度一致                 |
 
 ### baseVariableBorrowRate Fallback（SDK 和 RPC 均缺失时）
 
@@ -77,12 +77,12 @@ V3 uses RAY (`decimals=27`) for the same fields.
 
 以下字段已从 API 移除（原 Subgraph 来源），前端需适配：
 
-| 场景 | 影响 | 处理建议 |
-|------|------|----------|
+| 场景                           | 影响          | 处理建议                                                                           |
+| ------------------------------ | ------------- | ---------------------------------------------------------------------------------- |
 | 使用 `totalScaledVariableDebt` | ❌ 字段已移除 | 改用 `totalVariableDebt`（SDK 直接返回实际值，无需 `× variableBorrowIndex / RAY`） |
-| 使用 `variableBorrowIndex` | ❌ 字段已移除 | 不再需要 |
-| 计算实际债务 | ✅ 简化 | 直接使用 `totalVariableDebt` |
-| `baseVariableBorrowRate` 缺失 | ⚠️ 可能缺失 | V3: 后端用 APY→APR 反推 fallback；V4: SDK 直接提供（HubAsset settings） |
+| 使用 `variableBorrowIndex`     | ❌ 字段已移除 | 不再需要                                                                           |
+| 计算实际债务                   | ✅ 简化       | 直接使用 `totalVariableDebt`                                                       |
+| `baseVariableBorrowRate` 缺失  | ⚠️ 可能缺失   | V3: 后端用 APY→APR 反推 fallback；V4: SDK 直接提供（HubAsset settings）            |
 
 ---
 
@@ -90,37 +90,37 @@ V3 uses RAY (`decimals=27`) for the same fields.
 
 ### Fields from Aave SDK (`/api/markets`)
 
-| Field | Precision | Unit | Notes |
-|-------|-----------|------|-------|
-| `supplyApy` | Float | Percent (5.2 = 5.2%) | Already converted to percent |
-| `borrowApy` | Float | Percent (3.5 = 3.5%) | Already converted to percent |
-| `tokenPrice` | Float | USD | Already converted |
-| `supplyCapUsd` | Float | USD | Already converted |
-| `borrowCapUsd` | Float | USD | Already converted |
-| `reserveSizeUsd` | Float | USD | Already converted |
-| `utilizationPct` | Float | Percent (75.5 = 75.5%) | Already converted to percent |
-| `decimals` | Number | Integer | Token decimals (6, 8, 18, etc.) |
-| `availableLiquidity` | String | Raw token units | `BigInt` string |
-| `totalVariableDebt` | String | Raw token units | Total borrowed (actual, not scaled) |
-| `reserveFactor` | String | BPS (4 decimals) | "2000" = 20%, "1500" = 15% |
-| `variableRateSlope1` | String | RAY (27 decimals) | Interest rate parameter |
-| `variableRateSlope2` | String | RAY (27 decimals) | Interest rate parameter |
-| `optimalUsageRate` | String | RAY (27 decimals) | "900000000000000000000000000" = 90% |
+| Field                | Precision | Unit                   | Notes                               |
+| -------------------- | --------- | ---------------------- | ----------------------------------- |
+| `supplyApy`          | Float     | Percent (5.2 = 5.2%)   | Already converted to percent        |
+| `borrowApy`          | Float     | Percent (3.5 = 3.5%)   | Already converted to percent        |
+| `tokenPrice`         | Float     | USD                    | Already converted                   |
+| `supplyCapUsd`       | Float     | USD                    | Already converted                   |
+| `borrowCapUsd`       | Float     | USD                    | Already converted                   |
+| `reserveSizeUsd`     | Float     | USD                    | Already converted                   |
+| `utilizationPct`     | Float     | Percent (75.5 = 75.5%) | Already converted to percent        |
+| `decimals`           | Number    | Integer                | Token decimals (6, 8, 18, etc.)     |
+| `availableLiquidity` | String    | Raw token units        | `BigInt` string                     |
+| `totalVariableDebt`  | String    | Raw token units        | Total borrowed (actual, not scaled) |
+| `reserveFactor`      | String    | BPS (4 decimals)       | "2000" = 20%, "1500" = 15%          |
+| `variableRateSlope1` | String    | RAY (27 decimals)      | Interest rate parameter             |
+| `variableRateSlope2` | String    | RAY (27 decimals)      | Interest rate parameter             |
+| `optimalUsageRate`   | String    | RAY (27 decimals)      | "900000000000000000000000000" = 90% |
 
 ### Fields from On-chain RPC
 
-| Field | Precision | Unit | Notes |
-|-------|-----------|------|-------|
-| `deficit` | String | Raw token units | Bad debt, same decimals as token |
-| `baseVariableBorrowRate` | String | RAY (27 decimals) | Base rate before utilization curve |
+| Field                    | Precision | Unit              | Notes                              |
+| ------------------------ | --------- | ----------------- | ---------------------------------- |
+| `deficit`                | String    | Raw token units   | Bad debt, same decimals as token   |
+| `baseVariableBorrowRate` | String    | RAY (27 decimals) | Base rate before utilization curve |
 
 ## Precision Constants
 
-| Name | Value | Usage |
-|------|-------|-------|
+| Name    | Value   | Usage                              |
+| ------- | ------- | ---------------------------------- |
 | **RAY** | `10^27` | Interest rates, utilization ratios |
-| **WAD** | `10^18` | Common ERC20 token amounts |
-| **BPS** | `10^4` | Basis points (10000 = 100%) |
+| **WAD** | `10^18` | Common ERC20 token amounts         |
+| **BPS** | `10^4`  | Basis points (10000 = 100%)        |
 
 ## Conversion Examples
 
@@ -132,17 +132,17 @@ const rayToDecimal = (ray: string) => BigInt(ray) / BigInt(10 ** 27);
 const bpsToDecimal = (bps: string) => Number(bps) / 10000;
 
 // Raw token to human readable
-const toHuman = (raw: string, decimals: number) => 
+const toHuman = (raw: string, decimals: number) =>
   Number(BigInt(raw)) / 10 ** decimals;
 ```
 
 ## Why Different Precisions?
 
-| Source | Design Reason |
-|--------|---------------|
-| **SDK floats** | Pre-computed for display, avoids frontend BigInt handling |
+| Source          | Design Reason                                                |
+| --------------- | ------------------------------------------------------------ |
+| **SDK floats**  | Pre-computed for display, avoids frontend BigInt handling    |
 | **SDK strings** | Raw values for precise calculations, preserve full precision |
-| **RPC strings** | Direct from smart contracts, always full precision |
+| **RPC strings** | Direct from smart contracts, always full precision           |
 
 ## Consistency Notes
 

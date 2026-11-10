@@ -13,6 +13,7 @@ Merkl 新增了 3 种 `distributionType`（`AAVE_NET_APR`, `AAVE_V4_NET_APR`, `E
 ## Root Cause
 
 Campaign 类型判断只用了 `distributionType` 一个维度。但 Merkl API 中：
+
 - 同一 `distributionType` 可能对应不同 campaign 类型（如 `DUTCH_AUCTION` 既可能是荷兰拍也可能是空投）
 - 新增类型（`AAVE_NET_APR` 等）的 `distributionType` 本身无显性映射，但其 `mode` 字段有（`MAX_APR` → `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE`）
 
@@ -27,19 +28,19 @@ distributionMethod → distributionType → mode
 
 ### 映射矩阵
 
-| distributionType | distributionMethod | mode | 判断依据 | → 结果 |
-|---|---|---|---|---|
-| `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` | `MAX_APR` | - | **method** 显性 | MAX |
-| `MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT` | `MAX_APR` | - | **method** 显性 | MAX |
-| `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` | `FIX_APR` | - | **method** 显性 | FIX |
-| `FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE` | `FIX_APR` | - | **method** 显性 | FIX |
-| `FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT` | `FIX_APR` | - | **method** 显性 | FIX |
-| `DUTCH_AUCTION` | `DUTCH_AUCTION` | - | **method** 显性 | DUTCH |
-| `DUTCH_AUCTION` | `AIRDROP` | - | method 无显性，**type** 显性 | DUTCH |
-| `DUTCH_AUCTION` | `DEEL_DISTRIBUTION` | - | method 无显性，**type** 显性 | DUTCH |
-| `AAVE_NET_APR` | `AAVE_NET_APR` | `MAX_APR` | method/type 均无显性，**mode** 显性 | MAX |
-| `AAVE_V4_NET_APR` | `AAVE_V4_NET_APR` | `MAX_APR` | method/type 均无显性，**mode** 显性 | MAX |
-| `ERC4626_APR` | `ERC4626_APR` | `MAX_APR` | method/type 均无显性，**mode** 显性 | MAX |
+| distributionType                         | distributionMethod  | mode      | 判断依据                            | → 结果 |
+| ---------------------------------------- | ------------------- | --------- | ----------------------------------- | ------ |
+| `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE`   | `MAX_APR`           | -         | **method** 显性                     | MAX    |
+| `MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT`  | `MAX_APR`           | -         | **method** 显性                     | MAX    |
+| `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE`   | `FIX_APR`           | -         | **method** 显性                     | FIX    |
+| `FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE`  | `FIX_APR`           | -         | **method** 显性                     | FIX    |
+| `FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT` | `FIX_APR`           | -         | **method** 显性                     | FIX    |
+| `DUTCH_AUCTION`                          | `DUTCH_AUCTION`     | -         | **method** 显性                     | DUTCH  |
+| `DUTCH_AUCTION`                          | `AIRDROP`           | -         | method 无显性，**type** 显性        | DUTCH  |
+| `DUTCH_AUCTION`                          | `DEEL_DISTRIBUTION` | -         | method 无显性，**type** 显性        | DUTCH  |
+| `AAVE_NET_APR`                           | `AAVE_NET_APR`      | `MAX_APR` | method/type 均无显性，**mode** 显性 | MAX    |
+| `AAVE_V4_NET_APR`                        | `AAVE_V4_NET_APR`   | `MAX_APR` | method/type 均无显性，**mode** 显性 | MAX    |
+| `ERC4626_APR`                            | `ERC4626_APR`       | `MAX_APR` | method/type 均无显性，**mode** 显性 | MAX    |
 
 ### API 变更
 
@@ -62,11 +63,11 @@ normalizeCampaignType(input: NormalizeCampaignTypeInput): CampaignForecastType |
 
 ## Impact Scope
 
-| File | Change |
-|---|---|
-| `merklForecastModel.ts` | `normalizeCampaignType` 签名 + 映射表 |
-| `merklForecastService.ts` | 2 个调用点：提取 `distributionMethod` / `mode` 传入新签名 |
-| `merkl-api.ts` | `normalizeForecastCampaignTypeLite` 签名 + 映射表；`ForecastCampaignMetaLite` 新增 `rawDistributionType?` / `rawMode?` |
+| File                      | Change                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `merklForecastModel.ts`   | `normalizeCampaignType` 签名 + 映射表                                                                                  |
+| `merklForecastService.ts` | 2 个调用点：提取 `distributionMethod` / `mode` 传入新签名                                                              |
+| `merkl-api.ts`            | `normalizeForecastCampaignTypeLite` 签名 + 映射表；`ForecastCampaignMetaLite` 新增 `rawDistributionType?` / `rawMode?` |
 
 ## Test Coverage
 
@@ -78,6 +79,7 @@ normalizeCampaignType(input: NormalizeCampaignTypeInput): CampaignForecastType |
 ## Future-Proofing
 
 新增 `distributionType` 时：
+
 1. 若其 `distributionMethod` 已有显性映射 → **无需改代码**
 2. 若其 `mode` 已有映射 → **无需改代码**
 3. 若两者都无 → 仅需在 `DISTRIBUTION_METHOD_MAP` 或 `MODE_MAP` 中添加一行

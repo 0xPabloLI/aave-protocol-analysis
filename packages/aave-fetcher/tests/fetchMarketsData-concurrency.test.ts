@@ -1,45 +1,53 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
-import { buildMarketsBaseDataset, buildV3BaseDataset, fetchV4ReservesWithTimeout, fetchV3MarketsWithTimeout, FETCH_TIMEOUT_MS } from '../src/concurrent-fetch.js';
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import {
+  buildMarketsBaseDataset,
+  buildV3BaseDataset,
+  fetchV4ReservesWithTimeout,
+  fetchV3MarketsWithTimeout,
+  FETCH_TIMEOUT_MS,
+} from "../src/concurrent-fetch.js";
 
-function makeV3Market(overrides: {
-  address?: string;
-  chainName?: string;
-  chainId?: number;
-  tokenSymbol?: string;
-  tokenAddress?: string;
-  reserveIdSuffix?: string;
-} = {}): any {
+function makeV3Market(
+  overrides: {
+    address?: string;
+    chainName?: string;
+    chainId?: number;
+    tokenSymbol?: string;
+    tokenAddress?: string;
+    reserveIdSuffix?: string;
+  } = {}
+): any {
   const a = overrides;
   return {
-    address: a.address ?? '0xv3pool',
-    name: 'AaveV3Market',
+    address: a.address ?? "0xv3pool",
+    name: "AaveV3Market",
     chain: {
-      name: a.chainName ?? 'Ethereum',
+      name: a.chainName ?? "Ethereum",
       chainId: a.chainId ?? 1,
     },
     supplyReserves: [
       {
         underlyingToken: {
-          symbol: a.tokenSymbol ?? 'USDC',
-          name: 'USD Coin',
-          address: a.tokenAddress ?? '0xv3usdc',
+          symbol: a.tokenSymbol ?? "USDC",
+          name: "USD Coin",
+          address: a.tokenAddress ?? "0xv3usdc",
           decimals: 6,
         },
-        aToken: { address: '0xatoken' },
-        vToken: { address: '0xvtoken' },
+        aToken: { address: "0xatoken" },
+        vToken: { address: "0xvtoken" },
         isFrozen: false,
         isPaused: false,
         size: {
-          amount: { raw: '1000000000', value: '1000' },
-          usdPerToken: '1',
+          amount: { raw: "1000000000", value: "1000" },
+          usdPerToken: "1",
         },
         borrowInfo: {
-          utilizationRate: { value: '0.5' },
-          apy: { value: '0.03' },
+          utilizationRate: { value: "0.5" },
+          apy: { value: "0.03" },
         },
         supplyInfo: {
-          apy: { value: '0.02' },
+          apy: { value: "0.02" },
         },
         incentives: [],
       },
@@ -47,22 +55,24 @@ function makeV3Market(overrides: {
   };
 }
 
-function makeV4Reserve(overrides: {
-  reserveId?: string;
-  chainName?: string;
-  chainId?: number;
-  tokenSymbol?: string;
-  tokenAddress?: string;
-  spokeAddress?: string;
-} = {}): any {
+function makeV4Reserve(
+  overrides: {
+    reserveId?: string;
+    chainName?: string;
+    chainId?: number;
+    tokenSymbol?: string;
+    tokenAddress?: string;
+    spokeAddress?: string;
+  } = {}
+): any {
   const a = overrides;
   return {
-    reserveId: a.reserveId ?? '1:0xspoke:0xv4usdt',
-    chainName: a.chainName ?? 'Arbitrum',
+    reserveId: a.reserveId ?? "1:0xspoke:0xv4usdt",
+    chainName: a.chainName ?? "Arbitrum",
     chainId: a.chainId ?? 42161,
-    tokenSymbol: a.tokenSymbol ?? 'USDT',
-    tokenAddress: a.tokenAddress ?? '0xv4usdt',
-    spokeAddress: a.spokeAddress ?? '0xspoke',
+    tokenSymbol: a.tokenSymbol ?? "USDT",
+    tokenAddress: a.tokenAddress ?? "0xv4usdt",
+    spokeAddress: a.spokeAddress ?? "0xspoke",
     isFrozen: false,
     isPaused: false,
     supplyApy: 0.04,
@@ -70,23 +80,31 @@ function makeV4Reserve(overrides: {
   };
 }
 
-function makeV4FetchResult(mapped: any[] = [], raw: any = { reserves: [] }, spokeHubTopology: any[] = []) {
+function makeV4FetchResult(
+  mapped: any[] = [],
+  raw: any = { reserves: [] },
+  spokeHubTopology: any[] = []
+) {
   return { mapped, raw, spokeHubTopology };
 }
 
-describe('buildMarketsBaseDataset — pure sync merge', () => {
-  it('both success → full merged dataset', () => {
-    const v4Result = makeV4FetchResult([makeV4Reserve()], [{ reserves: [{}] }], []);
+describe("buildMarketsBaseDataset — pure sync merge", () => {
+  it("both success → full merged dataset", () => {
+    const v4Result = makeV4FetchResult(
+      [makeV4Reserve()],
+      [{ reserves: [{}] }],
+      []
+    );
     const result = buildMarketsBaseDataset([makeV3Market()], v4Result);
 
     assert.equal(result.v3Count, 1);
     assert.equal(result.v4Count, 1);
     assert.equal(result.baseDataset.length, 2);
-    assert.ok(result.baseDataset.find((r: any) => r.tokenSymbol === 'USDC'));
-    assert.ok(result.baseDataset.find((r: any) => r.tokenSymbol === 'USDT'));
+    assert.ok(result.baseDataset.find((r: any) => r.tokenSymbol === "USDC"));
+    assert.ok(result.baseDataset.find((r: any) => r.tokenSymbol === "USDT"));
   });
 
-  it('V3 empty + V4 data → V4 data only (V3 timeout fallback)', () => {
+  it("V3 empty + V4 data → V4 data only (V3 timeout fallback)", () => {
     const v4 = makeV4Reserve();
     const v4Result = makeV4FetchResult([v4]);
     const result = buildMarketsBaseDataset([], v4Result);
@@ -94,20 +112,20 @@ describe('buildMarketsBaseDataset — pure sync merge', () => {
     assert.equal(result.v3Count, 0);
     assert.equal(result.v4Count, 1);
     assert.equal(result.baseDataset.length, 1);
-    assert.equal(result.baseDataset[0].tokenSymbol, 'USDT');
+    assert.equal(result.baseDataset[0].tokenSymbol, "USDT");
   });
 
-  it('V3 data + V4 empty → V3 data only (V4 timeout fallback)', () => {
+  it("V3 data + V4 empty → V3 data only (V4 timeout fallback)", () => {
     const v4Result = makeV4FetchResult([]);
     const result = buildMarketsBaseDataset([makeV3Market()], v4Result);
 
     assert.equal(result.v3Count, 1);
     assert.equal(result.v4Count, 0);
     assert.equal(result.baseDataset.length, 1);
-    assert.equal(result.baseDataset[0].tokenSymbol, 'USDC');
+    assert.equal(result.baseDataset[0].tokenSymbol, "USDC");
   });
 
-  it('both empty → empty baseDataset (both timeout)', () => {
+  it("both empty → empty baseDataset (both timeout)", () => {
     const v4Result = makeV4FetchResult([]);
     const result = buildMarketsBaseDataset([], v4Result);
 
@@ -116,7 +134,7 @@ describe('buildMarketsBaseDataset — pure sync merge', () => {
     assert.equal(result.baseDataset.length, 0);
   });
 
-  it('should be synchronous (no Promise return)', () => {
+  it("should be synchronous (no Promise return)", () => {
     const v4Result = makeV4FetchResult([makeV4Reserve()]);
     const result = buildMarketsBaseDataset([makeV3Market()], v4Result);
 
@@ -125,8 +143,8 @@ describe('buildMarketsBaseDataset — pure sync merge', () => {
   });
 });
 
-describe('fetchV4ReservesWithTimeout — no v4Fatal (DI)', () => {
-  it('V4 returns data → success with source=sdk', async () => {
+describe("fetchV4ReservesWithTimeout — no v4Fatal (DI)", () => {
+  it("V4 returns data → success with source=sdk", async () => {
     const mockFetchV4 = async () => ({
       mapped: [makeV4Reserve()],
       raw: { reserves: [{}] },
@@ -138,12 +156,14 @@ describe('fetchV4ReservesWithTimeout — no v4Fatal (DI)', () => {
     });
 
     assert.equal(result.mapped.length, 1);
-    assert.equal(result.mapped[0].tokenSymbol, 'USDT');
-    assert.equal(result.source, 'sdk');
+    assert.equal(result.mapped[0].tokenSymbol, "USDT");
+    assert.equal(result.source, "sdk");
   });
 
-  it('V4 rejects + RPC mock succeeds → source: rpc', async () => {
-    const mockFetchV4 = async () => { throw new Error('V4 SDK down'); };
+  it("V4 rejects + RPC mock succeeds → source: rpc", async () => {
+    const mockFetchV4 = async () => {
+      throw new Error("V4 SDK down");
+    };
     const mockRpc = async () => ({ reserves: [makeV4Reserve()], errors: [] });
 
     const result = await fetchV4ReservesWithTimeout({
@@ -152,11 +172,15 @@ describe('fetchV4ReservesWithTimeout — no v4Fatal (DI)', () => {
     });
 
     assert.equal(result.mapped.length, 1);
-    assert.equal(result.source, 'rpc');
+    assert.equal(result.source, "rpc");
   });
 
-  it('V4 returns empty + RPC mock succeeds → source: rpc', async () => {
-    const mockFetchV4 = async () => ({ mapped: [], raw: { reserves: [] }, spokeHubTopology: [] });
+  it("V4 returns empty + RPC mock succeeds → source: rpc", async () => {
+    const mockFetchV4 = async () => ({
+      mapped: [],
+      raw: { reserves: [] },
+      spokeHubTopology: [],
+    });
     const mockRpc = async () => ({ reserves: [makeV4Reserve()], errors: [] });
 
     const result = await fetchV4ReservesWithTimeout({
@@ -165,13 +189,17 @@ describe('fetchV4ReservesWithTimeout — no v4Fatal (DI)', () => {
     });
 
     assert.equal(result.mapped.length, 1);
-    assert.equal(result.source, 'rpc');
+    assert.equal(result.source, "rpc");
   });
 });
 
-describe('fetchV4ReservesWithTimeout — RPC Layer 2 fallback', () => {
-  it('SDK empty + RPC empty → source: none, never rejects', async () => {
-    const mockFetchV4 = async () => ({ mapped: [], raw: { reserves: [] }, spokeHubTopology: [] });
+describe("fetchV4ReservesWithTimeout — RPC Layer 2 fallback", () => {
+  it("SDK empty + RPC empty → source: none, never rejects", async () => {
+    const mockFetchV4 = async () => ({
+      mapped: [],
+      raw: { reserves: [] },
+      spokeHubTopology: [],
+    });
     const mockRpc = async () => ({ reserves: [], errors: [] });
 
     const result = await fetchV4ReservesWithTimeout({
@@ -180,11 +208,15 @@ describe('fetchV4ReservesWithTimeout — RPC Layer 2 fallback', () => {
     });
 
     assert.equal(result.mapped.length, 0);
-    assert.equal(result.source, 'none');
+    assert.equal(result.source, "none");
   });
 
-  it('RPC fallback → spokeHubTopology is []', async () => {
-    const mockFetchV4 = async () => ({ mapped: [], raw: { reserves: [] }, spokeHubTopology: [] });
+  it("RPC fallback → spokeHubTopology is []", async () => {
+    const mockFetchV4 = async () => ({
+      mapped: [],
+      raw: { reserves: [] },
+      spokeHubTopology: [],
+    });
     const mockRpc = async () => ({ reserves: [makeV4Reserve()], errors: [] });
 
     const result = await fetchV4ReservesWithTimeout({
@@ -193,13 +225,20 @@ describe('fetchV4ReservesWithTimeout — RPC Layer 2 fallback', () => {
     });
 
     assert.deepEqual(result.spokeHubTopology, []);
-    assert.equal(result.source, 'rpc');
+    assert.equal(result.source, "rpc");
   });
 
-  it('SDK success (non-empty) → RPC not called, source: sdk', async () => {
+  it("SDK success (non-empty) → RPC not called, source: sdk", async () => {
     let rpcCalled = false;
-    const mockFetchV4 = async () => ({ mapped: [makeV4Reserve()], raw: { reserves: [] }, spokeHubTopology: [] });
-    const mockRpc = async () => { rpcCalled = true; return { reserves: [], errors: [] }; };
+    const mockFetchV4 = async () => ({
+      mapped: [makeV4Reserve()],
+      raw: { reserves: [] },
+      spokeHubTopology: [],
+    });
+    const mockRpc = async () => {
+      rpcCalled = true;
+      return { reserves: [], errors: [] };
+    };
 
     const result = await fetchV4ReservesWithTimeout({
       _fetchV4Fn: mockFetchV4,
@@ -207,11 +246,13 @@ describe('fetchV4ReservesWithTimeout — RPC Layer 2 fallback', () => {
     });
 
     assert.equal(rpcCalled, false);
-    assert.equal(result.source, 'sdk');
+    assert.equal(result.source, "sdk");
   });
 
-  it('SDK throws + RPC also empty → source: none, never rejects', async () => {
-    const mockFetchV4 = async () => { throw new Error('SDK down'); };
+  it("SDK throws + RPC also empty → source: none, never rejects", async () => {
+    const mockFetchV4 = async () => {
+      throw new Error("SDK down");
+    };
     const mockRpc = async () => ({ reserves: [], errors: [] });
 
     const result = await fetchV4ReservesWithTimeout({
@@ -220,12 +261,12 @@ describe('fetchV4ReservesWithTimeout — RPC Layer 2 fallback', () => {
     });
 
     assert.equal(result.mapped.length, 0);
-    assert.equal(result.source, 'none');
+    assert.equal(result.source, "none");
   });
 });
 
-describe('fetchV3MarketsWithTimeout — DI', () => {
-  it('V3 returns data → success', async () => {
+describe("fetchV3MarketsWithTimeout — DI", () => {
+  it("V3 returns data → success", async () => {
     const mockFetchV3 = async () => ({
       markets: [makeV3Market()],
       timestamp: Date.now(),
@@ -239,9 +280,9 @@ describe('fetchV3MarketsWithTimeout — DI', () => {
     assert.equal(result.markets.length, 1);
   });
 
-  it('V3 rejects → throws', async () => {
+  it("V3 rejects → throws", async () => {
     const mockFetchV3 = async () => {
-      throw new Error('V3 SDK down');
+      throw new Error("V3 SDK down");
     };
 
     await assert.rejects(
@@ -250,27 +291,34 @@ describe('fetchV3MarketsWithTimeout — DI', () => {
           _fetchV3Fn: mockFetchV3,
         });
       },
-      (err: any) => err.message.includes('V3 SDK down'),
-      'fetchV3MarketsWithTimeout should throw when _fetchV3Fn rejects'
+      (err: any) => err.message.includes("V3 SDK down"),
+      "fetchV3MarketsWithTimeout should throw when _fetchV3Fn rejects"
     );
   });
 });
 
-describe('FETCH_TIMEOUT_MS', () => {
-  it('should be 35 seconds', () => {
+describe("FETCH_TIMEOUT_MS", () => {
+  it("should be 35 seconds", () => {
     assert.equal(FETCH_TIMEOUT_MS, 35_000);
   });
 });
 
-describe('Promise.allSettled — concurrent V3/V4 scenarios', () => {
-  it('both success → full merged dataset', async () => {
+describe("Promise.allSettled — concurrent V3/V4 scenarios", () => {
+  it("both success → full merged dataset", async () => {
     const [v3Settled, v4Settled] = await Promise.allSettled([
-      fetchV3MarketsWithTimeout({ _fetchV3Fn: async () => ({ markets: [makeV3Market()], timestamp: new Date().toISOString() }) }),
-      fetchV4ReservesWithTimeout({ _fetchV4Fn: async () => makeV4FetchResult([makeV4Reserve()]) }),
+      fetchV3MarketsWithTimeout({
+        _fetchV3Fn: async () => ({
+          markets: [makeV3Market()],
+          timestamp: new Date().toISOString(),
+        }),
+      }),
+      fetchV4ReservesWithTimeout({
+        _fetchV4Fn: async () => makeV4FetchResult([makeV4Reserve()]),
+      }),
     ]);
 
-    assert.equal(v3Settled.status, 'fulfilled');
-    assert.equal(v4Settled.status, 'fulfilled');
+    assert.equal(v3Settled.status, "fulfilled");
+    assert.equal(v4Settled.status, "fulfilled");
 
     const v3Data = (v3Settled as PromiseFulfilledResult<any>).value;
     const v4Data = (v4Settled as PromiseFulfilledResult<any>).value;
@@ -281,14 +329,20 @@ describe('Promise.allSettled — concurrent V3/V4 scenarios', () => {
     assert.equal(result.baseDataset.length, 2);
   });
 
-  it('V3 fail + V4 success → V4 data only + fetchResult.v3.success=false', async () => {
+  it("V3 fail + V4 success → V4 data only + fetchResult.v3.success=false", async () => {
     const [v3Settled, v4Settled] = await Promise.allSettled([
-      fetchV3MarketsWithTimeout({ _fetchV3Fn: async () => { throw new Error('V3 down'); } }),
-      fetchV4ReservesWithTimeout({ _fetchV4Fn: async () => makeV4FetchResult([makeV4Reserve()]) }),
+      fetchV3MarketsWithTimeout({
+        _fetchV3Fn: async () => {
+          throw new Error("V3 down");
+        },
+      }),
+      fetchV4ReservesWithTimeout({
+        _fetchV4Fn: async () => makeV4FetchResult([makeV4Reserve()]),
+      }),
     ]);
 
-    assert.equal(v3Settled.status, 'rejected');
-    assert.equal(v4Settled.status, 'fulfilled');
+    assert.equal(v3Settled.status, "rejected");
+    assert.equal(v4Settled.status, "fulfilled");
 
     const v4Data = (v4Settled as PromiseFulfilledResult<any>).value;
     const result = buildMarketsBaseDataset([], v4Data);
@@ -297,20 +351,27 @@ describe('Promise.allSettled — concurrent V3/V4 scenarios', () => {
     assert.equal(result.v4Count, 1);
   });
 
-  it('V3 success + V4 SDK fail → V4 falls back to RPC/none, never rejected', async () => {
+  it("V3 success + V4 SDK fail → V4 falls back to RPC/none, never rejected", async () => {
     const mockRpc = async () => ({ reserves: [], errors: [] });
     const [v3Settled, v4Settled] = await Promise.allSettled([
-      fetchV3MarketsWithTimeout({ _fetchV3Fn: async () => ({ markets: [makeV3Market()], timestamp: new Date().toISOString() }) }),
+      fetchV3MarketsWithTimeout({
+        _fetchV3Fn: async () => ({
+          markets: [makeV3Market()],
+          timestamp: new Date().toISOString(),
+        }),
+      }),
       fetchV4ReservesWithTimeout({
-        _fetchV4Fn: async () => { throw new Error('V4 down'); },
+        _fetchV4Fn: async () => {
+          throw new Error("V4 down");
+        },
         _fetchRpcFn: mockRpc,
       }),
     ]);
 
-    assert.equal(v3Settled.status, 'fulfilled');
-    assert.equal(v4Settled.status, 'fulfilled');  // never rejects
+    assert.equal(v3Settled.status, "fulfilled");
+    assert.equal(v4Settled.status, "fulfilled"); // never rejects
     const v4Data = (v4Settled as PromiseFulfilledResult<any>).value;
-    assert.equal(v4Data.source, 'none');  // RPC also empty
+    assert.equal(v4Data.source, "none"); // RPC also empty
 
     const v3Data = (v3Settled as PromiseFulfilledResult<any>).value;
     const result = buildMarketsBaseDataset(v3Data.markets, v4Data);
@@ -319,38 +380,51 @@ describe('Promise.allSettled — concurrent V3/V4 scenarios', () => {
     assert.equal(result.v4Count, 0);
   });
 
-  it('V3 fail + V4 SDK fail → V3 rejected, V4 fulfilled (never rejects)', async () => {
+  it("V3 fail + V4 SDK fail → V3 rejected, V4 fulfilled (never rejects)", async () => {
     const mockRpc = async () => ({ reserves: [], errors: [] });
     const [v3Settled, v4Settled] = await Promise.allSettled([
-      fetchV3MarketsWithTimeout({ _fetchV3Fn: async () => { throw new Error('V3 down'); } }),
+      fetchV3MarketsWithTimeout({
+        _fetchV3Fn: async () => {
+          throw new Error("V3 down");
+        },
+      }),
       fetchV4ReservesWithTimeout({
-        _fetchV4Fn: async () => { throw new Error('V4 down'); },
+        _fetchV4Fn: async () => {
+          throw new Error("V4 down");
+        },
         _fetchRpcFn: mockRpc,
       }),
     ]);
 
-    assert.equal(v3Settled.status, 'rejected');
-    assert.equal(v4Settled.status, 'fulfilled');  // V4 never rejects now
+    assert.equal(v3Settled.status, "rejected");
+    assert.equal(v4Settled.status, "fulfilled"); // V4 never rejects now
     const v4Data = (v4Settled as PromiseFulfilledResult<any>).value;
-    assert.equal(v4Data.source, 'none');
+    assert.equal(v4Data.source, "none");
   });
 
-  it('fetchResult envelope shape', async () => {
+  it("fetchResult envelope shape", async () => {
     const [v3Settled, v4Settled] = await Promise.allSettled([
-      fetchV3MarketsWithTimeout({ _fetchV3Fn: async () => ({ markets: [makeV3Market()], timestamp: new Date().toISOString() }) }),
-      fetchV4ReservesWithTimeout({ _fetchV4Fn: async () => makeV4FetchResult([makeV4Reserve()]) }),
+      fetchV3MarketsWithTimeout({
+        _fetchV3Fn: async () => ({
+          markets: [makeV3Market()],
+          timestamp: new Date().toISOString(),
+        }),
+      }),
+      fetchV4ReservesWithTimeout({
+        _fetchV4Fn: async () => makeV4FetchResult([makeV4Reserve()]),
+      }),
     ]);
 
-    const v3Success = v3Settled.status === 'fulfilled';
-    const v4Success = v4Settled.status === 'fulfilled';
+    const v3Success = v3Settled.status === "fulfilled";
+    const v4Success = v4Settled.status === "fulfilled";
     const fetchResult = {
-      v3: { success: v3Success, source: v3Success ? 'sdk' : 'none' },
-      v4: { success: v4Success, source: v4Success ? 'sdk' : 'none' },
+      v3: { success: v3Success, source: v3Success ? "sdk" : "none" },
+      v4: { success: v4Success, source: v4Success ? "sdk" : "none" },
     };
 
     assert.deepEqual(fetchResult, {
-      v3: { success: true, source: 'sdk' },
-      v4: { success: true, source: 'sdk' },
+      v3: { success: true, source: "sdk" },
+      v4: { success: true, source: "sdk" },
     });
   });
 });

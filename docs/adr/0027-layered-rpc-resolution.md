@@ -17,11 +17,11 @@ Implemented
 
 ProviderPool 新增 `executeWithAutoRpc(chainId, execs, options): Promise<T | null>`，实现统一逐层补充 RPC 解析：
 
-| 层 | 来源 | 性质 | 时效性 |
-|---|---|---|---|
-| 1 | shared-config 硬编码 | 静态（编译时可知） | 需人工更新部署 |
-| 2 | viem/chains extractChain | 静态（编译时可知） | 随 viem 发版更新 |
-| 3 | chainid.network + chainlist.org | 动态（运行时发现） | 社区实时维护 |
+| 层  | 来源                            | 性质               | 时效性           |
+| --- | ------------------------------- | ------------------ | ---------------- |
+| 1   | shared-config 硬编码            | 静态（编译时可知） | 需人工更新部署   |
+| 2   | viem/chains extractChain        | 静态（编译时可知） | 随 viem 发版更新 |
+| 3   | chainid.network + chainlist.org | 动态（运行时发现） | 社区实时维护     |
 
 所有链（无论是否在 shared-config 中）走同一路径：逐层补充 URL，每层只在 `needsMore`（URL 列表为空或全部 suppressed）时才进入下一层。追加的 URL 与已有 URL 合并去重（`mergeUrls`）。
 

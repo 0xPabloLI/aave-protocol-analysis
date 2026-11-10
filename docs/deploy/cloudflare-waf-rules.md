@@ -13,24 +13,24 @@ Apply these in the Cloudflare dashboard → **Security → WAF → Custom rules*
 
 ### 1. Block known bot-target paths
 
-| Filter | Action | Reason |
-|--------|--------|--------|
-| URI Path in `{/robots.txt, /sitemap.xml, /sitemap.xml.gz}` | Block | No such files exist; crawlers generate 404s |
-| URI Path in `{/admin, /wp-admin, /wp-login.php, /wp-json, /.env, /.git, /config.json, /api/v1, /graphql}` | Block | Security scanners probing common endpoints |
-| URI Path in `{/xmlrpc.php, /phpmyadmin, /pma, /server-status, /actuator, /.well-known/security.txt}` but method ≠ GET | Block | Non-GET probes to well-known paths; server serves `/.well-known/security.txt` via GET, so only non-GET should be blocked |
+| Filter                                                                                                                | Action | Reason                                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------ |
+| URI Path in `{/robots.txt, /sitemap.xml, /sitemap.xml.gz}`                                                            | Block  | No such files exist; crawlers generate 404s                                                                              |
+| URI Path in `{/admin, /wp-admin, /wp-login.php, /wp-json, /.env, /.git, /config.json, /api/v1, /graphql}`             | Block  | Security scanners probing common endpoints                                                                               |
+| URI Path in `{/xmlrpc.php, /phpmyadmin, /pma, /server-status, /actuator, /.well-known/security.txt}` but method ≠ GET | Block  | Non-GET probes to well-known paths; server serves `/.well-known/security.txt` via GET, so only non-GET should be blocked |
 
 ### 2. Challenge suspicious user-agents (optional)
 
-| Filter | Action | Reason |
-|--------|--------|--------|
-| User-Agent contains `{Shodan, Censys, masscan, ZmEu, sqlmap}` | Block | Known scanner user-agents |
-| User-Agent is empty AND URI Path starts with `/api/` | Block | Legit API clients always send UA |
+| Filter                                                        | Action | Reason                           |
+| ------------------------------------------------------------- | ------ | -------------------------------- |
+| User-Agent contains `{Shodan, Censys, masscan, ZmEu, sqlmap}` | Block  | Known scanner user-agents        |
+| User-Agent is empty AND URI Path starts with `/api/`          | Block  | Legit API clients always send UA |
 
 ### 3. Rate-limit by IP (complementary)
 
-| Filter | Action | Reason |
-|--------|--------|--------|
-| Requests per 10s > 50 from same IP | Block | Generic brute-force protection |
+| Filter                             | Action | Reason                         |
+| ---------------------------------- | ------ | ------------------------------ |
+| Requests per 10s > 50 from same IP | Block  | Generic brute-force protection |
 
 ## Implementation Steps
 
@@ -43,6 +43,7 @@ Apply these in the Cloudflare dashboard → **Security → WAF → Custom rules*
 ## Monitoring
 
 After enabling WAF rules:
+
 - **Server-side**: Watch `combined.log` for `404:` entries — count should drop significantly
 - **Cloudflare-side**: Check **Security → Events** for blocked request analytics
 - **Railway**: Compare 4xx error rate before/after in HTTP logs

@@ -12,13 +12,13 @@
 
 `scripts/verification/` 下有 5 个脚本，全部对比 **SDK ↔ 链上 RPC**：
 
-| 脚本 | 对比维度 |
-|------|---------|
-| `v3-snx-onchain-compare.mjs` | V3 链上 vs SDK 逐字段 |
-| `v3-sdk-onchain-match.mjs` | V3 SDK vs 链上条目匹配 |
-| `v3-base-rate-fallback.mjs` | V3 baseRate fallback 反推验证 |
-| `v4-sdk-calculations.ts` | V4 SDK APY/utilization 公式验证 |
-| `sdk-field-coverage.mjs` | SDK 字段覆盖率检查 |
+| 脚本                         | 对比维度                        |
+| ---------------------------- | ------------------------------- |
+| `v3-snx-onchain-compare.mjs` | V3 链上 vs SDK 逐字段           |
+| `v3-sdk-onchain-match.mjs`   | V3 SDK vs 链上条目匹配          |
+| `v3-base-rate-fallback.mjs`  | V3 baseRate fallback 反推验证   |
+| `v4-sdk-calculations.ts`     | V4 SDK APY/utilization 公式验证 |
+| `sdk-field-coverage.mjs`     | SDK 字段覆盖率检查              |
 
 **缺失的维度**：没有任何工具验证后端 API 输出与 Aave 官网 UI 显示的一致性。
 
@@ -52,16 +52,17 @@ scripts/verification/compare-aave-ui/
 3. **Cap 单位转换**: 后端存 raw（base units string），Aave UI 返回 `amount.value`（human-readable）。diff-engine 中用 `rawToHumanReadable()` 按 decimals 转换后端值再对比
 4. **V4 版本判定**: 后端 API 无 `isV4` 字段，用 `hubId`/`spokeId` 或 `marketName` 含 "v4" 判定
 5. **V4 spokeChainId**: 后端无 `spokeChainId` 字段，从 `spokeId`（base64 编码）解码提取 chainId
-scripts/verification/
-├── compare-aave-ui/
-│   ├── README.md                    # 工具使用说明
-│   ├── fetch-aave-v3.mjs            # V3 GraphQL 数据拉取
-│   ├── fetch-aave-v4.mjs            # V4 GraphQL 数据拉取
-│   ├── normalize-aave-ui.mjs        # Aave UI 数据标准化（→ 统一比较格式）
-│   ├── normalize-backend-api.mjs    # 后端 API 数据标准化（→ 统一比较格式）
-│   ├── diff-engine.mjs              # 对比引擎（逐字段 diff + 容差判定）
-│   └── run-compare.mjs              # 主入口（串联全部流程）
-```
+   scripts/verification/
+   ├── compare-aave-ui/
+   │ ├── README.md # 工具使用说明
+   │ ├── fetch-aave-v3.mjs # V3 GraphQL 数据拉取
+   │ ├── fetch-aave-v4.mjs # V4 GraphQL 数据拉取
+   │ ├── normalize-aave-ui.mjs # Aave UI 数据标准化（→ 统一比较格式）
+   │ ├── normalize-backend-api.mjs # 后端 API 数据标准化（→ 统一比较格式）
+   │ ├── diff-engine.mjs # 对比引擎（逐字段 diff + 容差判定）
+   │ └── run-compare.mjs # 主入口（串联全部流程）
+
+````
 
 ### 数据源
 
@@ -110,34 +111,97 @@ query Markets($request: MarketsRequest!) {
     }
   }
 }
-```
+````
 
 **请求参数**：`{ request: { chainIds: [1, 42161, 10, 137, 8453, 43114, 1088] } }`
 
 ### V4 GraphQL 查询
 
 ```graphql
-query Reserves($request: ReservesRequest!, $currency: Currency!, $timeWindow: TimeWindow!) {
+query Reserves(
+  $request: ReservesRequest!
+  $currency: Currency!
+  $timeWindow: TimeWindow!
+) {
   value: reserves(request: $request) {
     id
     onChainId
-    chain { chainId }
-    spoke { chain { chainId } }
+    chain {
+      chainId
+    }
+    spoke {
+      chain {
+        chainId
+      }
+    }
     summary {
-      supplied { amount { onChainValue, value }, exchange, exchangeRate }
-      borrowed { amount { onChainValue, value }, exchange, exchangeRate }
-      suppliable { amount { onChainValue, value } }
-      borrowable { amount { onChainValue, value } }
-      supplyApy { onChainValue, value, normalized }
-      borrowApy { onChainValue, value, normalized }
+      supplied {
+        amount {
+          onChainValue
+          value
+        }
+        exchange
+        exchangeRate
+      }
+      borrowed {
+        amount {
+          onChainValue
+          value
+        }
+        exchange
+        exchangeRate
+      }
+      suppliable {
+        amount {
+          onChainValue
+          value
+        }
+      }
+      borrowable {
+        amount {
+          onChainValue
+          value
+        }
+      }
+      supplyApy {
+        onChainValue
+        value
+        normalized
+      }
+      borrowApy {
+        onChainValue
+        value
+        normalized
+      }
     }
     settings {
-      collateralFactor { onChainValue, value, normalized }
-      supplyCap { amount { onChainValue, value } }
-      borrowCap { amount { onChainValue, value } }
+      collateralFactor {
+        onChainValue
+        value
+        normalized
+      }
+      supplyCap {
+        amount {
+          onChainValue
+          value
+        }
+      }
+      borrowCap {
+        amount {
+          onChainValue
+          value
+        }
+      }
     }
-    status { frozen, paused, active }
-    asset { symbol, decimals }
+    status {
+      frozen
+      paused
+      active
+    }
+    asset {
+      symbol
+      decimals
+    }
   }
 }
 ```
@@ -157,27 +221,27 @@ query Reserves($request: ReservesRequest!, $currency: Currency!, $timeWindow: Ti
 
 #### 对比字段与容差
 
-| 字段 | 后端字段 | Aave UI 字段 | 容差 | 说明 |
-|------|---------|-------------|------|------|
-| Supply APY | `supplyApy` (percent) | `supplyInfo.apy.value` (decimal→需×100) | 0.05% | APY 小数位差异 |
-| Borrow APY | `borrowApy` (percent) | `borrowInfo.apy.value` (decimal→需×100) | 0.05% | APY 小数位差异 |
-| Total Supply USD | `totalSupplyUsd` | `supplyInfo.total.usd` | 1% | 汇率波动 |
-| Total Borrow USD | `totalBorrowUsd` | `borrowInfo.total.usd` | 1% | 汇率波动 |
-| Utilization | `utilizationPct` (percent) | `borrowInfo.utilizationRate.value` (decimal→×100) | 0.1% | 精度差异 |
-| Supply Cap | `supplyCap` | `supplyInfo.supplyCap.amount.value` | 0.1% | 原始值对比 |
-| Borrow Cap | `borrowCap` | `borrowInfo.borrowCap.amount.value` | 0.1% | 原始值对比 |
-| LTV | `ltv` (percent) | `supplyInfo.maxLTV.value` (decimal→×100) | 0.01% | RAY 精度 |
-| Liquidation Threshold | `liquidationThreshold` (percent) | `supplyInfo.liquidationThreshold.value` (decimal→×100) | 0.01% | RAY 精度 |
-| Is Frozen | `isFrozen` | `isFrozen` | exact | 布尔值 |
-| Is Paused | `isPaused` | `isPaused` | exact | 布尔值 |
+| 字段                  | 后端字段                         | Aave UI 字段                                           | 容差  | 说明           |
+| --------------------- | -------------------------------- | ------------------------------------------------------ | ----- | -------------- |
+| Supply APY            | `supplyApy` (percent)            | `supplyInfo.apy.value` (decimal→需×100)                | 0.05% | APY 小数位差异 |
+| Borrow APY            | `borrowApy` (percent)            | `borrowInfo.apy.value` (decimal→需×100)                | 0.05% | APY 小数位差异 |
+| Total Supply USD      | `totalSupplyUsd`                 | `supplyInfo.total.usd`                                 | 1%    | 汇率波动       |
+| Total Borrow USD      | `totalBorrowUsd`                 | `borrowInfo.total.usd`                                 | 1%    | 汇率波动       |
+| Utilization           | `utilizationPct` (percent)       | `borrowInfo.utilizationRate.value` (decimal→×100)      | 0.1%  | 精度差异       |
+| Supply Cap            | `supplyCap`                      | `supplyInfo.supplyCap.amount.value`                    | 0.1%  | 原始值对比     |
+| Borrow Cap            | `borrowCap`                      | `borrowInfo.borrowCap.amount.value`                    | 0.1%  | 原始值对比     |
+| LTV                   | `ltv` (percent)                  | `supplyInfo.maxLTV.value` (decimal→×100)               | 0.01% | RAY 精度       |
+| Liquidation Threshold | `liquidationThreshold` (percent) | `supplyInfo.liquidationThreshold.value` (decimal→×100) | 0.01% | RAY 精度       |
+| Is Frozen             | `isFrozen`                       | `isFrozen`                                             | exact | 布尔值         |
+| Is Paused             | `isPaused`                       | `isPaused`                                             | exact | 布尔值         |
 
 #### V4 特有字段
 
-| 字段 | 后端字段 | Aave UI 字段 | 容差 | 说明 |
-|------|---------|-------------|------|------|
-| Supply APY | `supplyApy` | `summary.supplyApy.value` | 0.05% | V4 normalized 值 |
-| Borrow APY | `borrowApy` | `summary.borrowApy.value` | 0.05% | V4 normalized 值 |
-| Collateral Factor | `collateralFactor` | `settings.collateralFactor.value` | 0.01% | V4 替代 LTV |
+| 字段              | 后端字段           | Aave UI 字段                      | 容差  | 说明             |
+| ----------------- | ------------------ | --------------------------------- | ----- | ---------------- |
+| Supply APY        | `supplyApy`        | `summary.supplyApy.value`         | 0.05% | V4 normalized 值 |
+| Borrow APY        | `borrowApy`        | `summary.borrowApy.value`         | 0.05% | V4 normalized 值 |
+| Collateral Factor | `collateralFactor` | `settings.collateralFactor.value` | 0.01% | V4 替代 LTV      |
 
 ### 输出格式
 
@@ -215,14 +279,14 @@ query Reserves($request: ReservesRequest!, $currency: Currency!, $timeWindow: Ti
 
 ### 容差状态
 
-| 状态 | 含义 |
-|------|------|
-| `exact_match` | 完全一致 |
-| `within_tolerance` | 差异在容差内 |
-| `out_of_tolerance` | 差异超出容差 |
-| `missing_in_backend` | Aave UI 有但后端无 |
+| 状态                 | 含义                |
+| -------------------- | ------------------- |
+| `exact_match`        | 完全一致            |
+| `within_tolerance`   | 差异在容差内        |
+| `out_of_tolerance`   | 差异超出容差        |
+| `missing_in_backend` | Aave UI 有但后端无  |
 | `missing_in_aave_ui` | 后端有但 Aave UI 无 |
-| `type_mismatch` | 值类型不同 |
+| `type_mismatch`      | 值类型不同          |
 
 ## 实现计划
 
@@ -295,31 +359,31 @@ V3 和 V4 的 GraphQL schema 完全不同（不同 endpoint、不同查询、不
 
 ## 进度跟踪
 
-| # | 任务 | 状态 | 备注 |
-|---|------|------|------|
-| 1 | V3 GraphQL 数据拉取 (`fetch-aave-v3.mjs`) | ✅ | 7 条链 184 reserves |
-| 2 | V4 GraphQL 数据拉取 (`fetch-aave-v4.mjs`) | ✅ | 从后端 API 自动检测 hub chain IDs |
-| 4 | 后端 API 数据标准化 (`fetch-backend-api.mjs`) | ✅ | V4 判定用 hubId/spokeId，提取 aaveProReserveId，spokeChainId 从 base64 解码 |
-| 5 | 对比引擎 (`diff-engine.mjs`) | ✅ | V4 用 aaveProReserveId 精确匹配，raw→human-readable 转换，绝对/相对容差 |
-| 6 | 主入口 (`run-compare.mjs`) | ✅ | --local/--no-v3/--no-v4/--output |
-| 7 | V3 全量对比测试 | ✅ | 168 matched, APY 全部 exact 或 within_tolerance |
-| 8 | V4 全量对比测试 | ✅ | 67 matched (aaveProReserveId 精确匹配), 0 out_of_tolerance |
-| 9 | 根因分析 | ✅ | 4 个根因已识别并全部修复 |
-| 10 | Incentive 对比 | 🔲 | Phase 3 |
-| 11 | CI 集成 | 🔲 | Phase 3 |
+| #   | 任务                                          | 状态 | 备注                                                                        |
+| --- | --------------------------------------------- | ---- | --------------------------------------------------------------------------- |
+| 1   | V3 GraphQL 数据拉取 (`fetch-aave-v3.mjs`)     | ✅   | 7 条链 184 reserves                                                         |
+| 2   | V4 GraphQL 数据拉取 (`fetch-aave-v4.mjs`)     | ✅   | 从后端 API 自动检测 hub chain IDs                                           |
+| 4   | 后端 API 数据标准化 (`fetch-backend-api.mjs`) | ✅   | V4 判定用 hubId/spokeId，提取 aaveProReserveId，spokeChainId 从 base64 解码 |
+| 5   | 对比引擎 (`diff-engine.mjs`)                  | ✅   | V4 用 aaveProReserveId 精确匹配，raw→human-readable 转换，绝对/相对容差     |
+| 6   | 主入口 (`run-compare.mjs`)                    | ✅   | --local/--no-v3/--no-v4/--output                                            |
+| 7   | V3 全量对比测试                               | ✅   | 168 matched, APY 全部 exact 或 within_tolerance                             |
+| 8   | V4 全量对比测试                               | ✅   | 67 matched (aaveProReserveId 精确匹配), 0 out_of_tolerance                  |
+| 9   | 根因分析                                      | ✅   | 4 个根因已识别并全部修复                                                    |
+| 10  | Incentive 对比                                | 🔲   | Phase 3                                                                     |
+| 11  | CI 集成                                       | 🔲   | Phase 3                                                                     |
 
 ## 首次实测结果 (2026-07-16, aaveProReserveId 精确匹配后)
 
 ### 总体
 
-| 指标 | V3 | V4 |
-|------|-----|-----|
-| 匹配 reserves | 168 | 67 |
-| 后端独有 | 123 | 11 |
-| Aave UI 独有 | 0 | 0 |
-| Out of tolerance | 0 | 0 |
-| Within tolerance | ~230 | 94 |
-| Exact match | ~720 | 310 |
+| 指标             | V3   | V4  |
+| ---------------- | ---- | --- |
+| 匹配 reserves    | 168  | 67  |
+| 后端独有         | 123  | 11  |
+| Aave UI 独有     | 0    | 0   |
+| Out of tolerance | 0    | 0   |
+| Within tolerance | ~230 | 94  |
+| Exact match      | ~720 | 310 |
 
 ### 根因分析：差异来源
 
@@ -386,6 +450,7 @@ Aave GraphQL API ──→ Aave UI（直接展示）
 ### 同源确认
 
 后端和 Aave UI 使用**完全相同的 GraphQL API 端点**：
+
 - V3: `https://api.v3.aave.com/graphql` — 后端 `@aave/aave-sdk` 的 `AaveClient.create()` 底层就是 urql 连到这个端点
 - V4: `https://api.aave.com/graphql` — 后端 `@aave/aave-v4-sdk` 同理
 
@@ -397,9 +462,9 @@ Aave GraphQL API ──→ Aave UI（直接展示）
 
 `aaveProReserveId` 有两个数据路径，输出格式不一致：
 
-| 路径 | 值 | 格式 |
-|---|---|---|
-| SDK fetcher (`v4-fetcher.ts`) | `r.id` | base64（`MTo6MHg...Ojo0`） |
+| 路径                            | 值                        | 格式                                      |
+| ------------------------------- | ------------------------- | ----------------------------------------- |
+| SDK fetcher (`v4-fetcher.ts`)   | `r.id`                    | base64（`MTo6MHg...Ojo0`）                |
 | RPC fallback (`aave-rpc-infra`) | `aaveProReserveId()` 函数 | 5段冒号（`1:0xspoke:0xtoken:0xhub:Main`） |
 
 前端 `buildAaveUrl()` 直接把 `aaveProReserveId` 拼入 `pro.aave.com/explore/reserve/{id}` URL。pro.aave.com 路由期望 base64 格式。当 SDK 挂掉走 RPC fallback 时，前端会生成无效链接。

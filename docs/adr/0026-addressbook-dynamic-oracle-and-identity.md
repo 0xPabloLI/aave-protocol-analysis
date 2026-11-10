@@ -29,6 +29,7 @@ AAV-528 完成后，`V4_SPOKE_TO_HUB` 已通过 SDK `spoke.connectedHubs` 动态
 ### 当前 spokeKey 的语义问题
 
 address-book 的 raw key（如 `MAIN_SPOKE`）在本项目中同时承担两个职责：
+
 - **功能性标识**：persistenceService 用 `v4|${spokeName}` 做 configMap key 查找
 - **展示标签**：日志、API 输出的人类可读名
 
@@ -38,10 +39,10 @@ address-book 的 raw key（如 `MAIN_SPOKE`）在本项目中同时承担两个�
 
 ### 1. spokeKey/spokeName 语义分离
 
-| 字段 | 新语义 | 新来源 | 示例 |
-|------|--------|--------|------|
-| `spokeKey` | 功能性唯一标识 | `chainId:spokeAddress` | `1:0x94e7a5dcbe81...` |
-| `spokeName` | 展示性标签 | SDK `spoke.name` | `"Main"` |
+| 字段        | 新语义         | 新来源                 | 示例                  |
+| ----------- | -------------- | ---------------------- | --------------------- |
+| `spokeKey`  | 功能性唯一标识 | `chainId:spokeAddress` | `1:0x94e7a5dcbe81...` |
+| `spokeName` | 展示性标签     | SDK `spoke.name`       | `"Main"`              |
 
 - `spokeKey` 用于 DB 查找、configMap key、唯一性约束
 - `spokeName` 用于日志、API 输出、前端展示
@@ -49,10 +50,10 @@ address-book 的 raw key（如 `MAIN_SPOKE`）在本项目中同时承担两个�
 
 ### 2. oracleAddress 链上读取
 
-| 协议 | 当前 | 动态化方案 | 链上方法 |
-|------|------|-----------|---------|
-| V3 | address-book `AaveV3*.ORACLE` | `PoolAddressesProvider.getOracle()` | addressBookRegistry 已有 `poolAddressesProvider` 字段 |
-| V4 | address-book `SPOKES[*_ORACLE]` | `Spoke.ORACLE()` | ISpokeV4 ABI 已有此 view 函数 |
+| 协议 | 当前                            | 动态化方案                          | 链上方法                                              |
+| ---- | ------------------------------- | ----------------------------------- | ----------------------------------------------------- |
+| V3   | address-book `AaveV3*.ORACLE`   | `PoolAddressesProvider.getOracle()` | addressBookRegistry 已有 `poolAddressesProvider` 字段 |
+| V4   | address-book `SPOKES[*_ORACLE]` | `Spoke.ORACLE()`                    | ISpokeV4 ABI 已有此 view 函数                         |
 
 缓存策略：首次 oracle 查询时读取一次，内存缓存。Oracle 地址是部署时设定的合约地址，链上不变（治理升级极罕见）。
 

@@ -1,30 +1,30 @@
-import { test } from 'node:test';
-import assert from 'node:assert/strict';
+import { test } from "node:test";
+import assert from "node:assert/strict";
 
 import {
   isPoolHealthy,
   markPoolUnhealthy,
   resetPoolHealth,
-} from '../src/services/dbPool.js';
+} from "../src/services/dbPool.js";
 
-test('isPoolHealthy: returns true when no errors recorded', () => {
+test("isPoolHealthy: returns true when no errors recorded", () => {
   resetPoolHealth();
   assert.strictEqual(isPoolHealthy(), true);
 });
 
-test('isPoolHealthy: returns false immediately after marking unhealthy', () => {
+test("isPoolHealthy: returns false immediately after marking unhealthy", () => {
   resetPoolHealth();
   markPoolUnhealthy();
   assert.strictEqual(isPoolHealthy(), false);
 });
 
-test('isPoolHealthy: returns false within backoff window (60s)', () => {
+test("isPoolHealthy: returns false within backoff window (60s)", () => {
   resetPoolHealth();
   markPoolUnhealthy();
   assert.strictEqual(isPoolHealthy(), false);
 });
 
-test('isPoolHealthy: returns true after backoff window expires', () => {
+test("isPoolHealthy: returns true after backoff window expires", () => {
   resetPoolHealth();
   markPoolUnhealthy();
 
@@ -36,7 +36,7 @@ test('isPoolHealthy: returns true after backoff window expires', () => {
   assert.strictEqual(isPoolHealthy(), true);
 });
 
-test('isPoolHealthy: multiple markPoolUnhealthy calls keep it unhealthy', () => {
+test("isPoolHealthy: multiple markPoolUnhealthy calls keep it unhealthy", () => {
   resetPoolHealth();
   markPoolUnhealthy();
   markPoolUnhealthy();
@@ -44,7 +44,7 @@ test('isPoolHealthy: multiple markPoolUnhealthy calls keep it unhealthy', () => 
   assert.strictEqual(isPoolHealthy(), false);
 });
 
-test('resetPoolHealth: clears unhealthy state', () => {
+test("resetPoolHealth: clears unhealthy state", () => {
   resetPoolHealth();
   markPoolUnhealthy();
   assert.strictEqual(isPoolHealthy(), false);

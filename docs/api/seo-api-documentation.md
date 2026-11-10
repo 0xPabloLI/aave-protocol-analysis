@@ -5,10 +5,11 @@
 Backend REST API for GSC (Google Search Console) automated collection and Semrush seed data management, serving the `/admin/seo` Dashboard.
 
 **Base URLs:**
-| Environment | Base URL |
-|---|---|
-| production | `https://api.aaveapy.com/api` |
-| staging | `https://staging-api.aaveapy.com/api` |
+
+| Environment | Base URL                              |
+| ----------- | ------------------------------------- |
+| production  | `https://api.aaveapy.com/api`         |
+| staging     | `https://staging-api.aaveapy.com/api` |
 
 ## Authentication
 
@@ -27,6 +28,7 @@ All SEO endpoints require `X-Admin-Token` header. Token comparison uses `timingS
 GSC cron diagnostic. Returns last fetch status.
 
 **Response:**
+
 ```json
 {
   "gsc": {
@@ -43,16 +45,18 @@ GSC cron diagnostic. Returns last fetch status.
 Query GSC data with optional aggregation.
 
 **Query Parameters:**
-| Param | Required | Description |
-|---|---|---|
-| `from` | Yes | Start date (YYYY-MM-DD) |
-| `to` | Yes | End date (YYYY-MM-DD) |
-| `groupBy` | No | Comma-separated: `date,country,page,query` |
-| `country` | No | Comma-separated alpha-3 codes (max 20) |
-| `page` | No | Exact page path match |
-| `query` | No | ILIKE keyword search (e.g. `aave supply`) |
+
+| Param     | Required | Description                                |
+| --------- | -------- | ------------------------------------------ |
+| `from`    | Yes      | Start date (YYYY-MM-DD)                    |
+| `to`      | Yes      | End date (YYYY-MM-DD)                      |
+| `groupBy` | No       | Comma-separated: `date,country,page,query` |
+| `country` | No       | Comma-separated alpha-3 codes (max 20)     |
+| `page`    | No       | Exact page path match                      |
+| `query`   | No       | ILIKE keyword search (e.g. `aave supply`)  |
 
 **Constraints:**
+
 - Date span ≤ `SEO_GSC_MAX_DATE_SPAN_DAYS` (default 90)
 - `groupBy` whitelist: `date`, `country`, `page`, `query`
 - Empty `groupBy` = detail rows (no aggregation)
@@ -63,16 +67,18 @@ Query GSC data with optional aggregation.
 Query Semrush seed data.
 
 **Query Parameters:**
-| Param | Required | Description |
-|---|---|---|
-| `country` | No | 2-letter country code filter |
-| `keyword` | No | ILIKE keyword search |
+
+| Param     | Required | Description                  |
+| --------- | -------- | ---------------------------- |
+| `country` | No       | 2-letter country code filter |
+| `keyword` | No       | ILIKE keyword search         |
 
 ### `POST /api/seo/semrush`
 
 Upsert a single Semrush snapshot.
 
 **Body:**
+
 ```json
 {
   "snapshot_date": "2026-05-18",
@@ -80,7 +86,7 @@ Upsert a single Semrush snapshot.
   "keyword": "aave lending",
   "volume": 1200,
   "position": 3.5,
-  "cpc_usd": 1.20,
+  "cpc_usd": 1.2,
   "difficulty": 45.0,
   "notes": null
 }
@@ -93,16 +99,28 @@ Batch upsert Semrush snapshots (≤5000, single transaction).
 **Rate limit:** 5 batch requests per minute per token. Exceed → `429`.
 
 **Body:**
+
 ```json
 {
   "snapshots": [
-    { "snapshot_date": "2026-05-18", "country": "br", "keyword": "aave", "volume": 1000 },
-    { "snapshot_date": "2026-05-18", "country": "fr", "keyword": "aave", "volume": 800 }
+    {
+      "snapshot_date": "2026-05-18",
+      "country": "br",
+      "keyword": "aave",
+      "volume": 1000
+    },
+    {
+      "snapshot_date": "2026-05-18",
+      "country": "fr",
+      "keyword": "aave",
+      "volume": 800
+    }
   ]
 }
 ```
 
 **Response:**
+
 ```json
 { "upserted": 2, "total": 2 }
 ```
@@ -113,14 +131,14 @@ Delete a Semrush snapshot by ID.
 
 ## Country Code Mapping
 
-| Market | GSC (alpha-3) | Semrush (2-letter) |
-|---|---|---|
-| Brazil | `bra` | `br` |
-| France | `fra` | `fr` |
-| Turkey | `tur` | `tr` |
-| United States | `usa` | `us` |
-| Germany | `deu` | `de` |
-| India | `ind` | `in` |
+| Market        | GSC (alpha-3) | Semrush (2-letter) |
+| ------------- | ------------- | ------------------ |
+| Brazil        | `bra`         | `br`               |
+| France        | `fra`         | `fr`               |
+| Turkey        | `tur`         | `tr`               |
+| United States | `usa`         | `us`               |
+| Germany       | `deu`         | `de`               |
+| India         | `ind`         | `in`               |
 
 GSC stores API-native alpha-3; Semrush stores 2-letter. M4 uses shared mapping table for display.
 
@@ -134,24 +152,24 @@ GSC stores API-native alpha-3; Semrush stores 2-letter. M4 uses shared mapping t
 
 ## Environment Variables
 
-| Variable | Location | Description |
-|---|---|---|
-| `SEO_ADMIN_TOKEN` | Railway + Vercel (server only) | 64 hex chars |
-| `SEO_ALLOWED_ORIGINS` | Railway | Comma-separated exact origins |
-| `SEO_GSC_MAX_DATE_SPAN_DAYS` | Railway | Default 90 |
-| `GSC_SA_EMAIL` | Railway | Service account email |
-| `GSC_SA_PRIVATE_KEY` | Railway secret | RSA key (`\n` escaped) |
-| `GSC_SITE_URL` | Railway | e.g. `https://aaveapy.com/` |
-| `GSC_BACKFILL_DAYS` | Railway | Optional; set 28 for first deploy |
+| Variable                     | Location                       | Description                       |
+| ---------------------------- | ------------------------------ | --------------------------------- |
+| `SEO_ADMIN_TOKEN`            | Railway + Vercel (server only) | 64 hex chars                      |
+| `SEO_ALLOWED_ORIGINS`        | Railway                        | Comma-separated exact origins     |
+| `SEO_GSC_MAX_DATE_SPAN_DAYS` | Railway                        | Default 90                        |
+| `GSC_SA_EMAIL`               | Railway                        | Service account email             |
+| `GSC_SA_PRIVATE_KEY`         | Railway secret                 | RSA key (`\n` escaped)            |
+| `GSC_SITE_URL`               | Railway                        | e.g. `https://aaveapy.com/`       |
+| `GSC_BACKFILL_DAYS`          | Railway                        | Optional; set 28 for first deploy |
 
 ## CORS
 
-| Environment | Origin | Source |
-|---|---|---|
-| production | `https://aaveapy.com` | `FRONTEND_URL` |
-| staging | `https://staging.aaveapy.com` | `FRONTEND_URL` |
+| Environment     | Origin                        | Source                |
+| --------------- | ----------------------------- | --------------------- |
+| production      | `https://aaveapy.com`         | `FRONTEND_URL`        |
+| staging         | `https://staging.aaveapy.com` | `FRONTEND_URL`        |
 | lovable preview | `https://aaveapy.lovable.app` | `SEO_ALLOWED_ORIGINS` |
-| local dev | `http://localhost:5173` | `ALLOWED_DEV_ORIGINS` |
+| local dev       | `http://localhost:5173`       | `ALLOWED_DEV_ORIGINS` |
 
 `allowedHeaders`: `Content-Type`, `Authorization`, `X-Admin-Token`
 `methods`: `GET`, `POST`, `DELETE`, `OPTIONS`

@@ -4,11 +4,11 @@
 
 From `DefaultReserveInterestRateStrategyV2.sol`, `UiPoolDataProviderV3.sol`, and `terminology-and-formulas.md`:
 
-| Field | Source | Meaning |
-|---|---|---|
-| `virtualUnderlyingBalance` | `pool.getVirtualUnderlyingBalance(asset)` | Protocol bookkeeping balance (`+` supply/repay, `-` withdraw/borrow) |
-| `availableLiquidity` | `IERC20(underlying).balanceOf(aTokenAddress)` | Real ERC20 token balance held by the aToken contract |
-| `deficit` | `pool.getReserveDeficit(asset)` | Bad debt (liquidation shortfall), passed as `unbacked` in rate params |
+| Field                      | Source                                        | Meaning                                                               |
+| -------------------------- | --------------------------------------------- | --------------------------------------------------------------------- |
+| `virtualUnderlyingBalance` | `pool.getVirtualUnderlyingBalance(asset)`     | Protocol bookkeeping balance (`+` supply/repay, `-` withdraw/borrow)  |
+| `availableLiquidity`       | `IERC20(underlying).balanceOf(aTokenAddress)` | Real ERC20 token balance held by the aToken contract                  |
+| `deficit`                  | `pool.getReserveDeficit(asset)`               | Bad debt (liquidation shortfall), passed as `unbacked` in rate params |
 
 ### Strategy Formula Context
 
@@ -45,14 +45,15 @@ totalVariableDebt = totalScaledVariableDebt × variableBorrowIndex ÷ 10²⁷
 
 **Verification example (ENS on Ethereum Mainnet):**
 
-| Source | Field | Value (raw, 18 decimals) |
-|--------|-------|--------------------------|
-| Aave SDK | `reserve.size.amount.raw` | `22357926998021311743149` |
-| Aave SDK | `availableLiquidity` | `20104153613733729749180` |
-| Aave SDK | `borrowInfo.total.amount.raw` | `2253773384287581993969` |
-| On-chain RPC | `deficit` | `5768310051222005613888` |
+| Source       | Field                         | Value (raw, 18 decimals)  |
+| ------------ | ----------------------------- | ------------------------- |
+| Aave SDK     | `reserve.size.amount.raw`     | `22357926998021311743149` |
+| Aave SDK     | `availableLiquidity`          | `20104153613733729749180` |
+| Aave SDK     | `borrowInfo.total.amount.raw` | `2253773384287581993969`  |
+| On-chain RPC | `deficit`                     | `5768310051222005613888`  |
 
 Calculation:
+
 ```
 reserve.size.raw  = availableLiquidity + totalVariableDebt
                   = 20104153613733729749180 + 2253773384287581993969
@@ -65,16 +66,17 @@ reserve.size.raw  = availableLiquidity + totalVariableDebt
 
 ### On-chain vs API Data Availability
 
-| Field | On-chain RPC | Aave API | Notes |
-|-------|:------------:|:--------:|-------|
-| `availableLiquidity` | ✅ | ✅ | |
-| `reserveFactor` | ✅ | ✅ | |
-| `variableRateSlope1/2` | ✅ | ✅ | |
-| `optimalUsageRate` | ✅ | ✅ | |
-| **`baseVariableBorrowRate`** | ✅ | ❌ | **仅 on-chain 可获取**，用于模拟利率计算 |
-| **`deficit`** | ✅ | ❌ | **仅 on-chain 可获取**，用于 Supply APY 计算 |
+| Field                        | On-chain RPC | Aave API | Notes                                        |
+| ---------------------------- | :----------: | :------: | -------------------------------------------- |
+| `availableLiquidity`         |      ✅      |    ✅    |                                              |
+| `reserveFactor`              |      ✅      |    ✅    |                                              |
+| `variableRateSlope1/2`       |      ✅      |    ✅    |                                              |
+| `optimalUsageRate`           |      ✅      |    ✅    |                                              |
+| **`baseVariableBorrowRate`** |      ✅      |    ❌    | **仅 on-chain 可获取**，用于模拟利率计算     |
+| **`deficit`**                |      ✅      |    ❌    | **仅 on-chain 可获取**，用于 Supply APY 计算 |
 
 **结论**：
+
 - `deficit` 必须通过 on-chain RPC 获取
 - `baseVariableBorrowRate` 优先从 on-chain 获取；**缺失时**后端用 fallback 反推：链上按秒复利，APR = SECONDS_PER_YEAR×((1+APY)^(1/SECONDS_PER_YEAR)−1)，再用该 reserve 的 `utilizationPct`、slopes、optimal 反算 base。计算中**不使用** reserve size。Fallback 返回 `null` 表示无法计算（输入缺失或参数不匹配），`0` 表示计算结果确实为零。调用者仅在返回非 `null` 时设置 `baseBorrowRate`。
 - 其他字段均可从 Aave API 获取
@@ -111,15 +113,16 @@ Frontend (aaveapy)
 ## 1.1 Backend: Data Sources
 
 **Implementation:**
+
 - `packages/aave-fetcher/src/index.ts` - Markets data fetcher (Aave SDK)
 - `backend/src/services/onchainDataService.ts` - On-chain data fetcher (RPC)
 
 ### Data Source Architecture
 
-| Source | Fields | Fallback |
-|--------|--------|----------|
-| Aave SDK | Most market data (`supplyApy`, `borrowApy`, `availableLiquidity`, `reserveFactor`, etc.) | Required - API fails if unavailable |
-| On-chain RPC | `deficit`, `baseVariableBorrowRate` | Optional - fields absent if RPC fails, 5-min cache on failure |
+| Source       | Fields                                                                                   | Fallback                                                      |
+| ------------ | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Aave SDK     | Most market data (`supplyApy`, `borrowApy`, `availableLiquidity`, `reserveFactor`, etc.) | Required - API fails if unavailable                           |
+| On-chain RPC | `deficit`, `baseVariableBorrowRate`                                                      | Optional - fields absent if RPC fails, 5-min cache on failure |
 
 ### On-chain Data via UiPoolDataProvider
 
@@ -151,16 +154,16 @@ pool.getReserveDeficit(asset) → uint256 deficit  // bad debt (raw token units)
 
 Fields available in each reserve object:
 
-| Field | Type | Source | Description |
-|-------|------|--------|-------------|
-| `decimals` | number | Aave SDK | Token decimals |
-| `availableLiquidity` | string | Aave SDK | Raw token units |
-| `reserveFactor` | string | Aave SDK | Basis points (4 decimals) |
-| `variableRateSlope1` | string | Aave SDK | Ray (27 decimals) |
-| `variableRateSlope2` | string | Aave SDK | Ray (27 decimals) |
-| `optimalUsageRate` | string | Aave SDK | Ray (27 decimals) |
-| `deficit` | string | On-chain RPC | Bad debt in raw token units (**optional**) |
-| `baseVariableBorrowRate` | string | On-chain RPC | Ray (27 decimals) (**optional**) |
+| Field                    | Type   | Source       | Description                                |
+| ------------------------ | ------ | ------------ | ------------------------------------------ |
+| `decimals`               | number | Aave SDK     | Token decimals                             |
+| `availableLiquidity`     | string | Aave SDK     | Raw token units                            |
+| `reserveFactor`          | string | Aave SDK     | Basis points (4 decimals)                  |
+| `variableRateSlope1`     | string | Aave SDK     | Ray (27 decimals)                          |
+| `variableRateSlope2`     | string | Aave SDK     | Ray (27 decimals)                          |
+| `optimalUsageRate`       | string | Aave SDK     | Ray (27 decimals)                          |
+| `deficit`                | string | On-chain RPC | Bad debt in raw token units (**optional**) |
+| `baseVariableBorrowRate` | string | On-chain RPC | Ray (27 decimals) (**optional**)           |
 
 **Important:** On-chain fields (`deficit`, `baseVariableBorrowRate`) may be absent if RPC fails. Frontend should implement fallback (e.g., assume `deficit = "0"`, `baseVariableBorrowRate = "0"`).
 
@@ -188,8 +191,8 @@ Fields available in each reserve object:
 
 ## 1.3 Env Config
 
-| 变量 | 说明 |
-|------|------|
+| 变量     | 说明                                                                        |
+| -------- | --------------------------------------------------------------------------- |
 | RPC URLs | 来自 `@internal/aave-shared-config`（详见 `docs/backend/rpc-endpoints.md`） |
 
 ---
@@ -206,6 +209,7 @@ const totalBorrowedUsd = reserveSizeUsd * (utilizationPct / 100);
 ```
 
 Where:
+
 - `reserveSizeUsd` = total supply in USD (from `reserves[].reserveSizeUsd`)
 - `utilizationPct` = utilization percentage (from `reserves[].utilizationPct`)
 
@@ -238,6 +242,7 @@ Working directory (example): a clone or git worktree of this repo, e.g. `.worktr
 **Recommendation:** keep a single source of truth for compounding math.
 
 Preferred order:
+
 1. Reuse `@aave/math-utils` compounded-rate logic (`calculateCompoundedRate` / `rayPow`).
 2. If temporary local implementation is needed, enforce parity tests against Aave reference vectors.
 
@@ -252,6 +257,7 @@ const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
 ```
 
 Implements:
+
 - Aave V3 rate simulation after supply amount.
 - APR conversion.
 - APY conversion aligned with Aave ray compounding behavior.
@@ -280,8 +286,8 @@ On-chain fields may be absent if RPC fails. Frontend must implement fallbacks:
 
 ```ts
 // Fallback for missing on-chain fields
-const deficit = reserve.deficit ?? '0';
-const baseRate = reserve.baseVariableBorrowRate ?? '0';
+const deficit = reserve.deficit ?? "0";
+const baseRate = reserve.baseVariableBorrowRate ?? "0";
 ```
 
 ---
@@ -302,10 +308,10 @@ const baseRate = reserve.baseVariableBorrowRate ?? '0';
 
 ### Fallback strategy
 
-| Field | Fallback Value | Impact |
-|-------|---------------|--------|
-| `deficit` | `"0"` | Supply APY slightly higher (ignores bad debt) |
-| `baseVariableBorrowRate` | `"0"` | Works for most reserves (base rate is typically 0) |
+| Field                    | Fallback Value | Impact                                             |
+| ------------------------ | -------------- | -------------------------------------------------- |
+| `deficit`                | `"0"`          | Supply APY slightly higher (ignores bad debt)      |
+| `baseVariableBorrowRate` | `"0"`          | Works for most reserves (base rate is typically 0) |
 
 ### Failure scenarios
 
@@ -323,8 +329,8 @@ Recommended approach:
 2. Check if on-chain fields exist before using them
 3. Apply fallback values when fields are missing
 4. Show UI indicator when simulation uses fallback data
-4. Recompute output on each input change locally (no extra backend call while typing amount).
-5. If data unavailable, show fallback message and keep default APY display intact.
+5. Recompute output on each input change locally (no extra backend call while typing amount).
+6. If data unavailable, show fallback message and keep default APY display intact.
 
 This keeps first paint fast and bounds failure blast radius.
 
@@ -348,16 +354,16 @@ This keeps first paint fast and bounds failure blast radius.
 
 ### Backend
 
-| 文件 | 说明 |
-|------|------|
-| `packages/aave-fetcher/src/index.ts` | Markets data fetcher (Aave SDK) |
+| 文件                                         | 说明                                                    |
+| -------------------------------------------- | ------------------------------------------------------- |
+| `packages/aave-fetcher/src/index.ts`         | Markets data fetcher (Aave SDK)                         |
 | `backend/src/services/onchainDataService.ts` | On-chain data fetcher (deficit, baseVariableBorrowRate) |
-| `backend/src/services/marketsService.ts` | Unified markets + on-chain data service |
+| `backend/src/services/marketsService.ts`     | Unified markets + on-chain data service                 |
 
 ### Frontend (aaveapy)
 
-| 文件 | 说明 |
-|------|------|
-| `src/lib/interestRateCalculator.ts` | Aave V3 利率模拟计算 |
-| `src/hooks/useMarketsData.ts` | Markets 数据 hook (含 on-chain 字段) |
-| `src/types/aave.ts` | Reserve 类型定义 |
+| 文件                                | 说明                                 |
+| ----------------------------------- | ------------------------------------ |
+| `src/lib/interestRateCalculator.ts` | Aave V3 利率模拟计算                 |
+| `src/hooks/useMarketsData.ts`       | Markets 数据 hook (含 on-chain 字段) |
+| `src/types/aave.ts`                 | Reserve 类型定义                     |

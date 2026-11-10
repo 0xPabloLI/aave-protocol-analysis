@@ -6,7 +6,10 @@ export function spokeKey(chainId: number, spokeAddress: string): string {
   return `${chainId}:${normalizeAddress(spokeAddress)}`;
 }
 
-export function v4SpokeCacheKey(spokeAddress: string, hubAddress: string): string {
+export function v4SpokeCacheKey(
+  spokeAddress: string,
+  hubAddress: string
+): string {
   return `${normalizeAddress(spokeAddress)}:${normalizeAddress(hubAddress)}`;
 }
 
@@ -14,11 +17,19 @@ export function v3PriceKey(chainId: number, tokenAddress: string): string {
   return `${chainId}:${normalizeAddress(tokenAddress)}`;
 }
 
-export function v4PriceKey(chainId: number, spokeAddress: string, tokenAddress: string): string {
+export function v4PriceKey(
+  chainId: number,
+  spokeAddress: string,
+  tokenAddress: string
+): string {
   return `${chainId}:${normalizeAddress(spokeAddress)}:${normalizeAddress(tokenAddress)}`;
 }
 
-export function v3OnchainKey(chainId: number, poolAddress: string, tokenAddress: string): string {
+export function v3OnchainKey(
+  chainId: number,
+  poolAddress: string,
+  tokenAddress: string
+): string {
   return `${chainId}:${normalizeAddress(poolAddress)}:${normalizeAddress(tokenAddress)}`;
 }
 
@@ -26,7 +37,7 @@ export function v4OnchainKey(
   chainId: number,
   spokeAddress: string,
   tokenAddress: string,
-  hubAddress: string,
+  hubAddress: string
 ): string {
   return `${chainId}:${normalizeAddress(spokeAddress)}:${normalizeAddress(tokenAddress)}:${normalizeAddress(hubAddress)}`;
 }
@@ -42,7 +53,7 @@ export function chainSymbolKey(chainId: number, symbol: string): string {
 export function topologySortKey(
   chainId: number,
   spokeAddress: string,
-  hubAddress: string,
+  hubAddress: string
 ): string {
   return `${chainId}:${normalizeAddress(spokeAddress)}:${normalizeAddress(hubAddress)}`;
 }
@@ -51,7 +62,7 @@ export function v4ReserveId(
   chainId: number,
   spokeAddress: string,
   tokenAddress: string,
-  hubAddress: string,
+  hubAddress: string
 ): string {
   return `${chainId}:${normalizeAddress(spokeAddress)}:${normalizeAddress(tokenAddress)}:${normalizeAddress(hubAddress)}`;
 }
@@ -60,7 +71,7 @@ export function v4ReserveId(
 export function v4HubScopeKey(
   chainId: number,
   tokenAddress: string,
-  hubAddress: string,
+  hubAddress: string
 ): string {
   return `${chainId}:${normalizeAddress(tokenAddress)}:${normalizeAddress(hubAddress)}`;
 }
@@ -71,9 +82,9 @@ export function v4HubScopeKey(
 export function aaveProReserveIdBase64(
   chainId: number,
   hubAddress: string,
-  onChainId: number,
+  onChainId: number
 ): string {
-  return Buffer.from(`${chainId}::${normalizeAddress(hubAddress)}::${onChainId}`).toString('base64');
+  return Buffer.from(
+    `${chainId}::${normalizeAddress(hubAddress)}::${onChainId}`
+  ).toString("base64");
 }
-
-

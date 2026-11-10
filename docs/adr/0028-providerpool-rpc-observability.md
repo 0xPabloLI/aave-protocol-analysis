@@ -23,7 +23,11 @@ AAV-601 提出三态模型 (healthy / degraded / dead)，未采纳。理由：
 扩展 `warnFn` → `logFn`，支持多级别：
 
 ```ts
-type LogFn = (level: 'info' | 'warn', msg: string, meta: Record<string, unknown>) => void;
+type LogFn = (
+  level: "info" | "warn",
+  msg: string,
+  meta: Record<string, unknown>
+) => void;
 ```
 
 - healthy → suppressed：`logFn('warn', 'rpc-endpoint-suppressed', { chainId, rpcUrl, consecutiveFailures, lastError, suppressedUntil })`
@@ -39,7 +43,7 @@ type LogFn = (level: 'info' | 'warn', msg: string, meta: Record<string, unknown>
 type EndpointStatus = {
   chainId: number;
   rpcUrl: string;
-  status: 'healthy' | 'suppressed';
+  status: "healthy" | "suppressed";
   consecutiveFailures: number;
   lastError: string;
   lastFailureAt: string;

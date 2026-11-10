@@ -13,11 +13,13 @@
 ## 目标与价值
 
 **目标：**
+
 - 修复 Merkl maxDeposit campaign 的 positionCap 提取，使 Celo USDT/WETH campaign 正确返回 positionCap
 - 修复 Brevis breakdown 缺少 isCombineCap 字段
 - positionCap 提取不依赖 `isAmountVariant` gate
 
 **价值：**
+
 - 前端 IncentiveTooltip 能正确展示 Merkl position cap 文案（"Incentive on first $X of net supply − borrow only"）
 - Brevis position cap 文案能正确展示（"Incentive on first $X of combined supply + borrow only"）
 - 消除 positionCap 提取对 APR 域 gate 的错误依赖
@@ -71,12 +73,13 @@
 3. 对每个 campaign：
    a. 用 `opp.explorerAddress` 查 `reserveUnderlyingLookup`
    b. 如果查到 reserve 数据（price + decimals 有效）且 `computeMethod === 'maxDeposit'`：
-      - 调用 `extractPositionCapFromCampaign(campaign, price, decimals)`
-      - 存入 `campaignDetailsCache`
-   c. 如果查不到 reserve 数据：跳过 positionCap 提取
+   - 调用 `extractPositionCapFromCampaign(campaign, price, decimals)`
+   - 存入 `campaignDetailsCache`
+     c. 如果查不到 reserve 数据：跳过 positionCap 提取
 4. APR 计算（`resolveCampaignApr`）仍走 `isAmountVariant` / `amountVariantPriceMap` 路径，不受影响
 
 **Reserve 匹配逻辑：**
+
 - V3 opp：`explorerAddress` = aToken address → 匹配 `reserve.aTokenAddress` → 拿 underlying price/decimals
 - V4 opp：`explorerAddress` = underlying address → 匹配 `reserve.tokenAddress` → 拿 underlying price/decimals
 - 非 Aave opp：`explorerAddress` 在 lookup 中查不到 → 跳过
@@ -84,11 +87,13 @@
 ## 风险与依赖
 
 **风险：**
+
 - V4 reserve 的 `aTokenAddress` 可能为 null，但 lookup 同时用 `tokenAddress` 做 key，覆盖了此场景
 - `reserve.decimals` 是 optional 字段（`decimals?: number`），lookup 构建时跳过 decimals 无效的 reserve
 - `fetchMerklCampaignDetails`（单 campaign fetch 路径）仍无法提取 positionCap，但该路径极少使用
 
 **依赖：**
+
 - `baseDataset`（Aave reserve 数据）必须在 Merkl 数据处理之前可用——当前架构已满足
 - Railway staging 自动部署最新 commit 后才能验证端到端效果
 

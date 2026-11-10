@@ -1,15 +1,14 @@
-import { readNumberEnv } from '@internal/aave-shared-config';
+import { readNumberEnv } from "@internal/aave-shared-config";
 
 export interface LlmAnalysisResult {
-  sourceSide: 'supply' | 'borrow';
+  sourceSide: "supply" | "borrow";
   offsetTokenSymbols: string[];
 }
 
 export type LlmOutcome =
-  | { tag: 'result'; value: LlmAnalysisResult | null }
-  | { tag: 'unavailable' };
+  { tag: "result"; value: LlmAnalysisResult | null } | { tag: "unavailable" };
 
-import { logger } from './logger.js';
+import { logger } from "./logger.js";
 
 /**
  * Default best-first chat-model allow-list (SiliconFlow free tier).
@@ -38,9 +37,9 @@ import { logger } from './logger.js';
  * served models are called, in priority order.
  */
 export const LLM_FREE_MODELS = [
-  'THUDM/GLM-4-9B-0414',
-  'THUDM/GLM-Z1-9B-0414',
-  'Qwen/Qwen3-8B',
+  "THUDM/GLM-4-9B-0414",
+  "THUDM/GLM-Z1-9B-0414",
+  "Qwen/Qwen3-8B",
 ] as const;
 
 /**
@@ -52,7 +51,10 @@ export const LLM_FREE_MODELS = [
 export function resolveModelAllowList(): string[] {
   const raw = process.env.LLM_MODELS;
   if (raw) {
-    const parsed = raw.split(',').map(s => s.trim()).filter(Boolean);
+    const parsed = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
     if (parsed.length > 0) return parsed;
   }
   return [...LLM_FREE_MODELS];
@@ -67,27 +69,29 @@ export function resetPrimaryModelsCache(): void {
 export async function fetchAvailableModels(
   baseUrl: string,
   apiKey: string,
-  fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  fetchFn: typeof globalThis.fetch = globalThis.fetch
 ): Promise<string[]> {
   if (primaryModelsCache !== null) return primaryModelsCache;
 
   try {
     // SiliconFlow supports ?sub_type=chat to return only chat-capable models.
-    const base = baseUrl.endsWith('/') ? `${baseUrl}models` : `${baseUrl}/models`;
+    const base = baseUrl.endsWith("/")
+      ? `${baseUrl}models`
+      : `${baseUrl}/models`;
     const url = `${base}?sub_type=chat`;
     const res = await fetchFn(url, {
       headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`,
       },
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json() as {
+    const json = (await res.json()) as {
       data?: Array<{ id: string }>;
     };
-    const models = (json.data ?? []).map(m => m.id);
-    if (models.length === 0) throw new Error('no models found');
+    const models = (json.data ?? []).map((m) => m.id);
+    if (models.length === 0) throw new Error("no models found");
     primaryModelsCache = models;
     return models;
   } catch {
@@ -98,37 +102,45 @@ export async function fetchAvailableModels(
 
 export async function buildModelChain(
   primaryConfig?: LlmClientConfig,
-  fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  fetchFn: typeof globalThis.fetch = globalThis.fetch
 ): Promise<Array<{ model: string; config: LlmClientConfig }>> {
   if (!primaryConfig) return [];
 
   // Real-time + allow-listed: take the live model list and keep only the
   // allow-list entries the provider is actually serving, in best-first order.
   const allowList = resolveModelAllowList();
-  const live = await fetchAvailableModels(primaryConfig.baseUrl, primaryConfig.apiKey, fetchFn);
+  const live = await fetchAvailableModels(
+    primaryConfig.baseUrl,
+    primaryConfig.apiKey,
+    fetchFn
+  );
   const liveSet = new Set(live);
-  const available = allowList.filter(model => liveSet.has(model));
+  const available = allowList.filter((model) => liveSet.has(model));
 
   // If the live fetch failed (returns the allow-list as fallback) or nothing
   // intersects, fall back to the full allow-list as a best effort.
   const chosen = available.length > 0 ? available : allowList;
-  return chosen.map(model => ({ model, config: primaryConfig }));
+  return chosen.map((model) => ({ model, config: primaryConfig }));
 }
 
 export function parseSseStream(raw: string): string {
-  let content = '';
-  for (const line of raw.split('\n')) {
-    if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+  let content = "";
+  for (const line of raw.split("\n")) {
+    if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
     try {
       const parsed = JSON.parse(line.slice(6));
       const delta = parsed.choices?.[0]?.delta?.content;
-      if (typeof delta === 'string') content += delta;
-    } catch { /* skip malformed lines */ }
+      if (typeof delta === "string") content += delta;
+    } catch {
+      /* skip malformed lines */
+    }
   }
   return content;
 }
 
-export function parseMarkdownWrappedJson(raw: string): LlmAnalysisResult | null {
+export function parseMarkdownWrappedJson(
+  raw: string
+): LlmAnalysisResult | null {
   const match = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (!match) return null;
   try {
@@ -139,17 +151,23 @@ export function parseMarkdownWrappedJson(raw: string): LlmAnalysisResult | null 
 }
 
 function tryParseJson(raw: string): unknown {
-  try { return JSON.parse(raw); } catch { return undefined; }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
 }
 
 function validateResult(parsed: unknown): LlmAnalysisResult | null {
   if (parsed === null) return null;
   if (
-    typeof parsed === 'object' && parsed !== null &&
-    ('sourceSide' in parsed) && ('offsetTokenSymbols' in parsed) &&
-    (parsed.sourceSide === 'supply' || parsed.sourceSide === 'borrow') &&
+    typeof parsed === "object" &&
+    parsed !== null &&
+    "sourceSide" in parsed &&
+    "offsetTokenSymbols" in parsed &&
+    (parsed.sourceSide === "supply" || parsed.sourceSide === "borrow") &&
     Array.isArray(parsed.offsetTokenSymbols) &&
-    parsed.offsetTokenSymbols.every((s: unknown) => typeof s === 'string')
+    parsed.offsetTokenSymbols.every((s: unknown) => typeof s === "string")
   ) {
     return parsed as LlmAnalysisResult;
   }
@@ -170,7 +188,7 @@ export function parseLlmResponse(raw: string): LlmAnalysisResult | null {
   const md = parseMarkdownWrappedJson(trimmed);
   if (md !== null) return md;
 
-  if (trimmed.includes('data: ')) {
+  if (trimmed.includes("data: ")) {
     const sseContent = parseSseStream(trimmed);
     if (sseContent) {
       const sseParsed = tryParseJson(sseContent);
@@ -198,7 +216,7 @@ OPPORTUNITY:
 - type: ${opp.type}
 - action: ${opp.action}
 - description: ${opp.description}
-- tokens: ${opp.tokenSymbols.join(', ')}
+- tokens: ${opp.tokenSymbols.join(", ")}
 
 QUESTION: Does this opportunity reward only the NET position (i.e., one side minus the opposite side of offset tokens)?
 
@@ -228,20 +246,28 @@ export interface LlmClientConfig {
   perModelRetries?: number;
 }
 
-const DEFAULT_TOTAL_TIMEOUT_MS = readNumberEnv('LLM_TOTAL_TIMEOUT_MS', { defaultValue: 15_000, min: 1_000 });
-const DEFAULT_PER_MODEL_RETRIES = readNumberEnv('LLM_PER_MODEL_RETRIES', { defaultValue: 1, min: 0 });
+const DEFAULT_TOTAL_TIMEOUT_MS = readNumberEnv("LLM_TOTAL_TIMEOUT_MS", {
+  defaultValue: 15_000,
+  min: 1_000,
+});
+const DEFAULT_PER_MODEL_RETRIES = readNumberEnv("LLM_PER_MODEL_RETRIES", {
+  defaultValue: 1,
+  min: 0,
+});
 
 export async function callLlmWithFallback(
   prompt: string,
   primaryConfig?: LlmClientConfig,
-  fetchFn: typeof globalThis.fetch = globalThis.fetch,
+  fetchFn: typeof globalThis.fetch = globalThis.fetch
 ): Promise<LlmOutcome> {
   const chain = await buildModelChain(primaryConfig, fetchFn);
   if (chain.length === 0) {
-    logger.debug('[LLM] no models available, returning unavailable');
-    return { tag: 'unavailable' };
+    logger.debug("[LLM] no models available, returning unavailable");
+    return { tag: "unavailable" };
   }
-  logger.debug(`[LLM] model chain: ${chain.map(m => m.model).join(' → ')} (${chain.length} models)`);
+  logger.debug(
+    `[LLM] model chain: ${chain.map((m) => m.model).join(" → ")} (${chain.length} models)`
+  );
 
   const timeout = primaryConfig?.totalTimeoutMs ?? DEFAULT_TOTAL_TIMEOUT_MS;
   const retries = primaryConfig?.perModelRetries ?? DEFAULT_PER_MODEL_RETRIES;
@@ -259,14 +285,14 @@ export async function callLlmWithFallback(
         const remaining = Math.max(deadline - Date.now(), 1);
         const res = await Promise.race([
           fetchFn(`${config.baseUrl}/chat/completions`, {
-            method: 'POST',
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${config.apiKey}`,
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${config.apiKey}`,
             },
             body: JSON.stringify({
               model,
-              messages: [{ role: 'user', content: prompt }],
+              messages: [{ role: "user", content: prompt }],
               temperature: 0,
               // 2048 gives the reasoning fallbacks (GLM-Z1-9B, Qwen3-8B) room to
               // finish <think> before the JSON answer. The primary GLM-4-9B is an
@@ -277,43 +303,58 @@ export async function callLlmWithFallback(
             }),
           }),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('timeout')), remaining)
+            setTimeout(() => reject(new Error("timeout")), remaining)
           ),
         ]);
         if (!res.ok) {
-          logger.debug(`[LLM] model ${model} returned ${res.status}, attempt ${attempt + 1}/${retries}`);
+          logger.debug(
+            `[LLM] model ${model} returned ${res.status}, attempt ${attempt + 1}/${retries}`
+          );
           continue;
         }
-        const contentType = res.headers.get('content-type') ?? '';
+        const contentType = res.headers.get("content-type") ?? "";
         let raw: string;
-        if (contentType.includes('text/event-stream')) {
+        if (contentType.includes("text/event-stream")) {
           raw = await res.text();
         } else {
-          const json = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
-          raw = json.choices?.[0]?.message?.content ?? '';
+          const json = (await res.json()) as {
+            choices?: Array<{ message?: { content?: string } }>;
+          };
+          raw = json.choices?.[0]?.message?.content ?? "";
         }
         const parsed = parseLlmResponse(raw);
         if (parsed !== null) {
           llmAnswered = true;
-          logger.info(`[LLM] model ${model} returned result: sourceSide=${parsed.sourceSide}, offsets=${parsed.offsetTokenSymbols.join(',')}`);
-          return { tag: 'result', value: parsed };
+          logger.info(
+            `[LLM] model ${model} returned result: sourceSide=${parsed.sourceSide}, offsets=${parsed.offsetTokenSymbols.join(",")}`
+          );
+          return { tag: "result", value: parsed };
         }
-        const directNull = raw.trim() === 'null' || tryParseJson(raw.trim()) === null;
+        const directNull =
+          raw.trim() === "null" || tryParseJson(raw.trim()) === null;
         if (directNull) {
           llmAnswered = true;
-          logger.info(`[LLM] model ${model} returned null (not a net position)`);
-          return { tag: 'result', value: null };
+          logger.info(
+            `[LLM] model ${model} returned null (not a net position)`
+          );
+          return { tag: "result", value: null };
         }
-        logger.debug(`[LLM] model ${model} returned unparseable content, treating as unanswered`);
+        logger.debug(
+          `[LLM] model ${model} returned unparseable content, treating as unanswered`
+        );
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        logger.debug(`[LLM] model ${model} attempt ${attempt + 1}/${retries} failed: ${msg}`);
+        logger.debug(
+          `[LLM] model ${model} attempt ${attempt + 1}/${retries} failed: ${msg}`
+        );
       }
     }
   }
   const outcome = llmAnswered
-    ? { tag: 'result' as const, value: null }
-    : { tag: 'unavailable' as const };
-  logger.info(`[LLM] chain exhausted, outcome: ${outcome.tag}${outcome.tag === 'result' ? ' (null)' : ''}`);
+    ? { tag: "result" as const, value: null }
+    : { tag: "unavailable" as const };
+  logger.info(
+    `[LLM] chain exhausted, outcome: ${outcome.tag}${outcome.tag === "result" ? " (null)" : ""}`
+  );
   return outcome;
 }

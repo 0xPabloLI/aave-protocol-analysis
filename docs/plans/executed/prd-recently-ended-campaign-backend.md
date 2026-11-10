@@ -3,6 +3,7 @@
 > **Status: Executed** (2026-07-06) — 实现路径与 PRD 不同。AAV-967/AAV-951 均 Done。
 >
 > **实际实现 vs PRD 设计差异**：
+>
 > - Merkl: 未请求 PAST opportunity，改用 `lastEndedCampaign` 内嵌方式（AAV-1044/AAV-1046），90 天 lookback 窗口（`ENDED_CAMPAIGN_LOOKBACK_DAYS = 90`）
 > - Brevis: `campaignStatus === 4 || campaignStatus === 5` + 7 天窗口 + per-type 去重 ✅（AAV-1028）
 > - Merit: 7 天窗口 + per-type 去重 ✅（AAV-1029）
@@ -17,19 +18,21 @@
 
 ### 关联 Issue
 
-| Issue | 标题 | 状态 | 说明 |
-|-------|------|------|------|
-| AAV-967 | 后端: recently ended campaign 数据源缺失 | Todo (High) | 本次要修的根因 |
-| AAV-951 | recently ended campaign好像完全没起作用啊 | Todo | 用户 bug 报告，修完 967 自动关闭 |
+| Issue   | 标题                                      | 状态        | 说明                             |
+| ------- | ----------------------------------------- | ----------- | -------------------------------- |
+| AAV-967 | 后端: recently ended campaign 数据源缺失  | Todo (High) | 本次要修的根因                   |
+| AAV-951 | recently ended campaign好像完全没起作用啊 | Todo        | 用户 bug 报告，修完 967 自动关闭 |
 
 ## 目标与价值
 
 **目标：**
+
 - 后端 API 在 `/markets` 响应中包含过去 7 天内结束的 campaign 数据
 - 三个数据源（Merkl、Brevis、Merit）的过期 campaign 保留策略与前端 `DEFAULT_LOOKBACK_DAYS = 7` 对齐
 - 业务判断（"哪些是 recently ended"）由后端完成，前端只负责渲染
 
 **价值：**
+
 - 修复前端已开发完成但完全不生效的功能
 - 用户可在 IncentiveTooltip 底部看到 "Recently Ended (N)" 折叠区块，了解近期刚结束的激励
 
@@ -110,11 +113,13 @@ getAaveCampaignsData()
 ## 风险与依赖
 
 **风险：**
+
 - Merkl PAST 请求增加 API 调用量，但数据量远小于 LIVE（PAST 需分页，但有 7 天窗口过滤，实际合并量小）
 - Brevis status=5 的 campaign 数据格式可能与 status=4 有差异，需验证 gRPC 响应结构
 - 7 天窗口是固定值，未来可能需要可配置化
 
 **依赖：**
+
 - Merkl API 支持 `status=PAST` 参数（已验证，返回 PAST opportunity）
 - Brevis gRPC `getAllProtocolDetail` 返回的 campaign 包含 status=5（已验证，172 条 status=5 campaign）
 - 前端 `collectRecentlyEndedCampaigns` 不需改动，只消费 `campaignEndedAt` 字段

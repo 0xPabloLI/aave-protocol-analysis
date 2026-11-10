@@ -81,15 +81,16 @@ npm run ci:remote
 
 ### Principle: One Workflow, One Responsibility
 
-| Workflow | Permissions | Trigger | Responsibility |
-|----------|-------------|---------|----------------|
-| `ci.yml` | `contents: read` | push, PR | Build, test, lint, audit |
-| `ci-auto-remediation.yml` | `contents: write`, `pull-requests: write` | workflow_run (on CI failure) | Auto-fix and create PR |
-| `auto-approve-remediation-pr.yml` | `pull-requests: write` | pull_request_target | Approve and auto-merge bot PRs |
+| Workflow                          | Permissions                               | Trigger                      | Responsibility                 |
+| --------------------------------- | ----------------------------------------- | ---------------------------- | ------------------------------ |
+| `ci.yml`                          | `contents: read`                          | push, PR                     | Build, test, lint, audit       |
+| `ci-auto-remediation.yml`         | `contents: write`, `pull-requests: write` | workflow_run (on CI failure) | Auto-fix and create PR         |
+| `auto-approve-remediation-pr.yml` | `pull-requests: write`                    | pull_request_target          | Approve and auto-merge bot PRs |
 
 ### Anti-Pattern: Inline Remediation
 
 ❌ **Don't** add remediation logic inside `ci.yml`:
+
 - Creates duplicate PRs when separate remediation workflow also triggers
 - Requires elevated permissions for main CI workflow
 - Harder to maintain and debug
@@ -202,7 +203,7 @@ jobs:
       - name: Attempt dependency remediation
         run: npm audit fix --omit=dev || true
 
-      - run: npm ci  # Reinstall to verify
+      - run: npm ci # Reinstall to verify
 
       - name: Validate build after remediation
         id: verify
@@ -234,7 +235,7 @@ jobs:
           title: "chore: auto remediation for CI failure (${{ steps.branch.outputs.name }})"
           body: |
             Auto-generated remediation PR.
-            
+
             Actions performed:
             - `npm audit fix --omit=dev`
             - `npm run build` (validation)

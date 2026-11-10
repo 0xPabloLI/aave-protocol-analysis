@@ -59,7 +59,7 @@ V4 SDK 的 Aave API 偶尔响应慢/卡住但不抛错，内部重试（3次 × 
 
 - 接口类型：
   ```typescript
-  type ErrorClass = 'retry_next_rpc' | 'try_fallback';
+  type ErrorClass = "retry_next_rpc" | "try_fallback";
   type ErrorClassifier = (error: unknown) => ErrorClass;
   ```
 - 默认分类器：

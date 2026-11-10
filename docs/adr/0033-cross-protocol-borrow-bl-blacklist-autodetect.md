@@ -13,11 +13,13 @@ Date: 2026-06-25
 ## Context
 
 Merkl opportunity 9623615825108171573（Lend USDtb on Aave, Ethereum）的 campaign 包含跨协议 borrow 排除规则：
+
 - 4 个 `hookType=14` 条目，指向不同 protocol 的 borrow 市场
 - 5 个 `params.blacklist` 地址（被排除的协议/市场合约）
 - 描述："Borrowers of USDtb on **any** Ethereum-based market or protocol are not eligible for rewards"
 
 现有代码的两个不足：
+
 1. `borrowBlacklist` 仅从 `identifier.includes('BORROW_BL')` 检测，未利用 `params.blacklist` + `hookType=14` 的组合语义
 2. `MerklCampaignAccess` 不存储 `borrowBytesLike` 信息，前端无法展示"哪些协议的 borrow 会导致 incentive 归零"
 
@@ -34,7 +36,9 @@ Merkl opportunity 9623615825108171573（Lend USDtb on Aave, Ethereum）的 campa
 扩展 borrowBlacklist 检测规则：
 
 ```typescript
-const isBorrowBl = (opp.identifier?.includes('BORROW_BL') ?? false) || hasBorrowExclusionHook(opp);
+const isBorrowBl =
+  (opp.identifier?.includes("BORROW_BL") ?? false) ||
+  hasBorrowExclusionHook(opp);
 ```
 
 `hasBorrowExclusionHook` 逻辑：遍历 opportunity 的所有 campaign，当任何 campaign 的 `params.hooks` 包含 hookType=14 (BORROW_BL) 或 hookType=17 (HEALTH_FACTOR) 时返回 true。
@@ -61,7 +65,7 @@ export interface MerklCampaignAccess {
   chainId: number;
   whitelist: string[];
   blacklist: string[];
-  borrowHookProtocols?: MerklBorrowHookProtocol[];  // 新增
+  borrowHookProtocols?: MerklBorrowHookProtocol[]; // 新增
 }
 ```
 
@@ -69,12 +73,12 @@ export interface MerklCampaignAccess {
 
 ## 实际数据：USDtb Campaign 1575990960628026476
 
-| hook | protocol | borrowBytesLike 数量 | 说明 |
-|---|---|---|---|
-| 0 | 2 | 1 | 某协议的 1 个 borrow 市场 |
-| 1 | 1 | 2 | 某协议的 2 个 borrow 市场 |
-| 2 | 0 | 3 (bytes32 hash) | Aave 自身的 borrow 市场 |
-| 3 | 3 | 5 | 某协议的 5 个 borrow 市场 |
+| hook | protocol | borrowBytesLike 数量 | 说明                      |
+| ---- | -------- | -------------------- | ------------------------- |
+| 0    | 2        | 1                    | 某协议的 1 个 borrow 市场 |
+| 1    | 1        | 2                    | 某协议的 2 个 borrow 市场 |
+| 2    | 0        | 3 (bytes32 hash)     | Aave 自身的 borrow 市场   |
+| 3    | 3        | 5                    | 某协议的 5 个 borrow 市场 |
 
 `params.blacklist` 5 个地址：被排除的协议/市场合约。
 

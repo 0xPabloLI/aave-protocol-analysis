@@ -1,5 +1,5 @@
-import { describe, it, beforeEach, afterEach } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it, beforeEach, afterEach } from "node:test";
+import assert from "node:assert/strict";
 import {
   createSlidingWindowRateLimiter,
   createAaveV3RateLimitedFetch,
@@ -7,9 +7,13 @@ import {
   restoreOriginalFetch,
   resetV3RateLimitState,
   getV3RateLimitStats,
-} from '@internal/aave-shared-config';
+} from "@internal/aave-shared-config";
 
-function mockFetch(statusCode: number, headers: Record<string, string> = {}, body = '') {
+function mockFetch(
+  statusCode: number,
+  headers: Record<string, string> = {},
+  body = ""
+) {
   return async () =>
     new Response(body, {
       status: statusCode,
@@ -17,8 +21,8 @@ function mockFetch(statusCode: number, headers: Record<string, string> = {}, bod
     }) as Promise<Response>;
 }
 
-describe('createSlidingWindowRateLimiter', () => {
-  it('allows requests within the limit', async () => {
+describe("createSlidingWindowRateLimiter", () => {
+  it("allows requests within the limit", async () => {
     const limiter = createSlidingWindowRateLimiter(3);
     await limiter.wait();
     await limiter.wait();
@@ -26,7 +30,7 @@ describe('createSlidingWindowRateLimiter', () => {
     assert.strictEqual(limiter.getTimestamps().length, 3);
   });
 
-  it('delays requests that exceed the limit', async () => {
+  it("delays requests that exceed the limit", async () => {
     const limiter = createSlidingWindowRateLimiter(2);
     await limiter.wait();
     await limiter.wait();
@@ -36,7 +40,7 @@ describe('createSlidingWindowRateLimiter', () => {
     assert.ok(elapsed >= 50, `Expected delay >= 50ms, got ${elapsed}ms`);
   });
 
-  it('cleans up old timestamps', async () => {
+  it("cleans up old timestamps", async () => {
     const limiter = createSlidingWindowRateLimiter(5);
     await limiter.wait();
     await new Promise((r) => setTimeout(r, 1100));
@@ -44,7 +48,7 @@ describe('createSlidingWindowRateLimiter', () => {
     assert.strictEqual(limiter.getTimestamps().length, 1);
   });
 
-  it('reset clears all timestamps', async () => {
+  it("reset clears all timestamps", async () => {
     const limiter = createSlidingWindowRateLimiter(5);
     await limiter.wait();
     await limiter.wait();
@@ -52,100 +56,103 @@ describe('createSlidingWindowRateLimiter', () => {
     assert.strictEqual(limiter.getTimestamps().length, 0);
   });
 
-  it('respects maxRps=1', async () => {
+  it("respects maxRps=1", async () => {
     const limiter = createSlidingWindowRateLimiter(1);
     await limiter.wait();
     const before = Date.now();
     await limiter.wait();
     const elapsed = Date.now() - before;
-    assert.ok(elapsed >= 50, `Expected delay >= 50ms with maxRps=1, got ${elapsed}ms`);
+    assert.ok(
+      elapsed >= 50,
+      `Expected delay >= 50ms with maxRps=1, got ${elapsed}ms`
+    );
   });
 });
 
-describe('createAaveV3RateLimitedFetch', () => {
+describe("createAaveV3RateLimitedFetch", () => {
   beforeEach(() => {
     resetV3RateLimitState();
   });
 
-  it('passes through successful responses', async () => {
+  it("passes through successful responses", async () => {
     const innerFetch = mockFetch(200, {}, '{"data":1}');
     const v3Fetch = createAaveV3RateLimitedFetch(innerFetch);
-    const response = await v3Fetch('https://test.com');
+    const response = await v3Fetch("https://test.com");
     assert.strictEqual(response.status, 200);
   });
 
-  it('retries on 429 with Retry-After header (seconds)', async () => {
+  it("retries on 429 with Retry-After header (seconds)", async () => {
     let callCount = 0;
     const innerFetch = async () => {
       callCount++;
       if (callCount === 1) {
-        return new Response('', {
+        return new Response("", {
           status: 429,
-          headers: new Headers({ 'Retry-After': '0' }),
+          headers: new Headers({ "Retry-After": "0" }),
         }) as Promise<Response>;
       }
-      return new Response('ok', { status: 200 }) as Promise<Response>;
+      return new Response("ok", { status: 200 }) as Promise<Response>;
     };
     const v3Fetch = createAaveV3RateLimitedFetch(innerFetch);
-    const response = await v3Fetch('https://test.com');
+    const response = await v3Fetch("https://test.com");
     assert.strictEqual(response.status, 200);
     assert.strictEqual(callCount, 2);
   });
 
-  it('retries on 429 without Retry-After using exponential backoff', async () => {
+  it("retries on 429 without Retry-After using exponential backoff", async () => {
     let callCount = 0;
     const innerFetch = async () => {
       callCount++;
       if (callCount === 1) {
-        return new Response('', { status: 429 }) as Promise<Response>;
+        return new Response("", { status: 429 }) as Promise<Response>;
       }
-      return new Response('ok', { status: 200 }) as Promise<Response>;
+      return new Response("ok", { status: 200 }) as Promise<Response>;
     };
     const v3Fetch = createAaveV3RateLimitedFetch(innerFetch);
-    const response = await v3Fetch('https://test.com');
+    const response = await v3Fetch("https://test.com");
     assert.strictEqual(response.status, 200);
     assert.strictEqual(callCount, 2);
   });
 
-  it('returns 429 response after max retries exhausted', async () => {
+  it("returns 429 response after max retries exhausted", async () => {
     let callCount = 0;
     const innerFetch = async () => {
       callCount++;
-      return new Response('', { status: 429 }) as Promise<Response>;
+      return new Response("", { status: 429 }) as Promise<Response>;
     };
     const v3Fetch = createAaveV3RateLimitedFetch(innerFetch);
-    const response = await v3Fetch('https://test.com');
+    const response = await v3Fetch("https://test.com");
     assert.strictEqual(response.status, 429);
   });
 
-  it('passes through 5xx without 429 retry logic', async () => {
+  it("passes through 5xx without 429 retry logic", async () => {
     const innerFetch = mockFetch(500);
     const v3Fetch = createAaveV3RateLimitedFetch(innerFetch);
-    const response = await v3Fetch('https://test.com');
+    const response = await v3Fetch("https://test.com");
     assert.strictEqual(response.status, 500);
   });
 
-  it('respects Retry-After as HTTP date', async () => {
+  it("respects Retry-After as HTTP date", async () => {
     let callCount = 0;
     const futureDate = new Date(Date.now() + 50).toUTCString();
     const innerFetch = async () => {
       callCount++;
       if (callCount === 1) {
-        return new Response('', {
+        return new Response("", {
           status: 429,
-          headers: new Headers({ 'Retry-After': futureDate }),
+          headers: new Headers({ "Retry-After": futureDate }),
         }) as Promise<Response>;
       }
-      return new Response('ok', { status: 200 }) as Promise<Response>;
+      return new Response("ok", { status: 200 }) as Promise<Response>;
     };
     const v3Fetch = createAaveV3RateLimitedFetch(innerFetch);
-    const response = await v3Fetch('https://test.com');
+    const response = await v3Fetch("https://test.com");
     assert.strictEqual(response.status, 200);
     assert.strictEqual(callCount, 2);
   });
 });
 
-describe('installV3RateLimitedFetch / restoreOriginalFetch', () => {
+describe("installV3RateLimitedFetch / restoreOriginalFetch", () => {
   beforeEach(() => {
     resetV3RateLimitState();
     restoreOriginalFetch();
@@ -155,7 +162,7 @@ describe('installV3RateLimitedFetch / restoreOriginalFetch', () => {
     restoreOriginalFetch();
   });
 
-  it('patches globalThis.fetch and restores it', () => {
+  it("patches globalThis.fetch and restores it", () => {
     const original = globalThis.fetch;
     installV3RateLimitedFetch();
     assert.notStrictEqual(globalThis.fetch, original);
@@ -163,7 +170,7 @@ describe('installV3RateLimitedFetch / restoreOriginalFetch', () => {
     assert.strictEqual(globalThis.fetch, original);
   });
 
-  it('double install is no-op', () => {
+  it("double install is no-op", () => {
     const original = globalThis.fetch;
     installV3RateLimitedFetch();
     const patched = globalThis.fetch;
@@ -173,49 +180,63 @@ describe('installV3RateLimitedFetch / restoreOriginalFetch', () => {
     assert.strictEqual(globalThis.fetch, original);
   });
 
-  it('double restore is no-op', () => {
+  it("double restore is no-op", () => {
     const original = globalThis.fetch;
     restoreOriginalFetch();
     assert.strictEqual(globalThis.fetch, original);
   });
 
-  it('patched fetch retries 429 responses on Aave V3 URLs', async () => {
+  it("patched fetch retries 429 responses on Aave V3 URLs", async () => {
     let callCount = 0;
     const mockImpl = async () => {
       callCount++;
       if (callCount === 1) {
-        return new Response('', { status: 429, headers: new Headers({ 'Retry-After': '0' }) }) as Promise<Response>;
+        return new Response("", {
+          status: 429,
+          headers: new Headers({ "Retry-After": "0" }),
+        }) as Promise<Response>;
       }
-      return new Response('ok', { status: 200 }) as Promise<Response>;
+      return new Response("ok", { status: 200 }) as Promise<Response>;
     };
     const original = globalThis.fetch;
     globalThis.fetch = mockImpl;
 
     installV3RateLimitedFetch();
     try {
-      const response = await globalThis.fetch('https://api.v3.aave.com/graphql');
+      const response = await globalThis.fetch(
+        "https://api.v3.aave.com/graphql"
+      );
       assert.strictEqual(response.status, 200);
-      assert.ok(callCount >= 2, `Expected >= 2 calls after 429 retry, got ${callCount}`);
+      assert.ok(
+        callCount >= 2,
+        `Expected >= 2 calls after 429 retry, got ${callCount}`
+      );
     } finally {
       restoreOriginalFetch();
       globalThis.fetch = original;
     }
   });
 
-  it('non-Aave URLs are not retried on 429 by inner-layer', async () => {
+  it("non-Aave URLs are not retried on 429 by inner-layer", async () => {
     let callCount = 0;
     const mockImpl = async () => {
       callCount++;
-      return new Response('', { status: 429 }) as Promise<Response>;
+      return new Response("", { status: 429 }) as Promise<Response>;
     };
     const original = globalThis.fetch;
     globalThis.fetch = mockImpl;
 
     installV3RateLimitedFetch();
     try {
-      const response = await globalThis.fetch('https://api.coingecko.com/api/v3/price');
+      const response = await globalThis.fetch(
+        "https://api.coingecko.com/api/v3/price"
+      );
       assert.strictEqual(response.status, 429);
-      assert.strictEqual(callCount, 1, `Non-Aave URLs should not be retried by inner-layer`);
+      assert.strictEqual(
+        callCount,
+        1,
+        `Non-Aave URLs should not be retried by inner-layer`
+      );
     } finally {
       restoreOriginalFetch();
       globalThis.fetch = original;
@@ -223,27 +244,31 @@ describe('installV3RateLimitedFetch / restoreOriginalFetch', () => {
   });
 });
 
-describe('per-chain 429 adaptive backoff + circuit breaker', () => {
+describe("per-chain 429 adaptive backoff + circuit breaker", () => {
   it('detects "Too Many Requests" as rate limit error', () => {
     const re = /too many requests|rate.?limit|429/i;
-    assert.ok(re.test('Too Many Requests'));
-    assert.ok(re.test('rate limit exceeded'));
-    assert.ok(re.test('Error: 429'));
-    assert.ok(!re.test('Internal Server Error'));
-    assert.ok(!re.test('Network timeout'));
+    assert.ok(re.test("Too Many Requests"));
+    assert.ok(re.test("rate limit exceeded"));
+    assert.ok(re.test("Error: 429"));
+    assert.ok(!re.test("Internal Server Error"));
+    assert.ok(!re.test("Network timeout"));
   });
 
-  it('circuit breaker: getV3RateLimitStats tracks 429 count', async () => {
+  it("circuit breaker: getV3RateLimitStats tracks 429 count", async () => {
     resetV3RateLimitState();
     const stats0 = getV3RateLimitStats();
     assert.strictEqual(stats0.total429s, 0);
 
-    const innerFetch = async () => new Response('', { status: 429 }) as Promise<Response>;
+    const innerFetch = async () =>
+      new Response("", { status: 429 }) as Promise<Response>;
     const v3Fetch = createAaveV3RateLimitedFetch(innerFetch);
-    await v3Fetch('https://test.com');
+    await v3Fetch("https://test.com");
 
     const stats1 = getV3RateLimitStats();
-    assert.ok(stats1.total429s >= 1, `Expected at least 1 429, got ${stats1.total429s}`);
+    assert.ok(
+      stats1.total429s >= 1,
+      `Expected at least 1 429, got ${stats1.total429s}`
+    );
     resetV3RateLimitState();
   });
 });

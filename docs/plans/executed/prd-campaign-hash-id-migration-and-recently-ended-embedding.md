@@ -4,13 +4,13 @@
 
 ## Implementation Status
 
-| Requirement | Status | Commit |
-|---|---|---|
-| R1: Campaign Hash ID Migration (Backend) | ✅ Done | 90348a2 |
-| R2: Recently Ended Embedding (Frontend) | ✅ Done | fbfe6474 |
-| R3: Remove PAST Opportunities Fetch | ✅ Done | 90348a2 |
+| Requirement                                  | Status  | Commit                                 |
+| -------------------------------------------- | ------- | -------------------------------------- |
+| R1: Campaign Hash ID Migration (Backend)     | ✅ Done | 90348a2                                |
+| R2: Recently Ended Embedding (Frontend)      | ✅ Done | fbfe6474                               |
+| R3: Remove PAST Opportunities Fetch          | ✅ Done | 90348a2                                |
 | R4: Campaign URL + Remove campaignDatabaseId | ✅ Done | 84836ab (backend), fbfe6474 (frontend) |
-| R5: Merkl URL Simplification | ✅ Done | ed7c8f9 (backend), c3f65224 (frontend) |
+| R5: Merkl URL Simplification                 | ✅ Done | ed7c8f9 (backend), c3f65224 (frontend) |
 
 ## Summary
 
@@ -19,17 +19,22 @@ Two coupled changes: (1) Migrate `campaignId` from Merkl Database ID to Hash ID 
 ## Background
 
 ### Campaign ID Confusion
+
 Merkl API has two IDs per campaign:
+
 - `opp.campaigns[].id` = Database ID (numeric, e.g. `8109624644183159412`) — used as input to `/v4/campaigns/{dbId}`
 - `opp.campaigns[].campaignId` = Hash ID (hex, e.g. `0x0cf07a3891db969d111ab99036b168b5965e6ada9054dfe5163197c6306ab265`) — used in Merkl web UI URLs: `https://app.merkl.xyz/opportunities/{oppId}/campaigns/{hash}`
 
 Current codebase stores Database ID as `campaignId` everywhere. Frontend has no way to link to individual Merkl campaign pages. The naming is confusing because Merkl's own API calls the hash `campaignId`.
 
 ### Campaign-Level URL
+
 Merkl supports campaign-level pages at `https://app.merkl.xyz/opportunities/{oppId}/campaigns/{hash}`. After the Hash ID migration, the frontend can construct these URLs using `opportunity.link` + `campaignId` (hash). This enables direct links to individual campaigns from both live and ended rows.
 
 ### Recently Ended Campaign Flow
+
 Currently, ended campaigns are handled via a separate data flow:
+
 - Backend creates "stubs" (minimal breakdowns with `campaignApr: 0`) from `opp.campaigns` and puts them in the same `breakdowns` array as live campaigns
 - Frontend `collectRecentlyEndedCampaigns()` + `RecentlyEndedCampaign` interface + `isRecentlyEnded()` separately filters and displays ended campaigns in a collapsible section
 - This separate flow means ended campaigns miss fields that live campaigns have (e.g. `rewardTokenSymbol`, `rewardTokenIconUrl`, `campaignType`)
@@ -58,6 +63,7 @@ Currently, ended campaigns are handled via a separate data flow:
 **R2.2** Delete `recentlyEndedCampaigns.ts` entirely (all exports removed).
 
 **R2.3** Add to `IncentiveCampaign` interface:
+
 ```ts
 recentlyEnded?: {
   startDate?: string;
@@ -68,6 +74,7 @@ recentlyEnded?: {
 ```
 
 **R2.4** In `buildIncentiveSources()`, for Merkl breakdowns:
+
 - Partition each opportunity's breakdowns into live (`isCampaignActive`) and ended (`isRecentlyEnded` logic, i.e. `campaignEndedAt < now`)
 - Group ended breakdowns by `rewardTokenSymbol`
 - When building a live campaign from a breakdown, find ended breakdowns with matching `rewardTokenSymbol` and attach them as `recentlyEnded`
@@ -89,6 +96,7 @@ recentlyEnded?: {
 **R4.2** Add ExternalLink icon to each campaign row (both live and ended) when `campaignUrl` is available. Icon positioned on the right side of the row, same line as APR value.
 
 **R4.3** Remove `campaignDatabaseId` from API schema across all layers:
+
 - `MerklCampaignBreakdown` type: remove `campaignDatabaseId?: string`
 - `merkl-api.ts`: remove `...(breakdownDbId !== hashId && { campaignDatabaseId: breakdownDbId })` spread assignments
 - `incentive-prune.ts`: remove `campaignDatabaseId` passthrough
@@ -103,6 +111,7 @@ recentlyEnded?: {
 ## Data Source Details
 
 ### Merkl v4 API `opp.campaigns[]` structure (verified 2026-06-29)
+
 ```json
 {
   "id": 8109624644183159412,                    // Database ID
@@ -116,6 +125,7 @@ recentlyEnded?: {
 ```
 
 ### Merkl v4 API `/v4/campaigns/{databaseId}` response
+
 ```json
 {
   "id": 8109624644183159412,          // Database ID (input param)
@@ -127,47 +137,49 @@ recentlyEnded?: {
 ```
 
 ### Opportunity Link Format
+
 Merkl supports both URL formats: the legacy `https://app.merkl.xyz/opportunities/{chainName}/{type}/{identifier}` and the new simplified `https://app.merkl.xyz/opportunities/{oppId}`. After R5, the backend only exposes `opportunityId` (the numeric ID), and the frontend constructs all URLs using the simplified format.
 
 ### Campaigns Without Hash ID
+
 After PAST fetch removal, campaigns without Hash ID are extremely rare (only when fallback `/v4/campaigns/{databaseId}` fetch also fails). These are discarded: no valid campaign URL can be constructed, and they have no consumer in the frontend.
 
 ## Affected Files
 
 ### Backend (aave-protocol-analysis repo)
 
-| File | Change |
-|---|---|
-| `packages/aave-shared-contracts/src/index.ts` | Remove `campaignDatabaseId` from `MerklCampaignBreakdown`; add `opportunityId?` to `MerklOpportunityGroup` |
-| `packages/aave-fetcher/src/merkl-api.ts` | Remove `campaignDatabaseId` from breakdown/stub output; remove `generateMerklOpportunityLink()` call for Merkl groups; populate `opportunityId` from `opp.id` |
-| `packages/aave-fetcher/src/incentive-prune.ts` | Remove `campaignDatabaseId` passthrough; remove `opportunityType` passthrough; add `opportunityId` passthrough |
-| `backend/src/types/index.ts` | Remove `campaignDatabaseId`; add `opportunityId`; remove Merkl `opportunityType` |
+| File                                           | Change                                                                                                                                                        |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/aave-shared-contracts/src/index.ts`  | Remove `campaignDatabaseId` from `MerklCampaignBreakdown`; add `opportunityId?` to `MerklOpportunityGroup`                                                    |
+| `packages/aave-fetcher/src/merkl-api.ts`       | Remove `campaignDatabaseId` from breakdown/stub output; remove `generateMerklOpportunityLink()` call for Merkl groups; populate `opportunityId` from `opp.id` |
+| `packages/aave-fetcher/src/incentive-prune.ts` | Remove `campaignDatabaseId` passthrough; remove `opportunityType` passthrough; add `opportunityId` passthrough                                                |
+| `backend/src/types/index.ts`                   | Remove `campaignDatabaseId`; add `opportunityId`; remove Merkl `opportunityType`                                                                              |
 
 ### Frontend (aaveapy repo)
 
-| File | Change |
-|---|---|
-| `src/components/dashboard/IncentiveTooltip.tsx` | Replace `getMerklLink()` + `opportunity.link` with `opportunityId`-based URL construction; add `campaignUrl`; embed `recentlyEnded`; `RecentlyEndedSection` rewrite; add ExternalLink icons |
-| `src/lib/recentlyEndedCampaigns.ts` | Delete entire file |
-| `src/lib/recentlyEndedCampaigns.test.ts` | Delete entire file |
-| `src/shared/market-contract/schemas.ts` | Remove `campaignDatabaseId`; remove `opportunityType`; add `opportunityId` |
-| `src/types/aave.ts` | Remove `campaignDatabaseId`; remove `opportunityType`; add `opportunityId` |
+| File                                            | Change                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/components/dashboard/IncentiveTooltip.tsx` | Replace `getMerklLink()` + `opportunity.link` with `opportunityId`-based URL construction; add `campaignUrl`; embed `recentlyEnded`; `RecentlyEndedSection` rewrite; add ExternalLink icons                                                                                                                                                                                                           |
+| `src/lib/recentlyEndedCampaigns.ts`             | Delete entire file                                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/lib/recentlyEndedCampaigns.test.ts`        | Delete entire file                                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/shared/market-contract/schemas.ts`         | Remove `campaignDatabaseId`; remove `opportunityType`; add `opportunityId`                                                                                                                                                                                                                                                                                                                            |
+| `src/types/aave.ts`                             | Remove `campaignDatabaseId`; remove `opportunityType`; add `opportunityId`                                                                                                                                                                                                                                                                                                                            |
 | `src/components/dashboard/IncentiveTooltip.tsx` | `IncentiveCampaign` add `campaignUrl?`, update `recentlyEnded?` to include `campaignUrl?`; `buildIncentiveSources` Merkl section: construct `campaignUrl`, partition live/ended, embed `recentlyEnded`; `RecentlyEndedSection` rewrite: read from `campaign.recentlyEnded`, add ExternalLink icons to both live and ended campaign rows; delete `RecentlyEndedCampaign`/`RecentlyEndedSource` imports |
-| `src/lib/recentlyEndedCampaigns.ts` | Delete entire file |
-| `src/lib/recentlyEndedCampaigns.test.ts` | Delete entire file |
-| `src/shared/market-contract/schemas.ts` | `MerklCampaignBreakdownSchema`: remove `campaignDatabaseId` |
-| `src/types/aave.ts` | `MerklCampaignBreakdown`: remove `campaignDatabaseId` |
+| `src/lib/recentlyEndedCampaigns.ts`             | Delete entire file                                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/lib/recentlyEndedCampaigns.test.ts`        | Delete entire file                                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/shared/market-contract/schemas.ts`         | `MerklCampaignBreakdownSchema`: remove `campaignDatabaseId`                                                                                                                                                                                                                                                                                                                                           |
+| `src/types/aave.ts`                             | `MerklCampaignBreakdown`: remove `campaignDatabaseId`                                                                                                                                                                                                                                                                                                                                                 |
 
 ## Risks
 
-| Risk | Mitigation |
-|---|---|
-| Map key migration breaks forecast/whitelist logic | All maps already migrated in Slice 1 (90348a2); `campaignDatabaseId` removal is output-only |
-| Hash ID format differs from existing test fixtures | Already updated in Slice 1 |
-| Merkl API changes `opp.campaigns[].campaignId` field name | Low risk — stable v4 API; add runtime type check |
-| `filterRecentExpiredCampaigns` dedup key uses `campaignId` | Already uses `rewardTokenId ?? rewardTokenSymbol ?? campaignType` as primary key; `campaignId` is fallback |
-| Campaigns without Hash ID are silently discarded | Near-zero occurrence after PAST fetch removal; acceptable trade-off for clean API schema |
-| Merkl opportunity link format change (chain/type/identifier → numeric ID) | Merkl supports both formats via redirect; frontend constructs URLs from `opportunityId` only |
+| Risk                                                                      | Mitigation                                                                                                 |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Map key migration breaks forecast/whitelist logic                         | All maps already migrated in Slice 1 (90348a2); `campaignDatabaseId` removal is output-only                |
+| Hash ID format differs from existing test fixtures                        | Already updated in Slice 1                                                                                 |
+| Merkl API changes `opp.campaigns[].campaignId` field name                 | Low risk — stable v4 API; add runtime type check                                                           |
+| `filterRecentExpiredCampaigns` dedup key uses `campaignId`                | Already uses `rewardTokenId ?? rewardTokenSymbol ?? campaignType` as primary key; `campaignId` is fallback |
+| Campaigns without Hash ID are silently discarded                          | Near-zero occurrence after PAST fetch removal; acceptable trade-off for clean API schema                   |
+| Merkl opportunity link format change (chain/type/identifier → numeric ID) | Merkl supports both formats via redirect; frontend constructs URLs from `opportunityId` only               |
 
 ## Out of Scope
 
@@ -183,6 +195,7 @@ Merkl has simplified their URL format from `https://app.merkl.xyz/opportunities/
 **R5.2** Backend: Remove `opportunityType` from prune/API output. It's only used internally for hub/spoke classification, offsetLevel determination, and netPositionConstraint detection.
 
 **R5.3** Frontend: Replace `getMerklLink()` and `opportunity.link` dependency with `opportunityId`-based URL construction:
+
 - Opportunity URL: `https://app.merkl.xyz/opportunities/${opportunityId}`
 - Campaign URL: `https://app.merkl.xyz/opportunities/${opportunityId}/campaigns/${campaignId}`
 

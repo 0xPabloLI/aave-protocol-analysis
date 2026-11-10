@@ -20,13 +20,13 @@
 
 ### ABI 归属（二层）
 
-| ABI | 层 | 来源 | 方法 |
-|---|---|---|---|
-| `ISpokeV4_ABI` | Upstream | `@aave-dao/aave-address-book/abis/ISpokeV4` | 完整 Spoke 接口 |
-| `IAaveOracle_ABI` | Upstream | `@aave-dao/aave-address-book/abis/IAaveOracle` | V3 oracle |
-| `IPool_ABI` | Upstream | `@aave-dao/aave-address-book/abis/IPool` | V3 pool |
-| `V4_HUB_FULL_ABI` | Shared | `@internal/aave-rpc-infra` | `IHubV4_ABI`（upstream）+ `HUB_EXTENSIONS_ABI`（shared-local composite） |
-| `V4_ORACLE_PRICES_ABI` | Local | `backend/src/abis/v4-oracle-prices.ts` | `getReservesPrices`（上游 `IAaveOracleV4_ABI` 只有 `getReserveSource`） |
+| ABI                    | 层       | 来源                                           | 方法                                                                     |
+| ---------------------- | -------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| `ISpokeV4_ABI`         | Upstream | `@aave-dao/aave-address-book/abis/ISpokeV4`    | 完整 Spoke 接口                                                          |
+| `IAaveOracle_ABI`      | Upstream | `@aave-dao/aave-address-book/abis/IAaveOracle` | V3 oracle                                                                |
+| `IPool_ABI`            | Upstream | `@aave-dao/aave-address-book/abis/IPool`       | V3 pool                                                                  |
+| `V4_HUB_FULL_ABI`      | Shared   | `@internal/aave-rpc-infra`                     | `IHubV4_ABI`（upstream）+ `HUB_EXTENSIONS_ABI`（shared-local composite） |
+| `V4_ORACLE_PRICES_ABI` | Local    | `backend/src/abis/v4-oracle-prices.ts`         | `getReservesPrices`（上游 `IAaveOracleV4_ABI` 只有 `getReserveSource`）  |
 
 ### HUB_EXTENSIONS_ABI 说明
 
@@ -38,11 +38,11 @@
 
 消费侧实际 import（grep 验证）：
 
-| 渠道 | 消费文件 | ABI |
-|---|---|---|
-| `@aave-dao/aave-address-book/abis/*` | `oracleService.ts` | ISpokeV4, IAaveOracle, IPool |
-| `@internal/aave-rpc-infra` | `onchainDataService.ts` | V4_HUB_FULL_ABI |
-| `backend/src/abis/index.js` | `oracleService.ts` | V4_ORACLE_PRICES_ABI |
+| 渠道                                 | 消费文件                | ABI                          |
+| ------------------------------------ | ----------------------- | ---------------------------- |
+| `@aave-dao/aave-address-book/abis/*` | `oracleService.ts`      | ISpokeV4, IAaveOracle, IPool |
+| `@internal/aave-rpc-infra`           | `onchainDataService.ts` | V4_HUB_FULL_ABI              |
+| `backend/src/abis/index.js`          | `oracleService.ts`      | V4_ORACLE_PRICES_ABI         |
 
 每个 ABI 只有 1 个消费点，3 渠道零交叉。**不需要重新引入聚合层**。若未来 ABI 消费方 >1 或需运行时切换来源，再引入不迟。
 
@@ -76,6 +76,7 @@
 ### 项 C: 二层架构正式承认（非 upstream + local，而是 upstream + shared + local）
 
 当前文档写 "upstream + local 二层"，但 `V4_HUB_FULL_ABI` 来自 shared 包，不是纯 upstream 也不是纯 local。选择：
+
 - **方案 1**：保持二层，把 shared 包视作 upstream 的一种（当前做法，加注释说明）
 - **方案 2**：改为三层 upstream / shared / local，语义最准确
 

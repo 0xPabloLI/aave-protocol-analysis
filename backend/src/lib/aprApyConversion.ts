@@ -14,10 +14,10 @@ export function apyToApr(apy: number): number {
 export function computeTargetTotalAprIncentiveApr(
   targetApr: number,
   nativeApy: number,
-  side: 'supply' | 'borrow',
+  side: "supply" | "borrow"
 ): number {
   const targetApy = convertAprToApy(targetApr);
-  if (side === 'supply') {
+  if (side === "supply") {
     const incentiveApy = targetApy - nativeApy;
     if (incentiveApy <= 0) return 0;
     return apyToApr(incentiveApy);

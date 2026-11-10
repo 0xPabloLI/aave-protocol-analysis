@@ -7,6 +7,7 @@ AAV-967: 后端 recently ended campaign 数据源缺失。核心问题：Merkl L
 ## 关键发现
 
 Merkl UI 上"每种 campaign"是按 **rewardToken** 分组的（不是 distributionType/campaignType）：
+
 - Opp 917101306019921918 (GHO Plasma): 7 条 DUTCH_AUCTION，分两组——WXPL (4条) + aPlaGHO (3条)
 - Opp 16566125236842396321 (sUSDe): AAVE_NET_APR (2条) + MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE (7条)，全是同一个 rewardToken
 
@@ -19,9 +20,11 @@ Merkl UI 上"每种 campaign"是按 **rewardToken** 分组的（不是 distribut
 4 个文件，+68/-12 行：
 
 ### 1. `packages/aave-shared-contracts/src/index.ts`
+
 - `MerklCampaignBreakdown` 新增 `rewardTokenId?: string`
 
 ### 2. `packages/aave-fetcher/src/merkl-api.ts`
+
 - `MerklEmbeddedCampaign` 新增 `rewardToken?: { symbol?: string; name?: string; id?: string }`
 - `MerklRewardsBreakdownForIntensity.token` 新增 `id?: string`
 - `extractRewardTokenFields()` 新增 `rewardTokenId` 提取
@@ -29,9 +32,11 @@ Merkl UI 上"每种 campaign"是按 **rewardToken** 分组的（不是 distribut
 - **`filterRecentExpiredCampaigns`**（~L1733-1748）：去重 key 从 `campaignType` 改为 `rewardTokenId ?? rewardTokenSymbol ?? campaignType ?? 'UNKNOWN'`
 
 ### 3. `packages/aave-fetcher/src/incentive-prune.ts`
+
 - `pruneMerklBreakdown` 保留 `rewardTokenId`
 
 ### 4. `packages/aave-fetcher/tests/filterRecentExpiredCampaigns.test.ts`
+
 - 新增"同 campaignType 不同 rewardToken 各保留 1 条"测试用例
 - 现有测试补充 `rewardTokenSymbol` 字段
 

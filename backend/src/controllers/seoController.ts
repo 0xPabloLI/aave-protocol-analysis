@@ -318,11 +318,9 @@ export async function batchUpsertSemrushSnapshots(
 
     for (const s of snapshots) {
       if (!s.snapshot_date || !s.country || !s.keyword) {
-        res
-          .status(400)
-          .json({
-            error: "Each snapshot requires snapshot_date, country, keyword",
-          });
+        res.status(400).json({
+          error: "Each snapshot requires snapshot_date, country, keyword",
+        });
         return;
       }
     }

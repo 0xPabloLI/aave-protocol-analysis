@@ -5,10 +5,10 @@ export type {
   MerklOpportunityGroup,
   BrevisCampaignBreakdown,
   BrevisCampaignItem,
-} from '@internal/aave-shared-contracts';
+} from "@internal/aave-shared-contracts";
 
 export {
   fetchMarketsData,
   runMarketsFetcher,
   getDataDir,
-} from '@internal/aave-fetcher';
+} from "@internal/aave-fetcher";

@@ -1,10 +1,10 @@
-import { runMarketsFetcher } from '@internal/aave-fetcher';
+import { runMarketsFetcher } from "@internal/aave-fetcher";
 
 async function main() {
   try {
     await runMarketsFetcher();
   } catch (error) {
-    console.error('❌ Failed to fetch Aave markets:', error);
+    console.error("❌ Failed to fetch Aave markets:", error);
     process.exit(1);
   }
   process.exit(0);

@@ -6,14 +6,20 @@
  * Deficit is merged into reserves at write time (single fetchedAt).
  */
 
-import { Request, Response } from 'express';
-import { getMarketsData, type RuntimeReserveData } from '../services/marketsService.js';
-import { serializeMarketsReservesForApi, computeSchemaFingerprint } from '../services/marketsApiSerialize.js';
-import { MarketsResponse, MarketWithSpread } from '../types/index.js';
-import { logger } from '../logger.js';
+import { Request, Response } from "express";
+import {
+  getMarketsData,
+  type RuntimeReserveData,
+} from "../services/marketsService.js";
+import {
+  serializeMarketsReservesForApi,
+  computeSchemaFingerprint,
+} from "../services/marketsApiSerialize.js";
+import { MarketsResponse, MarketWithSpread } from "../types/index.js";
+import { logger } from "../logger.js";
 
 /** API version — bumped when breaking changes (field renames) are introduced. */
-export const MARKETS_API_VERSION = 'snapshot-v3';
+export const MARKETS_API_VERSION = "snapshot-v3";
 
 /**
  * GET /api/markets
@@ -23,15 +29,23 @@ export const MARKETS_API_VERSION = 'snapshot-v3';
  */
 export async function getMarkets(req: Request, res: Response): Promise<void> {
   try {
-    const { payload, staleTimeMs, hardTtlMs, ageMs, isTooStale, deficitFallbackReserveIds, v4FallbackReserveIds } = getMarketsData();
+    const {
+      payload,
+      staleTimeMs,
+      hardTtlMs,
+      ageMs,
+      isTooStale,
+      deficitFallbackReserveIds,
+      v4FallbackReserveIds,
+    } = getMarketsData();
 
     if (!payload) {
-      logger.warn('Markets snapshot not yet available');
-      res.set('Retry-After', '10');
+      logger.warn("Markets snapshot not yet available");
+      res.set("Retry-After", "10");
       res.status(503).json({
-        errorCode: 'MARKETS_SNAPSHOT_NOT_READY',
-        error: 'Service unavailable',
-        message: 'Markets data is still loading. Please retry shortly.',
+        errorCode: "MARKETS_SNAPSHOT_NOT_READY",
+        error: "Service unavailable",
+        message: "Markets data is still loading. Please retry shortly.",
       });
       return;
     }
@@ -39,15 +53,17 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
     const filtered = payload.data.filter((item) => {
       return (
         item.marketName &&
-        item.marketName.trim() !== '' &&
+        item.marketName.trim() !== "" &&
         item.chainName &&
-        item.chainName.trim() !== '' &&
+        item.chainName.trim() !== "" &&
         item.tokenSymbol &&
-        item.tokenSymbol.trim() !== ''
+        item.tokenSymbol.trim() !== ""
       );
     });
 
-    const reserves: MarketWithSpread[] = serializeMarketsReservesForApi(filtered as RuntimeReserveData[]);
+    const reserves: MarketWithSpread[] = serializeMarketsReservesForApi(
+      filtered as RuntimeReserveData[]
+    );
 
     const response: MarketsResponse = {
       snapshot: {
@@ -63,14 +79,14 @@ export async function getMarkets(req: Request, res: Response): Promise<void> {
     };
 
     if (isTooStale) {
-      res.set('Warning', '110 - "Markets snapshot is stale"');
+      res.set("Warning", '110 - "Markets snapshot is stale"');
     }
 
     res.json(response);
   } catch (error) {
-    logger.error('Error getting markets:', error);
+    logger.error("Error getting markets:", error);
     res.status(500).json({
-      error: 'Internal server error',
+      error: "Internal server error",
       message: error instanceof Error ? error.message : String(error),
     });
   }

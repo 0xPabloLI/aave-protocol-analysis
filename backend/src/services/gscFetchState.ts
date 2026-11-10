@@ -16,7 +16,10 @@ export function getGscFetchState(): Readonly<GscFetchState> {
   return state;
 }
 
-export function setGscFetchSuccess(result: { targetDate: string; rowsUpserted: number }): void {
+export function setGscFetchSuccess(result: {
+  targetDate: string;
+  rowsUpserted: number;
+}): void {
   state = {
     lastSuccessAt: new Date().toISOString(),
     lastTargetDate: result.targetDate,

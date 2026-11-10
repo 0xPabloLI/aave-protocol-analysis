@@ -69,13 +69,11 @@ export const getSideDataMeta = async (_req: Request, res: Response) => {
   ].filter(Boolean).length;
   if (successCount === 0) {
     logger.error("Side-data meta failed: all sources unavailable");
-    res
-      .status(500)
-      .json({
-        error: "Internal server error",
-        message: "Failed to load side-data meta",
-        ...payload,
-      });
+    res.status(500).json({
+      error: "Internal server error",
+      message: "Failed to load side-data meta",
+      ...payload,
+    });
     return;
   }
 

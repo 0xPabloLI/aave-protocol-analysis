@@ -40,15 +40,20 @@ Currently, `campaignApr` in the breakdown is derived from `campaign.apr / 100` (
 **File**: `packages/aave-fetcher/src/merkl-api.ts`
 
 **New helper function**:
+
 ```typescript
 const AMOUNT_PATTERN = /_AMOUNT_/;
 
-const resolveCampaignApr = (campaign: any, distributionType?: string): number => {
+const resolveCampaignApr = (
+  campaign: any,
+  distributionType?: string
+): number => {
   if (!campaign) return 0;
   const topApr = Number(campaign.apr || 0);
 
-  const isAmountVariant = typeof distributionType === 'string'
-    && AMOUNT_PATTERN.test(distributionType.toUpperCase());
+  const isAmountVariant =
+    typeof distributionType === "string" &&
+    AMOUNT_PATTERN.test(distributionType.toUpperCase());
 
   // VALUE variants: campaign.apr is percentage format → divide by 100
   if (!isAmountVariant && topApr > 0) return topApr / 100;
@@ -56,9 +61,10 @@ const resolveCampaignApr = (campaign: any, distributionType?: string): number =>
   // AMOUNT variants: campaign.apr = 0, use distributionSettings.apr (already decimal)
   if (isAmountVariant) {
     const dsApr =
-      campaign?.params?.distributionMethodParameters?.distributionSettings?.apr
-      ?? campaign?.distributionMethodParameters?.distributionSettings?.apr
-      ?? campaign?.distributionSettings?.apr;
+      campaign?.params?.distributionMethodParameters?.distributionSettings
+        ?.apr ??
+      campaign?.distributionMethodParameters?.distributionSettings?.apr ??
+      campaign?.distributionSettings?.apr;
     const dsAprNum = Number(dsApr || 0);
     if (dsAprNum > 0) return dsAprNum;
   }
@@ -71,17 +77,20 @@ const resolveCampaignApr = (campaign: any, distributionType?: string): number =>
 ```
 
 **Design decision**: Uses `distributionType` containing `_AMOUNT_` to determine behavior, not `campaign.apr` value comparison. This is more precise because:
+
 - `_AMOUNT_` is the upstream's literal definition of the variant
 - A VALUE variant with `campaign.apr = 0` (edge case) should NOT fall back to `distributionSettings.apr`
 - An AMOUNT variant with a non-zero `campaign.apr` (hypothetical future) should use `distributionSettings.apr`
 
 **Call site 1** (opportunity loop, ~line 1129):
+
 ```typescript
 // Old: apr: Number(campaign.apr || 0) / 100,
 apr: resolveCampaignApr(campaign, opp.distributionType),
 ```
 
 **Call site 2** (`fetchMerklCampaignDetails`, ~line 924):
+
 ```typescript
 // Old: apr: aprPercent / 100,
 apr: resolveCampaignApr(campaign, campaign.distributionType),
@@ -99,10 +108,10 @@ apr: resolveCampaignApr(campaign, campaign.distributionType),
 
 The existing mapping tables in both `merklForecastModel.ts` (lines 68-82) and `merkl-api.ts` (lines 557-574) already map all AMOUNT variants:
 
-| Pattern | Mapped To |
-|---|---|
-| `MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT` | `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` |
-| `FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE` | `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` |
+| Pattern                                  | Mapped To                              |
+| ---------------------------------------- | -------------------------------------- |
+| `MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT`  | `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE` |
+| `FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE`  | `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` |
 | `FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT` | `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` |
 
 This is correct because forecast calculation form is identical for all variants. The mapping loss of AMOUNT semantics is intentional and documented in ADR-0024.
@@ -114,6 +123,7 @@ This is correct because forecast calculation form is identical for all variants.
 **File**: `packages/aave-fetcher/tests/resolveCampaignApr.test.ts`
 
 8 test cases covering:
+
 1. VALUE variant without distributionType
 2. VALUE variant with explicit non-AMOUNT distributionType
 3. AMOUNT_PER_VALUE fallback to distributionSettings.apr
@@ -139,6 +149,7 @@ distributionSettings.apr     ↓
 ## AMOUNT_PER_AMOUNT TVL Consideration
 
 AMOUNT_PER_AMOUNT's TVL must be in target token count (not USD) for forecast calculations to be consistent:
+
 - `requiredDaily / TVL(tokens)` = token/token/day (matches `aprCap` unit: token/token/year)
 - If TVL is in USD, the ratio is meaningless
 

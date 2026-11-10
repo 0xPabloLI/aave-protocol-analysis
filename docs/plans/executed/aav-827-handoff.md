@@ -4,6 +4,7 @@
 > 最新前端 handoff 见 [aav-827-frontend-handoff.md](./aav-827-frontend-handoff.md)。
 
 ## Priority
+
 高 — 后端返回错误数据会直接导致前端显示误导性 APR
 
 ## 当前问题
@@ -13,11 +14,15 @@
 文件：`packages/aave-fetcher/src/merkl-api.ts`
 
 当前实现（需修改）：
+
 ```typescript
 // 用 distributionType 包含 _AMOUNT_ 判断，返回 distributionSettings.apr
 // 问题：返回值是 token 利率（如 18.25 或 3650），不是 USD APR
 // 前端会把它当百分比显示，用户看到 1825% 或 365000%
-export const resolveCampaignApr = (campaign: any, distributionType?: string): number => {
+export const resolveCampaignApr = (
+  campaign: any,
+  distributionType?: string
+): number => {
   // ... AMOUNT fallback to distributionSettings.apr
 };
 ```
@@ -79,11 +84,11 @@ AMOUNT_PER_AMOUNT:
 
 ## 验证数据
 
-| 变体 | Campaign ID | campaign.apr | ds.apr | rewardToken.price | 期望 campaignApr |
-|---|---|---|---|---|---|
-| VALUE | 14885251677142679755 | 6 | 0.06 | 0.09 | 0.06 |
-| AMOUNT_PER_VALUE | 6132312600992582704 | 0 | 18.25 | null | 需取 price × 18.25 |
-| AMOUNT_PER_AMOUNT | 6977221384739878326 | 0 | 3650 | null | unavailable |
+| 变体              | Campaign ID          | campaign.apr | ds.apr | rewardToken.price | 期望 campaignApr   |
+| ----------------- | -------------------- | ------------ | ------ | ----------------- | ------------------ |
+| VALUE             | 14885251677142679755 | 6            | 0.06   | 0.09              | 0.06               |
+| AMOUNT_PER_VALUE  | 6132312600992582704  | 0            | 18.25  | null              | 需取 price × 18.25 |
+| AMOUNT_PER_AMOUNT | 6977221384739878326  | 0            | 3650   | null              | unavailable        |
 
 ## 相关文件
 

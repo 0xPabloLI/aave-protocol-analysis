@@ -11,6 +11,7 @@ Accepted
 Merkl campaigns (grouped as **CampaignGroups**) are sourced from Merkl API opportunities. A single opportunity may target either V3 or V4 protocol reserves. Without version-aware filtering, a V4 campaign can incorrectly attach to V3 reserves (or vice versa), producing misleading incentive data.
 
 The Merkl API response includes:
+
 - `type` — e.g. `AAVE_NET_LENDING`, `AAVE_V4_HUB_SUPPLY`
 - `explorerAddress` — the contract address associated with the opportunity
 - `name` — free-text human-readable name
@@ -44,11 +45,11 @@ Use a **4-step priority-based derivation**:
 
 Built once per fetch cycle from `baseDataset`:
 
-| Address type | Source | Maps to |
-|---|---|---|
+| Address type                  | Source            | Maps to           |
+| ----------------------------- | ----------------- | ----------------- |
 | aToken address (all reserves) | `r.aTokenAddress` | reserve's version |
 | vToken address (all reserves) | `r.vTokenAddress` | reserve's version |
-| spoke address (V4 only) | `r.spokeAddress` | `'v4'` |
+| spoke address (V4 only)       | `r.spokeAddress`  | `'v4'`            |
 
 V3 tokens are excluded from this lookup because V3 never uses underlying token as `explorerAddress`.
 V4 underlying tokens are in a separate lookup (only maps to v4) because they can be shared with V3.
@@ -61,18 +62,22 @@ V4 underlying tokens are in a separate lookup (only maps to v4) because they can
 ## Alternatives Considered
 
 ### A. Type-field-only matching (status quo before this ADR)
+
 - Relied on `type.toUpperCase().includes('V4')` only
 - Rejected: cannot handle future types that lack V4 prefix
 
 ### B. Name-based parsing
+
 - Parse human-readable opportunity name for version hints
 - Rejected: unreliable, free-text varies across Merkl types
 
 ### C. Known V3 type list
+
 - Maintain a hardcoded list of V3 types, default everything else
 - Rejected: brittle, requires manual updates when Merkl adds new types
 
 ### D. explorerAddress-only reverse lookup (without type fallback)
+
 - Build reverse index from all reserve addresses
 - Rejected: V4 Hub Supply uses underlying token which is shared with V3, causing ambiguous matches
 

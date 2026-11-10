@@ -20,7 +20,7 @@ Implemented
 
 ```typescript
 const isTestnetKey = (key: string): boolean =>
-  key.includes('Sepolia') || key.includes('Fuji');
+  key.includes("Sepolia") || key.includes("Fuji");
 ```
 
 - **过滤逻辑反转**：从"只允许白名单中的链"变为"排除已知的 testnet 链"

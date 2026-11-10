@@ -8,6 +8,6 @@
 export class V4ChainsFetchError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'V4ChainsFetchError';
+    this.name = "V4ChainsFetchError";
   }
 }

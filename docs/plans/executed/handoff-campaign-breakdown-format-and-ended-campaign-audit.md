@@ -12,9 +12,17 @@ Ended campaign 作为**独立 stub breakdown** 混入 `breakdowns` 数组：
 {
   "link": "https://app.merkl.xyz/opportunities/123",
   "breakdowns": [
-    { "campaignId": "hash_a", "campaignApr": 0.05, "rewardTokenSymbol": "USDC", /* live */ },
-    { "campaignId": "hash_b", "campaignApr": 0,    "rewardTokenSymbol": "USDC", /* stub for ended */ }
-  ]
+    {
+      "campaignId": "hash_a",
+      "campaignApr": 0.05,
+      "rewardTokenSymbol": "USDC" /* live */,
+    },
+    {
+      "campaignId": "hash_b",
+      "campaignApr": 0,
+      "rewardTokenSymbol": "USDC" /* stub for ended */,
+    },
+  ],
 }
 ```
 
@@ -38,10 +46,10 @@ Ended campaign 信息**内嵌为嵌套对象**到匹配的 live breakdown 上：
       "lastEndedCampaign": {
         "startedAt": "2026-06-01T00:00:00Z",
         "endedAt": "2026-06-28T00:00:00Z",
-        "campaignId": "hash_b"
-      }
-    }
-  ]
+        "campaignId": "hash_b",
+      },
+    },
+  ],
 }
 ```
 
@@ -57,26 +65,26 @@ Ended campaign 信息**内嵌为嵌套对象**到匹配的 live breakdown 上：
 ```typescript
 // @internal/aave-shared-contracts
 interface MerklCampaignBreakdown {
-  campaignId: string;                    // Hash ID (R1)
-  campaignApr: number;                   // APR 百分比
-  campaignStartedAt?: string;            // ISO timestamp
-  campaignEndedAt?: string;              // ISO timestamp
-  rawDistributionType?: string;          // 分布类型
-  rawMode?: string;                      // 分布模式
-  budgetBoundMode?: string;              // TARGET_TOTAL_APR 模式
-  rewardTokenSymbol?: string;            // 奖励代币符号
-  rewardTokenIconUrl?: string;           // 奖励代币图标
+  campaignId: string; // Hash ID (R1)
+  campaignApr: number; // APR 百分比
+  campaignStartedAt?: string; // ISO timestamp
+  campaignEndedAt?: string; // ISO timestamp
+  rawDistributionType?: string; // 分布类型
+  rawMode?: string; // 分布模式
+  budgetBoundMode?: string; // TARGET_TOTAL_APR 模式
+  rewardTokenSymbol?: string; // 奖励代币符号
+  rewardTokenIconUrl?: string; // 奖励代币图标
   message?: string | Record<string, unknown> | unknown[];
-  parentCampaignId?: string;             // V4 spoke 父 campaign
-  positionCap?: number;                  // 仓位上限 (USD)
-  pointsPerThousandUsd?: number;         // 积分强度
-  pointsRewardToken?: string;            // 积分代币
-  pointsTokenIconUrl?: string;           // 积分代币图标
+  parentCampaignId?: string; // V4 spoke 父 campaign
+  positionCap?: number; // 仓位上限 (USD)
+  pointsPerThousandUsd?: number; // 积分强度
+  pointsRewardToken?: string; // 积分代币
+  pointsTokenIconUrl?: string; // 积分代币图标
   // AAV-1044 — lastEndedCampaign inline embedding
   lastEndedCampaign?: {
-    startedAt: string;             // 最近结束 campaign 的开始时间
-    endedAt: string;               // 最近结束 campaign 的结束时间
-    campaignId: string;            // 最近结束 campaign 的 Hash ID
+    startedAt: string; // 最近结束 campaign 的开始时间
+    endedAt: string; // 最近结束 campaign 的结束时间
+    campaignId: string; // 最近结束 campaign 的 Hash ID
   };
 }
 ```
@@ -84,6 +92,7 @@ interface MerklCampaignBreakdown {
 ### 1.4 范围限制
 
 **当前仅 Merkl 支持 `lastEndedCampaign` 字段**。`MeritCampaignBreakdown` 和 `BrevisCampaignBreakdown` 上没有这些字段：
+
 - 后端 `merit-api.ts` 有 `filterRecentExpiredMeritCampaigns()` 过滤逻辑，但未将 ended 信息嵌入 breakdown
 - 后端 `brevis-api.ts` 有 `filterRecentExpiredBrevis()` 过滤逻辑，同样未嵌入
 - 前端 `RecentlyEndedSection` 只能收集到 Merkl 来源的 ended campaign
@@ -171,6 +180,7 @@ RecentlyEndedSection (L148-339)
 **问题**: 997 行测试中无任何 `recentlyEnded`/`RecentlyEndedSection` 相关测试用例。
 
 **修复**: 至少补充：
+
 - 有 `lastEndedCampaign` 时，RecentlyEndedSection 渲染正确
 - 无 `lastEndedCampaign` 时，RecentlyEndedSection 返回 null
 - ended campaign URL 正确拼接（`sourceLink + /campaigns/ + lastEndedCampaign.campaignId`）
@@ -182,6 +192,7 @@ RecentlyEndedSection (L148-339)
 **问题**: 核心内嵌逻辑（按 `rewardTokenSymbol` 匹配 ended campaign 并写入 `breakdown.lastEndedCampaign`）没有独立的单元测试。
 
 **修复**: 新增测试验证：
+
 - 同 `rewardTokenSymbol` 的 ended campaign 被内嵌到 live breakdown 的 `lastEndedCampaign`
 - 不同 `rewardTokenSymbol` 的 ended campaign 不被内嵌
 - 多个 ended campaign 取最近结束的那个
@@ -191,16 +202,16 @@ RecentlyEndedSection (L148-339)
 
 ## 4. 已确认无需修改的位置
 
-| 位置 | 原因 |
-|---|---|
-| `merklForecastService.ts` / `merklForecastController.ts` | forecast 按 campaignId 逐条处理，不关心 breakdown 是否为 stub。只处理 live campaign（从 markets snapshot 的 campaignIds 收集），不涉及 recentlyEnded |
-| `collectCampaignIdsFromMarkets` | 遍历 breakdowns 取 campaignId，ended campaign 的 campaignId 不会被取到（前端 `isCampaignActive` 过滤 + 后端 `filterRecentExpiredCampaigns` 拆分） |
-| `scaleGroupedCampaigns` / `scaleGroupedCampaignsWithContext` | 泛型缩放，只改 `campaignApr`，其他字段 spread 透传，包括 `lastEndedCampaign` |
-| `deduplicateHubSpokeBreakdowns` | 按 campaignId 做 Hub/Spoke dedup，与 ended embedding 无关 |
-| `persistenceService.ts` Merkl breakdown 哈希 | 仅用 `bd.campaignId` 作为 key，用于变更检测和 SUM 聚合，不直接影响 API payload |
-| 前端 `isCampaignActive` 过滤 | 所有 breakdown 遍历都用 `isCampaignActive` 过滤，ended breakdown（`campaignEndedAt < now`）被正确排除 |
-| 前端 campaign URL 构造 | Live 和 ended 都用前端拼接模式，已统一 |
-| 前端 `IncentiveCampaign` 类型 | 已迁移为 `lastEndedCampaign` 嵌套对象，无旧数组/标量模式残留 |
+| 位置                                                         | 原因                                                                                                                                                 |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `merklForecastService.ts` / `merklForecastController.ts`     | forecast 按 campaignId 逐条处理，不关心 breakdown 是否为 stub。只处理 live campaign（从 markets snapshot 的 campaignIds 收集），不涉及 recentlyEnded |
+| `collectCampaignIdsFromMarkets`                              | 遍历 breakdowns 取 campaignId，ended campaign 的 campaignId 不会被取到（前端 `isCampaignActive` 过滤 + 后端 `filterRecentExpiredCampaigns` 拆分）    |
+| `scaleGroupedCampaigns` / `scaleGroupedCampaignsWithContext` | 泛型缩放，只改 `campaignApr`，其他字段 spread 透传，包括 `lastEndedCampaign`                                                                         |
+| `deduplicateHubSpokeBreakdowns`                              | 按 campaignId 做 Hub/Spoke dedup，与 ended embedding 无关                                                                                            |
+| `persistenceService.ts` Merkl breakdown 哈希                 | 仅用 `bd.campaignId` 作为 key，用于变更检测和 SUM 聚合，不直接影响 API payload                                                                       |
+| 前端 `isCampaignActive` 过滤                                 | 所有 breakdown 遍历都用 `isCampaignActive` 过滤，ended breakdown（`campaignEndedAt < now`）被正确排除                                                |
+| 前端 campaign URL 构造                                       | Live 和 ended 都用前端拼接模式，已统一                                                                                                               |
+| 前端 `IncentiveCampaign` 类型                                | 已迁移为 `lastEndedCampaign` 嵌套对象，无旧数组/标量模式残留                                                                                         |
 
 ---
 
@@ -209,12 +220,14 @@ RecentlyEndedSection (L148-339)
 当前 `lastEndedCampaign` 字段仅存在于 `MerklCampaignBreakdown`。如果 Merit / Brevis 也需要 recently ended 展示：
 
 **后端改动**:
+
 1. 在 `@internal/aave-shared-contracts` 的 `MeritCampaignBreakdown` 上添加 `lastEndedCampaign?` 嵌套对象
 2. 在 `merit-api.ts` 的 `buildCampaignGroupFromMeritEntry` 中，将 `filterRecentExpiredMeritCampaigns` 过滤结果嵌入到匹配的 live breakdown
 3. Brevis 同理
 4. `incentive-prune.ts` 对应透传
 
 **前端改动**:
+
 1. `schemas.ts` 中 `MeritCampaignBreakdownSchema` / `BrevisCampaignBreakdownSchema` 添加 `lastEndedCampaign` 嵌套对象
 2. `types/aave.ts` 中 `MeritCampaignBreakdown` / `BrevisCampaignBreakdown` 添加字段
 3. `IncentiveTooltip.tsx` Merit / Brevis 遍历中透传 `lastEndedCampaign` 到 `IncentiveCampaign`
@@ -225,12 +238,12 @@ RecentlyEndedSection (L148-339)
 
 ## 6. Commit 记录
 
-| 改动 | Backend Commit | Frontend Commit |
-|---|---|---|
-| R1-R5 主 PRD | 90348a2, 84836ab, ed7c8f9, c3f65224 | fbfe6474, c3f65224 |
-| AAV-1044 修正 PRD | 52246d7 | b3dcd7c9 |
-| lastEndedCampaign 重命名 + P0/P1/P2 修复 | 8cc10b2 | 0e1edfb2 |
-| Forecast 404 根因修复（numeric campaignId 泄漏） | d68d4db | — |
+| 改动                                             | Backend Commit                      | Frontend Commit    |
+| ------------------------------------------------ | ----------------------------------- | ------------------ |
+| R1-R5 主 PRD                                     | 90348a2, 84836ab, ed7c8f9, c3f65224 | fbfe6474, c3f65224 |
+| AAV-1044 修正 PRD                                | 52246d7                             | b3dcd7c9           |
+| lastEndedCampaign 重命名 + P0/P1/P2 修复         | 8cc10b2                             | 0e1edfb2           |
+| Forecast 404 根因修复（numeric campaignId 泄漏） | d68d4db                             | —                  |
 
 ---
 
@@ -241,6 +254,7 @@ RecentlyEndedSection (L148-339)
 **根因**: Merkl V4 API 的 `campaign.campaignId` 字段并非总是 `0x` hash ID。DUTCH_AUCTION 等类型的 `campaignId` 是数字型内部 ID（如 `10768955319320541400`），而 Merkl 的 metrics 端点需要原始 DB ID（如 `7587760385108365908`）。
 
 **数据流**:
+
 1. `rewardsRecord.breakdowns[].campaignId` = DB ID (`7587760385108365908`)
 2. `fetchMerklCampaignDetails(dbId)` → Merkl 返回 `campaignId: "10768955319320541400"`（数字型，非 0x）
 3. 旧代码：`hashId = campaign.campaignId` → `"10768955319320541400"` 写入 `breakdown.campaignId`

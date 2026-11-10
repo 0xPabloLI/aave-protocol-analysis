@@ -29,10 +29,10 @@ catch:
 
 **两种不当行为**：
 
-| 错误类型 | 当前行为 | 应该做的 |
-|---|---|---|
-| ECONNRESET / ETIMEDOUT | 降级到 serial → 失败 → 换 RPC | **直接换 RPC**，不浪费 serial 时间 |
-| contract revert / ABI mismatch | 降级到 serial（换 RPC 没用） | 降级到 serial（正确） |
+| 错误类型                       | 当前行为                      | 应该做的                           |
+| ------------------------------ | ----------------------------- | ---------------------------------- |
+| ECONNRESET / ETIMEDOUT         | 降级到 serial → 失败 → 换 RPC | **直接换 RPC**，不浪费 serial 时间 |
+| contract revert / ABI mismatch | 降级到 serial（换 RPC 没用）  | 降级到 serial（正确）              |
 
 ## 设计
 
@@ -91,22 +91,34 @@ for each RPC candidate (健康优先 → 被压制兜底):
 ### 默认 errorClassifier
 
 ```typescript
-const DEFAULT_ERROR_CLASSIFIER = (error: unknown): 'switch-rpc' | 'downgrade' | 'unknown' => {
+const DEFAULT_ERROR_CLASSIFIER = (
+  error: unknown
+): "switch-rpc" | "downgrade" | "unknown" => {
   const code = getErrorCode(error);
   // Ethers network-level errors
-  if (code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'ENOTFOUND' ||
-      code === 'ECONNREFUSED' || code === 'EPIPE' || code === 'NETWORK_ERROR') {
-    return 'switch-rpc';
+  if (
+    code === "ECONNRESET" ||
+    code === "ETIMEDOUT" ||
+    code === "ENOTFOUND" ||
+    code === "ECONNREFUSED" ||
+    code === "EPIPE" ||
+    code === "NETWORK_ERROR"
+  ) {
+    return "switch-rpc";
   }
   // Ethers server errors (502, 503, 504, 429, etc.)
-  if (code === 'SERVER_ERROR') return 'switch-rpc';
+  if (code === "SERVER_ERROR") return "switch-rpc";
   // Contract-level errors
   const msg = error instanceof Error ? error.message : String(error);
-  if (msg.includes('CALL_EXCEPTION') || msg.includes('UNPREDICTABLE_GAS_LIMIT') ||
-      msg.includes('bad address checksum') || msg.includes('INVALID_ARGUMENT')) {
-    return 'downgrade';
+  if (
+    msg.includes("CALL_EXCEPTION") ||
+    msg.includes("UNPREDICTABLE_GAS_LIMIT") ||
+    msg.includes("bad address checksum") ||
+    msg.includes("INVALID_ARGUMENT")
+  ) {
+    return "downgrade";
   }
-  return 'unknown';
+  return "unknown";
 };
 ```
 
@@ -142,8 +154,8 @@ const DEFAULT_ERROR_CLASSIFIER = (error: unknown): 'switch-rpc' | 'downgrade' | 
 
 ## 影响范围
 
-| 场景 | 现有行为 | 新行为 |
-|---|---|---|
-| publicnode ECONNRESET + V4 deficit | Multicall3 失败 → serial 逐条（同 RPC）→ serial 也超时 → 换 RPC | Multicall3 失败 → 直接换 drift.org（跳过 serial） |
-| publicnode contract revert + V4 deficit | Multicall3 失败 → serial 逐条（同 RPC）| Multicall3 失败 → serial 逐条（同一 RPC 值得试） |
-| publicnode 正常 + V4 deficit | Multicall3 ✅ → 返回 | 不变 |
+| 场景                                    | 现有行为                                                        | 新行为                                            |
+| --------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------- |
+| publicnode ECONNRESET + V4 deficit      | Multicall3 失败 → serial 逐条（同 RPC）→ serial 也超时 → 换 RPC | Multicall3 失败 → 直接换 drift.org（跳过 serial） |
+| publicnode contract revert + V4 deficit | Multicall3 失败 → serial 逐条（同 RPC）                         | Multicall3 失败 → serial 逐条（同一 RPC 值得试）  |
+| publicnode 正常 + V4 deficit            | Multicall3 ✅ → 返回                                            | 不变                                              |

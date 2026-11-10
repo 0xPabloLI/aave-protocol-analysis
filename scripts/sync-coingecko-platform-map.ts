@@ -78,8 +78,11 @@ function renderGeneratedTs(chainIdToPlatform: Map<number, string>): string {
   const sortedIds = [...chainIdToPlatform.keys()].sort((a, b) => a - b);
   for (const id of sortedIds) {
     const platform = chainIdToPlatform.get(id)!;
-    const escaped = platform.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-    lines.push(`  ${id}: '${escaped}',`);
+    // Double quotes and this exact layout are what Prettier emits for the repo's
+    // .prettierrc (`singleQuote: false`). Emitting anything else makes the file
+    // drift the moment it is regenerated, and `--check` compares byte-for-byte.
+    const escaped = platform.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    lines.push(`  ${id}: "${escaped}",`);
   }
   lines.push("};", "");
   return lines.join("\n");

@@ -13,33 +13,56 @@ commit `165fade` 修复了 `processMerklData` 中 `MerklOpportunityData.distribu
 **文件**: `packages/aave-fetcher/src/merkl-api.ts`
 
 **1258 行** — `processMerklData` 中的 amount variant 预解析循环：
+
 ```ts
 // 当前（错误）：
-const campaignType = normalizeForecastCampaignTypeLite({ distributionType: opp.distributionType });
+const campaignType = normalizeForecastCampaignTypeLite({
+  distributionType: opp.distributionType,
+});
 // 改为：
-const campaignType = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
+const campaignType = normalizeForecastCampaignTypeLite({
+  distributionType: campaign.distributionType,
+});
 ```
+
 上下文：循环遍历 `opp.campaigns`，`campaign` 是当前迭代的 campaign 对象。
 
 **1341 行** — `processMerklData` 中的 campaignDetailsCache 构建循环：
+
 ```ts
 // 当前（错误）：
-const campaignType = normalizeForecastCampaignTypeLite({ distributionType: opp.distributionType });
+const campaignType = normalizeForecastCampaignTypeLite({
+  distributionType: opp.distributionType,
+});
 // 改为：
-const campaignType = normalizeForecastCampaignTypeLite({ distributionType: campaign.distributionType });
+const campaignType = normalizeForecastCampaignTypeLite({
+  distributionType: campaign.distributionType,
+});
 ```
 
 **1352 行** — 同一循环中 resolveCampaignApr 调用：
+
 ```ts
 // 当前（错误）：
-const resolved = resolveCampaignApr(campaign, opp.distributionType, rewardTokenPrice, targetTokenPrice);
+const resolved = resolveCampaignApr(
+  campaign,
+  opp.distributionType,
+  rewardTokenPrice,
+  targetTokenPrice
+);
 // 改为：
-const resolved = resolveCampaignApr(campaign, campaign.distributionType, rewardTokenPrice, targetTokenPrice);
+const resolved = resolveCampaignApr(
+  campaign,
+  campaign.distributionType,
+  rewardTokenPrice,
+  targetTokenPrice
+);
 ```
 
 **参考**: line 974 和 1008（`buildForecastCampaignMetaLiteMap` 中）已经正确使用 `campaign.distributionType`，这是同样的模式。
 
-**影响**: 
+**影响**:
+
 - 1258: amount variant campaign 识别失效 → `FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT` / `MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT` 类型无法识别 → 价格解析跳过 → pointsPerThousandUsd 计算不准确
 - 1341: campaignType 识别失效 → 同上
 - 1352: APR 解析走错分支 → campaignDetailsCache 中 apr 值可能不正确

@@ -23,20 +23,20 @@ AAV-1106 暴露了 `baseBorrowRate` 单位错误（RAY 小数误当作百分数�
 
 ### 2. 单位约定
 
-| 层 | `supplyApy`/`borrowApy`/`campaignApr` | `utilizationPct`/`slopes`/`baseBorrowRate`/`protocolFee` |
-|---|---|---|
-| **内存** (`RuntimeReserveData`) | ratio (0.04) | percent (4.0) |
-| **API** (`MarketWithSpread`) | percent (4.0) | percent (4.0) |
-| **序列化器** | ×100 | passthrough |
+| 层                              | `supplyApy`/`borrowApy`/`campaignApr` | `utilizationPct`/`slopes`/`baseBorrowRate`/`protocolFee` |
+| ------------------------------- | ------------------------------------- | -------------------------------------------------------- |
+| **内存** (`RuntimeReserveData`) | ratio (0.04)                          | percent (4.0)                                            |
+| **API** (`MarketWithSpread`)    | percent (4.0)                         | percent (4.0)                                            |
+| **序列化器**                    | ×100                                  | passthrough                                              |
 
 ### 3. 三层测试安全网
 
-| 测试 | 位置 | 防什么 |
-|---|---|---|
-| 注册表完整性 | `shared-contracts/tests/units.test.ts` | 新增字段忘记注册到 `FIELD_UNITS` |
-| 转换函数正确性 | 同上 | `rayToRatio`/`rayToPercent` 对已知 RAY 值的输出 |
-| 序列化器一致性 | `backend/tests/unitsConsistency.test.ts` | 序列化器实际行为与 `SERIALIZER_RULES` 不匹配 |
-| AAV-1106 回归 | 同上 | V4 RPC `borrowApy` 存了 percent 而非 ratio |
+| 测试           | 位置                                     | 防什么                                          |
+| -------------- | ---------------------------------------- | ----------------------------------------------- |
+| 注册表完整性   | `shared-contracts/tests/units.test.ts`   | 新增字段忘记注册到 `FIELD_UNITS`                |
+| 转换函数正确性 | 同上                                     | `rayToRatio`/`rayToPercent` 对已知 RAY 值的输出 |
+| 序列化器一致性 | `backend/tests/unitsConsistency.test.ts` | 序列化器实际行为与 `SERIALIZER_RULES` 不匹配    |
+| AAV-1106 回归  | 同上                                     | V4 RPC `borrowApy` 存了 percent 而非 ratio      |
 
 ### 4. 消除重复定义
 
@@ -45,15 +45,15 @@ AAV-1106 暴露了 `baseBorrowRate` 单位错误（RAY 小数误当作百分数�
 
 ## 关键代码点
 
-| 文件 | 关键点 |
-|---|---|
-| `packages/aave-shared-contracts/src/units.ts` | `FIELD_UNITS`、`SERIALIZER_RULES`、转换函数 |
-| `packages/aave-shared-contracts/src/index.ts` | re-export units.ts |
-| `packages/aave-shared-contracts/tests/units.test.ts` | 注册表完整性 + 转换正确性 |
-| `packages/aave-rpc-infra/src/index.ts` | `buildReserveData()` 中 `borrowApy = rayToRatio(...)` |
-| `backend/src/services/onchainDataService.ts` | `rayToPercent` import 自 shared-contracts |
-| `backend/src/services/marketsApiSerialize.ts` | 序列化器行为（被 `unitsConsistency.test.ts` 验证） |
-| `backend/tests/unitsConsistency.test.ts` | 序列化器 ↔ 注册表一致性 |
+| 文件                                                 | 关键点                                                |
+| ---------------------------------------------------- | ----------------------------------------------------- |
+| `packages/aave-shared-contracts/src/units.ts`        | `FIELD_UNITS`、`SERIALIZER_RULES`、转换函数           |
+| `packages/aave-shared-contracts/src/index.ts`        | re-export units.ts                                    |
+| `packages/aave-shared-contracts/tests/units.test.ts` | 注册表完整性 + 转换正确性                             |
+| `packages/aave-rpc-infra/src/index.ts`               | `buildReserveData()` 中 `borrowApy = rayToRatio(...)` |
+| `backend/src/services/onchainDataService.ts`         | `rayToPercent` import 自 shared-contracts             |
+| `backend/src/services/marketsApiSerialize.ts`        | 序列化器行为（被 `unitsConsistency.test.ts` 验证）    |
+| `backend/tests/unitsConsistency.test.ts`             | 序列化器 ↔ 注册表一致性                               |
 
 ## 后果
 

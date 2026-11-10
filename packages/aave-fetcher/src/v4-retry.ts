@@ -1,7 +1,14 @@
-import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
-import { V4ChainsFetchError } from './v4-errors.js';
+import type {
+  RuntimeReserveData,
+  SpokeHubTopology,
+} from "@internal/aave-shared-contracts";
+import { V4ChainsFetchError } from "./v4-errors.js";
 
-export type LogFn = (level: 'info' | 'warn' | 'error', msg: string, meta: Record<string, unknown>) => void;
+export type LogFn = (
+  level: "info" | "warn" | "error",
+  msg: string,
+  meta: Record<string, unknown>
+) => void;
 
 export interface V4FetchResult {
   mapped: RuntimeReserveData[];
@@ -35,7 +42,7 @@ const RETRY_BASE_DELAY_MS = 2000;
  */
 export async function fetchV4WithRetry(
   fetchFn: () => Promise<V4FetchResult>,
-  options?: { maxRetries?: number; logFn?: LogFn },
+  options?: { maxRetries?: number; logFn?: LogFn }
 ): Promise<V4RetryResult> {
   const maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES;
   const logFn = options?.logFn;
@@ -46,18 +53,26 @@ export async function fetchV4WithRetry(
       const result = await fetchFn();
 
       if (result.mapped.length === 0) {
-        throw new Error('[V4] Fetch succeeded but returned empty dataset');
+        throw new Error("[V4] Fetch succeeded but returned empty dataset");
       }
 
       if (attempt > 1) {
-        logFn?.('info', `[V4] Retry attempt ${attempt}/${maxRetries} succeeded with ${result.mapped.length} reserves`, {});
+        logFn?.(
+          "info",
+          `[V4] Retry attempt ${attempt}/${maxRetries} succeeded with ${result.mapped.length} reserves`,
+          {}
+        );
       }
 
       return result;
     } catch (error) {
       // Fast-fail: chains() is unreachable → skip retries
       if (error instanceof V4ChainsFetchError) {
-        logFn?.('warn', `[V4] chains() unreachable — fast-fail, skipping retries`, { error: error.message });
+        logFn?.(
+          "warn",
+          `[V4] chains() unreachable — fast-fail, skipping retries`,
+          { error: error.message }
+        );
         return { ...EMPTY_V4_RESULT, lastError: error };
       }
 
@@ -65,12 +80,20 @@ export async function fetchV4WithRetry(
       const isLastAttempt = attempt === maxRetries;
 
       if (isLastAttempt) {
-        logFn?.('error', `[V4] All ${maxRetries} attempts failed. Last error: ${lastError.message}`, {});
+        logFn?.(
+          "error",
+          `[V4] All ${maxRetries} attempts failed. Last error: ${lastError.message}`,
+          {}
+        );
         break;
       }
 
       const delayMs = RETRY_BASE_DELAY_MS * attempt;
-      logFn?.('warn', `[V4] Attempt ${attempt}/${maxRetries} failed, retrying in ${delayMs}ms... (error: ${lastError.message})`, {});
+      logFn?.(
+        "warn",
+        `[V4] Attempt ${attempt}/${maxRetries} failed, retrying in ${delayMs}ms... (error: ${lastError.message})`,
+        {}
+      );
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }

@@ -1,5 +1,5 @@
-import type { SpokeHubTopology } from '@internal/aave-shared-contracts';
-import { topologySortKey } from '@internal/aave-shared-contracts';
+import type { SpokeHubTopology } from "@internal/aave-shared-contracts";
+import { topologySortKey } from "@internal/aave-shared-contracts";
 
 export interface V4SdkReserveForTopology {
   spoke: {
@@ -11,7 +11,9 @@ export interface V4SdkReserveForTopology {
   };
 }
 
-export function extractSpokeHubTopology(reserves: V4SdkReserveForTopology[]): SpokeHubTopology {
+export function extractSpokeHubTopology(
+  reserves: V4SdkReserveForTopology[]
+): SpokeHubTopology {
   const seen = new Set<string>();
   const topology: SpokeHubTopology = [];
 

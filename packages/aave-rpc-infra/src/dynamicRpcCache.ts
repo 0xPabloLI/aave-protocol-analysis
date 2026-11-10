@@ -1,29 +1,33 @@
-import { fifoEvict } from '@internal/aave-shared-contracts';
+import { fifoEvict } from "@internal/aave-shared-contracts";
 
 export interface DynamicRpcCacheOptions {
   fetchChainIdNetwork?: (chainId: number) => Promise<string[]>;
   fetchChainListOrg?: (chainId: number) => Promise<string[]>;
 }
 
-const CHAINID_NETWORK_URL = 'https://chainid.network/chains';
-const CHAINLIST_ORG_URL = 'https://chainlist.org/rpcs';
+const CHAINID_NETWORK_URL = "https://chainid.network/chains";
+const CHAINLIST_ORG_URL = "https://chainlist.org/rpcs";
 
 async function defaultFetchChainIdNetwork(chainId: number): Promise<string[]> {
   const res = await fetch(`${CHAINID_NETWORK_URL}/${chainId}.json`);
   if (!res.ok) return [];
-  const data = await res.json() as { rpc?: string[] };
-  return Array.isArray(data?.rpc) ? data.rpc.filter((u): u is string => typeof u === 'string') : [];
+  const data = (await res.json()) as { rpc?: string[] };
+  return Array.isArray(data?.rpc)
+    ? data.rpc.filter((u): u is string => typeof u === "string")
+    : [];
 }
 
 async function defaultFetchChainListOrg(chainId: number): Promise<string[]> {
   const res = await fetch(`${CHAINLIST_ORG_URL}/${chainId}.json`);
   if (!res.ok) return [];
-  const data = await res.json() as { rpc?: string[] };
-  return Array.isArray(data?.rpc) ? data.rpc.filter((u): u is string => typeof u === 'string') : [];
+  const data = (await res.json()) as { rpc?: string[] };
+  return Array.isArray(data?.rpc)
+    ? data.rpc.filter((u): u is string => typeof u === "string")
+    : [];
 }
 
 function filterHttps(urls: string[]): string[] {
-  return urls.filter((u) => u.startsWith('https://'));
+  return urls.filter((u) => u.startsWith("https://"));
 }
 
 function dedupe(urls: string[]): string[] {
@@ -38,8 +42,10 @@ export class DynamicRpcCache {
   private readonly fetchChainListOrg: (chainId: number) => Promise<string[]>;
 
   constructor(options: DynamicRpcCacheOptions = {}) {
-    this.fetchChainIdNetwork = options.fetchChainIdNetwork ?? defaultFetchChainIdNetwork;
-    this.fetchChainListOrg = options.fetchChainListOrg ?? defaultFetchChainListOrg;
+    this.fetchChainIdNetwork =
+      options.fetchChainIdNetwork ?? defaultFetchChainIdNetwork;
+    this.fetchChainListOrg =
+      options.fetchChainListOrg ?? defaultFetchChainListOrg;
   }
 
   get(chainId: number): string[] | undefined {
@@ -70,8 +76,8 @@ export class DynamicRpcCache {
     ])
       .then(([cidResult, clResult]) => {
         const urls: string[] = [];
-        if (cidResult.status === 'fulfilled') urls.push(...cidResult.value);
-        if (clResult.status === 'fulfilled') urls.push(...clResult.value);
+        if (cidResult.status === "fulfilled") urls.push(...cidResult.value);
+        if (clResult.status === "fulfilled") urls.push(...clResult.value);
         const merged = dedupe(filterHttps(urls));
         if (merged.length > 0 && !this.cache.has(chainId)) {
           this.cache.set(chainId, merged);

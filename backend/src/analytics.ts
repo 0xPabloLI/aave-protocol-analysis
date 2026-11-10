@@ -32,9 +32,7 @@ try {
 }
 
 export type AnalyticsEvent =
-  | "api_request"
-  | "markets_snapshot_served"
-  | "stale_fallback_served";
+  "api_request" | "markets_snapshot_served" | "stale_fallback_served";
 
 export interface AnalyticsFields {
   readonly [key: string]: unknown;

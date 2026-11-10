@@ -12,13 +12,13 @@
 
 ### 旧部署日志事实
 
-| 证据 | 值 |
-|------|-----|
-| `missing=[name,message]` 频率 | 每 ~1 分钟 |
-| Worker 请求 | #305-#307，429s=287-289 |
-| Worker launches | 0（从未成功启动浏览器） |
-| Puppeteer fallback | 触发了（needDynamicCampaignInfo=true），但提取结果为空 |
-| heap 波动 | 269-325MB，周期 ~2min，**无单调增长** |
+| 证据                          | 值                                                     |
+| ----------------------------- | ------------------------------------------------------ |
+| `missing=[name,message]` 频率 | 每 ~1 分钟                                             |
+| Worker 请求                   | #305-#307，429s=287-289                                |
+| Worker launches               | 0（从未成功启动浏览器）                                |
+| Puppeteer fallback            | 触发了（needDynamicCampaignInfo=true），但提取结果为空 |
+| heap 波动                     | 269-325MB，周期 ~2min，**无单调增长**                  |
 
 ### 我的分析存在的问题
 
@@ -63,11 +63,13 @@ ethereum-new-sgho-boost 缓存中 name=undefined, message=undefined
 ## 待讨论和验证项
 
 ### 1. 真正的 OOM 根因
+
 - 需要获取长期内存数据（24h+）确认是否单调增长
 - metricsCache pruning 是否足够？
 - 是否需要 heap snapshot 分析？
 
 ### 2. Docker 中 Puppeteer 能否正常启动？
+
 - 本地验证通过：能启动 Chromium、渲染页面、提取内容
 - Docker 中 puppeteer 是 prod dep，postinstall 下载 Chromium
 - 但 **Docker 和本地环境有差异**（系统库、headless 模式、字体）
@@ -77,13 +79,14 @@ ethereum-new-sgho-boost 缓存中 name=undefined, message=undefined
 
 当前两种情况都返回 `name:""`, `message:[]`，语义不区分：
 
-| 场景 | 当前结果 | 应有的语义 |
-|------|----------|-----------|
-| 提取失败（网络错误、HTML 解析失败） | `name:undefined` → 重试 | 正确：应该重试 |
-| 提取成功但页面没有 supply/borrow（如 sgho-boost） | `name:undefined` → 重试 | **错误**：不是目标 incentive 类型，不应重试 |
-| 提取成功，有 supply/borrow（如 celo-supply-usdt） | `name:"Supply USDT"` → complete | 正确 |
+| 场景                                              | 当前结果                        | 应有的语义                                  |
+| ------------------------------------------------- | ------------------------------- | ------------------------------------------- |
+| 提取失败（网络错误、HTML 解析失败）               | `name:undefined` → 重试         | 正确：应该重试                              |
+| 提取成功但页面没有 supply/borrow（如 sgho-boost） | `name:undefined` → 重试         | **错误**：不是目标 incentive 类型，不应重试 |
+| 提取成功，有 supply/borrow（如 celo-supply-usdt） | `name:"Supply USDT"` → complete | 正确                                        |
 
 **建议**：引入 `extractionOutcome` 字段，区分：
+
 - `"not_attempted"` → undefined → 重试
 - `"extracted_empty"` → 确认不是目标类型 → 标记 complete，不再重试
 - `"extracted_content"` → 有内容 → complete
@@ -92,15 +95,16 @@ ethereum-new-sgho-boost 缓存中 name=undefined, message=undefined
 
 修改范围：
 
-| 位置 | 变更 |
-|------|------|
-| `isCachedTimeRangeComplete` endDateOk | `!!endDate && trim!==""` → `endDate !== undefined` |
-| `isCachedTimeRangeComplete` hasEndIndicatorOk | 增加 `endDate !== undefined` 判断 |
-| `isCachedTimeRangeComplete` missing push | 增加 `endDate === undefined` 条件 |
+| 位置                                           | 变更                                                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `isCachedTimeRangeComplete` endDateOk          | `!!endDate && trim!==""` → `endDate !== undefined`                                    |
+| `isCachedTimeRangeComplete` hasEndIndicatorOk  | 增加 `endDate !== undefined` 判断                                                     |
+| `isCachedTimeRangeComplete` missing push       | 增加 `endDate === undefined` 条件                                                     |
 | `loadCachedMeritCampaignMetadata` isValidEntry | `hasRequiredFields` → `hasLinkAndStart && (hasEndIndicator \|\| endDate!==undefined)` |
-| `loadCachedMeritCampaignMetadata` endDate 写入 | `endDate!` → `endDate ?? ""` |
+| `loadCachedMeritCampaignMetadata` endDate 写入 | `endDate!` → `endDate ?? ""`                                                          |
 
 **潜在隐患**：
+
 - `endDate:""` 现在被视为 complete → 如果 endDate 真的需要有效值才能判断 campaign 是否结束，`endDate:""` 的条目会跳过刷新
 - 但 `cachedCampaignEnded = isMeritCampaignMetadataEnded("")` → `parseMeritEndDate("")` → null → false → 不会因为 endDate="" 触发 ended refresh
 - **实际影响**：`ethereum-new-sgho-boost` 的 endDate 是 `"Wed Jun 17 2026"`（有值），所以 endDate 修改对当前 case 无实际效果

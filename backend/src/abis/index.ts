@@ -5,4 +5,4 @@
  * by consumers. This module only houses supplements not available upstream.
  */
 
-export { V4_ORACLE_PRICES_ABI } from './v4-oracle-prices.js';
+export { V4_ORACLE_PRICES_ABI } from "./v4-oracle-prices.js";

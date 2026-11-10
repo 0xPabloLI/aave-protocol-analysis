@@ -4,11 +4,11 @@ This folder contains universal development patterns extracted from project exper
 
 ## Documents
 
-| Document | Topics |
-|----------|--------|
-| [CI & Git Hooks](./ci-git-hooks-patterns.md) | Pre-commit/pre-push hooks, lock file drift prevention, GitHub Actions structure, auto-remediation workflows |
-| [Caching & Data Freshness](./caching-data-freshness-patterns.md) | TTL strategies, layered cache architecture, staleness detection, file snapshot design, HTTP cache headers |
-| [External API Integration](./external-api-integration-patterns.md) | Per-source caching, debug metadata, sort verification, rate limiting, identifier matching |
+| Document                                                           | Topics                                                                                                      |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| [CI & Git Hooks](./ci-git-hooks-patterns.md)                       | Pre-commit/pre-push hooks, lock file drift prevention, GitHub Actions structure, auto-remediation workflows |
+| [Caching & Data Freshness](./caching-data-freshness-patterns.md)   | TTL strategies, layered cache architecture, staleness detection, file snapshot design, HTTP cache headers   |
+| [External API Integration](./external-api-integration-patterns.md) | Per-source caching, debug metadata, sort verification, rate limiting, identifier matching                   |
 
 ## Usage
 
@@ -39,11 +39,12 @@ This folder contains universal development patterns extracted from project exper
 
 ## Project-Specific vs Reusable
 
-| Type | Location | Description |
-|------|----------|-------------|
-| **Project-specific** | `docs/backend/`, `docs/api/`, etc. | This project's architecture, APIs, deployment |
-| **Reusable patterns** | `docs/reusable/` | Universal patterns for any project |
+| Type                  | Location                           | Description                                   |
+| --------------------- | ---------------------------------- | --------------------------------------------- |
+| **Project-specific**  | `docs/backend/`, `docs/api/`, etc. | This project's architecture, APIs, deployment |
+| **Reusable patterns** | `docs/reusable/`                   | Universal patterns for any project            |
 
 When adding new documentation:
+
 - If it applies to any Node.js project → `docs/reusable/`
 - If it's specific to this codebase → appropriate domain folder

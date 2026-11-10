@@ -1,13 +1,16 @@
 # AAV-333 开发方案：增加基于用户Portfolio的Risk Premium Simulation
 
 ## 1. Issue 概述
+
 为 AaveAPY 项目增加对 V4 Risk Premium（RP）的模拟计算与展示。RP 是基于用户实际抵押品组合计算的风险溢价，影响借款人和供应者的利率表现。需结合用户连接钱包后读取的链上仓位数据，计算并在前端模拟界面展示。
 
 ## 2. 当前状态
+
 - 状态：Backlog，尚未开始开发
 - 相关连接钱包/导入用户 portfolio 功能尚未完成，属于前置依赖
 
 ## 3. 影响范围
+
 - 后端：aave-protocol-analysis/railway（V4 fetcher、API schema、portfolio数据结构）
 - 前端：aaveapy/lovable（portfolioCalculator.ts、simulation逻辑、UI展示、连接钱包集成）
 
@@ -16,18 +19,21 @@
 ### 4.1 后端改动
 
 #### 4.1.1 API schema 扩展
+
 - 文件：`backend/src/services/marketsApiSerialize.ts`（或对应API序列化文件）
 - 新增字段 `collateralRisk?: number`（百分比数字，经 percentValueToPercent 转换）到每个 V4 reserve 的数据结构
 - V4 fetcher（`src/v4-fetcher.ts`）从链上 `reserve.settings.collateralRisk`（PercentNumber 类型）读取该字段
 - V3 reserve 不设置该字段（undefined，API 输出中不出现）
 
 #### 4.1.2 数据流
+
 - 确保后端API `/api/markets` 返回的reserve数据包含 `collateralRisk` 字段
 - 保持字段命名与后端一致，前端直接使用
 
 ### 4.2 Portfolio 数据结构扩展
 
 #### 4.2.1 新增 collateral 标记
+
 - 类型定义：`src/types/portfolio.ts` 新增 `isCollateral: boolean` 字段到 `PortfolioPosition`
 - 连接钱包时，从链上仓位数据读取每个资产的抵押品状态，设置 `isCollateral`
 - Batch模式下，允许用户在 PortfolioPanel 手动切换 `isCollateral` 状态（UI新增开关）
@@ -35,6 +41,7 @@
 ### 4.3 计算逻辑
 
 #### 4.3.1 新增 computeRiskPremium 函数
+
 - 文件：`src/lib/portfolioCalculator.ts`
 - 输入：用户 portfolio positions 列表
 - 逻辑：
@@ -47,6 +54,7 @@
 - 返回 RP（BPS）
 
 #### 4.3.2 Simulation 集成
+
 - 文件：`src/hooks/useRateSimulation.ts` 或相关模拟逻辑文件
 - 修改 `buildRateSimulationResult()`，增加 RP 参数输入
 - 计算：
@@ -57,26 +65,31 @@
 ### 4.4 UI 展示
 
 #### 4.4.1 SimulationSubRow
+
 - 文件：`src/components/dashboard/Portfolio/SimulationSubRow.tsx`
 - 新增 Risk Premium 行，显示：
   - RP 值（BPS或%）
   - Effective Borrow APY（带RP调整后的借款利率）
 
 #### 4.4.2 PortfolioPanel 汇总区
+
 - 文件：`src/components/dashboard/Portfolio/PortfolioPanel.tsx`
 - 显示 portfolio-level Risk Premium 总值
 - 支持用户在 batch 模式下切换资产 collateral 状态，实时刷新 RP 计算结果
 
 ### 4.5 连接钱包功能（前置依赖）
+
 - 需完成钱包连接及链上仓位读取功能，确保能获取资产的抵押品状态
 - 关联项目：增加连接钱包功能（未包含在本方案内）
 
 ## 5. 依赖关系
+
 - 连接钱包 / 导入用户 portfolio 功能（必须先完成）
 - 后端 V4 fetcher 支持 `collateralRisk` 字段
 - aaveapy-doc 中的利率公式文档作为计算参考
 
 ## 6. 验收标准
+
 - 后端API `/api/markets` V4 reserve 数据包含 `collateralRisk` 字段（百分比数字，roundTo6）
 - 后端API `/api/markets` V3 reserve 数据不包含 `collateralRisk` 字段
 - 连接钱包后，用户 portfolio 中资产正确标记 `isCollateral`
@@ -88,6 +101,7 @@
 - 代码覆盖率和类型检查通过，无明显性能回退
 
 ## 7. 复杂度评估
+
 - Medium
 - 理由：
   - 需跨前后端多处改动，涉及链上数据读取、API schema扩展、复杂计算逻辑和UI展示
@@ -100,6 +114,7 @@
 后端部分已完成，前端部分待移至前端 repo。
 
 ### 后端（已完成，本项目）
+
 - **AAV-475**: PRD — 后端新增 collateralRisk 字段 + 序列化层重构 + 防护测试
 - **AAV-476**: 序列化层防护 — pickDefined 辅助函数 + 覆盖测试 ✅
 - **AAV-477**: 类型定义 + 字段注册表新增 collateralRisk ✅
@@ -109,6 +124,7 @@
 - **AAV-481**: 字段增删指南文档更新 ✅
 
 ### 前端（待移至前端 repo，见 Linear AAV-482）
+
 - Portfolio RP 计算逻辑 (`computeRiskPremium`)
 - Simulation 集成 (Effective Borrow APY / Supply APY with RP)
 - UI 展示 (SimulationSubRow Risk Premium 行 + PortfolioPanel 汇总区)

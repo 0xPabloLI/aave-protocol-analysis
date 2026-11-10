@@ -6,23 +6,23 @@ Reusable standard for API caching, snapshot freshness, TTL management, and stale
 
 ### Four States
 
-| State | Meaning | Behavior |
-|---|---|---|
-| Fresh | age ≤ `softTTL` | Return normally |
-| Soft stale | `softTTL` < age ≤ `hardTTL` | Return old value, mark stale |
-| Hard stale | age > `hardTTL` | Reject service or return explicit error |
-| Missing | no value yet | Return loading / empty / error |
+| State      | Meaning                     | Behavior                                |
+| ---------- | --------------------------- | --------------------------------------- |
+| Fresh      | age ≤ `softTTL`             | Return normally                         |
+| Soft stale | `softTTL` < age ≤ `hardTTL` | Return old value, mark stale            |
+| Hard stale | age > `hardTTL`             | Reject service or return explicit error |
+| Missing    | no value yet                | Return loading / empty / error          |
 
 ### Required Fields
 
 Every cache or snapshot must define:
 
-| Field | Meaning |
-|---|---|
-| `writeInterval` | Producer or cron refresh cadence |
-| `softTTL` | Age after which data is considered stale |
-| `hardTTL` | Maximum age allowed for serving old data |
-| `fallbackMode` | What happens when refresh fails |
+| Field           | Meaning                                  |
+| --------------- | ---------------------------------------- |
+| `writeInterval` | Producer or cron refresh cadence         |
+| `softTTL`       | Age after which data is considered stale |
+| `hardTTL`       | Maximum age allowed for serving old data |
+| `fallbackMode`  | What happens when refresh fails          |
 
 ### Naming Rules
 
@@ -35,18 +35,19 @@ Every cache or snapshot must define:
 
 ### Separate Write Interval from Serve Window
 
-| Concept | Definition | Example |
-|---------|------------|---------|
-| **Write interval** | How often producer or cron updates data | cron every 1 min or every 10 min |
-| **Soft TTL** | When data becomes stale | UI acceptable with 1 min stale |
-| **Max serve stale** | Oldest age allowed to serve | 5 min hard stop |
-| **Fallback mode** | What to do when refresh fails | reuse previous snapshot, empty result, or 503 |
+| Concept             | Definition                              | Example                                       |
+| ------------------- | --------------------------------------- | --------------------------------------------- |
+| **Write interval**  | How often producer or cron updates data | cron every 1 min or every 10 min              |
+| **Soft TTL**        | When data becomes stale                 | UI acceptable with 1 min stale                |
+| **Max serve stale** | Oldest age allowed to serve             | 5 min hard stop                               |
+| **Fallback mode**   | What to do when refresh fails           | reuse previous snapshot, empty result, or 503 |
 
 **Rule**: `softTTL ≤ hardTTL`
 
 ### Validate Freshness Against Source Cadence
 
 Before setting freshness controls:
+
 1. Check API docs for update frequency
 2. Sample observed timestamps over time
 3. Document the reasoning
@@ -74,12 +75,12 @@ Request
 
 ### When to Use Each Layer
 
-| Layer | Use Case | Typical Window |
-|-------|----------|-----------|
-| In-memory | Hot path, sub-second access | 10s - 5min |
-| File snapshot | Restart resilience, shared state | 1min - 1hr |
-| Online cache | Cross-instance sharing, CDN | 5min - 1hr |
-| Upstream API | Source of truth | N/A |
+| Layer         | Use Case                         | Typical Window |
+| ------------- | -------------------------------- | -------------- |
+| In-memory     | Hot path, sub-second access      | 10s - 5min     |
+| File snapshot | Restart resilience, shared state | 1min - 1hr     |
+| Online cache  | Cross-instance sharing, CDN      | 5min - 1hr     |
+| Upstream API  | Source of truth                  | N/A            |
 
 ## 4. File Snapshot Design
 
@@ -100,13 +101,13 @@ data/
 ### Atomic File Writes
 
 ```typescript
-import { writeFileSync, renameSync } from 'fs';
-import { join } from 'path';
+import { writeFileSync, renameSync } from "fs";
+import { join } from "path";
 
 function atomicWrite(filePath: string, data: unknown): void {
   const tmpPath = `${filePath}.tmp.${Date.now()}`;
   writeFileSync(tmpPath, JSON.stringify(data, null, 2));
-  renameSync(tmpPath, filePath);  // Atomic on POSIX
+  renameSync(tmpPath, filePath); // Atomic on POSIX
 }
 ```
 
@@ -117,9 +118,9 @@ function atomicWrite(filePath: string, data: unknown): void {
 ```typescript
 interface DataSnapshot<T> {
   _metadata: {
-    timestamp: string;      // ISO 8601
-    source: string;         // API endpoint or "cache"
-    ttlMs?: number;         // For staleness calculation
+    timestamp: string; // ISO 8601
+    source: string; // API endpoint or "cache"
+    ttlMs?: number; // For staleness calculation
   };
   data: T;
 }
@@ -132,38 +133,38 @@ interface DataSnapshot<T> {
 ### State Machine Pattern
 
 ```typescript
-type UpdateStatus = 'idle' | 'updating' | 'error';
+type UpdateStatus = "idle" | "updating" | "error";
 
-let updateStatus: UpdateStatus = 'idle';
+let updateStatus: UpdateStatus = "idle";
 let activeUpdatePromise: Promise<void> | null = null;
 let lastUpdateTime: number = 0;
 
 async function checkAndUpdateIfStale(hardTtlMs: number): Promise<void> {
   const isStale = Date.now() - lastUpdateTime > hardTtlMs;
-  
+
   if (!isStale) return;
-  
+
   // Already updating? Wait for it
   if (activeUpdatePromise) {
     await activeUpdatePromise;
     return;
   }
-  
+
   // Start new update
-  if (updateStatus === 'idle') {
-    updateStatus = 'updating';
+  if (updateStatus === "idle") {
+    updateStatus = "updating";
     activeUpdatePromise = performUpdate()
       .then(() => {
-        updateStatus = 'idle';
+        updateStatus = "idle";
         lastUpdateTime = Date.now();
       })
       .catch(() => {
-        updateStatus = 'error';
+        updateStatus = "error";
       })
       .finally(() => {
         activeUpdatePromise = null;
       });
-    
+
     await activeUpdatePromise;
   }
 }
@@ -179,7 +180,7 @@ async function getData(maxWaitMs: number = 1000): Promise<Data> {
     // Wait briefly for fresh data instead of returning stale
     await Promise.race([
       activeUpdatePromise,
-      new Promise(resolve => setTimeout(resolve, maxWaitMs))
+      new Promise((resolve) => setTimeout(resolve, maxWaitMs)),
     ]);
   }
   return cachedData;
@@ -193,11 +194,11 @@ async function getData(maxWaitMs: number = 1000): Promise<Data> {
 ### User-Critical Data (Markets, Prices)
 
 ```typescript
-const SOFT_TTL_MS = 60_000;             // 1 minute
-const HARD_TTL_MS = 300_000;     // 5 minutes → 503
+const SOFT_TTL_MS = 60_000; // 1 minute
+const HARD_TTL_MS = 300_000; // 5 minutes → 503
 
 if (dataAge > HARD_TTL_MS) {
-  throw new ServiceUnavailableError('Data too stale');
+  throw new ServiceUnavailableError("Data too stale");
 }
 ```
 
@@ -211,7 +212,7 @@ Optional hard cap: some services keep serving stale data until `hardTTL`; others
 ### Side Data (Categories, Metadata)
 
 ```typescript
-const SIDE_DATA_SOFT_TTL_MS = 3600_000;  // 1 hour
+const SIDE_DATA_SOFT_TTL_MS = 3600_000; // 1 hour
 ```
 
 - Longer TTL (30min - 1hr)
@@ -221,7 +222,7 @@ const SIDE_DATA_SOFT_TTL_MS = 3600_000;  // 1 hour
 ### Historical/Static Data
 
 ```typescript
-const HISTORICAL_TTL_MS = 86400_000;  // 24 hours
+const HISTORICAL_TTL_MS = 86400_000; // 24 hours
 ```
 
 - Very long TTL (hours - days)
@@ -234,18 +235,18 @@ For expensive scans that often find nothing:
 
 ```typescript
 interface CacheEntry<T> {
-  data: T | null;           // null = confirmed miss
+  data: T | null; // null = confirmed miss
   checkedAt: number;
-  hitCacheOnly: boolean;    // Was this a cache-only check?
+  hitCacheOnly: boolean; // Was this a cache-only check?
 }
 
 function shouldScan(entry: CacheEntry<T> | undefined): boolean {
-  if (!entry) return true;                    // Never checked
-  if (entry.data !== null) return false;      // Have data
-  if (entry.hitCacheOnly) return true;        // Was cache-only, need real scan
-  
+  if (!entry) return true; // Never checked
+  if (entry.data !== null) return false; // Have data
+  if (entry.hitCacheOnly) return true; // Was cache-only, need real scan
+
   const age = Date.now() - entry.checkedAt;
-  return age > NEGATIVE_CACHE_TTL_MS;         // Negative cache expired
+  return age > NEGATIVE_CACHE_TTL_MS; // Negative cache expired
 }
 ```
 
@@ -270,14 +271,14 @@ Is data user-critical for decisions?
 
 ```typescript
 // Critical: markets, prices, forecasts
-res.setHeader('Cache-Control', 'no-cache, must-revalidate');
-res.setHeader('ETag', computeETag(data));
+res.setHeader("Cache-Control", "no-cache, must-revalidate");
+res.setHeader("ETag", computeETag(data));
 
 // Side data: categories, static metadata
-res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=600');
+res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=600");
 
 // Static: historical data, images
-res.setHeader('Cache-Control', 'max-age=86400, immutable');
+res.setHeader("Cache-Control", "max-age=86400, immutable");
 ```
 
 ## 9. Debug Metadata for Troubleshooting
@@ -292,7 +293,7 @@ interface DebugSnapshot {
     params: Record<string, unknown>;
     pagesScanned: number;
     cacheHit: boolean;
-    hitCacheOnly: boolean;    // Important: was upstream actually called?
+    hitCacheOnly: boolean; // Important: was upstream actually called?
     responseTimeMs: number;
   };
   data: unknown;
@@ -307,9 +308,9 @@ When cached result depends on multiple sources with different cadences:
 
 ```typescript
 const SOURCE_CADENCES = {
-  marketData: 60_000,      // 1 min
-  incentiveData: 300_000,  // 5 min
-  metadata: 3600_000,      // 1 hour
+  marketData: 60_000, // 1 min
+  incentiveData: 300_000, // 5 min
+  metadata: 3600_000, // 1 hour
 };
 
 // Option 1: TTL based on freshest critical source

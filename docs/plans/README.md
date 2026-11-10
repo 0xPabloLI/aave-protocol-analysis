@@ -2,10 +2,10 @@
 
 ## Directory Structure
 
-| Directory | Purpose |
-|---|---|
-| `docs/plans/` | **Active or pending plans.** New plans are created here. |
-| `docs/plans/executed/` | **Completed plans.** Moved here after execution finishes. |
+| Directory                   | Purpose                                                                                                                                       |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/plans/`               | **Active or pending plans.** New plans are created here.                                                                                      |
+| `docs/plans/executed/`      | **Completed plans.** Moved here after execution finishes.                                                                                     |
 | `docs/plans/linear-issues/` | **Linear issue trackers.** Detailed implementation records keyed by Linear issue ID (e.g. `aav_170_plan.md`). Stay here regardless of status. |
 
 ## File Naming

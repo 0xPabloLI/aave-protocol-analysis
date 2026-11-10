@@ -17,10 +17,10 @@
  * - Per-entry traversal failures are caught and skipped.
  */
 
-import * as AaveAddressBook from '@aave-dao/aave-address-book';
-import { DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
-import type { SpokeHubTopology } from '@internal/aave-shared-contracts';
-import { spokeKey, topologySortKey } from '@internal/aave-shared-contracts';
+import * as AaveAddressBook from "@aave-dao/aave-address-book";
+import { DEFAULT_SPOKE_HUB_TOPOLOGY } from "@internal/aave-shared-config";
+import type { SpokeHubTopology } from "@internal/aave-shared-contracts";
+import { spokeKey, topologySortKey } from "@internal/aave-shared-contracts";
 
 // ============================================================
 // V3 Types
@@ -31,7 +31,7 @@ import { spokeKey, topologySortKey } from '@internal/aave-shared-contracts';
 // ============================================================
 
 const isTestnetKey = (key: string): boolean =>
-  key.includes('Sepolia') || key.includes('Fuji');
+  key.includes("Sepolia") || key.includes("Fuji");
 // ============================================================
 
 export interface V3PoolEntry {
@@ -59,7 +59,10 @@ export interface V4SpokeEntry {
 // Build: single-pass traversal of AaveAddressBook
 // ============================================================
 
-export function buildAll(topology: SpokeHubTopology): { v3: V3PoolEntry[]; v4Spokes: V4SpokeEntry[] } {
+export function buildAll(topology: SpokeHubTopology): {
+  v3: V3PoolEntry[];
+  v4Spokes: V4SpokeEntry[];
+} {
   const v3: V3PoolEntry[] = [];
   const v4Spokes: V4SpokeEntry[] = [];
 
@@ -76,43 +79,53 @@ export function buildAll(topology: SpokeHubTopology): { v3: V3PoolEntry[]; v4Spo
 
   for (const [key, value] of Object.entries(AaveAddressBook)) {
     try {
-      if (!value || typeof value !== 'object') continue;
+      if (!value || typeof value !== "object") continue;
       const v = value as Record<string, unknown>;
       const chainId = Number(v.CHAIN_ID);
       if (!Number.isFinite(chainId) || chainId <= 0) continue;
 
-      if (key.startsWith('AaveV3')) {
+      if (key.startsWith("AaveV3")) {
         if (isTestnetKey(key)) continue;
 
-        const poolAddress = typeof v.POOL === 'string' ? v.POOL.toLowerCase().trim() : '';
+        const poolAddress =
+          typeof v.POOL === "string" ? v.POOL.toLowerCase().trim() : "";
         if (!poolAddress) continue;
 
         v3.push({
           poolKey: key,
           chainId,
           poolAddress,
-          oracleAddress: typeof v.ORACLE === 'string' ? v.ORACLE.toLowerCase() : undefined,
-          uiPoolDataProviderAddress: typeof v.UI_POOL_DATA_PROVIDER === 'string' ? v.UI_POOL_DATA_PROVIDER : undefined,
-          poolAddressesProvider: typeof v.POOL_ADDRESSES_PROVIDER === 'string' ? v.POOL_ADDRESSES_PROVIDER : undefined,
+          oracleAddress:
+            typeof v.ORACLE === "string" ? v.ORACLE.toLowerCase() : undefined,
+          uiPoolDataProviderAddress:
+            typeof v.UI_POOL_DATA_PROVIDER === "string"
+              ? v.UI_POOL_DATA_PROVIDER
+              : undefined,
+          poolAddressesProvider:
+            typeof v.POOL_ADDRESSES_PROVIDER === "string"
+              ? v.POOL_ADDRESSES_PROVIDER
+              : undefined,
         });
-      } else if (key.startsWith('AaveV4')) {
+      } else if (key.startsWith("AaveV4")) {
         if (isTestnetKey(key)) continue;
 
         const spokes = v.SPOKES as Record<string, string> | undefined;
         if (!spokes) continue;
 
         for (const [spokeName, spokeAddr] of Object.entries(spokes)) {
-          if (!spokeName.endsWith('_SPOKE') && !spokeName.endsWith('_ESPOKE')) continue;
-          if (typeof spokeAddr !== 'string') continue;
+          if (!spokeName.endsWith("_SPOKE") && !spokeName.endsWith("_ESPOKE"))
+            continue;
+          if (typeof spokeAddr !== "string") continue;
 
           const spokeAddressLower = spokeAddr.toLowerCase().trim();
           const topoCacheKey = spokeKey(chainId, spokeAddr);
           const hubAddresses = topologyBySpoke.get(topoCacheKey);
           if (!hubAddresses || hubAddresses.length === 0) continue;
 
-          const oracleAddress = typeof spokes[`${spokeName}_ORACLE`] === 'string'
-            ? spokes[`${spokeName}_ORACLE`].toLowerCase()
-            : undefined;
+          const oracleAddress =
+            typeof spokes[`${spokeName}_ORACLE`] === "string"
+              ? spokes[`${spokeName}_ORACLE`].toLowerCase()
+              : undefined;
 
           for (const hubAddress of hubAddresses) {
             v4Spokes.push({
@@ -126,7 +139,9 @@ export function buildAll(topology: SpokeHubTopology): { v3: V3PoolEntry[]; v4Spo
         }
       }
     } catch (err) {
-      console.warn(`[addressBookRegistry] Skipping ${key}: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn(
+        `[addressBookRegistry] Skipping ${key}: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
   }
 

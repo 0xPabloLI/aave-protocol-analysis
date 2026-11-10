@@ -122,8 +122,7 @@ export async function fetchBrevisDistributedSoFar(
     };
 
     let multicallResults:
-      | { success: boolean; returnData: string }[]
-      | undefined;
+      { success: boolean; returnData: string }[] | undefined;
 
     if (options.providerPool) {
       try {

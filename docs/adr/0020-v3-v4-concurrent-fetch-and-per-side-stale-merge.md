@@ -35,7 +35,7 @@ PRD（AAV-388）原方案是 "SDK 失败时触发 RPC 直读"，但 RPC 兜底�
 
 ```typescript
 const [v3Settled, v4Settled] = await Promise.allSettled([
-  fetchV3MarketsWithTimeout(),          // 35s 独立 timeout
+  fetchV3MarketsWithTimeout(), // 35s 独立 timeout
   fetchV4ReservesWithTimeout({ v4Fatal }), // 35s 独立 timeout
 ]);
 ```
@@ -55,14 +55,14 @@ let v4FetchedAt: number | null = null;
 
 刷新流程（纯函数 `mergeWithPartialStale()`，见单测 `partialStaleMerge.test.ts`）：
 
-| 场景 | merged 结果 | stale 状态 |
-|---|---|---|
-| V3 ✓ V4 ✓ | freshV3 + freshV4 | 两个 stale 更新为新数据 |
-| V3 ✗ V4 ✓ + V3 stale 在 TTL 内 | staleV3 + freshV4 | V3 stale 保留，V4 stale 更新 |
-| V3 ✓ V4 ✗ + V4 stale 在 TTL 内 | freshV3 + staleV4 | V3 stale 更新，V4 stale 保留 |
-| V3 ✗ V4 ✗ + 两个 stale 在 TTL 内 | staleV3 + staleV4 | 两个 stale 保留 |
-| 单 side 失败 + 该 side stale 超 TTL | 该 side = []，对侧正常合并 | 不更新 |
-| 两 side 都失败 + 两个 stale 都超 TTL | merged = [] → 抛 Error | 不更新 |
+| 场景                                 | merged 结果                | stale 状态                   |
+| ------------------------------------ | -------------------------- | ---------------------------- |
+| V3 ✓ V4 ✓                            | freshV3 + freshV4          | 两个 stale 更新为新数据      |
+| V3 ✗ V4 ✓ + V3 stale 在 TTL 内       | staleV3 + freshV4          | V3 stale 保留，V4 stale 更新 |
+| V3 ✓ V4 ✗ + V4 stale 在 TTL 内       | freshV3 + staleV4          | V3 stale 更新，V4 stale 保留 |
+| V3 ✗ V4 ✗ + 两个 stale 在 TTL 内     | staleV3 + staleV4          | 两个 stale 保留              |
+| 单 side 失败 + 该 side stale 超 TTL  | 该 side = []，对侧正常合并 | 不更新                       |
+| 两 side 都失败 + 两个 stale 都超 TTL | merged = [] → 抛 Error     | 不更新                       |
 
 side 区分：`reserve.hubId` 可选字段（V4 有 hubId，V3 无）。类型安全，无需 `as any`。
 

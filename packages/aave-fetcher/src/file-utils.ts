@@ -1,10 +1,8 @@
-import { mkdir, rename, writeFile } from 'fs/promises';
-import { dirname } from 'path';
+import { mkdir, rename, writeFile } from "fs/promises";
+import { dirname } from "path";
 
 type JsonReplacer =
-  | ((this: any, key: string, value: any) => any)
-  | Array<number | string>
-  | null;
+  ((this: any, key: string, value: any) => any) | Array<number | string> | null;
 
 interface WriteJsonAtomicOptions {
   replacer?: JsonReplacer;
@@ -20,6 +18,6 @@ export async function writeJsonAtomic(
   const payload = JSON.stringify(value, replacer as any, space);
   const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
   await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(tempPath, payload, 'utf-8');
+  await writeFile(tempPath, payload, "utf-8");
   await rename(tempPath, filePath);
 }

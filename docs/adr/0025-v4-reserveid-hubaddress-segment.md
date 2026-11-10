@@ -7,6 +7,7 @@ Accepted
 ## 上下文
 
 V4 reserveId 的第四段 `hubName` 存在值域不一致问题：
+
 - v4-fetcher（SDK 侧）用 `r.asset.hub.name`，值如 "Core"/"Prime"/"Plus"
 - onchainDataService（address-book 侧）用 `V4SpokeConfig.hubName`（= hubKey），值如 "CORE_HUB"/"PRIME_HUB"/"PLUS_HUB"
 

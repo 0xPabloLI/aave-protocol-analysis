@@ -29,9 +29,9 @@ jobs:
             const { owner, repo } = context.repo;
             const headSha = process.env.HEAD_SHA ?? '';
             const headBranch = process.env.HEAD_BRANCH ?? '';
-            
+
             core.info(`Looking for draft PRs with head SHA: ${headSha}, branch: ${headBranch}`);
-            
+
             // Find PRs by head branch (more reliable)
             let prs = [];
             try {
@@ -46,7 +46,7 @@ jobs:
             } catch (error) {
               core.warning(`Failed to find PRs by branch: ${error.message}`);
             }
-            
+
             // Also try to find by searching all open PRs and matching SHA
             if (prs.length === 0) {
               try {
@@ -61,16 +61,16 @@ jobs:
                 core.warning(`Failed to search all PRs: ${error.message}`);
               }
             }
-            
+
             const draftPRs = prs.filter(pr => pr.draft === true);
-            
+
             if (draftPRs.length === 0) {
               core.info('No draft PRs found for this workflow run');
               return;
             }
-            
+
             core.info(`Found ${draftPRs.length} draft PR(s): ${draftPRs.map(pr => `#${pr.number}`).join(', ')}`);
-            
+
             // Check each draft PR's status
             for (const pr of draftPRs) {
               try {

@@ -66,14 +66,14 @@ V4 数据获取路径叠加了四种独立的弹性（resilience）模式，每�
 
 ### 模式 2: Three-layer fallback
 
-| 属性           | 值                                                                     |
+| 属性 | 值 |
 | -------------- | ---------------------------------------------------------------------- | ----- | ---------------------------------- |
-| **解决的问题** | 数据可用性 — V4 SDK 长时间宕机时仍能提供数据                           |
-| **触发条件**   | Layer 1: SDK 空集或超时 → Layer 2: SDK 失败 → Layer 3: 所有层失败      |
-| **行为**       | 严格降级，每层独立 timeout（SDK 35s + RPC 15s = 50s < 60s 外层硬限制） |
-| **状态模型**   | 无状态（`source: 'sdk'                                                 | 'rpc' | 'none'` 标识来源，不跨周期持久化） |
-| **实现位置**   | `concurrent-fetch.ts`（协调层）、`aave-rpc-infra`（Layer 2 实现）      |
-| **副作用**     | Layer 2 RPC 返回 `spokeHubTopology: []`（AAV-581 决策，避免拓扑降级）  |
+| **解决的问题** | 数据可用性 — V4 SDK 长时间宕机时仍能提供数据 |
+| **触发条件** | Layer 1: SDK 空集或超时 → Layer 2: SDK 失败 → Layer 3: 所有层失败 |
+| **行为** | 严格降级，每层独立 timeout（SDK 35s + RPC 15s = 50s < 60s 外层硬限制） |
+| **状态模型** | 无状态（`source: 'sdk'                                                 | 'rpc' | 'none'` 标识来源，不跨周期持久化） |
+| **实现位置** | `concurrent-fetch.ts`（协调层）、`aave-rpc-infra`（Layer 2 实现） |
+| **副作用** | Layer 2 RPC 返回 `spokeHubTopology: []`（AAV-581 决策，避免拓扑降级） |
 
 **降级路径的数据质量递减**：
 

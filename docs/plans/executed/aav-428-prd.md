@@ -66,8 +66,14 @@ V3 和 V4 的数据获取当前是串行的：先 `fetchRawMarketData()` 完成 
 
 ```typescript
 fetchResult: {
-  v3: { success: boolean; source: 'sdk' | 'timeout' | 'error' };
-  v4: { success: boolean; source: 'sdk' | 'rpc' | 'none' | 'timeout' | 'error' };
+  v3: {
+    success: boolean;
+    source: "sdk" | "timeout" | "error";
+  }
+  v4: {
+    success: boolean;
+    source: "sdk" | "rpc" | "none" | "timeout" | "error";
+  }
 }
 ```
 

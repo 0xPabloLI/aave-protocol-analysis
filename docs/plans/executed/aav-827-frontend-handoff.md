@@ -22,12 +22,12 @@
 
 ### `useTokenRateInMetrics` 影响的位置
 
-| 位置 | 文件 | 影响 |
-|---|---|---|
-| fetcher price resolve 跳过 | `merkl-api.ts:740,765` | `useTokenRateInMetrics=true` 时跳过 CoinGecko/reserve price resolve |
-| fetcher budget skip | `merkl-api.ts:804` | `useTokenRateInMetrics=true` 时允许无 price 的 budget（token 单位） |
+| 位置                               | 文件                          | 影响                                                                 |
+| ---------------------------------- | ----------------------------- | -------------------------------------------------------------------- |
+| fetcher price resolve 跳过         | `merkl-api.ts:740,765`        | `useTokenRateInMetrics=true` 时跳过 CoinGecko/reserve price resolve  |
+| fetcher budget skip                | `merkl-api.ts:804`            | `useTokenRateInMetrics=true` 时允许无 price 的 budget（token 单位）  |
 | backend extractDailyRewardsRecords | `merklForecastService.ts:280` | `useTokenRateInMetrics=true` → 读 `totalInToken`；false → 读 `total` |
-| backend TVL 换算 gate | `merklForecastService.ts:820` | 不再依赖此 flag——TVL 换算由 PER_AMOUNT + targetTokenPrice 决定 |
+| backend TVL 换算 gate              | `merklForecastService.ts:820` | 不再依赖此 flag——TVL 换算由 PER_AMOUNT + targetTokenPrice 决定       |
 
 ### AMOUNT 变体的两条路径
 
@@ -37,25 +37,25 @@
 
 所有字段统一为 USD：
 
-| 字段 | AMOUNT_PER_VALUE | AMOUNT_PER_AMOUNT | MAX_PER_AMOUNT |
-|---|---|---|---|
-| totalBudget | reward × price (USD) | reward × price (USD) | reward × price (USD) |
-| aprCap | dsApr × price (USD APR) | dsApr × (price/targetPrice) (USD APR) | dsApr / targetPrice (USD APR) |
-| latestTvl | USD（原始） | TVL × targetPrice (USD) | TVL × targetPrice (USD) |
-| campaignApr | dsApr × price (USD APR) | dsApr × (price/targetPrice) (USD APR) | dsApr / targetPrice (USD APR) |
-| distributedSoFar | USD（读 total） | USD（读 total） | USD（读 total） |
+| 字段             | AMOUNT_PER_VALUE        | AMOUNT_PER_AMOUNT                     | MAX_PER_AMOUNT                |
+| ---------------- | ----------------------- | ------------------------------------- | ----------------------------- |
+| totalBudget      | reward × price (USD)    | reward × price (USD)                  | reward × price (USD)          |
+| aprCap           | dsApr × price (USD APR) | dsApr × (price/targetPrice) (USD APR) | dsApr / targetPrice (USD APR) |
+| latestTvl        | USD（原始）             | TVL × targetPrice (USD)               | TVL × targetPrice (USD)       |
+| campaignApr      | dsApr × price (USD APR) | dsApr × (price/targetPrice) (USD APR) | dsApr / targetPrice (USD APR) |
+| distributedSoFar | USD（读 total）         | USD（读 total）                       | USD（读 total）               |
 
 → 和 VALUE 变体一致，前端不需要特殊处理。
 
 #### Token 路径（无 rewardTokenPrice）
 
-| 字段 | AMOUNT_PER_VALUE | AMOUNT_PER_AMOUNT | MAX_PER_AMOUNT |
-|---|---|---|---|
-| totalBudget | reward token 数量 | reward token 数量 | reward token 数量 |
-| aprCap | dsApr (token/USD/year) | 有 targetTokenPrice → dsApr/targetPrice (token/USD/year)；无 → dsApr (token/token/year) | 有 targetTokenPrice → dsApr/targetPrice (USD/USD/year)；无 → dsApr (USD/target/year) |
-| latestTvl | USD（原始） | 有 targetTokenPrice → TVL×targetPrice (USD)；无 → token 数量 | 有 targetTokenPrice → TVL×targetPrice (USD)；无 → token 数量 |
-| campaignApr | 0 | 0 | 0 |
-| distributedSoFar | token 数量（读 totalInToken） | token 数量（读 totalInToken） | token 数量（读 totalInToken） |
+| 字段             | AMOUNT_PER_VALUE              | AMOUNT_PER_AMOUNT                                                                       | MAX_PER_AMOUNT                                                                       |
+| ---------------- | ----------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| totalBudget      | reward token 数量             | reward token 数量                                                                       | reward token 数量                                                                    |
+| aprCap           | dsApr (token/USD/year)        | 有 targetTokenPrice → dsApr/targetPrice (token/USD/year)；无 → dsApr (token/token/year) | 有 targetTokenPrice → dsApr/targetPrice (USD/USD/year)；无 → dsApr (USD/target/year) |
+| latestTvl        | USD（原始）                   | 有 targetTokenPrice → TVL×targetPrice (USD)；无 → token 数量                            | 有 targetTokenPrice → TVL×targetPrice (USD)；无 → token 数量                         |
+| campaignApr      | 0                             | 0                                                                                       | 0                                                                                    |
+| distributedSoFar | token 数量（读 totalInToken） | token 数量（读 totalInToken）                                                           | token 数量（读 totalInToken）                                                        |
 
 → `campaignApr = 0` + `pointsPerThousandUsd > 0`，前端走 points fallback。
 
@@ -64,19 +64,23 @@
 ### 维度分析（为什么这样换算是正确的）
 
 **dsApr 的语义**：
+
 - AMOUNT_PER_VALUE：`dsApr = reward_token / USD / year`
 - AMOUNT_PER_AMOUNT：`dsApr = reward_token / target_token / year`
 - MAX_PER_AMOUNT：`dsApr = USD / target_token / year`（注意分子是 USD）
 
 **PER_AMOUNT + targetTokenPrice 的换算链**：
+
 ```
 TVL: target_token × targetTokenPrice = USD
 aprCap: (reward/target/year) / targetTokenPrice = reward/USD/year  [对 FIX_AMT_PER_AMT]
         (USD/target/year) / targetTokenPrice = USD/USD/year       [对 MAX_PER_AMT]
 ```
+
 → 全部统一到 USD 维度，dilution 公式 `TVL × aprCap` 正确。
 
 **PER_AMOUNT 无 targetTokenPrice**（当前仅 FastLane 1 个 case）：
+
 - TVL 保持 target token 数量，aprCap 保持 `dsApr`（token/token/year）
 - `TVL × dsApr = target × reward/target/year = reward/year` → 和 totalBudget（reward token 数量）维度自洽
 - 但 `latestTvl` 是 token 数量，前端 simulation 中 `latestTvl + inputUsd` 无法直接相加 → **已知边界 case**
@@ -86,28 +90,28 @@ aprCap: (reward/target/year) / targetTokenPrice = reward/USD/year  [对 FIX_AMT_
 ```typescript
 // MerklCampaignBreakdown 现在的结构（campaignAprUnavailableReason 已移除）
 interface MerklCampaignBreakdown extends BaseCampaignBreakdown {
-  campaignApr: number;  // USD APR (decimal, e.g. 0.035 = 3.5%); 0 = 无收益或无法计算
-  pointsPerThousandUsd?: number;  // POINT/PRETGE 类型输出；campaignApr > 0 时不输出
-  campaignType?: ForecastCampaignTypeLite;  // +3 AMOUNT 变体枚举值
+  campaignApr: number; // USD APR (decimal, e.g. 0.035 = 3.5%); 0 = 无收益或无法计算
+  pointsPerThousandUsd?: number; // POINT/PRETGE 类型输出；campaignApr > 0 时不输出
+  campaignType?: ForecastCampaignTypeLite; // +3 AMOUNT 变体枚举值
   // ...
 }
 ```
 
 ### AMOUNT 变体的 3 个新 `campaignType` 枚举值
 
-| 枚举值 | Merkl distributionType | 含义 |
-|---|---|---|
-| `FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE` | FIX_AMT_PER_VALUE | 每 USD 流动性固定 token 数量 |
-| `FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT` | FIX_AMT_PER_AMT | 每 token 流动性固定 token 数量 |
-| `MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT` | MAX_AMT_PER_AMT | 每 token 流动性最大 token 数量 |
+| 枚举值                                   | Merkl distributionType | 含义                           |
+| ---------------------------------------- | ---------------------- | ------------------------------ |
+| `FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE`  | FIX_AMT_PER_VALUE      | 每 USD 流动性固定 token 数量   |
+| `FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT` | FIX_AMT_PER_AMT        | 每 token 流动性固定 token 数量 |
+| `MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT`  | MAX_AMT_PER_AMT        | 每 token 流动性最大 token 数量 |
 
 ### `pointsPerThousandUsd` 计算逻辑
 
-| distributionType | TVL 含义 | 公式 | priceMultiplier |
-|---|---|---|---|
-| FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE | USD | `(value / TVL) × 1000` | 1 |
+| distributionType                       | TVL 含义          | 公式                                      | priceMultiplier  |
+| -------------------------------------- | ----------------- | ----------------------------------------- | ---------------- |
+| FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE  | USD               | `(value / TVL) × 1000`                    | 1                |
 | FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT | target token 数量 | `(value / TVL) × 1000 × targetTokenPrice` | targetTokenPrice |
-| MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT | target token 数量 | `(value / TVL) × 1000 × targetTokenPrice` | targetTokenPrice |
+| MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT  | target token 数量 | `(value / TVL) × 1000 × targetTokenPrice` | targetTokenPrice |
 
 无 targetTokenPrice 的 AMOUNT_PER_AMOUNT → `pointsPerThousandUsd = 0`（保守：无法算出正确 USD 强度）。
 
@@ -180,12 +184,12 @@ Merkl API → Fetcher (processMerklData)
 
 当前 `forecastWithTVL` 只识别 `MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE`、`FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE`、`DUTCH_AUCTION`。需要扩展为识别所有 6 种类型（3 个 VALUE + 3 个 AMOUNT），按四大类处理：
 
-| 大类 | campaignType | 处理方式 |
-|---|---|---|
-| DUTCH | DUTCH_AUCTION | 现有逻辑不变 |
-| FIX_VALUE | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE | 现有逻辑不变 |
+| 大类       | campaignType                                                                  | 处理方式                                       |
+| ---------- | ----------------------------------------------------------------------------- | ---------------------------------------------- |
+| DUTCH      | DUTCH_AUCTION                                                                 | 现有逻辑不变                                   |
+| FIX_VALUE  | FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE                                          | 现有逻辑不变                                   |
 | FIX_AMOUNT | FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE, FIX_REWARD_AMOUNT_PER_LIQUIDITY_AMOUNT | 和 FIX_VALUE 相同逻辑（后端已统一到 USD 维度） |
-| MAX | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE, MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT | 现有 MAX 逻辑（后端已统一到 USD 维度） |
+| MAX        | MAX_REWARD_VALUE_PER_LIQUIDITY_VALUE, MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT   | 现有 MAX 逻辑（后端已统一到 USD 维度）         |
 
 后端已把 AMOUNT 变体的 forecast 字段统一到 USD 维度（有 price 时）或 token 维度（无 price 时），所以前端 `forecastWithTVL` 可以用和 VALUE 变体相同的逻辑处理 AMOUNT 变体。
 
@@ -196,6 +200,7 @@ Merkl API → Fetcher (processMerklData)
 当前 `normalizeUsdUnit` 对 points campaign 做 `convertMerklPointsAmountToUsd(× rate)` 换算。
 
 需要改为：
+
 - 有 rewardTokenPrice 的 campaign → 透传 USD 值（后端已换算）
 - 无 rewardTokenPrice 的 campaign → 透传 token 数量，不做 `× rate` 换算
 
@@ -228,14 +233,14 @@ Ink 的 TydroInkPoints 没有 Merkl snapshot price，`useTokenRateInMetrics = tr
 
 部署后检查以下 campaign 的 Merkl breakdown：
 
-| 协议 | Token | token.type | campaignType | 预期 |
-|---|---|---|---|---|
-| IPOR Fusion | ipor-fusion-points-s2 | POINT | FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE | `campaignApr = 0`，`pointsPerThousandUsd > 0` |
-| Gravity | Gravity Points | POINT | FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE 或 _AMOUNT | `campaignApr = 0`，`pointsPerThousandUsd > 0` |
-| Lendle | LendPoints | POINT | FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE | `campaignApr = 0`，`pointsPerThousandUsd > 0` |
-| Whop | Whop USD | TOKEN | MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT | `campaignApr > 0`（有 price） |
-| pTMX | pTMX | PRETGE | FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE | `campaignApr > 0`（有 price） |
-| Ink | TydroInkPoints | PRETGE | DUTCH_AUCTION | 行为不变（有 snapshot price，走 USD 路径） |
+| 协议        | Token                 | token.type | campaignType                                     | 预期                                          |
+| ----------- | --------------------- | ---------- | ------------------------------------------------ | --------------------------------------------- |
+| IPOR Fusion | ipor-fusion-points-s2 | POINT      | FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE            | `campaignApr = 0`，`pointsPerThousandUsd > 0` |
+| Gravity     | Gravity Points        | POINT      | FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE 或 _AMOUNT | `campaignApr = 0`，`pointsPerThousandUsd > 0` |
+| Lendle      | LendPoints            | POINT      | FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE            | `campaignApr = 0`，`pointsPerThousandUsd > 0` |
+| Whop        | Whop USD              | TOKEN      | MAX_REWARD_VALUE_PER_LIQUIDITY_AMOUNT            | `campaignApr > 0`（有 price）                 |
+| pTMX        | pTMX                  | PRETGE     | FIX_REWARD_AMOUNT_PER_LIQUIDITY_VALUE            | `campaignApr > 0`（有 price）                 |
+| Ink         | TydroInkPoints        | PRETGE     | DUTCH_AUCTION                                    | 行为不变（有 snapshot price，走 USD 路径）    |
 
 ## 已解决的后端问题
 
@@ -273,25 +278,25 @@ Ink 的 TydroInkPoints 没有 Merkl snapshot price，`useTokenRateInMetrics = tr
 
 ### Commits (branch: `fix/automerge-race-condition`)
 
-| Commit | Description |
-|---|---|
+| Commit     | Description                                                                                                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------- |
 | `e5d8a911` | Main implementation: pointRateMap, safePointToUsdRate, getPointToUsdRate, AMOUNT variant recognition, schema fields |
-| `0564d739` | Local token icon first (later corrected in de67116f) |
-| `de67116f` | Restore resolveRewardTokenIconSrc + campaignsHaveUniformIcon functions |
-| `f0c3a41b` | Code review fixes + IncentiveTooltip overlay restoration |
+| `0564d739` | Local token icon first (later corrected in de67116f)                                                                |
+| `de67116f` | Restore resolveRewardTokenIconSrc + campaignsHaveUniformIcon functions                                              |
+| `f0c3a41b` | Code review fixes + IncentiveTooltip overlay restoration                                                            |
 
 ### Changes Summary
 
-| Item | Status |
-|---|---|
-| `safePointToUsdRate` fallback → 0 | Done |
-| `getPointToUsdRate(symbol, pointRateMap)` per-campaign routing | Done |
-| `pointRateMap: Record<string, number>` across all components | Done |
-| Remove default params `= TYDRO_POINT_TO_USD_RATE` | Done |
-| `MerklCampaignBreakdown` adds `rewardTokenSymbol` / `rewardTokenIconUrl` | Done |
-| `forecastWithTVL` recognizes AMOUNT variant campaignTypes + `TARGET_TOTAL_APR` | Done |
-| IncentiveTooltip reward token icon + `campaignsHaveUniformIcon` + grid alignment | Done |
-| Zod schema updated | Done |
+| Item                                                                             | Status |
+| -------------------------------------------------------------------------------- | ------ |
+| `safePointToUsdRate` fallback → 0                                                | Done   |
+| `getPointToUsdRate(symbol, pointRateMap)` per-campaign routing                   | Done   |
+| `pointRateMap: Record<string, number>` across all components                     | Done   |
+| Remove default params `= TYDRO_POINT_TO_USD_RATE`                                | Done   |
+| `MerklCampaignBreakdown` adds `rewardTokenSymbol` / `rewardTokenIconUrl`         | Done   |
+| `forecastWithTVL` recognizes AMOUNT variant campaignTypes + `TARGET_TOTAL_APR`   | Done   |
+| IncentiveTooltip reward token icon + `campaignsHaveUniformIcon` + grid alignment | Done   |
+| Zod schema updated                                                               | Done   |
 
 ### Deferred (Out of Scope)
 

@@ -20,12 +20,12 @@
 
 ## 最终 offsetLevel 映射（deterministic，无 fallback）
 
-| opportunityType | offsetLevel | 原因 |
-|---|---|---|
-| `AAVE_V4_SPOKE_SUPPLY` | `'reserve'` | 4维度精确匹配（chainId + spoke + token + hub），offset 也精确匹配 |
-| `AAVE_V4_HUB_SUPPLY` | `'hub-cross-spoke'` | 缺少 spokeAddress，只能匹配同 hub 同 token 下所有 spoke |
-| `AAVE_NET_*` (V3) | `'reserve'` | 同 pool 精确匹配 |
-| `AAVE_V4_NET_APR` | `'hub-cross-spoke'` | 同 HUB_SUPPLY，缺少 spokeAddress |
+| opportunityType        | offsetLevel         | 原因                                                              |
+| ---------------------- | ------------------- | ----------------------------------------------------------------- |
+| `AAVE_V4_SPOKE_SUPPLY` | `'reserve'`         | 4维度精确匹配（chainId + spoke + token + hub），offset 也精确匹配 |
+| `AAVE_V4_HUB_SUPPLY`   | `'hub-cross-spoke'` | 缺少 spokeAddress，只能匹配同 hub 同 token 下所有 spoke           |
+| `AAVE_NET_*` (V3)      | `'reserve'`         | 同 pool 精确匹配                                                  |
+| `AAVE_V4_NET_APR`      | `'hub-cross-spoke'` | 同 HUB_SUPPLY，缺少 spokeAddress                                  |
 
 ## 已移除的死路径
 
@@ -43,29 +43,29 @@
 
 ## Linear Issue 状态
 
-| Issue | 状态 | 说明 |
-|---|---|---|
-| AAV-924 (PRD + borrowBlacklist) | Done | commits: `9f4c2a9`, `5354e33`, `e17a7f4`, `7109281` |
-| AAV-921 (V4 HUB_SUPPLY hub 消歧) | Done | commit: `7109281` |
-| AAV-995 (PRD) | Done | 核心+清理+hooks 全部完成 |
-| AAV-996 (删除 tokenAddrToReserveId) | Done | — |
-| AAV-997 (hub-cross-spoke) | Done | — |
-| AAV-905 (tokenAddrToReserveId 冲突) | Done | 已删除 |
-| AAV-906 (resolveOffsetReserveIds prefix) | Done | hub-cross-spoke 已实现 |
-| AAV-927 (Slice 3 多值映射) | Canceled | 方案变更为删除 |
-| AAV-928 (Slice 4 hub-aware) | Done | 被 AAV-997 覆盖 |
-| AAV-958 (跨协议 BORROW_BL autodetect) | Done | commit: `e17a7f4` |
-| AAV-962 (前端 BORROW_BL simulation) | Backlog | 待前端实现 |
+| Issue                                    | 状态     | 说明                                                |
+| ---------------------------------------- | -------- | --------------------------------------------------- |
+| AAV-924 (PRD + borrowBlacklist)          | Done     | commits: `9f4c2a9`, `5354e33`, `e17a7f4`, `7109281` |
+| AAV-921 (V4 HUB_SUPPLY hub 消歧)         | Done     | commit: `7109281`                                   |
+| AAV-995 (PRD)                            | Done     | 核心+清理+hooks 全部完成                            |
+| AAV-996 (删除 tokenAddrToReserveId)      | Done     | —                                                   |
+| AAV-997 (hub-cross-spoke)                | Done     | —                                                   |
+| AAV-905 (tokenAddrToReserveId 冲突)      | Done     | 已删除                                              |
+| AAV-906 (resolveOffsetReserveIds prefix) | Done     | hub-cross-spoke 已实现                              |
+| AAV-927 (Slice 3 多值映射)               | Canceled | 方案变更为删除                                      |
+| AAV-928 (Slice 4 hub-aware)              | Done     | 被 AAV-997 覆盖                                     |
+| AAV-958 (跨协议 BORROW_BL autodetect)    | Done     | commit: `e17a7f4`                                   |
+| AAV-962 (前端 BORROW_BL simulation)      | Backlog  | 待前端实现                                          |
 
 ## 调研结论（保留供参考）
 
 ### 匹配语义
 
-| opp 类型 | 匹配维度 | 匹配关系 |
-|---|---|---|
-| V3 (NET_LENDING/SUPPLY 等) | `chainId` + `explorerAddress` → tokenAddr/aTokenAddr/vTokenAddr | 1:1 |
-| V4 SPOKE_SUPPLY | `chainId` + `spokeAddress` + `underlyingToken` + `hubAddress` | 1:1（ADR-0030 已跳过） |
-| V4 HUB_SUPPLY | `chainId` + `ds.hubAddress` + `explorerAddress`(=tokenAddress) | 1:N（Hub 层 APR 统一覆盖所有 spoke） |
+| opp 类型                   | 匹配维度                                                        | 匹配关系                             |
+| -------------------------- | --------------------------------------------------------------- | ------------------------------------ |
+| V3 (NET_LENDING/SUPPLY 等) | `chainId` + `explorerAddress` → tokenAddr/aTokenAddr/vTokenAddr | 1:1                                  |
+| V4 SPOKE_SUPPLY            | `chainId` + `spokeAddress` + `underlyingToken` + `hubAddress`   | 1:1（ADR-0030 已跳过）               |
+| V4 HUB_SUPPLY              | `chainId` + `ds.hubAddress` + `explorerAddress`(=tokenAddress)  | 1:N（Hub 层 APR 统一覆盖所有 spoke） |
 
 ### `ds.targetToken` 含义
 
@@ -73,11 +73,11 @@ V4 HUB_SUPPLY 的 `ds.targetToken` = `opp.identifier`，是 Merkl 系统的 Hub 
 
 ### hookType=14 borrowBytesLike 格式（逆向推断，无官方文档）
 
-| protocol | Market | borrowBytesLike 格式 | 可 vToken 反查？ |
-|---|---|---|---|
-| 0 | Main | 32 字节 hash | ❌ |
-| 1 | Lido | 地址 | ❌（不在 vTokenAddress 映射中） |
-| 2 | EtherFi | 地址 | ✅ |
-| 3 | Horizon | 混合 | 部分 |
+| protocol | Market  | borrowBytesLike 格式 | 可 vToken 反查？                |
+| -------- | ------- | -------------------- | ------------------------------- |
+| 0        | Main    | 32 字节 hash         | ❌                              |
+| 1        | Lido    | 地址                 | ❌（不在 vTokenAddress 映射中） |
+| 2        | EtherFi | 地址                 | ✅                              |
+| 3        | Horizon | 混合                 | 部分                            |
 
 结论：borrowBytesLike 格式不一致，不适合做 reserve 反查。

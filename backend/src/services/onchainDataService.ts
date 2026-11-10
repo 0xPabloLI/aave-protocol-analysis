@@ -25,14 +25,25 @@
  *   - Target: ~16 Multicall3 batches (3 Hub × 2 + 10 spoke deficit) → ~35 RPC calls (down from ~241 serial)
  */
 
-import { Contract, providers, utils } from 'ethers';
-import { UiPoolDataProvider } from '@aave/contract-helpers';
-import { providerPool, executeMulticall3, withTimeout } from '@internal/aave-rpc-infra';
-import { logger } from '../logger.js';
-import { BACKEND_CACHE_TTL_MS } from '../cacheTtl.js';
-import { V3_ENTRIES, V4_SPOKE_ENTRIES } from './addressBookRegistry.js';
-import { V4_HUB_FULL_ABI } from '@internal/aave-rpc-infra';
-import { normalizeAddress, v4SpokeCacheKey, v3OnchainKey, v4OnchainKey, fifoEvict, rayToPercent } from '@internal/aave-shared-contracts';
+import { Contract, providers, utils } from "ethers";
+import { UiPoolDataProvider } from "@aave/contract-helpers";
+import {
+  providerPool,
+  executeMulticall3,
+  withTimeout,
+} from "@internal/aave-rpc-infra";
+import { logger } from "../logger.js";
+import { BACKEND_CACHE_TTL_MS } from "../cacheTtl.js";
+import { V3_ENTRIES, V4_SPOKE_ENTRIES } from "./addressBookRegistry.js";
+import { V4_HUB_FULL_ABI } from "@internal/aave-rpc-infra";
+import {
+  normalizeAddress,
+  v4SpokeCacheKey,
+  v3OnchainKey,
+  v4OnchainKey,
+  fifoEvict,
+  rayToPercent,
+} from "@internal/aave-shared-contracts";
 
 const ONCHAIN_PER_RPC_TIMEOUT_MS = 15_000;
 const HUB_MAPPING_TTL_MS = 10 * 60_000;
@@ -59,14 +70,17 @@ function poolConfigKey(chainId: number, poolAddress: string): string {
 }
 
 export const POOL_CONFIGS = new Map<string, OnchainConfig>(
-  V3_ENTRIES
-    .filter((e) => e.uiPoolDataProviderAddress && e.poolAddressesProvider)
-    .map((e) => [poolConfigKey(e.chainId, e.poolAddress), {
+  V3_ENTRIES.filter(
+    (e) => e.uiPoolDataProviderAddress && e.poolAddressesProvider
+  ).map((e) => [
+    poolConfigKey(e.chainId, e.poolAddress),
+    {
       poolAddress: e.poolAddress,
       chainId: e.chainId,
       uiPoolDataProviderAddress: e.uiPoolDataProviderAddress!,
       poolAddressesProvider: e.poolAddressesProvider!,
-    }]),
+    },
+  ])
 );
 
 const RAY = BigInt(10) ** BigInt(27);
@@ -81,14 +95,21 @@ export function processDeficitBatchResults(
     const r = results[i];
     const underlying = underlyings[i];
     if (!r.success) {
-      logger.debug(`Multicall3 getSpokeDeficitRay failed for ${underlying}, skipping`);
+      logger.debug(
+        `Multicall3 getSpokeDeficitRay failed for ${underlying}, skipping`
+      );
       continue;
     }
     let deficitRay: bigint;
     try {
-      deficitRay = V4_HUB_INTERFACE.decodeFunctionResult('getSpokeDeficitRay', r.returnData)[0];
+      deficitRay = V4_HUB_INTERFACE.decodeFunctionResult(
+        "getSpokeDeficitRay",
+        r.returnData
+      )[0];
     } catch (e) {
-      logger.debug(`Decode getSpokeDeficitRay failed for ${underlying}: ${e instanceof Error ? e.message : String(e)}, skipping`);
+      logger.debug(
+        `Decode getSpokeDeficitRay failed for ${underlying}: ${e instanceof Error ? e.message : String(e)}, skipping`
+      );
       continue;
     }
     const deficitRayStr = String(deficitRay);
@@ -154,55 +175,60 @@ let cachedHubMappingAt = 0;
 
 async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
   try {
-    const chainData = await providerPool.executeWithAutoRpc(
-      config.chainId,
-      {
-        primary: async (provider: providers.Provider) => {
-          const uiPoolDataProvider = new UiPoolDataProvider({
-            uiPoolDataProviderAddress: config.uiPoolDataProviderAddress,
-            provider,
-            chainId: config.chainId,
-          });
+    const chainData = await providerPool.executeWithAutoRpc(config.chainId, {
+      primary: async (provider: providers.Provider) => {
+        const uiPoolDataProvider = new UiPoolDataProvider({
+          uiPoolDataProviderAddress: config.uiPoolDataProviderAddress,
+          provider,
+          chainId: config.chainId,
+        });
 
-          const humanized = await withTimeout(
-            uiPoolDataProvider.getReservesHumanized({
-              lendingPoolAddressProvider: config.poolAddressesProvider,
-            }),
-            ONCHAIN_PER_RPC_TIMEOUT_MS,
-            `On-chain fetch timeout for chain ${config.chainId}`
-          );
+        const humanized = await withTimeout(
+          uiPoolDataProvider.getReservesHumanized({
+            lendingPoolAddressProvider: config.poolAddressesProvider,
+          }),
+          ONCHAIN_PER_RPC_TIMEOUT_MS,
+          `On-chain fetch timeout for chain ${config.chainId}`
+        );
 
-          const reserves = (humanized as any).reservesData ?? [];
-          const chainData = new Map<string, OnchainReserveData>();
+        const reserves = (humanized as any).reservesData ?? [];
+        const chainData = new Map<string, OnchainReserveData>();
 
-          for (const reserve of reserves) {
-            const addr = normalizeAddress(String(reserve.underlyingAsset || ''));
-            if (!addr) continue;
+        for (const reserve of reserves) {
+          const addr = normalizeAddress(String(reserve.underlyingAsset || ""));
+          if (!addr) continue;
 
-            const data: OnchainReserveData = {};
+          const data: OnchainReserveData = {};
 
-            if (reserve.deficit !== undefined && reserve.deficit !== null) {
-              data.deficit = reserve.deficit?.toString?.() ?? String(reserve.deficit);
-            }
-
-            if (reserve.baseVariableBorrowRate !== undefined && reserve.baseVariableBorrowRate !== null) {
-              const rayStr = reserve.baseVariableBorrowRate?.toString?.() ?? String(reserve.baseVariableBorrowRate);
-              const pct = rayToPercent(rayStr);
-              if (pct !== undefined) data.baseVariableBorrowRate = pct;
-            }
-
-            if (Object.keys(data).length > 0) {
-              chainData.set(addr, data);
-            }
+          if (reserve.deficit !== undefined && reserve.deficit !== null) {
+            data.deficit =
+              reserve.deficit?.toString?.() ?? String(reserve.deficit);
           }
 
-          return chainData;
-        },
+          if (
+            reserve.baseVariableBorrowRate !== undefined &&
+            reserve.baseVariableBorrowRate !== null
+          ) {
+            const rayStr =
+              reserve.baseVariableBorrowRate?.toString?.() ??
+              String(reserve.baseVariableBorrowRate);
+            const pct = rayToPercent(rayStr);
+            if (pct !== undefined) data.baseVariableBorrowRate = pct;
+          }
+
+          if (Object.keys(data).length > 0) {
+            chainData.set(addr, data);
+          }
+        }
+
+        return chainData;
       },
-    );
+    });
 
     if (!chainData) {
-      logger.debug(`⏭️  On-chain: Skipping chain ${config.chainId}, no RPC URLs`);
+      logger.debug(
+        `⏭️  On-chain: Skipping chain ${config.chainId}, no RPC URLs`
+      );
       return false;
     }
 
@@ -214,7 +240,9 @@ async function fetchAndCacheChain(config: OnchainConfig): Promise<boolean> {
 
     return true;
   } catch {
-    logger.warn(`All RPC endpoints failed for ${config.poolAddress}, using cached data if available`);
+    logger.warn(
+      `All RPC endpoints failed for ${config.poolAddress}, using cached data if available`
+    );
     return false;
   }
 }
@@ -224,11 +252,14 @@ async function fetchSpokeDeficitMulticall3(
   hubAddress: string,
   spokeAddress: string,
   spokeName: string,
-  underlyingToAssetId: Map<string, number>,
+  underlyingToAssetId: Map<string, number>
 ): Promise<Map<string, OnchainReserveData>> {
   const deficitCalls: { underlying: string; callData: string }[] = [];
   for (const [underlying, assetId] of underlyingToAssetId) {
-    const callData = V4_HUB_INTERFACE.encodeFunctionData('getSpokeDeficitRay', [assetId, spokeAddress]);
+    const callData = V4_HUB_INTERFACE.encodeFunctionData("getSpokeDeficitRay", [
+      assetId,
+      spokeAddress,
+    ]);
     deficitCalls.push({ underlying, callData });
   }
   if (deficitCalls.length === 0) return new Map();
@@ -238,7 +269,9 @@ async function fetchSpokeDeficitMulticall3(
     allowFailure: true,
     callData: c.callData,
   }));
-  const results = await executeMulticall3(provider, multicallCalls, { label: `V4 deficit batch for ${spokeName}` });
+  const results = await executeMulticall3(provider, multicallCalls, {
+    label: `V4 deficit batch for ${spokeName}`,
+  });
   const underlyings = deficitCalls.map((c) => c.underlying);
   return processDeficitBatchResults(results, underlyings);
 }
@@ -248,17 +281,20 @@ async function fetchSpokeDeficitSerial(
   hubAddress: string,
   spokeAddress: string,
   spokeName: string,
-  underlyingToAssetId: Map<string, number>,
+  underlyingToAssetId: Map<string, number>
 ): Promise<Map<string, OnchainReserveData>> {
   const spokeData = new Map<string, OnchainReserveData>();
   const hubContract = new Contract(hubAddress, V4_HUB_FULL_ABI, provider);
   for (const [underlying, assetId] of underlyingToAssetId) {
-    const deficitRay = await withTimeout(
+    const deficitRay = (await withTimeout(
       hubContract.getSpokeDeficitRay(assetId, spokeAddress),
       ONCHAIN_PER_RPC_TIMEOUT_MS,
       `V4 getSpokeDeficitRay(${assetId}, ${spokeName}) timeout`
-    ) as any;
-    const result = processDeficitSerialResult(BigInt(String(deficitRay)), underlying);
+    )) as any;
+    const result = processDeficitSerialResult(
+      BigInt(String(deficitRay)),
+      underlying
+    );
     spokeData.set(underlying, result);
   }
   return spokeData;
@@ -273,22 +309,38 @@ async function fetchAndCacheV4Spoke(
   let underlyingToAssetId = hubAssetMapping.get(config.hubAddress);
   if (!underlyingToAssetId) {
     try {
-      underlyingToAssetId = (await providerPool.executeWithAutoRpc(
-        config.chainId,
-        {
-          primary: (p: providers.Provider) => buildHubAssetMappingMulticallInner(p, config.hubAddress, config.hubAddress, 'safety-net').catch((e) => {
-            logger.warn(`V4 hub mapping Multicall3 primary failed for ${config.hubAddress}: ${e instanceof Error ? e.message : String(e)}`);
-            throw e;
-          }),
-          fallback: (p: providers.Provider) => buildHubAssetMappingSerial(p, config.hubAddress, config.hubAddress, 'safety-net'),
-        },
-      )) ?? undefined;
+      underlyingToAssetId =
+        (await providerPool.executeWithAutoRpc(config.chainId, {
+          primary: (p: providers.Provider) =>
+            buildHubAssetMappingMulticallInner(
+              p,
+              config.hubAddress,
+              config.hubAddress,
+              "safety-net"
+            ).catch((e) => {
+              logger.warn(
+                `V4 hub mapping Multicall3 primary failed for ${config.hubAddress}: ${e instanceof Error ? e.message : String(e)}`
+              );
+              throw e;
+            }),
+          fallback: (p: providers.Provider) =>
+            buildHubAssetMappingSerial(
+              p,
+              config.hubAddress,
+              config.hubAddress,
+              "safety-net"
+            ),
+        })) ?? undefined;
       if (!underlyingToAssetId) {
-        logger.debug(`⏭️  V4 hub mapping: Skipping ${config.hubAddress} (chain ${config.chainId}), no RPC URLs`);
+        logger.debug(
+          `⏭️  V4 hub mapping: Skipping ${config.hubAddress} (chain ${config.chainId}), no RPC URLs`
+        );
         return false;
       }
     } catch {
-      logger.warn(`All RPC endpoints failed for V4 hub mapping ${config.hubAddress}, using cached spoke data`);
+      logger.warn(
+        `All RPC endpoints failed for V4 hub mapping ${config.hubAddress}, using cached spoke data`
+      );
       return false;
     }
     if (underlyingToAssetId!.size > 0) {
@@ -303,21 +355,34 @@ async function fetchAndCacheV4Spoke(
   }
 
   try {
-    const spokeData = await providerPool.executeWithAutoRpc(
-      config.chainId,
-      {
-        primary: (p: providers.Provider) =>
-          fetchSpokeDeficitMulticall3(p, config.hubAddress, config.spokeAddress, config.spokeName, underlyingToAssetId!).catch((e) => {
-            logger.warn(`V4 deficit Multicall3 primary failed for ${config.spokeName}: ${e instanceof Error ? e.message : String(e)}`);
-            throw e;
-          }),
-        fallback: (p: providers.Provider) =>
-          fetchSpokeDeficitSerial(p, config.hubAddress, config.spokeAddress, config.spokeName, underlyingToAssetId!),
-      },
-    );
+    const spokeData = await providerPool.executeWithAutoRpc(config.chainId, {
+      primary: (p: providers.Provider) =>
+        fetchSpokeDeficitMulticall3(
+          p,
+          config.hubAddress,
+          config.spokeAddress,
+          config.spokeName,
+          underlyingToAssetId!
+        ).catch((e) => {
+          logger.warn(
+            `V4 deficit Multicall3 primary failed for ${config.spokeName}: ${e instanceof Error ? e.message : String(e)}`
+          );
+          throw e;
+        }),
+      fallback: (p: providers.Provider) =>
+        fetchSpokeDeficitSerial(
+          p,
+          config.hubAddress,
+          config.spokeAddress,
+          config.spokeName,
+          underlyingToAssetId!
+        ),
+    });
 
     if (!spokeData) {
-      logger.debug(`⏭️  V4 deficit: Skipping ${config.spokeName} (chain ${config.chainId}), no RPC URLs`);
+      logger.debug(
+        `⏭️  V4 deficit: Skipping ${config.spokeName} (chain ${config.chainId}), no RPC URLs`
+      );
       return false;
     }
 
@@ -325,7 +390,9 @@ async function fetchAndCacheV4Spoke(
     fifoEvict(v4SpokeCache, MAX_V4_SPOKE_CACHE_ENTRIES);
     return true;
   } catch {
-    logger.warn(`All RPC endpoints failed for V4 ${config.spokeName}, using cached data if available`);
+    logger.warn(
+      `All RPC endpoints failed for V4 ${config.spokeName}, using cached data if available`
+    );
     return false;
   }
 }
@@ -341,10 +408,17 @@ async function buildHubAssetMappingMulticallInner(
 ): Promise<Map<string, number>> {
   const mapping = new Map<string, number>();
 
-  const getAssetCountCalldata = V4_HUB_INTERFACE.encodeFunctionData('getAssetCount');
+  const getAssetCountCalldata =
+    V4_HUB_INTERFACE.encodeFunctionData("getAssetCount");
   const results = await executeMulticall3(
     provider,
-    [{ target: hubAddress, allowFailure: false, callData: getAssetCountCalldata }],
+    [
+      {
+        target: hubAddress,
+        allowFailure: false,
+        callData: getAssetCountCalldata,
+      },
+    ],
     { label: `V4 getAssetCount for ${hubLabel} [${context}]` }
   );
 
@@ -353,40 +427,56 @@ async function buildHubAssetMappingMulticallInner(
     return mapping;
   }
 
-  const assetCountBN = V4_HUB_INTERFACE.decodeFunctionResult('getAssetCount', results[0].returnData)[0];
+  const assetCountBN = V4_HUB_INTERFACE.decodeFunctionResult(
+    "getAssetCount",
+    results[0].returnData
+  )[0];
   const assetCount = Number(assetCountBN);
 
   if (assetCount > MAX_HUB_ASSET_COUNT) {
-    logger.warn(`V4 Hub ${hubLabel} reports ${assetCount} assets (>${MAX_HUB_ASSET_COUNT}), capping to prevent excessive RPC load`);
+    logger.warn(
+      `V4 Hub ${hubLabel} reports ${assetCount} assets (>${MAX_HUB_ASSET_COUNT}), capping to prevent excessive RPC load`
+    );
     return mapping;
   }
 
   const getAssetCalls = [];
   for (let assetId = 0; assetId < assetCount; assetId++) {
-    const callData = V4_HUB_INTERFACE.encodeFunctionData('getAsset', [assetId]);
+    const callData = V4_HUB_INTERFACE.encodeFunctionData("getAsset", [assetId]);
     getAssetCalls.push({ target: hubAddress, allowFailure: true, callData });
   }
 
   if (getAssetCalls.length === 0) return mapping;
 
-  const assetResults = await executeMulticall3(provider, getAssetCalls, { label: `V4 getAsset batch for ${hubLabel} [${context}]` });
+  const assetResults = await executeMulticall3(provider, getAssetCalls, {
+    label: `V4 getAsset batch for ${hubLabel} [${context}]`,
+  });
 
   for (let assetId = 0; assetId < assetResults.length; assetId++) {
     const r = assetResults[assetId];
     if (!r.success) continue;
     try {
-      const asset = V4_HUB_INTERFACE.decodeFunctionResult('getAsset', r.returnData)[0];
-      const underlying = normalizeAddress(String(asset.underlying || ''));
+      const asset = V4_HUB_INTERFACE.decodeFunctionResult(
+        "getAsset",
+        r.returnData
+      )[0];
+      const underlying = normalizeAddress(String(asset.underlying || ""));
       if (underlying) mapping.set(underlying, assetId);
     } catch (e) {
-      logger.debug(`V4 Multicall3 decode getAsset(${assetId}) failed for ${hubLabel}: ${e}`);
+      logger.debug(
+        `V4 Multicall3 decode getAsset(${assetId}) failed for ${hubLabel}: ${e}`
+      );
     }
   }
 
   if (mapping.size === 0 && assetCount > 0) {
-    logger.warn(`V4 Multicall3 Hub mapping for ${hubLabel}: 0/${assetCount} assets decoded successfully — possible ABI mismatch`);
+    logger.warn(
+      `V4 Multicall3 Hub mapping for ${hubLabel}: 0/${assetCount} assets decoded successfully — possible ABI mismatch`
+    );
   } else {
-    logger.debug(`V4 Multicall3 Hub mapping for ${hubLabel}: ${mapping.size} assets (1 + ${assetCount} calls → 2 Multicall3 batches)`);
+    logger.debug(
+      `V4 Multicall3 Hub mapping for ${hubLabel}: ${mapping.size} assets (1 + ${assetCount} calls → 2 Multicall3 batches)`
+    );
   }
 
   return mapping;
@@ -403,37 +493,45 @@ async function buildHubAssetMappingSerial(
   const hubContract = new Contract(hubAddress, V4_HUB_FULL_ABI, provider);
 
   try {
-    const assetCountBN = await withTimeout(
+    const assetCountBN = (await withTimeout(
       hubContract.getAssetCount(),
       ONCHAIN_PER_RPC_TIMEOUT_MS,
       `V4 serial getAssetCount timeout for ${hubLabel} [${context}]`
-    ) as any;
+    )) as any;
     const assetCount = Number(assetCountBN);
 
     if (assetCount > MAX_HUB_ASSET_COUNT) {
-      logger.warn(`V4 Hub ${hubLabel} reports ${assetCount} assets (>${MAX_HUB_ASSET_COUNT}), capping to prevent excessive RPC load`);
+      logger.warn(
+        `V4 Hub ${hubLabel} reports ${assetCount} assets (>${MAX_HUB_ASSET_COUNT}), capping to prevent excessive RPC load`
+      );
       return mapping;
     }
 
     for (let assetId = 0; assetId < assetCount; assetId++) {
       try {
-        const asset = await withTimeout(
+        const asset = (await withTimeout(
           hubContract.getAsset(assetId),
           ONCHAIN_PER_RPC_TIMEOUT_MS,
           `V4 serial getAsset(${assetId}) timeout for ${hubLabel}`
-        ) as any;
-        const underlying = normalizeAddress(String(asset.underlying || ''));
+        )) as any;
+        const underlying = normalizeAddress(String(asset.underlying || ""));
         if (underlying) mapping.set(underlying, assetId);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        logger.debug(`V4 serial getAsset(${assetId}) failed for ${hubLabel}: ${msg}`);
+        logger.debug(
+          `V4 serial getAsset(${assetId}) failed for ${hubLabel}: ${msg}`
+        );
       }
     }
 
     if (mapping.size === 0 && assetCount > 0) {
-      logger.warn(`V4 serial Hub mapping for ${hubLabel}: 0/${assetCount} assets decoded — possible ABI mismatch`);
+      logger.warn(
+        `V4 serial Hub mapping for ${hubLabel}: 0/${assetCount} assets decoded — possible ABI mismatch`
+      );
     } else {
-      logger.debug(`V4 serial Hub mapping for ${hubLabel}: ${mapping.size} assets via ${1 + assetCount} serial calls`);
+      logger.debug(
+        `V4 serial Hub mapping for ${hubLabel}: ${mapping.size} assets via ${1 + assetCount} serial calls`
+      );
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -445,7 +543,7 @@ async function buildHubAssetMappingSerial(
 
 export async function refreshOnchainCache(): Promise<void> {
   if (refreshInProgress) {
-    logger.debug('On-chain cache refresh already in progress, skipping');
+    logger.debug("On-chain cache refresh already in progress, skipping");
     return;
   }
 
@@ -454,7 +552,9 @@ export async function refreshOnchainCache(): Promise<void> {
       const startTime = Date.now();
       const poolKeys = Array.from(POOL_CONFIGS.keys());
 
-      logger.info(`[onchain] Refreshing cache for ${poolKeys.length} V3 pools + ${V4_SPOKE_CONFIGS.length} V4 spokes...`);
+      logger.info(
+        `[onchain] Refreshing cache for ${poolKeys.length} V3 pools + ${V4_SPOKE_CONFIGS.length} V4 spokes...`
+      );
 
       const v3Results = await Promise.allSettled(
         poolKeys.map((poolKey) => {
@@ -470,7 +570,7 @@ export async function refreshOnchainCache(): Promise<void> {
 
       for (let i = 0; i < v3Results.length; i++) {
         const r = v3Results[i];
-        if (r.status === 'fulfilled' && r.value) {
+        if (r.status === "fulfilled" && r.value) {
           v3Success++;
           const entry = poolCache.get(poolKeys[i]);
           if (entry) v3TotalReserves += entry.data.size;
@@ -482,9 +582,11 @@ export async function refreshOnchainCache(): Promise<void> {
       const now = Date.now();
       let hubAssetMapping: Map<string, Map<string, number>>;
 
-      if (cachedHubMapping && (now - cachedHubMappingAt) < HUB_MAPPING_TTL_MS) {
+      if (cachedHubMapping && now - cachedHubMappingAt < HUB_MAPPING_TTL_MS) {
         hubAssetMapping = cachedHubMapping;
-        logger.debug(`[onchain] Hub mapping TTL fresh, using cached (${cachedHubMapping.size} hubs)`);
+        logger.debug(
+          `[onchain] Hub mapping TTL fresh, using cached (${cachedHubMapping.size} hubs)`
+        );
       } else {
         hubAssetMapping = new Map();
         for (const config of V4_SPOKE_CONFIGS) {
@@ -493,9 +595,21 @@ export async function refreshOnchainCache(): Promise<void> {
             const mapping = await providerPool.executeWithAutoRpc(
               config.chainId,
               {
-                primary: (p: providers.Provider) => buildHubAssetMappingMulticallInner(p, config.hubAddress, config.hubAddress, 'pre-build'),
-                fallback: (p: providers.Provider) => buildHubAssetMappingSerial(p, config.hubAddress, config.hubAddress, 'pre-build'),
-              },
+                primary: (p: providers.Provider) =>
+                  buildHubAssetMappingMulticallInner(
+                    p,
+                    config.hubAddress,
+                    config.hubAddress,
+                    "pre-build"
+                  ),
+                fallback: (p: providers.Provider) =>
+                  buildHubAssetMappingSerial(
+                    p,
+                    config.hubAddress,
+                    config.hubAddress,
+                    "pre-build"
+                  ),
+              }
             );
             if (mapping && mapping.size > 0) {
               hubAssetMapping.set(config.hubAddress, mapping);
@@ -520,7 +634,9 @@ export async function refreshOnchainCache(): Promise<void> {
         const ok = await fetchAndCacheV4Spoke(config, hubAssetMapping);
         if (ok) {
           v4Success++;
-          const entry = v4SpokeCache.get(v4SpokeCacheKey(config.spokeAddress, config.hubAddress));
+          const entry = v4SpokeCache.get(
+            v4SpokeCacheKey(config.spokeAddress, config.hubAddress)
+          );
           if (entry) v4TotalAssets += entry.data.size;
         } else {
           v4Fail++;
@@ -530,7 +646,7 @@ export async function refreshOnchainCache(): Promise<void> {
       const elapsed = Date.now() - startTime;
       logger.info(
         `[onchain] V3 ${v3TotalReserves} reserves from ${v3Success}/${poolKeys.length} pools, ` +
-        `V4 ${v4TotalAssets} assets from ${v4Success}/${V4_SPOKE_CONFIGS.length} spokes (${v4Fail} failed) in ${elapsed}ms`
+          `V4 ${v4TotalAssets} assets from ${v4Success}/${V4_SPOKE_CONFIGS.length} spokes (${v4Fail} failed) in ${elapsed}ms`
       );
     } finally {
       refreshInProgress = null;
@@ -552,7 +668,11 @@ export function getOnchainDataFromCache(): Map<string, OnchainReserveData> {
     const config = POOL_CONFIGS.get(poolKey);
     if (!config) continue;
     for (const [tokenAddr, data] of entry.data) {
-      const reserveId = v3OnchainKey(config.chainId, config.poolAddress, tokenAddr);
+      const reserveId = v3OnchainKey(
+        config.chainId,
+        config.poolAddress,
+        tokenAddr
+      );
       result.set(reserveId, data);
     }
   }
@@ -561,12 +681,19 @@ export function getOnchainDataFromCache(): Map<string, OnchainReserveData> {
   // Per-spoke deficit (getSpokeDeficitRay), semantically aligned with V3 reserve.deficit
   // Key format matches V4 reserveId — direct lookup, no fallback needed
   for (const v4Config of V4_SPOKE_CONFIGS) {
-    const entry = v4SpokeCache.get(v4SpokeCacheKey(v4Config.spokeAddress, v4Config.hubAddress));
+    const entry = v4SpokeCache.get(
+      v4SpokeCacheKey(v4Config.spokeAddress, v4Config.hubAddress)
+    );
     if (!entry) continue;
     const age = now - entry.updatedAt;
     if (age >= ttl) continue;
     for (const [tokenAddr, data] of entry.data) {
-      const key = v4OnchainKey(v4Config.chainId, v4Config.spokeAddress, tokenAddr, v4Config.hubAddress);
+      const key = v4OnchainKey(
+        v4Config.chainId,
+        v4Config.spokeAddress,
+        tokenAddr,
+        v4Config.hubAddress
+      );
       result.set(key, data);
     }
   }
@@ -627,8 +754,11 @@ const SECONDS_PER_YEAR = 365 * 24 * 60 * 60;
 
 function apyRatioToAprPercent(apyRatio: number): number | null {
   if (!Number.isFinite(apyRatio) || apyRatio <= -1) return null;
-  const aprDecimal = SECONDS_PER_YEAR * (Math.pow(1 + apyRatio, 1 / SECONDS_PER_YEAR) - 1);
-  return Number.isFinite(aprDecimal) && aprDecimal >= 0 ? aprDecimal * 100 : null;
+  const aprDecimal =
+    SECONDS_PER_YEAR * (Math.pow(1 + apyRatio, 1 / SECONDS_PER_YEAR) - 1);
+  return Number.isFinite(aprDecimal) && aprDecimal >= 0
+    ? aprDecimal * 100
+    : null;
 }
 
 export function calculateBaseRateFallback(
@@ -655,7 +785,8 @@ export function calculateBaseRateFallback(
     Number.isFinite(slopeBelowOptimal)
   ) {
     if (utilizationPct <= optimalUtilization && optimalUtilization > 0) {
-      const slope1Contribution = slopeBelowOptimal * (utilizationPct / optimalUtilization);
+      const slope1Contribution =
+        slopeBelowOptimal * (utilizationPct / optimalUtilization);
       const baseRate = borrowRatePct - slope1Contribution;
       if (baseRate >= 0) return baseRate;
       return null;

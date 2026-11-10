@@ -1,7 +1,5 @@
-import {
-  fetchMerklOpportunitiesSnapshot,
-} from '@internal/aave-shared-config';
-import { MERKL_TTL } from '../cacheTtl.js';
+import { fetchMerklOpportunitiesSnapshot } from "@internal/aave-shared-config";
+import { MERKL_TTL } from "../cacheTtl.js";
 
 export interface FetchMerklOpportunitiesOptions {
   mainProtocolId?: string;
@@ -18,7 +16,7 @@ export const fetchMerklOpportunities = async (
   options: FetchMerklOpportunitiesOptions = {}
 ): Promise<unknown[]> =>
   fetchMerklOpportunitiesSnapshot({
-    baseUrl: 'https://api.merkl.xyz/v4',
+    baseUrl: "https://api.merkl.xyz/v4",
     mainProtocolId: options.mainProtocolId,
     status: options.status,
     campaigns: options.campaigns,

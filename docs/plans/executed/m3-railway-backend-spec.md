@@ -7,10 +7,10 @@
 
 **API Base URL：**
 
-| 环境 | Base |
-|---|---|
-| production | `https://api.aaveapy.com/api` |
-| staging | `https://staging-api.aaveapy.com/api` |
+| 环境       | Base                                  |
+| ---------- | ------------------------------------- |
+| production | `https://api.aaveapy.com/api`         |
+| staging    | `https://staging-api.aaveapy.com/api` |
 
 ---
 
@@ -62,14 +62,14 @@ COMMIT;
 
 ### 1.1 国家码（GSC vs Semrush）
 
-| 市场 | GSC `country` | Semrush `country` |
-|---|---|---|
-| Brazil | `bra` | `br` |
-| France | `fra` | `fr` |
-| Turkey | `tur` | `tr` |
-| United States | `usa` | `us` |
-| Germany | `deu` | `de` |
-| India | `ind` | `in` |
+| 市场          | GSC `country` | Semrush `country` |
+| ------------- | ------------- | ----------------- |
+| Brazil        | `bra`         | `br`              |
+| France        | `fra`         | `fr`              |
+| Turkey        | `tur`         | `tr`              |
+| United States | `usa`         | `us`              |
+| Germany       | `deu`         | `de`              |
+| India         | `ind`         | `in`              |
 
 各表保留原生编码；M4 使用 `backend/src/utils/seoCountryCodes.ts` 映射展示，**不在 DB 层合并**。
 
@@ -78,6 +78,7 @@ COMMIT;
 ## 2. Google Search Console 接入
 
 ### 2.1 凭据准备（一次性）
+
 1. Google Cloud Console → Service Account + JSON key。
 2. GSC 属性 → 用户与权限 → SA 邮箱 **完整** 权限。
 3. 启用 Google Search Console API。
@@ -93,6 +94,7 @@ COMMIT;
 - **可选：** `GSC_BACKFILL_DAYS=28` 首次部署回填（逐日拉取）。
 
 ### 2.3 触发方式
+
 - `node-cron` 内嵌于 `updateScheduler.ts`（与现有架构一致）。
 
 ---
@@ -111,14 +113,15 @@ COMMIT;
 
 ### 3.2 `GET /api/seo/gsc`
 
-| 参数 | 必填 | 说明 |
-|---|---|---|
-| `from`, `to` | ✅ | `YYYY-MM-DD`，`from <= to` |
-| `country` | ❌ | GSC 码，逗号分隔，最多 20 |
-| `page` | ❌ | 精确 URL |
-| `groupBy` | ❌ | 白名单：`date`,`country`,`page`,`query`；非法忽略 |
+| 参数         | 必填 | 说明                                              |
+| ------------ | ---- | ------------------------------------------------- |
+| `from`, `to` | ✅   | `YYYY-MM-DD`，`from <= to`                        |
+| `country`    | ❌   | GSC 码，逗号分隔，最多 20                         |
+| `page`       | ❌   | 精确 URL                                          |
+| `groupBy`    | ❌   | 白名单：`date`,`country`,`page`,`query`；非法忽略 |
 
 **额外校验：**
+
 - 日期跨度 ≤ `SEO_GSC_MAX_DATE_SPAN_DAYS`（默认 90），否则 400。
 - 无 `groupBy`：返回明细行（无 `GROUP BY`）。
 - 有 `groupBy`：`SUM(clicks/impressions)` + 加权 CTR/position，`GROUP BY` 仅白名单列。
@@ -130,18 +133,22 @@ COMMIT;
 Query：`country`（2 字母）, `from`, `to`, `keyword`（ILIKE，转义 `%` `_`）。
 
 ### 3.4 `POST /api/seo/semrush`
+
 单条 UPSERT `(snapshot_date, country, keyword)`。
 
 ### 3.5 `POST /api/seo/semrush/batch`
+
 - Body：`{ "snapshots": [ ... ] }`，≤5000。
 - **单事务** 批量 UPSERT；失败整批 rollback → 500。
 - 幂等：重复 POST 行数不变。
 - 建议：batch 每分钟 ≤5 次/token（内存限流）。
 
 ### 3.6 `DELETE /api/seo/semrush/:id`
+
 硬删；非法 id → 400；不存在 → 404。
 
 ### 3.7 `GET /api/seo/status`
+
 GSC cron 诊断（同 SEO 鉴权）：
 
 ```json
@@ -180,18 +187,18 @@ Lovable keyword_compare → JSON → POST /api/seo/semrush/batch → Dashboard G
 
 ## 6. 测试与验收
 
-| 项 | 检查 |
-|---|---|
-| Migration | `schema_migrations` 含 009；表+索引存在 |
-| GSC cron | 手动/等待 06:00 UTC；`gsc_daily` 有数据 |
-| GSC 分页 | 模拟 >25k 行时分页拉全 |
-| GSC 幂等 | 重复同日 cron，行数不增 |
-| GSC 失败 | 429 重试后仍失败 → `lastError` 非空 + `logger.error` |
-| `GET /api/seo/status` | 反映最近成功/失败 |
-| `GET /api/seo/gsc` | 401/400/200；跨度>90天 400；`groupBy=country` 聚合正确 |
-| batch | 单事务；空数组 400；33 条种子幂等 |
-| CORS | `aaveapy.lovable.app` 通过；`evil.lovable.app` 拒绝 |
-| 测试质量 | 无 placeholder；supertest + gsc mock |
+| 项                    | 检查                                                   |
+| --------------------- | ------------------------------------------------------ |
+| Migration             | `schema_migrations` 含 009；表+索引存在                |
+| GSC cron              | 手动/等待 06:00 UTC；`gsc_daily` 有数据                |
+| GSC 分页              | 模拟 >25k 行时分页拉全                                 |
+| GSC 幂等              | 重复同日 cron，行数不增                                |
+| GSC 失败              | 429 重试后仍失败 → `lastError` 非空 + `logger.error`   |
+| `GET /api/seo/status` | 反映最近成功/失败                                      |
+| `GET /api/seo/gsc`    | 401/400/200；跨度>90天 400；`groupBy=country` 聚合正确 |
+| batch                 | 单事务；空数组 400；33 条种子幂等                      |
+| CORS                  | `aaveapy.lovable.app` 通过；`evil.lovable.app` 拒绝    |
+| 测试质量              | 无 placeholder；supertest + gsc mock                   |
 
 ---
 
@@ -233,38 +240,38 @@ jq -c '{ snapshots: .rows }' docs/plans/semrush-seed-2026-05-18.json | \
 
 ## 9. 环境变量
 
-| 变量 | 位置 | 说明 |
-|---|---|---|
-| `SEO_ADMIN_TOKEN` | Railway + Vercel server | 64 hex；仅 BFF/脚本使用 |
-| `SEO_ALLOWED_ORIGINS` | Railway | 精确 CORS 扩展 |
-| `SEO_GSC_MAX_DATE_SPAN_DAYS` | Railway | 默认 `90` |
-| `GSC_SA_EMAIL` | Railway | SA email |
-| `GSC_SA_PRIVATE_KEY` | Railway secret | RSA key |
-| `GSC_SITE_URL` | Railway | 属性 URL |
-| `GSC_BACKFILL_DAYS` | Railway | 可选，如 `28` |
+| 变量                         | 位置                    | 说明                    |
+| ---------------------------- | ----------------------- | ----------------------- |
+| `SEO_ADMIN_TOKEN`            | Railway + Vercel server | 64 hex；仅 BFF/脚本使用 |
+| `SEO_ALLOWED_ORIGINS`        | Railway                 | 精确 CORS 扩展          |
+| `SEO_GSC_MAX_DATE_SPAN_DAYS` | Railway                 | 默认 `90`               |
+| `GSC_SA_EMAIL`               | Railway                 | SA email                |
+| `GSC_SA_PRIVATE_KEY`         | Railway secret          | RSA key                 |
+| `GSC_SITE_URL`               | Railway                 | 属性 URL                |
+| `GSC_BACKFILL_DAYS`          | Railway                 | 可选，如 `28`           |
 
 ---
 
 ## 10. 回滚
 
-1. 移除 `/api/seo` 路由  
-2. 移除 GSC cron + `gscFetchState`  
-3. `DROP TABLE gsc_daily, semrush_snapshots`  
-4. 清理 env  
+1. 移除 `/api/seo` 路由
+2. 移除 GSC cron + `gscFetchState`
+3. `DROP TABLE gsc_daily, semrush_snapshots`
+4. 清理 env
 5. `npm uninstall googleapis dayjs`（backend workspace）
 
 ---
 
 ## 11. 架构决策记录
 
-| 决策 | 原因 |
-|---|---|
-| SEO 直查 DB | 数据量小、admin QPS 低；GSC 用批量写避免占满连接池 |
-| GSC 分页 + 批量 UPSERT | 防 25k 截断与 N+1 写入 |
-| Vercel BFF 鉴权 | 浏览器无法安全持有 admin token |
-| `timingSafeEqual` | 防 token 时序攻击 |
-| 国家码分表存储 | 尊重各 API 原生格式；映射在应用层 |
-| 禁止 `*.lovable.app` CORS | 子域绕过 |
+| 决策                      | 原因                                               |
+| ------------------------- | -------------------------------------------------- |
+| SEO 直查 DB               | 数据量小、admin QPS 低；GSC 用批量写避免占满连接池 |
+| GSC 分页 + 批量 UPSERT    | 防 25k 截断与 N+1 写入                             |
+| Vercel BFF 鉴权           | 浏览器无法安全持有 admin token                     |
+| `timingSafeEqual`         | 防 token 时序攻击                                  |
+| 国家码分表存储            | 尊重各 API 原生格式；映射在应用层                  |
+| 禁止 `*.lovable.app` CORS | 子域绕过                                           |
 
 ---
 

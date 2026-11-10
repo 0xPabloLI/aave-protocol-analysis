@@ -8,14 +8,14 @@
 
 ## 完成状态
 
-| Requirement | Status | Commit (Backend) | Commit (Frontend) |
-|---|---|---|---|
-| R1: Campaign Hash ID Migration | ✅ Done | 90348a2 | — (类型同步) |
-| R2: Recently Ended Embedding | ✅ Done | — | fbfe6474 |
-| R3: Remove PAST Opportunities Fetch | ✅ Done | 90348a2 | — |
-| R4: Campaign URL + Remove campaignDatabaseId | ✅ Done | 84836ab | fbfe6474 |
-| R5: Merkl URL Simplification | ✅ Done | ed7c8f9 | c3f65224 |
-| AAV-1044: opportunityId type fix + CampaignGroup.opportunityType cleanup + inline embedding | ✅ Done | 52246d7 | b3dcd7c9 |
+| Requirement                                                                                 | Status  | Commit (Backend) | Commit (Frontend) |
+| ------------------------------------------------------------------------------------------- | ------- | ---------------- | ----------------- |
+| R1: Campaign Hash ID Migration                                                              | ✅ Done | 90348a2          | — (类型同步)      |
+| R2: Recently Ended Embedding                                                                | ✅ Done | —                | fbfe6474          |
+| R3: Remove PAST Opportunities Fetch                                                         | ✅ Done | 90348a2          | —                 |
+| R4: Campaign URL + Remove campaignDatabaseId                                                | ✅ Done | 84836ab          | fbfe6474          |
+| R5: Merkl URL Simplification                                                                | ✅ Done | ed7c8f9          | c3f65224          |
+| AAV-1044: opportunityId type fix + CampaignGroup.opportunityType cleanup + inline embedding | ✅ Done | 52246d7          | b3dcd7c9          |
 
 ## R5 实现细节
 
@@ -65,6 +65,7 @@ Staging API 只返回 V4 数据（63 条），没有 V3 数据。前端页面也
 **不是 R5 导致的**。问题是 Aave V3 SDK 被 rate limit（429 Too Many Requests），V3 fetch 连续超时（35s timeout 不够完成 23 条链的串行 fetch + 3 retries + backoff）。
 
 Railway 日志证据：
+
 ```
 ❌ V3 fetch failed: V3 fetch timeout (timeout after 35000ms)
 📊 Unified dataset: 63 reserves (V3: 0, V4: 63)
@@ -83,6 +84,7 @@ Railway 日志证据：
 ### V3 已有的优化
 
 之前已做过以下优化（非本次 session）：
+
 - V3/V4 并发 fetch（`Promise.allSettled`），各自 35s 独立 timeout
 - per-side stale merge（`mergeWithPartialStale`）
 - LLM circuit breaker
