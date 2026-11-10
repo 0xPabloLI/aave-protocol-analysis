@@ -79,7 +79,7 @@
     "husky": "9.1.7",
     "jscpd": "5.4.2",
     "knip": "6.44.2",
-    "lint-staged": "15.5.2",
+    "lint-staged": "17.6.0",
     "prettier": "3.9.10",
     "syncpack": "15.3.3",
     "ts-prune": "0.10.3",
