@@ -211,7 +211,7 @@ jobs:
       # the daily series is visible without reading the Actions tab.
       - name: Report failure as an issue
         if: failure()
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           # Passed through the environment rather than inlined as ${{ }}, so the
           # script stays valid JavaScript and can be syntax-checked locally.
