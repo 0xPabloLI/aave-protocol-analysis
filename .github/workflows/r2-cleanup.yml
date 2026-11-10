@@ -6,8 +6,12 @@ name: R2 Cleanup & Audit
 #   3. Manual trigger: list-only (audit) or list+delete (cleanup)
 #
 # Retention when deleting:
-#   daily/   keep 2 most recent
-#   archive/ keep 2 most recent
+#   daily/   keep 7 most recent  (matches db-backup.yml's post-upload prune)
+#   archive/ keep 4 most recent  (matches db-backup.yml's post-upload prune)
+#
+# This workflow is a weekly safety net for db-backup.yml, so it must never be
+# stricter than that workflow. backend/tests/dbBackupWorkflow.test.ts fails if
+# the two files' KEEP_DAILY / KEEP_ARCHIVE values drift apart.
 #
 # Required GitHub Secrets:
 #   R2_ACCESS_KEY_ID       Cloudflare R2 API token Access Key
@@ -44,6 +48,9 @@ jobs:
       R2_BUCKET: ${{ secrets.R2_BUCKET }}
       # Scheduled runs always do delete; manual runs respect the input
       ACTION: ${{ github.event_name == 'schedule' && 'delete' || github.event.inputs.action }}
+      # Must match db-backup.yml — see the retention note at the top of this file.
+      KEEP_DAILY: 7
+      KEEP_ARCHIVE: 4
     steps:
       - name: List all R2 objects
         run: |
@@ -161,20 +168,20 @@ jobs:
           TOTAL_DAILY=$(wc -l < /tmp/daily-listing.txt)
           echo "Total daily/ objects: $TOTAL_DAILY"
 
-          if [ "$TOTAL_DAILY" -le 2 ]; then
+          if [ "$TOTAL_DAILY" -le "$KEEP_DAILY" ]; then
             echo "Only $TOTAL_DAILY daily/ objects, nothing to delete."
           else
             echo ""
-            echo "=== Keeping the 2 newest daily/ backups ==="
-            head -2 /tmp/daily-listing.txt
+            echo "=== Keeping the ${KEEP_DAILY} newest daily/ backups ==="
+            head -"$KEEP_DAILY" /tmp/daily-listing.txt
 
             echo ""
             echo "=== Objects to delete ==="
-            tail -n +3 /tmp/daily-listing.txt
+            tail -n +"$((KEEP_DAILY + 1))" /tmp/daily-listing.txt
 
             echo ""
             echo "=== Deleting old daily/ backups ==="
-            tail -n +3 /tmp/daily-listing.txt | awk '{print $4}' | while read -r KEY; do
+            tail -n +"$((KEEP_DAILY + 1))" /tmp/daily-listing.txt | awk '{print $4}' | while read -r KEY; do
               echo "Deleting: daily/$KEY"
               aws s3 rm "s3://${R2_BUCKET}/daily/${KEY}" \
                 --endpoint-url "$R2_ENDPOINT" \
@@ -191,16 +198,16 @@ jobs:
           TOTAL_ARCHIVE=$(wc -l < /tmp/archive-listing.txt)
           echo "Total archive/ objects: $TOTAL_ARCHIVE"
 
-          if [ "$TOTAL_ARCHIVE" -le 2 ]; then
+          if [ "$TOTAL_ARCHIVE" -le "$KEEP_ARCHIVE" ]; then
             echo "Only $TOTAL_ARCHIVE archive/ objects, nothing to delete."
           else
             echo ""
-            echo "=== Keeping the 2 newest archive/ backups ==="
-            head -2 /tmp/archive-listing.txt
+            echo "=== Keeping the ${KEEP_ARCHIVE} newest archive/ backups ==="
+            head -"$KEEP_ARCHIVE" /tmp/archive-listing.txt
 
             echo ""
             echo "=== Deleting old archive/ backups ==="
-            tail -n +3 /tmp/archive-listing.txt | awk '{print $4}' | while read -r KEY; do
+            tail -n +"$((KEEP_ARCHIVE + 1))" /tmp/archive-listing.txt | awk '{print $4}' | while read -r KEY; do
               echo "Deleting: archive/$KEY"
               aws s3 rm "s3://${R2_BUCKET}/archive/${KEY}" \
                 --endpoint-url "$R2_ENDPOINT" \
