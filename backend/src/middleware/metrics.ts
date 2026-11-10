@@ -33,6 +33,17 @@ const httpRequestDuration = new client.Histogram({
   registers: [register],
 });
 
+/**
+ * Route label for requests that matched no Express route.
+ *
+ * `req.route` is only set by `Route.prototype.dispatch`, so 404s (and responses
+ * produced directly by path-mounted middleware, e.g. the rate limiter's 429)
+ * have no route to name. Falling back to `req.path` handed the label to the
+ * caller: every scanned path (`/wp-login.php`, `/.env`, …) created ~11 permanent
+ * prom-client series. A single constant keeps the cardinality bounded (AAV-1337).
+ */
+export const UNMATCHED_ROUTE_LABEL = "<unmatched>";
+
 export function metricsMiddleware(
   req: Request,
   res: Response,
@@ -42,7 +53,10 @@ export function metricsMiddleware(
   res.on("finish", () => {
     // Normalize paths with IDs to keep label cardinality bounded
     // (e.g. /api/seo/semorphism/x -> route label stays the literal route).
-    const route = req.route?.path ? String(req.route.path) : req.path;
+    // Unmatched requests must NOT fall back to req.path (AAV-1337).
+    const route = req.route?.path
+      ? String(req.route.path)
+      : UNMATCHED_ROUTE_LABEL;
     const durationSec = Number(process.hrtime.bigint() - startNs) / 1e9;
     try {
       httpRequestsTotal.inc({

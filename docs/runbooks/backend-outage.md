@@ -18,6 +18,12 @@ Symptom: `/health` non-200, 5xx spikes, or no snapshot updates.
      memory-only without DATABASE_URL.
    - **Stale data, no errors** — check marketsService staleness + cache TTLs;
      `/api/markets` returns documented 503 while warming.
-5. **Recovery** — `railway up` a fix or `railway redeploy --service aave-protocol-analysis --from-source -y`. Verify /health after ~3 min warm-up.
+5. **Recovery** — push a fix (or `railway up` one). Verify /health after ~3 min
+   warm-up. `railway redeploy --service aave-protocol-analysis --from-source -y` is
+   a **last resort**, not the default: it runs no checks and deploys the newest
+   commit of the configured source, so use it only after triaging the failing CI
+   run as infrastructure noise (runner/registry flake, upstream 5xx). A real test,
+   build or lint regression must be fixed and deployed by the normal chain — see
+   `railway-environment-config.md` §"Deploy skipped by Wait for CI".
 6. **Post-incident** — file the follow-up issue with the `ci-failure` /
    incident labels; update this runbook if the diagnosis was non-obvious.

@@ -55,6 +55,7 @@
 | 26  | gscService                 | `cachedClient`                           | 单例         | ✅          | ➖(懒加载后永久)                | ➖(单条)                            | ➖(单例)                         | 🟢   | googleapis JWT+Webmasters client,单实例从不累积                                                                       |
 | 26b | server.ts (undici)         | `globalDispatcher`                       | 全局单例     | ✅          | ✅(keepAliveTimeout=30s)        | ✅(connections=10/host)             | ✅(连接超时自动关闭)             | 🟢   | 限制undici TLS连接池;之前默认无限制导致native memory(OpenSSL缓冲区)持续累积~14MB/h                                    |
 | 26c | server.ts (防御性)         | `https.globalAgent` / `http.globalAgent` | 全局Agent    | ✅          | ✅(keepAlive自动)               | ✅(maxSockets=10, maxFreeSockets=2) | ✅(free池≤2/host,自动淘汰)       | 🟢   | 防御性：node-fetch已移除(AAV-1064)，所有HTTP走undici单通道;此限制作为安全网防止transitive依赖通过http/https模块泄漏   |
+| 26d | sideDataPersistenceService | `sideDataHashes`                         | Map          | ✅          | ➖(非时效指纹)                  | ✅(≤3)                              | ✅(warm重填+reset)               | 🟢   | key=`SIDE_DATA_SOURCES` 枚举(3)，`Map.set` 覆盖同 key，size 恒 ≤3(有测试)；hash 仅在 INSERT 成功后提交（AAV-1339）    |
 
 ### packages/aave-fetcher/src/
 

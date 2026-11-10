@@ -106,14 +106,37 @@ railway deployment list --service b0f24c39-38f2-41a4-9d64-0291282dda52 \
   --environment 5d5ddcf3-aa4a-49ac-b7a8-1faf26b90bb3 --json \
   | jq -r '.[] | "\(.status)\t\((.meta.commitHash // "-")[0:7])\t\(.createdAt)\t\(.meta.reason // "-")"'
 
-# 2. Deploy the latest commit from the configured source
+# 2. Find the failing run and TRIAGE it — this step is required, not optional.
+#    gh api "repos/0xPabloLI/aave-protocol-analysis/actions/runs?head_sha=<sha>"
+#    Railway evaluates only GitHub Actions workflow runs; other GitHub apps are out of scope.
+#      a. Real regression (test / build / lint / type / audit failure, real finding)?
+#         → STOP. Fix it, push, and let the normal chain deploy. Do NOT continue.
+#      b. Infrastructure noise (registry or runner flake, upstream 5xx, a run that
+#         was cancelled by `concurrency.cancel-in-progress`)?
+#         → Continue to step 3, and record the reason where the incident is tracked.
+
+# 3. Deploy the latest commit from the configured source.
+#    ⚠️ This command performs NO checks. `--from-source` deploys the newest commit
+#    of the configured source whatever its check status (see `railway redeploy
+#    --help`: "Pull and deploy the latest commit or image from the configured
+#    source, instead of redeploying the existing deployment") — i.e. it puts back
+#    exactly the commit "Wait for CI" just withheld. `-y` skips the confirmation
+#    prompt, so running it IS the operator's approval of one exception, and the
+#    operator owns the result. The post-deploy smoke test only covers health,
+#    /api/markets, /api/meta/side-data and the frontend — not the CI gates
+#    (ESLint, syncpack, jscpd, knip, tests, typecheck).
 railway redeploy --service b0f24c39-38f2-41a4-9d64-0291282dda52 --environment 5d5ddcf3-aa4a-49ac-b7a8-1faf26b90bb3 --from-source -y
 
-# 3. Verify the live SHA (health needs ~3 min to warm up)
+# 4. Verify the live SHA (health needs ~3 min to warm up)
 curl -s https://api.aaveapy.com/health
 ```
 
-**Finding the failing run:** `gh api "repos/0xPabloLI/aave-protocol-analysis/actions/runs?head_sha=<sha>"` and look for a non-`success` conclusion. Railway evaluates only GitHub Actions workflow runs — other GitHub apps are out of scope.
+**Escape hatch (explicit exception):** shipping while CI is genuinely red is allowed
+only as a deliberate, recorded exception — repo owner approval, reason, and the
+follow-up fix must be written into the issue or PR that tracks the incident. Silence
+is not approval; a skipped deploy that nobody triages should stay skipped.
+
+**Finding the failing run:** `gh api "repos/0xPabloLI/aave-protocol-analysis/actions/runs?head_sha=<sha>"` and look for a non-`success` conclusion.
 
 ### Dead variables removed 2026-11-09
 

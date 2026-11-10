@@ -5,7 +5,10 @@
  *
  * Design (mirrors persistenceService.ts patterns):
  * - Skipped silently when DATABASE_URL is unset (opt-in).
- * - Content-hash change detection: only writes when data actually changed.
+ * - Content-hash change detection: a new row only when the *stored* form
+ *   changed; an unchanged refresh just advances `fetched_at` (AAV-1339).
+ * - The hash is committed only after the INSERT succeeded, so a transient DB
+ *   failure is retried on the next refresh instead of looking like a write.
  * - Failures only log a warning and never propagate.
  * - fire-and-forget writes (caller uses `void` prefix, never awaits).
  *
@@ -27,6 +30,10 @@ export const SIDE_DATA_SOURCES = ["categories", "fdv", "forecast"] as const;
 export type SideDataSource = (typeof SIDE_DATA_SOURCES)[number];
 
 // ── Content-hash map (max 3 entries, one per source) ──────────────────────
+//
+// Value = content hash of the *stored* form of the snapshot currently in the
+// DB (see buildSideDataPayload). Committed only after a successful INSERT, and
+// pre-filled from `content_hash` when warming from DB.
 
 const sideDataHashes = new Map<string, string>();
 
@@ -40,22 +47,6 @@ export function resetSideDataHashes(): void {
 // ts-prune-ignore-next
 export function getSideDataHashMapSize(): number {
   return sideDataHashes.size;
-}
-
-/**
- * Check if the data for a given source has changed since the last write.
- * Returns true if the data should be persisted (hash differs or no previous hash).
- * Returns false if data is null/undefined or hash is unchanged.
- */
-export function shouldPersistSideData(
-  source: SideDataSource,
-  data: unknown
-): boolean {
-  if (data === null || data === undefined) return false;
-  const newHash = computeHash([data]);
-  if (sideDataHashes.get(source) === newHash) return false;
-  sideDataHashes.set(source, newHash);
-  return true;
 }
 
 // ── Payload types ──────────────────────────────────────────────────────────
@@ -170,30 +161,98 @@ export function selectLatestSideData(rows: DbRow[]): SideDataPayload | null {
 const RETENTION_COUNT = 3;
 
 /**
+ * Minimal DB surface used by the write path. Production omits the parameter and
+ * gets `queryWithHealthTracking`; tests pass a recording stub so the
+ * write-then-commit ordering is verifiable without a live database.
+ */
+export interface SideDataQuery {
+  (text: string, params?: unknown[]): Promise<{ rowCount: number | null }>;
+}
+
+const defaultQuery: SideDataQuery = (text, params) =>
+  queryWithHealthTracking(text, params);
+
+const INSERT_SNAPSHOT_SQL = `INSERT INTO side_data_snapshots (source, data, fetched_at, content_hash)
+   VALUES ($1, $2, $3, $4)`;
+
+async function insertSideDataSnapshot(
+  source: SideDataSource,
+  payload: SideDataPayload,
+  query: SideDataQuery
+): Promise<void> {
+  await query(INSERT_SNAPSHOT_SQL, [
+    source,
+    JSON.stringify(payload.data),
+    new Date(payload.fetchedAt).toISOString(),
+    payload.contentHash,
+  ]);
+}
+
+/**
+ * Advance `fetched_at` on the snapshot a restart will read back, provided it
+ * holds exactly the content we just hashed. Returns the number of rows touched
+ * (0 = no such row).
+ *
+ * The row is chosen with the same ordering as `selectLatestSideData` (the read
+ * path), so the row this advances is the row the warm-up would restore.
+ */
+async function touchLatestSideDataSnapshot(
+  source: SideDataSource,
+  payload: SideDataPayload,
+  query: SideDataQuery
+): Promise<number> {
+  const result = await query(
+    `UPDATE side_data_snapshots
+        SET fetched_at = $3
+      WHERE id = (
+              SELECT id FROM side_data_snapshots
+               WHERE source = $1
+               ORDER BY fetched_at DESC, created_at DESC
+               LIMIT 1
+            )
+        AND content_hash = $2`,
+    [source, payload.contentHash, new Date(payload.fetchedAt).toISOString()]
+  );
+  return result.rowCount ?? 0;
+}
+
+/**
  * Persist a side-data snapshot to PostgreSQL.
  * Fire-and-forget — caller should use `void` prefix, never await.
- * Silently fails when DB is unavailable or data unchanged.
+ * Silently fails when DB is unavailable or data is empty.
  */
 export async function persistSideData(
   source: SideDataSource,
   data: unknown,
-  fetchedAt: number
+  fetchedAt: number,
+  query: SideDataQuery = defaultQuery
 ): Promise<void> {
   if (!isPersistenceEnabled() || !isPoolHealthy()) return;
-
-  if (!shouldPersistSideData(source, data)) return;
 
   const payload = buildSideDataPayload(source, data, fetchedAt);
   if (!payload) return;
 
+  const contentChanged = sideDataHashes.get(source) !== payload.contentHash;
+
   try {
-    const fetchedAtIso = new Date(payload.fetchedAt).toISOString();
-    await queryWithHealthTracking(
-      `INSERT INTO side_data_snapshots (source, data, fetched_at, content_hash)
-       VALUES ($1, $2, $3, $4)`,
-      [source, JSON.stringify(payload.data), fetchedAtIso, payload.contentHash]
-    );
-    await cleanupOldSideDataSnapshots(source);
+    // Unchanged bytes need no new row — but the snapshot is still fresh as of
+    // now, and `fetched_at` is what a restart reads back (AAV-1339). When
+    // nothing holds this content (fresh or manually cleaned DB, or another
+    // instance pushed our row out of retention) the touch no-ops and we fall
+    // through to re-create it, rather than updating nothing forever.
+    if (
+      !contentChanged &&
+      (await touchLatestSideDataSnapshot(source, payload, query)) > 0
+    ) {
+      return;
+    }
+
+    await insertSideDataSnapshot(source, payload, query);
+    // Commit the hash only once the row is durable: committing before the
+    // INSERT made a transient failure permanent, because the retry then saw
+    // "unchanged" and skipped the write (AAV-1339).
+    sideDataHashes.set(source, payload.contentHash);
+    await cleanupOldSideDataSnapshots(source, query);
   } catch (error) {
     markPoolUnhealthy();
     logger.warn(
@@ -206,10 +265,11 @@ export async function persistSideData(
  * Delete old rows for a given source, keeping only the latest RETENTION_COUNT.
  */
 async function cleanupOldSideDataSnapshots(
-  source: SideDataSource
+  source: SideDataSource,
+  query: SideDataQuery = defaultQuery
 ): Promise<void> {
   try {
-    await queryWithHealthTracking(
+    await query(
       `DELETE FROM side_data_snapshots
        WHERE source = $1
          AND id NOT IN (

@@ -25,6 +25,27 @@ concurrency:
 jobs:
   build-and-prune:
     runs-on: ubuntu-latest
+    # Real PostgreSQL for the opt-in DB suites (backend/tests/sideDataPersistenceDb.test.ts).
+    # Without this service `TEST_DATABASE_URL` is unset and those tests skip, leaving
+    # the side-data write path's SQL unverified in the enforced path (AAV-1339).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Throwaway CI database. Never point this at a real environment: the DB
+      # suites create, rename and delete tables.
+      TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 

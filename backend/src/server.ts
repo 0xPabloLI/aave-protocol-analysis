@@ -49,9 +49,9 @@ import {
 import { runMigrations } from "./services/autoMigrate.js";
 import { warmSideDataFromDb } from "./services/sideDataPersistenceService.js";
 import { requestIdMiddleware } from "./middleware/requestId.js";
-import { metricsMiddleware, metricsHandler } from "./middleware/metrics.js";
+import { registerObservabilityMiddleware } from "./middleware/observability.js";
 import { flags } from "./flags.js";
-import { initSentry, tagRequestScope } from "./instrumentation.js";
+import { initSentry } from "./instrumentation.js";
 
 // Sentry error tracking — dormant unless SENTRY_DSN is set.
 const sentryActive = flags.sentryEnabled ? initSentry() : false;
@@ -151,13 +151,9 @@ app.use(
   })
 );
 app.use(apiCacheHeadersMiddleware);
-if (flags.metricsEnabled) {
-  app.use((req, res, next) => {
-    tagRequestScope(req);
-    metricsMiddleware(req, res, next);
-  });
-  app.get("/metrics", metricsHandler);
-}
+// Sentry request-scope tagging + Prometheus metrics. Request tracing is
+// registered unconditionally — only the metrics half is gated (AAV-1340).
+registerObservabilityMiddleware(app);
 
 const apiRateLimit = rateLimitMiddleware(60_000, 120);
 app.use("/api/markets", apiRateLimit);

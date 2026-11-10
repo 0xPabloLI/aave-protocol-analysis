@@ -20,6 +20,12 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
      warm-up (oracle prices + market data fetch). Verify with
      `curl https://staging-api.aaveapy.com/health` → `{"status":"ok"}`.
    - Still failing after fix: `railway up --detach --service aave-protocol-analysis -m "..."`.
-5. **Escalate** — if the release commit is bad, redeploy the previous tag:
-   `railway redeploy --service aave-protocol-analysis --from-source -y` after
-   confirming the linked service with `railway status`.
+5. **Escalate** — rolling back means pushing a revert commit; the normal chain then
+   deploys it. `railway redeploy --service aave-protocol-analysis --from-source -y`
+   is **not** a rollback: `--from-source` deploys the newest commit of the
+   configured source ("latest commit or image from the configured source", per
+   `railway redeploy --help`), not the last commit that passed CI. Use it only
+   after triaging the failing CI run as infrastructure noise (runner/registry
+   flake, upstream 5xx); a real regression must be fixed, not deployed around.
+   Confirm the linked service with `railway status` first, and verify
+   `curl https://staging-api.aaveapy.com/health` after ~3 min warm-up.
