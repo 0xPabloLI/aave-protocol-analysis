@@ -80,7 +80,7 @@
     "jscpd": "5.4.2",
     "knip": "6.44.2",
     "lint-staged": "15.5.2",
-    "prettier": "3.8.3",
+    "prettier": "3.9.10",
     "syncpack": "15.3.3",
     "ts-prune": "0.10.3",
     "tsx": "4.23.15",
