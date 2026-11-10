@@ -8,8 +8,11 @@ name: Database Backup to Cloudflare R2
 #
 # Retention:
 #   daily/   keeps the 7 most recent backups, older ones auto-deleted after each upload
-#   archive/ keeps the 4 most recent backups, older ones auto-deleted after each upload
+#   archive/ keeps the 12 most recent backups, older ones auto-deleted after each upload
 #            also clears daily/ on success (daily snapshots superseded by archive)
+#            Archive runs fire when the DB crosses ARCHIVE_THRESHOLD_BYTES (3 GB,
+#            roughly monthly), so 12 slots ≈ a year of monthly restore points,
+#            each one carrying the ~month of rows it held at that moment.
 #
 # Backs up staging database only (production DB not deployed).
 #
@@ -44,7 +47,7 @@ permissions:
 # drift apart.
 env:
   KEEP_DAILY: 7
-  KEEP_ARCHIVE: 4
+  KEEP_ARCHIVE: 12
 
 jobs:
   backup:

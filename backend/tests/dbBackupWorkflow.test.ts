@@ -58,6 +58,23 @@ test("prune steps derive their counts from the retention constants", () => {
   }
 });
 
+test("prune step titles carry the constants, never a stale literal", () => {
+  // r2-cleanup.yml's step title read "keep latest 2" long after the code had
+  // moved to KEEP_DAILY=7 — the title was the only place still saying 2, and it
+  // is what a reader checks when auditing retention.
+  const yaml = readWorkflow("r2-cleanup.yml");
+
+  assert.ok(
+    !/- name: Delete old .*keep (latest )?\d+/i.test(yaml),
+    "r2-cleanup.yml: the prune step title must interpolate the constants, not hardcode a count"
+  );
+  assert.ok(
+    yaml.includes("${{ env.KEEP_DAILY }}") &&
+      yaml.includes("${{ env.KEEP_ARCHIVE }}"),
+    "r2-cleanup.yml: the prune step title must show both retention counts"
+  );
+});
+
 test("db-backup reports a failed run as an issue", () => {
   const yaml = readWorkflow("db-backup.yml");
 

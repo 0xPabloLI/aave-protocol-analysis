@@ -7,7 +7,7 @@ name: R2 Cleanup & Audit
 #
 # Retention when deleting:
 #   daily/   keep 7 most recent  (matches db-backup.yml's post-upload prune)
-#   archive/ keep 4 most recent  (matches db-backup.yml's post-upload prune)
+#   archive/ keep 12 most recent (matches db-backup.yml's post-upload prune)
 #
 # This workflow is a weekly safety net for db-backup.yml, so it must never be
 # stricter than that workflow. backend/tests/dbBackupWorkflow.test.ts fails if
@@ -50,7 +50,7 @@ jobs:
       ACTION: ${{ github.event_name == 'schedule' && 'delete' || github.event.inputs.action }}
       # Must match db-backup.yml — see the retention note at the top of this file.
       KEEP_DAILY: 7
-      KEEP_ARCHIVE: 4
+      KEEP_ARCHIVE: 12
     steps:
       - name: List all R2 objects
         run: |
@@ -156,7 +156,7 @@ jobs:
             });
             console.log('Created new R2 quota warning issue');
 
-      - name: Delete old daily backups (keep latest 2)
+      - name: Delete old backups (keep ${{ env.KEEP_DAILY }} daily / ${{ env.KEEP_ARCHIVE }} archive)
         if: env.ACTION == 'delete'
         run: |
           set -euo pipefail
