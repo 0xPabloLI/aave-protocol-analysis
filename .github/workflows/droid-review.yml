@@ -29,3 +29,15 @@ jobs:
           factory_api_key: ${{ secrets.FACTORY_API_KEY }}
           automatic_review: true
           automatic_security_review: true
+          # Three bots open PRs in this repo: renovate (dependency + action bumps),
+          # dependabot (security updates) and github-actions (bot/* remediation and
+          # Coingecko sync PRs). The action refuses bot-triggered runs by default and
+          # fails the check with "Workflow initiated by non-human actor", which put a
+          # red X on every bot PR and silently skipped its review — this workflow's
+          # own trigger covers all non-draft PRs, so that was never the intent.
+          # The action normalises both sides: lowercase, trailing "[bot]" stripped.
+          # All three bots already hold equal or greater privilege here (Renovate
+          # automerges into `railway`; `auto-merge-bot-prs.yml` arms auto-merge for
+          # bot/* PRs), so allowing them to trigger a read-and-comment review is a
+          # strictly smaller grant. Remove a name to stop reviewing that bot's PRs.
+          allowed_bots: "renovate,dependabot,github-actions"
