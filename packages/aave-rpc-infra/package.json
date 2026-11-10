@@ -20,7 +20,7 @@
     "test": "npx --no-install tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@aave-dao/aave-address-book": "^4.57.1",
+    "@aave-dao/aave-address-book": "4.75.8",
     "@internal/aave-shared-config": "1.0.0",
     "@internal/aave-shared-contracts": "1.0.0",
     "ethers": "5.8.0",

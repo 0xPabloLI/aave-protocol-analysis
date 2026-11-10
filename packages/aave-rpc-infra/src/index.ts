@@ -1,11 +1,26 @@
-import { providers, utils } from 'ethers';
-import * as AaveAddressBook from '@aave-dao/aave-address-book';
-import { IHubV4_ABI } from '@aave-dao/aave-address-book/abis/IHubV4';
-import { ISpokeV4_ABI } from '@aave-dao/aave-address-book/abis/ISpokeV4';
-import { AAVE_CHAIN_ID_TO_RPC_KEY, getAaveRpcUrlsByChainId, DEFAULT_SPOKE_HUB_TOPOLOGY } from '@internal/aave-shared-config';
-import type { RuntimeReserveData, SpokeHubTopology } from '@internal/aave-shared-contracts';
-import { getErrorCode, normalizeAddress, spokeKey, topologySortKey, v4ReserveId, rayToRatio, aaveProReserveIdBase64 } from '@internal/aave-shared-contracts';
-import { DynamicRpcCache } from './dynamicRpcCache.js';
+import { providers, utils } from "ethers";
+import * as AaveAddressBook from "@aave-dao/aave-address-book";
+import { IHubV4_ABI } from "@aave-dao/aave-address-book/abis/IHubV4";
+import { ISpokeV4_ABI } from "@aave-dao/aave-address-book/abis/ISpokeV4";
+import {
+  AAVE_CHAIN_ID_TO_RPC_KEY,
+  getAaveRpcUrlsByChainId,
+  DEFAULT_SPOKE_HUB_TOPOLOGY,
+} from "@internal/aave-shared-config";
+import type {
+  RuntimeReserveData,
+  SpokeHubTopology,
+} from "@internal/aave-shared-contracts";
+import {
+  getErrorCode,
+  normalizeAddress,
+  spokeKey,
+  topologySortKey,
+  v4ReserveId,
+  rayToRatio,
+  aaveProReserveIdBase64,
+} from "@internal/aave-shared-contracts";
+import { DynamicRpcCache } from "./dynamicRpcCache.js";
 
 // ============================================================
 // Ethers ABI decode type-safe wrapper (scoped escape hatch)
@@ -39,7 +54,9 @@ function decodeTyped<T>(result: utils.Result, index?: number): T {
   return value as T;
 }
 
-function createInterface(abi: ReadonlyArray<Record<string, unknown>>): utils.Interface {
+function createInterface(
+  abi: ReadonlyArray<Record<string, unknown>>
+): utils.Interface {
   return new utils.Interface(abi as unknown as utils.Fragment[]);
 }
 
@@ -59,7 +76,7 @@ type EndpointHealth = {
 export type EndpointStatus = {
   chainId: number;
   rpcUrl: string;
-  status: 'healthy' | 'suppressed';
+  status: "healthy" | "suppressed";
   consecutiveFailures: number;
   lastError: string;
   lastFailureAt: string;
@@ -76,7 +93,11 @@ export type HealthStatus = {
   };
 };
 
-export type LogFn = (level: 'info' | 'warn', msg: string, meta: Record<string, unknown>) => void;
+export type LogFn = (
+  level: "info" | "warn",
+  msg: string,
+  meta: Record<string, unknown>
+) => void;
 
 export type ProviderPoolOptions = {
   failureThreshold?: number;
@@ -86,7 +107,7 @@ export type ProviderPoolOptions = {
   logFn?: LogFn;
 };
 
-export type ErrorClass = 'retry_next_rpc' | 'try_fallback';
+export type ErrorClass = "retry_next_rpc" | "try_fallback";
 
 export type ErrorClassifier = (error: unknown) => ErrorClass;
 
@@ -107,13 +128,22 @@ function defaultErrorClassifier(error: unknown): ErrorClass {
   const msg = error instanceof Error ? error.message : String(error);
   const code = getErrorCode(error);
   if (code !== undefined) {
-    const networkCodes = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'NETWORK_ERROR', 'SERVER_ERROR']);
-    if (networkCodes.has(code)) return 'retry_next_rpc';
+    const networkCodes = new Set([
+      "ECONNRESET",
+      "ETIMEDOUT",
+      "ECONNREFUSED",
+      "NETWORK_ERROR",
+      "SERVER_ERROR",
+    ]);
+    if (networkCodes.has(code)) return "retry_next_rpc";
   }
-  if (msg.includes('CALL_EXCEPTION') || msg.includes('UNPREDICTABLE_GAS_LIMIT')) {
-    return 'try_fallback';
+  if (
+    msg.includes("CALL_EXCEPTION") ||
+    msg.includes("UNPREDICTABLE_GAS_LIMIT")
+  ) {
+    return "try_fallback";
   }
-  return 'retry_next_rpc';
+  return "retry_next_rpc";
 }
 
 export class ProviderPool {
@@ -128,12 +158,24 @@ export class ProviderPool {
   private readonly dynamicRpcCache: DynamicRpcCache;
   private newChainHook: NewChainHook | null = null;
   private logFn: LogFn | null;
-  private viemChainCache: Array<{ id: number; rpcUrls: { default: { http: string[] } } }> | null = null;
+  private viemChainCache: Array<{
+    id: number;
+    rpcUrls: { default: { http: string[] } };
+  }> | null = null;
 
   constructor(options: ProviderPoolOptions & { providerTtlMs?: number } = {}) {
-    this.failureThreshold = Math.max(1, options.failureThreshold ?? DEFAULT_FAILURE_THRESHOLD);
-    this.suppressionMs = Math.max(1_000, options.suppressionMs ?? DEFAULT_SUPPRESSION_MS);
-    this.providerTtlMs = Math.max(60_000, options.providerTtlMs ?? DEFAULT_PROVIDER_TTL_MS);
+    this.failureThreshold = Math.max(
+      1,
+      options.failureThreshold ?? DEFAULT_FAILURE_THRESHOLD
+    );
+    this.suppressionMs = Math.max(
+      1_000,
+      options.suppressionMs ?? DEFAULT_SUPPRESSION_MS
+    );
+    this.providerTtlMs = Math.max(
+      60_000,
+      options.providerTtlMs ?? DEFAULT_PROVIDER_TTL_MS
+    );
     this.now = options.now ?? Date.now;
     this.errorClassifier = options.errorClassifier ?? defaultErrorClassifier;
     this.dynamicRpcCache = new DynamicRpcCache();
@@ -142,7 +184,7 @@ export class ProviderPool {
 
   /** Post-construction configuration for logFn on the singleton instance */
   configure(options: { logFn?: LogFn | null }): void {
-    if ('logFn' in options) {
+    if ("logFn" in options) {
       this.logFn = options.logFn ?? null;
     }
   }
@@ -155,10 +197,12 @@ export class ProviderPool {
     this.dynamicRpcCache.set(chainId, urls);
   }
 
-  private async loadViemChains(): Promise<Array<{ id: number; rpcUrls: { default: { http: string[] } } }>> {
+  private async loadViemChains(): Promise<
+    Array<{ id: number; rpcUrls: { default: { http: string[] } } }>
+  > {
     if (this.viemChainCache) return this.viemChainCache;
     try {
-      const viemChains = await import('viem/chains');
+      const viemChains = await import("viem/chains");
       this.viemChainCache = Object.values(viemChains) as any;
       return this.viemChainCache!;
     } catch {
@@ -169,10 +213,15 @@ export class ProviderPool {
   private async resolveViemChainRpcs(chainId: number): Promise<string[]> {
     const allChains = await this.loadViemChains();
     if (allChains.length === 0) return [];
-    const viem = await import('viem');
-    const chain = viem.extractChain({ chains: allChains as any[], id: chainId });
+    const viem = await import("viem");
+    const chain = viem.extractChain({
+      chains: allChains as any[],
+      id: chainId,
+    });
     if (!chain?.rpcUrls?.default?.http) return [];
-    return chain.rpcUrls.default.http.filter((u: string) => u.startsWith('https://'));
+    return chain.rpcUrls.default.http.filter((u: string) =>
+      u.startsWith("https://")
+    );
   }
 
   private areAllSuppressed(chainId: number, urls: string[]): boolean {
@@ -199,7 +248,7 @@ export class ProviderPool {
       primary: (provider: providers.Provider) => Promise<T>;
       fallback?: (provider: providers.Provider) => Promise<T>;
     },
-    options?: ExecuteWithAutoRpcOptions,
+    options?: ExecuteWithAutoRpcOptions
   ): Promise<T | null> {
     let urls = getAaveRpcUrlsByChainId(chainId);
     const hadHardcodedUrls = urls.length > 0;
@@ -211,7 +260,10 @@ export class ProviderPool {
         if (!hadHardcodedUrls) {
           this.dynamicRpcCache.startFetch(chainId);
           this.newChainHook?.();
-          this.logFn?.('warn', `new-chain-detected`, { chainId, message: `New chain ${chainId} detected without hardcoded RPC — please add to shared-config. Using viem/chains + external discovery.` });
+          this.logFn?.("warn", `new-chain-detected`, {
+            chainId,
+            message: `New chain ${chainId} detected without hardcoded RPC — please add to shared-config. Using viem/chains + external discovery.`,
+          });
         }
       }
     }
@@ -243,14 +295,20 @@ export class ProviderPool {
     return !!health && health.suppressedUntil > this.now();
   }
 
-  reportProviderFailure(chainId: number, rpcUrl: string, errorMessage: string): void {
+  reportProviderFailure(
+    chainId: number,
+    rpcUrl: string,
+    errorMessage: string
+  ): void {
     const key = this.endpointKey(chainId, rpcUrl);
     const now = this.now();
     const current = this.endpointHealthByKey.get(key);
     const wasSuppressed = this.isSuppressed(current);
     const nextFailures = (current?.consecutiveFailures ?? 0) + 1;
     const shouldSuppress = nextFailures >= this.failureThreshold;
-    const suppressedUntil = shouldSuppress ? now + this.suppressionMs : (current?.suppressedUntil ?? 0);
+    const suppressedUntil = shouldSuppress
+      ? now + this.suppressionMs
+      : (current?.suppressedUntil ?? 0);
     this.endpointHealthByKey.set(key, {
       consecutiveFailures: nextFailures,
       suppressedUntil,
@@ -259,7 +317,13 @@ export class ProviderPool {
       lastSuccessAt: current?.lastSuccessAt ?? 0,
     });
     if (!wasSuppressed && shouldSuppress) {
-      this.logFn?.('warn', 'rpc-endpoint-suppressed', { chainId, rpcUrl, consecutiveFailures: nextFailures, lastError: errorMessage, suppressedUntil });
+      this.logFn?.("warn", "rpc-endpoint-suppressed", {
+        chainId,
+        rpcUrl,
+        consecutiveFailures: nextFailures,
+        lastError: errorMessage,
+        suppressedUntil,
+      });
     }
   }
 
@@ -271,12 +335,12 @@ export class ProviderPool {
     this.endpointHealthByKey.set(key, {
       consecutiveFailures: 0,
       suppressedUntil: 0,
-      lastError: current?.lastError ?? '',
+      lastError: current?.lastError ?? "",
       lastFailureAt: current?.lastFailureAt ?? 0,
       lastSuccessAt: now,
     });
     if (wasSuppressed) {
-      this.logFn?.('info', 'rpc-endpoint-recovered', { chainId, rpcUrl });
+      this.logFn?.("info", "rpc-endpoint-recovered", { chainId, rpcUrl });
     }
   }
 
@@ -287,9 +351,9 @@ export class ProviderPool {
     let suppressed = 0;
 
     for (const [key, health] of this.endpointHealthByKey.entries()) {
-      const [chainIdRaw, ...rpcUrlParts] = key.split(':');
+      const [chainIdRaw, ...rpcUrlParts] = key.split(":");
       const chainId = Number(chainIdRaw);
-      const rpcUrl = rpcUrlParts.join(':');
+      const rpcUrl = rpcUrlParts.join(":");
       if (!Number.isFinite(chainId) || !rpcUrl) continue;
 
       const isSup = health.suppressedUntil > now;
@@ -302,16 +366,20 @@ export class ProviderPool {
       endpoints.push({
         chainId,
         rpcUrl,
-        status: isSup ? 'suppressed' : 'healthy',
+        status: isSup ? "suppressed" : "healthy",
         consecutiveFailures: health.consecutiveFailures,
         lastError: health.lastError,
         lastFailureAt: new Date(health.lastFailureAt).toISOString(),
         lastSuccessAt: new Date(health.lastSuccessAt).toISOString(),
-        ...(isSup ? { suppressedUntil: new Date(health.suppressedUntil).toISOString() } : {}),
+        ...(isSup
+          ? { suppressedUntil: new Date(health.suppressedUntil).toISOString() }
+          : {}),
       });
     }
 
-    endpoints.sort((a, b) => (a.chainId - b.chainId) || a.rpcUrl.localeCompare(b.rpcUrl));
+    endpoints.sort(
+      (a, b) => a.chainId - b.chainId || a.rpcUrl.localeCompare(b.rpcUrl)
+    );
 
     return {
       endpoints,
@@ -327,8 +395,13 @@ export class ProviderPool {
     };
   }
 
-  getProvidersForChain(chainId: number, fallbackUrls: string[]): ProviderCandidate[] {
-    const healthyCandidates: Array<ProviderCandidate & { lastSuccessAt: number; index: number }> = [];
+  getProvidersForChain(
+    chainId: number,
+    fallbackUrls: string[]
+  ): ProviderCandidate[] {
+    const healthyCandidates: Array<
+      ProviderCandidate & { lastSuccessAt: number; index: number }
+    > = [];
     const suppressedCandidates: ProviderCandidate[] = [];
 
     for (let index = 0; index < fallbackUrls.length; index++) {
@@ -354,7 +427,8 @@ export class ProviderPool {
     }
 
     healthyCandidates.sort((a, b) => {
-      if (b.lastSuccessAt !== a.lastSuccessAt) return b.lastSuccessAt - a.lastSuccessAt;
+      if (b.lastSuccessAt !== a.lastSuccessAt)
+        return b.lastSuccessAt - a.lastSuccessAt;
       return a.index - b.index;
     });
 
@@ -362,7 +436,10 @@ export class ProviderPool {
     this.cleanupStaleProviders();
 
     return [
-      ...healthyCandidates.map(({ rpcUrl, provider }) => ({ rpcUrl, provider })),
+      ...healthyCandidates.map(({ rpcUrl, provider }) => ({
+        rpcUrl,
+        provider,
+      })),
       ...suppressedCandidates,
     ];
   }
@@ -374,7 +451,7 @@ export class ProviderPool {
       primary: (provider: providers.Provider) => Promise<T>;
       fallback?: (provider: providers.Provider) => Promise<T>;
     },
-    options?: ExecuteWithFallbackOptions,
+    options?: ExecuteWithFallbackOptions
   ): Promise<T> {
     const candidates = this.getProvidersForChain(chainId, rpcUrls);
     const errors: Array<{ rpcUrl: string; message: string }> = [];
@@ -389,13 +466,16 @@ export class ProviderPool {
         this.reportProviderFailure(chainId, rpcUrl, message);
 
         const errorClass = this.errorClassifier(error);
-        if (errorClass === 'try_fallback' && execs.fallback) {
+        if (errorClass === "try_fallback" && execs.fallback) {
           try {
             const fallbackResult = await execs.fallback(provider);
             this.reportProviderSuccess(chainId, rpcUrl);
             return fallbackResult;
           } catch (fallbackError) {
-            const fbMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+            const fbMsg =
+              fallbackError instanceof Error
+                ? fallbackError.message
+                : String(fallbackError);
             this.reportProviderFailure(chainId, rpcUrl, fbMsg);
             errors.push({ rpcUrl, message: `${message} | fallback: ${fbMsg}` });
           }
@@ -405,9 +485,11 @@ export class ProviderPool {
       }
     }
 
-    const label = options?.label ? ` (${options.label})` : '';
-    const details = errors.map(e => `  ${e.rpcUrl}: ${e.message}`).join('\n');
-    throw new Error(`executeWithFallback${label}: all ${rpcUrls.length} RPCs failed for chain ${chainId}\n${details}`);
+    const label = options?.label ? ` (${options.label})` : "";
+    const details = errors.map((e) => `  ${e.rpcUrl}: ${e.message}`).join("\n");
+    throw new Error(
+      `executeWithFallback${label}: all ${rpcUrls.length} RPCs failed for chain ${chainId}\n${details}`
+    );
   }
 
   /** Remove provider + health entries unused for longer than providerTtlMs */
@@ -444,50 +526,41 @@ export const MULTICALL3_ABI = [
     inputs: [
       {
         components: [
-          { internalType: 'address', name: 'target', type: 'address' },
-          { internalType: 'bool', name: 'allowFailure', type: 'bool' },
-          { internalType: 'bytes', name: 'callData', type: 'bytes' },
+          { internalType: "address", name: "target", type: "address" },
+          { internalType: "bool", name: "allowFailure", type: "bool" },
+          { internalType: "bytes", name: "callData", type: "bytes" },
         ],
-        internalType: 'struct Multicall3.Call3[]',
-        name: 'calls',
-        type: 'tuple[]',
+        internalType: "struct Multicall3.Call3[]",
+        name: "calls",
+        type: "tuple[]",
       },
     ],
-    name: 'aggregate3',
+    name: "aggregate3",
     outputs: [
       {
         components: [
-          { internalType: 'bool', name: 'success', type: 'bool' },
-          { internalType: 'bytes', name: 'returnData', type: 'bytes' },
+          { internalType: "bool", name: "success", type: "bool" },
+          { internalType: "bytes", name: "returnData", type: "bytes" },
         ],
-        internalType: 'struct Multicall3.Result[]',
-        name: 'returnData',
-        type: 'tuple[]',
+        internalType: "struct Multicall3.Result[]",
+        name: "returnData",
+        type: "tuple[]",
       },
     ],
-    stateMutability: 'payable',
-    type: 'function',
+    stateMutability: "payable",
+    type: "function",
   },
 ] as const;
 
-export const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
+export const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 export { ISpokeV4_ABI };
 
-export const HUB_EXTENSIONS_ABI = [
-  {
-    inputs: [
-      { internalType: 'uint256', name: 'assetId', type: 'uint256' },
-      { internalType: 'address', name: 'spoke', type: 'address' },
-    ],
-    name: 'getSpokeDeficitRay',
-    outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
-
-export const V4_HUB_FULL_ABI = [...IHubV4_ABI, ...HUB_EXTENSIONS_ABI] as const;
+// Upstream IHubV4 now ships the full Hub interface, getSpokeDeficitRay included,
+// so the local HUB_EXTENSIONS_ABI supplement was retired (AAV-1345). Kept as a
+// named export so that re-adding a supplement later stays a one-line change.
+// The methods the V4 reader depends on are pinned by backend/tests/abi-drift.test.ts.
+export const V4_HUB_FULL_ABI = IHubV4_ABI;
 
 export type Multicall3Call = {
   target: string;
@@ -505,7 +578,11 @@ export type Multicall3Options = {
   label?: string;
 };
 
-export async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string
+): Promise<T> {
   let timeoutId: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
@@ -522,16 +599,16 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, message: s
 export async function executeMulticall3(
   provider: providers.Provider,
   calls: Multicall3Call[],
-  options: Multicall3Options = {},
+  options: Multicall3Options = {}
 ): Promise<Multicall3Result[]> {
   const iface = createInterface(MULTICALL3_ABI);
-  const encodedData = iface.encodeFunctionData('aggregate3', [calls]);
+  const encodedData = iface.encodeFunctionData("aggregate3", [calls]);
   const rawResult = await withTimeout(
-    provider.call({ to: MULTICALL3_ADDRESS, data: encodedData }, 'latest'),
+    provider.call({ to: MULTICALL3_ADDRESS, data: encodedData }, "latest"),
     options.timeoutMs ?? 15_000,
-    options.label ?? 'Multicall3.aggregate3 timeout',
+    options.label ?? "Multicall3.aggregate3 timeout"
   );
-  const decoded = iface.decodeFunctionResult('aggregate3', rawResult);
+  const decoded = iface.decodeFunctionResult("aggregate3", rawResult);
   return decodeTyped<Multicall3ResultDecoded[]>(decoded, 0).map((result) => ({
     success: result.success,
     returnData: result.returnData,
@@ -547,7 +624,10 @@ export interface V4SpokeEntry {
 }
 
 function isSupportedChain(chainId: number): boolean {
-  return Object.prototype.hasOwnProperty.call(AAVE_CHAIN_ID_TO_RPC_KEY, chainId);
+  return Object.prototype.hasOwnProperty.call(
+    AAVE_CHAIN_ID_TO_RPC_KEY,
+    chainId
+  );
 }
 
 export function getV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
@@ -566,7 +646,12 @@ export function getV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
 
   const entries: V4SpokeEntry[] = [];
   for (const [moduleName, moduleValue] of Object.entries(AaveAddressBook)) {
-    if (!moduleName.startsWith('AaveV4') || !moduleValue || typeof moduleValue !== 'object') continue;
+    if (
+      !moduleName.startsWith("AaveV4") ||
+      !moduleValue ||
+      typeof moduleValue !== "object"
+    )
+      continue;
     const value = moduleValue as Record<string, unknown>;
     const chainId = Number(value.CHAIN_ID);
     if (!Number.isFinite(chainId) || !isSupportedChain(chainId)) continue;
@@ -577,14 +662,15 @@ export function getV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
 
     const hubAddressToName = new Map<string, string>();
     for (const [hubName, hubAddr] of Object.entries(hubs)) {
-      if (typeof hubAddr === 'string') {
+      if (typeof hubAddr === "string") {
         hubAddressToName.set(normalizeAddress(hubAddr), hubName);
       }
     }
 
     for (const [spokeName, spokeAddress] of Object.entries(spokes)) {
-      if (!spokeName.endsWith('_SPOKE') && !spokeName.endsWith('_ESPOKE')) continue;
-      if (typeof spokeAddress !== 'string') continue;
+      if (!spokeName.endsWith("_SPOKE") && !spokeName.endsWith("_ESPOKE"))
+        continue;
+      if (typeof spokeAddress !== "string") continue;
       const spokeCacheKey = spokeKey(chainId, spokeAddress);
       const hubAddresses = topologyBySpoke.get(spokeCacheKey);
       if (!hubAddresses) continue;
@@ -622,17 +708,26 @@ export function getDefaultV4SpokeEntries(): V4SpokeEntry[] {
  * (no topology entry = not traversed). If a non-curated topology is passed,
  * the caller should pre-filter.
  */
-export function buildFallbackV4SpokeEntries(topology: SpokeHubTopology): V4SpokeEntry[] {
+export function buildFallbackV4SpokeEntries(
+  topology: SpokeHubTopology
+): V4SpokeEntry[] {
   return topology.map(({ chainId, spokeAddress, hubAddress }) => ({
-    spokeName: 'unknown',
+    spokeName: "unknown",
     chainId,
     spokeAddress: spokeAddress.toLowerCase(),
-    hubName: 'unknown',
+    hubName: "unknown",
     hubAddress: hubAddress.toLowerCase(),
   }));
 }
 
-export type ProviderPoolLike = Pick<ProviderPool, 'getProvidersForChain' | 'reportProviderFailure' | 'reportProviderSuccess' | 'errorClassifier' | 'executeWithAutoRpc'>;
+export type ProviderPoolLike = Pick<
+  ProviderPool,
+  | "getProvidersForChain"
+  | "reportProviderFailure"
+  | "reportProviderSuccess"
+  | "errorClassifier"
+  | "executeWithAutoRpc"
+>;
 
 export interface FetchV4ReservesViaRpcOptions {
   entries?: V4SpokeEntry[];
@@ -660,13 +755,13 @@ async function callContract(
   target: string,
   functionName: string,
   args: unknown[],
-  timeoutMs: number,
+  timeoutMs: number
 ): Promise<utils.Result> {
   const data = iface.encodeFunctionData(functionName, args);
   const raw = await withTimeout(
-    provider.call({ to: target, data }, 'latest'),
+    provider.call({ to: target, data }, "latest"),
     timeoutMs,
-    `${functionName} timeout for ${target}`,
+    `${functionName} timeout for ${target}`
   );
   return iface.decodeFunctionResult(functionName, raw);
 }
@@ -676,7 +771,7 @@ function buildReserveData(
   underlying: string,
   decimals: number,
   hubAsset: any,
-  onChainId: number,
+  onChainId: number
 ): RuntimeReserveData {
   const liquidity = bigintToString(hubAsset.liquidity ?? hubAsset[0]);
   const borrowed = bigintToString(hubAsset.drawnShares ?? hubAsset[6]);
@@ -684,17 +779,25 @@ function buildReserveData(
   // borrowApy is a 'ratio' field (0.04 = 4%) per FIELD_UNITS.
   // Use rayToRatio (÷10^27) — NOT rayToPercent — to match SDK path convention.
   // Serializer applies ×100 to ratio fields for API output.
-  const borrowApy = rayToRatio(String(hubAsset.drawnRate ?? hubAsset[10] ?? ''));
+  const borrowApy = rayToRatio(
+    String(hubAsset.drawnRate ?? hubAsset[10] ?? "")
+  );
   const protocolFeeRaw = hubAsset.liquidityFee ?? hubAsset[8];
-  const protocolFee = protocolFeeRaw !== undefined ? Number(protocolFeeRaw) / 100 : undefined;
+  const protocolFee =
+    protocolFeeRaw !== undefined ? Number(protocolFeeRaw) / 100 : undefined;
 
   return {
-    reserveId: v4ReserveId(entry.chainId, entry.spokeAddress, underlying, entry.hubAddress),
-    marketName: `AaveV4${entry.spokeName.replace(/\s+/g, '')}`,
+    reserveId: v4ReserveId(
+      entry.chainId,
+      entry.spokeAddress,
+      underlying,
+      entry.hubAddress
+    ),
+    marketName: `AaveV4${entry.spokeName.replace(/\s+/g, "")}`,
     chainName: `Chain ${entry.chainId}`,
     chainId: entry.chainId,
-    tokenName: 'Unknown',
-    tokenSymbol: 'Unknown',
+    tokenName: "Unknown",
+    tokenSymbol: "Unknown",
     tokenAddress: underlying,
     aTokenAddress: null,
     vTokenAddress: null,
@@ -710,19 +813,30 @@ function buildReserveData(
     spokeId: normalizeAddress(entry.spokeAddress),
     spokeName: entry.spokeName,
     spokeAddress: normalizeAddress(entry.spokeAddress),
-    aaveProReserveId: aaveProReserveIdBase64(entry.chainId, entry.hubAddress, onChainId),
+    aaveProReserveId: aaveProReserveIdBase64(
+      entry.chainId,
+      entry.hubAddress,
+      onChainId
+    ),
   };
 }
 
 async function fetchEntryReservesMulticall(
   provider: providers.Provider,
   entry: V4SpokeEntry,
-  timeoutMs: number,
+  timeoutMs: number
 ): Promise<RuntimeReserveData[]> {
   const spokeIface = createInterface(ISpokeV4_ABI);
   const hubIface = createInterface(V4_HUB_FULL_ABI);
 
-  const reserveCountResult = await callContract(provider, spokeIface, entry.spokeAddress, 'getReserveCount', [], timeoutMs);
+  const reserveCountResult = await callContract(
+    provider,
+    spokeIface,
+    entry.spokeAddress,
+    "getReserveCount",
+    [],
+    timeoutMs
+  );
   const reserveCount = Number(reserveCountResult[0]);
   if (reserveCount === 0) return [];
 
@@ -732,20 +846,35 @@ async function fetchEntryReservesMulticall(
     reserveCalls.push({
       target: entry.spokeAddress,
       allowFailure: true,
-      callData: spokeIface.encodeFunctionData('getReserve', [i]),
+      callData: spokeIface.encodeFunctionData("getReserve", [i]),
     });
   }
-  const reserveResults = await executeMulticall3(provider, reserveCalls, { timeoutMs, label: `getReserve batch for ${entry.spokeName}` });
+  const reserveResults = await executeMulticall3(provider, reserveCalls, {
+    timeoutMs,
+    label: `getReserve batch for ${entry.spokeName}`,
+  });
 
   // Filter reserves matching our hub, collect asset IDs
-  const matchingReserves: Array<{ underlying: string; assetId: bigint; decimals: number; onChainId: number }> = [];
+  const matchingReserves: Array<{
+    underlying: string;
+    assetId: bigint;
+    decimals: number;
+    onChainId: number;
+  }> = [];
   for (let i = 0; i < reserveResults.length; i++) {
     const result = reserveResults[i];
     if (!result.success) continue;
-    const decoded = decodeTyped<SpokeReserveDecoded>(spokeIface.decodeFunctionResult('getReserve', result.returnData), 0);
-    const reserveHub = normalizeAddress(String(decoded.hub ?? decoded[1] ?? ''));
+    const decoded = decodeTyped<SpokeReserveDecoded>(
+      spokeIface.decodeFunctionResult("getReserve", result.returnData),
+      0
+    );
+    const reserveHub = normalizeAddress(
+      String(decoded.hub ?? decoded[1] ?? "")
+    );
     if (reserveHub !== normalizeAddress(entry.hubAddress)) continue;
-    const underlying = normalizeAddress(String(decoded.underlying ?? decoded[0] ?? ''));
+    const underlying = normalizeAddress(
+      String(decoded.underlying ?? decoded[0] ?? "")
+    );
     if (!underlying) continue;
     const assetId = BigInt(String(decoded.assetId ?? decoded[2] ?? 0));
     const decimals = Number(decoded.decimals ?? decoded[3] ?? 18);
@@ -754,12 +883,15 @@ async function fetchEntryReservesMulticall(
   if (matchingReserves.length === 0) return [];
 
   // Batch all getAsset calls via Multicall3
-  const assetCalls: Multicall3Call[] = matchingReserves.map(r => ({
+  const assetCalls: Multicall3Call[] = matchingReserves.map((r) => ({
     target: entry.hubAddress,
     allowFailure: true,
-    callData: hubIface.encodeFunctionData('getAsset', [r.assetId]),
+    callData: hubIface.encodeFunctionData("getAsset", [r.assetId]),
   }));
-  const assetResults = await executeMulticall3(provider, assetCalls, { timeoutMs, label: `getAsset batch for ${entry.hubName}` });
+  const assetResults = await executeMulticall3(provider, assetCalls, {
+    timeoutMs,
+    label: `getAsset batch for ${entry.hubName}`,
+  });
 
   // Build RuntimeReserveData from matching reserves + hub assets
   const reserves: RuntimeReserveData[] = [];
@@ -767,8 +899,13 @@ async function fetchEntryReservesMulticall(
     const { underlying, decimals, onChainId } = matchingReserves[i];
     const assetResult = assetResults[i];
     if (!assetResult.success) continue;
-    const hubAsset = decodeTyped<HubAssetDecoded>(hubIface.decodeFunctionResult('getAsset', assetResult.returnData), 0);
-    reserves.push(buildReserveData(entry, underlying, decimals, hubAsset, onChainId));
+    const hubAsset = decodeTyped<HubAssetDecoded>(
+      hubIface.decodeFunctionResult("getAsset", assetResult.returnData),
+      0
+    );
+    reserves.push(
+      buildReserveData(entry, underlying, decimals, hubAsset, onChainId)
+    );
   }
 
   return reserves;
@@ -777,33 +914,68 @@ async function fetchEntryReservesMulticall(
 async function fetchEntryReservesSerial(
   provider: providers.Provider,
   entry: V4SpokeEntry,
-  timeoutMs: number,
+  timeoutMs: number
 ): Promise<RuntimeReserveData[]> {
   const spokeIface = createInterface(ISpokeV4_ABI);
   const hubIface = createInterface(V4_HUB_FULL_ABI);
-  const reserveCountResult = await callContract(provider, spokeIface, entry.spokeAddress, 'getReserveCount', [], timeoutMs);
+  const reserveCountResult = await callContract(
+    provider,
+    spokeIface,
+    entry.spokeAddress,
+    "getReserveCount",
+    [],
+    timeoutMs
+  );
   const reserveCount = Number(reserveCountResult[0]);
   const reserves: RuntimeReserveData[] = [];
 
   for (let reserveIndex = 0; reserveIndex < reserveCount; reserveIndex++) {
-    const spokeReserve = decodeTyped<SpokeReserveDecoded>((await callContract(provider, spokeIface, entry.spokeAddress, 'getReserve', [reserveIndex], timeoutMs)), 0);
-    const reserveHub = normalizeAddress(String(spokeReserve.hub ?? spokeReserve[1] ?? ''));
+    const spokeReserve = decodeTyped<SpokeReserveDecoded>(
+      await callContract(
+        provider,
+        spokeIface,
+        entry.spokeAddress,
+        "getReserve",
+        [reserveIndex],
+        timeoutMs
+      ),
+      0
+    );
+    const reserveHub = normalizeAddress(
+      String(spokeReserve.hub ?? spokeReserve[1] ?? "")
+    );
     if (reserveHub !== normalizeAddress(entry.hubAddress)) continue;
 
-    const underlying = normalizeAddress(String(spokeReserve.underlying ?? spokeReserve[0] ?? ''));
+    const underlying = normalizeAddress(
+      String(spokeReserve.underlying ?? spokeReserve[0] ?? "")
+    );
     if (!underlying) continue;
 
-    const assetId = BigInt(String(spokeReserve.assetId ?? spokeReserve[2] ?? 0));
+    const assetId = BigInt(
+      String(spokeReserve.assetId ?? spokeReserve[2] ?? 0)
+    );
     const decimals = Number(spokeReserve.decimals ?? spokeReserve[3] ?? 18);
-    const hubAsset = decodeTyped<HubAssetDecoded>((await callContract(provider, hubIface, entry.hubAddress, 'getAsset', [assetId], timeoutMs)), 0);
-    reserves.push(buildReserveData(entry, underlying, decimals, hubAsset, reserveIndex));
+    const hubAsset = decodeTyped<HubAssetDecoded>(
+      await callContract(
+        provider,
+        hubIface,
+        entry.hubAddress,
+        "getAsset",
+        [assetId],
+        timeoutMs
+      ),
+      0
+    );
+    reserves.push(
+      buildReserveData(entry, underlying, decimals, hubAsset, reserveIndex)
+    );
   }
 
   return reserves;
 }
 
 export async function fetchV4ReservesViaRpc(
-  options: FetchV4ReservesViaRpcOptions,
+  options: FetchV4ReservesViaRpcOptions
 ): Promise<FetchV4ReservesViaRpcResult> {
   const activePool = options.providerPool ?? providerPool;
   const timeoutMs = options.timeoutMs ?? 15_000;
@@ -815,13 +987,17 @@ export async function fetchV4ReservesViaRpc(
       const entryReserves = await activePool.executeWithAutoRpc(
         entry.chainId,
         {
-          primary: (p: providers.Provider) => fetchEntryReservesMulticall(p, entry, timeoutMs),
-          fallback: (p: providers.Provider) => fetchEntryReservesSerial(p, entry, timeoutMs),
+          primary: (p: providers.Provider) =>
+            fetchEntryReservesMulticall(p, entry, timeoutMs),
+          fallback: (p: providers.Provider) =>
+            fetchEntryReservesSerial(p, entry, timeoutMs),
         },
-        { label: `fetchV4Reserves:${entry.spokeName}` },
+        { label: `fetchV4Reserves:${entry.spokeName}` }
       );
       if (!entryReserves) {
-        errors.push(`${entry.spokeName}/${entry.hubName}: no RPC URLs available`);
+        errors.push(
+          `${entry.spokeName}/${entry.hubName}: no RPC URLs available`
+        );
         continue;
       }
       reserves.push(...entryReserves);

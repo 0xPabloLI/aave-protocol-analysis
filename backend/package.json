@@ -23,7 +23,7 @@
     "prune": "ts-prune -i '\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v 'SEMRUSH_TO_GSC' | grep -v 'ForTests' | grep '^src/' | (grep -q . && exit 1 || exit 0)"
   },
   "dependencies": {
-    "@aave-dao/aave-address-book": "^4.57.1",
+    "@aave-dao/aave-address-book": "4.75.8",
     "@aave/contract-helpers": "^1.37.1",
     "@internal/aave-fetcher": "1.0.0",
     "@internal/aave-rpc-infra": "1.0.0",
