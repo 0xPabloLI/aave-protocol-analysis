@@ -71,7 +71,7 @@
     "hono": "^4.13.5",
     "minimatch@>=7.0.0": "11.0.4",
     "preact": "^11.0.0",
-    "undici": "^7.28.0",
+    "undici": "^8.0.0",
     "ws": "^8.21.0"
   },
   "devDependencies": {
