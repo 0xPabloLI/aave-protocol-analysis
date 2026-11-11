@@ -121,21 +121,30 @@ jobs:
             // time, which would leave the warning unfindable by the dedupe query
             // below: each weekly run would then open a NEW issue instead of
             // commenting on the open one. Ensure the label exists first.
+            //
+            // Every failure here is downgraded to a warning on purpose: losing
+            // the dedupe is a duplicate issue, losing the warning is silence.
             try {
               await github.rest.issues.getLabel({ owner, repo, name: 'r2-quota-warning' });
             } catch (lookupError) {
-              if (lookupError.status !== 404) throw lookupError;
-              try {
-                await github.rest.issues.createLabel({
-                  owner, repo,
-                  name: 'r2-quota-warning',
-                  color: 'ededed',
-                  description: 'R2 bucket usage above the free-tier threshold',
-                });
-                console.log('Created missing label r2-quota-warning');
-              } catch (createError) {
-                // Lost a race with a concurrent run that created it first.
-                if (createError.status !== 422) throw createError;
+              if (lookupError.status !== 404) {
+                core.warning(`could not check label r2-quota-warning: ${lookupError.message}`);
+              } else {
+                try {
+                  await github.rest.issues.createLabel({
+                    owner, repo,
+                    name: 'r2-quota-warning',
+                    color: 'ededed',
+                    description: 'R2 bucket usage above the free-tier threshold',
+                  });
+                  core.info('Created missing label r2-quota-warning');
+                } catch (createError) {
+                  // 422 = a concurrent run created it first; anything else means
+                  // the issue below gets filed without the label (still a warning).
+                  if (createError.status !== 422) {
+                    core.warning(`could not create label r2-quota-warning: ${createError.message}`);
+                  }
+                }
               }
             }
 

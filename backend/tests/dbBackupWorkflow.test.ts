@@ -168,5 +168,18 @@ test("alert workflows create their issue label before deduping by it", () => {
       createLabel < dedupeQuery,
       `${file}: the label must be created before the dedupe query runs, not after it`
     );
+    // Alert delivery must never depend on label bookkeeping: if the label lookup
+    // or create fails (403 from a token without label rights, 5xx), the step has
+    // to warn and file the issue anyway. Losing dedupe costs a duplicate issue;
+    // losing the alert costs a silently missing backup.
+    const ensureBlock = yaml.slice(ensureLabel, dedupeQuery);
+    assert.ok(
+      ensureBlock.includes("core.warning"),
+      `${file}: a failed label lookup must degrade to a warning so the alert still files`
+    );
+    assert.ok(
+      !/throw (lookup|create)Error;/.test(ensureBlock),
+      `${file}: a label failure must not abort the alert step`
+    );
   }
 });
