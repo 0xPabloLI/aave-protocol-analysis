@@ -28,7 +28,7 @@
     "@internal/aave-rpc-infra": "1.0.0",
     "@internal/aave-shared-config": "1.0.0",
     "@internal/aave-shared-contracts": "1.0.0",
-    "dotenv": "^17.3.1",
+    "dotenv": "^18.0.0",
     "playwright": "^1.61.0",
     "winston": "^3.19.0"
   },
