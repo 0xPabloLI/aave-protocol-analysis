@@ -3,6 +3,13 @@ name: Uptime alert
 # Custom alerting rule: probe public health endpoints on a schedule; open or
 # update a GitHub issue when a probe fails. This is the runtime alerting
 # channel (complements CI auto-revert, which only covers push-time failures).
+#
+# Runs on a GitHub-hosted runner every 15 minutes and only fires from the
+# default branch (`main`) — a copy of this file on another branch is never
+# scheduled. Verified 2026-11-11: both github-script refs here were 37-character
+# SHAs, so every run since it reached main died in "Set up job" and this channel
+# had never raised a single real alert. backend/tests/workflowActionPins.test.ts
+# now fails if any action ref is not a full 40-character SHA.
 
 on:
   schedule:
@@ -16,6 +23,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Probe backend /health
         id: backend
@@ -28,7 +36,7 @@ jobs:
 
       - name: Open or update alert issue
         if: steps.backend.outcome == 'failure'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -41,6 +49,39 @@ jobs:
               '',
               'Runbook: `docs/runbooks/backend-outage.md`.',
             ].join('\n');
+
+            // GitHub silently drops labels that do not exist at issue-create
+            // time. This step dedupes by title, so a dropped label would not
+            // duplicate what it files — the alert would just be invisible to
+            // any label-based triage. Ensure the labels exist first; a failure
+            // here is a warning, never a reason to skip filing the alert.
+            for (const [name, description] of [
+              ['alerting', 'Runtime alert opened by a scheduled probe'],
+              ['needs-triage', 'Not triaged yet'],
+            ]) {
+              try {
+                await github.rest.issues.getLabel({ ...context.repo, name });
+              } catch (lookupError) {
+                if (lookupError.status !== 404) {
+                  core.warning(`could not check label ${name}: ${lookupError.message}`);
+                } else {
+                  try {
+                    await github.rest.issues.createLabel({
+                      ...context.repo,
+                      name,
+                      color: 'ededed',
+                      description,
+                    });
+                    core.info(`Created missing label ${name}`);
+                  } catch (createError) {
+                    // 422 = a concurrent run created it first.
+                    if (createError.status !== 422) {
+                      core.warning(`could not create label ${name}: ${createError.message}`);
+                    }
+                  }
+                }
+              }
+            }
 
             const existing = await github.paginate(github.rest.issues.listForRepo, {
               owner, repo, state: 'open', per_page: 100,
@@ -56,7 +97,7 @@ jobs:
 
       - name: Close alert issue on recovery
         if: steps.backend.outcome == 'success'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const { owner, repo } = context.repo;

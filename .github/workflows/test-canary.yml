@@ -132,6 +132,42 @@ jobs:
             const decision = JSON.parse(fs.readFileSync(decisionPath, 'utf8'));
 
             const title = '⚠️ CI build duration regression';
+
+            // GitHub silently drops labels that do not exist at issue-create
+            // time, and filtering by a label that does not exist matches
+            // nothing. Together that means: no `ci-perf` label → the lookup
+            // below never sees the previous issue → a fresh issue every week,
+            // and the recovery path can never find it to close. Ensure both
+            // labels exist before the query; failures stay warnings so the
+            // regression is still reported.
+            for (const [name, description] of [
+              ['ci-perf', 'CI build duration regression'],
+              ['needs-triage', 'Not triaged yet'],
+            ]) {
+              try {
+                await github.rest.issues.getLabel({ ...context.repo, name });
+              } catch (lookupError) {
+                if (lookupError.status !== 404) {
+                  core.warning(`could not check label ${name}: ${lookupError.message}`);
+                } else {
+                  try {
+                    await github.rest.issues.createLabel({
+                      ...context.repo,
+                      name,
+                      color: 'ededed',
+                      description,
+                    });
+                    core.info(`Created missing label ${name}`);
+                  } catch (createError) {
+                    // 422 = a concurrent run created it first.
+                    if (createError.status !== 422) {
+                      core.warning(`could not create label ${name}: ${createError.message}`);
+                    }
+                  }
+                }
+              }
+            }
+
             const open = await github.paginate(github.rest.issues.listForRepo, {
               owner, repo, state: 'open', per_page: 100, labels: 'ci-perf',
             });
