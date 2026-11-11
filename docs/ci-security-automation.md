@@ -28,13 +28,11 @@ This ensures lock file changes are always included in commits, preventing local/
 
 Because the osv-scanner gate has no CI counterpart, an advisory it cannot resolve would block every push indefinitely. `OSV_ALLOWLIST` in `.husky/pre-push` exists for that case; each entry carries its justification inline. Current entries:
 
-| GHSA                  | Package     | Why allowlisted                                                   |
-| --------------------- | ----------- | ----------------------------------------------------------------- |
-| `GHSA-848j-6mx2-7j84` | `elliptic`  | No upstream fix; reaches us via `ethers@5`.                       |
-| `GHSA-3g3m-2fjr-6pw4` | `glob`      | dev-only; latest parents still pin `^13.0.6`, the fix is a major. |
-| `GHSA-g3hv-75wg-m249` | `minimatch` | dev-only; latest parents still pin `^10.2.2`, the fix is a major. |
+| GHSA                  | Package    | Why allowlisted                             |
+| --------------------- | ---------- | ------------------------------------------- |
+| `GHSA-848j-6mx2-7j84` | `elliptic` | No upstream fix; reaches us via `ethers@5`. |
 
-Re-check the two dev-only entries whenever `test-exclude`, `ts-json-schema-generator` or `@typescript-eslint/typescript-estree` widen their ranges.
+The two dev-only entries (`glob` `GHSA-3g3m-2fjr-6pw4`, `minimatch` `GHSA-g3hv-75wg-m249`) were removed on 2026-11-11. Both were fixable after all: `overrides` in `package.json` pin `glob` to `^14.0.4` and `minimatch@>=7.0.0 <11.0.1` to `^11.0.5`, and the two majors were validated against the only consumers — `test-exclude` (c8 coverage) and `ts-json-schema-generator` (schema generation) both use `globSync`/`glob.sync` and `minimatch()` only. glob 13 could not absorb the patched minimatch on its own: it matches magic path portions with `instanceof RegExp`, while minimatch 11 emits `Matcher` objects, which is why glob had to move to 14. If `glob@13` or `minimatch@10` ever reappears in the lockfile, that is a regression of these overrides, not a new advisory.
 
 The `npm audit` allowlist is a separate list, kept in the `"audit"` script in `package.json` (see [Security Audit Layered Architecture](#security-audit-layered-architecture)).
 
@@ -231,14 +229,13 @@ The `continue-on-error: true` on `security-audit` in `ci.yml` is a **hard constr
 | 3     | CI Auto Remediation                     | CI build failure       | Other CI failures (build break, etc.)                                |
 | 4     | Security Moderate Report                | Weekly (Mon 04:00 UTC) | **Runtime** dependencies at `moderate` severity, minus the allowlist |
 
-**Dependabot security updates are disabled** (repo setting, 2026-11-09). The toggle outlived the Renovate migration but had nothing left to do: both remaining alerts (`elliptic`, `minimatch`) have no fix path, so Dependabot could not open a PR — it could only fail a workflow run on every push to `main`, which made Railway skip the production deploy (see "A failed check suite does not hold the deploy" above). Dependabot **alerts** remain enabled for visibility; Renovate is the update path.
+**Dependabot security updates are disabled** (repo setting, 2026-11-09). The toggle outlived the Renovate migration but had nothing left to do: the alerts open at the time (`elliptic`, `minimatch`) looked unfixable, so Dependabot could not open a PR — it could only fail a workflow run on every push to `main`, which made Railway skip the production deploy (see "A failed check suite does not hold the deploy" above). Dependabot **alerts** remain enabled for visibility; Renovate is the update path. `minimatch` was in fact fixable and was cleared on 2026-11-11 by the `package.json` overrides; `elliptic` remains open.
 
-⚠️ **Layer 4 does not track either of those two advisories.** It reads `npm audit`, not the Dependabot API, and it narrows the result twice: it reports only `moderate` severity, and it runs `npm audit --omit=dev`. So:
+⚠️ **Layer 4 does not track the one remaining advisory.** It reads `npm audit`, not the Dependabot API, and it narrows the result twice: it reports only `moderate` severity, and it runs `npm audit --omit=dev`. So:
 
-- `minimatch` (`GHSA-g3hv-75wg-m249`, moderate) is a dev-only dependency — every lockfile entry is `dev: true` — and `--omit=dev` never sees it.
-- `elliptic` (`GHSA-848j-6mx2-7j84`) is `low`, not moderate, **and** its advisory is the first entry in the audit allowlist in `package.json`, so layer 4 would filter it out anyway.
+- `elliptic` (`GHSA-848j-6mx2-7j84`) is `low`, not moderate, **and** its advisory is the only entry in the audit allowlist in `package.json`, so layer 4 would filter it out anyway. The advisory covers every published version (`<= 6.6.1`, `first_patched_version: null`; 6.6.1 is the newest release), and it reaches us through the pinned `ethers@5.8.0` → `@ethersproject/signing-key` → `elliptic@6.6.1`. The vulnerable path is ECDSA signing (RFC 6979 nonce truncation); this repo never constructs a wallet or signs — `ethers` is used for read-only calls and encoding — so exposure is theoretical.
 
-Both are therefore **known and accepted with no layer tracking them** — visible only in the Dependabot alerts list. Closing that gap means either dropping an allowlist entry (which fails the `npm run audit` gate, since neither advisory has a fix path) or adding a dev-dependency audit path. The layer-4 table row above is scoped to what it actually reports.
+It is therefore **known and accepted with no layer tracking it** — visible only in the Dependabot alerts list. Closing that gap means either dropping the allowlist entry (which fails the `npm run audit` gate, since the advisory has no fix path) or adding a dev-dependency audit path. The layer-4 table row above is scoped to what it actually reports.
 
 ### Renovate automerge
 
