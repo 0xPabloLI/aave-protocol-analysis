@@ -85,7 +85,7 @@ ssh -A -t "$TARGET_HOST" bash -s "$DOPPLER_TOKEN_B64" << 'REMOTE_SCRIPT'
   echo "Connected to remote server..."
   
   # --- Node.js/NVM logic: always ensure node is available at the start ---
-  REQUIRED_NODE_VERSION="20.18.1"
+  REQUIRED_NODE_VERSION="24.12.0"
   export NVM_DIR="$HOME/.nvm"
   if [ -s "$NVM_DIR/nvm.sh" ]; then
     . "$NVM_DIR/nvm.sh"

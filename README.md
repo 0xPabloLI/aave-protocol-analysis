@@ -1,7 +1,7 @@
 # Aave Markets Data Fetcher
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22.22.1+-green.svg)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 This project provides a backend service that uses the Aave TypeScript SDK and @bgd-labs/aave-address-book to fetch market data from all supported networks, and integrates Merkl and Brevis incentive data. The service includes both a data fetcher and a REST API server.
@@ -74,7 +74,7 @@ aave/
 
 ### Prerequisites
 
-- Node.js 20 or higher
+- Node.js 22.22.1 or higher (CI and the Docker build run Node 24; the floor comes from `lint-staged` 17)
 - npm or yarn package manager
 
 ### Install Dependencies

@@ -10,6 +10,9 @@
   ],
   "license": "MIT",
   "author": "",
+  "engines": {
+    "node": ">=22.22.1"
+  },
   "type": "module",
   "main": "dist/index.js",
   "workspaces": [
@@ -63,8 +66,10 @@
   "overrides": {
     "axios": "^1.13.5",
     "ethers": "5.8.0",
+    "glob": "^14.0.4",
     "h3": "^1.15.5",
     "hono": "^4.13.5",
+    "minimatch@>=7.0.0 <11.0.1": "^11.0.5",
     "preact": "^10.28.3",
     "undici": "^7.28.0",
     "ws": "^8.21.0"
@@ -79,7 +84,7 @@
     "husky": "9.1.7",
     "jscpd": "5.4.2",
     "knip": "6.44.2",
-    "lint-staged": "15.5.2",
+    "lint-staged": "17.6.0",
     "prettier": "3.9.10",
     "syncpack": "15.3.3",
     "ts-prune": "0.10.3",
