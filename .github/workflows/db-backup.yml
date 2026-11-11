@@ -261,21 +261,31 @@ jobs:
             // below: every failed run would then open a NEW issue instead of
             // commenting on the open one. Ensure the label exists first rather
             // than relying on someone having added it by hand.
+            //
+            // Every failure here is downgraded to a warning on purpose: losing
+            // the dedupe is a duplicate issue, losing the alert is a silently
+            // missing backup. Never let the bookkeeping block the alert.
             try {
               await github.rest.issues.getLabel({ ...context.repo, name: label });
             } catch (lookupError) {
-              if (lookupError.status !== 404) throw lookupError;
-              try {
-                await github.rest.issues.createLabel({
-                  ...context.repo,
-                  name: label,
-                  color: 'ededed',
-                  description: 'Daily staging DB backup failed to reach R2',
-                });
-                core.info(`Created missing label ${label}`);
-              } catch (createError) {
-                // Lost a race with a concurrent run that created it first.
-                if (createError.status !== 422) throw createError;
+              if (lookupError.status !== 404) {
+                core.warning(`could not check label ${label}: ${lookupError.message}`);
+              } else {
+                try {
+                  await github.rest.issues.createLabel({
+                    ...context.repo,
+                    name: label,
+                    color: 'ededed',
+                    description: 'Daily staging DB backup failed to reach R2',
+                  });
+                  core.info(`Created missing label ${label}`);
+                } catch (createError) {
+                  // 422 = a concurrent run created it first; anything else means
+                  // the issue below gets filed without the label (still an alert).
+                  if (createError.status !== 422) {
+                    core.warning(`could not create label ${label}: ${createError.message}`);
+                  }
+                }
               }
             }
 
