@@ -156,9 +156,9 @@ Service outage (DB replaced by a Node.js container), recoverable via
    2. **To Spec** — 用 `to-spec` skill 将对话结论合成为 spec 文档。**必须包含 Scenario & Risk Verification 章节**（场景矩阵），矩阵行直接成为 TDD 测试用例。**无矩阵 = spec 不完整**。
    3. **To Tickets** — 用 `to-tickets` skill 将 spec 拆分为带依赖边的 tracer-bullet tickets
    4. **TDD Implement** — 逐 ticket 先思考最佳实践的改法是什么，再用 `implement` skill 实施；`implement` 必须强制调用 `tdd`（red → green → refactor），关键逻辑必须先写测试
-   5. **Code Review** — 用 `code-review` skill 做双轴审查（Standards + Spec）
+   5. **Code Review** — 用 `code-review` skill 做双轴审查（Standards + Spec）。审查的是固定区间的 **committed diff**：开工前记 baseline，审查前记 `taskHead = git rev-parse HEAD`，比较 `baseline...taskHead`，不要拿会被后续改动移动的裸 `HEAD` 当终点。每个 accepted finding 回到 Step 4 修复并重新验证，已 push 的只追加 commit。审查报告必须给出结论并落实，生成完就忽略等于没做。
    6. **Runtime Verify** — 前端 `npm run dev:staging` + 浏览器核心交互 + 现有 E2E 无回归；后端 `npm run dev` + API 端点验证。spec 标注"不做 UI"不豁免此步。
-   7. **Commit & Push** — 通过验证后 commit + push 到远端（遵循 commit 规范）
+   7. **Commit & Push** — 通过验证后 commit + push 到远端（遵循 commit 规范）。stage 时显式列路径，不用 `git add -A` / `git add .`；同一文件里混有其他 session 的改动时用 `git add -p` 只选本任务的 hunk。commit 后 `git show --stat HEAD` 核对文件清单只含本任务文件，混入他人文件立即报告，不改写已发布历史来掩盖。
    8. **更新相关文档及 Issue** — 同步更新 docs、ADR、Linear issue 状态
    9. **Session 结束验证** — 在 session 结束前，逐条确认 Step 1-8 全部完成。**未完成的步骤必须当场补做或显式标注为"跳过 + 原因"**。确认清单：
       - [ ] Step 1 Grill 完成（有 spec 或对话记录佐证）
@@ -172,6 +172,14 @@ Service outage (DB replaced by a Node.js container), recoverable via
       - [ ] 产品视角结论完成（汇报先讲清 issue/feature 原本要什么、用户现在看到什么，再列 Step 1-8 完成情况与证据）
       - 如有任何步骤跳过，必须在向用户汇报时**显式列出**跳过的步骤和原因，不得遗漏
 10. **每次修改都用最佳实践**: 改代码前先考虑最佳实践的改法是什么，再动手实施。
+
+## PR Guardrails & Merge Authorization
+
+- **Merge gate — an unresolved review thread blocks the merge.** Bots and humans count the same. Fix each finding for real, or answer it with evidence, then resolve the thread. A real disagreement stays open for the owner instead of being papered over: do not make cosmetic edits whose only purpose is to empty the thread list.
+- **Standing authorization to merge your own PR** (owner's decision, 2026-11-11): merge without asking again when all four hold — the four required checks are green (`build-and-prune`, `security-audit`, `socket-firewall`, `quality-gates`), no unresolved review thread remains, the diff still matches the scope the user authorized, and the branch has no conflict with `main`. Stop and ask when a review thread raises a real problem, a required check fails, or the change grows past that scope. On `main` the merge deploys production — that deploy is part of the authorization, not a separate request.
+- **A delivery request authorizes its delivery chain**: implement → verify → commit → push the task branch → open the PR → merge under the rules above → update the tracker. Anything outside that chain (a direct push to `main`, rewriting published history, pushing a branch that is not this task's) still needs explicit authorization for that action.
+- **After a PR is open, only append.** No amend or rebase of commits that are already pushed — a fix is a new commit. The PR body describes the whole branch relative to the merge base, not just the latest commit.
+- **Report only what ran.** A testing section lists checks that actually passed, with their evidence. Never a "should pass" or "to be verified" line, and never a mock-green presented as real-data-green.
 
 ## Architecture Rules
 
@@ -319,6 +327,7 @@ Canonical source for knowledge spanning frontend AND backend, or Aave protocol f
 
 - Keep docs concise and remove superseded content.
 - Prefer runtime verification/log evidence over speculative explanations.
+- **外部事实双源**：影响设计选择的外部事实（API 行为、库版本、定价、平台限制）至少两个独立来源验证，优先级为本地源码/CLI 实际运行 > 官方文档/官方仓库 > 网络讨论（只能证明"有人报告过"）。冲突时以本地源码和实际调用结果为准，并记录版本差异。查不到就写"待验证"，不能把"没搜到证据"表述成"不受影响"。
 - Keep schema convergence across incentive sources; avoid unused fields in public payload.
 - Use exact-origin CORS settings; treat freshness TTL changes as explicit, documented decisions.
 
