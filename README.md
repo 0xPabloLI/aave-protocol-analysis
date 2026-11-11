@@ -74,7 +74,7 @@ aave/
 
 ### Prerequisites
 
-- Node.js 22.22.1 or higher (CI and the Docker build run Node 24; the floor comes from `lint-staged` 17)
+- Node.js 22.22.1 or higher (CI and the Docker build run Node 26; the floor comes from `lint-staged` 17)
 - npm or yarn package manager
 
 ### Install Dependencies

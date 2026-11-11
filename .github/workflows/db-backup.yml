@@ -3,7 +3,9 @@ name: Database Backup to Cloudflare R2
 # PG dump → upload to Cloudflare R2 (S3-compatible).
 #
 # Modes:
-#   daily  (default): writes to R2 daily/ prefix, scheduled 03:00 UTC
+#   daily  (default): writes to R2 daily/ prefix, once a day in the morning UTC
+#                     (the cron asks for 03:00 UTC; GitHub starts it hours late,
+#                     so plan by cadence, never by clock time — see on.schedule)
 #   archive:          writes to R2 archive/ prefix (permanent), triggered on-demand
 #
 # Retention:
@@ -28,7 +30,13 @@ name: Database Backup to Cloudflare R2
 
 on:
   schedule:
-    - cron: "0 3 * * *" # 03:00 UTC daily → defaults to mode=daily
+    # Asks for 03:00 UTC. GitHub's schedule queue is best-effort, not a timer:
+    # the 14 scheduled runs before 2026-11-11 all started between 09:05 and
+    # 10:39 UTC, i.e. 6h05–7h39 late, and r2-cleanup.yml (0 6 * * 0) drifts the
+    # same way, so this is the queue rather than congestion. Nothing in the
+    # workflow fixes it; only an external scheduler calling workflow_dispatch
+    # would. Treat "03:00 UTC daily" as "once a day, morning UTC".
+    - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       mode:
@@ -232,7 +240,7 @@ jobs:
       # the daily series is visible without reading the Actions tab.
       - name: Report failure as an issue
         if: failure()
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           # Passed through the environment rather than inlined as ${{ }}, so the
           # script stays valid JavaScript and can be syntax-checked locally.

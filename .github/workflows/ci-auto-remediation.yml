@@ -48,7 +48,7 @@ jobs:
       - name: Check if CI failure is ERESOLVE (unfixable by audit)
         id: skip-check
         if: github.event_name == 'workflow_run'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             core.setOutput('skip', 'false');
@@ -96,15 +96,15 @@ jobs:
 
       - name: Checkout target branch
         if: steps.skip-check.outputs.skip != 'true'
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ steps.branch.outputs.name }}
 
       - name: Setup Node
         if: steps.skip-check.outputs.skip != 'true'
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: "24"
+          node-version: "26"
           cache: "npm"
 
       # Same pin as ci.yml. The lockfile is only valid for the npm version that
@@ -175,7 +175,7 @@ jobs:
       - name: Create remediation PR
         id: cpr
         if: steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok == 'true' && steps.diff.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8
+        uses: peter-evans/create-pull-request@15733dbdfeedb4f7fdb73d13c6f5ac83b710fab8 # v8
         with:
           commit-message: "chore: auto-remediate dependency issues after CI failure"
           branch: "bot/ci-auto-remediation-${{ github.run_id }}"
@@ -197,7 +197,7 @@ jobs:
 
       - name: Review and enable auto-merge for remediation PR
         if: steps.skip-check.outputs.skip != 'true' && steps.cpr.outputs.pull-request-number != ''
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           github-token: ${{ secrets.CODEX_BOT_TOKEN != '' && secrets.CODEX_BOT_TOKEN || github.token }}
           script: |
@@ -299,7 +299,7 @@ jobs:
       - name: Escalate via issue when remediation fails
         if: ${{ !cancelled() && steps.skip-check.outputs.skip != 'true' && steps.verify.outputs.ok != 'true' }}
         continue-on-error: true
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           # Passed through the environment instead of being interpolated into the
           # script: these values contain backticks, which would terminate a JS

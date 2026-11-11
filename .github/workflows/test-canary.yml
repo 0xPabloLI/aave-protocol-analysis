@@ -33,12 +33,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Node
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: "24"
+          node-version: "26"
           cache: "npm"
 
       - name: Install root dependencies
@@ -116,7 +116,7 @@ jobs:
 
       - name: Open, update or close the regression issue
         if: always()
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           TREND_DECISION_PATH: ${{ runner.temp }}/ci-build-trend.json
         with:
@@ -132,6 +132,42 @@ jobs:
             const decision = JSON.parse(fs.readFileSync(decisionPath, 'utf8'));
 
             const title = '⚠️ CI build duration regression';
+
+            // GitHub silently drops labels that do not exist at issue-create
+            // time, and filtering by a label that does not exist matches
+            // nothing. Together that means: no `ci-perf` label → the lookup
+            // below never sees the previous issue → a fresh issue every week,
+            // and the recovery path can never find it to close. Ensure both
+            // labels exist before the query; failures stay warnings so the
+            // regression is still reported.
+            for (const [name, description] of [
+              ['ci-perf', 'CI build duration regression'],
+              ['needs-triage', 'Not triaged yet'],
+            ]) {
+              try {
+                await github.rest.issues.getLabel({ ...context.repo, name });
+              } catch (lookupError) {
+                if (lookupError.status !== 404) {
+                  core.warning(`could not check label ${name}: ${lookupError.message}`);
+                } else {
+                  try {
+                    await github.rest.issues.createLabel({
+                      ...context.repo,
+                      name,
+                      color: 'ededed',
+                      description,
+                    });
+                    core.info(`Created missing label ${name}`);
+                  } catch (createError) {
+                    // 422 = a concurrent run created it first.
+                    if (createError.status !== 422) {
+                      core.warning(`could not create label ${name}: ${createError.message}`);
+                    }
+                  }
+                }
+              }
+            }
+
             const open = await github.paginate(github.rest.issues.listForRepo, {
               owner, repo, state: 'open', per_page: 100, labels: 'ci-perf',
             });

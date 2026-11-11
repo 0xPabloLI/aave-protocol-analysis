@@ -1,7 +1,7 @@
 name: R2 Cleanup & Audit
 
 # Automated R2 storage management:
-#   1. Weekly auto-cleanup (Sunday 06:00 UTC): list + delete old backups
+#   1. Weekly auto-cleanup (Sundays, morning UTC): list + delete old backups
 #   2. Storage quota check: create GitHub issue if usage > 8 GB (80% of 10 GB free tier)
 #   3. Manual trigger: list-only (audit) or list+delete (cleanup)
 #
@@ -21,7 +21,10 @@ name: R2 Cleanup & Audit
 
 on:
   schedule:
-    - cron: "0 6 * * 0" # Sunday 06:00 UTC — weekly auto-cleanup
+    # Asks for Sunday 06:00 UTC; GitHub starts scheduled runs hours late
+    # (this repo measured 4h12m–6h35m for this cron). The weekly cadence is
+    # what matters, not the clock time.
+    - cron: "0 6 * * 0"
   workflow_dispatch:
     inputs:
       action:
@@ -82,7 +85,7 @@ jobs:
 
       - name: Storage quota check (create issue if > 8 GB)
         if: env.TOTAL_SIZE != ''
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           github-token: ${{ secrets.CODEX_BOT_TOKEN != '' && secrets.CODEX_BOT_TOKEN || github.token }}
           script: |

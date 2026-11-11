@@ -6,9 +6,11 @@ bash scripts/hook-autofix.sh pre-push
 #   GHSA-848j-6mx2-7j84  elliptic (Low) — no upstream fix; reaches us via ethers@5.
 # The glob (GHSA-3g3m-2fjr-6pw4) and minimatch (GHSA-g3hv-75wg-m249) entries were
 # dropped on 2026-11-11: the `glob` and `minimatch` overrides in package.json move the
-# tooling to glob 14.0.4 / minimatch 11.0.7, and the coverage (c8 → test-exclude) and
-# schema (ts-json-schema-generator) paths were re-validated against them. Do not
-# re-add them — a reappearing copy of glob 13 / minimatch 10 is a regression.
+# tooling to glob 14.0.3 / minimatch 11.0.4 (both patched, and both past the 7-day
+# cool-down — the first patched releases, glob 14.0.2 / minimatch 11.0.1, were already
+# old enough). The coverage (c8 → test-exclude) and schema (ts-json-schema-generator)
+# paths were re-validated against them. Do not re-add them — a reappearing copy of
+# glob 13 / minimatch 10 is a regression.
 # scan:mcp (.mcp.json supply chain) stays manual: npm run scan:mcp
 OSV_ALLOWLIST="GHSA-848j-6mx2-7j84"
 if command -v osv-scanner >/dev/null 2>&1; then
