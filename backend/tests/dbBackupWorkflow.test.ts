@@ -161,5 +161,12 @@ test("alert workflows create their issue label before deduping by it", () => {
       ensureLabel < dedupeQuery,
       `${file}: the label must be ensured before the dedupe query runs`
     );
+    // getLabel precedes the query even when the create path is dead code, so the
+    // create call needs its own ordering assertion: moved below the query, a
+    // missing label would still be undiscoverable and repeats would duplicate.
+    assert.ok(
+      createLabel < dedupeQuery,
+      `${file}: the label must be created before the dedupe query runs, not after it`
+    );
   }
 });
