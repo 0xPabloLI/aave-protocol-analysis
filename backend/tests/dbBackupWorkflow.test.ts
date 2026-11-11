@@ -131,3 +131,35 @@ test("the failure alert pins its action to a commit SHA", () => {
     "actions/github-script must be pinned to a full commit SHA"
   );
 });
+
+test("alert workflows create their issue label before deduping by it", () => {
+  // Verified 2026-11-11: neither `db-backup-failure` nor `r2-quota-warning`
+  // existed as a repo label, and GitHub silently drops unknown labels when an
+  // issue is created. The alert still fired, but the dedupe query (which filters
+  // by that label) could never match, so every failed run opened a new issue
+  // instead of commenting on the open one. The workflows now ensure the label
+  // exists before they query it, so this cannot depend on a manual repo setting.
+  for (const file of ["db-backup.yml", "r2-cleanup.yml"]) {
+    const yaml = readWorkflow(file);
+    const ensureLabel = yaml.indexOf("issues.getLabel");
+    const createLabel = yaml.indexOf("issues.createLabel");
+    const dedupeQuery = yaml.indexOf("issues.listForRepo");
+
+    assert.ok(
+      ensureLabel !== -1,
+      `${file}: the alert must check whether its label exists`
+    );
+    assert.ok(
+      createLabel !== -1,
+      `${file}: the alert must create the label when it is missing`
+    );
+    assert.ok(
+      dedupeQuery !== -1,
+      `${file}: the alert must still dedupe against the open issue`
+    );
+    assert.ok(
+      ensureLabel < dedupeQuery,
+      `${file}: the label must be ensured before the dedupe query runs`
+    );
+  }
+});

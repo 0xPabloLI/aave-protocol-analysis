@@ -117,6 +117,28 @@ jobs:
 
             // Check if an open issue with the "r2-quota-warning" label already exists
             const { owner, repo } = context.repo;
+            // GitHub silently drops labels that do not exist at issue-create
+            // time, which would leave the warning unfindable by the dedupe query
+            // below: each weekly run would then open a NEW issue instead of
+            // commenting on the open one. Ensure the label exists first.
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: 'r2-quota-warning' });
+            } catch (lookupError) {
+              if (lookupError.status !== 404) throw lookupError;
+              try {
+                await github.rest.issues.createLabel({
+                  owner, repo,
+                  name: 'r2-quota-warning',
+                  color: 'ededed',
+                  description: 'R2 bucket usage above the free-tier threshold',
+                });
+                console.log('Created missing label r2-quota-warning');
+              } catch (createError) {
+                // Lost a race with a concurrent run that created it first.
+                if (createError.status !== 422) throw createError;
+              }
+            }
+
             const existing = await github.rest.issues.listForRepo({
               owner, repo,
               labels: 'r2-quota-warning',
