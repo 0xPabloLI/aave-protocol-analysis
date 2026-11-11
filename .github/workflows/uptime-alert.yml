@@ -24,39 +24,55 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
+      - name: Check out the endpoint definitions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Probe health endpoints
         id: probe
         continue-on-error: true
         run: |
-          # Both environments are checked, staging first. Each target gets three
-          # attempts 20s apart before it counts as down: production warms up for
-          # ~3 minutes after every deploy and Railway restarts it on each `main`
-          # push, so a single failed curl would page on every release and the
-          # alert would be trained away within a week.
+          # Both URLs come from ENVIRONMENT_TARGETS, the same definition
+          # deployment-smoke-test.yml resolves, so post-deploy verification and
+          # this monitor cannot drift apart.
+          #
+          # Each target gets a four-minute budget rather than a fixed attempt
+          # count: the backend answers 503 until its startup caches are warm
+          # (backend/src/server.ts) and Railway restarts it on every `main`
+          # push. Three quick retries (~40s) would have filed an outage issue
+          # for every routine deploy.
+          budget=240
           fail=0
-          for target in \
-            "staging:https://staging-api.aaveapy.com/health" \
-            "production:https://api.aaveapy.com/health"; do
-            name="${target%%:*}"
-            url="${target#*:}"
+          for env in staging production; do
+            url=$(node --input-type=module -e "
+              import { ENVIRONMENT_TARGETS } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+              process.stdout.write(ENVIRONMENT_TARGETS['$env'].apiBaseUrl + '/health');
+            ")
+            echo "$env target: $url"
+            deadline=$((SECONDS + budget))
             code=000
-            for attempt in 1 2 3; do
+            while :; do
               # curl can print a status and still exit non-zero (the body died
-              # mid-transfer), which would concatenate with a fallback echo.
-              # Overwrite the whole value instead of appending to it.
-              code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "$url") || code=000
+              # mid-transfer), so overwrite the whole value instead of
+              # appending a fallback to it.
+              code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url") || code=000
               if [ "$code" = "200" ]; then
+                echo "$env healthy"
                 break
               fi
-              echo "$name attempt $attempt/3 -> HTTP $code"
-              if [ "$attempt" -lt 3 ]; then
-                sleep 20
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                echo "$env still HTTP $code after ${budget}s — giving up"
+                break
               fi
+              echo "$env HTTP $code, retrying"
+              sleep 15
             done
-            echo "$name=$code" >> "$GITHUB_OUTPUT"
-            echo "$name /health -> HTTP $code"
+            echo "$env=$code" >> "$GITHUB_OUTPUT"
             if [ "$code" != "200" ]; then
               fail=1
             fi

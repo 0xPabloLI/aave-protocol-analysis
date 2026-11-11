@@ -26,7 +26,12 @@ export function isCommitSha(value) {
   return COMMIT_SHA_RE.test(normalizeValue(value).trim());
 }
 
-const ENVIRONMENT_TARGETS = {
+/**
+ * Per-environment hosts. Exported so the scheduled uptime probe reads the same
+ * definition that deployment verification uses — two mappings would let the
+ * post-deploy check and the 15-minute monitor disagree about the endpoint.
+ */
+export const ENVIRONMENT_TARGETS = {
   production: {
     environmentLabel: "production",
     deployBranch: "main",
