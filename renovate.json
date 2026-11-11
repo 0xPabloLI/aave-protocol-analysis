@@ -23,6 +23,12 @@
       "enabled": false
     },
     {
+      "description": "TODO(AAV-1354): TypeScript majors cannot go green today, and `typescript`'s `latest` dist-tag is already 7.0.2, so Renovate re-opens a PR that can never pass. Two independent blockers, both verified 2026-11-11: (1) every typescript-eslint release, 8.72.2 included, peers `typescript >=4.8.4 <6.1.0`, so `npm install` fails with ERESOLVE; (2) TS 7 removed `moduleResolution: \"node\"` outright (TS5108, hard error in 4 tsconfigs) where TS 6 only deprecates it (TS5107, silenceable with `ignoreDeprecations`). Disabled at the major level, not per-version, because the next major would hit the same peer wall. Remove this rule once typescript-eslint's peer range covers TS 7.",
+      "matchDepNames": ["typescript"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
       "matchDatasources": ["npm"],
       "matchUpdateTypes": ["major", "minor", "patch", "digest", "pinDigest"],
       "minimumReleaseAge": "7 days"
