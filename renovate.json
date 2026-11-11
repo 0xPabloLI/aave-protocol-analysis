@@ -35,6 +35,11 @@
       "allowedVersions": "<10"
     },
     {
+      "description": "TODO(AAV-1359): `@aave/client` is the V3 data path and cannot move to v7 — v7 deleted `markets()` and did not replace V3 with anything equivalent. Verified 2026-11-11 by querying the live API through both SDKs: v7's `chains()` knows 4 chains (1, 5042, 8453, 43114) where v0.12 knows 21, and v7's `reserves([137, 10, 42161])` returns 0 rows because Polygon/Optimism/Arbitrum are V3-only. The 122 reserves v7 does return are all V4 hub/spoke (`asset.hub`, `HubAssetSettings`, no aToken/vToken), while v0.12 still serves 24 V3 markets — AaveV3Polygon alone has 21 supply reserves. So the data is not gone from the API; v7's typed surface dropped it. Matched with `matchDepNames` on purpose: `@aave/client-v4` is an npm alias of the same package at ^7 and must keep updating. Drop this rule once a release exposes the V3 markets again.",
+      "matchDepNames": ["@aave/client"],
+      "allowedVersions": "<1"
+    },
+    {
       "matchDatasources": ["npm"],
       "matchUpdateTypes": ["major", "minor", "patch", "digest", "pinDigest"],
       "minimumReleaseAge": "7 days"
