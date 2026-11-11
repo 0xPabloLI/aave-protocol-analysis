@@ -256,6 +256,29 @@ jobs:
               'point in time is missing. Check the failed step in the run log.',
             ].join('\n');
 
+            // GitHub silently drops labels that do not exist at issue-create
+            // time, which would leave the alert unfindable by the dedupe query
+            // below: every failed run would then open a NEW issue instead of
+            // commenting on the open one. Ensure the label exists first rather
+            // than relying on someone having added it by hand.
+            try {
+              await github.rest.issues.getLabel({ ...context.repo, name: label });
+            } catch (lookupError) {
+              if (lookupError.status !== 404) throw lookupError;
+              try {
+                await github.rest.issues.createLabel({
+                  ...context.repo,
+                  name: label,
+                  color: 'ededed',
+                  description: 'Daily staging DB backup failed to reach R2',
+                });
+                core.info(`Created missing label ${label}`);
+              } catch (createError) {
+                // Lost a race with a concurrent run that created it first.
+                if (createError.status !== 422) throw createError;
+              }
+            }
+
             const { data: open } = await github.rest.issues.listForRepo({
               ...context.repo,
               labels: label,
