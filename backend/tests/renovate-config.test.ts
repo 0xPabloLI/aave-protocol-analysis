@@ -170,6 +170,26 @@ test("address-book upgrade rule is present with its label", () => {
   assert.ok(rule.labels.includes("address-book-upgrade"));
 });
 
+test("eslint is capped below 10 until eslint-plugin-import allows it", () => {
+  const config = JSON.parse(readConfig("renovate.json"));
+  const rule = config.packageRules.find((r: { matchPackageNames?: string[] }) =>
+    r.matchPackageNames?.includes("eslint")
+  );
+  assert.ok(rule, "eslint ceiling packageRule not found");
+  // eslint-plugin-import@2.32.0 peers `^2 || ^3 || ... || ^9` with no `^10`, so a
+  // strict `npm ci` fails with ERESOLVE. typescript-eslint and
+  // eslint-plugin-react-hooks already allow ^10, so this is the only blocker.
+  // Verified 2026-11-11 against the failing renovate/major-eslint-monorepo PR.
+  assert.equal(rule.allowedVersions, "<10");
+  // Both halves of the pair, not just @eslint/js: capping one leaves the other
+  // free to jump to a major the plugin cannot peer with. Same reasoning as the
+  // frontend's AAV-1301 rule.
+  assert.deepEqual([...rule.matchPackageNames].sort(), [
+    "@eslint/js",
+    "eslint",
+  ]);
+});
+
 test("ethers major updates stay disabled (pinned exact by policy)", () => {
   const config = JSON.parse(readConfig("renovate.json"));
   const rule = config.packageRules.find((r: { matchDepNames?: string[] }) =>

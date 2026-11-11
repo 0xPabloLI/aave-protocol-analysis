@@ -29,6 +29,12 @@
       "enabled": false
     },
     {
+      "description": "TODO(AAV-1301): eslint 10 cannot install on the backend either, for the same upstream reason as the frontend ceiling: eslint-plugin-import@2.32.0 peers `^2 || ^3 || ... || ^9` with no `^10`, so a strict `npm ci` fails with ERESOLVE. typescript-eslint@8.72.1 and eslint-plugin-react-hooks already allow `^10`, so eslint-plugin-import is the only blocker. Verified 2026-11-11 against the failing `renovate/major-eslint-monorepo` PR #229 (`peerOptional eslint@^10.0.0 from @eslint/js@10.0.1` while the lockfile still resolves eslint 9.39.5). Both packages are capped together because the pair must move as one: capping only `@eslint/js` leaves `eslint` itself free to jump. `eslint` 9.x minor/patch keep flowing. Drop this rule once eslint-plugin-import's peer range covers eslint 10.",
+      "matchDatasources": ["npm"],
+      "matchPackageNames": ["@eslint/js", "eslint"],
+      "allowedVersions": "<10"
+    },
+    {
       "matchDatasources": ["npm"],
       "matchUpdateTypes": ["major", "minor", "patch", "digest", "pinDigest"],
       "minimumReleaseAge": "7 days"
