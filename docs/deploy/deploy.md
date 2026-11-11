@@ -13,7 +13,7 @@
 
 ## 前置要求
 
-- Node.js 22.22.1+（CI 与 Docker 构建用 Node 24；下限来自 `lint-staged` 17，根 `package.json` 的 `engines` 会校验）
+- Node.js 22.22.1+（CI 与 Docker 构建用 Node 26；下限来自 `lint-staged` 17，根 `package.json` 的 `engines` 会校验）
 - npm 或 yarn
 - （可选）PM2 - 用于进程管理
 
