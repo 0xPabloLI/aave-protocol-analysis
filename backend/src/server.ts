@@ -71,6 +71,13 @@ try {
     pipelining: 1,
     keepAliveTimeout: 30_000,
     keepAliveMaxTimeout: 60_000,
+    // Pin HTTP/1.1: undici v8 starts negotiating HTTP/2 by default when ALPN
+    // offers it, and the caps above were measured against HTTP/1.1. h2
+    // multiplexes onto one connection with its own buffer and HPACK overhead,
+    // so letting the transport change underneath would invalidate the RSS
+    // numbers this config exists to hold. Re-evaluate deliberately, not as a
+    // side effect of a dependency bump.
+    allowH2: false,
   });
   setGlobalDispatcher(globalAgent);
 } catch (e) {
