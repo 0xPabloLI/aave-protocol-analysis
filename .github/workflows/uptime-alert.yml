@@ -1,8 +1,9 @@
 name: Uptime alert
 
-# Custom alerting rule: probe public health endpoints on a schedule; open or
-# update a GitHub issue when a probe fails. This is the runtime alerting
-# channel (complements CI auto-revert, which only covers push-time failures).
+# Custom alerting rule: probe both public health endpoints (staging and
+# production) on a schedule; open or update a GitHub issue when a probe fails.
+# This is the runtime alerting channel (complements CI auto-revert and
+# deployment-smoke-test.yml, which only cover push-time failures).
 #
 # Runs on a GitHub-hosted runner every 15 minutes and only fires from the
 # default branch (`main`) — a copy of this file on another branch is never
@@ -25,27 +26,58 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Probe backend /health
-        id: backend
+      - name: Probe health endpoints
+        id: probe
         continue-on-error: true
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
-            https://staging-api.aaveapy.com/health || echo 000)
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          [ "$code" = "200" ]
+          # Both environments are checked, staging first. Each target gets three
+          # attempts 20s apart before it counts as down: production warms up for
+          # ~3 minutes after every deploy and Railway restarts it on each `main`
+          # push, so a single failed curl would page on every release and the
+          # alert would be trained away within a week.
+          fail=0
+          for target in \
+            "staging:https://staging-api.aaveapy.com/health" \
+            "production:https://api.aaveapy.com/health"; do
+            name="${target%%:*}"
+            url="${target#*:}"
+            code=000
+            for attempt in 1 2 3; do
+              # curl can print a status and still exit non-zero (the body died
+              # mid-transfer), which would concatenate with a fallback echo.
+              # Overwrite the whole value instead of appending to it.
+              code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "$url") || code=000
+              if [ "$code" = "200" ]; then
+                break
+              fi
+              echo "$name attempt $attempt/3 -> HTTP $code"
+              if [ "$attempt" -lt 3 ]; then
+                sleep 20
+              fi
+            done
+            echo "$name=$code" >> "$GITHUB_OUTPUT"
+            echo "$name /health -> HTTP $code"
+            if [ "$code" != "200" ]; then
+              fail=1
+            fi
+          done
+          exit $fail
 
       - name: Open or update alert issue
-        if: steps.backend.outcome == 'failure'
+        if: steps.probe.outcome == 'failure'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const { owner, repo } = context.repo;
             const title = '⚠️ Uptime alert: health probe failing';
-            const backend = '${{ steps.backend.outputs.code }}';
+            const staging = '${{ steps.probe.outputs.staging }}';
+            const production = '${{ steps.probe.outputs.production }}';
+            const mark = (code) => (code === '200' ? '✅' : '❌');
             const body = [
               `Scheduled probe failed at ${new Date().toISOString()}`,
               '',
-              `- backend /health → HTTP \`${backend || 'not probed'}\``,
+              `- ${mark(staging)} staging \`/health\` → HTTP \`${staging || 'not probed'}\``,
+              `- ${mark(production)} production \`/health\` → HTTP \`${production || 'not probed'}\``,
               '',
               'Runbook: `docs/runbooks/backend-outage.md`.',
             ].join('\n');
@@ -96,7 +128,7 @@ jobs:
             }
 
       - name: Close alert issue on recovery
-        if: steps.backend.outcome == 'success'
+        if: steps.probe.outcome == 'success'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
@@ -108,7 +140,7 @@ jobs:
             for (const issue of open.filter((i) => i.title === title)) {
               await github.rest.issues.createComment({
                 owner, repo, issue_number: issue.number,
-                body: `✅ Probes recovered at ${new Date().toISOString()} — closing.`,
+                body: `✅ Both probes healthy at ${new Date().toISOString()} — closing.`,
               });
               await github.rest.issues.update({ owner, repo, issue_number: issue.number, state: 'closed' });
             }
