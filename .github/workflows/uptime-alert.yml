@@ -1,8 +1,9 @@
 name: Uptime alert
 
-# Custom alerting rule: probe public health endpoints on a schedule; open or
-# update a GitHub issue when a probe fails. This is the runtime alerting
-# channel (complements CI auto-revert, which only covers push-time failures).
+# Custom alerting rule: probe both public health endpoints (staging and
+# production) on a schedule; open or update a GitHub issue when a probe fails.
+# This is the runtime alerting channel (complements CI auto-revert and
+# deployment-smoke-test.yml, which only cover push-time failures).
 #
 # Runs on a GitHub-hosted runner every 15 minutes and only fires from the
 # default branch (`main`) — a copy of this file on another branch is never
@@ -23,29 +24,76 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Probe backend /health
-        id: backend
+      - name: Check out the endpoint definitions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Probe health endpoints
+        id: probe
         continue-on-error: true
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
-            https://staging-api.aaveapy.com/health || echo 000)
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          [ "$code" = "200" ]
+          # Both URLs come from ENVIRONMENT_TARGETS, the same definition
+          # deployment-smoke-test.yml resolves, so post-deploy verification and
+          # this monitor cannot drift apart.
+          #
+          # Each target gets a four-minute budget rather than a fixed attempt
+          # count: the backend answers 503 until its startup caches are warm
+          # (backend/src/server.ts) and Railway restarts it on every `main`
+          # push. Three quick retries (~40s) would have filed an outage issue
+          # for every routine deploy.
+          budget=240
+          fail=0
+          for env in staging production; do
+            url=$(node --input-type=module -e "
+              import { ENVIRONMENT_TARGETS } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+              process.stdout.write(ENVIRONMENT_TARGETS['$env'].apiBaseUrl + '/health');
+            ")
+            echo "$env target: $url"
+            deadline=$((SECONDS + budget))
+            code=000
+            while :; do
+              # curl can print a status and still exit non-zero (the body died
+              # mid-transfer), so overwrite the whole value instead of
+              # appending a fallback to it.
+              code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$url") || code=000
+              if [ "$code" = "200" ]; then
+                echo "$env healthy"
+                break
+              fi
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                echo "$env still HTTP $code after ${budget}s — giving up"
+                break
+              fi
+              echo "$env HTTP $code, retrying"
+              sleep 15
+            done
+            echo "$env=$code" >> "$GITHUB_OUTPUT"
+            if [ "$code" != "200" ]; then
+              fail=1
+            fi
+          done
+          exit $fail
 
       - name: Open or update alert issue
-        if: steps.backend.outcome == 'failure'
+        if: steps.probe.outcome == 'failure'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const { owner, repo } = context.repo;
             const title = '⚠️ Uptime alert: health probe failing';
-            const backend = '${{ steps.backend.outputs.code }}';
+            const staging = '${{ steps.probe.outputs.staging }}';
+            const production = '${{ steps.probe.outputs.production }}';
+            const mark = (code) => (code === '200' ? '✅' : '❌');
             const body = [
               `Scheduled probe failed at ${new Date().toISOString()}`,
               '',
-              `- backend /health → HTTP \`${backend || 'not probed'}\``,
+              `- ${mark(staging)} staging \`/health\` → HTTP \`${staging || 'not probed'}\``,
+              `- ${mark(production)} production \`/health\` → HTTP \`${production || 'not probed'}\``,
               '',
               'Runbook: `docs/runbooks/backend-outage.md`.',
             ].join('\n');
@@ -96,7 +144,7 @@ jobs:
             }
 
       - name: Close alert issue on recovery
-        if: steps.backend.outcome == 'success'
+        if: steps.probe.outcome == 'success'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
@@ -108,7 +156,7 @@ jobs:
             for (const issue of open.filter((i) => i.title === title)) {
               await github.rest.issues.createComment({
                 owner, repo, issue_number: issue.number,
-                body: `✅ Probes recovered at ${new Date().toISOString()} — closing.`,
+                body: `✅ Both probes healthy at ${new Date().toISOString()} — closing.`,
               });
               await github.rest.issues.update({ owner, repo, issue_number: issue.number, state: 'closed' });
             }

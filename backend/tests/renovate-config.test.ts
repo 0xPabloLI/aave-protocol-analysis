@@ -179,6 +179,29 @@ test("ethers major updates stay disabled (pinned exact by policy)", () => {
   assert.equal(rule.enabled, false);
 });
 
+test("typescript major updates stay disabled until the toolchain catches up", () => {
+  const config = JSON.parse(readConfig("renovate.json"));
+  const rule = config.packageRules.find(
+    (r: { matchDepNames?: string[]; matchUpdateTypes?: string[] }) =>
+      r.matchDepNames?.includes("typescript")
+  );
+  assert.ok(rule, "typescript packageRule not found");
+  // Verified 2026-11-11 on a scratch copy: the lockfile resolves 7.0.2 fine, so
+  // the lockfile was never the blocker. Two independent walls instead — every
+  // typescript-eslint release peers `typescript >=4.8.4 <6.1.0` (ERESOLVE on
+  // install), and TS 7 removed `moduleResolution: "node"` outright (TS5108).
+  // `latest` is already 7.0.2, so without this rule Renovate re-opens a PR that
+  // cannot pass on every run. See AAV-1354.
+  assert.equal(
+    rule.enabled,
+    false,
+    "TypeScript majors must stay disabled until typescript-eslint accepts TS 7"
+  );
+  // Scoped to majors deliberately: `typescript-eslint` is a separate dep name,
+  // so its own minor/patch updates keep flowing through untouched.
+  assert.deepEqual(rule.matchUpdateTypes, ["major"]);
+});
+
 test("dependabot.yml is gone (Renovate migration complete)", () => {
   let existed = true;
   try {
