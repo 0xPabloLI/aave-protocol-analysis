@@ -56,6 +56,7 @@
 | codex-0409g | Codex | 再压缩 backend freshness 文档 | docs/backend/data-freshness-mechanism.md | done | 2026-04-09T00:00:00 | 已统一术语并压缩描述段落 |
 | codex-0504a | CodeArts | 分析 v4 reserve 冻结/暂停与 supply/borrow 标志的关系 | (只读分析，无写入) | done | 2026-05-04T00:00:00 | |
 | workbuddy-0916a | WorkBuddy | AAV-1289 下线 Merit 全链路 + AAV-1290 readiness 补齐 | workers/, packages/aave-fetcher/src/{merit-api,cloudflare-browser,incentive-prune,index,cli,config}.ts, packages/aave-shared-contracts/src/{index,units}.ts, backend/src/{types,server}.ts, backend/src/services/{persistenceService,marketsApiSerialize}.ts, .github/workflows/{ci,uptime-alert,test-canary}.yml, package.json, knip.json, .devcontainer/, docs/ | active | 2026-09-16T05:45:00 | 与 4 月遗留条目（均已 done / 视为 stale）无实际冲突 |
+| droid-1112a | Droid | AAV-1365 Brevis position cap 刮取加固（句式候选表 + 锚点候选表 + 语义上下文 + MetaMask 归属门 + 失败上报） | packages/aave-fetcher/src/brevis-api.ts, packages/aave-fetcher/tests/brevisPositionCapCopy.test.ts | done | 2026-11-12T15:50:00 | commit `0baacf6`；未 push 前已合 origin/railway（`d9610a7`）。同一 session 在 frontend 仓库完成 AAV-1350 发布与利率文档重写（见 aaveapy `SESSION-BOARD.md` 的 `droid-1112a`）。本行**补登记**：开工时未读本看板即改动 fetcher，已补 ↩ |
 
 ---
 
