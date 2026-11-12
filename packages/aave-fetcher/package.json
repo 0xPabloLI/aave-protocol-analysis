@@ -22,7 +22,7 @@
     "test:coverage": "npx --no-install c8 --include 'src/**' --check-coverage --lines 40 --statements 40 --functions 51 --branches 75 --reporter=text-summary npx --no-install tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@aave-dao/aave-address-book": "4.75.8",
+    "@aave-dao/aave-address-book": "4.76.1",
     "@aave/client": "^0.12.0",
     "@aave/client-v4": "npm:@aave/client@^7.0.0",
     "@internal/aave-rpc-infra": "1.0.0",
