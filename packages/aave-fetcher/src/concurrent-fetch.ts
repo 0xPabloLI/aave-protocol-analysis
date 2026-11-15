@@ -30,8 +30,13 @@ export function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
           toFiniteNumber(reserve?.size?.usdPerToken) ??
           toFiniteNumber(reserve?.usdExchangeRate) ??
           undefined;
+        // AAV-1379: `markets` is `any[]`, so nothing guarantees the key exists.
+        // The SDK sends `null` today, but an omitted key would otherwise read as
+        // "borrowable" with every borrow-side field silently absent. Both shapes
+        // mean the same thing here, so collapse them once and read only this.
+        const borrowInfo = reserve.borrowInfo ?? null;
         const utilizationRaw = toFiniteNumber(
-          reserve?.borrowInfo?.utilizationRate?.value
+          borrowInfo?.utilizationRate?.value
         );
         const utilizationPct =
           utilizationRaw !== null && utilizationRaw >= 0
@@ -55,39 +60,35 @@ export function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
             : (toFiniteNumber(supplyApyValue) ?? undefined);
 
         const isBorrowDisabledByState =
-          reserve.borrowInfo?.borrowingState === "DISABLED" ||
-          reserve.borrowInfo === null;
+          borrowInfo?.borrowingState === "DISABLED" || borrowInfo === null;
 
-        const borrowCapValue = reserve.borrowInfo?.borrowCap?.amount?.value;
+        const borrowCapValue = borrowInfo?.borrowCap?.amount?.value;
         const borrowCapIsOne =
           borrowCapValue !== undefined && toFiniteNumber(borrowCapValue) === 1;
         const isBorrowDisabled = hasProtocolReason
           ? false
           : isBorrowDisabledByState || borrowCapIsOne;
 
-        const borrowApyValue = reserve.borrowInfo?.apy?.value;
+        const borrowApyValue = borrowInfo?.apy?.value;
         const borrowApy = toFiniteNumber(borrowApyValue) ?? undefined;
 
         const decimals = reserve.underlyingToken?.decimals ?? undefined;
         const liquidity =
-          reserve.borrowInfo?.availableLiquidity?.amount?.raw ?? undefined;
-        const borrowed = reserve.borrowInfo?.total?.amount?.raw ?? undefined;
+          borrowInfo?.availableLiquidity?.amount?.raw ?? undefined;
+        const borrowed = borrowInfo?.total?.amount?.raw ?? undefined;
         const supplied = reserve.size?.amount?.raw ?? undefined;
         const supplyCap =
           reserve.supplyInfo?.supplyCap?.amount?.raw ?? undefined;
-        const borrowCap =
-          reserve.borrowInfo?.borrowCap?.amount?.raw ?? undefined;
-        const protocolFee = percentValueToPercent(
-          reserve.borrowInfo?.reserveFactor
-        );
+        const borrowCap = borrowInfo?.borrowCap?.amount?.raw ?? undefined;
+        const protocolFee = percentValueToPercent(borrowInfo?.reserveFactor);
         const slopeBelowOptimal = percentValueToPercent(
-          reserve.borrowInfo?.variableRateSlope1
+          borrowInfo?.variableRateSlope1
         );
         const slopeAboveOptimal = percentValueToPercent(
-          reserve.borrowInfo?.variableRateSlope2
+          borrowInfo?.variableRateSlope2
         );
         const optimalUtilization = percentValueToPercent(
-          reserve.borrowInfo?.optimalUsageRate
+          borrowInfo?.optimalUsageRate
         );
 
         // AAV-1222: Collateral LTV and liquidation threshold from supplyInfo
