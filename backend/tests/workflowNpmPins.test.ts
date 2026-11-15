@@ -9,8 +9,8 @@ const ROOT = resolve(__dirname, "..", "..");
 const WORKFLOWS = resolve(ROOT, ".github", "workflows");
 const DOCKERFILE = resolve(ROOT, "Dockerfile");
 
-const NPM_PIN = /npm install -g npm@(\d+\.\d+\.\d+)/;
-const NPM_INSTALL = /^(?:sfw\s+)?npm (?:ci|run ci)\b/;
+const NPM_PIN = /^npm install -g npm@(\d+\.\d+\.\d+)/;
+const NPM_INSTALL = /^(?:sfw\s+)?npm (?:ci|run ci)(?=\s|$)/;
 
 interface Scope {
   label: string;
@@ -49,6 +49,13 @@ function scanScope(scope: Scope, lines: string[]): NpmPinScan {
     const line = lines[i];
     if (line.trim() === "" || /^\s*#/.test(line)) continue;
 
+    // A pin never survives a new Dockerfile stage: the next stage starts from a
+    // fresh image, so it must pin again before installing.
+    if (/^FROM\s/.test(line)) {
+      pinnedEarlier = false;
+      continue;
+    }
+
     const command = commandOf(line);
     if (!command) continue;
 
@@ -71,7 +78,7 @@ function scanScope(scope: Scope, lines: string[]): NpmPinScan {
 /** Split the `jobs:` mapping into 2-space-indented job blocks. */
 function jobsIn(yaml: string): Scope[] {
   const lines = yaml.split("\n");
-  const jobsAt = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+  const jobsAt = lines.findIndex((line) => /^jobs:\s*(?:#.*)?$/.test(line));
   if (jobsAt === -1) return [];
 
   const jobs: Scope[] = [];
@@ -173,7 +180,7 @@ function readWorkflow(file: string): string {
  */
 function jobHeaderCount(yaml: string): number {
   const lines = yaml.split("\n");
-  const jobsAt = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+  const jobsAt = lines.findIndex((line) => /^jobs:\s*(?:#.*)?$/.test(line));
   if (jobsAt === -1) return 0;
 
   let count = 0;
@@ -281,6 +288,12 @@ test("pin scan is job-scoped and ignores prose", () => {
       problems: 1,
     },
     {
+      name: "jobs header with an inline comment",
+      yaml: "jobs: # weekly\n  canary:\n    steps:\n      - run: npm ci\n",
+      ciSteps: 1,
+      problems: 1,
+    },
+    {
       name: "quoted job header",
       yaml: 'jobs:\n  "canary":\n    steps:\n      - run: npm ci\n',
       ciSteps: 1,
@@ -301,6 +314,18 @@ test("pin scan is job-scoped and ignores prose", () => {
     {
       name: "npm run ci installs too",
       yaml: "jobs:\n  build:\n    steps:\n      - run: npm run ci\n",
+      ciSteps: 1,
+      problems: 1,
+    },
+    {
+      name: "npm run ci:lint is not an install",
+      yaml: "jobs:\n  build:\n    steps:\n      - run: npm run ci:lint\n",
+      ciSteps: 0,
+      problems: 0,
+    },
+    {
+      name: "prose cannot impersonate a pin",
+      yaml: 'jobs:\n  canary:\n    steps:\n      - run: echo "npm install -g npm@9.9.9"\n      - run: npm ci\n',
       ciSteps: 1,
       problems: 1,
     },
@@ -353,6 +378,14 @@ test("dockerfile scan requires a pin before every install", () => {
   const scan = scanDockerfileNpmPins("Dockerfile", withoutPin);
   assert.equal(scan.ciSteps, 1);
   assert.equal(scan.problems.length, 1);
+
+  // A pin in an earlier stage must not satisfy a later stage.
+  const multiStage =
+    "FROM node:26 AS build\nRUN npm install -g npm@11.6.2\nRUN HUSKY=0 npm ci\n" +
+    "FROM node:26\nRUN HUSKY=0 npm ci\n";
+  const staged = scanDockerfileNpmPins("Dockerfile", multiStage);
+  assert.equal(staged.ciSteps, 2);
+  assert.equal(staged.problems.length, 1, staged.problems.join("\n"));
 });
 
 test("version drift is reported with every source", () => {
