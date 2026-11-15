@@ -29,11 +29,14 @@ const isBorrowDisabledByState =
 
 2026-11-15 22:42 (+08) 抓取 `https://staging-api.aaveapy.com/api/markets`，441 条 reserve：
 
-| 组                             | 条数 | 说明                                                     |
-| ------------------------------ | ---- | -------------------------------------------------------- |
-| `borrowDisabled: true`         | 142  | 与 AAV-1378 的基线一致，说明 `=== null` 当前**确实生效** |
-| 无任何借入侧数字               | 19   | 与 `NO_BORROW_SIDE_BASELINE = 19` 一致                   |
-| 其中 `borrowDisabled !== true` | 1    | Linea `wrsETH`，`isFrozen: true`（协议标记优先，非缺口） |
+| 组                             | 条数 | 说明                                                                                                          |
+| ------------------------------ | ---- | ------------------------------------------------------------------------------------------------------------- |
+| `borrowDisabled: true`         | 142  | 其中 **18** 条同时无借入侧数字（即 `borrowInfo === null`），另外 124 条借入侧数字齐全（`borrowCap === 1` 等） |
+| 无任何借入侧数字               | 19   | 与 `NO_BORROW_SIDE_BASELINE = 19` 一致；18 条 `borrowDisabled`，1 条不是                                      |
+| 其中 `borrowDisabled !== true` | 1    | Linea `wrsETH`，`isFrozen: true`（协议标记优先，非缺口）                                                      |
+
+`borrowDisabled` **不是**「有无借入侧」的判别式（124 条同时成立），所以上表的 18 才是
+`borrowInfo === null` 的实际命中数 —— 与 AAV-1378 的结论一致，别把 142 当成该分支的计数。
 
 即：**尚未在 441 条样本里观察到键缺失**。本票定性为「输入是 `any`、判定只覆盖 `null`」
 的健壮性缺口。
@@ -71,6 +74,16 @@ const borrowInfo = reserve.borrowInfo ?? null;
 - `npm run build` → 通过；`npm run test:typecheck -w aave-dashboard-backend` → 通过
 - `npm run lint` → **0 error / 289 warning**（与基线一致，未新增）
 - `npm run check:test-naming` → 119 files OK
+
+交付链路（`4568702`，已推 `railway`）：
+
+| 环节             | 证据                                                                        |
+| ---------------- | --------------------------------------------------------------------------- |
+| CI               | run `43726394350` = success（quality-gates / security-audit / socket 全绿） |
+| staging 部署     | deployment `7805083292` = success，`/health` 的 `commitSha` = `4568702`     |
+| 烟测             | Deployment Smoke Test = success（同 sha 另有一条 `skipped` 是 in_progress） |
+| 线上纯防御性核对 | 新进程产出的快照 `14:56:02Z`：441 条 / `borrowDisabled` 142 / 无借入侧 19   |
+| API 字段断言     | `RUN_API_FIELDS_TESTS=true` → **7 pass / 0 fail**                           |
 
 ## Residual risks
 
