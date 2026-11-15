@@ -121,6 +121,23 @@ export interface BrevisDataItem {
   protocolVersion: "v3" | "v4";
 }
 
+/**
+ * Campaign 文案在压缩后的 `_app` chunk 里的首尾锚点，按顺序尝试。
+ * 锚点是扫 minified JSX 的定位手段，不是语义契约——所以给多个候选，
+ * 让改词只影响命中哪一条，而不影响 cap 是否被抓到。
+ */
+const COPY_START_MARKERS: readonly string[] = [
+  "Eligible MetaMask",
+  "MetaMask Card users",
+  "reward APR when lending",
+  "reward APR",
+];
+const COPY_END_MARKERS: readonly string[] = [
+  'per user."',
+  "per user",
+  "collateral and/or debt",
+];
+
 export class BrevisApiClient {
   private frontendUrl = "https://incentra.brevis.network";
   private grpcBaseUrl = "https://incentra-prd.brevis.network";
@@ -581,6 +598,10 @@ export class BrevisApiClient {
   async fetchMetaMaskCampaignDescription(): Promise<{
     description: string;
     positionCap: number | null;
+    /** 命中的金额句式（`p1`…`p5`），null 表示文案里没解析出 cap。 */
+    pattern: string | null;
+    /** 命中的首尾锚点，仅用于告警定位。 */
+    markerPair: string;
   } | null> {
     try {
       // 1. Fetch 页面 HTML，找到 _app chunk 文件名（含构建 hash）
@@ -609,21 +630,30 @@ export class BrevisApiClient {
       const jsContent = await chunkResponse.text();
 
       // 3. 定位 METAMASK 描述文字块
-      const startMarker = "Eligible MetaMask";
+      //    锚点也走候选表：文案换个开头时继续抓，而不是静默返回 null。
+      const startMarker = COPY_START_MARKERS.find((marker) =>
+        jsContent.includes(marker)
+      );
+      if (!startMarker) {
+        logger.warn(
+          `⚠️ JS bundle 中未找到 MetaMask campaign 描述（锚点全缺: ${COPY_START_MARKERS.join(" | ")}）`
+        );
+        return null;
+      }
       const idx = jsContent.indexOf(startMarker);
-      if (idx < 0) {
-        logger.warn("⚠️ JS bundle 中未找到 MetaMask campaign 描述");
-        return null;
-      }
 
-      // 提取从 "Eligible MetaMask" 到 'per user."' 的 JSX 块
-      // 需要包含结尾的闭合引号，否则最后一段文字无法被 regex 捕获
-      const endMarker = 'per user."';
-      const endIdx = jsContent.indexOf(endMarker, idx);
-      if (endIdx < 0) {
-        logger.warn("⚠️ JS bundle 中未找到描述文字结尾");
+      // 提取从起始锚点到结尾锚点的 JSX 块
+      // 需要包含结尾的引号，否则最后一段文字无法被 regex 捕获
+      const endMarker = COPY_END_MARKERS.find(
+        (marker) => jsContent.indexOf(marker, idx) > idx
+      );
+      if (!endMarker) {
+        logger.warn(
+          `⚠️ JS bundle 中未找到描述文字结尾（锚点全缺: ${COPY_END_MARKERS.join(" | ")}）`
+        );
         return null;
       }
+      const endIdx = jsContent.indexOf(endMarker, idx);
       const block = jsContent.substring(idx, endIdx + endMarker.length);
 
       // 4. 从 JSX 块中提取可读文字
@@ -677,14 +707,19 @@ export class BrevisApiClient {
 
       const description = textParts.join(" ").replace(/\s+/g, " ").trim();
 
-      const positionCap = extractPositionCapFromDescription(description);
+      const analysis = analyzePositionCapCopy(description);
 
       logger.debug(
-        `📋 MetaMask campaign 描述提取成功: positionCap=${positionCap}`
+        `📋 MetaMask campaign 描述提取成功: positionCap=${analysis.capUsd} (${analysis.pattern ?? "no pattern"})`
       );
       logger.debug(`📋 完整描述: ${description}`);
 
-      return { description, positionCap };
+      return {
+        description,
+        positionCap: analysis.capUsd,
+        pattern: analysis.pattern,
+        markerPair: `${startMarker} → ${endMarker}`,
+      };
     } catch (error: any) {
       logger.warn(`⚠️ 提取 MetaMask campaign 描述失败: ${error.message}`);
       return null;
@@ -826,6 +861,39 @@ export class BrevisApiClient {
               continue;
             }
 
+            // 抓来的文案属于 MetaMask Card 这一族；别的族若继承同一个 cap，
+            // 就是拿 A 的持仓上限去砍 B 的收益。
+            const campaignName =
+              typeof config?.name === "string" ? config.name : undefined;
+            const isMetaMaskFamily = isMetaMaskCampaignFamily(campaignName);
+            const campaignCopy = isMetaMaskFamily ? metaMaskDesc : null;
+            if (
+              isMetaMaskFamily &&
+              metaMaskDesc &&
+              metaMaskDesc.positionCap == null
+            ) {
+              logger.warn(
+                `⚠️ Brevis MetaMask 文案未解析出 position cap（句式 ${metaMaskDesc.pattern ?? "none"}，锚点 ${metaMaskDesc.markerPair}），本次按无 cap 处理`,
+                {
+                  event: "brevis_position_cap_extraction_failed",
+                  campaignId: String(campaign?.id ?? ""),
+                  campaignName,
+                  chainId: protocol?.chainId,
+                  snippet: metaMaskDesc.description.slice(0, 240),
+                }
+              );
+            }
+            if (!isMetaMaskFamily && metaMaskDesc) {
+              logger.info(
+                `ℹ️ Brevis campaign「${campaignName ?? "unnamed"}」不属于 MetaMask 族，未套用抓取的文案与 position cap`,
+                {
+                  event: "brevis_campaign_family_without_copy",
+                  campaignId: String(campaign?.id ?? ""),
+                  chainId: protocol?.chainId,
+                }
+              );
+            }
+
             // 构建 campaign item；budget* 仅供 fetchBrevisAprs 算 totalBudget，enrich 后剥离
             const campaignItem: BrevisCampaignItem = {
               link,
@@ -834,9 +902,9 @@ export class BrevisApiClient {
                 ? { name: config.name.trim() }
                 : {}),
               // METAMASK campaigns: 附加从前端 JS bundle 提取的描述和 position cap
-              ...(metaMaskDesc
+              ...(campaignCopy
                 ? {
-                    message: metaMaskDesc.description,
+                    message: campaignCopy.description,
                   }
                 : {}),
               breakdowns: [
@@ -859,9 +927,9 @@ export class BrevisApiClient {
                   Number.isFinite(protocol.tvl)
                     ? { latestTvl: protocol.tvl }
                     : {}),
-                  ...(metaMaskDesc?.positionCap != null
+                  ...(campaignCopy?.positionCap != null
                     ? {
-                        positionCapUsd: metaMaskDesc.positionCap,
+                        positionCapUsd: campaignCopy.positionCap,
                         isCombineCap: true,
                       }
                     : {}),
@@ -955,15 +1023,127 @@ export class BrevisApiClient {
 }
 
 /**
+ * Brevis 不返回结构化的 position cap：数字只活在前端 campaign 文案里，所以这段文案
+ * 就是契约本身（`/up to X,XXX USDC/` 一类句式）。改用有序候选表而不是单条正则，
+ * 因为 Brevis 换一种说法（"capped at"、"limited to"）时，单条正则会让 cap 静默变 null，
+ * 前端随即按名义 APR 显示——一个只会偏高、不会报错的失效。
+ */
+const POSITION_CAP_PATTERNS: ReadonlyArray<RegExp> = [
+  // 最具体的先试：combined/total 一句里同时带出金额
+  /(?:combined|total)[^.]{0,80}?up to \$?([\d,]+(?:\.\d+)?)\s*(?:USDC|USD)/i,
+  /up to \$?([\d,]+(?:\.\d+)?)\s*(?:USDC|USD)/i,
+  /(?:capped|limited)\s+(?:at|to)\s+\$?([\d,]+(?:\.\d+)?)\s*(?:USDC|USD)/i,
+  /(?:cap|ceiling)\s+of\s+\$?([\d,]+(?:\.\d+)?)\s*(?:USDC|USD)/i,
+  /\$?([\d,]+(?:\.\d+)?)\s*(?:USDC|USD)[^.]{0,60}?\b(?:cap|ceiling|combined)\b/i,
+];
+
+/** 命中金额附近出现这些词，才说明它在讲持仓/用户上限而不是交易量或预算。 */
+const POSITION_CONTEXT_RE =
+  /\b(collateral|debt|supply|borrow|position|lend(?:ing)?|per user|per wallet)\b/i;
+const PER_USER_CONTEXT_RE =
+  /\b(per user|per wallet|combined|collateral|debt)\b/i;
+/** 超过 10 亿美金的"cap"一定是解析到了别的东西。 */
+const MAX_PLAUSIBLE_CAP_USD = 1_000_000_000;
+
+export interface PositionCapCopyAnalysis {
+  /** 解析出的 cap（USD），解析不到为 null。 */
+  capUsd: number | null;
+  /** 命中的候选 ID（`p1`…`p5`），便于在告警里定位是哪条句式撑住的。 */
+  pattern: string | null;
+  /** 金额是否落在持仓口径的措辞里；false 时 cap 仍然采用，但语义存疑。 */
+  hasPositionContext: boolean;
+}
+
+interface PositionCapCandidate {
+  capUsd: number;
+  pattern: string;
+  rank: number;
+  hasPositionContext: boolean;
+  perUser: boolean;
+  index: number;
+}
+
+/** 择优顺序：句式越具体越优先，其次看是否落在持仓口径，最后取最靠前的出现位置。 */
+function isBetterCandidate(
+  candidate: PositionCapCandidate,
+  incumbent: PositionCapCandidate
+): boolean {
+  if (candidate.rank !== incumbent.rank) return candidate.rank < incumbent.rank;
+  if (candidate.hasPositionContext !== incumbent.hasPositionContext) {
+    return candidate.hasPositionContext;
+  }
+  if (candidate.perUser !== incumbent.perUser) return candidate.perUser;
+  return candidate.index < incumbent.index;
+}
+
+/**
+ * 解析 Brevis campaign 文案里的 position cap，并报告命中的句式与上下文。
+ */
+export function analyzePositionCapCopy(
+  description: string
+): PositionCapCopyAnalysis {
+  const text = (description ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return { capUsd: null, pattern: null, hasPositionContext: false };
+
+  let best: PositionCapCandidate | null = null;
+
+  for (const [rank, candidatePattern] of POSITION_CAP_PATTERNS.entries()) {
+    const global = new RegExp(
+      candidatePattern.source,
+      `${candidatePattern.flags}g`
+    );
+    for (const match of text.matchAll(global)) {
+      const amount = Number((match[1] ?? "").replace(/,/g, ""));
+      if (
+        !Number.isFinite(amount) ||
+        amount <= 0 ||
+        amount > MAX_PLAUSIBLE_CAP_USD
+      ) {
+        continue;
+      }
+      const index = match.index ?? 0;
+      const window = text.slice(
+        Math.max(0, index - 140),
+        index + match[0].length + 140
+      );
+      const candidate: PositionCapCandidate = {
+        capUsd: amount,
+        pattern: `p${rank + 1}`,
+        rank,
+        hasPositionContext: POSITION_CONTEXT_RE.test(window),
+        perUser: PER_USER_CONTEXT_RE.test(window),
+        index,
+      };
+      if (best === null || isBetterCandidate(candidate, best)) best = candidate;
+    }
+  }
+
+  if (best === null) {
+    return { capUsd: null, pattern: null, hasPositionContext: false };
+  }
+  return {
+    capUsd: best.capUsd,
+    pattern: best.pattern,
+    hasPositionContext: best.hasPositionContext,
+  };
+}
+
+/**
  * 从 Brevis campaign 描述文字中提取 position cap（USD）。
- * 提取方式：匹配 "up to X,XXX USDC/USD" 格式的文案。
  * 不限 actionType——只要描述中能匹配到 cap 就设值。
  */
 export function extractPositionCapFromDescription(
   description: string
 ): number | null {
-  const capMatch = description.match(/up to ([\d,]+)\s*(USDC|USD)/i);
-  return capMatch ? parseInt(capMatch[1].replace(/,/g, ""), 10) : null;
+  return analyzePositionCapCopy(description).capUsd;
+}
+
+/**
+ * 抓来的文案只属于 MetaMask Card 那一族 campaign；别的族若继承了同一个 cap，
+ * 就是拿 A 的持仓上限去砍 B 的收益。
+ */
+export function isMetaMaskCampaignFamily(name: string | undefined): boolean {
+  return /metamask/i.test(name ?? "");
 }
 
 // 导出单例实例

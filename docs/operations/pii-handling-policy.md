@@ -47,8 +47,19 @@ PII 边界声明」——本文即该声明。
   独立文件，曾是唯一没有闸门的通道（AAV-1290 前会把凭据原文写入 `analytics.log`）。
 - `scrubFormat` 在主日志链中必须排在 `splat()` **之后**：`logger.info(msg, meta)` 的 meta
   由 splat 并入记录，排在前面会整段绕过清洗。
-- **Sentry**：`sendDefaultPii: false`，并在 `beforeSend` 中显式删除
-  `authorization` 与 `cookie` 请求头（纵深防御）。
+- **Sentry**：`dataCollection` 逐类目关掉 `userInfo`（客户端 IP）、`cookies`、
+  `httpHeaders`、`httpBodies`、`urlQueryParams`、`databaseQueryData`、`genAI`；另在
+  `beforeSend` 中删除 `authorization` 与 `cookie` 请求头（纵深防御——在
+  `httpHeaders: false` 下已不会触发，留作配置被放宽时的兜底）。
+  ⚠️ **不要改回 `sendDefaultPii`**：Sentry v11 移除了该选项**及其对应的限制映射**
+  （v10 的 `defaultPiiToCollectionOptions.js` 在 v11 已不存在），什么都不设时默认**全收**
+  ——含客户端 IP、请求/响应 body、数据库查询值；而 v10 用来过滤 IP 相关 header 的
+  `PII_HEADER_SNIPPETS`（`forwarded`/`-ip`/`remote-`/`via`/`-user`）在 v11 已被删除，
+  所以「少写一个类目」在这里是**放宽**而不是保持。`graphQL` 与 `stackFrameVariables`
+  保持默认值，与 v10 的 `sendDefaultPii: false` 一致。
+  ⚠️ **升到 v11 时还有一类要关**：v11 新增 `mcp` 与 `queues`（**默认都开**），v10 的
+  `DataCollection` 没有这两个字段所以现在写不进去 —— 版本升级必须**同批**补上
+  `mcp: { inputs: false, outputs: false }` 与 `queues: false`，见 AAV-1358。
 - **路由标签归一**（`backend/src/middleware/metrics.ts`）：指标 `route` 标签与分析
   `analytics.path` 共用同一个变量，取值只有两种——已匹配路由的 **pattern**
   （`req.route.path`，如 `/semrush/:id`，不含调用方数据）或固定常量

@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const OLD_FIELD_NAMES = [
   "reserveSize",
@@ -13,16 +15,75 @@ const OLD_FIELD_NAMES = [
   "baseVariableBorrowRate",
 ] as const;
 
-const NEW_FIELD_NAMES = [
+/**
+ * Present on every reserve: the supply side plus the protocol-level parameters
+ * every market must be able to describe.
+ *
+ * `supplied` / `supplyCap` / `ltv` / `liquidationThreshold` come from
+ * `supplyInfo` and the market itself. `baseBorrowRate` does not: on V3 it is
+ * filled by `marketsService` from the SDK, then an on-chain read, then a
+ * fallback derived from the borrow fields; on V4 it comes from the hub's
+ * `settings`. It belongs here because a reserve without a rate model cannot be
+ * priced at all, but a failure here points at RPC coverage, not at supply
+ * serialisation — check `marketsService` first.
+ *
+ * `supplyApy` is deliberately absent: it is `undefined` when supply is disabled
+ * or the market reports a zero cap, and both are legitimate.
+ */
+const ALWAYS_PRESENT = [
   "supplied",
+  "supplyCap",
+  "baseBorrowRate",
+  "ltv",
+  "liquidationThreshold",
+] as const;
+
+/**
+ * The borrow side. A reserve either has all of these or none of them — the
+ * frontend reads them as one block, and a half-populated block is a mapping
+ * bug, not a market shape.
+ *
+ * On V3 they all come from `reserve.borrowInfo` in
+ * `packages/aave-fetcher/src/concurrent-fetch.ts`. On V4 they are assembled
+ * from two independent sources: the per-spoke summary (`borrowApy`, `borrowed`)
+ * and the hub summary/settings (`liquidity`, `utilizationPct`, the slopes,
+ * `optimalUtilization`, `borrowCap`). The all-or-nothing rule still applies to
+ * both, but on V4 a partial block can also mean one of the two sources came
+ * back empty.
+ *
+ * `protocolFee` is not in this list on purpose — see ABSENT_MEANS_ZERO.
+ */
+const BORROW_SIDE = [
+  "borrowApy",
+  "borrowCap",
   "borrowed",
   "liquidity",
-  "protocolFee",
   "slopeBelowOptimal",
   "slopeAboveOptimal",
   "optimalUtilization",
-  "baseBorrowRate",
+  "utilizationPct",
 ] as const;
+
+/**
+ * `protocolFee: 0` is omitted by the API on purpose: the frontend contract is
+ * "absent means 0" (`aaveapy/docs/rate-calculation.md`, AAV-1350), and
+ * `serializeReserveForApi` has a test pinning that behaviour. It therefore
+ * cannot take part in a presence assertion — 45 of the 441 staging reserves
+ * have a zero fee and would read as missing.
+ */
+const ABSENT_MEANS_ZERO = "protocolFee";
+
+/**
+ * How many reserves are allowed to have no borrow side at all.
+ *
+ * Measured on the 2026-11-15 staging snapshot: 19 of 441 (14 on Ethereum plus
+ * one each on Arbitrum / Avalanche / Linea / Optimism / Polygon), all V3, all
+ * with `borrowInfo: null` on the SDK side. Raising this number means a reserve
+ * that used to have a borrow side lost it — confirm with the protocol state
+ * before touching it, because that is exactly the data gap this guards against.
+ * A lower number is fine: the block came back.
+ */
+const KNOWN_BORROW_SIDE_ABSENT = 19;
 
 interface MarketsResponse {
   snapshot: { version: string };
@@ -32,6 +93,20 @@ interface MarketsResponse {
 const API_URL =
   process.env.API_FIELDS_TEST_URL ??
   "https://staging-api.aaveapy.com/api/markets";
+
+let snapshot: MarketsResponse | null | undefined;
+
+/**
+ * One fetch per run, shared by every assertion: independent requests can land
+ * on different snapshots (reserves are added and removed between them), and a
+ * staging hiccup on one of them used to fail only the assertions after it.
+ */
+function markets(): MarketsResponse | null {
+  if (snapshot === undefined) {
+    snapshot = fetchMarkets();
+  }
+  return snapshot;
+}
 
 function fetchMarkets(): MarketsResponse | null {
   try {
@@ -46,18 +121,36 @@ function fetchMarkets(): MarketsResponse | null {
   }
 }
 
+/** `in` alone would count an explicit `null` as present. */
+function present(reserve: Record<string, unknown>, field: string): boolean {
+  const value = reserve[field];
+  return value !== undefined && value !== null;
+}
+
+function reserveLabel(reserve: Record<string, unknown>): string {
+  return String(reserve.reserveId ?? "<no reserveId>");
+}
+
+function hasBorrowSide(reserve: Record<string, unknown>): boolean {
+  return BORROW_SIDE.some((field) => present(reserve, field));
+}
+
 test(
-  "API fields v3 — snapshot version is markets-v3",
+  "API fields v3 — snapshot version matches MARKETS_API_VERSION",
   { skip: !process.env.RUN_API_FIELDS_TESTS },
-  () => {
-    const data = fetchMarkets();
+  async () => {
+    // Read the constant instead of a literal: the assertion previously pinned
+    // the pre-rename name and could not follow the implementation (AAV-1378).
+    const { MARKETS_API_VERSION } = await import("../src/types/index.js");
+
+    const data = markets();
     if (!data) {
       assert.fail(`Could not fetch API at ${API_URL}`);
     }
     assert.equal(
       data.snapshot.version,
-      "markets-v3",
-      `Expected version 'markets-v3' but got '${data.snapshot.version}'`
+      MARKETS_API_VERSION,
+      `Expected version '${MARKETS_API_VERSION}' but got '${data.snapshot.version}'`
     );
   }
 );
@@ -66,7 +159,7 @@ test(
   "API fields v3 — no old field names leaked in any reserve",
   { skip: !process.env.RUN_API_FIELDS_TESTS },
   () => {
-    const data = fetchMarkets();
+    const data = markets();
     if (!data) {
       assert.fail(`Could not fetch API at ${API_URL}`);
     }
@@ -93,33 +186,134 @@ test(
 );
 
 test(
-  "API fields v3 — new field names present in at least 90% of reserves",
+  "API fields v3 — always-present fields are on every reserve",
   { skip: !process.env.RUN_API_FIELDS_TESTS },
   () => {
-    const data = fetchMarkets();
+    const data = markets();
+    if (!data) {
+      assert.fail(`Could not fetch API at ${API_URL}`);
+    }
+    assert.ok(data.reserves.length > 0, "No reserves in response");
+
+    const missing: string[] = [];
+    for (const reserve of data.reserves) {
+      for (const field of ALWAYS_PRESENT) {
+        if (!present(reserve, field)) {
+          missing.push(`${reserveLabel(reserve)}:${field}`);
+        }
+      }
+    }
+
+    assert.deepEqual(
+      missing,
+      [],
+      `${missing.length} missing field(s) out of ${data.reserves.length} reserves: ${missing.slice(0, 10).join(", ")}. Note baseBorrowRate is filled by an on-chain fallback — check RPC coverage before the serialiser.`
+    );
+  }
+);
+
+test(
+  "API fields v3 — the borrow-side block is all-or-nothing",
+  { skip: !process.env.RUN_API_FIELDS_TESTS },
+  () => {
+    const data = markets();
     if (!data) {
       assert.fail(`Could not fetch API at ${API_URL}`);
     }
 
-    const total = data.reserves.length;
-    assert.ok(total > 0, "No reserves in response");
-
-    const fieldCoverage: Record<string, number> = {};
-    for (const field of NEW_FIELD_NAMES) {
-      fieldCoverage[field] = 0;
-    }
+    const partial: string[] = [];
     for (const reserve of data.reserves) {
-      for (const field of NEW_FIELD_NAMES) {
-        if (field in reserve) fieldCoverage[field]++;
+      const presentFields = BORROW_SIDE.filter((field) =>
+        present(reserve, field)
+      );
+      if (
+        presentFields.length === 0 ||
+        presentFields.length === BORROW_SIDE.length
+      ) {
+        continue;
+      }
+      const absent = BORROW_SIDE.filter((field) => !present(reserve, field));
+      partial.push(
+        `${reserveLabel(reserve)} has ${presentFields.length}/${BORROW_SIDE.length}, missing [${absent.join(", ")}]`
+      );
+    }
+
+    assert.deepEqual(
+      partial,
+      [],
+      `Borrow side is partially populated on ${partial.length} reserve(s); the block must be emitted whole or not at all: ${partial.slice(0, 10).join("; ")}`
+    );
+  }
+);
+
+test(
+  "API fields v3 — no new reserve silently loses its borrow side",
+  { skip: !process.env.RUN_API_FIELDS_TESTS },
+  () => {
+    const data = markets();
+    if (!data) {
+      assert.fail(`Could not fetch API at ${API_URL}`);
+    }
+
+    // Deliberately not filtering on `borrowDisabled`: on V3 that flag is derived
+    // from `borrowInfo === null` (concurrent-fetch.ts), so using it to explain a
+    // missing block would just restate the observation. 124 of the 441 staging
+    // reserves have a complete borrow side *and* `borrowDisabled: true`, so the
+    // flag cannot tell the two situations apart either. Count them instead.
+    const absent = data.reserves.filter((reserve) => !hasBorrowSide(reserve));
+
+    assert.ok(
+      absent.length <= KNOWN_BORROW_SIDE_ABSENT,
+      `${absent.length} reserve(s) have no borrow side, up from the recorded ${KNOWN_BORROW_SIDE_ABSENT}. Either the protocol disabled borrowing on a new market — then raise the baseline — or the fetcher dropped a block that used to be there: ${absent
+        .slice(0, 10)
+        .map(reserveLabel)
+        .join(", ")}`
+    );
+  }
+);
+
+test(
+  "API fields v3 — protocolFee is a 0..100 percent when present, absent means 0",
+  { skip: !process.env.RUN_API_FIELDS_TESTS },
+  () => {
+    const data = markets();
+    if (!data) {
+      assert.fail(`Could not fetch API at ${API_URL}`);
+    }
+
+    const invalid: string[] = [];
+    for (const reserve of data.reserves) {
+      if (!present(reserve, ABSENT_MEANS_ZERO)) continue;
+      const fee = reserve[ABSENT_MEANS_ZERO];
+      if (
+        typeof fee !== "number" ||
+        !Number.isFinite(fee) ||
+        fee < 0 ||
+        fee > 100
+      ) {
+        invalid.push(`${reserveLabel(reserve)}: ${String(fee)}`);
       }
     }
 
-    for (const field of NEW_FIELD_NAMES) {
-      const pct = Math.round((fieldCoverage[field] / total) * 100);
-      assert.ok(
-        pct >= 90,
-        `Field '${field}' only present in ${pct}% of reserves (${fieldCoverage[field]}/${total}). Expected >= 90%`
-      );
-    }
+    assert.deepEqual(
+      invalid,
+      [],
+      `protocolFee must be a finite percent in 0..100: ${invalid.slice(0, 10).join(", ")}`
+    );
   }
 );
+
+test("API fields v3 — this file does not spell a version literal", () => {
+  // A literal survives renames: the old assertion kept spelling the previous
+  // name and stayed red for as long as nobody ran it. Any quoted slug-vN token
+  // fails here, so reading MARKETS_API_VERSION is the only way to name the
+  // version. Scope is this file only — marketsVersionBump.test.ts pins the
+  // literal on purpose, so a bump has to touch it.
+  const source = readFileSync(fileURLToPath(import.meta.url), "utf-8");
+  const hardcodedVersion = /["'`][a-z][a-z-]*-v\d+["'`]/;
+
+  assert.ok(
+    !hardcodedVersion.test(source),
+    "apiFieldsVerification.test.ts must read MARKETS_API_VERSION instead of spelling a version literal"
+  );
+});

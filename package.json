@@ -44,6 +44,7 @@
     "check:test-naming": "node scripts/check-test-naming.mjs",
     "check:feature-flags": "node scripts/check-feature-flags.mjs",
     "check:agents-drift": "node scripts/check-agents-drift.mjs",
+    "check:brevis-live": "tsx scripts/brevis-live-check.ts",
     "check:quality": "npm run lint && npm run check:syncpack && npm run check:todos && npm run check:duplicates && npm run check:knip && npm run check:test-naming && npm run check:feature-flags && npm run check:agents-drift",
     "prune": "ts-prune -i '\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v '^src/' | (grep -q . && exit 1 || exit 0)",
     "scan": "npm run scan:code && npm run scan:deps",
@@ -55,7 +56,7 @@
     "prepare": "husky || true"
   },
   "dependencies": {
-    "@aave-dao/aave-address-book": "4.75.8",
+    "@aave-dao/aave-address-book": "4.76.2",
     "@aave/contract-helpers": "^1.37.1",
     "@internal/aave-fetcher": "1.0.0",
     "@internal/aave-shared-config": "1.0.0",
@@ -71,7 +72,8 @@
     "hono": "^4.13.5",
     "minimatch@>=7.0.0": "11.0.4",
     "preact": "^11.0.0",
-    "undici": "^7.28.0",
+    "undici": "^8.0.0",
+    "viem": "2.57.16",
     "ws": "^8.21.0"
   },
   "devDependencies": {

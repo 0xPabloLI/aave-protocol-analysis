@@ -170,6 +170,26 @@ test("address-book upgrade rule is present with its label", () => {
   assert.ok(rule.labels.includes("address-book-upgrade"));
 });
 
+test("eslint is capped below 10 until eslint-plugin-import allows it", () => {
+  const config = JSON.parse(readConfig("renovate.json"));
+  const rule = config.packageRules.find((r: { matchPackageNames?: string[] }) =>
+    r.matchPackageNames?.includes("eslint")
+  );
+  assert.ok(rule, "eslint ceiling packageRule not found");
+  // eslint-plugin-import@2.32.0 peers `^2 || ^3 || ... || ^9` with no `^10`, so a
+  // strict `npm ci` fails with ERESOLVE. typescript-eslint and
+  // eslint-plugin-react-hooks already allow ^10, so this is the only blocker.
+  // Verified 2026-11-11 against the failing renovate/major-eslint-monorepo PR.
+  assert.equal(rule.allowedVersions, "<10");
+  // Both halves of the pair, not just @eslint/js: capping one leaves the other
+  // free to jump to a major the plugin cannot peer with. Same reasoning as the
+  // frontend's AAV-1301 rule.
+  assert.deepEqual([...rule.matchPackageNames].sort(), [
+    "@eslint/js",
+    "eslint",
+  ]);
+});
+
 test("ethers major updates stay disabled (pinned exact by policy)", () => {
   const config = JSON.parse(readConfig("renovate.json"));
   const rule = config.packageRules.find((r: { matchDepNames?: string[] }) =>
@@ -200,6 +220,27 @@ test("typescript major updates stay disabled until the toolchain catches up", ()
   // Scoped to majors deliberately: `typescript-eslint` is a separate dep name,
   // so its own minor/patch updates keep flowing through untouched.
   assert.deepEqual(rule.matchUpdateTypes, ["major"]);
+});
+
+test("@aave/client is capped below 1 until a release exposes the V3 markets", () => {
+  const config = JSON.parse(readConfig("renovate.json"));
+  const rule = config.packageRules.find((r: { matchDepNames?: string[] }) =>
+    r.matchDepNames?.includes("@aave/client")
+  );
+  assert.ok(rule, "@aave/client ceiling packageRule not found");
+  // v7 deleted `markets()` and its `reserves()` replacement serves only V4
+  // hub/spoke data on 4 chains, while the V3 path covers 21 chains and 24
+  // markets. Verified 2026-11-11 against the live API. See AAV-1359.
+  assert.equal(rule.allowedVersions, "<1");
+  // The ceiling must key off the manifest name, never the package name:
+  // `@aave/client-v4` is an npm alias of the same package at ^7, so matching on
+  // the package name would silently freeze the V4 path as well.
+  assert.deepEqual(rule.matchDepNames, ["@aave/client"]);
+  assert.equal(
+    rule.matchPackageNames,
+    undefined,
+    "matchPackageNames would also match the @aave/client-v4 alias and freeze V4"
+  );
 });
 
 test("dependabot.yml is gone (Renovate migration complete)", () => {

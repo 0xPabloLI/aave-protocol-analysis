@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { CrossAssetPairing } from "../dist/index.js";
+import type { CrossAssetPairing } from "../src/index.js";
 
 describe("CrossAssetPairing", () => {
-  it("should be importable from @internal/aave-shared-contracts", () => {
+  it("should be exported by the package index and accept a well-formed pairing", () => {
     const pairing: CrossAssetPairing = {
       sourceSide: "borrow",
       pairedReserveId: "8453:0xpool:0xcbETH",

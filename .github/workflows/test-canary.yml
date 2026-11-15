@@ -41,11 +41,33 @@ jobs:
           node-version: "26"
           cache: "npm"
 
+      # Same pin as ci.yml and the Dockerfile — enforced by
+      # backend/tests/workflowNpmPins.test.ts.
+      - name: Pin npm (lockfile validated with 11.6.2)
+        run: npm install -g npm@11.6.2
+
+      # One install covers every workspace. `npm ci --prefix backend` cannot
+      # work: backend has no lockfile of its own (workspace root owns it).
       - name: Install root dependencies
         run: npm ci
 
-      - name: Install backend dependencies
-        run: npm ci --prefix backend
+      # Suites consume the workspace packages through their `exports` field,
+      # which resolves to `dist/` — so the build has to happen first. This used
+      # to run after the suites ("a timing change can never alter what the
+      # suites see"), which in a clean checkout meant the suites saw no build
+      # output at all and the canary never once went green (AAV-1376).
+      # The step is not `continue-on-error`: a broken build is the failure to
+      # report, and letting the suites run on top of it only muddies the cause.
+      # `backend/tests/testCanaryOrder.test.ts` fails if this moves back down.
+      - name: Build (timed)
+        id: build
+        shell: bash
+        run: |
+          start=$(date +%s)
+          npm run build
+          end=$(date +%s)
+          echo "seconds=$(( end - start ))" >> "$GITHUB_OUTPUT"
+          echo "Build stage: $(( end - start ))s" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run full suites with duration tracking
         shell: bash
@@ -58,11 +80,12 @@ jobs:
             echo "| ----- | -------- | ------ |"
           } >> "$SUMMARY"
 
+          FAILED=0
           run_suite() {
             local name="$1"; shift
             local start end status
             start=$(date +%s)
-            if "$@"; then status="✅ pass"; else status="❌ FAIL"; fi
+            if "$@"; then status="✅ pass"; else status="❌ FAIL"; FAILED=$(( FAILED + 1 )); fi
             end=$(date +%s)
             echo "| ${name} | $(( end - start ))s | ${status} |" >> "$SUMMARY"
             [[ "$status" == "✅ pass" ]]
@@ -71,26 +94,33 @@ jobs:
           RUN_API_FIELDS_TESTS=true
           export RUN_API_FIELDS_TESTS
 
+          # The API-fields assertions compare MARKETS_API_VERSION against the
+          # deployed snapshot. Point them at the deployment this ref produces:
+          # the schedule runs on `main` (= production), while every other ref
+          # here is `railway` (= staging). The test defaults to staging, so a
+          # version bump that reaches railway first would otherwise turn the
+          # weekly main run red on correct code (AAV-1378).
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            export API_FIELDS_TEST_URL="https://api.aaveapy.com/api/markets"
+          else
+            export API_FIELDS_TEST_URL="https://staging-api.aaveapy.com/api/markets"
+          fi
+
           run_suite "shared-contracts" npm run test -w @internal/aave-shared-contracts
           run_suite "root" npm test
           run_suite "rpc-infra" npm run test -w @internal/aave-rpc-infra
           run_suite "fetcher" npm run test -w @internal/aave-fetcher
           run_suite "backend" npm run test -w aave-dashboard-backend
 
-      # Deliberately after the suites: keeps this addition strictly additive to
-      # the existing test execution, so a timing change can never alter what the
-      # suites see. `always()` still yields a sample when a suite already failed.
-      - name: Build (timed)
-        id: build
-        if: always()
-        shell: bash
-        continue-on-error: true
-        run: |
-          start=$(date +%s)
-          npm run build
-          end=$(date +%s)
-          echo "seconds=$(( end - start ))" >> "$GITHUB_OUTPUT"
-          echo "Build stage: $(( end - start ))s" >> "$GITHUB_STEP_SUMMARY"
+          # Nothing here runs with `set -e`, so a failing suite in the middle
+          # only returns non-zero into an ignored call site: the step would go
+          # green as long as the last suite passed. Report the count explicitly
+          # (AAV-1378).
+          if (( FAILED > 0 )); then
+            echo "" >> "$SUMMARY"
+            echo "**${FAILED} suite(s) failed.**" >> "$SUMMARY"
+            exit 1
+          fi
 
       - name: Build duration trend
         if: always() && steps.build.outputs.seconds != ''
