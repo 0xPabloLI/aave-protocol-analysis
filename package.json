@@ -55,7 +55,7 @@
     "prepare": "husky || true"
   },
   "dependencies": {
-    "@aave-dao/aave-address-book": "4.76.1",
+    "@aave-dao/aave-address-book": "4.76.2",
     "@aave/contract-helpers": "^1.37.1",
     "@internal/aave-fetcher": "1.0.0",
     "@internal/aave-shared-config": "1.0.0",
