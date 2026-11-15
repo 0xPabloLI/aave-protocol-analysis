@@ -46,11 +46,10 @@ jobs:
       - name: Pin npm (lockfile validated with 11.6.2)
         run: npm install -g npm@11.6.2
 
+      # One install covers every workspace. `npm ci --prefix backend` cannot
+      # work: backend has no lockfile of its own (workspace root owns it).
       - name: Install root dependencies
         run: npm ci
-
-      - name: Install backend dependencies
-        run: npm ci --prefix backend
 
       - name: Run full suites with duration tracking
         shell: bash

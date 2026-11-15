@@ -306,8 +306,8 @@ test("pin scan is job-scoped and ignores prose", () => {
       problems: 1,
     },
     {
-      name: "npm ci --prefix backend",
-      yaml: "jobs:\n  canary:\n    steps:\n      - run: npm ci --prefix backend\n",
+      name: "npm ci --omit=dev",
+      yaml: "jobs:\n  canary:\n    steps:\n      - run: npm ci --omit=dev\n",
       ciSteps: 1,
       problems: 1,
     },
@@ -343,7 +343,7 @@ test("pin scan is job-scoped and ignores prose", () => {
     },
     {
       name: "two installs after one pin",
-      yaml: "jobs:\n  canary:\n    steps:\n      - run: npm install -g npm@11.6.2\n      - run: npm ci\n      - run: npm ci --prefix backend\n",
+      yaml: "jobs:\n  canary:\n    steps:\n      - run: npm install -g npm@11.6.2\n      - run: npm ci\n      - run: npm ci --omit=dev\n",
       ciSteps: 2,
       problems: 0,
     },
@@ -386,6 +386,32 @@ test("dockerfile scan requires a pin before every install", () => {
   const staged = scanDockerfileNpmPins("Dockerfile", multiStage);
   assert.equal(staged.ciSteps, 2);
   assert.equal(staged.problems.length, 1, staged.problems.join("\n"));
+});
+
+test("workflows do not install a workspace with npm ci --prefix", () => {
+  // The backend is an npm workspace and has no lockfile of its own; a nested
+  // `npm ci --prefix backend` fails with EUSAGE ("can only install with an
+  // existing package-lock.json"). The root install already covers every
+  // workspace. The canary carried that step and failed on every run.
+  const offenders: string[] = [];
+
+  for (const file of workflowFiles()) {
+    readWorkflow(file)
+      .split("\n")
+      .forEach((line, index) => {
+        if (/^\s*#/.test(line)) return;
+        const command = commandOf(line);
+        if (/^npm ci\b/.test(command) && command.includes("--prefix")) {
+          offenders.push(`${file}:${index + 1}  ${command}`);
+        }
+      });
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `npm ci --prefix cannot install a workspace:\n${offenders.join("\n")}`
+  );
 });
 
 test("version drift is reported with every source", () => {

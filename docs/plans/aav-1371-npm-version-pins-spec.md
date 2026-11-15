@@ -24,21 +24,22 @@
 
 ## Scenario & Risk Verification
 
-| #   | 场景                                       | 期望                           |
-| --- | ------------------------------------------ | ------------------------------ |
-| S1  | 同一 job：pin 在 `npm ci` 之前             | 通过                           |
-| S2  | 同一 job：有 `npm ci`、无 pin              | 失败，报 `file:line`           |
-| S3  | 同一 job：pin 在 `npm ci` 之后             | 失败                           |
-| S4  | pin 在另一个 job，当前 job 只有 `npm ci`   | 失败（作用域按 job 隔离）      |
-| S5  | `sfw npm ci`                               | 被识别为安装步骤，遵守同一规则 |
-| S6  | `npm ci --prefix backend`                  | 被识别为安装步骤，遵守同一规则 |
-| S7  | 注释里出现 `npm ci`                        | 忽略，不产生违规               |
-| S8  | 同一 job 多个 `npm ci`，pin 只在最前       | 全部通过                       |
-| S9  | 所有 workflow / Dockerfile 的 pin 版本一致 | 通过                           |
-| S10 | 某个 workflow 或 Dockerfile 的版本漂移     | 失败，列出所有版本与来源       |
-| S11 | 仓库里一个 `npm ci` 都没有（守卫自身失效） | 失败，防止空断言恒绿           |
-| S12 | job header 带行尾注释 / 引号 key           | 仍被识别为 job，不静默跳过     |
-| S13 | Dockerfile 的 `npm ci` 之前没有 pin        | 失败                           |
+| #   | 场景                                       | 期望                               |
+| --- | ------------------------------------------ | ---------------------------------- |
+| S1  | 同一 job：pin 在 `npm ci` 之前             | 通过                               |
+| S2  | 同一 job：有 `npm ci`、无 pin              | 失败，报 `file:line`               |
+| S3  | 同一 job：pin 在 `npm ci` 之后             | 失败                               |
+| S4  | pin 在另一个 job，当前 job 只有 `npm ci`   | 失败（作用域按 job 隔离）          |
+| S5  | `sfw npm ci`                               | 被识别为安装步骤，遵守同一规则     |
+| S6  | `npm ci --omit=dev`                        | 被识别为安装步骤，遵守同一规则     |
+| S7  | 注释里出现 `npm ci`                        | 忽略，不产生违规                   |
+| S8  | 同一 job 多个 `npm ci`，pin 只在最前       | 全部通过                           |
+| S9  | 所有 workflow / Dockerfile 的 pin 版本一致 | 通过                               |
+| S10 | 某个 workflow 或 Dockerfile 的版本漂移     | 失败，列出所有版本与来源           |
+| S11 | 仓库里一个 `npm ci` 都没有（守卫自身失效） | 失败，防止空断言恒绿               |
+| S12 | job header 带行尾注释 / 引号 key           | 仍被识别为 job，不静默跳过         |
+| S13 | Dockerfile 的 `npm ci` 之前没有 pin        | 失败                               |
+| S14 | 工作流用 `npm ci --prefix <workspace>`     | 失败（workspace 子包无独立锁文件） |
 
 ## Testing Decisions
 
@@ -55,3 +56,4 @@
 ## Further Notes
 
 - 既有 `backend/tests/ciAutoRemediationWorkflow.test.ts` 已经断言 `ci.yml` 与 `ci-auto-remediation.yml` 的版本一致；本守卫把它推广到全仓，两者不冲突。
+- 首轮 canary 实跑（run `43694208242`）暴露了一个独立缺陷：`npm ci --prefix backend` 在 workspace 仓必然 EUSAGE（`backend/` 没有独立锁文件，根 `npm ci` 已覆盖所有 workspace）。该步骤已移除，并由 S14 静态守卫禁止再次出现。
