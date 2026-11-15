@@ -1,6 +1,6 @@
 # AAV-1378 — 让 API fields 断言真正可执行、且断言对的语义
 
-> **Status: Done** — 已推 `railway`；canary run `43703021736` 全绿（该 workflow 历史上第一次）。
+> **Status: Executed (2026-11-15)** — 已推 `railway`；canary run `43703832449` 全绿（该 workflow 历史上第一次）。
 
 ## Problem
 
@@ -114,10 +114,12 @@ borrow 侧」，而 API 上唯一的候选判别式 `borrowDisabled` 不成立�
 - `marketsVersionBump.test.ts` 单跑：改前 `ERR_MODULE_NOT_FOUND`，改后 1 pass。
 - backend 全量 `557 pass / 0 fail / 7 skip`；`test:typecheck` 通过；`npm run lint` 0 errors；
   `npm run check:quality` exit 0。
-- **canary 实跑** `43703021736`（`railway` @ `328c70d`）：整 run **success**，10 个 step
-  全绿。套件读数（日志里 `✔` 行数 / `✖` 行数）：shared-contracts 128/0、root 63/0、
-  rpc-infra 49/0、fetcher 482/0、backend 564/0 —— 合计 1286 通过、0 失败。`Build (timed)`
-  与 `Build duration trend` 均 success。
+- **canary 实跑** `43703832449`（`railway` @ `a40b44b`，含失败吞没修复）：整 run
+  **success**，10 个 step 全绿。套件读数（日志里 `✔` 行数 / `✖` 行数）：shared-contracts
+  128/0、root 63/0、rpc-infra 49/0、fetcher 482/0、backend 565/0 —— 合计 1287 通过、0 失败。
+  `Build (timed)` 与 `Build duration trend` 均 success。这是该 workflow 历史上**第一次**
+  整 run 通过；上一次 `43703021736`（`328c70d`，失败吞没修复之前）同样全绿，用于证明
+  断言本身在 staging 数据上通过。
 - 失败吞没的红验证：`run_suite "a" true; run_suite "b" false; run_suite "c" true` 在新脚本
   下得到 `FAILED=1` → `exit 1`（旧脚本会给绿）；去掉 `exit` 块后静态守卫报
   `the suites step must exit non-zero when any suite failed`。
