@@ -106,6 +106,7 @@ scripts/*
 !scripts/hook-autofix.sh
 !scripts/ci-build-trend.mjs
 !scripts/check-agents-drift.mjs
+!scripts/brevis-live-check.ts
 !scripts/verification/
 
 data/

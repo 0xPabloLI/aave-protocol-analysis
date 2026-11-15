@@ -1,0 +1,140 @@
+name: Brevis live check
+
+# AAV-1369. `positionCapUsd` is scraped out of the Brevis frontend `_app` chunk,
+# so a copy edit upstream silently turns the cap into `null` and only a log
+# warning remembers it. This job reads the live copy once a day and fails when
+# the scrape stops producing a usable number.
+#
+# Three assertions (see `scripts/brevis-live-check.ts`):
+#   1. anchors hit and `positionCap > 0`;
+#   2. the copy still says `collateral` / `debt` (otherwise the number may be a
+#      volume cap);
+#   3. every campaign's gRPC `type` is in the action-type table — the fetcher
+#      hardcodes `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE` for all of them.
+#
+# Scheduled triggers only fire from the default branch (`main`), so on `railway`
+# this file is dormant until the next promotion. The `push` trigger below is
+# what makes it real in the meantime: it runs when the scraper itself changes,
+# which is exactly when a live re-read is worth the network call.
+on:
+  schedule:
+    # Asks for 05:00 UTC — between the 04:00 security scans and the 06:00
+    # canary. GitHub's schedule queue drifts by hours (see db-backup.yml), so
+    # treat this as "once a day" rather than a clock time.
+    - cron: "0 5 * * *"
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+      - railway
+    paths:
+      - "packages/aave-fetcher/src/brevis-api.ts"
+      - "scripts/brevis-live-check.ts"
+      - ".github/workflows/brevis-live-check.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: brevis-live-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "26"
+          cache: "npm"
+
+      - name: Pin npm (lockfile validated with 11.6.2)
+        run: npm install -g npm@11.6.2
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The check reaches the workspace packages through `@internal/*`, whose
+      # entry points are `dist/`. Without a build a clean checkout has nothing
+      # to import — the same ordering defect that kept test-canary red
+      # (AAV-1376), so it is fixed here by construction.
+      - name: Build workspace packages
+        run: npm run build
+
+      - name: Check the live copy
+        id: check
+        run: npm run check:brevis-live
+
+      - name: Open or update alert issue
+        if: failure()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const title = '⚠️ Brevis live check failing';
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              `The live Brevis check failed at ${new Date().toISOString()}.`,
+              '',
+              `Run: ${runUrl}`,
+              '',
+              'Read the run summary first: the script prints the matched phrase id,',
+              'the marker pair and the first 400 characters of the copy, so the',
+              'failing assertion usually names the word that moved.',
+              '',
+              '- `copy-unavailable` / `cap-not-parsed` / `position-wording-missing`:',
+              '  the frontend copy changed shape. `packages/aave-fetcher/src/brevis-api.ts`',
+              '  owns the candidate tables (`COPY_START_MARKERS`, `COPY_END_MARKERS`,',
+              '  `POSITION_CAP_PATTERNS`); extend them rather than pinning one literal.',
+              '- `unknown-campaign-type`: a new gRPC `campaign.type` appeared. Confirm',
+              '  whether it is an action type or a new reward mechanism before touching',
+              '  the hardcoded `FIX_REWARD_VALUE_PER_LIQUIDITY_VALUE`.',
+              '- `grpc-unreachable`: `incentra-prd.brevis.network` did not answer. This',
+              '  is an upstream outage, not a parse bug — check the incentive pipeline',
+              '  before editing code.',
+              '',
+              'If the failing step is Install or Build instead, this is repo',
+              'infrastructure rather than a Brevis change; the issue is still opened',
+              'because the daily check produced no evidence either way.',
+            ].join('\n');
+
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const existing = open.find((i) => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner, repo, title, body, labels: ['needs-triage'],
+              });
+            }
+
+      - name: Close alert issue on recovery
+        if: success()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const title = '⚠️ Brevis live check failing';
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            for (const issue of open.filter((i) => i.title === title)) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: `✅ Live check passed at ${new Date().toISOString()} — closing.`,
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: issue.number, state: 'closed',
+              });
+            }
