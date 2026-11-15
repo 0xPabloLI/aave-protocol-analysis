@@ -1,6 +1,6 @@
 # AAV-1371 — 所有 `npm ci` 工作流钉死 npm 版本
 
-> **Status: Implemented** — pending push / merge.
+> **Status: Executed** (2026-11-15) — shipped in `de15e0a..a4209eb`; moved to `executed/`.
 
 ## Problem
 
