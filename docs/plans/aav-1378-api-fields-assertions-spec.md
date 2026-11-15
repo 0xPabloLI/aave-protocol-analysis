@@ -1,6 +1,6 @@
 # AAV-1378 — 让 API fields 断言真正可执行、且断言对的语义
 
-> **Status: Implemented, not pushed** — 本地与 staging 各 7/7；待 push + `workflow_dispatch` 补 run 读数。
+> **Status: Done** — 已推 `railway`；canary run `43703021736` 全绿（该 workflow 历史上第一次）。
 
 ## Problem
 
@@ -72,6 +72,11 @@ staging 441 条 reserve 实测分布（2026-11-15 单次抓取）：
 5. **canary 目标对齐**：测试默认打 staging，而 schedule 只在 `main`（= production）上跑。
    `test-canary.yml` 现在按 `GITHUB_REF` 选目标（main → production，其余 → staging），
    否则 railway 先 bump 版本时，周一的 main run 会在完全正确的代码上红。
+6. **失败不再被吞**（本轮实跑时发现）：`run_suite` 返回非零，但脚本没有 `set -e`，
+   只有**最后一个** suite 的返回值决定 step 成败 —— 中间任何套件失败都只写进表格，step
+   照样绿。加 `FAILED` 计数 + 末尾 `exit 1`，并由
+   `backend/tests/testCanaryOrder.test.ts` 静态断言这两点。这和 AAV-1294 / 1349 是同一
+   形状：门在看不见的地方报绿。
 
 ### 为什么不用「按有无 borrow 侧分组算覆盖率」
 
@@ -109,6 +114,13 @@ borrow 侧」，而 API 上唯一的候选判别式 `borrowDisabled` 不成立�
 - `marketsVersionBump.test.ts` 单跑：改前 `ERR_MODULE_NOT_FOUND`，改后 1 pass。
 - backend 全量 `557 pass / 0 fail / 7 skip`；`test:typecheck` 通过；`npm run lint` 0 errors；
   `npm run check:quality` exit 0。
+- **canary 实跑** `43703021736`（`railway` @ `328c70d`）：整 run **success**，10 个 step
+  全绿。套件读数（日志里 `✔` 行数 / `✖` 行数）：shared-contracts 128/0、root 63/0、
+  rpc-infra 49/0、fetcher 482/0、backend 564/0 —— 合计 1286 通过、0 失败。`Build (timed)`
+  与 `Build duration trend` 均 success。
+- 失败吞没的红验证：`run_suite "a" true; run_suite "b" false; run_suite "c" true` 在新脚本
+  下得到 `FAILED=1` → `exit 1`（旧脚本会给绿）；去掉 `exit` 块后静态守卫报
+  `the suites step must exit non-zero when any suite failed`。
 
 ## Out of Scope
 

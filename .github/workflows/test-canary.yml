@@ -80,11 +80,12 @@ jobs:
             echo "| ----- | -------- | ------ |"
           } >> "$SUMMARY"
 
+          FAILED=0
           run_suite() {
             local name="$1"; shift
             local start end status
             start=$(date +%s)
-            if "$@"; then status="✅ pass"; else status="❌ FAIL"; fi
+            if "$@"; then status="✅ pass"; else status="❌ FAIL"; FAILED=$(( FAILED + 1 )); fi
             end=$(date +%s)
             echo "| ${name} | $(( end - start ))s | ${status} |" >> "$SUMMARY"
             [[ "$status" == "✅ pass" ]]
@@ -110,6 +111,16 @@ jobs:
           run_suite "rpc-infra" npm run test -w @internal/aave-rpc-infra
           run_suite "fetcher" npm run test -w @internal/aave-fetcher
           run_suite "backend" npm run test -w aave-dashboard-backend
+
+          # Nothing here runs with `set -e`, so a failing suite in the middle
+          # only returns non-zero into an ignored call site: the step would go
+          # green as long as the last suite passed. Report the count explicitly
+          # (AAV-1378).
+          if (( FAILED > 0 )); then
+            echo "" >> "$SUMMARY"
+            echo "**${FAILED} suite(s) failed.**" >> "$SUMMARY"
+            exit 1
+          fi
 
       - name: Build duration trend
         if: always() && steps.build.outputs.seconds != ''

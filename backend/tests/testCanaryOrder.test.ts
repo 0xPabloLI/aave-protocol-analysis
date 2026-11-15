@@ -399,3 +399,23 @@ test("shared-contracts runs its own tests from src, not from its build output", 
   assert.ok(seen >= 8, `expected the package's test files, found ${seen}`);
   assert.deepEqual(offenders, []);
 });
+
+test("a failing suite fails the step, not just the table row", () => {
+  // `run_suite` returns non-zero, but the script has no `set -e`, so a middle
+  // suite's failure used to be swallowed: only the last call decided whether
+  // the step went green. That is the same "gate reports success while blind"
+  // shape as AAV-1294 / 1349 — and it would have made the first green canary
+  // untrustworthy (AAV-1378).
+  const text = readFileSync(CANARY, "utf-8");
+
+  assert.match(
+    text,
+    /FAILED=\$\(\( FAILED \+ 1 \)\)/,
+    "run_suite must count failures instead of returning them into an ignored call site"
+  );
+  assert.match(
+    text,
+    /if \(\( FAILED > 0 \)\);\s*then[\s\S]*?exit 1/,
+    "the suites step must exit non-zero when any suite failed"
+  );
+});
