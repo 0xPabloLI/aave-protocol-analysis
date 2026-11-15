@@ -117,13 +117,12 @@ SESSION-BOARD.md
 
 .arts/
 
-# MCP config (contains sensitive tokens)
-.trae/mcp.json
+# Trae IDE local config (MCP tokens, skills); backups of mcp.json included
+.trae/
 
 # Agent config directories (local tools, not part of the project)
 .claude/
 .workbuddy/
-.trae/skills
 .cursor/skills
 
 # Git worktrees
