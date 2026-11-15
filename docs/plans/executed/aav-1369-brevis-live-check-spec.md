@@ -1,6 +1,6 @@
 # AAV-1369 — Brevis campaign copy / cap 的 live 检查
 
-> **Status: Active** — 实现完成，待真 run 证据。
+> **Status: Executed** (2026-11-15) — 实现完成，首个 push 触发的真实 run `43714899540` 全绿。
 
 ## 问题
 
@@ -50,8 +50,21 @@ minified `_app` chunk 里刮出来的。AAV-1365 已经把「单条正则 + 两�
 
 ### 实网（2026-11-15）
 
-经代理跑通完整链路（本机 Node 的 DNS 解析不到 `incentra-prd.brevis.network`，
-用 `undici` ProxyAgent 绕开；见「残余风险」）：
+**GitHub Actions run `43714899540`（push 触发，`railway`）—— 整 run success，8 个 step 全绿：**
+
+```
+- positionCap: 5000 (pattern p1)
+- markers: Eligible MetaMask → per user."
+- protocols: 1, campaigns: 1
+- campaign.type: 3001×1
+
+✅ All assertions passed.
+```
+
+「Open or update alert issue」按设计 skipped、「Close alert issue on recovery」执行（无 open issue，空转）。
+这一跑同时证伪了本机那条 DNS 限制的普适性：**GitHub runner 能解析 `incentra-prd.brevis.network`**。
+
+本机经代理跑通完整链路（本机 Node 的 DNS 解析不到该 gRPC 主机，用 `undici` ProxyAgent 绕开）：
 
 ```
 - positionCap: 5000 (pattern p1)
@@ -105,12 +118,20 @@ minified `_app` chunk 里刮出来的。AAV-1365 已经把「单条正则 + 两�
    定时才真正生效。
 2. **本机 Node 解析不到 `incentra-prd.brevis.network`**（`dig` 能解析、`getaddrinfo` 不能，
    `curl --resolve` 到 34.212.219.119 返回 404 = 主机本身是活的）。因此本机直连跑必然红在
-   `grpc-unreachable`；GitHub runner 上预期正常。**若 runner 也解析不到，这条检查会持续红**，
-   那是上游/网络事实，不应靠放宽断言消掉。
-3. **未知 `campaign.type` 的语义仍需人工判断**：它可能是新的 action type，也可能是新机制。
+   `grpc-unreachable`；**GitHub runner 已实测可解析**（run `43714899540` 全绿）。这条限制只影响
+   本机复现，不构成 CI 风险，也不该靠放宽断言绕开。
+3. **失败分支的告警/恢复逻辑从未真的执行过。** 首个 run 是绿的，所以
+   「Open or update alert issue」与「Close alert issue on recovery」两段 github-script 只有语法
+   校验（`new AsyncFunction(script)`）与形状守卫，没有运行时证据。它与 `uptime-alert.yml` 同形
+   （按 title 去重、只加 `needs-triage`），但「第一次真用就是真故障」仍是本仓的老问题
+   （对照 AAV-1295 的回滚 mutation）。失败路径的**脚本侧**已验证：直连跑时 `exit 1` +
+   `grpc-unreachable` 是实测输出。
+4. **未知 `campaign.type` 的语义仍需人工判断**：它可能是新的 action type，也可能是新机制。
    检查只负责把它变成红灯，不替人下结论。
-4. **报告只截 400 字文案。** 定位够用，但不构成完整的文案存档。
-5. **`campaignType` 硬编码仍未改。** 本票只加检查，不动数据模型。
+5. **报告只截 400 字文案。** 定位够用，但不构成完整的文案存档。
+6. **`campaignType` 硬编码仍未改。** 本票只加检查，不动数据模型。
+7. **「Aave protocol 从列表里消失」会被读成零 campaign**，按设计不失败（只打印计数）。
+   当前 Brevis 只有 1 个 Aave protocol（Linea），这个区分做不出来。
 
 ## Out of scope
 
