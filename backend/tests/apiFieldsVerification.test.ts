@@ -17,8 +17,15 @@ const OLD_FIELD_NAMES = [
 
 /**
  * Present on every reserve: the supply side plus the protocol-level parameters
- * that come from `supplyInfo` / the market itself. None of these depend on
- * `borrowInfo` existing, so a reserve missing one is a real hole.
+ * every market must be able to describe.
+ *
+ * `supplied` / `supplyCap` / `ltv` / `liquidationThreshold` come from
+ * `supplyInfo` and the market itself. `baseBorrowRate` does not: on V3 it is
+ * filled by `marketsService` from the SDK, then an on-chain read, then a
+ * fallback derived from the borrow fields; on V4 it comes from the hub's
+ * `settings`. It belongs here because a reserve without a rate model cannot be
+ * priced at all, but a failure here points at RPC coverage, not at supply
+ * serialisation — check `marketsService` first.
  *
  * `supplyApy` is deliberately absent: it is `undefined` when supply is disabled
  * or the market reports a zero cap, and both are legitimate.
@@ -32,11 +39,17 @@ const ALWAYS_PRESENT = [
 ] as const;
 
 /**
- * Every one of these is read from `reserve.borrowInfo` in
- * `packages/aave-fetcher/src/concurrent-fetch.ts`. They are all-or-nothing: the
- * SDK either returns a borrow side or it returns `borrowInfo: null` (a reserve
- * whose borrowing was switched off), and the fetcher does not synthesise a
- * partial block. A half-populated block means the field mapping drifted.
+ * The borrow side. A reserve either has all of these or none of them — the
+ * frontend reads them as one block, and a half-populated block is a mapping
+ * bug, not a market shape.
+ *
+ * On V3 they all come from `reserve.borrowInfo` in
+ * `packages/aave-fetcher/src/concurrent-fetch.ts`. On V4 they are assembled
+ * from two independent sources: the per-spoke summary (`borrowApy`, `borrowed`)
+ * and the hub summary/settings (`liquidity`, `utilizationPct`, the slopes,
+ * `optimalUtilization`, `borrowCap`). The all-or-nothing rule still applies to
+ * both, but on V4 a partial block can also mean one of the two sources came
+ * back empty.
  *
  * `protocolFee` is not in this list on purpose — see ABSENT_MEANS_ZERO.
  */
@@ -60,6 +73,18 @@ const BORROW_SIDE = [
  */
 const ABSENT_MEANS_ZERO = "protocolFee";
 
+/**
+ * How many reserves are allowed to have no borrow side at all.
+ *
+ * Measured on the 2026-11-15 staging snapshot: 19 of 441 (14 on Ethereum plus
+ * one each on Arbitrum / Avalanche / Linea / Optimism / Polygon), all V3, all
+ * with `borrowInfo: null` on the SDK side. Raising this number means a reserve
+ * that used to have a borrow side lost it — confirm with the protocol state
+ * before touching it, because that is exactly the data gap this guards against.
+ * A lower number is fine: the block came back.
+ */
+const KNOWN_BORROW_SIDE_ABSENT = 19;
+
 interface MarketsResponse {
   snapshot: { version: string };
   reserves: Array<Record<string, unknown>>;
@@ -72,9 +97,9 @@ const API_URL =
 let snapshot: MarketsResponse | null | undefined;
 
 /**
- * One fetch per run, shared by every assertion: five independent requests can
- * land on different snapshots (reserves are added and removed between them) and
- * a staging hiccup on one of them used to fail only the assertions after it.
+ * One fetch per run, shared by every assertion: independent requests can land
+ * on different snapshots (reserves are added and removed between them), and a
+ * staging hiccup on one of them used to fail only the assertions after it.
  */
 function markets(): MarketsResponse | null {
   if (snapshot === undefined) {
@@ -96,8 +121,18 @@ function fetchMarkets(): MarketsResponse | null {
   }
 }
 
+/** `in` alone would count an explicit `null` as present. */
+function present(reserve: Record<string, unknown>, field: string): boolean {
+  const value = reserve[field];
+  return value !== undefined && value !== null;
+}
+
 function reserveLabel(reserve: Record<string, unknown>): string {
   return String(reserve.reserveId ?? "<no reserveId>");
+}
+
+function hasBorrowSide(reserve: Record<string, unknown>): boolean {
+  return BORROW_SIDE.some((field) => present(reserve, field));
 }
 
 test(
@@ -151,7 +186,7 @@ test(
 );
 
 test(
-  "API fields v3 — supply-side fields are present on every reserve",
+  "API fields v3 — always-present fields are on every reserve",
   { skip: !process.env.RUN_API_FIELDS_TESTS },
   () => {
     const data = markets();
@@ -163,7 +198,7 @@ test(
     const missing: string[] = [];
     for (const reserve of data.reserves) {
       for (const field of ALWAYS_PRESENT) {
-        if (!(field in reserve)) {
+        if (!present(reserve, field)) {
           missing.push(`${reserveLabel(reserve)}:${field}`);
         }
       }
@@ -172,7 +207,7 @@ test(
     assert.deepEqual(
       missing,
       [],
-      `${missing.length} missing supply-side field(s) out of ${data.reserves.length} reserves: ${missing.slice(0, 10).join(", ")}`
+      `${missing.length} missing field(s) out of ${data.reserves.length} reserves: ${missing.slice(0, 10).join(", ")}. Note baseBorrowRate is filled by an on-chain fallback — check RPC coverage before the serialiser.`
     );
   }
 );
@@ -188,26 +223,31 @@ test(
 
     const partial: string[] = [];
     for (const reserve of data.reserves) {
-      const present = BORROW_SIDE.filter((field) => field in reserve);
-      if (present.length === 0 || present.length === BORROW_SIDE.length) {
+      const presentFields = BORROW_SIDE.filter((field) =>
+        present(reserve, field)
+      );
+      if (
+        presentFields.length === 0 ||
+        presentFields.length === BORROW_SIDE.length
+      ) {
         continue;
       }
-      const absent = BORROW_SIDE.filter((field) => !(field in reserve));
+      const absent = BORROW_SIDE.filter((field) => !present(reserve, field));
       partial.push(
-        `${reserveLabel(reserve)} has ${present.length}/${BORROW_SIDE.length}, missing [${absent.join(", ")}]`
+        `${reserveLabel(reserve)} has ${presentFields.length}/${BORROW_SIDE.length}, missing [${absent.join(", ")}]`
       );
     }
 
     assert.deepEqual(
       partial,
       [],
-      `Borrow side is partially populated on ${partial.length} reserve(s); the fetcher must emit the block whole or not at all: ${partial.slice(0, 10).join("; ")}`
+      `Borrow side is partially populated on ${partial.length} reserve(s); the block must be emitted whole or not at all: ${partial.slice(0, 10).join("; ")}`
     );
   }
 );
 
 test(
-  "API fields v3 — a reserve with no borrow side is disabled, frozen, paused or inactive",
+  "API fields v3 — no new reserve silently loses its borrow side",
   { skip: !process.env.RUN_API_FIELDS_TESTS },
   () => {
     const data = markets();
@@ -215,24 +255,19 @@ test(
       assert.fail(`Could not fetch API at ${API_URL}`);
     }
 
-    const unexplained: string[] = [];
-    for (const reserve of data.reserves) {
-      if (BORROW_SIDE.some((field) => field in reserve)) continue;
+    // Deliberately not filtering on `borrowDisabled`: on V3 that flag is derived
+    // from `borrowInfo === null` (concurrent-fetch.ts), so using it to explain a
+    // missing block would just restate the observation. 124 of the 441 staging
+    // reserves have a complete borrow side *and* `borrowDisabled: true`, so the
+    // flag cannot tell the two situations apart either. Count them instead.
+    const absent = data.reserves.filter((reserve) => !hasBorrowSide(reserve));
 
-      const explained =
-        reserve.borrowDisabled === true ||
-        reserve.isFrozen === true ||
-        reserve.isPaused === true ||
-        reserve.isActive === false;
-      if (!explained) {
-        unexplained.push(reserveLabel(reserve));
-      }
-    }
-
-    assert.deepEqual(
-      unexplained,
-      [],
-      `${unexplained.length} reserve(s) have no borrow side without a protocol flag explaining it — that is a data gap, not a market shape: ${unexplained.slice(0, 10).join(", ")}`
+    assert.ok(
+      absent.length <= KNOWN_BORROW_SIDE_ABSENT,
+      `${absent.length} reserve(s) have no borrow side, up from the recorded ${KNOWN_BORROW_SIDE_ABSENT}. Either the protocol disabled borrowing on a new market — then raise the baseline — or the fetcher dropped a block that used to be there: ${absent
+        .slice(0, 10)
+        .map(reserveLabel)
+        .join(", ")}`
     );
   }
 );
@@ -248,7 +283,7 @@ test(
 
     const invalid: string[] = [];
     for (const reserve of data.reserves) {
-      if (!(ABSENT_MEANS_ZERO in reserve)) continue;
+      if (!present(reserve, ABSENT_MEANS_ZERO)) continue;
       const fee = reserve[ABSENT_MEANS_ZERO];
       if (
         typeof fee !== "number" ||
@@ -268,12 +303,14 @@ test(
   }
 );
 
-test("API fields v3 — the version assertion does not hardcode a version", () => {
+test("API fields v3 — this file does not spell a version literal", () => {
   // A literal survives renames: the old assertion kept spelling the previous
-  // name and stayed red for as long as nobody ran it. Any hardcoded version in
-  // this file now fails here, so the constant is the only way to spell it.
+  // name and stayed red for as long as nobody ran it. Any quoted slug-vN token
+  // fails here, so reading MARKETS_API_VERSION is the only way to name the
+  // version. Scope is this file only — marketsVersionBump.test.ts pins the
+  // literal on purpose, so a bump has to touch it.
   const source = readFileSync(fileURLToPath(import.meta.url), "utf-8");
-  const hardcodedVersion = /["'](?:markets|snapshot)-v\d+["']/;
+  const hardcodedVersion = /["'`][a-z][a-z-]*-v\d+["'`]/;
 
   assert.ok(
     !hardcodedVersion.test(source),

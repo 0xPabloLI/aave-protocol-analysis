@@ -93,6 +93,18 @@ jobs:
           RUN_API_FIELDS_TESTS=true
           export RUN_API_FIELDS_TESTS
 
+          # The API-fields assertions compare MARKETS_API_VERSION against the
+          # deployed snapshot. Point them at the deployment this ref produces:
+          # the schedule runs on `main` (= production), while every other ref
+          # here is `railway` (= staging). The test defaults to staging, so a
+          # version bump that reaches railway first would otherwise turn the
+          # weekly main run red on correct code (AAV-1378).
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            export API_FIELDS_TEST_URL="https://api.aaveapy.com/api/markets"
+          else
+            export API_FIELDS_TEST_URL="https://staging-api.aaveapy.com/api/markets"
+          fi
+
           run_suite "shared-contracts" npm run test -w @internal/aave-shared-contracts
           run_suite "root" npm test
           run_suite "rpc-infra" npm run test -w @internal/aave-rpc-infra

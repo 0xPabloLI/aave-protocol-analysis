@@ -22,9 +22,6 @@ import {
 } from "../types/index.js";
 import { logger } from "../logger.js";
 
-/** API version — bumped when breaking changes (field renames) are introduced. */
-export { MARKETS_API_VERSION };
-
 /**
  * GET /api/markets
  * Returns all markets data from the in-memory snapshot.
