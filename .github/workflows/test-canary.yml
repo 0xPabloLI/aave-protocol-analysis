@@ -41,9 +41,8 @@ jobs:
           node-version: "26"
           cache: "npm"
 
-      # Same pin as ci.yml and the Dockerfile: the lockfile is only valid for
-      # the npm version that generated it, and a canary that validates it with a
-      # different npm reports a fake flaky instead of a real signal.
+      # Same pin as ci.yml and the Dockerfile — enforced by
+      # backend/tests/workflowNpmPins.test.ts.
       - name: Pin npm (lockfile validated with 11.6.2)
         run: npm install -g npm@11.6.2
 

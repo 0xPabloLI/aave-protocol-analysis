@@ -9,28 +9,73 @@ const ROOT = resolve(__dirname, "..", "..");
 const WORKFLOWS = resolve(ROOT, ".github", "workflows");
 const DOCKERFILE = resolve(ROOT, "Dockerfile");
 
-const NPM_PIN = /npm\s+install\s+-g\s+npm@(\d+\.\d+\.\d+)/;
-const NPM_CI = /\bnpm\s+ci\b/;
+const NPM_PIN = /npm install -g npm@(\d+\.\d+\.\d+)/;
+const NPM_INSTALL = /^(?:sfw\s+)?npm (?:ci|run ci)\b/;
 
-interface Job {
+interface Scope {
+  label: string;
   name: string;
   start: number;
   end: number;
 }
 
 export interface NpmPinScan {
+  jobs: number;
   ciSteps: number;
   problems: string[];
 }
 
-/** Split `jobs:` into 2-space-indented job blocks, with 0-based line bounds. */
-function jobsIn(yaml: string): Job[] {
+/**
+ * The command a YAML/Dockerfile line runs, stripped of the wrapper syntax that
+ * is not part of the command. Anchoring on this is what keeps prose such as
+ * `echo '... npm ci ...'` or `- name: npm install -g npm@...` from satisfying
+ * (or violating) the rule without running anything.
+ */
+function commandOf(line: string): string {
+  let text = line.trim().replace(/^-\s*/, "");
+  text = text.replace(/^run:\s*/, "").replace(/^RUN\s+/, "");
+  while (/^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/.test(text)) {
+    text = text.replace(/^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/, "");
+  }
+  return text;
+}
+
+function scanScope(scope: Scope, lines: string[]): NpmPinScan {
+  let ciSteps = 0;
+  let pinnedEarlier = false;
+  const problems: string[] = [];
+
+  for (let i = scope.start; i < scope.end; i += 1) {
+    const line = lines[i];
+    if (line.trim() === "" || /^\s*#/.test(line)) continue;
+
+    const command = commandOf(line);
+    if (!command) continue;
+
+    // Check the install before recording a pin on the same line: a pin that
+    // appears after `npm ci` in the same command is not an earlier pin.
+    if (NPM_INSTALL.test(command)) {
+      ciSteps += 1;
+      if (!pinnedEarlier) {
+        problems.push(
+          `${scope.label}:${i + 1}  npm ci in ${scope.name} has no earlier npm version pin`
+        );
+      }
+    }
+    if (NPM_PIN.test(command)) pinnedEarlier = true;
+  }
+
+  return { jobs: 1, ciSteps, problems };
+}
+
+/** Split the `jobs:` mapping into 2-space-indented job blocks. */
+function jobsIn(yaml: string): Scope[] {
   const lines = yaml.split("\n");
   const jobsAt = lines.findIndex((line) => /^jobs:\s*$/.test(line));
   if (jobsAt === -1) return [];
 
-  const jobs: Job[] = [];
-  let current: Omit<Job, "end"> | null = null;
+  const jobs: Scope[] = [];
+  let current: { name: string; start: number } | null = null;
 
   for (let i = jobsAt + 1; i < lines.length; i += 1) {
     const line = lines[i];
@@ -38,14 +83,29 @@ function jobsIn(yaml: string): Job[] {
     // A new top-level key ends the jobs mapping.
     if (/^\S/.test(line)) break;
 
-    const job = line.match(/^ {2}([A-Za-z0-9_-]+):\s*$/);
+    // Allow an inline comment: `canary: # weekly` is still a job header, and
+    // dropping it would silently skip every install inside that job.
+    const job = line.match(/^ {2}(["']?)([A-Za-z0-9_-]+)\1:\s*(?:#.*)?$/);
     if (!job) continue;
 
-    if (current) jobs.push({ ...current, end: i });
-    current = { name: job[1], start: i };
+    if (current)
+      jobs.push({
+        label: "",
+        name: current.name,
+        start: current.start,
+        end: i,
+      });
+    current = { name: job[2], start: i };
   }
 
-  if (current) jobs.push({ ...current, end: lines.length });
+  if (current) {
+    jobs.push({
+      label: "",
+      name: current.name,
+      start: current.start,
+      end: lines.length,
+    });
+  }
   return jobs;
 }
 
@@ -56,27 +116,20 @@ function jobsIn(yaml: string): Job[] {
  */
 export function scanWorkflowNpmPins(label: string, yaml: string): NpmPinScan {
   const lines = yaml.split("\n");
-  const problems: string[] = [];
-  let ciSteps = 0;
+  const scopes = jobsIn(yaml).map((scope) => ({ ...scope, label }));
+  const scans = scopes.map((scope) => scanScope(scope, lines));
 
-  for (const job of jobsIn(yaml)) {
-    let pinned = false;
-    for (let i = job.start; i < job.end; i += 1) {
-      const line = lines[i];
-      if (/^\s*#/.test(line)) continue;
-      if (NPM_PIN.test(line)) pinned = true;
-      if (!NPM_CI.test(line)) continue;
+  return {
+    jobs: scopes.length,
+    ciSteps: scans.reduce((sum, scan) => sum + scan.ciSteps, 0),
+    problems: scans.flatMap((scan) => scan.problems),
+  };
+}
 
-      ciSteps += 1;
-      if (!pinned) {
-        problems.push(
-          `${label}:${i + 1}  npm ci in job "${job.name}" has no earlier npm version pin`
-        );
-      }
-    }
-  }
-
-  return { ciSteps, problems };
+/** Same rule for a single-scope file (the Dockerfile). */
+export function scanDockerfileNpmPins(label: string, text: string): NpmPinScan {
+  const lines = text.split("\n");
+  return scanScope({ label, name: "file", start: 0, end: lines.length }, lines);
 }
 
 /** All npm pins in the given sources, or one problem per pin when they disagree. */
@@ -87,7 +140,8 @@ export function npmVersionDrift(
 
   for (const source of sources) {
     source.text.split("\n").forEach((line, index) => {
-      const pin = line.match(NPM_PIN);
+      if (/^\s*#/.test(line)) return;
+      const pin = commandOf(line).match(NPM_PIN);
       if (pin)
         found.push({ label: source.label, line: index + 1, version: pin[1] });
     });
@@ -112,14 +166,40 @@ function readWorkflow(file: string): string {
   return readFileSync(resolve(WORKFLOWS, file), "utf8");
 }
 
+/**
+ * Independent count of job headers: every 2-space-indented, non-comment line
+ * inside the `jobs:` block. Job properties live at 4 spaces, so anything at 2
+ * is a job key. Used to prove the parser did not silently drop a job.
+ */
+function jobHeaderCount(yaml: string): number {
+  const lines = yaml.split("\n");
+  const jobsAt = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+  if (jobsAt === -1) return 0;
+
+  let count = 0;
+  for (let i = jobsAt + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (line.trim() === "" || /^\s*#/.test(line)) continue;
+    if (/^\S/.test(line)) break;
+    if (/^ {2}[^\s#]/.test(line)) count += 1;
+  }
+  return count;
+}
+
 test("every npm ci in .github/workflows is preceded by an npm pin in the same job", () => {
   const problems: string[] = [];
   let ciSteps = 0;
 
   for (const file of workflowFiles()) {
-    const scan = scanWorkflowNpmPins(file, readWorkflow(file));
+    const yaml = readWorkflow(file);
+    const scan = scanWorkflowNpmPins(file, yaml);
     ciSteps += scan.ciSteps;
     problems.push(...scan.problems);
+    assert.equal(
+      scan.jobs,
+      jobHeaderCount(yaml),
+      `${file}: parsed ${scan.jobs} jobs, but the file has ${jobHeaderCount(yaml)} job headers`
+    );
   }
 
   // Guard the guard: an empty scan would make the assertion below vacuously true.
@@ -128,6 +208,22 @@ test("every npm ci in .github/workflows is preceded by an npm pin in the same jo
     problems,
     [],
     `npm ci steps without a pin in the same job:\n${problems.join("\n")}`
+  );
+});
+
+test("the Dockerfile pins npm before every install", () => {
+  const scan = scanDockerfileNpmPins(
+    "Dockerfile",
+    readFileSync(DOCKERFILE, "utf8")
+  );
+  assert.ok(
+    scan.ciSteps >= 2,
+    `expected at least 2 Dockerfile installs, found ${scan.ciSteps}`
+  );
+  assert.deepEqual(
+    scan.problems,
+    [],
+    `Dockerfile installs without a pin:\n${scan.problems.join("\n")}`
   );
 });
 
@@ -161,14 +257,32 @@ test("pin scan is job-scoped and ignores prose", () => {
       problems: 0,
     },
     {
+      name: "bare npm ci without a pin",
+      yaml: "jobs:\n  canary:\n    steps:\n      - run: npm ci\n",
+      ciSteps: 1,
+      problems: 1,
+    },
+    {
       name: "pin after npm ci",
       yaml: "jobs:\n  canary:\n    steps:\n      - run: npm ci\n      - run: npm install -g npm@11.6.2\n",
       ciSteps: 1,
       problems: 1,
     },
     {
-      name: "pin only in a sibling job",
+      name: "pin in another job",
       yaml: "jobs:\n  a:\n    steps:\n      - run: npm install -g npm@11.6.2\n  b:\n    steps:\n      - run: npm ci\n",
+      ciSteps: 1,
+      problems: 1,
+    },
+    {
+      name: "job header with an inline comment",
+      yaml: "jobs:\n  canary: # weekly\n    steps:\n      - run: npm ci\n",
+      ciSteps: 1,
+      problems: 1,
+    },
+    {
+      name: "quoted job header",
+      yaml: 'jobs:\n  "canary":\n    steps:\n      - run: npm ci\n',
       ciSteps: 1,
       problems: 1,
     },
@@ -185,8 +299,20 @@ test("pin scan is job-scoped and ignores prose", () => {
       problems: 1,
     },
     {
+      name: "npm run ci installs too",
+      yaml: "jobs:\n  build:\n    steps:\n      - run: npm run ci\n",
+      ciSteps: 1,
+      problems: 1,
+    },
+    {
       name: "comment mentioning npm ci",
       yaml: "jobs:\n  canary:\n    steps:\n      # npm ci used to run here\n      - run: echo ok\n",
+      ciSteps: 0,
+      problems: 0,
+    },
+    {
+      name: "echo containing npm ci",
+      yaml: "jobs:\n  canary:\n    steps:\n      - run: echo 'npm ci failed'\n",
       ciSteps: 0,
       problems: 0,
     },
@@ -217,6 +343,16 @@ test("pin scan is job-scoped and ignores prose", () => {
       `${fixture.name}: problem count`
     );
   }
+});
+
+test("dockerfile scan requires a pin before every install", () => {
+  const withPin = "RUN npm install -g npm@11.6.2\nRUN HUSKY=0 npm ci\n";
+  assert.deepEqual(scanDockerfileNpmPins("Dockerfile", withPin).problems, []);
+
+  const withoutPin = "RUN HUSKY=0 npm ci\n";
+  const scan = scanDockerfileNpmPins("Dockerfile", withoutPin);
+  assert.equal(scan.ciSteps, 1);
+  assert.equal(scan.problems.length, 1);
 });
 
 test("version drift is reported with every source", () => {
