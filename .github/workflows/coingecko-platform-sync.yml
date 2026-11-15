@@ -26,6 +26,11 @@ jobs:
           node-version: "26"
           cache: "npm"
 
+      # Same pin as ci.yml and the Dockerfile: the lockfile is only valid for
+      # the npm version that generated it.
+      - name: Pin npm (lockfile validated with 11.6.2)
+        run: npm install -g npm@11.6.2
+
       - name: Install dependencies
         run: npm ci
 
