@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import {
   EXPECTED_RUNTIME_FIELDS,
   validateRuntimeReserveShape,
-} from "../dist/index.js";
+} from "../src/index.js";
 
 describe("EXPECTED_RUNTIME_FIELDS", () => {
   it("should contain all required fields", () => {

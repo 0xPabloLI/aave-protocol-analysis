@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { NetPositionConstraint } from "../dist/index.js";
+import type { NetPositionConstraint } from "../src/index.js";
 
 describe("NetPositionConstraint", () => {
   it("should be importable from @internal/aave-shared-contracts", () => {

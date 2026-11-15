@@ -51,6 +51,24 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
+      # Suites consume the workspace packages through their `exports` field,
+      # which resolves to `dist/` — so the build has to happen first. This used
+      # to run after the suites ("a timing change can never alter what the
+      # suites see"), which in a clean checkout meant the suites saw no build
+      # output at all and the canary never once went green (AAV-1376).
+      # The step is not `continue-on-error`: a broken build is the failure to
+      # report, and letting the suites run on top of it only muddies the cause.
+      # `backend/tests/testCanaryOrder.test.ts` fails if this moves back down.
+      - name: Build (timed)
+        id: build
+        shell: bash
+        run: |
+          start=$(date +%s)
+          npm run build
+          end=$(date +%s)
+          echo "seconds=$(( end - start ))" >> "$GITHUB_OUTPUT"
+          echo "Build stage: $(( end - start ))s" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run full suites with duration tracking
         shell: bash
         run: |
@@ -80,21 +98,6 @@ jobs:
           run_suite "rpc-infra" npm run test -w @internal/aave-rpc-infra
           run_suite "fetcher" npm run test -w @internal/aave-fetcher
           run_suite "backend" npm run test -w aave-dashboard-backend
-
-      # Deliberately after the suites: keeps this addition strictly additive to
-      # the existing test execution, so a timing change can never alter what the
-      # suites see. `always()` still yields a sample when a suite already failed.
-      - name: Build (timed)
-        id: build
-        if: always()
-        shell: bash
-        continue-on-error: true
-        run: |
-          start=$(date +%s)
-          npm run build
-          end=$(date +%s)
-          echo "seconds=$(( end - start ))" >> "$GITHUB_OUTPUT"
-          echo "Build stage: $(( end - start ))s" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build duration trend
         if: always() && steps.build.outputs.seconds != ''

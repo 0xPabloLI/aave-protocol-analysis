@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { CrossAssetPairing } from "../dist/index.js";
+import type { CrossAssetPairing } from "../src/index.js";
 
 describe("CrossAssetPairing", () => {
   it("should be importable from @internal/aave-shared-contracts", () => {
