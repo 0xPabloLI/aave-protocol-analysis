@@ -24,33 +24,53 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
    - `deployment-smoke-test.yml` runs after Railway reports a successful deploy.
      On a failed check the `rollback` job selects the newest **release**
      deployment (`meta.reason: "deploy"`) whose commit is **not** the current
-     head, calls Railway's `deploymentRollback` mutation, and opens a
+     head, calls Railway's `deploymentRedeploy(targetId)` mutation, and opens a
      `smoke-test-failure` issue. `redeploy`/`rollback` deployments are recovery
-     copies and are never targets: on 2026-11-16 a release rollback served in
-     10m43s while rollbacks to copies exceeded 20 and 30 minutes.
+     copies and are never targets: recovering to one is redundant and can point
+     at the head's own commit.
    - **Production is gated.** The mutation runs only when the repository
      variable `RAILWAY_PRODUCTION_ROLLBACK_ENABLED` is exactly `true`
      (case-sensitive; padded values stay gated); staging is never gated. If the
      issue title says `auto-rollback GATED (manual action required)`, nothing
      was rolled back. Triage the failing commit and either revert-and-push or
-     run the manual mutation below. Do not flip the variable just to clear an
-     incident — it exists to make the first production rollback deliberate.
+     run the manual `deploymentRedeploy` below. Do not flip the variable just to
+     clear an incident — it exists to make the first production rollback
+     deliberate.
    - If the issue says the rollback succeeded, confirm the live commit after
      the ~3 min warm-up:
      `curl -s https://api.aaveapy.com/health | jq -r .commitSha` (or
      `https://staging-api.aaveapy.com/health`).
-   - If the rollback itself failed, the run log contains the Railway response.
+   - If the recovery itself failed, the run log contains the Railway response.
      Retry the same mutation manually (take the deployment ID from the run's
      "Rollback plan" line):
      ```bash
      curl -sS https://backboard.railway.com/graphql/v2 \
        -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
        -H "Content-Type: application/json" \
-       -d '{"query":"mutation($id: String!) { deploymentRollback(id: $id) }","variables":{"id":"<deployment-id>"}}'
+       -d '{"query":"mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }","variables":{"id":"<deployment-id>"}}'
      ```
-     `deploymentRollback` returns `true` on success. To restore a specific head
-     deployment after a drill, use the same shape with
-     `mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }`.
+     `deploymentRedeploy` returns the new deployment object; poll `/health` until
+     `commitSha` matches the target commit (40–72 seconds on 2026-11-16).
+   - **Manual `deploymentRollback` experiment (not the auto path).** It returns
+     `true`, but on 2026-11-16 four real runs took 10m43s at best and over
+     30 minutes in three of four, with `/health` empty throughout. Only run it
+     when you can accept an outage of that length and have the current head ID
+     ready for the recovery:
+     ```bash
+     # 1) roll back to a target deployment (removes the serving deployment)
+     curl -sS https://backboard.railway.com/graphql/v2 \
+       -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{"query":"mutation($id: String!) { deploymentRollback(id: $id) }","variables":{"id":"<target-id>"}}'
+     # 2) if /health does not reach the target commit, restore the head
+     curl -sS https://backboard.railway.com/graphql/v2 \
+       -H "Authorization: Bearer $RAILWAY_API_TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{"query":"mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }","variables":{"id":"<head-id>"}}'
+     ```
+     Do not use it for production recovery unless the platform rollout has been
+     re-tested. The workflow deliberately does not call it (a static test
+     enforces that).
    - If the head is itself a rollback deployment (`meta.reason: "rollback"`),
      the target selector fails closed with `head-is-rollback`; it also fails
      closed with `no-release-deployment` when only recovery copies remain, and
@@ -66,9 +86,9 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
      "Validate drill request" before any mutation.
    - The run summary records head/target deployment IDs and commits, the
      selection reason, the gate state, and every step outcome. Keep the run URL
-     and the `deploymentRollback` response with the delivery evidence. The
-     health waits allow 30 minutes: a release rollback served in 10m43s, while
-     rollbacks to `redeploy` copies exceeded 20 and 30 minutes on 2026-11-16.
+     and the `deploymentRedeploy` response with the delivery evidence. The
+     health waits allow 5 minutes; redeploys served in 40–72 seconds on
+     2026-11-16.
 7. **Escalate** — pushing a revert commit is still the normal recovery when the
    auto-rollback is gated or unavailable. `railway redeploy --service aave-protocol-analysis --from-source -y`
    is **not** a rollback: `--from-source` deploys the newest commit of the

@@ -132,10 +132,11 @@ export function selectRailwayRollbackTarget(targetEnvironment, secrets) {
  *
  * Only a release deployment (`meta.reason === "deploy"`) is a rollback target.
  * `redeploy` and `rollback` deployments are recovery copies of an earlier
- * release: rolling back to one is redundant, and on 2026-11-16 rollbacks to
- * such copies took over 20 and over 30 minutes to serve, while a rollback to a
- * release served in 10m43s. A release whose commit equals the head's commit is
- * also skipped — it cannot change what is served.
+ * release: rolling back to one is redundant, and it can point at the head's own
+ * commit. (The workflow recovers with `deploymentRedeploy` rather than
+ * `deploymentRollback`; see the workflow for the 2026-11-16 latency evidence.)
+ * A release whose commit equals the head's commit is also skipped — it cannot
+ * change what is served.
  *
  * `edges` are passed straight from the GraphQL response; malformed shapes are
  * treated as "no deployments" so a bad response can never select arbitrarily.

@@ -441,8 +441,8 @@ test("selectRollbackCandidate: a newer redeploy or rollback deployment is not a 
   // Captured after the third staging drill. The head is the restore redeploy,
   // then the drill's rollback, the deploy that the restore copied, another
   // redeploy, the second drill's rollback, and the last real release.
-  // Rolling back to a recovery artifact took over 20 and over 30 minutes to
-  // serve on 2026-11-16; the release target took 10m43s.
+  // Recovery copies are redundant rollback targets and can point at the
+  // head's own commit; only the release `b6a3be43` is selected.
   const plan = selectRollbackCandidate([
     {
       node: {

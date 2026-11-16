@@ -10,7 +10,9 @@
  *   2. the production gate must be evaluated before the mutation;
  *   3. the failure issue must carry the gate state, not silently report "skipped";
  *   4. execute mode must be staging-only and require an explicit confirmation;
- *   5. the drill must restore the head deployment after a real rollback.
+ *   5. the drill must restore the head deployment after a real rollback;
+ *   6. recovery uses `deploymentRedeploy`, because every `deploymentRollback`
+ *      on 2026-11-16 left the service down for 10m43s or longer.
  *
  * Behaviour tests live in `tests/deploymentSmokeTest.test.ts`; this file only
  * reads the YAML text so a future edit cannot reorder or drop a guard.
@@ -97,15 +99,28 @@ test("workflow: concurrency is keyed by deployment id, not environment", () => {
   );
 });
 
-test("rollback: the production gate is evaluated before the mutation", () => {
+test("rollback: the workflow never calls deploymentRollback", () => {
+  const workflow = readWorkflow();
+
+  assert.ok(
+    !workflow.includes("mutation($id: String!) { deploymentRollback"),
+    "deploymentRollback never served within 30 minutes on 2026-11-16; keep it in the runbook, not the automated path"
+  );
+  assert.ok(
+    !workflow.includes(".data.deploymentRollback"),
+    "no workflow step may read a deploymentRollback response"
+  );
+});
+
+test("rollback: the production gate is evaluated before the recovery mutation", () => {
   const rollback = jobBlock(readWorkflow(), "rollback");
   const mutationQuery =
-    "mutation($id: String!) { deploymentRollback(id: $id) }";
+    "mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }";
   const gateIndex = rollback.indexOf("resolveRollbackGate");
   const mutationIndex = rollback.indexOf(mutationQuery);
 
   assert.ok(gateIndex > -1, "rollback job must call resolveRollbackGate");
-  assert.ok(mutationIndex > -1, "rollback job must call deploymentRollback");
+  assert.ok(mutationIndex > -1, "rollback job must call deploymentRedeploy");
   assert.ok(
     gateIndex < mutationIndex,
     "the gate must run before the mutation, not after it"
@@ -213,11 +228,11 @@ test("drill: plan mode is read-only, execute mode rolls back and restores", () =
   );
 
   assert.ok(
-    !planStep.includes("deploymentRollback"),
-    "plan mode must never call the rollback mutation"
+    !planStep.includes("deploymentRedeploy"),
+    "plan mode must never call the recovery mutation"
   );
   assert.ok(planStep.includes("selectRollbackCandidate"));
-  assert.ok(executeStep.includes("deploymentRollback"));
+  assert.ok(executeStep.includes("deploymentRedeploy"));
   assert.ok(
     restoreStep.includes("deploymentRedeploy"),
     "a real rollback drill must restore the original head"
@@ -231,8 +246,8 @@ test("drill: plan mode is read-only, execute mode rolls back and restores", () =
   assert.ok(waitRollback.includes("wait-for-commit-sha.sh"));
   assert.ok(waitRestore.includes("wait-for-commit-sha.sh"));
   assert.ok(
-    waitRollback.includes('"$EXPECTED_SHA" 180 10'),
-    "the rollback cold start observed on 2026-11-16 took over 20 minutes"
+    waitRollback.includes('"$EXPECTED_SHA" 30 10'),
+    "a redeploy served in 40-72s on 2026-11-16; the wait allows five minutes"
   );
-  assert.ok(waitRestore.includes('"$EXPECTED_SHA" 180 10'));
+  assert.ok(waitRestore.includes('"$EXPECTED_SHA" 30 10'));
 });

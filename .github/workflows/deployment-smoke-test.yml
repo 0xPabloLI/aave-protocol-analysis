@@ -400,15 +400,20 @@ jobs:
 
           echo "🔄 Rolling back $ENV_LABEL to deployment: ${ROLLBACK_ID:0:8}..."
 
+          # `deploymentRedeploy`, not `deploymentRollback`: on 2026-11-16 every
+          # deploymentRollback was accepted but the rollback deployment did not
+          # serve for 10m43s at best and over 30 minutes in three of four
+          # drills, while deploymentRedeploy served in 40-72 seconds. See
+          # docs/runbooks/app-deploy-failure.md for the manual experiment.
           ROLLBACK_RESULT=$(jq -n --arg id "$ROLLBACK_ID" \
-            '{query: "mutation($id: String!) { deploymentRollback(id: $id) }", variables: {id: $id}}' \
+            '{query: "mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }", variables: {id: $id}}' \
             | curl -sS --max-time 30 -X POST "$RAILWAY_API_URL" \
               -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
               -d @-)
 
-          if echo "$ROLLBACK_RESULT" | jq -e '.data.deploymentRollback == true' > /dev/null 2>&1; then
-            echo "✅ Railway $ENV_LABEL rolled back successfully"
+          if echo "$ROLLBACK_RESULT" | jq -e '.data.deploymentRedeploy.id != null and .data.deploymentRedeploy.id != ""' > /dev/null 2>&1; then
+            echo "✅ Railway $ENV_LABEL redeployed deployment ${ROLLBACK_ID:0:8}"
             echo "rollback_executed=true" >> "$GITHUB_OUTPUT"
           else
             echo "❌ Rollback failed:"
@@ -450,8 +455,8 @@ jobs:
 
   # ── Manual rollback drill (workflow_dispatch only) ────────────────────────
   # Plan mode is read-only and works for both environments. Execute mode is
-  # staging-only: it performs a real deploymentRollback, waits for the
-  # rolled-back commit to serve, then redeploys the original head. Production
+  # staging-only: it redeploys the selected target deployment, waits for the
+  # target commit to serve, then redeploys the original head. Production
   # auto-rollback stays behind RAILWAY_PRODUCTION_ROLLBACK_ENABLED.
   drill:
     if: github.event_name == 'workflow_dispatch'
@@ -648,7 +653,7 @@ jobs:
         run: |
           echo "🔄 Rolling back $DRILL_ENVIRONMENT to ${ROLLBACK_ID:0:8}..."
           ROLLBACK_RESULT=$(jq -n --arg id "$ROLLBACK_ID" \
-            '{query: "mutation($id: String!) { deploymentRollback(id: $id) }", variables: {id: $id}}' \
+            '{query: "mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }", variables: {id: $id}}' \
             | curl -sS --max-time 30 -X POST "$RAILWAY_API_URL" \
               -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
@@ -656,11 +661,11 @@ jobs:
 
           echo "$ROLLBACK_RESULT" | jq . 2>/dev/null || echo "$ROLLBACK_RESULT"
 
-          if echo "$ROLLBACK_RESULT" | jq -e '.data.deploymentRollback == true' > /dev/null 2>&1; then
-            echo "✅ deploymentRollback returned true"
+          if echo "$ROLLBACK_RESULT" | jq -e '.data.deploymentRedeploy.id != null and .data.deploymentRedeploy.id != ""' > /dev/null 2>&1; then
+            echo "✅ deploymentRedeploy returned $(echo "$ROLLBACK_RESULT" | jq -r '.data.deploymentRedeploy.id')"
             echo "executed=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::deploymentRollback did not return true"
+            echo "::error::deploymentRedeploy did not return a deployment"
             echo "executed=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
@@ -671,7 +676,7 @@ jobs:
         env:
           EXPECTED_SHA: ${{ steps.plan.outputs.target_commit }}
           HEALTH_URL: ${{ steps.target.outputs.api_base_url }}/health
-        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 180 10
+        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 30 10
 
       - name: Restore the original head deployment
         id: restore
@@ -706,7 +711,7 @@ jobs:
         env:
           EXPECTED_SHA: ${{ steps.plan.outputs.head_commit }}
           HEALTH_URL: ${{ steps.target.outputs.api_base_url }}/health
-        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 180 10
+        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 30 10
 
       - name: Drill summary
         if: always()

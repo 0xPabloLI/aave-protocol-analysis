@@ -119,10 +119,12 @@ share a per-environment `railway-rollback-<environment>` mutex. Drill it before
 trusting it:
 `gh workflow run deployment-smoke-test.yml --ref railway -f environment=staging -f mode=plan`,
 then the same with `-f mode=execute -f confirm=rollback-staging` (staging-only;
-the drill restores the head automatically). The drill waits up to 30 minutes for a
-rollback to serve; on 2026-11-16 a release rollback took 10m43s and rollbacks to
-`redeploy` copies exceeded 30 minutes. Manual recovery and evidence recording:
-`docs/runbooks/app-deploy-failure.md`.
+the drill restores the head automatically). The recovery mutation is
+`deploymentRedeploy(target)`: every `deploymentRollback` on 2026-11-16 returned
+`true` but left the service down for 10m43s at best and over 30 minutes in three
+of four runs, while `deploymentRedeploy` served in 40–72 seconds. The drill waits
+up to 5 minutes; `deploymentRollback` remains a manual runbook experiment only.
+Manual recovery and evidence recording: `docs/runbooks/app-deploy-failure.md`.
 
 ⚠️ **A failed workflow run on the commit does not hold the deploy — it skips it.**
 Railway marks the deployment `SKIPPED` (`reason=deploy`) and the previous commit keeps
