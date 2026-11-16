@@ -50,7 +50,7 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
        -d '{"query":"mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }","variables":{"id":"<deployment-id>"}}'
      ```
      `deploymentRedeploy` returns the new deployment object; poll `/health` until
-     `commitSha` matches the target commit (40–72 seconds on 2026-11-16).
+     `commitSha` matches the target commit (40–92 seconds on 2026-11-16).
    - **Manual `deploymentRollback` experiment (not the auto path).** It returns
      `true`, but on 2026-11-16 four real runs served in 10m43s at best, took
      21m17s in the second, and did not serve within 30 minutes in the last two;
@@ -87,8 +87,8 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
    - The run summary records head/target deployment IDs and commits, the
      selection reason, the gate state, and every step outcome. Keep the run URL
      and the `deploymentRedeploy` response with the delivery evidence. The
-     health waits allow 5 minutes; the staging drill `43831007873` passed
-     (target 71s, restore 61s).
+     health waits allow 5 minutes; the final staging drill `43835257174`
+     passed (target 92s, restore 71s).
 7. **Escalate** — pushing a revert commit is still the normal recovery when the
    auto-rollback is gated or unavailable. `railway redeploy --service aave-protocol-analysis --from-source -y`
    is **not** a rollback: `--from-source` deploys the newest commit of the

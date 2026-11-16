@@ -420,7 +420,7 @@ jobs:
           # deploymentRollback was accepted but the rollback deployment served
           # in 10m43s at best, took 21m17s in the second drill, and did not
           # serve within 30 minutes in the last two, while deploymentRedeploy
-          # served in 40-72 seconds. See docs/runbooks/app-deploy-failure.md
+          # served in 40-92 seconds. See docs/runbooks/app-deploy-failure.md
           # for the manual experiment.
           ROLLBACK_RESULT=$(jq -n --arg id "$ROLLBACK_ID" \
             '{query: "mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }", variables: {id: $id}}' \

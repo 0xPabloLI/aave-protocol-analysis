@@ -123,7 +123,7 @@ the drill restores the head automatically). The recovery mutation is
 `deploymentRedeploy(target)`: every `deploymentRollback` on 2026-11-16 returned
 `true` but the rollback deployment served in 10m43s at best, took 21m17s in the
 second drill, and did not serve within 30 minutes in the last two, while
-`deploymentRedeploy` served in 40–72 seconds. The drill waits
+`deploymentRedeploy` served in 40–92 seconds. The drill waits
 up to 5 minutes; `deploymentRollback` remains a manual runbook experiment only.
 Manual recovery and evidence recording: `docs/runbooks/app-deploy-failure.md`.
 
