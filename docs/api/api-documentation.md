@@ -63,7 +63,7 @@ API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即"建议刷�
 
 市场储备数据的完整结构，包含所有激励信息。
 
-> **前端字段映射**：各字段在前端界面中的展示名称、排序选项、派生计算公式见 [field-glossary.md](./field-glossary.md)。
+> **前端字段映射**：各字段在前端界面中的展示名称、排序选项、派生计算公式见 [field-glossary.md](../../aaveapy-doc/field-glossary.md)。
 
 ```typescript
 interface RuntimeReserveData {
@@ -107,6 +107,15 @@ interface RuntimeReserveData {
   borrowApy?: number; // 【单位: 百分比】Borrow APY，如 3.97 表示 3.97%（即使禁用也返回真实值）
   borrowDisabled?: boolean; // 借贷是否被禁用（仅当 true 时出现），原因：borrowingState=DISABLED 或 borrowCap=1
   borrowCapUsd?: number; // 【单位: USD】借贷上限金额，与 supplyCapUsd 对称
+
+  // 抵押与清算参数（AAV-1222 引入；单位: percent，链上 BPS / 100）
+  // ltv === 0 是协议真值，不是缺字段（AAV-1380）：该资产不提供 **base 模式**借力。
+  // 三种真实成因：治理把稳定币 base LTV 置 0（阻断递归借贷）／资产不具抵押资格（liquidationThreshold 亦为 0）／
+  // V3.6 isFrozen 时 ltv 被强制为 0（liquidationThreshold 不变，Health Factor 不受影响）。
+  // eMode 的 LTV **不**并入本字段：同一资产在 eMode 类别下可能更高（例：WETH base 81% vs ETH-correlated 93%）。
+  ltv?: number; // 【单位: percent】抵押 LTV（80 = 80%）。V3: supplyInfo.maxLTV，V4: settings.collateralFactor。
+  liquidationThreshold?: number; // 【单位: percent】清算阈值（82.5 = 82.5%）。V3: supplyInfo.liquidationThreshold，V4 与 ltv 相同（单一 collateralFactor）。0 = 不具抵押资格。
+  collateralRisk?: number; // 【仅 V4】【单位: percent】抵押风险参数（链上 uint24，BPS）。Risk Premium 模拟的输入，影响等效借款 APY；V3 不返回。
 
   // 协议激励（已完全迁移到结构化字段，单位: 百分比）
   // 注：Merit 激励字段（meritSupplys/meritBorrows）已随 Merit 计划终止移除（AAV-1289）。
