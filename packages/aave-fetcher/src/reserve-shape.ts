@@ -88,7 +88,11 @@ function readPath(value: unknown, path: readonly string[]): unknown {
   let cursor: unknown = value;
   for (const key of path) {
     if (typeof cursor !== "object" || cursor === null) return undefined;
-    cursor = (cursor as Record<string, unknown>)[key];
+    // Semgrep (prototype pollution): never index an object with a variable key.
+    // `path` is always a hardcoded literal and labels run on ≤5 samples, so the
+    // linear scan costs nothing.
+    const entry = Object.entries(cursor as object).find(([k]) => k === key);
+    cursor = entry?.[1];
   }
   return cursor;
 }
