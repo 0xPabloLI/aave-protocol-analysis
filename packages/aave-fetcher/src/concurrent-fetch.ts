@@ -4,6 +4,7 @@ import type {
 } from "@internal/aave-shared-contracts";
 import { v3OnchainKey } from "@internal/aave-shared-contracts";
 import { logger } from "./logger.js";
+import { auditV3InputShape } from "./reserve-shape.js";
 import { toFiniteNumber, percentValueToPercent } from "./utils/number.js";
 import type { V4FetchResult } from "./v4-retry.js";
 
@@ -12,6 +13,11 @@ export type { V4FetchResult };
 export const FETCH_TIMEOUT_MS = 35_000;
 
 export function buildV3BaseDataset(markets: any[]): RuntimeReserveData[] {
+  // AAV-1379 follow-up: report the payload shape before mapping it. Observational
+  // only — a malformed reserve is still mapped exactly as before, it just stops
+  // being silent about it.
+  auditV3InputShape(markets);
+
   const baseDataset: RuntimeReserveData[] = [];
 
   markets.forEach((market) => {
