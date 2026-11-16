@@ -144,6 +144,8 @@
 
 ## Further Notes
 
+- 本机跑 `npm run ci:remote` 时，`npm ci` 与 `npm run audit` 两步必须先显式指向官方 registry（`--registry=https://registry.npmjs.org/`）：npmmirror 缺 `@aave/types@1.1.0` 的 tarball，且不实现 `/-/npm/v1/security/*`。其余 13 步按脚本原样通过。这是本机镜像的限制，与本次改动无关。
+
 - 本票的「312」是会随治理变动的实时数字，不是常量：任何基线式断言（例如「0 值应等于 312」）都会在下一次
   治理投票后变红。所以此处只记录日期与当时数值，断言只写不变量。
 - 零值三分类里只有 `frozen` 一类会影响 HF（V3.6 冻结不动 `liquidationThreshold`），另两类影响的是借力。

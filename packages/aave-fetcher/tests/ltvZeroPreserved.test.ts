@@ -17,8 +17,6 @@ import { buildV3BaseDataset } from "../src/concurrent-fetch.js";
  * different facts and the API has an assertion that every reserve carries `ltv`).
  */
 
-type PercentLike = { value?: unknown } | undefined;
-
 function makeMarket(supplyInfo: Record<string, unknown>): unknown {
   return {
     address: "0xV3POOL",
@@ -51,7 +49,7 @@ function firstReserve(markets: unknown[]): RuntimeReserveData {
   return dataset[0];
 }
 
-function pct(value: string): PercentLike {
+function pct(value: string): { value: string } {
   return { value };
 }
 
