@@ -87,8 +87,8 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
    - The run summary records head/target deployment IDs and commits, the
      selection reason, the gate state, and every step outcome. Keep the run URL
      and the `deploymentRedeploy` response with the delivery evidence. The
-     health waits allow 5 minutes; redeploys served in 40–72 seconds on
-     2026-11-16.
+     health waits allow 5 minutes; the staging drill `43831007873` passed
+     (target 71s, restore 61s).
 7. **Escalate** — pushing a revert commit is still the normal recovery when the
    auto-rollback is gated or unavailable. `railway redeploy --service aave-protocol-analysis --from-source -y`
    is **not** a rollback: `--from-source` deploys the newest commit of the
