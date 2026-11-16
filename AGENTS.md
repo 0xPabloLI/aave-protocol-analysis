@@ -108,6 +108,15 @@ runs as post-deploy verification (health, `/api/markets`, `/api/meta/side-data`,
 frontend), and rolls the deployment back via the Railway GraphQL API if a check
 fails.
 
+The rollback path is **fail-closed**: it never selects the head deployment, and
+production only mutates when the repository variable
+`RAILWAY_PRODUCTION_ROLLBACK_ENABLED` is exactly `true` (unset = a GATED issue,
+no mutation). Drill it before trusting it:
+`gh workflow run deployment-smoke-test.yml --ref railway -f environment=staging -f mode=plan`,
+then the same with `-f mode=execute -f confirm=rollback-staging` (staging-only;
+the drill restores the head automatically). Manual recovery and evidence
+recording: `docs/runbooks/app-deploy-failure.md`.
+
 ⚠️ **A failed workflow run on the commit does not hold the deploy — it skips it.**
 Railway marks the deployment `SKIPPED` (`reason=deploy`) and the previous commit keeps
 serving, with `/health` still reporting `status: ok`. Verified 2026-11-09: a Dependabot

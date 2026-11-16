@@ -80,12 +80,15 @@ This repository has five related workflows:
    - Result: bot PRs merge automatically after required CI checks pass
 
 5. `Deployment Smoke Test` (`.github/workflows/deployment-smoke-test.yml`)
-   - Triggered via `deployment_status` when Railway reports a successful deployment on `main` / `railway`
+   - Triggered via `deployment_status` when Railway reports a successful deployment on `main` / `railway`; also exposes a manual `workflow_dispatch` rollback drill (below)
    - **Not** triggered by `push` — avoids deadlock with Railway's "Wait for CI" (see below)
    - Runs right after Railway reports deploy success: resolve target from `deployment.ref` with fallback to deployment environment, then health check, `/api/markets` (≥50 reserves + snapshot), `/api/meta/side-data`, frontend accessibility (curl retries only; no long poll for `commitSha`)
    - On failure: auto-rollback via Railway GraphQL `deploymentRollback` mutation, then creates a GitHub issue with `smoke-test-failure` label
-   - Rollback target: newest `canRollback == true` deployment that is not the current broken head
-   - Rollback secret selection is branch-specific with no production→staging fallback when the chosen environment secret is empty; notification issue titles also reflect rollback succeeded/skipped/failed state
+   - Rollback target: newest `canRollback == true` deployment that is not the current broken head. Selection is **fail-closed**: when the only eligible deployment is the head, the job errors and requires manual intervention instead of redeploying the broken commit. The log records each candidate's `meta.commitHash` so the chosen commit is auditable.
+   - **Production gate**: production auto-rollback runs only when the repository variable `RAILWAY_PRODUCTION_ROLLBACK_ENABLED` is exactly `true`. Unset or any other value closes the gate: the rollback job exits non-zero, emits `rollback_gated=true`, and the failure issue is titled `auto-rollback GATED (manual action required)`. Staging is never gated. Do not set the variable until the staging drill has passed.
+   - **Concurrency**: keyed on `github.event.deployment.id`, with `cancel-in-progress: false`. Every deployment in an environment reports the same `"aaveapy / staging"` environment string, so an environment key let the rollback deployment cancel the run performing the rollback before the failure issue was created.
+   - **Manual drill**: `workflow_dispatch` takes `environment` (`staging`/`production`), `mode` (`plan`/`execute`) and `confirm`. `plan` is read-only and works for both environments; `execute` is staging-only, requires `confirm=rollback-staging`, performs a real `deploymentRollback`, polls `/health.commitSha` until the target commit serves, then restores the original head via `deploymentRedeploy` even when the post-rollback wait failed. Command and evidence recording: `docs/runbooks/app-deploy-failure.md`.
+   - Rollback secret selection is branch-specific with no production→staging fallback when the chosen environment secret is empty; notification issue titles reflect rollback succeeded/skipped/failed/GATED state
    - Branch → environment mapping: `main` → production (`api.aaveapy.com`), `railway` → staging (`staging-api.aaveapy.com`)
 
 ### Third-party actions: SHA pinning
@@ -185,7 +188,7 @@ push → CI (push-triggered, Railway waits for this)
          Smoke test triggers (deployment_status event)
               ↓ health + API checks on live backend
               ├→ all checks pass → done
-              └→ any check fails → auto-rollback + GitHub issue
+              └→ any check fails → auto-rollback (staging always; production only when the gate is open) + GitHub issue
 ```
 
 Context fields come from `github.event.deployment.*` (not `github.sha` / `github.ref_name`). The workflow gates on `deployment_status.state == 'success'`, then resolves target branch/environment from `deployment.ref` with fallback to `deployment.environment` so commit-SHA deployments do not skip smoke tests when `ref` is empty.
