@@ -22,10 +22,12 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
    - Still failing after fix: `railway up --detach --service aave-protocol-analysis -m "..."`.
 5. **Smoke-test failure and auto-rollback**
    - `deployment-smoke-test.yml` runs after Railway reports a successful deploy.
-     On a failed check the `rollback` job selects the newest
-     `canRollback == true` deployment that is **not** the current head, calls
-     Railway's `deploymentRollback` mutation, and opens a
-     `smoke-test-failure` issue.
+     On a failed check the `rollback` job selects the newest **release**
+     deployment (`meta.reason: "deploy"`) whose commit is **not** the current
+     head, calls Railway's `deploymentRollback` mutation, and opens a
+     `smoke-test-failure` issue. `redeploy`/`rollback` deployments are recovery
+     copies and are never targets: on 2026-11-16 a release rollback served in
+     10m43s while rollbacks to copies exceeded 20 and 30 minutes.
    - **Production is gated.** The mutation runs only when the repository
      variable `RAILWAY_PRODUCTION_ROLLBACK_ENABLED` is exactly `true`
      (case-sensitive; padded values stay gated); staging is never gated. If the
@@ -50,9 +52,11 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
      deployment after a drill, use the same shape with
      `mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }`.
    - If the head is itself a rollback deployment (`meta.reason: "rollback"`),
-     the target selector fails closed with `head-is-rollback`; do not bypass
-     it. Treat a second failure as a manual incident and do not re-run the
-     rollback.
+     the target selector fails closed with `head-is-rollback`; it also fails
+     closed with `no-release-deployment` when only recovery copies remain, and
+     with `same-commit-as-head` when the only release is the head's commit.
+     Do not bypass these guards. Treat a second failure as a manual incident
+     and do not re-run the rollback.
 6. **Drill the rollback path (staging only)**
    - Read-only plan for either environment:
      `gh workflow run deployment-smoke-test.yml --ref railway -f environment=staging -f mode=plan`
@@ -63,8 +67,8 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
    - The run summary records head/target deployment IDs and commits, the
      selection reason, the gate state, and every step outcome. Keep the run URL
      and the `deploymentRollback` response with the delivery evidence. The
-     health waits allow 30 minutes: rollback cold starts took 10m43s and over
-     20 minutes on 2026-11-16.
+     health waits allow 30 minutes: a release rollback served in 10m43s, while
+     rollbacks to `redeploy` copies exceeded 20 and 30 minutes on 2026-11-16.
 7. **Escalate** — pushing a revert commit is still the normal recovery when the
    auto-rollback is gated or unavailable. `railway redeploy --service aave-protocol-analysis --from-source -y`
    is **not** a rollback: `--from-source` deploys the newest commit of the

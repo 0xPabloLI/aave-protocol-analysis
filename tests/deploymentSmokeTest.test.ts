@@ -354,7 +354,10 @@ const STAGING_EDGES = [
       status: "SUCCESS",
       createdAt: "2026-11-16T04:02:17.573Z",
       canRollback: true,
-      meta: { commitHash: "5ceb6e65ebe2826ab23a79a315a05260d867f918" },
+      meta: {
+        reason: "deploy",
+        commitHash: "5ceb6e65ebe2826ab23a79a315a05260d867f918",
+      },
     },
   },
   {
@@ -363,7 +366,7 @@ const STAGING_EDGES = [
       status: "REMOVED",
       createdAt: "2026-11-16T01:11:47.003Z",
       canRollback: true,
-      meta: { commitHash: "878f41e" },
+      meta: { reason: "deploy", commitHash: "878f41e" },
     },
   },
   {
@@ -372,7 +375,7 @@ const STAGING_EDGES = [
       status: "REMOVED",
       createdAt: "2026-11-15T15:03:52.683Z",
       canRollback: true,
-      meta: { commitHash: "91a36af" },
+      meta: { reason: "deploy", commitHash: "91a36af" },
     },
   },
 ];
@@ -384,7 +387,10 @@ const PRODUCTION_EDGES = [
       status: "SUCCESS",
       createdAt: "2026-11-15T13:02:29.843Z",
       canRollback: true,
-      meta: { commitHash: "4ab7243fd39df7d771c9ad6656cb31025dc6cce2" },
+      meta: {
+        reason: "deploy",
+        commitHash: "4ab7243fd39df7d771c9ad6656cb31025dc6cce2",
+      },
     },
   },
   {
@@ -393,7 +399,7 @@ const PRODUCTION_EDGES = [
       status: "REMOVED",
       createdAt: "2026-11-11T08:02:09.370Z",
       canRollback: true,
-      meta: { commitHash: "192c3dc" },
+      meta: { reason: "deploy", commitHash: "192c3dc" },
     },
   },
   {
@@ -402,7 +408,7 @@ const PRODUCTION_EDGES = [
       status: "REMOVED",
       createdAt: "2026-11-11T07:16:57.119Z",
       canRollback: false,
-      meta: { commitHash: "81c0328" },
+      meta: { reason: "deploy", commitHash: "81c0328" },
     },
   },
 ];
@@ -429,6 +435,140 @@ test("selectRollbackCandidate: real production payload selects the previous depl
   assert.equal(plan.targetCommit, "192c3dc");
   assert.equal(plan.eligibleCount, 2);
   assert.equal(plan.reason, "selected");
+});
+
+test("selectRollbackCandidate: a newer redeploy or rollback deployment is not a rollback target", () => {
+  // Captured after the third staging drill. The head is the restore redeploy,
+  // then the drill's rollback, the deploy that the restore copied, another
+  // redeploy, the second drill's rollback, and the last real release.
+  // Rolling back to a recovery artifact took over 20 and over 30 minutes to
+  // serve on 2026-11-16; the release target took 10m43s.
+  const plan = selectRollbackCandidate([
+    {
+      node: {
+        id: "5cbb4957",
+        status: "SUCCESS",
+        createdAt: "2026-11-16T07:13:44.842Z",
+        canRollback: true,
+        meta: { reason: "redeploy", commitHash: "10cda0e" },
+      },
+    },
+    {
+      node: {
+        id: "697784e8",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:43:25.805Z",
+        canRollback: true,
+        meta: { reason: "rollback", commitHash: "12c6c16" },
+      },
+    },
+    {
+      node: {
+        id: "b2598e00",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:38:30.562Z",
+        canRollback: true,
+        meta: { reason: "deploy", commitHash: "10cda0e" },
+      },
+    },
+    {
+      node: {
+        id: "ef9f3c09",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:31:03.565Z",
+        canRollback: true,
+        meta: { reason: "redeploy", commitHash: "12c6c16" },
+      },
+    },
+    {
+      node: {
+        id: "e9044226",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:10:43.499Z",
+        canRollback: true,
+        meta: { reason: "rollback", commitHash: "61879da" },
+      },
+    },
+    {
+      node: {
+        id: "b6a3be43",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:05:52.344Z",
+        canRollback: true,
+        meta: { reason: "deploy", commitHash: "12c6c16" },
+      },
+    },
+  ]);
+
+  assert.equal(plan.headId, "5cbb4957");
+  assert.equal(plan.targetId, "b6a3be43");
+  assert.equal(plan.targetCommit, "12c6c16");
+  assert.equal(plan.targetCreatedAt, "2026-11-16T06:05:52.344Z");
+  assert.equal(plan.eligibleCount, 6);
+  assert.equal(plan.reason, "selected");
+});
+
+test("selectRollbackCandidate: a release with the head's commit is not a target", () => {
+  const plan = selectRollbackCandidate([
+    {
+      node: {
+        id: "restored-head",
+        status: "SUCCESS",
+        createdAt: "2026-11-16T07:13:44.842Z",
+        canRollback: true,
+        meta: { reason: "redeploy", commitHash: "10cda0e" },
+      },
+    },
+    {
+      node: {
+        id: "same-commit-release",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:38:30.562Z",
+        canRollback: true,
+        meta: { reason: "deploy", commitHash: "10cda0e" },
+      },
+    },
+  ]);
+
+  assert.equal(plan.targetId, "");
+  assert.equal(plan.eligibleCount, 2);
+  assert.equal(plan.reason, "same-commit-as-head");
+});
+
+test("selectRollbackCandidate: no release deployment is a target", () => {
+  const plan = selectRollbackCandidate([
+    {
+      node: {
+        id: "head",
+        status: "SUCCESS",
+        createdAt: "2026-11-16T07:13:44.842Z",
+        canRollback: true,
+        meta: { reason: "deploy", commitHash: "10cda0e" },
+      },
+    },
+    {
+      node: {
+        id: "previous-rollback",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:43:25.805Z",
+        canRollback: true,
+        meta: { reason: "rollback", commitHash: "12c6c16" },
+      },
+    },
+    {
+      node: {
+        id: "previous-redeploy",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:31:03.565Z",
+        canRollback: true,
+        meta: { reason: "redeploy", commitHash: "61879da" },
+      },
+    },
+  ]);
+
+  assert.equal(plan.targetId, "");
+  assert.equal(plan.eligibleCount, 3);
+  assert.equal(plan.reason, "no-release-deployment");
 });
 
 test("selectRollbackCandidate: a head-only canRollback list fails closed instead of redeploying the broken head", () => {
@@ -527,7 +667,7 @@ test("selectRollbackCandidate: a single non-head eligible deployment is selected
         status: "REMOVED",
         createdAt: "2026-11-15T04:00:00.000Z",
         canRollback: true,
-        meta: { commitHash: "abc1234" },
+        meta: { reason: "deploy", commitHash: "abc1234" },
       },
     },
   ]);

@@ -130,6 +130,13 @@ export function selectRailwayRollbackTarget(targetEnvironment, secrets) {
  * (create a manual-intervention issue) instead of retrying the same broken
  * version.
  *
+ * Only a release deployment (`meta.reason === "deploy"`) is a rollback target.
+ * `redeploy` and `rollback` deployments are recovery copies of an earlier
+ * release: rolling back to one is redundant, and on 2026-11-16 rollbacks to
+ * such copies took over 20 and over 30 minutes to serve, while a rollback to a
+ * release served in 10m43s. A release whose commit equals the head's commit is
+ * also skipped — it cannot change what is served.
+ *
  * `edges` are passed straight from the GraphQL response; malformed shapes are
  * treated as "no deployments" so a bad response can never select arbitrarily.
  */
@@ -153,6 +160,7 @@ export function selectRollbackCandidate(edges) {
   }
 
   const resolvedHeadId = normalizeValue(nodes[0].id).trim();
+  const resolvedHeadCommit = normalizeValue(nodes[0].meta?.commitHash).trim();
   const eligible = nodes.filter((node) => node.canRollback === true);
   const headReason = normalizeValue(nodes[0].meta?.reason).trim();
 
@@ -168,8 +176,15 @@ export function selectRollbackCandidate(edges) {
     };
   }
 
-  const target = eligible.find(
+  const nonHeadEligible = eligible.filter(
     (node) => normalizeValue(node.id).trim() !== resolvedHeadId
+  );
+  const releases = nonHeadEligible.filter(
+    (node) => normalizeValue(node.meta?.reason).trim() === "deploy"
+  );
+  const target = releases.find(
+    (node) =>
+      normalizeValue(node.meta?.commitHash).trim() !== resolvedHeadCommit
   );
 
   return {
@@ -181,9 +196,13 @@ export function selectRollbackCandidate(edges) {
     eligibleCount: eligible.length,
     reason: target
       ? "selected"
-      : eligible.length > 0
-        ? "only-head-eligible"
-        : "no-eligible-deployment",
+      : releases.length > 0
+        ? "same-commit-as-head"
+        : nonHeadEligible.length > 0
+          ? "no-release-deployment"
+          : eligible.length > 0
+            ? "only-head-eligible"
+            : "no-eligible-deployment",
   };
 }
 
