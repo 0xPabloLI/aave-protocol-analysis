@@ -539,6 +539,7 @@ test("resolveRollbackGate: production is gated unless the exact literal true is 
     "1",
     "yes",
     "on",
+    " true ",
   ];
 
   for (const value of gatedValues) {
@@ -556,13 +557,6 @@ test("resolveRollbackGate: production is gated unless the exact literal true is 
     resolveRollbackGate({
       environmentLabel: "production",
       productionRollbackEnabled: "true",
-    }),
-    { allowed: true, reason: "production-enabled" }
-  );
-  assert.deepEqual(
-    resolveRollbackGate({
-      environmentLabel: "production",
-      productionRollbackEnabled: " true ",
     }),
     { allowed: true, reason: "production-enabled" }
   );

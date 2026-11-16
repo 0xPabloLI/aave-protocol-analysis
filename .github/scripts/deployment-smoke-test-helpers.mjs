@@ -99,6 +99,11 @@ export function resolveDeploymentTarget({ ref, sha, environment }) {
   };
 }
 
+/**
+ * Select the Railway project/service/environment IDs for the environment whose
+ * deployment failed. This is the *environment* target; `selectRollbackCandidate`
+ * below picks the individual deployment inside it.
+ */
 export function selectRailwayRollbackTarget(targetEnvironment, secrets) {
   const normalizedTargetEnvironment =
     normalizeValue(targetEnvironment).toLowerCase();
@@ -125,18 +130,16 @@ export function selectRailwayRollbackTarget(targetEnvironment, secrets) {
  * `edges` are passed straight from the GraphQL response; malformed shapes are
  * treated as "no deployments" so a bad response can never select arbitrarily.
  */
-export function selectRollbackCandidate(edges, { headId } = {}) {
+export function selectRollbackCandidate(edges) {
   const nodes = Array.isArray(edges)
     ? edges
         .map((edge) => edge?.node)
         .filter((node) => normalizeValue(node?.id).trim() !== "")
     : [];
 
-  const requestedHeadId = normalizeValue(headId).trim();
-
   if (nodes.length === 0) {
     return {
-      headId: requestedHeadId,
+      headId: "",
       targetId: "",
       targetCommit: "",
       targetStatus: "",
@@ -146,7 +149,7 @@ export function selectRollbackCandidate(edges, { headId } = {}) {
     };
   }
 
-  const resolvedHeadId = requestedHeadId || normalizeValue(nodes[0].id).trim();
+  const resolvedHeadId = normalizeValue(nodes[0].id).trim();
   const eligible = nodes.filter((node) => node.canRollback === true);
   const target = eligible.find(
     (node) => normalizeValue(node.id).trim() !== resolvedHeadId
@@ -168,7 +171,7 @@ export function selectRollbackCandidate(edges, { headId } = {}) {
 }
 
 function isTrue(value) {
-  return value === true || String(value ?? "").trim() === "true";
+  return value === true || value === "true";
 }
 
 /**
@@ -197,11 +200,11 @@ export function resolveRollbackGate({
   return { allowed: false, reason: "unknown-environment" };
 }
 
-function getRollbackPresentation(
+function getRollbackPresentation({
   rollbackExecuted,
   rollbackOutcome,
-  rollbackGated
-) {
+  rollbackGated,
+}) {
   if (isTrue(rollbackGated)) {
     return {
       titleSuffix: "auto-rollback GATED (manual action required)",
@@ -239,11 +242,11 @@ export function createSmokeTestIssuePayload({
   rollbackOutcome,
   rollbackGated,
 }) {
-  const rollback = getRollbackPresentation(
+  const rollback = getRollbackPresentation({
     rollbackExecuted,
     rollbackOutcome,
-    rollbackGated
-  );
+    rollbackGated,
+  });
 
   return {
     title: `🚨 ${environment} smoke test failed — ${rollback.titleSuffix}`,

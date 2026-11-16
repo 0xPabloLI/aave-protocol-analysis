@@ -27,12 +27,12 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
      Railway's `deploymentRollback` mutation, and opens a
      `smoke-test-failure` issue.
    - **Production is gated.** The mutation runs only when the repository
-     variable `RAILWAY_PRODUCTION_ROLLBACK_ENABLED` is exactly `true`; staging
-     is never gated. If the issue title says
-     `auto-rollback GATED (manual action required)`, nothing was rolled back.
-     Triage the failing commit and either revert-and-push or run the manual
-     mutation below. Do not flip the variable just to clear an incident — it
-     exists to make the first production rollback deliberate.
+     variable `RAILWAY_PRODUCTION_ROLLBACK_ENABLED` is exactly `true`
+     (case-sensitive; padded values stay gated); staging is never gated. If the
+     issue title says `auto-rollback GATED (manual action required)`, nothing
+     was rolled back. Triage the failing commit and either revert-and-push or
+     run the manual mutation below. Do not flip the variable just to clear an
+     incident — it exists to make the first production rollback deliberate.
    - If the issue says the rollback succeeded, confirm the live commit after
      the ~3 min warm-up:
      `curl -s https://api.aaveapy.com/health | jq -r .commitSha` (or
@@ -49,6 +49,11 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
      `deploymentRollback` returns `true` on success. To restore a specific head
      deployment after a drill, use the same shape with
      `mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }`.
+   - If the rollback deployment's own smoke test also fails, **stop**. The
+     target heuristic cannot tell a rollback from a normal deploy
+     (`meta.reason` is `deploy`), so a second automatic attempt can select a
+     bad version. Treat it as a manual incident and do not re-run the
+     rollback.
 6. **Drill the rollback path (staging only)**
    - Read-only plan for either environment:
      `gh workflow run deployment-smoke-test.yml --ref railway -f environment=staging -f mode=plan`

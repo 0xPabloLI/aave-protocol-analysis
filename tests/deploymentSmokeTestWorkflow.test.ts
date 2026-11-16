@@ -50,15 +50,33 @@ function jobBlock(workflow: string, job: string): string {
   return lines.slice(start, end === -1 ? undefined : end).join("\n");
 }
 
+/** The lines of a named step inside a job block. */
+function stepBlock(job: string, step: string): string {
+  const lines = job.split("\n");
+  const start = lines.findIndex((line) => line === `      - name: ${step}`);
+  if (start === -1) {
+    throw new Error(`step "${step}" not found in the job block`);
+  }
+
+  const end = lines.findIndex(
+    (line, index) => index > start && /^ {6}- /.test(line)
+  );
+
+  return lines.slice(start, end === -1 ? undefined : end).join("\n");
+}
+
 test("workflow: exposes a plan/execute drill with an explicit confirmation input", () => {
   const workflow = readWorkflow();
+  const dispatch = workflow.slice(
+    workflow.indexOf("  workflow_dispatch:"),
+    workflow.indexOf("\npermissions:")
+  );
 
-  assert.ok(workflow.includes("workflow_dispatch:"));
-  assert.ok(workflow.includes("      environment:"));
-  assert.ok(workflow.includes("      mode:"));
-  assert.ok(workflow.includes("      confirm:"));
-  assert.ok(workflow.includes("- staging"));
-  assert.ok(workflow.includes("- production"));
+  assert.ok(dispatch.length > 0, "workflow_dispatch block not found");
+  assert.ok(dispatch.includes("      environment:"));
+  assert.ok(dispatch.includes("      mode:"));
+  assert.ok(dispatch.includes("      confirm:"));
+  assert.match(dispatch, /options:\s*\n\s*- staging\s*\n\s*- production/);
 });
 
 test("workflow: concurrency is keyed by deployment id, not environment", () => {
@@ -81,8 +99,10 @@ test("workflow: concurrency is keyed by deployment id, not environment", () => {
 
 test("rollback: the production gate is evaluated before the mutation", () => {
   const rollback = jobBlock(readWorkflow(), "rollback");
+  const mutationQuery =
+    "mutation($id: String!) { deploymentRollback(id: $id) }";
   const gateIndex = rollback.indexOf("resolveRollbackGate");
-  const mutationIndex = rollback.indexOf("deploymentRollback");
+  const mutationIndex = rollback.indexOf(mutationQuery);
 
   assert.ok(gateIndex > -1, "rollback job must call resolveRollbackGate");
   assert.ok(mutationIndex > -1, "rollback job must call deploymentRollback");
@@ -91,8 +111,7 @@ test("rollback: the production gate is evaluated before the mutation", () => {
     "the gate must run before the mutation, not after it"
   );
   assert.equal(
-    rollback.split("mutation($id: String!) { deploymentRollback(id: $id) }")
-      .length - 1,
+    rollback.split(mutationQuery).length - 1,
     1,
     "the mutation request must have a single call site"
   );
@@ -145,34 +164,70 @@ test("smoke-test: a workflow_dispatch does not masquerade as a deployment verifi
 
 test("drill: execute mode is staging-only and requires the confirmation string", () => {
   const drill = jobBlock(readWorkflow(), "drill");
+  const validate = stepBlock(drill, "Validate drill request");
+  const plan = stepBlock(drill, "Fetch deployments and plan the rollback");
 
   assert.ok(drill.includes("if: github.event_name == 'workflow_dispatch'"));
-  assert.ok(
-    drill.includes("Only staging rollbacks may be executed by the drill")
-  );
-  assert.ok(drill.includes("rollback-staging"));
+  assert.ok(validate.includes('"$DRILL_ENVIRONMENT" != "staging"'));
+  assert.ok(validate.includes("exit 1"));
+  assert.ok(validate.includes("rollback-staging"));
   assert.ok(drill.includes("if: inputs.mode == 'execute'"));
+  assert.ok(
+    plan.includes('"$DRILL_MODE" = "execute"') &&
+      plan.includes('"$GATE_ALLOWED" != "true"'),
+    "execute must fail closed when the gate is closed, even if the staging check changes"
+  );
+});
+
+test("rollback: a drill and a smoke rollback share one environment mutex", () => {
+  const workflow = readWorkflow();
+  const rollback = jobBlock(workflow, "rollback");
+  const drill = jobBlock(workflow, "drill");
+
+  assert.ok(
+    rollback.includes(
+      "group: railway-rollback-${{ needs.smoke-test.outputs.environment_label }}"
+    )
+  );
+  assert.ok(
+    drill.includes("group: railway-rollback-${{ inputs.environment }}")
+  );
+  assert.ok(
+    !drill.includes("rollback-drill-"),
+    "a separate drill group could mutate the same environment concurrently with a real rollback"
+  );
 });
 
 test("drill: plan mode is read-only, execute mode rolls back and restores", () => {
   const drill = jobBlock(readWorkflow(), "drill");
-  const planStart = drill.indexOf("Fetch deployments and plan the rollback");
-  const executeStart = drill.indexOf("Execute rollback (staging only)");
-  const planStep = drill.slice(planStart, executeStart);
+  const planStep = stepBlock(drill, "Fetch deployments and plan the rollback");
+  const executeStep = stepBlock(drill, "Execute rollback (staging only)");
+  const restoreStep = stepBlock(drill, "Restore the original head deployment");
+  const waitRollback = stepBlock(
+    drill,
+    "Wait for the rolled-back commit to serve"
+  );
+  const waitRestore = stepBlock(
+    drill,
+    "Wait for the restored head commit to serve"
+  );
 
-  assert.ok(planStart > -1 && executeStart > planStart);
   assert.ok(
     !planStep.includes("deploymentRollback"),
     "plan mode must never call the rollback mutation"
   );
-  assert.ok(drill.includes("selectRollbackCandidate"));
-  assert.ok(drill.includes("deploymentRollback"));
+  assert.ok(planStep.includes("selectRollbackCandidate"));
+  assert.ok(executeStep.includes("deploymentRollback"));
   assert.ok(
-    drill.includes("deploymentRedeploy"),
+    restoreStep.includes("deploymentRedeploy"),
     "a real rollback drill must restore the original head"
   );
   assert.ok(
-    drill.includes("if: always() && steps.rollback.outputs.executed == 'true'"),
+    restoreStep.includes(
+      "if: always() && steps.rollback.outputs.executed == 'true'"
+    ),
     "restore must run even when the post-rollback health check fails"
   );
+  assert.ok(waitRollback.includes("wait-for-commit-sha.sh"));
+  assert.ok(waitRestore.includes("wait-for-commit-sha.sh"));
 });

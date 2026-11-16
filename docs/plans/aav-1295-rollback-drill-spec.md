@@ -54,20 +54,22 @@ deploymentRedeploy(id: String!, usePreviousImageTag: Boolean): Deployment!
 
 在 `.github/scripts/deployment-smoke-test-helpers.mjs` 新增：
 
-- `selectRollbackCandidate(edges, { headId })`：输入真实 `deployments` 响应的
-  `edges`，返回
+- `selectRollbackCandidate(edges)`：输入真实 `deployments` 响应的 `edges`，返回
   `{ headId, targetId, targetCommit, targetStatus, targetCreatedAt, eligibleCount, reason }`。
   - 只选 `canRollback === true` 的部署；
   - **永远不选 head**：head 是刚失败的那次部署，回滚到它等于重新部署坏版本；
   - 没有非 head 候选时返回 `reason: "only-head-eligible"`，由 workflow 报错并建
     issue，而不是静默重部署 head（fail closed）；
-  - `headId` 可选覆盖，默认取 `edges[0].node.id`；workflow 依赖 Railway 返回的
-    最新优先顺序，本地用真实响应验证过。
+  - head 取 `edges[0].node.id`；workflow 依赖 Railway 返回的最新优先顺序，
+    本地用真实响应验证过；
+  - `eligibleCount` 会写进 rollback/drill 的日志与 step summary，便于审计。
 - `resolveRollbackGate({ environmentLabel, productionRollbackEnabled })`：
   - `staging` → allowed；
-  - `production` + 变量**精确**等于 `"true"` → allowed；
-  - 其他任何值（未设置、`"TRUE"`、`"1"`、`"yes"`、空串）→ gated；
-  - 未知环境 → gated（fail closed）。
+  - `production` + 变量**精确**等于 `"true"`（大小写敏感，不接受前后空格）→
+    allowed；
+  - 其他任何值（未设置、`"TRUE"`、`"1"`、`"yes"`、`" true "`、空串）→ gated；
+  - 未知环境 → gated（fail closed；workflow 的上游解析器只产出
+    staging/production，这一支是防御性测试）。
 - `createSmokeTestIssuePayload` 新增 `rollbackGated`，状态优先级：
   `gated` > `succeeded` > `skipped` > `failed`。
 
@@ -82,10 +84,13 @@ deploymentRedeploy(id: String!, usePreviousImageTag: Boolean): Deployment!
 | `confirm`     | 字符串                 | execute 必须精确等于 `rollback-staging`，否则拒绝启动 |
 
 - `plan`：拉取真实 `deployments`，用 `selectRollbackCandidate` 选出 head/target，
-  打印到 step summary；**不调用任何 mutation**。production 也允许 plan。
-- `execute`：仅 staging；要求 `confirm=rollback-staging`；先
-  `deploymentRollback(targetId)`，轮询 `/health.commitSha` 到 target commit；
-  再用 `deploymentRedeploy(headId)` 恢复，轮询回 head commit。
+  先把 head/target/eligibleCount/gate 写进 step summary，再判断有没有目标；
+  **不调用任何 mutation**。production 也允许 plan。
+- `execute`：仅 staging；要求 `confirm=rollback-staging`；在 plan 步骤里再次检查
+  `gate_allowed`，闸门关闭时直接失败（即使未来有人放松 staging-only 校验也不会
+  绕过闸门）；先 `deploymentRollback(targetId)`，用
+  `.github/scripts/wait-for-commit-sha.sh` 轮询 `/health.commitSha` 到 target
+  commit；再用 `deploymentRedeploy(headId)` 恢复，轮询回 head commit。
   - 任一步失败都保留 `always()` 的恢复/汇总步骤，job 最终为红；
   - 恢复失败时 runbook 给出手动命令；不允许把失败报成绿。
 
@@ -94,7 +99,7 @@ deploymentRedeploy(id: String!, usePreviousImageTag: Boolean): Deployment!
 `rollback` job 在执行 mutation 前读 `vars.RAILWAY_PRODUCTION_ROLLBACK_ENABLED`：
 
 - `staging`：始终放行；
-- `production`：只有变量精确等于 `"true"` 才放行；
+- `production`：只有变量精确等于 `"true"`（大小写敏感，不接受前后空格）才放行；
 - 闸门关闭时：**不做 mutation**，输出 `rollback_gated=true`，建一条
   `smoke-test-failure` issue（标题写明 `auto-rollback GATED`），job 以非零退出，
   让 workflow 红而不是假绿；
@@ -120,6 +125,9 @@ concurrency:
 
 deployment id 对每次部署唯一；dispatch run 用 `run_id`，互不取消。
 
+auto-rollback job 与 drill 另有 job-level `railway-rollback-<environment>` 共享
+mutex，保证手动演练与真实回滚不会同时改同一个环境。
+
 ### 5. 输出串联
 
 `Rollback Railway deployment` 步骤同时在所有分支（成功、失败、闸门、无目标）
@@ -137,8 +145,10 @@ deployment id 对每次部署唯一；dispatch run 用 `run_id`，互不取消�
   四态。
 - `tests/deploymentSmokeTestWorkflow.test.ts`：workflow 静态断言 ——
   mutation 前有 gate、mutation 请求只有一个调用点、drill 拒绝 production
-  execute、execute 需要 confirm、恢复用 `deploymentRedeploy`、concurrency
-  group 含 deployment id、通知步骤传 `rollbackGated`。静态测试只把
+  execute、execute 需要 confirm、execute 在闸门关闭时失败、rollback 与 drill
+  共享 environment mutex、两个 wait step 都调用 `wait-for-commit-sha.sh`、恢复用
+  `deploymentRedeploy`、concurrency group 含 deployment id、通知步骤传
+  `rollbackGated`。静态测试只把
   `mutation($id: String!) { deploymentRollback(id: $id) }` 计为调用点；
   `jq` 结果判定里出现的字段名不算第二次调用。
 
@@ -167,51 +177,52 @@ deployment id 对每次部署唯一；dispatch run 用 `run_id`，互不取消�
 
 ### Modified Files Impact
 
-| 文件                                                | 修改内容                                                          | 风险   | 评估                                                                                                        |
-| --------------------------------------------------- | ----------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------- |
-| `.github/scripts/deployment-smoke-test-helpers.mjs` | 新增 `selectRollbackCandidate` / `resolveRollbackGate` / gated 态 | Medium | 纯函数；现有导出签名不变；所有新分支有单测；workflow 与 drill 复用同一实现。                                |
-| `.github/workflows/deployment-smoke-test.yml`       | dispatch 演练、production 闸门、concurrency key、目标选择 helper  | High   | 生产恢复路径；闸门默认关闭、execute 仅 staging、mutation 前有静态守卫；负控证明 production execute 不可达。 |
-| `tests/deploymentSmokeTest.test.ts`                 | 真实 fixture + 新增 helper/payload 用例                           | Low    | 测试专用；真实数据来自 2026-11-16 只读查询。                                                                |
-| `tests/deploymentSmokeTestWorkflow.test.ts`         | 新增 workflow 静态守卫                                            | Low    | 测试专用；只读文本，不执行外部动作。                                                                        |
-| `docs/ci-security-automation.md`                    | 记录闸门、drill、concurrency 语义                                 | Low    | 文档；与代码同步。                                                                                          |
-| `docs/runbooks/app-deploy-failure.md`               | production 闸门关闭/恢复失败时的手动步骤                          | Low    | 文档；操作员入口。                                                                                          |
-| `AGENTS.md`                                         | 一行闸门与 drill 命令                                             | Low    | 文档；`check:agents-drift` 会验证引用的 workflow 文件存在。                                                 |
-| `docs/plans/aav-1295-rollback-drill-spec.md`        | 本 spec                                                           | Low    | 新文件。                                                                                                    |
-| `SESSION-BOARD.md`                                  | 注册与注销                                                        | Low    | 协调文件。                                                                                                  |
+| 文件                                                | 修改内容                                                                                        | 风险   | 评估                                                                                                                        |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `.github/scripts/deployment-smoke-test-helpers.mjs` | 新增 `selectRollbackCandidate` / `resolveRollbackGate` / gated 态                               | Medium | 纯函数；现有导出签名不变；所有新分支有单测；workflow 与 drill 复用同一实现。                                                |
+| `.github/scripts/wait-for-commit-sha.sh`            | rollback/restore 共用的 health SHA 轮询脚本                                                     | Medium | 两个 wait step 共用；本地对 staging 真实验过 match=0 / mismatch=1；drill 复验。                                             |
+| `.github/workflows/deployment-smoke-test.yml`       | dispatch 演练、production 闸门、concurrency key、共享 mutex、目标选择 helper、plan 先写 summary | High   | 生产恢复路径；闸门默认关闭、execute 仅 staging 且再次检查 gate、mutation 前有静态守卫；负控证明 production execute 不可达。 |
+| `tests/deploymentSmokeTest.test.ts`                 | 真实 fixture + 新增 helper/payload 用例                                                         | Low    | 测试专用；真实数据来自 2026-11-16 只读查询。                                                                                |
+| `tests/deploymentSmokeTestWorkflow.test.ts`         | 新增 workflow 静态守卫                                                                          | Low    | 测试专用；只读文本，不执行外部动作。                                                                                        |
+| `docs/ci-security-automation.md`                    | 记录闸门、drill、concurrency 语义                                                               | Low    | 文档；与代码同步。                                                                                                          |
+| `docs/runbooks/app-deploy-failure.md`               | production 闸门关闭/恢复失败时的手动步骤                                                        | Low    | 文档；操作员入口。                                                                                                          |
+| `AGENTS.md`                                         | 一行闸门与 drill 命令                                                                           | Low    | 文档；`check:agents-drift` 会验证引用的 workflow 文件存在。                                                                 |
+| `docs/plans/aav-1295-rollback-drill-spec.md`        | 本 spec                                                                                         | Low    | 新文件。                                                                                                                    |
+| `SESSION-BOARD.md`                                  | 注册与注销                                                                                      | Low    | 协调文件。                                                                                                                  |
 
 ### Behavioral Scenarios
 
-| #   | Scenario                                         | Expected Behavior                                                                                | Risk   | Evidence                                    | Mitigation                                                                                                     |
-| --- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------ | ------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| S1  | Real staging `deployments` payload               | target = `b211…` (878f41e), not head `49e5…` (5ceb6e6)                                           | Medium | automated test + runtime plan               | 真实 fixture；drill plan 复验                                                                                  |
-| S2  | Real production `deployments` payload            | target = `6195…` (192c3dc), not head `1586…` (4ab7243)                                           | Medium | automated test + runtime plan               | 真实 fixture；production plan 复验                                                                             |
-| S3  | Only head is `canRollback`                       | `targetId=""`, reason `only-head-eligible`; rollback step fails loudly                           | High   | automated test + static assertion           | fail closed，不重新部署坏 head                                                                                 |
-| S4  | No deployment is `canRollback`                   | `targetId=""`, reason `no-eligible-deployment`; step fails                                       | Medium | automated test                              | 同上                                                                                                           |
-| S5  | Empty/malformed `edges`                          | no target, no crash, reason `no-deployments`                                                     | Low    | automated test                              | 纯函数兜底                                                                                                     |
-| S6  | Production smoke failure, variable unset         | gate closed, no mutation, `rollback_gated=true`, issue says GATED, job red                       | High   | automated test + static assertion           | 默认关闭；issue 明确要求人工操作                                                                               |
-| S7  | Production smoke failure, variable `"true"`      | gate allowed, mutation path runs                                                                 | High   | automated test                              | 只在用户授权后设置变量                                                                                         |
-| S8  | Production variable `"TRUE"`/`"1"`/`"yes"`/empty | gate closed                                                                                      | Medium | automated test                              | 精确匹配，拒绝宽松真值                                                                                         |
-| S9  | Staging smoke failure, variable unset            | gate allowed, mutation path runs                                                                 | Medium | automated test                              | staging 始终放行                                                                                               |
-| S10 | Unknown/empty environment                        | gate closed, reason `unknown-environment`                                                        | Low    | automated test                              | fail closed                                                                                                    |
-| S11 | Mutation returns `true`                          | `rollback_executed=true`; issue says succeeded                                                   | Medium | automated test + runtime drill              | drill 真实返回                                                                                                 |
-| S12 | Mutation returns `false`/error                   | `rollback_executed=false`; issue says failed; no false success                                   | High   | automated test + static assertion           | 现有布尔判定保留                                                                                               |
-| S13 | Drill execute without `confirm=rollback-staging` | rejected before any mutation                                                                     | High   | static assertion + runtime negative control | 输入校验步骤                                                                                                   |
-| S14 | Drill execute on production                      | rejected before any mutation                                                                     | High   | static assertion                            | 仅 staging execute                                                                                             |
-| S15 | Staging drill execute                            | health SHA target → head; both polls pass; summary records both                                  | High   | runtime-real-data                           | 自动 restore + `always()` 汇总                                                                                 |
-| S16 | Restore/health never reaches head                | job red, manual steps in runbook; staging may stay on target                                     | High   | static assertion + human acceptance         | `deploymentRedeploy(headId)`，失败不吞                                                                         |
-| S17 | Rollback deployment triggers a new smoke run     | new run does not cancel the run performing rollback/notification                                 | High   | static assertion + runtime drill            | concurrency group 用 deployment id                                                                             |
-| S18 | Head itself is a rollback deployment (loop risk) | if `meta.reason` identifies rollback, do not auto-rollback again; otherwise record residual risk | High   | runtime-real-data (observe `meta.reason`)   | 已确认历史部署的 `meta.reason` 全是 `"deploy"`；drill 再观察回滚部署是否不同；未识别则开 follow-up，不在本票猜 |
-| S19 | Environment secrets missing                      | `rollback_executed=false`; issue says skipped, not gated                                         | Medium | automated test + static assertion           | 现有 skip 路径保留                                                                                             |
-| S20 | Production plan drill                            | read-only; no mutation; prints target and gate state                                             | High   | static assertion + runtime plan             | plan 分支不含 mutation                                                                                         |
+| #   | Scenario                                                    | Expected Behavior                                                                                | Risk   | Evidence                                    | Mitigation                                                                                                    |
+| --- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| S1  | Real staging `deployments` payload                          | target = `b211…` (878f41e), not head `49e5…` (5ceb6e6)                                           | Medium | automated test + runtime plan               | 真实 fixture；drill plan 复验                                                                                 |
+| S2  | Real production `deployments` payload                       | target = `6195…` (192c3dc), not head `1586…` (4ab7243)                                           | Medium | automated test + runtime plan               | 真实 fixture；production plan 复验                                                                            |
+| S3  | Only head is `canRollback`                                  | `targetId=""`, reason `only-head-eligible`; rollback step fails loudly                           | High   | automated test + static assertion           | fail closed，不重新部署坏 head                                                                                |
+| S4  | No deployment is `canRollback`                              | `targetId=""`, reason `no-eligible-deployment`; step fails                                       | Medium | automated test                              | 同上                                                                                                          |
+| S5  | Empty/malformed `edges`                                     | no target, no crash, reason `no-deployments`                                                     | Low    | automated test                              | 纯函数兜底                                                                                                    |
+| S6  | Production smoke failure, variable unset                    | gate closed, no mutation, `rollback_gated=true`, issue says GATED, job red                       | High   | automated test + static assertion           | 默认关闭；issue 明确要求人工操作                                                                              |
+| S7  | Production smoke failure, variable `"true"`                 | gate allowed, mutation path runs                                                                 | High   | automated test                              | 只在用户授权后设置变量                                                                                        |
+| S8  | Production variable `"TRUE"`/`"1"`/`"yes"`/`" true "`/empty | gate closed                                                                                      | Medium | automated test                              | 精确匹配，拒绝宽松真值/前后空格                                                                               |
+| S9  | Staging smoke failure, variable unset                       | gate allowed, mutation path runs                                                                 | Medium | automated test                              | staging 始终放行                                                                                              |
+| S10 | Unknown/empty environment                                   | gate closed, reason `unknown-environment`                                                        | Low    | automated test                              | fail closed；workflow 上游只产出 staging/production，这一支是防御性守卫                                       |
+| S11 | Mutation returns `true`                                     | `rollback_executed=true`; issue says succeeded                                                   | Medium | automated test + runtime drill              | drill 真实返回                                                                                                |
+| S12 | Mutation returns `false`/error                              | `rollback_executed=false`; issue says failed; no false success                                   | High   | automated test + static assertion           | 现有布尔判定保留                                                                                              |
+| S13 | Drill execute without `confirm=rollback-staging`            | rejected before any mutation                                                                     | High   | static assertion + runtime negative control | 输入校验步骤                                                                                                  |
+| S14 | Drill execute on production                                 | rejected before any mutation                                                                     | High   | static assertion                            | 仅 staging execute                                                                                            |
+| S15 | Staging drill execute                                       | health SHA target → head; both polls pass; summary records both                                  | High   | runtime-real-data                           | 自动 restore + `always()` 汇总                                                                                |
+| S16 | Restore/health never reaches head                           | job red, manual steps in runbook; staging may stay on target                                     | High   | static assertion + human acceptance         | `deploymentRedeploy(headId)`，失败不吞                                                                        |
+| S17 | Rollback deployment triggers a new smoke run                | new run does not cancel the run performing rollback/notification                                 | High   | static assertion + runtime drill            | concurrency group 用 deployment id；rollback/drill 再共享 environment mutex                                   |
+| S18 | Head itself is a rollback deployment (loop risk)            | if `meta.reason` identifies rollback, do not auto-rollback again; otherwise record residual risk | High   | runtime-real-data (observe `meta.reason`)   | 已确认历史部署的 `meta.reason` 全是 `"deploy"`；runbook/ci 文档写明第二次失败必须人工停手；follow-up 票待授权 |
+| S19 | Environment secrets missing                                 | `rollback_executed=false`; issue says skipped, not gated                                         | Medium | automated test + static assertion           | 现有 skip 路径保留                                                                                            |
+| S20 | Production plan drill                                       | read-only; no mutation; prints target and gate state                                             | High   | static assertion + runtime plan             | plan 分支不含 mutation                                                                                        |
 
 ## Tickets
 
-| #   | Title                                                           | Blocked by | What it delivers                                                  |
-| --- | --------------------------------------------------------------- | ---------- | ----------------------------------------------------------------- |
-| T1  | helper：目标选择 + 闸门 + gated payload 纯函数与单测            | None       | 所有决策逻辑可在稳定 seam 上测试；现有 helper 行为不变            |
-| T2  | workflow：dispatch 演练 + production 闸门 + concurrency 修复    | T1         | plan/execute 入口、fail-closed 目标选择、gate 输出、静态守卫      |
-| T3  | runtime：staging execute 真实回滚 + restore，production plan    | T2         | mutation 第一次真实执行、health SHA 双向切换、production 只读证据 |
-| T4  | docs + Linear + roadmap：记录证据、runbook、是否放行 production | T3         | 操作员可复现；AAV-1295 的残余风险明确；由用户决定变量是否打开     |
+| #   | Title                                                              | Blocked by | What it delivers                                                             |
+| --- | ------------------------------------------------------------------ | ---------- | ---------------------------------------------------------------------------- |
+| T1  | helper：目标选择 + 闸门 + gated payload 纯函数与单测               | None       | 所有决策逻辑可在稳定 seam 上测试；现有 helper 行为不变                       |
+| T2  | workflow：dispatch 演练 + production 闸门 + concurrency/mutex 修复 | T1         | plan/execute 入口、fail-closed 目标选择、gate 输出、共享 wait 脚本、静态守卫 |
+| T3  | runtime：staging execute 真实回滚 + restore，production plan       | T2         | mutation 第一次真实执行、health SHA 双向切换、production 只读证据            |
+| T4  | docs + Linear + roadmap：记录证据、runbook、是否放行 production    | T3         | 操作员可复现；AAV-1295 的残余风险明确；由用户决定变量是否打开                |
 
 ## Out of Scope
 
@@ -230,8 +241,8 @@ deployment id 对每次部署唯一；dispatch run 用 `run_id`，互不取消�
   专属 secret ID 与项目环境 —— 闸门把这段风险留到人工放行。
 - 回滚部署的 smoke test 如果也失败，现有启发式可能把「坏版本」当成下一目标
   （S18）。2026-11-16 的只读查询显示所有历史部署的 `meta.reason` 都是
-  `"deploy"`，所以不能靠它识别 rollback；drill 会观察回滚产生的新部署是否仍是
-  `"deploy"`。若无法识别，本票只记录风险，loop guard 另开票。
+  `"deploy"`，所以不能靠它识别 rollback；runbook 与 ci 文档已写明第二次失败必须
+  人工停手，loop guard 另开票（创建 Linear 票需要用户授权）。
 - `deploymentRedeploy` 恢复失败时，staging 可能停在旧版本；runbook 给出手动恢复
   命令，drill 不会把它报成绿。
 - `RAILWAY_PRODUCTION_ROLLBACK_ENABLED` 是 repo variable，不进入 git 历史；

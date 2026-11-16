@@ -110,8 +110,10 @@ fails.
 
 The rollback path is **fail-closed**: it never selects the head deployment, and
 production only mutates when the repository variable
-`RAILWAY_PRODUCTION_ROLLBACK_ENABLED` is exactly `true` (unset = a GATED issue,
-no mutation). Drill it before trusting it:
+`RAILWAY_PRODUCTION_ROLLBACK_ENABLED` is exactly `true` (case-sensitive; unset or
+padded values = a GATED issue, no mutation). The auto-rollback job and the drill
+share a per-environment `railway-rollback-<environment>` mutex. Drill it before
+trusting it:
 `gh workflow run deployment-smoke-test.yml --ref railway -f environment=staging -f mode=plan`,
 then the same with `-f mode=execute -f confirm=rollback-staging` (staging-only;
 the drill restores the head automatically). Manual recovery and evidence

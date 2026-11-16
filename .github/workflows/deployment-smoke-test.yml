@@ -1,6 +1,9 @@
 # Post-deployment smoke test: verify live APIs return healthy data after Railway deploy.
 # Runs health + API checks once Railway reports deploy success (no long SHA wait loop).
-# On failure: auto-rollback via Railway GraphQL API (both staging and production).
+# On failure: auto-rollback via Railway GraphQL API. Staging always rolls back;
+# production only when the RAILWAY_PRODUCTION_ROLLBACK_ENABLED repository variable
+# is exactly "true". workflow_dispatch runs a read-only plan for either environment
+# or a real staging-only rollback drill.
 #
 # Trigger: deployment_status (after Railway deploys), NOT push — avoids deadlock
 # with Railway's "Wait for CI" which blocks deploy until all push-triggered
@@ -268,6 +271,11 @@ jobs:
   rollback:
     needs: smoke-test
     if: failure() && needs.smoke-test.outputs.should_run == 'true'
+    # Shared with the drill: a manual drill and an automatic rollback must not
+    # mutate the same environment at the same time.
+    concurrency:
+      group: railway-rollback-${{ needs.smoke-test.outputs.environment_label }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     env:
       RAILWAY_API_URL: https://backboard.railway.com/graphql/v2
@@ -349,6 +357,8 @@ jobs:
 
           echo "🔍 Fetching recent deployments for $ENV_LABEL..."
 
+          # Kept inline (same shape as the drill plan step) rather than wrapped
+          # in a client; update both copies together when the schema changes.
           DEPLOYMENTS=$(jq -n \
             --arg project "$RAILWAY_PROJECT_ID" \
             --arg service "$RAILWAY_SERVICE_ID" \
@@ -379,7 +389,8 @@ jobs:
           HEAD_ID=$(echo "$ROLLBACK_PLAN" | jq -r '.headId')
           ROLLBACK_ID=$(echo "$ROLLBACK_PLAN" | jq -r '.targetId')
           ROLLBACK_REASON=$(echo "$ROLLBACK_PLAN" | jq -r '.reason')
-          echo "Rollback plan: head=${HEAD_ID:0:8} target=${ROLLBACK_ID:0:8} reason=$ROLLBACK_REASON"
+          ELIGIBLE_COUNT=$(echo "$ROLLBACK_PLAN" | jq -r '.eligibleCount')
+          echo "Rollback plan: head=${HEAD_ID:0:8} target=${ROLLBACK_ID:0:8} eligible=$ELIGIBLE_COUNT reason=$ROLLBACK_REASON"
 
           if [ -z "$ROLLBACK_ID" ]; then
             echo "::error::No rollback-eligible deployment found for $ENV_LABEL (reason: $ROLLBACK_REASON). Manual intervention required."
@@ -446,7 +457,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     concurrency:
-      group: rollback-drill-${{ inputs.environment }}
+      group: railway-rollback-${{ inputs.environment }}
       cancel-in-progress: false
     env:
       RAILWAY_API_URL: https://backboard.railway.com/graphql/v2
@@ -510,6 +521,7 @@ jobs:
         id: plan
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          ENVIRONMENT_LABEL: ${{ steps.target.outputs.environment_label }}
           RAILWAY_PRODUCTION_PROJECT_ID: ${{ secrets.RAILWAY_PRODUCTION_PROJECT_ID }}
           RAILWAY_PRODUCTION_SERVICE_ID: ${{ secrets.RAILWAY_PRODUCTION_SERVICE_ID }}
           RAILWAY_PRODUCTION_ENVIRONMENT_ID: ${{ secrets.RAILWAY_PRODUCTION_ENVIRONMENT_ID }}
@@ -576,12 +588,13 @@ jobs:
           TARGET_COMMIT=$(echo "$PLAN" | jq -r '.targetCommit')
           TARGET_STATUS=$(echo "$PLAN" | jq -r '.targetStatus')
           TARGET_CREATED_AT=$(echo "$PLAN" | jq -r '.targetCreatedAt')
+          ELIGIBLE_COUNT=$(echo "$PLAN" | jq -r '.eligibleCount')
           REASON=$(echo "$PLAN" | jq -r '.reason')
 
           GATE_JSON=$(node --input-type=module -e "
             import { resolveRollbackGate } from './.github/scripts/deployment-smoke-test-helpers.mjs';
             console.log(JSON.stringify(resolveRollbackGate({
-              environmentLabel: process.env.DRILL_ENVIRONMENT,
+              environmentLabel: process.env.ENVIRONMENT_LABEL,
               productionRollbackEnabled: process.env.PRODUCTION_ROLLBACK_ENABLED,
             })));
           ")
@@ -595,19 +608,15 @@ jobs:
           echo "target_commit=$TARGET_COMMIT" >> "$GITHUB_OUTPUT"
           echo "target_status=$TARGET_STATUS" >> "$GITHUB_OUTPUT"
           echo "target_created_at=$TARGET_CREATED_AT" >> "$GITHUB_OUTPUT"
+          echo "eligible_count=$ELIGIBLE_COUNT" >> "$GITHUB_OUTPUT"
           echo "reason=$REASON" >> "$GITHUB_OUTPUT"
           echo "gate_allowed=$GATE_ALLOWED" >> "$GITHUB_OUTPUT"
           echo "gate_reason=$GATE_REASON" >> "$GITHUB_OUTPUT"
 
-          echo "Rollback drill plan: head=${HEAD_ID:0:8}/${HEAD_COMMIT:0:7} target=${TARGET_ID:0:8}/${TARGET_COMMIT:0:7} reason=$REASON gate=$GATE_ALLOWED($GATE_REASON)"
-
-          if [ -z "$TARGET_ID" ]; then
-            echo "::error::No rollback-eligible deployment found for $DRILL_ENVIRONMENT (reason: $REASON)."
-            exit 1
-          fi
+          echo "Rollback drill plan: head=${HEAD_ID:0:8}/${HEAD_COMMIT:0:7} target=${TARGET_ID:0:8}/${TARGET_COMMIT:0:7} eligible=$ELIGIBLE_COUNT reason=$REASON gate=$GATE_ALLOWED($GATE_REASON)"
 
           {
-            echo "## Rollback drill plan — $DRILL_ENVIRONMENT"
+            echo "## Rollback drill plan — $ENVIRONMENT_LABEL"
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
@@ -615,9 +624,20 @@ jobs:
             echo "| Head | \`$HEAD_ID\` / \`$HEAD_COMMIT\` / \`$HEAD_STATUS\` |"
             echo "| Target | \`$TARGET_ID\` / \`$TARGET_COMMIT\` / \`$TARGET_STATUS\` |"
             echo "| Target created | \`$TARGET_CREATED_AT\` |"
+            echo "| Eligible deployments | \`$ELIGIBLE_COUNT\` |"
             echo "| Selection reason | \`$REASON\` |"
             echo "| Production gate | \`$GATE_ALLOWED\` (\`$GATE_REASON\`) |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$DRILL_MODE" = "execute" ] && [ "$GATE_ALLOWED" != "true" ]; then
+            echo "::error::Execute mode requires an open rollback gate for $ENVIRONMENT_LABEL ($GATE_REASON)."
+            exit 1
+          fi
+
+          if [ -z "$TARGET_ID" ]; then
+            echo "::error::No rollback-eligible deployment found for $ENVIRONMENT_LABEL (reason: $REASON)."
+            exit 1
+          fi
 
       - name: Execute rollback (staging only)
         id: rollback
@@ -651,18 +671,7 @@ jobs:
         env:
           EXPECTED_SHA: ${{ steps.plan.outputs.target_commit }}
           HEALTH_URL: ${{ steps.target.outputs.api_base_url }}/health
-        run: |
-          for attempt in $(seq 1 60); do
-            SHA=$(curl -sS --max-time 10 "$HEALTH_URL" | jq -r '.commitSha // empty')
-            if [ "$SHA" = "$EXPECTED_SHA" ]; then
-              echo "✅ $DRILL_ENVIRONMENT is serving $EXPECTED_SHA after rollback"
-              exit 0
-            fi
-            echo "attempt $attempt: health commitSha=${SHA:-<empty>} (want $EXPECTED_SHA)"
-            sleep 10
-          done
-          echo "::error::Rollback did not become healthy with $EXPECTED_SHA"
-          exit 1
+        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 60 10
 
       - name: Restore the original head deployment
         id: restore
@@ -697,18 +706,7 @@ jobs:
         env:
           EXPECTED_SHA: ${{ steps.plan.outputs.head_commit }}
           HEALTH_URL: ${{ steps.target.outputs.api_base_url }}/health
-        run: |
-          for attempt in $(seq 1 60); do
-            SHA=$(curl -sS --max-time 10 "$HEALTH_URL" | jq -r '.commitSha // empty')
-            if [ "$SHA" = "$EXPECTED_SHA" ]; then
-              echo "✅ $DRILL_ENVIRONMENT is serving $EXPECTED_SHA after restore"
-              exit 0
-            fi
-            echo "attempt $attempt: health commitSha=${SHA:-<empty>} (want $EXPECTED_SHA)"
-            sleep 10
-          done
-          echo "::error::Restore did not become healthy with $EXPECTED_SHA. Manual recovery required."
-          exit 1
+        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 60 10
 
       - name: Drill summary
         if: always()
@@ -728,6 +726,7 @@ jobs:
             echo "|-------|-------|"
             echo "| Head | \`${{ steps.plan.outputs.head_id }}\` / \`${{ steps.plan.outputs.head_commit }}\` |"
             echo "| Target | \`${{ steps.plan.outputs.target_id }}\` / \`${{ steps.plan.outputs.target_commit }}\` |"
+            echo "| Eligible deployments | \`${{ steps.plan.outputs.eligible_count }}\` |"
             echo "| Selection | \`${{ steps.plan.outputs.reason }}\` |"
             echo "| Production gate | \`${{ steps.plan.outputs.gate_allowed }}\` (\`${{ steps.plan.outputs.gate_reason }}\`) |"
           } >> "$GITHUB_STEP_SUMMARY"
