@@ -221,6 +221,7 @@ mutex，保证手动演练与真实回滚不会同时改同一个环境。
 | `43831671017` | production / plan（最终代码）                  | head `1586d53f`/`4ab7243`，target `6195f301`/`192c3dc`（deploy），eligible=2，gate=false(production-gated)；无 mutation                                                                                                                      |
 | `43835167967` | staging / plan（`first: 10`）                  | head `52f2cfc4`/`f5341fb`，target `425e7468`/`97d941f`（deploy），eligible=10，gate=true(staging)                                                                                                                                            |
 | `43835257174` | staging / execute（最终 workflow）             | head `52f2cfc4`/`f5341fb`，target `425e7468`/`97d941f`；`deploymentRedeploy` 返回 `0309013c`；target 在 08:57:24 served（92s）；restore `d82b4553` served `f5341fb`（71s）；run 全绿                                                         |
+| `43837166209` | production / plan（`0c1f4bd`）                 | head `1586d53f`/`4ab7243`，target `6195f301`/`192c3dc`（deploy），eligible=2，gate=false(production-gated)；无 mutation                                                                                                                      |
 
 `43812407580` 的 wait 只给了 60×10s，rollback 部署在 05:46:36 创建、约 05:57:19
 才完成首次健康 fetch（10m43s），所以 wait 失败、run 为红；`always()` 的 restore
@@ -248,8 +249,10 @@ runbook 手动实验。
 `ccfb21de`/`802a951`，target `2d909c62`/`65f2089`（release），`deploymentRedeploy`
 返回 `246afaea`；`/health` 在 08:26:20 变为 `65f2089`（71s），restore
 `bf6aabdc` 在 08:27:22 回到 `802a951`（61s）。所有 step 通过，run 为绿；这是
-S15 的第一份完整证据。`43831671017` 用最终代码重跑 production plan：target 仍是
+S15 的第一份完整证据。`43831671017` 用 `802a951` 重跑 production plan：target 仍是
 `6195f301`/`192c3dc`，eligible=2，gate=false(production-gated)，没有 mutation。
+`43837166209` 用最终 `0c1f4bd` 再跑一次 production plan，target、eligible、gate
+均不变，仍无 mutation。
 
 `43835167967` 用最终 workflow 重跑 staging plan（`first: 10`）：head
 `52f2cfc4`/`f5341fb`，target `425e7468`/`97d941f`，eligible=10，gate=true。
