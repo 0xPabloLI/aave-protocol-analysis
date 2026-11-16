@@ -92,7 +92,8 @@ deploymentRedeploy(id: String!, usePreviousImageTag: Boolean): Deployment!
   `gate_allowed`，闸门关闭时直接失败（即使未来有人放松 staging-only 校验也不会
   绕过闸门）；先 `deploymentRollback(targetId)`，用
   `.github/scripts/wait-for-commit-sha.sh` 轮询 `/health.commitSha` 到 target
-  commit（120 次 × 10s = 20 分钟；2026-11-16 的 rollback 冷启动用了 10m43s）；
+  commit（180 次 × 10s = 30 分钟；2026-11-16 的 rollback 冷启动用了 10m43s，
+  第二次超过 20 分钟）；
   再用 `deploymentRedeploy(headId)` 恢复，轮询回 head commit。
   - 任一步失败都保留 `always()` 的恢复/汇总步骤，job 最终为红；
   - 恢复失败时 runbook 给出手动命令；不允许把失败报成绿。
@@ -181,18 +182,24 @@ mutex，保证手动演练与真实回滚不会同时改同一个环境。
 实施 commit `61879da` 推送后，CI `43811743870` success；Railway staging 部署到
 `61879da`，post-deploy smoke `43812119937` success。
 
-| 运行          | 入口                                           | 结果                                                                                                                                                                        |
-| ------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `43812166816` | staging / plan                                 | head `0411ad56`/`61879da`，target `49e5f677`/`5ceb6e6`，eligible=5，gate=true(staging)                                                                                      |
-| `43812218200` | production / plan                              | head `1586d53f`/`4ab7243`，target `6195f301`/`192c3dc`，eligible=2，gate=false(production-gated)                                                                            |
-| `43812326958` | staging / execute / `confirm=wrong`            | `Validate drill request` 失败；plan/execute/wait/restore 全部 skipped                                                                                                       |
-| `43812407580` | staging / execute / `confirm=rollback-staging` | mutation 返回 `true`；rollback 部署 `4a9c722c`（commit `5ceb6e6`，`meta.reason: "rollback"`）；restore 部署 `ad935125`（commit `61879da`，`meta.reason: "redeploy"`）served |
+| 运行          | 入口                                           | 结果                                                                                                                                                                                           |
+| ------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `43812166816` | staging / plan                                 | head `0411ad56`/`61879da`，target `49e5f677`/`5ceb6e6`，eligible=5，gate=true(staging)                                                                                                         |
+| `43812218200` | production / plan                              | head `1586d53f`/`4ab7243`，target `6195f301`/`192c3dc`，eligible=2，gate=false(production-gated)                                                                                               |
+| `43812326958` | staging / execute / `confirm=wrong`            | `Validate drill request` 失败；plan/execute/wait/restore 全部 skipped                                                                                                                          |
+| `43812407580` | staging / execute / `confirm=rollback-staging` | mutation 返回 `true`；rollback 部署 `4a9c722c`（commit `5ceb6e6`，`meta.reason: "rollback"`）；restore 部署 `ad935125`（commit `61879da`，`meta.reason: "redeploy"`）served                    |
+| `43814886684` | staging / plan（wait 修复后）                  | head `b6a3be43`/`12c6c16`，target `ad935125`/`61879da`，eligible=5，gate=true(staging)                                                                                                         |
+| `43814933172` | staging / execute（wait 修复后）               | mutation 返回 `true`；rollback 部署 `e9044226`（commit `61879da`，`meta.reason: "rollback"`）；wait 120×10s 超时；restore 部署 `ef9f3c09`（commit `12c6c16`，`meta.reason: "redeploy"`）served |
 
 `43812407580` 的 wait 只给了 60×10s，rollback 部署在 05:46:36 创建、约 05:57:19
 才完成首次健康 fetch（10m43s），所以 wait 失败、run 为红；`always()` 的 restore
 仍然执行，05:57:59 staging 回到 `61879da`。这次运行已经证明 mutation 返回形状、
-rollback 部署的 `meta.reason`、以及 restore 路径；不足是 wait 预算。随后把 wait
-改为 120×10s（20 分钟），并加了 `head-is-rollback` guard，重跑结果见下一次更新。
+rollback 部署的 `meta.reason`、以及 restore 路径；不足是 wait 预算。
+
+`43814933172` 把 wait 提到 120×10s，但 rollback 部署 `e9044226` 在 06:10:43 创建、
+06:32:00 才开始输出日志（21m17s），仍超过 20 分钟；restore `ef9f3c09` 在 06:31:03
+创建并 served `12c6c16`。因此 wait 再提到 180×10s（30 分钟），并保留
+`head-is-rollback` guard；第三次 execute 结果见下一次更新。
 
 ## Scenario & Risk Verification Matrix
 
@@ -202,7 +209,7 @@ rollback 部署的 `meta.reason`、以及 restore 路径；不足是 wait 预算
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------- |
 | `.github/scripts/deployment-smoke-test-helpers.mjs` | 新增 `selectRollbackCandidate` / `resolveRollbackGate` / head-is-rollback / gated 态                          | Medium | 纯函数；现有导出签名不变；所有新分支有单测；workflow 与 drill 复用同一实现。                                                |
 | `.github/scripts/wait-for-commit-sha.sh`            | rollback/restore 共用的 health SHA 轮询脚本                                                                   | Medium | 两个 wait step 共用；本地对 staging 真实验过 match=0 / mismatch=1；drill 复验。                                             |
-| `.github/workflows/deployment-smoke-test.yml`       | dispatch 演练、production 闸门、concurrency key、共享 mutex、目标选择 helper、plan 先写 summary、20 分钟 wait | High   | 生产恢复路径；闸门默认关闭、execute 仅 staging 且再次检查 gate、mutation 前有静态守卫；负控证明 production execute 不可达。 |
+| `.github/workflows/deployment-smoke-test.yml`       | dispatch 演练、production 闸门、concurrency key、共享 mutex、目标选择 helper、plan 先写 summary、30 分钟 wait | High   | 生产恢复路径；闸门默认关闭、execute 仅 staging 且再次检查 gate、mutation 前有静态守卫；负控证明 production execute 不可达。 |
 | `tests/deploymentSmokeTest.test.ts`                 | 真实 fixture + 新增 helper/payload 用例                                                                       | Low    | 测试专用；真实数据来自 2026-11-16 只读查询。                                                                                |
 | `tests/deploymentSmokeTestWorkflow.test.ts`         | 新增 workflow 静态守卫                                                                                        | Low    | 测试专用；只读文本，不执行外部动作。                                                                                        |
 | `docs/ci-security-automation.md`                    | 记录闸门、drill、concurrency 语义                                                                             | Low    | 文档；与代码同步。                                                                                                          |

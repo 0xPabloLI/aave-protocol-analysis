@@ -671,7 +671,7 @@ jobs:
         env:
           EXPECTED_SHA: ${{ steps.plan.outputs.target_commit }}
           HEALTH_URL: ${{ steps.target.outputs.api_base_url }}/health
-        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 120 10
+        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 180 10
 
       - name: Restore the original head deployment
         id: restore
@@ -706,7 +706,7 @@ jobs:
         env:
           EXPECTED_SHA: ${{ steps.plan.outputs.head_commit }}
           HEALTH_URL: ${{ steps.target.outputs.api_base_url }}/health
-        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 120 10
+        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 180 10
 
       - name: Drill summary
         if: always()

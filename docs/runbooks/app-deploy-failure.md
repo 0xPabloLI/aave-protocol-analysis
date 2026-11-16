@@ -63,8 +63,8 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
    - The run summary records head/target deployment IDs and commits, the
      selection reason, the gate state, and every step outcome. Keep the run URL
      and the `deploymentRollback` response with the delivery evidence. The
-     health waits allow 20 minutes: a rollback cold start can exceed 10 minutes
-     (observed 2026-11-16: 10m43s to first healthy fetch).
+     health waits allow 30 minutes: rollback cold starts took 10m43s and over
+     20 minutes on 2026-11-16.
 7. **Escalate** — pushing a revert commit is still the normal recovery when the
    auto-rollback is gated or unavailable. `railway redeploy --service aave-protocol-analysis --from-source -y`
    is **not** a rollback: `--from-source` deploys the newest commit of the
