@@ -49,10 +49,9 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
      `deploymentRollback` returns `true` on success. To restore a specific head
      deployment after a drill, use the same shape with
      `mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }`.
-   - If the rollback deployment's own smoke test also fails, **stop**. The
-     target heuristic cannot tell a rollback from a normal deploy
-     (`meta.reason` is `deploy`), so a second automatic attempt can select a
-     bad version. Treat it as a manual incident and do not re-run the
+   - If the head is itself a rollback deployment (`meta.reason: "rollback"`),
+     the target selector fails closed with `head-is-rollback`; do not bypass
+     it. Treat a second failure as a manual incident and do not re-run the
      rollback.
 6. **Drill the rollback path (staging only)**
    - Read-only plan for either environment:
@@ -63,7 +62,9 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
      "Validate drill request" before any mutation.
    - The run summary records head/target deployment IDs and commits, the
      selection reason, the gate state, and every step outcome. Keep the run URL
-     and the `deploymentRollback` response with the delivery evidence.
+     and the `deploymentRollback` response with the delivery evidence. The
+     health waits allow 20 minutes: a rollback cold start can exceed 10 minutes
+     (observed 2026-11-16: 10m43s to first healthy fetch).
 7. **Escalate** — pushing a revert commit is still the normal recovery when the
    auto-rollback is gated or unavailable. `railway redeploy --service aave-protocol-analysis --from-source -y`
    is **not** a rollback: `--from-source` deploys the newest commit of the

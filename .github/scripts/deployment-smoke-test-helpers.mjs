@@ -123,9 +123,12 @@ export function selectRailwayRollbackTarget(targetEnvironment, secrets) {
  *
  * The first edge is the head — the deployment whose smoke test just failed.
  * Rolling back to the head would redeploy the broken commit, so the head is
- * never a candidate. When no non-head deployment can roll back, the caller
- * must fail closed (create a manual-intervention issue) instead of retrying
- * the same broken version.
+ * never a candidate. If the head is itself a rollback deployment
+ * (`meta.reason === "rollback"`), a second automatic rollback would loop, so
+ * the function fails closed with `head-is-rollback` and lets a human decide.
+ * When no non-head deployment can roll back, the caller must fail closed
+ * (create a manual-intervention issue) instead of retrying the same broken
+ * version.
  *
  * `edges` are passed straight from the GraphQL response; malformed shapes are
  * treated as "no deployments" so a bad response can never select arbitrarily.
@@ -151,6 +154,20 @@ export function selectRollbackCandidate(edges) {
 
   const resolvedHeadId = normalizeValue(nodes[0].id).trim();
   const eligible = nodes.filter((node) => node.canRollback === true);
+  const headReason = normalizeValue(nodes[0].meta?.reason).trim();
+
+  if (headReason === "rollback") {
+    return {
+      headId: resolvedHeadId,
+      targetId: "",
+      targetCommit: "",
+      targetStatus: "",
+      targetCreatedAt: "",
+      eligibleCount: eligible.length,
+      reason: "head-is-rollback",
+    };
+  }
+
   const target = eligible.find(
     (node) => normalizeValue(node.id).trim() !== resolvedHeadId
   );

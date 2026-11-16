@@ -108,8 +108,9 @@ runs as post-deploy verification (health, `/api/markets`, `/api/meta/side-data`,
 frontend), and rolls the deployment back via the Railway GraphQL API if a check
 fails.
 
-The rollback path is **fail-closed**: it never selects the head deployment, and
-production only mutates when the repository variable
+The rollback path is **fail-closed**: it never selects the head deployment, a
+head that is itself a rollback deployment (`meta.reason: rollback`) fails closed
+with `head-is-rollback`, and production only mutates when the repository variable
 `RAILWAY_PRODUCTION_ROLLBACK_ENABLED` is exactly `true` (case-sensitive; unset or
 padded values = a GATED issue, no mutation). The auto-rollback job and the drill
 share a per-environment `railway-rollback-<environment>` mutex. Drill it before

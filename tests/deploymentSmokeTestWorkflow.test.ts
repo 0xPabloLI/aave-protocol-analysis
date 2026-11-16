@@ -230,4 +230,9 @@ test("drill: plan mode is read-only, execute mode rolls back and restores", () =
   );
   assert.ok(waitRollback.includes("wait-for-commit-sha.sh"));
   assert.ok(waitRestore.includes("wait-for-commit-sha.sh"));
+  assert.ok(
+    waitRollback.includes('"$EXPECTED_SHA" 120 10'),
+    "the rollback cold start observed on 2026-11-16 took over 10 minutes"
+  );
+  assert.ok(waitRestore.includes('"$EXPECTED_SHA" 120 10'));
 });

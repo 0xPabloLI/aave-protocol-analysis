@@ -450,6 +450,34 @@ test("selectRollbackCandidate: a head-only canRollback list fails closed instead
   assert.equal(plan.reason, "only-head-eligible");
 });
 
+test("selectRollbackCandidate: a rollback head fails closed instead of looping", () => {
+  const plan = selectRollbackCandidate([
+    {
+      node: {
+        id: "rollback-head",
+        status: "REMOVED",
+        createdAt: "2026-11-16T05:46:36.786Z",
+        canRollback: true,
+        meta: { reason: "rollback", commitHash: "5ceb6e6" },
+      },
+    },
+    {
+      node: {
+        id: "previous-deploy",
+        status: "REMOVED",
+        createdAt: "2026-11-16T05:40:13.159Z",
+        canRollback: true,
+        meta: { reason: "deploy", commitHash: "61879da" },
+      },
+    },
+  ]);
+
+  assert.equal(plan.headId, "rollback-head");
+  assert.equal(plan.targetId, "");
+  assert.equal(plan.eligibleCount, 2);
+  assert.equal(plan.reason, "head-is-rollback");
+});
+
 test("selectRollbackCandidate: no canRollback deployment has no target", () => {
   const plan = selectRollbackCandidate([
     {
