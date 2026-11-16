@@ -252,8 +252,9 @@ function getRollbackPresentation({
 
   if (isTrue(rollbackExecuted)) {
     return {
-      titleSuffix: "auto-rollback succeeded",
-      status: "✅ Auto-rollback succeeded — previous deployment restored",
+      titleSuffix: "auto-rollback accepted",
+      status:
+        "✅ Auto-rollback accepted — Railway is redeploying the previous release; confirm `/health` after warm-up",
     };
   }
 

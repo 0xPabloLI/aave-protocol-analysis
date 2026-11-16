@@ -36,7 +36,7 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
      run the manual `deploymentRedeploy` below. Do not flip the variable just to
      clear an incident — it exists to make the first production rollback
      deliberate.
-   - If the issue says the rollback succeeded, confirm the live commit after
+   - If the issue says the rollback was accepted, confirm the live commit after
      the ~3 min warm-up:
      `curl -s https://api.aaveapy.com/health | jq -r .commitSha` (or
      `https://staging-api.aaveapy.com/health`).
@@ -52,10 +52,10 @@ Symptom: `railway up` fails, healthcheck stays unhealthy, or CI auto-reverted a 
      `deploymentRedeploy` returns the new deployment object; poll `/health` until
      `commitSha` matches the target commit (40–72 seconds on 2026-11-16).
    - **Manual `deploymentRollback` experiment (not the auto path).** It returns
-     `true`, but on 2026-11-16 four real runs took 10m43s at best and over
-     30 minutes in three of four, with `/health` empty throughout. Only run it
-     when you can accept an outage of that length and have the current head ID
-     ready for the recovery:
+     `true`, but on 2026-11-16 four real runs served in 10m43s at best, took
+     21m17s in the second, and did not serve within 30 minutes in the last two;
+     `/health` was empty throughout. Only run it when you can accept an outage
+     of that length and have the current head ID ready for the recovery:
      ```bash
      # 1) roll back to a target deployment (removes the serving deployment)
      curl -sS https://backboard.railway.com/graphql/v2 \

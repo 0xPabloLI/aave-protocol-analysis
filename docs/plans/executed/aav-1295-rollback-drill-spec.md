@@ -4,12 +4,12 @@
 > 默认关闭，打开需 owner 单独授权。已移入 `docs/plans/executed/`。
 >
 > **Outcome (2026-11-16):** `deploymentRollback` 已真实执行 4 次，每次都返回
-> `true`；但 rollback 部署在 4 次里只有 1 次在 10m43s 内 serving，其余 3 次
-> 超过 30 分钟仍未 serving。`deploymentRedeploy(targetId)` 在 4 次恢复里都在
-> 40–72 秒内 serving，因此自动回滚与演练改用 `deploymentRedeploy`；
-> `deploymentRollback` 仅保留为 runbook 里的手动实验。第 5 次演练
-> `43831007873` 用 `deploymentRedeploy` 全绿（target 71s、restore 61s）。
-> production 闸门不变（默认关闭，未打开）。
+> `true`；但 rollback 部署只有 1 次在 10m43s 内 serving，第二次 21m17s 才开始
+> 输出日志，其余 2 次超过 30 分钟仍未 serving。`deploymentRedeploy(targetId)`
+> 在 4 次恢复里都在 40–72 秒内 serving，因此自动回滚与演练改用
+> `deploymentRedeploy`；`deploymentRollback` 仅保留为 runbook 里的手动实验。
+> 第 5 次演练 `43831007873` 用 `deploymentRedeploy` 全绿（target 71s、
+> restore 61s）。production 闸门不变（默认关闭，未打开）。
 
 ## Problem
 
@@ -172,8 +172,9 @@ mutex，保证手动演练与真实回滚不会同时改同一个环境。
   `deploymentRedeploy`、concurrency group 含 deployment id、通知步骤传
   `rollbackGated`。静态测试只把
   `mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }` 计为
-  回滚调用点，并断言 workflow 不包含 `deploymentRollback` 查询或响应引用
-  （它只留在 runbook 手动实验里）。
+  回滚调用点；“单调用点”断言只作用于 `rollback` job，drill 的 execute/restore
+  各有一个调用点，三处字面量与成功谓词由独立断言计数。测试还断言 workflow
+  不包含 `deploymentRollback` 查询或响应引用（它只留在 runbook 手动实验里）。
 
 ### 2. 运行时真实数据
 
@@ -234,9 +235,10 @@ served；restore `5cbb4957` 在 07:14:55 served `10cda0e`（约 71 秒）。当�
 
 `43824584821` 用 release 目标 `b2598e00`/`10cda0e`：rollback 部署 `79ce1753`
 仍然 30 分钟未 served；restore `42562581` 在约 72 秒内 served `65f2089`。
-四次 `deploymentRollback` 的最好成绩是 10m43s，其余三次超过 20/30 分钟；
-而 `deploymentRedeploy` 四次恢复都在 40–72 秒。结论：自动回滚与演练改用
-`deploymentRedeploy(targetId)`；`deploymentRollback` 仅作为 runbook 手动实验。
+四次 `deploymentRollback` 的最好成绩是 10m43s，其余三次为 21m17s、超过
+30 分钟、超过 30 分钟；而 `deploymentRedeploy` 四次恢复都在 40–72 秒。结论：
+自动回滚与演练改用 `deploymentRedeploy(targetId)`；`deploymentRollback` 仅作为
+runbook 手动实验。
 
 `43831007873` 是切换到 `deploymentRedeploy` 后的第 5 次 execute：head
 `ccfb21de`/`802a951`，target `2d909c62`/`65f2089`（release），`deploymentRedeploy`
@@ -258,7 +260,7 @@ S15 的完整证据。`43831671017` 用最终代码重跑 production plan：targ
 | `tests/deploymentSmokeTestWorkflow.test.ts`           | 新增 workflow 静态守卫                                                                                                                  | Low    | 测试专用；只读文本，不执行外部动作。                                                                                        |
 | `docs/ci-security-automation.md`                      | 记录闸门、drill、concurrency 语义                                                                                                       | Low    | 文档；与代码同步。                                                                                                          |
 | `docs/runbooks/app-deploy-failure.md`                 | production 闸门关闭/恢复失败时的手动步骤                                                                                                | Low    | 文档；操作员入口。                                                                                                          |
-| `AGENTS.md`                                           | 一行闸门与 drill 命令                                                                                                                   | Low    | 文档；`check:agents-drift` 会验证引用的 workflow 文件存在。                                                                 |
+| `AGENTS.md`                                           | deploy 规则、rollback 语义、gate 与 drill 命令                                                                                          | Low    | 文档；`check:agents-drift` 会验证引用的 workflow 文件存在。                                                                 |
 | `docs/plans/executed/aav-1295-rollback-drill-spec.md` | 本 spec                                                                                                                                 | Low    | 已完成，移入 executed。                                                                                                     |
 | `SESSION-BOARD.md`                                    | 注册与注销                                                                                                                              | Low    | 协调文件。                                                                                                                  |
 
@@ -288,7 +290,7 @@ S15 的完整证据。`43831671017` 用最终代码重跑 production plan：targ
 | S20 | Production plan drill                                       | read-only; no mutation; prints target and gate state                                                            | High   | static assertion + runtime plan                                 | plan 分支不含 mutation                                                                                                     |
 | S21 | Only non-head candidates are `redeploy`/`rollback`          | `targetId=""`, reason `no-release-deployment`; step fails                                                       | High   | automated test + runtime drill                                  | 恢复副本是冗余目标且可能与 head 同 commit；只恢复到 release                                                                |
 | S22 | The only release has the head's commit                      | `targetId=""`, reason `same-commit-as-head`; step fails                                                         | Medium | automated test                                                  | 同 commit 回滚不能改变服务版本，且会让 wait 假绿                                                                           |
-| S23 | `deploymentRollback` must not appear in the workflow        | no query/response reference; runbook keeps the manual experiment                                                | High   | automated test                                                  | 四次真实执行均未在 30 分钟内 serving；自动路径只用 `deploymentRedeploy`                                                    |
+| S23 | `deploymentRollback` must not appear in the workflow        | no query/response reference; runbook keeps the manual experiment                                                | High   | automated test                                                  | 四次真实执行：10m43s、21m17s、>30m、>30m；自动路径只用 `deploymentRedeploy`                                                |
 
 ## Tickets
 

@@ -105,8 +105,8 @@ Deploys are **automatic**. Both environments are wired to Railway's GitHub app
 Chain: push → CI passes → Railway's "Wait for CI" releases the deploy → Railway
 deploys → `deployment_status` comes back → `.github/workflows/deployment-smoke-test.yml`
 runs as post-deploy verification (health, `/api/markets`, `/api/meta/side-data`,
-frontend), and rolls the deployment back via the Railway GraphQL API if a check
-fails.
+frontend), and recovers the previous release via the Railway GraphQL API
+(`deploymentRedeploy`) if a check fails.
 
 The rollback path is **fail-closed**: it never selects the head, only a **release**
 deployment (`meta.reason: deploy`) whose commit differs from the head
@@ -121,8 +121,9 @@ trusting it:
 then the same with `-f mode=execute -f confirm=rollback-staging` (staging-only;
 the drill restores the head automatically). The recovery mutation is
 `deploymentRedeploy(target)`: every `deploymentRollback` on 2026-11-16 returned
-`true` but left the service down for 10m43s at best and over 30 minutes in three
-of four runs, while `deploymentRedeploy` served in 40–72 seconds. The drill waits
+`true` but the rollback deployment served in 10m43s at best, took 21m17s in the
+second drill, and did not serve within 30 minutes in the last two, while
+`deploymentRedeploy` served in 40–72 seconds. The drill waits
 up to 5 minutes; `deploymentRollback` remains a manual runbook experiment only.
 Manual recovery and evidence recording: `docs/runbooks/app-deploy-failure.md`.
 

@@ -213,6 +213,57 @@ test("rollback: a drill and a smoke rollback share one environment mutex", () =>
   );
 });
 
+test("rollback: the plan writes head/target/eligible to the step summary", () => {
+  const rollback = jobBlock(readWorkflow(), "rollback");
+
+  assert.ok(
+    rollback.includes("$GITHUB_STEP_SUMMARY"),
+    "the eligible count must reach the run summary, not only the log"
+  );
+  assert.ok(rollback.includes("${ELIGIBLE_COUNT}"));
+  assert.ok(rollback.includes("${ROLLBACK_REASON}"));
+});
+
+test("rollback: the deployments window is wide enough for recovery copies", () => {
+  const workflow = readWorkflow();
+
+  assert.equal(
+    workflow.split("first: 10").length - 1,
+    2,
+    "both deployments queries must inspect 10 edges; five can be exhausted by recovery copies"
+  );
+});
+
+test("rollback: shared Railway query literals and success predicates stay in sync", () => {
+  const workflow = readWorkflow();
+  const deploymentsQuery =
+    "query($input: DeploymentListInput!, $first: Int) { deployments(input: $input, first: $first) { edges { node { id status createdAt canRollback meta } } } }";
+  const redeployMutation =
+    "mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }";
+  const redeploySucceeded =
+    '.data.deploymentRedeploy.id != null and .data.deploymentRedeploy.id != ""';
+
+  assert.equal(
+    workflow.split(deploymentsQuery).length - 1,
+    2,
+    "the rollback job and the drill plan must use the exact same deployments query"
+  );
+  assert.equal(
+    workflow.split(redeployMutation).length - 1,
+    3,
+    "auto-rollback, drill execute and restore must use the exact same redeploy mutation"
+  );
+  assert.equal(
+    workflow.split(redeploySucceeded).length - 1,
+    3,
+    "every redeploy response check must use the same non-empty id predicate"
+  );
+  assert.ok(
+    !workflow.includes("jq -e '.data.deploymentRedeploy.id'"),
+    "a bare truthiness check accepts a null id; use the shared predicate"
+  );
+});
+
 test("drill: plan mode is read-only, execute mode rolls back and restores", () => {
   const drill = jobBlock(readWorkflow(), "drill");
   const planStep = stepBlock(drill, "Fetch deployments and plan the rollback");

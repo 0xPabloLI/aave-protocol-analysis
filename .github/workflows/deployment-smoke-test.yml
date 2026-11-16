@@ -365,7 +365,7 @@ jobs:
             --arg environment "$RAILWAY_ENVIRONMENT_ID" \
             '{
               query: "query($input: DeploymentListInput!, $first: Int) { deployments(input: $input, first: $first) { edges { node { id status createdAt canRollback meta } } } }",
-              variables: { input: { projectId: $project, serviceId: $service, environmentId: $environment }, first: 5 }
+              variables: { input: { projectId: $project, serviceId: $service, environmentId: $environment }, first: 10 }
             }' | curl -sS --max-time 30 -X POST "$RAILWAY_API_URL" \
               -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
@@ -392,6 +392,22 @@ jobs:
           ELIGIBLE_COUNT=$(echo "$ROLLBACK_PLAN" | jq -r '.eligibleCount')
           echo "Rollback plan: head=${HEAD_ID:0:8} target=${ROLLBACK_ID:0:8} eligible=$ELIGIBLE_COUNT reason=$ROLLBACK_REASON"
 
+          TARGET_COMMIT=$(echo "$ROLLBACK_PLAN" | jq -r '.targetCommit')
+          TARGET_STATUS=$(echo "$ROLLBACK_PLAN" | jq -r '.targetStatus')
+          TARGET_CREATED_AT=$(echo "$ROLLBACK_PLAN" | jq -r '.targetCreatedAt')
+          {
+            echo "## Rollback plan — $ENV_LABEL"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Head | \`${HEAD_ID}\` / \`${DEPLOY_SHA}\` |"
+            echo "| Target | \`${ROLLBACK_ID}\` / \`${TARGET_COMMIT}\` |"
+            echo "| Target status | \`${TARGET_STATUS}\` |"
+            echo "| Target created | \`${TARGET_CREATED_AT}\` |"
+            echo "| Eligible deployments | \`${ELIGIBLE_COUNT}\` |"
+            echo "| Selection reason | \`${ROLLBACK_REASON}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
           if [ -z "$ROLLBACK_ID" ]; then
             echo "::error::No rollback-eligible deployment found for $ENV_LABEL (reason: $ROLLBACK_REASON). Manual intervention required."
             echo "rollback_executed=false" >> "$GITHUB_OUTPUT"
@@ -401,10 +417,11 @@ jobs:
           echo "🔄 Rolling back $ENV_LABEL to deployment: ${ROLLBACK_ID:0:8}..."
 
           # `deploymentRedeploy`, not `deploymentRollback`: on 2026-11-16 every
-          # deploymentRollback was accepted but the rollback deployment did not
-          # serve for 10m43s at best and over 30 minutes in three of four
-          # drills, while deploymentRedeploy served in 40-72 seconds. See
-          # docs/runbooks/app-deploy-failure.md for the manual experiment.
+          # deploymentRollback was accepted but the rollback deployment served
+          # in 10m43s at best, took 21m17s in the second drill, and did not
+          # serve within 30 minutes in the last two, while deploymentRedeploy
+          # served in 40-72 seconds. See docs/runbooks/app-deploy-failure.md
+          # for the manual experiment.
           ROLLBACK_RESULT=$(jq -n --arg id "$ROLLBACK_ID" \
             '{query: "mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }", variables: {id: $id}}' \
             | curl -sS --max-time 30 -X POST "$RAILWAY_API_URL" \
@@ -569,7 +586,7 @@ jobs:
             --arg environment "$RAILWAY_ENVIRONMENT_ID" \
             '{
               query: "query($input: DeploymentListInput!, $first: Int) { deployments(input: $input, first: $first) { edges { node { id status createdAt canRollback meta } } } }",
-              variables: { input: { projectId: $project, serviceId: $service, environmentId: $environment }, first: 5 }
+              variables: { input: { projectId: $project, serviceId: $service, environmentId: $environment }, first: 10 }
             }' | curl -sS --max-time 30 -X POST "$RAILWAY_API_URL" \
               -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
@@ -695,7 +712,7 @@ jobs:
 
           echo "$RESTORE_RESULT" | jq . 2>/dev/null || echo "$RESTORE_RESULT"
 
-          if echo "$RESTORE_RESULT" | jq -e '.data.deploymentRedeploy.id' > /dev/null 2>&1; then
+          if echo "$RESTORE_RESULT" | jq -e '.data.deploymentRedeploy.id != null and .data.deploymentRedeploy.id != ""' > /dev/null 2>&1; then
             echo "✅ deploymentRedeploy accepted"
             echo "executed=true" >> "$GITHUB_OUTPUT"
             echo "deployment_id=$(echo "$RESTORE_RESULT" | jq -r '.data.deploymentRedeploy.id')" >> "$GITHUB_OUTPUT"

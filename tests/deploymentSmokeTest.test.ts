@@ -302,11 +302,11 @@ test("createSmokeTestIssuePayload: success title when the rollback executed", ()
 
   assert.equal(
     payload.title,
-    "🚨 staging smoke test failed — auto-rollback succeeded"
+    "🚨 staging smoke test failed — auto-rollback accepted"
   );
   assert.match(
     payload.body,
-    /Auto-rollback succeeded — previous deployment restored/
+    /Auto-rollback accepted — Railway is redeploying the previous release/
   );
 });
 
