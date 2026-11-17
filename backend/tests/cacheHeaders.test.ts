@@ -53,6 +53,29 @@ test("/api/meta/side-data gets public cache with s-maxage=600", async () => {
   assert.ok(cc?.includes("public"), `expected public, got: ${cc}`);
 });
 
+test("/api/meta/e-mode gets the same public cache as side-data", async () => {
+  const { apiCacheHeadersMiddleware } =
+    await import("../src/middleware/cacheHeaders.js");
+  for (const p of [
+    "/api/meta/e-mode",
+    "/api/meta/e-mode/1:0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+  ]) {
+    const { res, headers } = mockRes();
+    apiCacheHeadersMiddleware(mockReq(p), res, () => {});
+    const cc = headers["Cache-Control"];
+    assert.ok(cc?.includes("public"), `expected public, got: ${cc}`);
+    assert.ok(cc?.includes("max-age=60"), `expected max-age=60, got: ${cc}`);
+    assert.ok(
+      cc?.includes("s-maxage=600"),
+      `expected s-maxage=600, got: ${cc}`
+    );
+    assert.ok(
+      cc?.includes("stale-while-revalidate=600"),
+      `expected stale-while-revalidate=600, got: ${cc}`
+    );
+  }
+});
+
 test("unknown paths get no Cache-Control header", async () => {
   const { apiCacheHeadersMiddleware } =
     await import("../src/middleware/cacheHeaders.js");

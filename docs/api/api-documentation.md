@@ -19,12 +19,13 @@
 - **API 基础路径**:
   - `/api/markets` - 市场数据（含 on-chain 字段）
   - `/api/meta/side-data` - 侧数据聚合（categories + fdv + forecast）
+  - `/api/meta/e-mode`、`/api/meta/e-mode/{marketKey}` - V3 eMode 类别与资产成员关系（AAV-1394）
   - `/health`、`/api/health` - 健康检查
 - **数据格式**: JSON
 - **字符编码**: UTF-8
-- **端点总数**: **4 条 URL**（若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 3 个逻辑端点）
+- **端点总数**: **6 条 URL**（若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 5 个逻辑端点）
 
-> **OpenAPI spec 的范围（AAV-1293）**：`/openapi.json` 只描述**公开数据面**（`GET /markets`、`GET /meta/side-data`）。`/api/seo/*` 是内部管理面（`X-Admin-Token`，经 Supabase `seo-proxy` 调用），单独记录在 [seo-api-documentation.md](./seo-api-documentation.md)，**不**纳入公开 spec；`/health`、`/metrics`、`/openapi.json` 同样不在范围内。
+> **OpenAPI spec 的范围（AAV-1293 / AAV-1394）**：`/openapi.json` 只描述**公开数据面**（`GET /markets`、`GET /meta/side-data`、`GET /meta/e-mode`、`GET /meta/e-mode/{marketKey}`）。`/api/seo/*` 是内部管理面（`X-Admin-Token`，经 Supabase `seo-proxy` 调用），单独记录在 [seo-api-documentation.md](./seo-api-documentation.md)，**不**纳入公开 spec；`/health`、`/metrics`、`/openapi.json` 同样不在范围内。
 
 ## Rate Limiting & Security
 
@@ -32,6 +33,8 @@
 | ----------------------------- | ------------------- | ----------------------------- | --------------- |
 | `GET /api/markets`            | 120 req/min per IP  | 无（公开）                    | N/A (GET)       |
 | `GET /api/meta/side-data`     | 120 req/min per IP  | 无（公开）                    | N/A (GET)       |
+| `GET /api/meta/e-mode`        | 120 req/min per IP  | 无（公开）                    | N/A (GET)       |
+| `GET /api/meta/e-mode/:key`   | 120 req/min per IP  | 无（公开）                    | N/A (GET)       |
 | `GET /health`, `/api/health`  | 无                  | 无（公开）                    | N/A (GET)       |
 | `GET /api/seo/*`              | 无                  | `X-Admin-Token` (timing-safe) | N/A (GET)       |
 | `POST /api/seo/semrush`       | 无                  | `X-Admin-Token`               | 256 KB          |
@@ -49,6 +52,13 @@
 | 启动 warmup 未完成 | `MARKETS_SNAPSHOT_NOT_READY` | 10 秒       | 数据正在加载，稍后重试        |
 | 数据超过 hardTTL   | `MARKETS_SNAPSHOT_STALE`     | 60 秒       | cron 持续刷新失败，等待下一轮 |
 
+`GET /api/meta/e-mode` 与详情路径的 503：
+
+| 场景                              | errorCode                  | Retry-After | 含义                                        |
+| --------------------------------- | -------------------------- | ----------- | ------------------------------------------- |
+| snapshot 冷启动                   | `EMODE_SNAPSHOT_NOT_READY` | 10 秒       | markets 快照尚未建立                        |
+| snapshot 有数据但 V3 eMode 未就绪 | `EMODE_DATA_UNAVAILABLE`   | 15 秒       | V3 fetch 尚未成功，或硬 TTL 内无 stale 数据 |
+
 ## Freshness Contract
 
 API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即"建议刷新提示"而非最终服务边界。真正的 `hardTTL` 由后端 freshness 文档定义；当接口需要硬边界或 fallback 策略时，以后端实现和 `docs/backend/data-freshness-mechanism.md` 为准。
@@ -57,6 +67,7 @@ API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即"建议刷�
 | ------------------------------- | ------------------- | ------------------------------------------------------------ |
 | `GET /api/markets`              | snapshot 软过期提示 | 请求不触发刷新，硬边界由后端 markets 服务控制                |
 | `GET /api/meta/side-data`       | 各子块的 softTTL    | `categories` / `fdv` / `forecast` 各自保留独立 `staleTimeMs` |
+| `GET /api/meta/e-mode*`         | 无 `staleTimeMs`    | 跟随 markets snapshot 的 1m 刷新；响应头 `Cache-Control` 60s |
 | 其他带 `staleTimeMs` 的缓存字段 | 子快照 softTTL      | 仅表示刷新节奏，不代表一定会强制失败                         |
 
 ## 数据模型
@@ -341,7 +352,95 @@ flowchart LR
 
 ---
 
-### 3. 健康检查
+### 3. 获取 V3 eMode 类别
+
+**端点**:
+
+- `GET /api/meta/e-mode` — 市场索引
+- `GET /api/meta/e-mode/{marketKey}` — 单个市场的类别与成员关系
+
+**描述**: eMode 是 V3 的 per-market 类别配置，不属于 base 风险参数。`/api/markets` 的 `ltv` 永远是 base LTV（AAV-1380 已确认 `0` 是协议真值）；需要按用户实际启用的 eMode 类别取 LTV/LT 的消费方，从这里取数。
+
+- `marketKey` = `{chainId}:{poolAddress}`（pool 小写），与 `/api/markets` 的 `reserveId` 前两段同源。
+- 只覆盖 V3 市场。V4 的 eMode 是独立的 E-Mode Spoke（部署级隔离），不在本端点。
+- 请求只读内存快照；数据随 markets cron（1m）刷新。
+
+**请求参数**:
+
+- 索引：无
+- 详情：路径参数 `marketKey`，格式 `^[0-9]+:0x[0-9a-fA-F]{40}$`
+
+**响应格式**:
+
+```typescript
+interface EModeIndexPayload {
+  generatedAt: string; // markets snapshot 的 _metadata.timestamp
+  markets: {
+    marketKey: string;
+    chainId: number;
+    chainName: string;
+    marketName: string;
+    categoryCount: number;
+  }[];
+}
+
+interface EModeMarketPayload {
+  generatedAt: string;
+  marketKey: string;
+  chainId: number;
+  chainName: string;
+  marketName: string;
+  categories: {
+    id: number;
+    label: string;
+    maxLtv: number; // percent, 93 = 93%
+    liquidationThreshold: number; // percent
+    liquidationPenalty: number; // percent
+    collateralReserves: string[]; // 小写地址，只含 canBeCollateral=true
+    borrowableReserves: string[]; // 小写地址，只含 canBeBorrowed=true
+  }[];
+}
+```
+
+**响应示例**:
+
+```json
+{
+  "generatedAt": "2026-11-17T05:00:00.000Z",
+  "marketKey": "1:0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+  "chainId": 1,
+  "chainName": "Ethereum",
+  "marketName": "AaveV3Ethereum",
+  "categories": [
+    {
+      "id": 1,
+      "label": "ETH correlated",
+      "maxLtv": 93,
+      "liquidationThreshold": 95,
+      "liquidationPenalty": 1,
+      "collateralReserves": ["0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"],
+      "borrowableReserves": []
+    }
+  ]
+}
+```
+
+**状态码**:
+
+- `200`: 成功（索引无市场、或详情 `categories: []` 都是合法 200）
+- `400`: `EMODE_INVALID_MARKET_KEY`
+- `404`: `EMODE_MARKET_NOT_FOUND`（含 V4 市场 key）
+- `503`: `EMODE_SNAPSHOT_NOT_READY` / `EMODE_DATA_UNAVAILABLE`（见上文 503 表）
+
+**消费要点**:
+
+- 用 `getUserEMode()` 返回的类别 id 匹配 `categories[].id`；类别 0 回退 `/api/markets` 的 base `ltv`.
+- 只把 `collateralReserves` 里的地址当作该类别可抵押资产；不在数组里 = 该类别下不可抵押（不是“LTV=0 但可抵押”）。
+- 前端本地用 `tokenAddress` 关联 `/api/markets` 的 reserve 行，拿 symbol/decimals。
+
+---
+
+### 4. 健康检查
 
 **端点**: `GET /health` / `GET /api/health`
 

@@ -9,6 +9,7 @@ export {
   v4SpokeCacheKey,
   v3PriceKey,
   v4PriceKey,
+  v3MarketKey,
   v3OnchainKey,
   v4OnchainKey,
   chainTokenKey,
@@ -267,6 +268,59 @@ export interface MarketsFetchResult {
   v4: SideFetchResult;
 }
 
+// ============================================================
+// V3 E-Mode (AAV-1394)
+// ============================================================
+
+/**
+ * One V3 eMode category, in API percent units (93 = 93%).
+ *
+ * Member arrays are pruned: a reserve only appears in `collateralReserves`
+ * when `canBeCollateral` is true, and in `borrowableReserves` when
+ * `canBeBorrowed` is true. A reserve that is neither is not a member of the
+ * category and is omitted entirely.
+ */
+export interface EModeCategoryData {
+  id: number;
+  label: string;
+  maxLtv: number;
+  liquidationThreshold: number;
+  liquidationPenalty: number;
+  /** Lowercase reserve token addresses that can be used as collateral. */
+  collateralReserves: string[];
+  /** Lowercase reserve token addresses that can be borrowed. */
+  borrowableReserves: string[];
+}
+
+/** eMode categories for one V3 market. `marketKey` = `chainId:poolAddress`. */
+export interface EModeMarketData {
+  marketKey: string;
+  chainId: number;
+  chainName: string;
+  marketName: string;
+  categories: EModeCategoryData[];
+}
+
+/** Compact market entry returned by the eMode index endpoint. */
+export interface EModeMarketSummary {
+  marketKey: string;
+  chainId: number;
+  chainName: string;
+  marketName: string;
+  categoryCount: number;
+}
+
+/** `GET /api/meta/e-mode` response. */
+export interface EModeIndexPayload {
+  generatedAt: string;
+  markets: EModeMarketSummary[];
+}
+
+/** `GET /api/meta/e-mode/:marketKey` response. */
+export interface EModeMarketPayload extends EModeMarketData {
+  generatedAt: string;
+}
+
 export interface MarketsPayload {
   _metadata: {
     timestamp: string;
@@ -281,6 +335,11 @@ export interface MarketsPayload {
   spokeHubTopology?: SpokeHubTopology;
   /** Brevis distributedSoFarUsd per campaignId, populated by fetcher, consumed by backend side-data. */
   brevisDistributedSoFar?: Map<string, number | undefined>;
+  /**
+   * V3 eMode categories, internal to the snapshot. Served by the separate
+   * `/api/meta/e-mode` endpoints; `/api/markets` serialization ignores it.
+   */
+  eModeMarkets?: EModeMarketData[];
 }
 
 // ============================================================

@@ -7,6 +7,9 @@ const CACHE_CONTROL = {
   // the shortest source TTL (forecast=10m) so edge cache never serves data older than
   // any individual source's freshness contract.
   sideDataMeta: "public, max-age=60, s-maxage=600, stale-while-revalidate=600",
+  // AAV-1394: eMode is refreshed by the same 1m markets cron; 60s browser
+  // cache stays behind the writer, and the edge cap aligns with side-data.
+  eModeMeta: "public, max-age=60, s-maxage=600, stale-while-revalidate=600",
   // Never cache health checks.
   noStore: "no-store",
 } as const;
@@ -38,6 +41,12 @@ export function apiCacheHeadersMiddleware(
 
   if (path.startsWith("/api/meta/side-data")) {
     setCacheControlIfMissing(res, CACHE_CONTROL.sideDataMeta);
+    next();
+    return;
+  }
+
+  if (path.startsWith("/api/meta/e-mode")) {
+    setCacheControlIfMissing(res, CACHE_CONTROL.eModeMeta);
     next();
     return;
   }

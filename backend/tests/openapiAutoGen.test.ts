@@ -110,16 +110,25 @@ test("generated spec does not have partial field in SideDataPayload", () => {
   }
 });
 
-// AAV-1293: the public OpenAPI spec covers the public data surface only.
-// `/api/seo/*` is an admin API behind `SEO_ADMIN_TOKEN` and is deliberately
-// kept out (it has its own doc: docs/api/seo-api-documentation.md).
+// AAV-1293 / AAV-1394: the public OpenAPI spec covers the public data surface
+// only. `/api/seo/*` is an admin API behind `SEO_ADMIN_TOKEN` and is
+// deliberately kept out (it has its own doc: docs/api/seo-api-documentation.md).
 test("generated spec paths stay limited to the public data endpoints", () => {
   const paths = STATIC_OPENAPI.paths as Record<string, unknown>;
   assert.deepEqual(
     Object.keys(paths).sort(),
-    ["/markets", "/meta/side-data"],
-    "public OpenAPI must expose only the two public data endpoints"
+    ["/markets", "/meta/e-mode", "/meta/e-mode/{marketKey}", "/meta/side-data"],
+    "public OpenAPI must expose only the public data endpoints"
   );
+});
+
+test("generated spec includes the eMode response schemas", () => {
+  const components = STATIC_OPENAPI.components as {
+    schemas: Record<string, unknown>;
+  };
+  assert.ok(components.schemas.EModeIndexPayload, "EModeIndexPayload schema");
+  assert.ok(components.schemas.EModeMarketPayload, "EModeMarketPayload schema");
+  assert.ok(components.schemas.EModeCategoryData, "EModeCategoryData schema");
 });
 
 test("generate-openapi.ts records why the SEO admin surface is excluded", () => {

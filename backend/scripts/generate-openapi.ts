@@ -104,17 +104,31 @@ const sideDataPayloadSchema = generateSchemaForType(
   SHARED_CONTRACTS_PATH,
   "SideDataPayload"
 );
+const eModeIndexPayloadSchema = generateSchemaForType(
+  SHARED_CONTRACTS_PATH,
+  "EModeIndexPayload"
+);
+const eModeMarketPayloadSchema = generateSchemaForType(
+  SHARED_CONTRACTS_PATH,
+  "EModeMarketPayload"
+);
 
 // 合并所有 definitions
 const allDefinitions: Record<string, unknown> = {
   ...extractDefinitions(marketsResponseSchema),
   ...extractDefinitions(marketWithSpreadSchema),
   ...extractDefinitions(sideDataPayloadSchema),
+  ...extractDefinitions(eModeIndexPayloadSchema),
+  ...extractDefinitions(eModeMarketPayloadSchema),
 };
 
 // 从 MarketsResponse schema 提取顶层结构作为 $ref 目标
 const marketsResponseRef = { $ref: "#/components/schemas/MarketsResponse" };
 const sideDataPayloadRef = { $ref: "#/components/schemas/SideDataPayload" };
+const eModeIndexPayloadRef = { $ref: "#/components/schemas/EModeIndexPayload" };
+const eModeMarketPayloadRef = {
+  $ref: "#/components/schemas/EModeMarketPayload",
+};
 
 // 确保入口类型在 definitions 中
 if (marketsResponseSchema.$ref) {
@@ -125,6 +139,12 @@ if (!allDefinitions.MarketWithSpread && marketWithSpreadSchema.properties) {
 }
 if (!allDefinitions.SideDataPayload) {
   allDefinitions.SideDataPayload = sideDataPayloadSchema;
+}
+if (!allDefinitions.EModeIndexPayload) {
+  allDefinitions.EModeIndexPayload = eModeIndexPayloadSchema;
+}
+if (!allDefinitions.EModeMarketPayload) {
+  allDefinitions.EModeMarketPayload = eModeMarketPayloadSchema;
 }
 
 // ============================================================
@@ -165,14 +185,33 @@ const marketsErrorResponse = {
   required: ["errorCode", "error", "message"],
 };
 
+const eModeErrorResponse = {
+  type: "object",
+  properties: {
+    errorCode: {
+      type: "string",
+      enum: [
+        "EMODE_SNAPSHOT_NOT_READY",
+        "EMODE_DATA_UNAVAILABLE",
+        "EMODE_INVALID_MARKET_KEY",
+        "EMODE_MARKET_NOT_FOUND",
+      ],
+    },
+    error: { type: "string" },
+    message: { type: "string" },
+  },
+  required: ["errorCode", "error", "message"],
+};
+
 // ============================================================
 // 组装完整 OpenAPI spec
 // ============================================================
 
-// AAV-1293: this spec is the PUBLIC data surface only — `/markets` and
-// `/meta/side-data`. `/api/seo/*` is the SEO admin surface: every route sits
-// behind `seoAuthMiddleware` (`X-Admin-Token`, timing-safe compare), the
-// browser reaches it through the Supabase `seo-proxy` edge function, and it is
+// AAV-1293 / AAV-1394: this spec is the PUBLIC data surface only — `/markets`,
+// `/meta/side-data`, and the eMode index/detail pair.
+// `/api/seo/*` is the SEO admin surface. Every SEO route sits behind
+// `seoAuthMiddleware` (`X-Admin-Token`, timing-safe compare), the browser
+// reaches it through the Supabase `seo-proxy` edge function, and it is
 // documented separately in docs/api/seo-api-documentation.md. It is
 // deliberately not a public contract: listing its write payloads here would
 // freeze internal operations into an external promise. Infra endpoints
@@ -220,6 +259,65 @@ const spec = {
           },
           "429": rateLimitResponse,
           "503": serviceUnavailableResponse(marketsErrorResponse),
+        },
+      },
+    },
+    "/meta/e-mode": {
+      get: {
+        operationId: "getMetaEModeIndex",
+        summary: "List V3 markets that expose eMode categories",
+        responses: {
+          "200": {
+            description: "eMode market index",
+            content: {
+              "application/json": { schema: eModeIndexPayloadRef },
+            },
+          },
+          "429": rateLimitResponse,
+          "503": serviceUnavailableResponse(eModeErrorResponse),
+        },
+      },
+    },
+    "/meta/e-mode/{marketKey}": {
+      get: {
+        operationId: "getMetaEModeMarket",
+        summary:
+          "Get eMode categories and reserve membership for one V3 market",
+        parameters: [
+          {
+            name: "marketKey",
+            in: "path",
+            required: true,
+            description: "`chainId:poolAddress` — same prefix as reserveId",
+            schema: {
+              type: "string",
+              pattern: "^[0-9]+:0x[0-9a-fA-F]{40}$",
+              example: "1:0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+            },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "eMode categories for one market",
+            content: {
+              "application/json": { schema: eModeMarketPayloadRef },
+            },
+          },
+          "400": {
+            description: "Malformed marketKey",
+            content: {
+              "application/json": { schema: eModeErrorResponse },
+            },
+          },
+          "404": {
+            description:
+              "Market not found (or V4 market, which has no eMode categories)",
+            content: {
+              "application/json": { schema: eModeErrorResponse },
+            },
+          },
+          "429": rateLimitResponse,
+          "503": serviceUnavailableResponse(eModeErrorResponse),
         },
       },
     },
