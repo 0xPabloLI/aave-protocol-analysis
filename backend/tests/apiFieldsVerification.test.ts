@@ -185,6 +185,45 @@ test(
   }
 );
 
+/**
+ * AAV-449: `spokeName` is no longer part of `/api/markets`. It repeated the V4
+ * `marketName` suffix (`AaveV4Main` vs `Main`) and carried no stable meaning —
+ * the SDK path said `Main`, the RPC fallback said `MAIN_SPOKE` or `unknown`.
+ * V4 identity travels through `spokeId` (and `spokeAddress`, which the client
+ * derives from `reserveId`).
+ *
+ * Asserting both halves matters: a serializer that accidentally dropped the
+ * whole V4 identity block would make the absence check pass vacuously.
+ */
+test(
+  "API fields v4 — spokeName is gone while V4 identity remains",
+  { skip: !process.env.RUN_API_FIELDS_TESTS },
+  () => {
+    const data = markets();
+    if (!data) {
+      assert.fail(`Could not fetch API at ${API_URL}`);
+    }
+
+    const leaked = data.reserves
+      .filter((reserve) => "spokeName" in reserve)
+      .slice(0, 5)
+      .map(reserveLabel);
+    assert.deepEqual(
+      leaked,
+      [],
+      `spokeName is still exposed on ${leaked.length} reserve(s): ${leaked.join(", ")}`
+    );
+
+    const v4WithIdentity = data.reserves.filter((reserve) =>
+      present(reserve, "spokeId")
+    );
+    assert.ok(
+      v4WithIdentity.length > 0,
+      "No V4 reserve carries spokeId — the absence assertion above would pass vacuously"
+    );
+  }
+);
+
 test(
   "API fields v3 — always-present fields are on every reserve",
   { skip: !process.env.RUN_API_FIELDS_TESTS },
