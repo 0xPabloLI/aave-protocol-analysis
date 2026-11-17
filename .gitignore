@@ -110,6 +110,8 @@ scripts/*
 !scripts/ci-build-trend.mjs
 !scripts/check-agents-drift.mjs
 !scripts/brevis-live-check.ts
+!scripts/session-id.mjs
+!scripts/commit-msg-session-id.mjs
 !scripts/verification/
 
 data/

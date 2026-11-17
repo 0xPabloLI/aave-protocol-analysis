@@ -1,0 +1,1 @@
+node scripts/commit-msg-session-id.mjs "$1" || { echo "❌ commit-msg: session-id trailer failed"; exit 1; }

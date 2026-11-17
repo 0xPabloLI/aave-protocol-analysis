@@ -54,7 +54,10 @@
     "scan:deps": "osv-scanner --lockfile ./package-lock.json",
     "test": "tsx --test tests/*.test.ts",
     "sync:coingecko-platform-map": "tsx scripts/sync-coingecko-platform-map.ts",
-    "prepare": "husky || true"
+    "prepare": "husky || true",
+    "session:start": "node scripts/session-id.mjs start",
+    "session:id": "node scripts/session-id.mjs id",
+    "session:end": "node scripts/session-id.mjs end"
   },
   "dependencies": {
     "@aave-dao/aave-address-book": "4.76.2",

@@ -87,4 +87,4 @@
 3. 竞态应急（提交被并行挤出、或必须在不动共享工作区与 index 的前提下提交）按 `docs/agents/git-concurrent-recovery.md` 的配方执行；该路径绕过 commit hooks，完成后须按配方对齐 index。
 4. 目标文件已有非本 session 的未提交改动时，本 session 停止并报告，由用户决定落库顺序。
 5. **写 ref 前紧邻复核身份**：`commit` / `amend` / `reset` / `rebase` 前，在同一批命令里先取 `git rev-parse HEAD` 与 `git diff --cached --name-only`，与预期不符即停止并报告；判据取 HEAD 本身（`git status` 在 HEAD 被他人 rebase 后仍显示「干净」）。
-6. **Session-Id 纯约定**（本 repo 未安装 session hooks 机器兜底）：commit 可带 `git commit --trailer "Session-Id: <yyyymmdd>-<task>-<6hex>"`，同一 session 用同一 id，amend 不叠加第二个 id；登记表（约定 `$(git rev-parse --git-common-dir)/session-pilot/pilot-log.md`，本地不入库）只放接力状态，不放持久教训与交付细节。
+6. **Session-Id（机器兜底已装）**：`npm run session:start -- --task <name>` 生成 `<yyyymmdd>-<task>-<6hex>` 并写 `<git-common-dir>/session-pilot/active.json`；`.husky/commit-msg` 在该文件存在时自动追加 `Session-Id:` trailer（已有 trailer 不叠加，amend 不会出现双 id）；`npm run session:end` 写收尾条目并清理。登记表 `pilot-log.md` 只放接力状态（baseline / 任务 / 收尾 head），不放持久教训与交付细节。
