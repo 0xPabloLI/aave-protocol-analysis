@@ -1,6 +1,6 @@
 # AAV-449 — 从 `/api/markets` 响应中移除 `spokeName`
 
-> **Status: Active** — 实施中（2026-11-17）。
+> **Status: Executed** (2026-11-17) — 已交付，staging `9a2fa2d` 验证通过。
 > **票面**：`[Backend] 移除 spokeName 字段 — 语义与 marketName 冗余`（Low / Ready for agent，AAV-387 子票 1/4）。
 > **Scope**：只收敛**对外契约**。`RuntimeReserveData` 与 DB archive 保留 `spokeName`，不做数据库迁移。
 
