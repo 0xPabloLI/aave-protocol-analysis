@@ -109,9 +109,11 @@ if (selection.checkable.length === 0) {
   exit(EXIT.tooling);
 }
 
-const bin =
+const bin = path.resolve(
+  root,
   process.env.PRETTIER_BIN ??
-  path.join(root, "node_modules", "prettier", "bin", "prettier.cjs");
+    path.join("node_modules", "prettier", "bin", "prettier.cjs")
+);
 if (!existsSync(bin)) {
   failTooling(`prettier binary not found at ${bin} (run \`npm ci\`)`);
 }

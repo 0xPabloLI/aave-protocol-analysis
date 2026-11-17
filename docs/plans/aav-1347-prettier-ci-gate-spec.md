@@ -137,3 +137,50 @@ Seams（预先约定）：
 
 - 开工基线：`git rev-parse HEAD` 记录于 Step 5，审查区间取 `baseline...taskHead`。
 - 现状取证：`git ls-files` 461 条，symlink 2 条（`.agents/skills`、`aaveapy-doc`）；对 459 条跑 prettier `--check --ignore-unknown` = rc 0 / 4.48s。
+
+## Code Review（Standards + Spec）
+
+审查区间：`ab7c7e7...7d67cb7`（baseline = 开工前 HEAD，taskHead = 实现 commit）。审查由同一 session 分两轴完成（当前环境没有可用的并行 sub-agent 通道，已在汇报中标注这一偏离）。
+
+| #   | 轴        | Finding                                                                                                 | 判定                 | 处理                                                                                                                                                                                                                           |
+| --- | --------- | ------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R1  | Standards | 守卫测试只在用例末尾 `rmSync`，断言失败时临时仓库会泄漏                                                 | 接受（Low）          | 改为 `makeRepoFor(t, files)`，用 `t.after()` 清理；失败的用例也会自清                                                                                                                                                          |
+| R2  | Standards | `PRETTIER_BIN` 若传相对路径，`existsSync` 按进程 cwd 解析，而 prettier 以 `root` 为 cwd，二者可能不一致 | 接受（Low）          | 统一 `path.resolve(root, bin)`，相对路径按仓库根解析                                                                                                                                                                           |
+| R3  | Standards | `EXIT.ok` 未被使用                                                                                      | 拒绝（judgement）    | 是退出码命名表的一部分，保留语义完整性；knip 的 exports 规则为 off                                                                                                                                                             |
+| R4  | Standards | 成功行 `file(s)` / `symlink(s)` 的单复数写法                                                            | 拒绝（judgement）    | 与失败报告同一风格，CI 日志里可读性优先                                                                                                                                                                                        |
+| R5  | Spec      | 票面要求「格式检查」用 `--check`；实现用 `--list-different`                                             | 接受（记录）         | 二者判定相同，后者只输出文件名、无需解析 `[warn]` 前缀；已在 spec Solution 与脚本注释写明理由                                                                                                                                  |
+| R6  | Spec      | S14 生成器一致性要求 runtime 实证                                                                       | 部分完成（环境限制） | `npm run sync:coingecko-platform-map -- --check` 因 CoinGecko 连接超时（`UND_ERR_CONNECT_TIMEOUT`）无法完成；静态证据：生成器 `renderGeneratedTs` 明确按 `.prettierrc` 输出双引号布局，且生成物本身在 463 个受检文件中通过门禁 |
+
+无 scope creep：diff 只包含门禁、接线、文档、守卫测试与本 spec。
+
+## Verification Evidence（Step 6）
+
+| #   | 场景                      | 证据                                                                  | 结果                                                  |
+| --- | ------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------- |
+| S1  | 全树已格式化              | `npm run check:prettier`                                              | ✅ 463 个受检文件，rc 0                               |
+| S2  | 故意改坏一个 tracked 文件 | 临时改写 `docs/agents/harness.md` 后跑门禁                            | ✅ rc 1，输出点名该文件；随后 `git status` 干净       |
+| S3  | tracked symlink           | 真实仓库 + temp repo 用例                                             | ✅ `.agents/skills`、`aaveapy-doc` 计为 skipped，rc 0 |
+| S4  | staged deletion           | temp repo 用例                                                        | ✅ 计为 missing，rc 0                                 |
+| S5  | 未跟踪文件                | temp repo 用例                                                        | ✅ 不参与检查                                         |
+| S6  | `.prettierignore` 生成物  | temp repo 用例 + 真实仓库                                             | ✅ rc 0                                               |
+| S7  | 无 parser 文件            | `deploy.sh` 用例 + 真实仓库 `.sh`/`.sql`                              | ✅ rc 0                                               |
+| S8  | 空清单                    | temp repo `git init` 无文件                                           | ✅ rc 2 + 明确说明                                    |
+| S9  | 非 git 目录               | temp 目录                                                             | ✅ rc 2 + 环境错误说明                                |
+| S10 | prettier 缺失             | `PRETTIER_BIN` 指向不存在路径                                         | ✅ rc 2                                               |
+| S11 | 空格/中文路径             | `中文 文件.ts` 用例                                                   | ✅ rc 1 且正确点名                                    |
+| S12 | 分批                      | `PRETTIER_CHUNK_SIZE=1` 用例                                          | ✅ 3 批后仍只报坏文件                                 |
+| S13 | 多批中仅一批违规          | 同上                                                                  | ✅ 只列 `c.ts`                                        |
+| S14 | 生成器一致性              | 见 R6                                                                 | ⚠️ live 网络受阻；静态证据 + 生成物通过门禁           |
+| S15 | 接线完整性                | 3 条静态守卫用例                                                      | ✅ rc 0                                               |
+| S16 | 失败信息可读性            | `formatFailureReport` 单测 + 真实破坏输出                             | ✅ 计数/清单/修复命令三段                             |
+| S17 | 门禁只读                  | pre-commit / `.lintstagedrc` 静态断言                                 | ✅ 未引用新脚本                                       |
+| S18 | 干净 checkout             | `git clone` 到 `/tmp`（465 tracked entries），`PRETTIER_BIN` 指向主仓 | ✅ 463 检查 / 2 symlink skipped，rc 0                 |
+| S19 | 新脚本被 gitignore 吞掉   | `git ls-files` 断言（staging 后）                                     | ✅ 两个脚本均 tracked                                 |
+
+其他门禁：
+
+- `npm run check:quality` → rc 0（含 prettier / ESLint / syncpack / TODO / jscpd 3.28% / knip / test-naming 124 / feature-flags / agents-drift 463）
+- `npm test` → 139 pass / 0 fail（含本票 25 条）
+- `npm run build` → rc 0
+- `npm run check:bin-paths` / `check:workspace-coverage` → rc 0
+- GPG：本机 `gpg` 不可用，commit 用 `git -c commit.gpgsign=false` 完成，未改动全局配置

@@ -90,6 +90,18 @@ function runGate(
   return { status: res.status, output: `${res.stdout}\n${res.stderr}` };
 }
 
+type CleanupContext = { after: (fn: () => void) => void };
+
+/** Build a throwaway repo that removes itself even when an assertion fails. */
+function makeRepoFor(
+  t: CleanupContext,
+  files: Record<string, string> = {}
+): Repo {
+  const repo = makeRepo(files);
+  t.after(() => rmSync(repo.dir, { recursive: true, force: true }));
+  return repo;
+}
+
 // ── pure functions ──────────────────────────────────────────────────────────
 
 test("selectFormattableFiles: drops tracked symlinks and missing paths", () => {
@@ -163,104 +175,96 @@ test("formatSuccessLine: reports what was checked and what was skipped", () => {
 
 // ── entry point behaviour (real git + real prettier) ────────────────────────
 
-test("passes when every tracked file is formatted", () => {
-  const { dir } = makeRepo({ "a.ts": CLEAN_TS, "b.md": "# Title\n" });
+test("passes when every tracked file is formatted", (t) => {
+  const { dir } = makeRepoFor(t, { "a.ts": CLEAN_TS, "b.md": "# Title\n" });
   const { status, output } = runGate(dir);
   assert.equal(status, 0, output);
   assert.match(output, /formatted/i);
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("fails and names the offending file", () => {
-  const { dir } = makeRepo({ "a.ts": CLEAN_TS, "bad.ts": BAD_TS });
+test("fails and names the offending file", (t) => {
+  const { dir } = makeRepoFor(t, { "a.ts": CLEAN_TS, "bad.ts": BAD_TS });
   const { status, output } = runGate(dir);
   assert.equal(status, 1, output);
   assert.match(output, /bad\.ts/);
   assert.doesNotMatch(output, /- a\.ts/);
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("skips tracked symlinks instead of erroring on them", () => {
-  const { dir, git } = makeRepo({ "real.ts": CLEAN_TS });
+test("skips tracked symlinks instead of erroring on them", (t) => {
+  const { dir, git } = makeRepoFor(t, { "real.ts": CLEAN_TS });
   symlinkSync(path.join(dir, "real.ts"), path.join(dir, "linked.ts"));
   git("add", "linked.ts");
   const { status, output } = runGate(dir);
   assert.equal(status, 0, output);
   assert.match(output, /1 symlink/);
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("ignores untracked files entirely (clean-checkout parity)", () => {
-  const { dir } = makeRepo({ "a.ts": CLEAN_TS });
+test("ignores untracked files entirely (clean-checkout parity)", (t) => {
+  const { dir } = makeRepoFor(t, { "a.ts": CLEAN_TS });
   writeFileSync(path.join(dir, "untracked.ts"), BAD_TS);
   const { status } = runGate(dir);
   assert.equal(status, 0);
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("honours .prettierignore for generated files", () => {
-  const { dir } = makeRepo({
+test("honours .prettierignore for generated files", (t) => {
+  const { dir } = makeRepoFor(t, {
     ".prettierignore": "generated.json\n",
     "generated.json": '{"a":1}\n',
     "a.ts": CLEAN_TS,
   });
   const { status, output } = runGate(dir);
   assert.equal(status, 0, output);
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("ignores files without a prettier parser", () => {
-  const { dir } = makeRepo({ "deploy.sh": "if [ 1 ];then   echo hi;fi\n" });
+test("ignores files without a prettier parser", (t) => {
+  const { dir } = makeRepoFor(t, {
+    "deploy.sh": "if [ 1 ];then   echo hi;fi\n",
+  });
   const { status, output } = runGate(dir);
   assert.equal(status, 0, output);
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("skips index entries whose working-tree file is gone", () => {
-  const { dir } = makeRepo({ "a.ts": CLEAN_TS, "deleted.ts": BAD_TS });
+test("skips index entries whose working-tree file is gone", (t) => {
+  const { dir } = makeRepoFor(t, { "a.ts": CLEAN_TS, "deleted.ts": BAD_TS });
   rmSync(path.join(dir, "deleted.ts"));
   const { status, output } = runGate(dir);
   assert.equal(status, 0, output);
   assert.match(output, /1 missing/);
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("fails loudly when there is nothing to check", () => {
-  const { dir } = makeRepo();
+test("fails loudly when there is nothing to check", (t) => {
+  const { dir } = makeRepoFor(t);
   const { status, output } = runGate(dir);
   assert.equal(status, 2, output);
   assert.match(output, /no tracked files/i);
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("fails loudly outside a git repository", () => {
+test("fails loudly outside a git repository", (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), "prettier-gate-nogit-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   const { status, output } = runGate(dir);
   assert.equal(status, 2, output);
   assert.match(output, /git/i);
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("fails loudly when prettier itself is unavailable", () => {
-  const { dir } = makeRepo({ "a.ts": CLEAN_TS });
+test("fails loudly when prettier itself is unavailable", (t) => {
+  const { dir } = makeRepoFor(t, { "a.ts": CLEAN_TS });
   const { status, output } = runGate(dir, {
     PRETTIER_BIN: path.join(dir, "no-such-prettier.cjs"),
   });
   assert.equal(status, 2, output);
   assert.match(output, /prettier/i);
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("handles paths with spaces and non-ASCII characters", () => {
-  const { dir } = makeRepo({ "中文 文件.ts": BAD_TS });
+test("handles paths with spaces and non-ASCII characters", (t) => {
+  const { dir } = makeRepoFor(t, { "中文 文件.ts": BAD_TS });
   const { status, output } = runGate(dir);
   assert.equal(status, 1, output);
   assert.match(output, /中文 文件\.ts/);
-  rmSync(dir, { recursive: true, force: true });
 });
 
-test("checks every batch and reports only the bad files", () => {
-  const { dir } = makeRepo({
+test("checks every batch and reports only the bad files", (t) => {
+  const { dir } = makeRepoFor(t, {
     "a.ts": CLEAN_TS,
     "b.ts": CLEAN_TS,
     "c.ts": BAD_TS,
@@ -271,7 +275,6 @@ test("checks every batch and reports only the bad files", () => {
   assert.match(output, /- c\.ts/);
   assert.doesNotMatch(output, /- a\.ts/);
   assert.doesNotMatch(output, /- b\.ts/);
-  rmSync(dir, { recursive: true, force: true });
 });
 
 // ── wiring guards ───────────────────────────────────────────────────────────
