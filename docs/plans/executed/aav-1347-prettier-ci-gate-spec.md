@@ -1,6 +1,6 @@
 # AAV-1347 — Prettier 纳入 CI 门禁
 
-> **Status: Active** — implementation in progress.
+> **Status: Executed** — 2026-11-17 交付到 `railway`：`7d67cb7`（feat）+ `b1cbba9`（review fixes）+ `bfd2687`（merge `af304a0` jscpd 5.4.3）。CI run 44051705352 四门全绿，`quality-gates` 的 `Prettier format check (tracked files)` step 在干净 checkout 上首次真实运行即通过。
 > Ticket: Linear AAV-1347（[Chore] Prettier 未纳入 CI 门禁 → 227 文件漂移的成因，会随时间重新积累）
 
 ## Problem Statement
@@ -184,3 +184,9 @@ Seams（预先约定）：
 - `npm run build` → rc 0
 - `npm run check:bin-paths` / `check:workspace-coverage` → rc 0
 - GPG：本机 `gpg` 不可用，commit 用 `git -c commit.gpgsign=false` 完成，未改动全局配置
+
+### CI（远端，2026-11-17）
+
+- run `44051705352` @ `bfd2687`：`build-and-prune` / `security-audit` / `socket-firewall` / `quality-gates` 全部 **success**。
+- `quality-gates` 的 step 6 `Prettier format check (tracked files)` **success** — 本票的门禁在 GitHub 干净 checkout 上第一次真实运行即通过（不是本地假绿）。
+- `npm ci` 用的是钉死的 npm 11.6.2（step 4），锁文件由 `af304a0`（jscpd 5.4.3）合并后的版本提供。
