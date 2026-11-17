@@ -419,7 +419,7 @@ interface EModeMarketPayload {
       "liquidationThreshold": 95,
       "liquidationPenalty": 1,
       "collateralReserves": ["0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"],
-      "borrowableReserves": []
+      "borrowableReserves": ["0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"]
     }
   ]
 }
