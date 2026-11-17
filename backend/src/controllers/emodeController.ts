@@ -75,5 +75,3 @@ export function createEModeMetaHandler(
     res.status(200).json(response);
   };
 }
-
-export const getEModeMeta = createEModeMetaHandler();
