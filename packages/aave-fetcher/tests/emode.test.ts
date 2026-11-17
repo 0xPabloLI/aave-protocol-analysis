@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildEModeMarkets } from "../src/emode.js";
+import { buildEModeMarkets, selectFreshEModeMarkets } from "../src/emode.js";
 
 const POOL = "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2";
 const WETH = "0xC02aaa39b223FE8D0A0e5C4F27eAD9083C756Cc2";
@@ -134,5 +134,21 @@ describe("AAV-1394 buildEModeMarkets", () => {
         categories: [],
       },
     ]);
+  });
+
+  it("does not treat a soft-empty or all-malformed V3 response as fresh eMode", () => {
+    assert.equal(selectFreshEModeMarkets([]), undefined);
+    assert.equal(
+      selectFreshEModeMarkets([
+        market({ address: "bad" }),
+        market({ chain: { chainId: 0, name: "Ethereum" } }),
+      ]),
+      undefined
+    );
+    assert.deepEqual(
+      selectFreshEModeMarkets([market({ eModeCategories: null })])?.[0]
+        .categories,
+      []
+    );
   });
 });

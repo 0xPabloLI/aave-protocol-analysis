@@ -31,7 +31,7 @@ export function buildEModeMarkets(markets: unknown[]): EModeMarketData[] {
       typeof market.address === "string"
         ? normalizeAddress(market.address)
         : "";
-    if (!Number.isInteger(chainId) || chainId <= 0) continue;
+    if (!Number.isSafeInteger(chainId) || chainId <= 0) continue;
     if (!ADDRESS_RE.test(poolAddress)) continue;
 
     const marketKey = v3MarketKey(chainId, poolAddress);
@@ -53,6 +53,24 @@ export function buildEModeMarkets(markets: unknown[]): EModeMarketData[] {
   );
 }
 
+/**
+ * Choose the value the refresh may publish as fresh eMode data.
+ *
+ * `undefined` means "do not replace the stale cache":
+ * - the bulk V3 query returned no markets (soft failure), or
+ * - markets came back but every one failed validation.
+ *
+ * A parsed market with zero categories is still a real result, so it returns
+ * `[{ categories: [] }]` rather than `undefined`.
+ */
+export function selectFreshEModeMarkets(
+  markets: unknown[]
+): EModeMarketData[] | undefined {
+  if (markets.length === 0) return undefined;
+  const built = buildEModeMarkets(markets);
+  return built.length > 0 ? built : undefined;
+}
+
 function buildCategories(rawCategories: unknown): EModeCategoryData[] {
   if (!Array.isArray(rawCategories)) return [];
 
@@ -62,7 +80,7 @@ function buildCategories(rawCategories: unknown): EModeCategoryData[] {
     const category = rawCategory as Record<string, any>;
 
     const id = Number(category.id);
-    if (!Number.isInteger(id) || id < 0) continue;
+    if (!Number.isSafeInteger(id) || id < 0) continue;
     if (typeof category.label !== "string" || category.label.trim() === "") {
       continue;
     }

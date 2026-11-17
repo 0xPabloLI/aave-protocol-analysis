@@ -22,7 +22,7 @@ export function parseEModeMarketKey(raw: string): string | null {
   const match = MARKET_KEY_RE.exec(raw.trim());
   if (!match) return null;
   const chainId = Number(match[1]);
-  if (!Number.isInteger(chainId) || chainId <= 0) return null;
+  if (!Number.isSafeInteger(chainId) || chainId <= 0) return null;
   return v3MarketKey(chainId, match[2]);
 }
 
