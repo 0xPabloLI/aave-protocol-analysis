@@ -1,6 +1,6 @@
 # AAV-1293 — OpenAPI 只覆盖公开数据面（`/api/seo/*` 不纳入）
 
-> **Status: Active** — decision + guard implementation.
+> **Status: Executed** — 2026-11-17 交付到 `railway`（`55296b2`）；CI run `44058368427` 四门全绿，含新增的 Prettier 门。决策：**不纳入** `/api/seo/*`，理由落代码注释 + 两条守卫。
 > Ticket: Linear AAV-1293（[后端] 是否将 `/api/seo/*` 管理面纳入 OpenAPI spec（AAV-1290 残留项），Low）
 
 ## Problem Statement
@@ -101,3 +101,5 @@
 - `npm run check:prettier` → rc 0（463 tracked / 2 symlink skipped）
 - `npm run build -w aave-dashboard-backend` → rc 0（gen:openapi 重新生成后 static 无 diff）
 - `npm run check:quality` → rc 0（ESLint / syncpack / TODO / jscpd / knip / test-naming 124 / feature-flags / agents-drift 465）
+
+CI（远端，2026-11-17）：run `44058368427` @ `55296b2` — `build-and-prune` / `security-audit` / `socket-firewall` / `quality-gates` 全 success；`quality-gates` 的 `Prettier format check (tracked files)` success（本票新增的 spec 文件也在干净 checkout 上通过）。
