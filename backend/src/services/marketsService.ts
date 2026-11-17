@@ -326,7 +326,9 @@ export function mergeWithPartialStale(
  * Called by cron and startup warmup.
  * Uses a lock to prevent concurrent refreshes.
  */
-export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
+export async function refreshMarketsSnapshot(
+  fetchMarkets: typeof fetchMarketsData = fetchMarketsData
+): Promise<MarketsSnapshot> {
   // If refresh is already in progress, wait for it
   if (refreshInProgress) {
     return refreshInProgress;
@@ -350,7 +352,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       try {
         const memBeforeFetch = process.memoryUsage();
         payload = await withTimeout(
-          fetchMarketsData({ cachedConstraints }),
+          fetchMarkets({ cachedConstraints }),
           MARKETS_FETCH_TIMEOUT_MS,
           "Markets fetch timeout"
         );
