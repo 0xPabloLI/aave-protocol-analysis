@@ -109,3 +109,28 @@ test("generated spec does not have partial field in SideDataPayload", () => {
     );
   }
 });
+
+// AAV-1293: the public OpenAPI spec covers the public data surface only.
+// `/api/seo/*` is an admin API behind `SEO_ADMIN_TOKEN` and is deliberately
+// kept out (it has its own doc: docs/api/seo-api-documentation.md).
+test("generated spec paths stay limited to the public data endpoints", () => {
+  const paths = STATIC_OPENAPI.paths as Record<string, unknown>;
+  assert.deepEqual(
+    Object.keys(paths).sort(),
+    ["/markets", "/meta/side-data"],
+    "public OpenAPI must expose only the two public data endpoints"
+  );
+});
+
+test("generate-openapi.ts records why the SEO admin surface is excluded", () => {
+  assert.match(
+    GENERATE_SCRIPT_SRC,
+    /SEO admin surface/,
+    "generate-openapi.ts must state that /api/seo/* is an admin surface"
+  );
+  assert.match(
+    GENERATE_SCRIPT_SRC,
+    /not a public contract/,
+    "generate-openapi.ts must state that the SEO surface is not a public contract"
+  );
+});

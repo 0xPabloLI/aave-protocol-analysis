@@ -24,6 +24,8 @@
 - **字符编码**: UTF-8
 - **端点总数**: **4 条 URL**（若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 3 个逻辑端点）
 
+> **OpenAPI spec 的范围（AAV-1293）**：`/openapi.json` 只描述**公开数据面**（`GET /markets`、`GET /meta/side-data`）。`/api/seo/*` 是内部管理面（`X-Admin-Token`，经 Supabase `seo-proxy` 调用），单独记录在 [seo-api-documentation.md](./seo-api-documentation.md)，**不**纳入公开 spec；`/health`、`/metrics`、`/openapi.json` 同样不在范围内。
+
 ## Rate Limiting & Security
 
 | 端点                          | 速率限制            | 认证                          | Body 限制       |

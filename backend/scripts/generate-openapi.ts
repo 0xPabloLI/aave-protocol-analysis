@@ -169,6 +169,16 @@ const marketsErrorResponse = {
 // 组装完整 OpenAPI spec
 // ============================================================
 
+// AAV-1293: this spec is the PUBLIC data surface only — `/markets` and
+// `/meta/side-data`. `/api/seo/*` is the SEO admin surface: every route sits
+// behind `seoAuthMiddleware` (`X-Admin-Token`, timing-safe compare), the
+// browser reaches it through the Supabase `seo-proxy` edge function, and it is
+// documented separately in docs/api/seo-api-documentation.md. It is
+// deliberately not a public contract: listing its write payloads here would
+// freeze internal operations into an external promise. Infra endpoints
+// (`/health`, `/metrics`, `/openapi.json`) are out of scope for the same
+// reason. If a future change needs one of them here, change this comment and
+// the guard in backend/tests/openapiAutoGen.test.ts together.
 const spec = {
   openapi: "3.1.0",
   info: {
