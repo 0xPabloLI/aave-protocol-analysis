@@ -97,8 +97,10 @@ interface RuntimeReserveData {
   hubName?: string; // 【仅 V4】Hub 名称，如 "Core"
   hubAddress?: string; // 【仅 V4】Hub 合约地址
   spokeId?: string; // 【仅 V4】Spoke 唯一标识符（base64）
-  spokeName?: string; // 【仅 V4】Spoke 名称，如 "Main"
   spokeAddress?: string; // 【仅 V4】Spoke 合约地址（市场入口）
+  // `spokeName` 不在 API 输出中（AAV-449）：它与 `marketName` 的后缀重复，
+  // 且 SDK 路径（"Main"）与 RPC fallback 路径（"MAIN_SPOKE"/"unknown"）取值语义漂移。
+  // Spoke 身份用 `spokeId`；`spokeAddress` 由前端从 `reserveId` 解析得到。
 
   // 【仅 V4】字段层级语义（Hub & Spoke 架构）
   // V4 的 Hub & Spoke 架构中，部分字段为 Hub 级别（同一 Hub+token 的所有 Spoke 共享），
