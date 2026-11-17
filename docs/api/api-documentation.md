@@ -342,6 +342,8 @@ flowchart LR
 - `partial`: 某个子块失败时仍可返回部分成功结果
 - `errors`: 按子块返回失败原因
 - 各子块保留自己的 `fetchedAt` / `staleTimeMs`（softTTL）
+- **`ETag`（AAV-365）**：弱标签 `W/"<32 hex>"`，由**语义内容**计算（对象键排序、数组保序），排除两个保活标记 `generatedAt` 与 `campaignAccess.updatedAt`；`fetchedAt` / `staleTimeMs` / 子块数据仍参与哈希，真实重取必换标签
+- **条件请求**：带 `If-None-Match: <上一轮 ETag>` 且内容未变 → `304`（空体，保留 `ETag` 与 `Cache-Control`）；请求头 `Cache-Control: no-cache` 一律返回完整 `200`
 
 **说明**:
 
@@ -761,7 +763,8 @@ Merkl 返回里历史上存在两套命名：
 **状态码**:
 
 - `200`: 至少有一块数据成功（`partial` 可能为 `true`）。
-- `500`: categories、fdv、forecast、campaignAccess 均失败（无可用侧数据）。
+- `304`: `If-None-Match` 与当前内容标签一致（内容未变，无响应体）。
+- `500`: categories、fdv、forecast、campaignAccess 均失败（无可用侧数据）。错误路径强制 `Cache-Control: no-store`，且不携带内容标签。
 
 ---
 
