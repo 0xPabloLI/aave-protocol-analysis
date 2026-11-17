@@ -19,20 +19,21 @@
 - `npm run dev` — run fetcher CLI
 - `npm run build` — build shared-contracts → fetcher → root (ordered)
 - `npm run ci:remote` — full CI-equivalent local gate
-- `npm run check:quality` — quality gates: ESLint + syncpack + TODO scan + jscpd + knip + test-naming + feature-flags + AGENTS.md drift (CI job `quality-gates` runs the same set)
+- `npm run check:quality` — quality gates: Prettier + ESLint + syncpack + TODO scan + jscpd + knip + test-naming + feature-flags + AGENTS.md drift (CI job `quality-gates` runs the same set)
 
 ### Quality gates (CI `quality-gates` job)
 
-| Gate                     | Command                       | Policy                                                                                                                               |
-| ------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| ESLint                   | `npm run lint`                | 0 errors; warnings ratcheted via `--max-warnings` — **lower over time, never raise**                                                 |
-| Version drift (syncpack) | `npm run check:syncpack`      | Same dependency must use the same specifier in every workspace; `ethers` pinned exact `5.8.0`                                        |
-| Tech-debt markers        | `npm run check:todos`         | `TODO`/`FIXME` must reference an issue key: `TODO(AAV-123)`                                                                          |
-| Duplicate code (jscpd)   | `npm run check:duplicates`    | Fails above 5% duplicated lines (`min-tokens: 70`); lower the threshold as debt shrinks                                              |
-| Unused deps/files (knip) | `npm run check:knip`          | Root workspace; config in `knip.json`; exports checked by `ts-prune` gates                                                           |
-| Test naming              | `npm run check:test-naming`   | Every test lives in a `tests/` dir, named `*.test.ts`                                                                                |
-| Feature flags            | `npm run check:feature-flags` | Flags defined in `backend/src/flags.ts` must have at least one consumer (dead-flag detection)                                        |
-| AGENTS.md drift          | `npm run check:agents-drift`  | Every file/workflow/script this file names must exist; cross-repo refs need a reasoned exemption in `scripts/check-agents-drift.mjs` |
+| Gate                     | Command                       | Policy                                                                                                                                                                                         |
+| ------------------------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prettier format          | `npm run check:prettier`      | `scripts/check-prettier-format.mjs` over git-tracked files only (`git ls-files`); tracked symlinks skipped, `.prettierignore` owns generated files; violation = exit 1, tooling error = exit 2 |
+| ESLint                   | `npm run lint`                | 0 errors; warnings ratcheted via `--max-warnings` — **lower over time, never raise**                                                                                                           |
+| Version drift (syncpack) | `npm run check:syncpack`      | Same dependency must use the same specifier in every workspace; `ethers` pinned exact `5.8.0`                                                                                                  |
+| Tech-debt markers        | `npm run check:todos`         | `TODO`/`FIXME` must reference an issue key: `TODO(AAV-123)`                                                                                                                                    |
+| Duplicate code (jscpd)   | `npm run check:duplicates`    | Fails above 5% duplicated lines (`min-tokens: 70`); lower the threshold as debt shrinks                                                                                                        |
+| Unused deps/files (knip) | `npm run check:knip`          | Root workspace; config in `knip.json`; exports checked by `ts-prune` gates                                                                                                                     |
+| Test naming              | `npm run check:test-naming`   | Every test lives in a `tests/` dir, named `*.test.ts`                                                                                                                                          |
+| Feature flags            | `npm run check:feature-flags` | Flags defined in `backend/src/flags.ts` must have at least one consumer (dead-flag detection)                                                                                                  |
+| AGENTS.md drift          | `npm run check:agents-drift`  | Every file/workflow/script this file names must exist; cross-repo refs need a reasoned exemption in `scripts/check-agents-drift.mjs`                                                           |
 
 Quality gates are run by `npm run check:quality`. The drift check resolves against the **git-tracked** tree, so a path that exists only locally (gitignored, or a symlink out of the work tree) is reported rather than accepted — a reference is only satisfied by a file a fresh clone would have. `npm run check:agents-drift -- --verbose` lists those local-only entries and the deliberate cross-repo exemptions.
 
@@ -311,7 +312,7 @@ When touching one area, check its pair:
 
 - Quality is enforced by Husky hooks with auto-fix: `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged); `pre-push` → `scripts/hook-autofix.sh pre-push` (ci build+test + auto-fix bin-paths/globstar/audit). CI auto-reverts direct pushes that fail.
 - Auto-fixable checks: bin-paths (`./node_modules/.bin/X` → `npx --no-install X`), globstar (`tests/**/*.test.ts` → `tests/*.test.ts`), audit (`npm audit fix --omit=dev`), Prettier (lint-staged).
-- Non-auto-fixable checks: build, test:typecheck, test, prune, workspace-coverage — these require manual fixes.
+- Non-auto-fixable checks: build, test:typecheck, test, prune, workspace-coverage, and the Prettier format gate (`npx prettier --write <files>` is manual; `lint-staged` only fixes staged files) — these require manual fixes.
 - **Dist import check** (debug-only, also covered by `ci:remote`):
   ```bash
   rg "dist/index\.js|\.\.\/\.\.\/\.\.\/dist" backend/src tests

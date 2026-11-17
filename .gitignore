@@ -103,6 +103,9 @@ scripts/*
 !scripts/check-test-naming.mjs
 !scripts/check-feature-flags.mjs
 !scripts/check-no-globstar-in-test.sh
+!scripts/check-prettier-format.mjs
+!scripts/lib/
+!scripts/lib/prettier-gate.mjs
 !scripts/hook-autofix.sh
 !scripts/ci-build-trend.mjs
 !scripts/check-agents-drift.mjs
