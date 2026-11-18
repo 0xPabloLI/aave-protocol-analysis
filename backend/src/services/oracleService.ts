@@ -26,6 +26,7 @@ import {
   v3PriceKey,
   v4PriceKey,
   fifoEvict,
+  normalizeAddress,
 } from "@internal/aave-shared-contracts";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -219,7 +220,7 @@ async function fetchV3PoolPrices(
 
   const priceMap: Record<string, OraclePriceEntry> = {};
   for (let i = 0; i < assets.length; i++) {
-    const addr = assets[i].toLowerCase();
+    const addr = normalizeAddress(assets[i]);
     const raw = rawPrices[i];
     priceMap[addr] = {
       priceUsd: Number(raw) / 1e8,
@@ -314,9 +315,9 @@ async function fetchV4SpokePrices(
     );
     reserveResults.forEach((r, i) => {
       if (r.status === "fulfilled") {
-        reserveTokens[String(reserveIds[i])] = String(
-          r.value.underlying ?? r.value[0]
-        ).toLowerCase();
+        reserveTokens[String(reserveIds[i])] = normalizeAddress(
+          String(r.value.underlying ?? r.value[0])
+        );
       } else {
         logger.debug(
           `⚠️  Oracle V4: Failed to fetch reserve ${reserveIds[i]} details for ${config.spokeName}`

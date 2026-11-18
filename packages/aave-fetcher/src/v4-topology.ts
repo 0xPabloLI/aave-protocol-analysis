@@ -1,5 +1,8 @@
 import type { SpokeHubTopology } from "@internal/aave-shared-contracts";
-import { topologySortKey } from "@internal/aave-shared-contracts";
+import {
+  topologySortKey,
+  normalizeAddress,
+} from "@internal/aave-shared-contracts";
 
 export interface V4SdkReserveForTopology {
   spoke: {
@@ -18,11 +21,11 @@ export function extractSpokeHubTopology(
   const topology: SpokeHubTopology = [];
 
   for (const reserve of reserves) {
-    const spokeAddress = reserve.spoke.address.toLowerCase();
+    const spokeAddress = normalizeAddress(reserve.spoke.address);
     const chainId = reserve.spoke.chain.id;
 
     for (const connected of reserve.spoke.connectedHubs) {
-      const hubAddress = connected.hub.address.toLowerCase();
+      const hubAddress = normalizeAddress(connected.hub.address);
       const key = topologySortKey(chainId, spokeAddress, hubAddress);
       if (seen.has(key)) continue;
       seen.add(key);

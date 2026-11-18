@@ -1,6 +1,6 @@
 import { COINGECKO_PLATFORM_BY_CHAIN_ID_SYNCED } from "./generated/coingecko-platform-by-chain-id.js";
 import { toFiniteNumber } from "./utils/number.js";
-import { fifoEvict } from "@internal/aave-shared-contracts";
+import { fifoEvict, normalizeAddress } from "@internal/aave-shared-contracts";
 
 type AssetPlatform = { id?: string; chain_identifier?: number | null };
 
@@ -228,7 +228,7 @@ async function fetchCoingeckoTokenPriceUsd(
 ): Promise<number | undefined> {
   if (!isValidEvmAddress(tokenAddress)) return undefined;
 
-  const normalizedAddress = tokenAddress.toLowerCase();
+  const normalizedAddress = normalizeAddress(tokenAddress);
 
   const cachedPlatformId = resolveCoingeckoPlatformId(
     chainId,
@@ -281,7 +281,7 @@ export async function resolveTokenPriceWithBackup({
     return normalizedSnapshotPrice;
   }
 
-  const rawNormalizedAddress = tokenAddress?.trim().toLowerCase() ?? "";
+  const rawNormalizedAddress = normalizeAddress(tokenAddress ?? "");
   // If invalid, skip contract-based lookup and fall back to symbol-based lookup.
   const normalizedAddress = isValidEvmAddress(rawNormalizedAddress)
     ? rawNormalizedAddress

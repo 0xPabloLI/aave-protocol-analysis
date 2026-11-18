@@ -30,7 +30,7 @@ import type {
   MarketsPayload,
   RuntimeReserveData,
 } from "@internal/aave-shared-contracts";
-import { fifoEvict } from "@internal/aave-shared-contracts";
+import { fifoEvict, normalizeAddress } from "@internal/aave-shared-contracts";
 import type { OraclePricesSnapshot } from "./oracleService.js";
 
 const PERSIST_INTERVAL_MS =
@@ -549,8 +549,8 @@ async function ensureOracleSourceConfigs(
       source: "v3",
       poolKey: v3.poolKey,
       chainId: v3.chainId,
-      poolAddress: v3.poolAddress.toLowerCase(),
-      oracleAddress: v3.oracleAddress.toLowerCase(),
+      poolAddress: normalizeAddress(v3.poolAddress),
+      oracleAddress: normalizeAddress(v3.oracleAddress),
       spokeAddress: "",
     });
   }
@@ -560,8 +560,8 @@ async function ensureOracleSourceConfigs(
       poolKey: v4.spokeName,
       chainId: v4.chainId,
       poolAddress: "",
-      oracleAddress: v4.oracleAddress.toLowerCase(),
-      spokeAddress: v4.spokeAddress.toLowerCase(),
+      oracleAddress: normalizeAddress(v4.oracleAddress),
+      spokeAddress: normalizeAddress(v4.spokeAddress),
     });
   }
 
@@ -618,7 +618,7 @@ async function persistOraclePrices(
       rows.push({
         snapshotTs,
         chainId: v3.chainId,
-        tokenAddress: tokenAddr.toLowerCase(),
+        tokenAddress: normalizeAddress(tokenAddr),
         priceUsd: entry.priceUsd,
         configId,
       });
@@ -634,7 +634,7 @@ async function persistOraclePrices(
       rows.push({
         snapshotTs,
         chainId: v4.chainId,
-        tokenAddress: tokenAddr.toLowerCase(),
+        tokenAddress: normalizeAddress(tokenAddr),
         priceUsd: entry.priceUsd,
         configId,
       });

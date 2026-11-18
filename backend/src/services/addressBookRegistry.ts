@@ -20,7 +20,11 @@
 import * as AaveAddressBook from "@aave-dao/aave-address-book";
 import { DEFAULT_SPOKE_HUB_TOPOLOGY } from "@internal/aave-shared-config";
 import type { SpokeHubTopology } from "@internal/aave-shared-contracts";
-import { spokeKey, topologySortKey } from "@internal/aave-shared-contracts";
+import {
+  spokeKey,
+  topologySortKey,
+  normalizeAddress,
+} from "@internal/aave-shared-contracts";
 
 // ============================================================
 // V3 Types
@@ -71,9 +75,9 @@ export function buildAll(topology: SpokeHubTopology): {
     const key = spokeKey(entry.chainId, entry.spokeAddress);
     const existing = topologyBySpoke.get(key);
     if (existing) {
-      existing.push(entry.hubAddress.toLowerCase());
+      existing.push(normalizeAddress(entry.hubAddress));
     } else {
-      topologyBySpoke.set(key, [entry.hubAddress.toLowerCase()]);
+      topologyBySpoke.set(key, [normalizeAddress(entry.hubAddress)]);
     }
   }
 
@@ -88,7 +92,7 @@ export function buildAll(topology: SpokeHubTopology): {
         if (isTestnetKey(key)) continue;
 
         const poolAddress =
-          typeof v.POOL === "string" ? v.POOL.toLowerCase().trim() : "";
+          typeof v.POOL === "string" ? normalizeAddress(v.POOL) : "";
         if (!poolAddress) continue;
 
         v3.push({
@@ -96,7 +100,9 @@ export function buildAll(topology: SpokeHubTopology): {
           chainId,
           poolAddress,
           oracleAddress:
-            typeof v.ORACLE === "string" ? v.ORACLE.toLowerCase() : undefined,
+            typeof v.ORACLE === "string"
+              ? normalizeAddress(v.ORACLE)
+              : undefined,
           uiPoolDataProviderAddress:
             typeof v.UI_POOL_DATA_PROVIDER === "string"
               ? v.UI_POOL_DATA_PROVIDER
@@ -117,14 +123,14 @@ export function buildAll(topology: SpokeHubTopology): {
             continue;
           if (typeof spokeAddr !== "string") continue;
 
-          const spokeAddressLower = spokeAddr.toLowerCase().trim();
+          const spokeAddressLower = normalizeAddress(spokeAddr);
           const topoCacheKey = spokeKey(chainId, spokeAddr);
           const hubAddresses = topologyBySpoke.get(topoCacheKey);
           if (!hubAddresses || hubAddresses.length === 0) continue;
 
           const oracleAddress =
             typeof spokes[`${spokeName}_ORACLE`] === "string"
-              ? spokes[`${spokeName}_ORACLE`].toLowerCase()
+              ? normalizeAddress(spokes[`${spokeName}_ORACLE`])
               : undefined;
 
           for (const hubAddress of hubAddresses) {

@@ -22,7 +22,7 @@ import type {
   RuntimeReserveData,
   SpokeHubTopology,
 } from "@internal/aave-shared-contracts";
-import { v4ReserveId } from "@internal/aave-shared-contracts";
+import { v4ReserveId, normalizeAddress } from "@internal/aave-shared-contracts";
 import { logger } from "./logger.js";
 import { auditV4ReserveShape } from "./reserve-shape.js";
 import { toFiniteNumber, percentValueToPercent } from "./utils/number.js";
@@ -112,7 +112,7 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     const chainName: string = r.chain?.name ?? "Unknown";
     const chainIdNum: number = Number(r.chain?.chainId ?? 0);
     const tokenAddress: string = r.asset?.underlying?.address ?? "";
-    const tokenAddressLower = tokenAddress.toLowerCase();
+    const tokenAddressLower = normalizeAddress(tokenAddress);
     const tokenSymbol: string = r.asset?.underlying?.info?.symbol ?? "Unknown";
     const tokenName: string = r.asset?.underlying?.info?.name ?? "Unknown";
     const decimals: number | undefined =
@@ -122,8 +122,8 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
     const hubAddress: string = r.asset?.hub?.address ?? "";
     const spokeAddress: string = r.spoke?.address ?? "";
     if (!spokeAddress) continue;
-    const spokeAddressLower = spokeAddress.toLowerCase();
-    const hubAddressLower = hubAddress.toLowerCase();
+    const spokeAddressLower = normalizeAddress(spokeAddress);
+    const hubAddressLower = normalizeAddress(hubAddress);
     // V4 reserveId 格式: {chainId}:{spokeAddress}:{tokenAddress}:{hubAddress}
     // address-based，和 V3 (${chainId}:${poolAddress}:${tokenAddr}) 风格一致
     // hubAddress 确保唯一性：同一 spoke 内同一 token 可来自不同 hub

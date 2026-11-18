@@ -31,6 +31,7 @@ import {
   v4HubScopeKey,
   isWithinLookbackWindow,
   normalizeCampaignType,
+  normalizeAddress,
 } from "@internal/aave-shared-contracts";
 import { resolveOffsetSymbolAddress } from "./merkl-symbol-resolver.js";
 export type {
@@ -283,7 +284,7 @@ export function resolveOffsetReserveIds(
   const prefix = extractPoolSpokePrefix(oppReserveId);
   if (!prefix || !version) return [];
 
-  const normalizedAddr = offsetTokenAddress.toLowerCase();
+  const normalizedAddr = normalizeAddress(offsetTokenAddress);
 
   if (version === "v3") {
     if (offsetLevel === "hub-cross-spoke") return [];
@@ -405,10 +406,10 @@ export function buildReserveUnderlyingLookup(
   const set = new Set<string>();
   for (const r of baseDataset) {
     if (r.aTokenAddress) {
-      set.add(chainTokenKey(r.chainId, r.aTokenAddress.toLowerCase()));
+      set.add(chainTokenKey(r.chainId, normalizeAddress(r.aTokenAddress)));
     }
     if (r.tokenAddress) {
-      set.add(chainTokenKey(r.chainId, r.tokenAddress.toLowerCase()));
+      set.add(chainTokenKey(r.chainId, normalizeAddress(r.tokenAddress)));
     }
   }
   return set;
@@ -893,7 +894,7 @@ const buildForecastFieldsFromOpportunity = async (
   if (!meta.useTokenRateInMetrics && normalizedPrice === undefined) {
     const reserveTokenAddress =
       typeof snapshot.rewardToken?.address === "string"
-        ? snapshot.rewardToken.address.toLowerCase()
+        ? normalizeAddress(snapshot.rewardToken.address)
         : "";
     const reservePriceKey = chainTokenKey(meta.chainId, reserveTokenAddress);
     const reserveTokenPrice =
@@ -1721,7 +1722,7 @@ export async function processMerklData(
           const cacheKey = hashId || databaseId;
           const explorerAddr =
             typeof opp.explorerAddress === "string"
-              ? opp.explorerAddress.toLowerCase()
+              ? normalizeAddress(opp.explorerAddress)
               : "";
           const isKnownReserve =
             explorerAddr && mergedOptionsWithLookup.reserveUnderlyingLookup
@@ -1852,7 +1853,7 @@ export async function processMerklData(
       opp.chainId === 1
         ? parseMarketNameFromOpportunityName(opp.name, opp.chainId)
         : "Unknown";
-    const explorerAddress = opp.explorerAddress.toLowerCase();
+    const explorerAddress = normalizeAddress(opp.explorerAddress);
 
     const opportunityId = String(opp.id || "").trim();
 
@@ -2167,7 +2168,7 @@ function extractComposedCampaignInfo(opp: MerklOpportunity): {
         composedSubCampaigns.push({
           underlyingToken:
             typeof underlyingToken === "string"
-              ? underlyingToken.toLowerCase()
+              ? normalizeAddress(underlyingToken)
               : undefined,
           campaignType:
             typeof sub?.campaignType === "number"
@@ -2379,11 +2380,11 @@ function extractOffsetTokenAddresses(opp: MerklOpportunity): string[] {
       for (const t of tokens) {
         const addr =
           typeof t === "string"
-            ? t.toLowerCase()
+            ? normalizeAddress(t)
             : typeof t === "object" &&
                 t !== null &&
                 typeof (t as any).underlyingToken === "string"
-              ? (t as any).underlyingToken.toLowerCase()
+              ? normalizeAddress((t as any).underlyingToken)
               : null;
         if (addr && !seen.has(addr)) {
           seen.add(addr);
@@ -2503,14 +2504,19 @@ export function detectCrossAssetPairing(
   if (!opp.composedSubCampaigns || opp.composedSubCampaigns.length < 2)
     return null;
 
-  const explorerAddr = opp.explorerAddress?.toLowerCase();
+  const explorerAddr = opp.explorerAddress
+    ? normalizeAddress(opp.explorerAddress)
+    : undefined;
   if (!explorerAddr) return null;
 
   let sourceSub: ComposedSubCampaign | undefined;
   let pairedSub: ComposedSubCampaign | undefined;
 
   for (const sub of opp.composedSubCampaigns) {
-    if (sub.mainParameter?.toLowerCase() === explorerAddr) {
+    if (
+      sub.mainParameter &&
+      normalizeAddress(sub.mainParameter) === explorerAddr
+    ) {
       sourceSub = sub;
     } else {
       pairedSub = sub;
@@ -2644,7 +2650,7 @@ export async function detectNetPositionConstraint(
           for (const addr of tokenAddrs) {
             const resolvedIds = resolveOffsetReserveIds(
               oppReserveId,
-              addr.toLowerCase(),
+              normalizeAddress(addr),
               reserveIdSet,
               offsetLevel
             );
@@ -2708,7 +2714,7 @@ export function extractNetPositionConstraint(
   const debugMissing: string[] = [];
 
   for (const addr of offsetTokenAddresses ?? []) {
-    const normalizedAddr = addr.toLowerCase();
+    const normalizedAddr = normalizeAddress(addr);
     const resolvedIds = resolveOffsetReserveIds(
       oppReserveId,
       normalizedAddr,
@@ -2772,7 +2778,7 @@ export function findMatchingMerklOpportunities(
       );
 
   for (const tokenAddr of tokenAddressesToCheck) {
-    const indexKey = `${item.chainId}-${tokenAddr.toLowerCase()}`;
+    const indexKey = `${item.chainId}-${normalizeAddress(tokenAddr)}`;
 
     const matchingOpportunities = merklData[indexKey];
     if (matchingOpportunities?.length > 0) {
