@@ -25,6 +25,10 @@ export function v4PriceKey(
   return `${chainId}:${normalizeAddress(spokeAddress)}:${normalizeAddress(tokenAddress)}`;
 }
 
+export function v3MarketKey(chainId: number, poolAddress: string): string {
+  return `${chainId}:${normalizeAddress(poolAddress)}`;
+}
+
 export function v3OnchainKey(
   chainId: number,
   poolAddress: string,

@@ -22,6 +22,7 @@ function createV3Client() {
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { logger } from "./logger.js";
+import { selectFreshEModeMarkets } from "./emode.js";
 import { writeJsonAtomic } from "./file-utils.js";
 import { brevisApi, pruneBrevisCampaignForRuntime } from "./brevis-api.js";
 import { fetchBrevisDistributedSoFar } from "./brevis-distributed-so-far.js";
@@ -1362,6 +1363,10 @@ export async function fetchMarketsData(options?: {
   };
   const marketData = v3Success ? v3Settled.value : emptyMarketData;
   const v4Result = v4SettledValue;
+  // AAV-1394: only a real V3 response that produced at least one parseable
+  // market may replace the eMode stale cache. `selectFreshEModeMarkets` returns
+  // undefined for both a soft-empty bulk query and an all-malformed list.
+  const eModeMarkets = selectFreshEModeMarkets(marketData.markets);
 
   if (!v3Success && !v4Success) {
     throw new Error("Both V3 and V4 fetch failed");
@@ -1436,6 +1441,7 @@ export async function fetchMarketsData(options?: {
     ...(brevisResult.brevisDistributedSoFar.size > 0
       ? { brevisDistributedSoFar: brevisResult.brevisDistributedSoFar }
       : {}),
+    ...(eModeMarkets ? { eModeMarkets } : {}),
   };
 
   // Write debug files (non-blocking, never fail the cron)

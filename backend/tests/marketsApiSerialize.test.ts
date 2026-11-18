@@ -876,7 +876,16 @@ test("serializeReserveForApi output covers all EXPECTED_RUNTIME_FIELDS", () => {
   const api = serializeReserveForApi(reserve);
   const outputKeys = Object.keys(api);
 
-  const SERIALIZED_EXCLUDE = new Set(["hubAddress", "spokeAddress"]);
+  // Deliberate omissions from the public payload:
+  // - hubAddress / spokeAddress: the client derives both from `reserveId`
+  //   (`src/lib/reserveIdParser.ts`), so the payload never carried them.
+  // - spokeName: removed by AAV-449 — redundant with `marketName`, unstable
+  //   across SDK/RPC paths, no consumer.
+  const SERIALIZED_EXCLUDE = new Set([
+    "hubAddress",
+    "spokeAddress",
+    "spokeName",
+  ]);
 
   const missing: string[] = [];
   for (const field of EXPECTED_RUNTIME_FIELDS) {

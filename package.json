@@ -38,6 +38,7 @@
     "lint": "eslint . --max-warnings 371",
     "lint:fix": "eslint . --fix",
     "check:syncpack": "syncpack lint",
+    "check:prettier": "node scripts/check-prettier-format.mjs",
     "check:todos": "node scripts/check-todo-format.mjs",
     "check:duplicates": "jscpd --config .jscpd.json",
     "check:knip": "knip",
@@ -45,7 +46,7 @@
     "check:feature-flags": "node scripts/check-feature-flags.mjs",
     "check:agents-drift": "node scripts/check-agents-drift.mjs",
     "check:brevis-live": "tsx scripts/brevis-live-check.ts",
-    "check:quality": "npm run lint && npm run check:syncpack && npm run check:todos && npm run check:duplicates && npm run check:knip && npm run check:test-naming && npm run check:feature-flags && npm run check:agents-drift",
+    "check:quality": "npm run check:prettier && npm run lint && npm run check:syncpack && npm run check:todos && npm run check:duplicates && npm run check:knip && npm run check:test-naming && npm run check:feature-flags && npm run check:agents-drift",
     "prune": "ts-prune -i '\\.d\\.ts' 2>&1 | grep -v '(used in module)' | grep -v '^src/' | (grep -q . && exit 1 || exit 0)",
     "scan": "npm run scan:code && npm run scan:deps",
     "scan:code": "semgrep scan --config p/default --metrics=off --error src/ packages/",
@@ -53,7 +54,10 @@
     "scan:deps": "osv-scanner --lockfile ./package-lock.json",
     "test": "tsx --test tests/*.test.ts",
     "sync:coingecko-platform-map": "tsx scripts/sync-coingecko-platform-map.ts",
-    "prepare": "husky || true"
+    "prepare": "husky || true",
+    "session:start": "node scripts/session-id.mjs start",
+    "session:id": "node scripts/session-id.mjs id",
+    "session:end": "node scripts/session-id.mjs end"
   },
   "dependencies": {
     "@aave-dao/aave-address-book": "4.76.2",
@@ -67,7 +71,7 @@
   "overrides": {
     "axios": "^1.13.5",
     "ethers": "5.8.0",
-    "glob": "14.0.3",
+    "glob": "14.0.4",
     "h3": "^2.0.0",
     "hono": "^4.13.5",
     "minimatch@>=7.0.0": "11.0.4",
@@ -84,7 +88,7 @@
     "eslint-plugin-import": "2.32.0",
     "globals": "17.14.0",
     "husky": "9.1.7",
-    "jscpd": "5.4.2",
+    "jscpd": "5.4.3",
     "knip": "6.44.2",
     "lint-staged": "17.6.0",
     "prettier": "3.9.10",

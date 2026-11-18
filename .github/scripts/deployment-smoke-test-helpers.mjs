@@ -99,6 +99,11 @@ export function resolveDeploymentTarget({ ref, sha, environment }) {
   };
 }
 
+/**
+ * Select the Railway project/service/environment IDs for the environment whose
+ * deployment failed. This is the *environment* target; `selectRollbackCandidate`
+ * below picks the individual deployment inside it.
+ */
 export function selectRailwayRollbackTarget(targetEnvironment, secrets) {
   const normalizedTargetEnvironment =
     normalizeValue(targetEnvironment).toLowerCase();
@@ -113,11 +118,143 @@ export function selectRailwayRollbackTarget(targetEnvironment, secrets) {
   };
 }
 
-function getRollbackPresentation(rollbackExecuted, rollbackOutcome) {
-  if (rollbackExecuted === "true") {
+/**
+ * Pick the deployment to roll back to from Railway's `deployments` edges.
+ *
+ * The first edge is the head — the deployment whose smoke test just failed.
+ * Rolling back to the head would redeploy the broken commit, so the head is
+ * never a candidate. If the head is itself a rollback deployment
+ * (`meta.reason === "rollback"`), a second automatic rollback would loop, so
+ * the function fails closed with `head-is-rollback` and lets a human decide.
+ * When no non-head deployment can roll back, the caller must fail closed
+ * (create a manual-intervention issue) instead of retrying the same broken
+ * version.
+ *
+ * Only a release deployment (`meta.reason === "deploy"`) is a rollback target.
+ * `redeploy` and `rollback` deployments are recovery copies of an earlier
+ * release: rolling back to one is redundant, and it can point at the head's own
+ * commit. (The workflow recovers with `deploymentRedeploy` rather than
+ * `deploymentRollback`; see the workflow for the 2026-11-16 latency evidence.)
+ * A release whose commit equals the head's commit is also skipped — it cannot
+ * change what is served.
+ *
+ * `edges` are passed straight from the GraphQL response; malformed shapes are
+ * treated as "no deployments" so a bad response can never select arbitrarily.
+ */
+export function selectRollbackCandidate(edges) {
+  const nodes = Array.isArray(edges)
+    ? edges
+        .map((edge) => edge?.node)
+        .filter((node) => normalizeValue(node?.id).trim() !== "")
+    : [];
+
+  if (nodes.length === 0) {
     return {
-      titleSuffix: "auto-rollback succeeded",
-      status: "✅ Auto-rollback succeeded — previous deployment restored",
+      headId: "",
+      targetId: "",
+      targetCommit: "",
+      targetStatus: "",
+      targetCreatedAt: "",
+      eligibleCount: 0,
+      reason: "no-deployments",
+    };
+  }
+
+  const resolvedHeadId = normalizeValue(nodes[0].id).trim();
+  const resolvedHeadCommit = normalizeValue(nodes[0].meta?.commitHash).trim();
+  const eligible = nodes.filter((node) => node.canRollback === true);
+  const headReason = normalizeValue(nodes[0].meta?.reason).trim();
+
+  if (headReason === "rollback") {
+    return {
+      headId: resolvedHeadId,
+      targetId: "",
+      targetCommit: "",
+      targetStatus: "",
+      targetCreatedAt: "",
+      eligibleCount: eligible.length,
+      reason: "head-is-rollback",
+    };
+  }
+
+  const nonHeadEligible = eligible.filter(
+    (node) => normalizeValue(node.id).trim() !== resolvedHeadId
+  );
+  const releases = nonHeadEligible.filter(
+    (node) => normalizeValue(node.meta?.reason).trim() === "deploy"
+  );
+  const target = releases.find(
+    (node) =>
+      normalizeValue(node.meta?.commitHash).trim() !== resolvedHeadCommit
+  );
+
+  return {
+    headId: resolvedHeadId,
+    targetId: target ? normalizeValue(target.id).trim() : "",
+    targetCommit: target ? normalizeValue(target.meta?.commitHash).trim() : "",
+    targetStatus: target ? normalizeValue(target.status).trim() : "",
+    targetCreatedAt: target ? normalizeValue(target.createdAt).trim() : "",
+    eligibleCount: eligible.length,
+    reason: target
+      ? "selected"
+      : releases.length > 0
+        ? "same-commit-as-head"
+        : nonHeadEligible.length > 0
+          ? "no-release-deployment"
+          : eligible.length > 0
+            ? "only-head-eligible"
+            : "no-eligible-deployment",
+  };
+}
+
+function isTrue(value) {
+  return value === true || value === "true";
+}
+
+/**
+ * Production auto-rollback was never exercised before AAV-1295, and the first
+ * real use of a recovery path should not be an incident. The gate is closed
+ * unless the repository variable holds the exact literal `true`; any other
+ * value — including `"TRUE"`, `"1"` and an unset variable — is gated.
+ * Staging is always allowed: that is where the drill runs.
+ */
+export function resolveRollbackGate({
+  environmentLabel,
+  productionRollbackEnabled,
+}) {
+  const environment = normalizeValue(environmentLabel).trim().toLowerCase();
+
+  if (environment === "staging") {
+    return { allowed: true, reason: "staging" };
+  }
+
+  if (environment === "production") {
+    return isTrue(productionRollbackEnabled)
+      ? { allowed: true, reason: "production-enabled" }
+      : { allowed: false, reason: "production-gated" };
+  }
+
+  return { allowed: false, reason: "unknown-environment" };
+}
+
+function getRollbackPresentation({
+  rollbackExecuted,
+  rollbackOutcome,
+  rollbackGated,
+}) {
+  if (isTrue(rollbackGated)) {
+    return {
+      titleSuffix: "auto-rollback GATED (manual action required)",
+      status:
+        "⛔ Auto-rollback gated — production rollback requires explicit confirmation (`RAILWAY_PRODUCTION_ROLLBACK_ENABLED`).",
+    };
+  }
+
+  if (isTrue(rollbackExecuted)) {
+    return {
+      titleSuffix: "auto-rollback accepted",
+      status:
+        "✅ Auto-rollback accepted — Railway is redeploying the previous release; confirm `/health` after warm-up",
     };
   }
 
@@ -141,8 +278,13 @@ export function createSmokeTestIssuePayload({
   runUrl,
   rollbackExecuted,
   rollbackOutcome,
+  rollbackGated,
 }) {
-  const rollback = getRollbackPresentation(rollbackExecuted, rollbackOutcome);
+  const rollback = getRollbackPresentation({
+    rollbackExecuted,
+    rollbackOutcome,
+    rollbackGated,
+  });
 
   return {
     title: `🚨 ${environment} smoke test failed — ${rollback.titleSuffix}`,

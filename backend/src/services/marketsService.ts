@@ -15,6 +15,7 @@
 
 import { fetchMarketsData } from "@internal/aave-fetcher";
 import type {
+  EModeMarketData,
   NetPositionConstraint,
   MarketsFetchResult,
   MarketsPayload,
@@ -117,6 +118,10 @@ let staleV3Data: RuntimeReserveData[] = [];
 let staleV4Data: RuntimeReserveData[] = [];
 let v3FetchedAt: number | null = null;
 let v4FetchedAt: number | null = null;
+// AAV-1394: eMode data follows the V3 side's hard-TTL lifecycle. `null` means
+// "never fetched"; `[]` is a valid result (V3 succeeded, no categories).
+let staleV3EMode: EModeMarketData[] | null = null;
+let v3EModeFetchedAt: number | null = null;
 
 // Refresh lock to prevent concurrent refreshes
 let refreshInProgress: Promise<MarketsSnapshot> | null = null;
@@ -152,6 +157,59 @@ export interface PartialStaleMergeResult {
   v4Fresh: boolean;
   v3Present: boolean;
   v4Present: boolean;
+}
+
+export interface EModeStaleMergeInput {
+  /** `undefined` means the V3 side did not produce eMode data this cycle. */
+  freshEMode: EModeMarketData[] | undefined;
+  staleEMode: EModeMarketData[] | null;
+  staleFetchedAt: number | null;
+  hardTtlMs: number;
+  now: number;
+}
+
+export interface EModeStaleMergeResult {
+  /** Value for `payload.eModeMarkets`; `undefined` means "do not serve". */
+  eModeMarkets: EModeMarketData[] | undefined;
+  newStaleEMode: EModeMarketData[] | null;
+  newFetchedAt: number | null;
+}
+
+/**
+ * AAV-1394: eMode has no per-reserve merge path. A V3 refresh that parsed
+ * markets replaces the cache; a soft-empty V3 failure keeps the last
+ * successful array until its hard TTL expires.
+ */
+export function mergeEModeWithStale(
+  input: EModeStaleMergeInput
+): EModeStaleMergeResult {
+  const { freshEMode, staleEMode, staleFetchedAt, hardTtlMs, now } = input;
+
+  if (freshEMode !== undefined) {
+    return {
+      eModeMarkets: freshEMode,
+      newStaleEMode: freshEMode,
+      newFetchedAt: now,
+    };
+  }
+
+  if (
+    staleEMode !== null &&
+    staleFetchedAt !== null &&
+    now - staleFetchedAt <= hardTtlMs
+  ) {
+    return {
+      eModeMarkets: staleEMode,
+      newStaleEMode: staleEMode,
+      newFetchedAt: staleFetchedAt,
+    };
+  }
+
+  return {
+    eModeMarkets: undefined,
+    newStaleEMode: staleEMode,
+    newFetchedAt: staleFetchedAt,
+  };
 }
 
 export function mergeWithPartialStale(
@@ -268,7 +326,9 @@ export function mergeWithPartialStale(
  * Called by cron and startup warmup.
  * Uses a lock to prevent concurrent refreshes.
  */
-export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
+export async function refreshMarketsSnapshot(
+  fetchMarkets: typeof fetchMarketsData = fetchMarketsData
+): Promise<MarketsSnapshot> {
   // If refresh is already in progress, wait for it
   if (refreshInProgress) {
     return refreshInProgress;
@@ -292,7 +352,7 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
       try {
         const memBeforeFetch = process.memoryUsage();
         payload = await withTimeout(
-          fetchMarketsData({ cachedConstraints }),
+          fetchMarkets({ cachedConstraints }),
           MARKETS_FETCH_TIMEOUT_MS,
           "Markets fetch timeout"
         );
@@ -333,6 +393,20 @@ export async function refreshMarketsSnapshot(): Promise<MarketsSnapshot> {
 
       const now = Date.now();
       const hardTtl = BACKEND_CACHE_TTL_MS.marketsHardTtlMs;
+
+      // AAV-1394: eMode follows the V3 side's hard-TTL lifecycle.
+      const eModeMerge = mergeEModeWithStale({
+        freshEMode: payload.eModeMarkets,
+        staleEMode: staleV3EMode,
+        staleFetchedAt: v3EModeFetchedAt,
+        hardTtlMs: hardTtl,
+        now,
+      });
+      staleV3EMode = eModeMerge.newStaleEMode;
+      v3EModeFetchedAt = eModeMerge.newFetchedAt;
+      if (eModeMerge.eModeMarkets !== undefined) {
+        payload.eModeMarkets = eModeMerge.eModeMarkets;
+      }
 
       // Merge fresh data with per-side stale fallback (pure function)
       const mergeResult = mergeWithPartialStale({

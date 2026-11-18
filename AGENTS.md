@@ -19,20 +19,21 @@
 - `npm run dev` — run fetcher CLI
 - `npm run build` — build shared-contracts → fetcher → root (ordered)
 - `npm run ci:remote` — full CI-equivalent local gate
-- `npm run check:quality` — quality gates: ESLint + syncpack + TODO scan + jscpd + knip + test-naming + feature-flags + AGENTS.md drift (CI job `quality-gates` runs the same set)
+- `npm run check:quality` — quality gates: Prettier + ESLint + syncpack + TODO scan + jscpd + knip + test-naming + feature-flags + AGENTS.md drift (CI job `quality-gates` runs the same set)
 
 ### Quality gates (CI `quality-gates` job)
 
-| Gate                     | Command                       | Policy                                                                                                                               |
-| ------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| ESLint                   | `npm run lint`                | 0 errors; warnings ratcheted via `--max-warnings` — **lower over time, never raise**                                                 |
-| Version drift (syncpack) | `npm run check:syncpack`      | Same dependency must use the same specifier in every workspace; `ethers` pinned exact `5.8.0`                                        |
-| Tech-debt markers        | `npm run check:todos`         | `TODO`/`FIXME` must reference an issue key: `TODO(AAV-123)`                                                                          |
-| Duplicate code (jscpd)   | `npm run check:duplicates`    | Fails above 5% duplicated lines (`min-tokens: 70`); lower the threshold as debt shrinks                                              |
-| Unused deps/files (knip) | `npm run check:knip`          | Root workspace; config in `knip.json`; exports checked by `ts-prune` gates                                                           |
-| Test naming              | `npm run check:test-naming`   | Every test lives in a `tests/` dir, named `*.test.ts`                                                                                |
-| Feature flags            | `npm run check:feature-flags` | Flags defined in `backend/src/flags.ts` must have at least one consumer (dead-flag detection)                                        |
-| AGENTS.md drift          | `npm run check:agents-drift`  | Every file/workflow/script this file names must exist; cross-repo refs need a reasoned exemption in `scripts/check-agents-drift.mjs` |
+| Gate                     | Command                       | Policy                                                                                                                                                                                         |
+| ------------------------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prettier format          | `npm run check:prettier`      | `scripts/check-prettier-format.mjs` over git-tracked files only (`git ls-files`); tracked symlinks skipped, `.prettierignore` owns generated files; violation = exit 1, tooling error = exit 2 |
+| ESLint                   | `npm run lint`                | 0 errors; warnings ratcheted via `--max-warnings` — **lower over time, never raise**                                                                                                           |
+| Version drift (syncpack) | `npm run check:syncpack`      | Same dependency must use the same specifier in every workspace; `ethers` pinned exact `5.8.0`                                                                                                  |
+| Tech-debt markers        | `npm run check:todos`         | `TODO`/`FIXME` must reference an issue key: `TODO(AAV-123)`                                                                                                                                    |
+| Duplicate code (jscpd)   | `npm run check:duplicates`    | Fails above 5% duplicated lines (`min-tokens: 70`); lower the threshold as debt shrinks                                                                                                        |
+| Unused deps/files (knip) | `npm run check:knip`          | Root workspace; config in `knip.json`; exports checked by `ts-prune` gates                                                                                                                     |
+| Test naming              | `npm run check:test-naming`   | Every test lives in a `tests/` dir, named `*.test.ts`                                                                                                                                          |
+| Feature flags            | `npm run check:feature-flags` | Flags defined in `backend/src/flags.ts` must have at least one consumer (dead-flag detection)                                                                                                  |
+| AGENTS.md drift          | `npm run check:agents-drift`  | Every file/workflow/script this file names must exist; cross-repo refs need a reasoned exemption in `scripts/check-agents-drift.mjs`                                                           |
 
 Quality gates are run by `npm run check:quality`. The drift check resolves against the **git-tracked** tree, so a path that exists only locally (gitignored, or a symlink out of the work tree) is reported rather than accepted — a reference is only satisfied by a file a fresh clone would have. `npm run check:agents-drift -- --verbose` lists those local-only entries and the deliberate cross-repo exemptions.
 
@@ -105,8 +106,27 @@ Deploys are **automatic**. Both environments are wired to Railway's GitHub app
 Chain: push → CI passes → Railway's "Wait for CI" releases the deploy → Railway
 deploys → `deployment_status` comes back → `.github/workflows/deployment-smoke-test.yml`
 runs as post-deploy verification (health, `/api/markets`, `/api/meta/side-data`,
-frontend), and rolls the deployment back via the Railway GraphQL API if a check
-fails.
+frontend), and recovers the previous release via the Railway GraphQL API
+(`deploymentRedeploy`) if a check fails.
+
+The rollback path is **fail-closed**: it never selects the head, only a **release**
+deployment (`meta.reason: deploy`) whose commit differs from the head
+(`no-release-deployment` / `same-commit-as-head` otherwise), a head that is itself
+a rollback deployment (`meta.reason: rollback`) fails closed with
+`head-is-rollback`, and production only mutates when the repository variable
+`RAILWAY_PRODUCTION_ROLLBACK_ENABLED` is exactly `true` (case-sensitive; unset or
+padded values = a GATED issue, no mutation). The auto-rollback job and the drill
+share a per-environment `railway-rollback-<environment>` mutex. Drill it before
+trusting it:
+`gh workflow run deployment-smoke-test.yml --ref railway -f environment=staging -f mode=plan`,
+then the same with `-f mode=execute -f confirm=rollback-staging` (staging-only;
+the drill restores the head automatically). The recovery mutation is
+`deploymentRedeploy(target)`: every `deploymentRollback` on 2026-11-16 returned
+`true` but the rollback deployment served in 10m43s at best, took 21m17s in the
+second drill, and did not serve within 30 minutes in the last two, while
+`deploymentRedeploy` served in 40–92 seconds. The drill waits
+up to 5 minutes; `deploymentRollback` remains a manual runbook experiment only.
+Manual recovery and evidence recording: `docs/runbooks/app-deploy-failure.md`.
 
 ⚠️ **A failed workflow run on the commit does not hold the deploy — it skips it.**
 Railway marks the deployment `SKIPPED` (`reason=deploy`) and the previous commit keeps
@@ -150,12 +170,14 @@ Service outage (DB replaced by a Node.js container), recoverable via
 
 1. **Web access**: Prefer the `web-access` skill (`.cursor/skills/web-access/SKILL.md`) for any web browsing — it uses Chrome CDP to access real browser content (Twitter, SPAs, login-walled pages). Only use `web_fetch` for simple static URL content. Run `node ~/.agents/skills/web-access/scripts/check-deps.mjs` to verify availability.
 2. **Decision: Lightweight or Substantial?**
-   - **Lightweight**（检查、解释、常规工作）：直接进行，不需要加载额外 skill。
+   - 先按 `docs/agents/implementation-workflow.md` 判两个独立维度：**Planning Scale**（S0 只读 / S1 单 context / S2 跨 context 路线清楚 / S3 雾状路线）与 **Risk**（R0–R3）。S0/S1 不要求独立 Spec 与 Tickets；S2/S3 必须走完整 Step 1–9。
+   - 给建议（代码/架构/工具/服务/模型/流程改动）前读 `docs/agents/proposal-review.md`：因果依据、影响面、事实双源（操作程序在 `docs/conventions/fact-verification.md`）、新工具准入。
+   - **Lightweight**（S0/S1 + R0/R1：检查、解释、纯文档/规则改动）：直接进行，不需要额外 skill。
    - **Substantial implementation**: 按以下 Mandatory Implementation Workflow 执行。
-3. **Hook policy**: Husky hooks have auto-fix capability. `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged). `pre-push` → `scripts/hook-autofix.sh pre-push` which runs `ci` (build+test, non-fixable) then auto-fixable checks (bin-paths, globstar, audit). If auto-fix changes files in pre-push, the commit is amended and you must push again. Do not bypass with `--no-verify` unless the user explicitly confirms. CI auto-reverts direct pushes that fail CI.
+3. **Hook policy**: Husky hooks have auto-fix capability. `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged). `commit-msg` → 有活跃 session 时自动追加 `Session-Id` trailer（`npm run session:start -- --task <name>` 开启，`npm run session:end` 收尾；状态在 `<git-common-dir>/session-pilot/`，不入库）。`pre-push` → `scripts/hook-autofix.sh pre-push` which runs `ci` (build+test, non-fixable) then auto-fixable checks (bin-paths, globstar, audit). If auto-fix changes files in pre-push, the commit is amended and you must push again. Do not bypass with `--no-verify` unless the user explicitly confirms. CI auto-reverts direct pushes that fail CI.
 4. **Git safety**: no stash/checkout operations without explicit user confirmation in current conversation.
 5. **Remote merge policy**: prefer PR-based merge flow; do not locally merge topic branches into `main`. Before creating a PR, always `git merge origin/main` (or the target branch) to resolve conflicts locally, then push. Never create a PR with unresolved merge conflicts.
-6. **Branch discipline**: all development commits go directly on `railway` branch. Do NOT create feature branches or worktrees unless explicitly asked by the user. If a stray branch exists, merge it into `railway` and delete it promptly.
+6. **Branch discipline**: 交付分支固定——`railway`（staging）/ `main`（production，PR 合并），**不在共享工作目录 `checkout`/`switch`**。单 session 工作时按历史习惯直提 `railway`；**存在第二个写入 session 时**，本 session 必须开独占 worktree（`git worktree add <dir> -b session/<id> railway`）并在其中提交，交付走 PR 到 `railway` 或独占窗口内 fast-forward——共享工作目录即共享 index 与工作树，是并行冲突的根因。详细规则见 `docs/agents/git-workflow.md` §2 / §9；竞态应急见 `docs/agents/git-concurrent-recovery.md`。游离分支合回 `railway` 后及时删除。
 7. **Cross-session boundary**: before committing, inspect `git diff` and `git diff --staged` for changes not made in the current session. If unrelated unstaged/unstaged changes exist (from another session or prior work), **STOP** and confirm with the user whether to include, exclude, or stash them. Never silently bundle foreign changes into your commit.
 8. **No code changes without explicit go-ahead**: 在用户确认开始或给出明确实施指令前，不修改任何代码文件。讨论、调研、Grill 阶段只做分析和方案设计。
 9. **Mandatory implementation workflow**: 每次改代码之前必须走完以下工作流，不得跳步：
@@ -292,7 +314,7 @@ When touching one area, check its pair:
 
 - Quality is enforced by Husky hooks with auto-fix: `pre-commit` → build + `test:typecheck` + auto-fix (bin-paths, globstar) + Prettier (lint-staged); `pre-push` → `scripts/hook-autofix.sh pre-push` (ci build+test + auto-fix bin-paths/globstar/audit). CI auto-reverts direct pushes that fail.
 - Auto-fixable checks: bin-paths (`./node_modules/.bin/X` → `npx --no-install X`), globstar (`tests/**/*.test.ts` → `tests/*.test.ts`), audit (`npm audit fix --omit=dev`), Prettier (lint-staged).
-- Non-auto-fixable checks: build, test:typecheck, test, prune, workspace-coverage — these require manual fixes.
+- Non-auto-fixable checks: build, test:typecheck, test, prune, workspace-coverage, and the Prettier format gate (`npx prettier --write <files>` is manual; `lint-staged` only fixes staged files) — these require manual fixes.
 - **Dist import check** (debug-only, also covered by `ci:remote`):
   ```bash
   rg "dist/index\.js|\.\.\/\.\.\/\.\.\/dist" backend/src tests

@@ -9,6 +9,7 @@ export {
   v4SpokeCacheKey,
   v3PriceKey,
   v4PriceKey,
+  v3MarketKey,
   v3OnchainKey,
   v4OnchainKey,
   chainTokenKey,
@@ -213,10 +214,17 @@ export interface RuntimeReserveData {
   spokeId?: string;
   spokeName?: string;
   spokeAddress?: string;
+  /** V4-only collateral risk parameter (percent; on-chain `collateralRisk` is uint24 in BPS). Input to the
+   * risk-premium simulation that adjusts the effective borrow APY; V3 does not return it, so the field is absent. */
   collateralRisk?: number;
-  /** Collateral LTV (percent: 80 = 80%). V3: supplyInfo.maxLTV, V4: settings.collateralFactor. */
+  /** Collateral LTV (percent: 80 = 80%). V3: supplyInfo.maxLTV, V4: settings.collateralFactor.
+   * `0` is a real protocol value, never a missing field: the reserve gives no *base-mode* borrow power
+   * (governance sets stablecoin LTV to 0 to block recursive borrowing; on V3.6 `isFrozen` also forces it to 0).
+   * eMode LTV is NOT folded in and can be higher, so a consumer computing borrow capacity from this field
+   * alone under-estimates eMode users. `liquidationThreshold = 0` is the separate "not collateral" case. */
   ltv?: number;
-  /** Liquidation threshold (percent: 82.5 = 82.5%). V3: supplyInfo.liquidationThreshold, V4: = ltv (collateralFactor). */
+  /** Liquidation threshold (percent: 82.5 = 82.5%). V3: supplyInfo.liquidationThreshold, V4: = ltv (collateralFactor).
+   * `0` means the asset has no collateral eligibility (it cannot be used as HF collateral at all). */
   liquidationThreshold?: number;
 }
 
@@ -260,6 +268,59 @@ export interface MarketsFetchResult {
   v4: SideFetchResult;
 }
 
+// ============================================================
+// V3 E-Mode (AAV-1394)
+// ============================================================
+
+/**
+ * One V3 eMode category, in API percent units (93 = 93%).
+ *
+ * Member arrays are pruned: a reserve only appears in `collateralReserves`
+ * when `canBeCollateral` is true, and in `borrowableReserves` when
+ * `canBeBorrowed` is true. A reserve that is neither is not a member of the
+ * category and is omitted entirely.
+ */
+export interface EModeCategoryData {
+  id: number;
+  label: string;
+  maxLtv: number;
+  liquidationThreshold: number;
+  liquidationPenalty: number;
+  /** Lowercase reserve token addresses that can be used as collateral. */
+  collateralReserves: string[];
+  /** Lowercase reserve token addresses that can be borrowed. */
+  borrowableReserves: string[];
+}
+
+/** eMode categories for one V3 market. `marketKey` = `chainId:poolAddress`. */
+export interface EModeMarketData {
+  marketKey: string;
+  chainId: number;
+  chainName: string;
+  marketName: string;
+  categories: EModeCategoryData[];
+}
+
+/** Compact market entry returned by the eMode index endpoint. */
+export interface EModeMarketSummary {
+  marketKey: string;
+  chainId: number;
+  chainName: string;
+  marketName: string;
+  categoryCount: number;
+}
+
+/** `GET /api/meta/e-mode` response. */
+export interface EModeIndexPayload {
+  generatedAt: string;
+  markets: EModeMarketSummary[];
+}
+
+/** `GET /api/meta/e-mode/:marketKey` response. */
+export interface EModeMarketPayload extends EModeMarketData {
+  generatedAt: string;
+}
+
 export interface MarketsPayload {
   _metadata: {
     timestamp: string;
@@ -274,6 +335,11 @@ export interface MarketsPayload {
   spokeHubTopology?: SpokeHubTopology;
   /** Brevis distributedSoFarUsd per campaignId, populated by fetcher, consumed by backend side-data. */
   brevisDistributedSoFar?: Map<string, number | undefined>;
+  /**
+   * V3 eMode categories, internal to the snapshot. Served by the separate
+   * `/api/meta/e-mode` endpoints; `/api/markets` serialization ignores it.
+   */
+  eModeMarkets?: EModeMarketData[];
 }
 
 // ============================================================

@@ -103,7 +103,10 @@ function scaleGroupedCampaignsWithContext<
   }));
 }
 
-const PASSTHROUGH_FIELDS: readonly (keyof RuntimeReserveData)[] = [
+// Typed against the *public* API shape, not the in-memory one: a field removed
+// from `MarketWithSpread` (e.g. `spokeName`, AAV-449) then has to leave this
+// whitelist too, otherwise `tsc` fails instead of silently keeping the payload.
+const PASSTHROUGH_FIELDS: readonly (keyof MarketWithSpread)[] = [
   "tokenPrice",
   "utilizationPct",
   "aTokenAddress",
@@ -119,7 +122,6 @@ const PASSTHROUGH_FIELDS: readonly (keyof RuntimeReserveData)[] = [
   "hubId",
   "hubName",
   "spokeId",
-  "spokeName",
 ] as const;
 
 function pickDefined(
@@ -389,7 +391,6 @@ export function computeSchemaFingerprint(): string {
     hubName: "__fingerprint__",
     hubAddress: "0x0000000000000000000000000000000000000001",
     spokeId: "__fingerprint__",
-    spokeName: "__fingerprint__",
     spokeAddress: "0x0000000000000000000000000000000000000001",
     collateralRisk: 5,
     ltv: 80,

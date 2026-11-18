@@ -1,6 +1,9 @@
 # Post-deployment smoke test: verify live APIs return healthy data after Railway deploy.
 # Runs health + API checks once Railway reports deploy success (no long SHA wait loop).
-# On failure: auto-rollback via Railway GraphQL API (both staging and production).
+# On failure: auto-rollback via Railway GraphQL API. Staging always rolls back;
+# production only when the RAILWAY_PRODUCTION_ROLLBACK_ENABLED repository variable
+# is exactly "true". workflow_dispatch runs a read-only plan for either environment
+# or a real staging-only rollback drill.
 #
 # Trigger: deployment_status (after Railway deploys), NOT push — avoids deadlock
 # with Railway's "Wait for CI" which blocks deploy until all push-triggered
@@ -16,20 +19,47 @@ name: Deployment Smoke Test
 
 on:
   deployment_status:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to plan or drill"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      mode:
+        description: "plan = read-only; execute = real rollback + restore (staging only)"
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - execute
+      confirm:
+        description: 'Type "rollback-staging" to execute the real staging drill'
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
   issues: write
 
-# Cancel in-progress runs for the same deployment target environment.
+# Key by deployment ID, not environment. Railway reports the same
+# "<project> / <environment>" string for every deployment in an environment,
+# so the old group made a rollback deployment cancel the run that was
+# performing the rollback and creating the failure issue (AAV-1295).
 concurrency:
-  group: smoke-test-${{ github.event.deployment.environment || github.event.deployment.ref || github.event.deployment.sha }}
-  cancel-in-progress: true
+  group: smoke-test-${{ github.event.deployment.id || github.run_id }}
+  cancel-in-progress: false
 
 jobs:
   smoke-test:
-    # Only run on successful Railway deployments; target environment is resolved in-step
-    if: github.event.deployment_status.state == 'success'
+    # Only run on successful Railway deployments; workflow_dispatch is the
+    # rollback drill and must not masquerade as a deployment verification.
+    if: github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.target.outputs.should_run }}
@@ -241,6 +271,11 @@ jobs:
   rollback:
     needs: smoke-test
     if: failure() && needs.smoke-test.outputs.should_run == 'true'
+    # Shared with the drill: a manual drill and an automatic rollback must not
+    # mutate the same environment at the same time.
+    concurrency:
+      group: railway-rollback-${{ needs.smoke-test.outputs.environment_label }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     env:
       RAILWAY_API_URL: https://backboard.railway.com/graphql/v2
@@ -254,6 +289,7 @@ jobs:
         id: rollback
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          PRODUCTION_ROLLBACK_ENABLED: ${{ vars.RAILWAY_PRODUCTION_ROLLBACK_ENABLED }}
           RAILWAY_PRODUCTION_PROJECT_ID: ${{ secrets.RAILWAY_PRODUCTION_PROJECT_ID }}
           RAILWAY_PRODUCTION_SERVICE_ID: ${{ secrets.RAILWAY_PRODUCTION_SERVICE_ID }}
           RAILWAY_PRODUCTION_ENVIRONMENT_ID: ${{ secrets.RAILWAY_PRODUCTION_ENVIRONMENT_ID }}
@@ -261,6 +297,10 @@ jobs:
           RAILWAY_STAGING_SERVICE_ID: ${{ secrets.RAILWAY_STAGING_SERVICE_ID }}
           RAILWAY_STAGING_ENVIRONMENT_ID: ${{ secrets.RAILWAY_STAGING_ENVIRONMENT_ID }}
         run: |
+          # Every exit path must set both outputs: the notification step uses
+          # them to distinguish "gated" from "skipped" and "failed".
+          echo "rollback_gated=false" >> "$GITHUB_OUTPUT"
+
           TARGET_JSON=$(node --input-type=module -e "
             import { selectRailwayRollbackTarget } from './.github/scripts/deployment-smoke-test-helpers.mjs';
             const target = selectRailwayRollbackTarget(process.env.ENV_LABEL, {
@@ -292,60 +332,105 @@ jobs:
           fi
 
           if [ -z "$RAILWAY_PROJECT_ID" ] || [ -z "$RAILWAY_SERVICE_ID" ] || [ -z "$RAILWAY_ENVIRONMENT_ID" ]; then
-            echo "⚠️ Railway ${{ env.ENV_LABEL }} secrets not configured — skipping auto-rollback"
+            echo "⚠️ Railway $ENV_LABEL secrets not configured — skipping auto-rollback"
             echo "rollback_executed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "🔍 Fetching recent deployments for ${{ env.ENV_LABEL }}..."
+          GATE_JSON=$(ENV_LABEL="$ENV_LABEL" PRODUCTION_ROLLBACK_ENABLED="$PRODUCTION_ROLLBACK_ENABLED" node --input-type=module -e "
+            import { resolveRollbackGate } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+            console.log(JSON.stringify(resolveRollbackGate({
+              environmentLabel: process.env.ENV_LABEL,
+              productionRollbackEnabled: process.env.PRODUCTION_ROLLBACK_ENABLED,
+            })));
+          ")
+          GATE_ALLOWED=$(echo "$GATE_JSON" | jq -r '.allowed')
+          GATE_REASON=$(echo "$GATE_JSON" | jq -r '.reason')
+          echo "Rollback gate: $GATE_REASON"
 
-          DEPLOYMENTS=$(curl -s -X POST "${{ env.RAILWAY_API_URL }}" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "query": "query($input: DeploymentListInput!, $first: Int) { deployments(input: $input, first: $first) { edges { node { id status createdAt canRollback } } } }",
-              "variables": {
-                "input": {
-                  "projectId": "'"$RAILWAY_PROJECT_ID"'",
-                  "serviceId": "'"$RAILWAY_SERVICE_ID"'",
-                  "environmentId": "'"$RAILWAY_ENVIRONMENT_ID"'"
-                },
-                "first": 5
-              }
-            }')
-
-          echo "Deployments:"
-          echo "$DEPLOYMENTS" | jq '.data.deployments.edges[].node | {id: .id[0:8], status, createdAt, canRollback}' 2>/dev/null
-
-          # Prefer the newest rollback-eligible deploy that is not the list head (typical broken in-flight head has canRollback false).
-          # If only one eligible target exists, use it — do not skip .[0] with .[1] (Codex P1).
-          HEAD_ID=$(echo "$DEPLOYMENTS" | jq -r '.data.deployments.edges[0].node.id // empty')
-          ROLLBACK_ID=$(echo "$DEPLOYMENTS" | jq -r --arg head "$HEAD_ID" '
-            [.data.deployments.edges[].node | select(.canRollback == true and .id != $head)] | .[0].id // empty
-          ')
-          if [ -z "$ROLLBACK_ID" ]; then
-            ROLLBACK_ID=$(echo "$DEPLOYMENTS" | jq -r '
-              [.data.deployments.edges[].node | select(.canRollback == true)] | .[0].id // empty
-            ')
-          fi
-
-          if [ -z "$ROLLBACK_ID" ]; then
-            echo "❌ No rollback-eligible deployment found for ${{ env.ENV_LABEL }}"
+          if [ "$GATE_ALLOWED" != "true" ]; then
+            echo "::error::Auto-rollback blocked for $ENV_LABEL ($GATE_REASON). Set repository variable RAILWAY_PRODUCTION_ROLLBACK_ENABLED=true only after the staging drill has passed."
+            echo "rollback_executed=false" >> "$GITHUB_OUTPUT"
+            echo "rollback_gated=true" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
-          echo "🔄 Rolling back ${{ env.ENV_LABEL }} to deployment: ${ROLLBACK_ID:0:8}..."
+          echo "🔍 Fetching recent deployments for $ENV_LABEL..."
 
-          ROLLBACK_RESULT=$(curl -s -X POST "${{ env.RAILWAY_API_URL }}" \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "query": "mutation($id: String!) { deploymentRollback(id: $id) }",
-              "variables": { "id": "'"$ROLLBACK_ID"'" }
-            }')
+          # Kept inline (same shape as the drill plan step) rather than wrapped
+          # in a client; update both copies together when the schema changes.
+          DEPLOYMENTS=$(jq -n \
+            --arg project "$RAILWAY_PROJECT_ID" \
+            --arg service "$RAILWAY_SERVICE_ID" \
+            --arg environment "$RAILWAY_ENVIRONMENT_ID" \
+            '{
+              query: "query($input: DeploymentListInput!, $first: Int) { deployments(input: $input, first: $first) { edges { node { id status createdAt canRollback meta } } } }",
+              variables: { input: { projectId: $project, serviceId: $service, environmentId: $environment }, first: 10 }
+            }' | curl -sS --max-time 30 -X POST "$RAILWAY_API_URL" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d @-)
 
-          if echo "$ROLLBACK_RESULT" | jq -e '.data.deploymentRollback == true' > /dev/null 2>&1; then
-            echo "✅ Railway ${{ env.ENV_LABEL }} rolled back successfully"
+          if ! echo "$DEPLOYMENTS" | jq -e '.data.deployments.edges' > /dev/null 2>&1; then
+            echo "::error::Railway deployments query failed for $ENV_LABEL:"
+            echo "$DEPLOYMENTS" | jq . 2>/dev/null || echo "$DEPLOYMENTS"
+            echo "rollback_executed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "Deployments:"
+          echo "$DEPLOYMENTS" | jq '.data.deployments.edges[].node | {id: .id[0:8], status, createdAt, canRollback, reason: .meta.reason, commit: (.meta.commitHash // "-")[0:7]}' 2>/dev/null
+
+          EDGES=$(echo "$DEPLOYMENTS" | jq -c '.data.deployments.edges // []')
+          ROLLBACK_PLAN=$(EDGES="$EDGES" node --input-type=module -e "
+            import { selectRollbackCandidate } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+            console.log(JSON.stringify(selectRollbackCandidate(JSON.parse(process.env.EDGES ?? '[]'))));
+          ")
+          HEAD_ID=$(echo "$ROLLBACK_PLAN" | jq -r '.headId')
+          ROLLBACK_ID=$(echo "$ROLLBACK_PLAN" | jq -r '.targetId')
+          ROLLBACK_REASON=$(echo "$ROLLBACK_PLAN" | jq -r '.reason')
+          ELIGIBLE_COUNT=$(echo "$ROLLBACK_PLAN" | jq -r '.eligibleCount')
+          echo "Rollback plan: head=${HEAD_ID:0:8} target=${ROLLBACK_ID:0:8} eligible=$ELIGIBLE_COUNT reason=$ROLLBACK_REASON"
+
+          TARGET_COMMIT=$(echo "$ROLLBACK_PLAN" | jq -r '.targetCommit')
+          TARGET_STATUS=$(echo "$ROLLBACK_PLAN" | jq -r '.targetStatus')
+          TARGET_CREATED_AT=$(echo "$ROLLBACK_PLAN" | jq -r '.targetCreatedAt')
+          {
+            echo "## Rollback plan — $ENV_LABEL"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Head | \`${HEAD_ID}\` / \`${DEPLOY_SHA}\` |"
+            echo "| Target | \`${ROLLBACK_ID}\` / \`${TARGET_COMMIT}\` |"
+            echo "| Target status | \`${TARGET_STATUS}\` |"
+            echo "| Target created | \`${TARGET_CREATED_AT}\` |"
+            echo "| Eligible deployments | \`${ELIGIBLE_COUNT}\` |"
+            echo "| Selection reason | \`${ROLLBACK_REASON}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "$ROLLBACK_ID" ]; then
+            echo "::error::No rollback-eligible deployment found for $ENV_LABEL (reason: $ROLLBACK_REASON). Manual intervention required."
+            echo "rollback_executed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          echo "🔄 Rolling back $ENV_LABEL to deployment: ${ROLLBACK_ID:0:8}..."
+
+          # `deploymentRedeploy`, not `deploymentRollback`: on 2026-11-16 every
+          # deploymentRollback was accepted but the rollback deployment served
+          # in 10m43s at best, took 21m17s in the second drill, and did not
+          # serve within 30 minutes in the last two, while deploymentRedeploy
+          # served in 40-92 seconds. See docs/runbooks/app-deploy-failure.md
+          # for the manual experiment.
+          ROLLBACK_RESULT=$(jq -n --arg id "$ROLLBACK_ID" \
+            '{query: "mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }", variables: {id: $id}}' \
+            | curl -sS --max-time 30 -X POST "$RAILWAY_API_URL" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d @-)
+
+          if echo "$ROLLBACK_RESULT" | jq -e '.data.deploymentRedeploy.id != null and .data.deploymentRedeploy.id != ""' > /dev/null 2>&1; then
+            echo "✅ Railway $ENV_LABEL redeployed deployment ${ROLLBACK_ID:0:8}"
             echo "rollback_executed=true" >> "$GITHUB_OUTPUT"
           else
             echo "❌ Rollback failed:"
@@ -367,12 +452,14 @@ jobs:
             const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
             const rollbackExecuted = '${{ steps.rollback.outputs.rollback_executed }}';
             const rollbackOutcome = '${{ steps.rollback.outcome }}' || 'unknown';
+            const rollbackGated = '${{ steps.rollback.outputs.rollback_gated }}';
             const payload = createSmokeTestIssuePayload({
               environment: env,
               sha,
               runUrl,
               rollbackExecuted,
               rollbackOutcome,
+              rollbackGated,
             });
 
             await github.rest.issues.create({
@@ -382,3 +469,286 @@ jobs:
               body: payload.body,
               labels: ['smoke-test-failure'],
             });
+
+  # ── Manual rollback drill (workflow_dispatch only) ────────────────────────
+  # Plan mode is read-only and works for both environments. Execute mode is
+  # staging-only: it redeploys the selected target deployment, waits for the
+  # target commit to serve, then redeploys the original head. Production
+  # auto-rollback stays behind RAILWAY_PRODUCTION_ROLLBACK_ENABLED.
+  drill:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: railway-rollback-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      RAILWAY_API_URL: https://backboard.railway.com/graphql/v2
+      DRILL_ENVIRONMENT: ${{ inputs.environment }}
+      DRILL_MODE: ${{ inputs.mode }}
+      DRILL_CONFIRM: ${{ inputs.confirm }}
+      PRODUCTION_ROLLBACK_ENABLED: ${{ vars.RAILWAY_PRODUCTION_ROLLBACK_ENABLED }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Validate drill request
+        run: |
+          echo "Drill: environment=$DRILL_ENVIRONMENT mode=$DRILL_MODE"
+
+          if [ "$DRILL_MODE" != "plan" ] && [ "$DRILL_MODE" != "execute" ]; then
+            echo "::error::Unknown drill mode: $DRILL_MODE"
+            exit 1
+          fi
+
+          if [ "$DRILL_MODE" = "execute" ]; then
+            if [ "$DRILL_ENVIRONMENT" != "staging" ]; then
+              echo "::error::Only staging rollbacks may be executed by the drill; production is plan-only."
+              exit 1
+            fi
+            if [ "$DRILL_CONFIRM" != "rollback-staging" ]; then
+              echo "::error::Set confirm=rollback-staging to execute a real staging rollback."
+              exit 1
+            fi
+          fi
+
+      - name: Resolve drill target
+        id: target
+        env:
+          DEPLOYMENT_REF: ${{ github.ref_name }}
+          DEPLOYMENT_SHA: ${{ github.sha }}
+          DEPLOYMENT_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          TARGET_JSON=$(node --input-type=module -e "
+            import { resolveDeploymentTarget } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+            const target = resolveDeploymentTarget({
+              ref: process.env.DEPLOYMENT_REF,
+              sha: process.env.DEPLOYMENT_SHA,
+              environment: process.env.DEPLOYMENT_ENVIRONMENT,
+            });
+            console.log(JSON.stringify(target));
+          ")
+
+          SHOULD_RUN=$(echo "$TARGET_JSON" | jq -r '.shouldRun')
+          if [ "$SHOULD_RUN" != "true" ]; then
+            echo "::error::Could not resolve $DRILL_ENVIRONMENT to a staging/production target."
+            echo "$TARGET_JSON" | jq .
+            exit 1
+          fi
+
+          ENVIRONMENT_LABEL=$(echo "$TARGET_JSON" | jq -r '.environmentLabel')
+          API_BASE_URL=$(echo "$TARGET_JSON" | jq -r '.apiBaseUrl')
+          echo "environment_label=$ENVIRONMENT_LABEL" >> "$GITHUB_OUTPUT"
+          echo "api_base_url=$API_BASE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch deployments and plan the rollback
+        id: plan
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          ENVIRONMENT_LABEL: ${{ steps.target.outputs.environment_label }}
+          RAILWAY_PRODUCTION_PROJECT_ID: ${{ secrets.RAILWAY_PRODUCTION_PROJECT_ID }}
+          RAILWAY_PRODUCTION_SERVICE_ID: ${{ secrets.RAILWAY_PRODUCTION_SERVICE_ID }}
+          RAILWAY_PRODUCTION_ENVIRONMENT_ID: ${{ secrets.RAILWAY_PRODUCTION_ENVIRONMENT_ID }}
+          RAILWAY_STAGING_PROJECT_ID: ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}
+          RAILWAY_STAGING_SERVICE_ID: ${{ secrets.RAILWAY_STAGING_SERVICE_ID }}
+          RAILWAY_STAGING_ENVIRONMENT_ID: ${{ secrets.RAILWAY_STAGING_ENVIRONMENT_ID }}
+        run: |
+          TARGET_JSON=$(node --input-type=module -e "
+            import { selectRailwayRollbackTarget } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+            const target = selectRailwayRollbackTarget(process.env.DRILL_ENVIRONMENT, {
+              production: {
+                projectId: process.env.RAILWAY_PRODUCTION_PROJECT_ID,
+                serviceId: process.env.RAILWAY_PRODUCTION_SERVICE_ID,
+                environmentId: process.env.RAILWAY_PRODUCTION_ENVIRONMENT_ID,
+              },
+              staging: {
+                projectId: process.env.RAILWAY_STAGING_PROJECT_ID,
+                serviceId: process.env.RAILWAY_STAGING_SERVICE_ID,
+                environmentId: process.env.RAILWAY_STAGING_ENVIRONMENT_ID,
+              },
+            });
+            console.log(JSON.stringify(target));
+          ")
+          RAILWAY_PROJECT_ID=$(echo "$TARGET_JSON" | jq -r '.projectId')
+          RAILWAY_SERVICE_ID=$(echo "$TARGET_JSON" | jq -r '.serviceId')
+          RAILWAY_ENVIRONMENT_ID=$(echo "$TARGET_JSON" | jq -r '.environmentId')
+
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::error::RAILWAY_API_TOKEN is not configured."
+            exit 1
+          fi
+          if [ -z "$RAILWAY_PROJECT_ID" ] || [ -z "$RAILWAY_SERVICE_ID" ] || [ -z "$RAILWAY_ENVIRONMENT_ID" ]; then
+            echo "::error::Railway $DRILL_ENVIRONMENT IDs are not configured."
+            exit 1
+          fi
+
+          DEPLOYMENTS=$(jq -n \
+            --arg project "$RAILWAY_PROJECT_ID" \
+            --arg service "$RAILWAY_SERVICE_ID" \
+            --arg environment "$RAILWAY_ENVIRONMENT_ID" \
+            '{
+              query: "query($input: DeploymentListInput!, $first: Int) { deployments(input: $input, first: $first) { edges { node { id status createdAt canRollback meta } } } }",
+              variables: { input: { projectId: $project, serviceId: $service, environmentId: $environment }, first: 10 }
+            }' | curl -sS --max-time 30 -X POST "$RAILWAY_API_URL" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d @-)
+
+          if ! echo "$DEPLOYMENTS" | jq -e '.data.deployments.edges' > /dev/null 2>&1; then
+            echo "::error::Railway deployments query failed for $DRILL_ENVIRONMENT:"
+            echo "$DEPLOYMENTS" | jq . 2>/dev/null || echo "$DEPLOYMENTS"
+            exit 1
+          fi
+
+          EDGES=$(echo "$DEPLOYMENTS" | jq -c '.data.deployments.edges // []')
+          PLAN=$(EDGES="$EDGES" node --input-type=module -e "
+            import { selectRollbackCandidate } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+            console.log(JSON.stringify(selectRollbackCandidate(JSON.parse(process.env.EDGES ?? '[]'))));
+          ")
+          HEAD_ID=$(echo "$PLAN" | jq -r '.headId')
+          HEAD_COMMIT=$(echo "$EDGES" | jq -r '.[0].node.meta.commitHash // empty')
+          HEAD_STATUS=$(echo "$EDGES" | jq -r '.[0].node.status // empty')
+          TARGET_ID=$(echo "$PLAN" | jq -r '.targetId')
+          TARGET_COMMIT=$(echo "$PLAN" | jq -r '.targetCommit')
+          TARGET_STATUS=$(echo "$PLAN" | jq -r '.targetStatus')
+          TARGET_CREATED_AT=$(echo "$PLAN" | jq -r '.targetCreatedAt')
+          ELIGIBLE_COUNT=$(echo "$PLAN" | jq -r '.eligibleCount')
+          REASON=$(echo "$PLAN" | jq -r '.reason')
+
+          GATE_JSON=$(node --input-type=module -e "
+            import { resolveRollbackGate } from './.github/scripts/deployment-smoke-test-helpers.mjs';
+            console.log(JSON.stringify(resolveRollbackGate({
+              environmentLabel: process.env.ENVIRONMENT_LABEL,
+              productionRollbackEnabled: process.env.PRODUCTION_ROLLBACK_ENABLED,
+            })));
+          ")
+          GATE_ALLOWED=$(echo "$GATE_JSON" | jq -r '.allowed')
+          GATE_REASON=$(echo "$GATE_JSON" | jq -r '.reason')
+
+          echo "head_id=$HEAD_ID" >> "$GITHUB_OUTPUT"
+          echo "head_commit=$HEAD_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "head_status=$HEAD_STATUS" >> "$GITHUB_OUTPUT"
+          echo "target_id=$TARGET_ID" >> "$GITHUB_OUTPUT"
+          echo "target_commit=$TARGET_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "target_status=$TARGET_STATUS" >> "$GITHUB_OUTPUT"
+          echo "target_created_at=$TARGET_CREATED_AT" >> "$GITHUB_OUTPUT"
+          echo "eligible_count=$ELIGIBLE_COUNT" >> "$GITHUB_OUTPUT"
+          echo "reason=$REASON" >> "$GITHUB_OUTPUT"
+          echo "gate_allowed=$GATE_ALLOWED" >> "$GITHUB_OUTPUT"
+          echo "gate_reason=$GATE_REASON" >> "$GITHUB_OUTPUT"
+
+          echo "Rollback drill plan: head=${HEAD_ID:0:8}/${HEAD_COMMIT:0:7} target=${TARGET_ID:0:8}/${TARGET_COMMIT:0:7} eligible=$ELIGIBLE_COUNT reason=$REASON gate=$GATE_ALLOWED($GATE_REASON)"
+
+          {
+            echo "## Rollback drill plan — $ENVIRONMENT_LABEL"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Mode | \`$DRILL_MODE\` |"
+            echo "| Head | \`$HEAD_ID\` / \`$HEAD_COMMIT\` / \`$HEAD_STATUS\` |"
+            echo "| Target | \`$TARGET_ID\` / \`$TARGET_COMMIT\` / \`$TARGET_STATUS\` |"
+            echo "| Target created | \`$TARGET_CREATED_AT\` |"
+            echo "| Eligible deployments | \`$ELIGIBLE_COUNT\` |"
+            echo "| Selection reason | \`$REASON\` |"
+            echo "| Production gate | \`$GATE_ALLOWED\` (\`$GATE_REASON\`) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$DRILL_MODE" = "execute" ] && [ "$GATE_ALLOWED" != "true" ]; then
+            echo "::error::Execute mode requires an open rollback gate for $ENVIRONMENT_LABEL ($GATE_REASON)."
+            exit 1
+          fi
+
+          if [ -z "$TARGET_ID" ]; then
+            echo "::error::No rollback-eligible deployment found for $ENVIRONMENT_LABEL (reason: $REASON)."
+            exit 1
+          fi
+
+      - name: Execute rollback (staging only)
+        id: rollback
+        if: inputs.mode == 'execute'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          ROLLBACK_ID: ${{ steps.plan.outputs.target_id }}
+        run: |
+          echo "🔄 Rolling back $DRILL_ENVIRONMENT to ${ROLLBACK_ID:0:8}..."
+          ROLLBACK_RESULT=$(jq -n --arg id "$ROLLBACK_ID" \
+            '{query: "mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }", variables: {id: $id}}' \
+            | curl -sS --max-time 30 -X POST "$RAILWAY_API_URL" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d @-)
+
+          echo "$ROLLBACK_RESULT" | jq . 2>/dev/null || echo "$ROLLBACK_RESULT"
+
+          if echo "$ROLLBACK_RESULT" | jq -e '.data.deploymentRedeploy.id != null and .data.deploymentRedeploy.id != ""' > /dev/null 2>&1; then
+            echo "✅ deploymentRedeploy returned $(echo "$ROLLBACK_RESULT" | jq -r '.data.deploymentRedeploy.id')"
+            echo "executed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::deploymentRedeploy did not return a deployment"
+            echo "executed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Wait for the rolled-back commit to serve
+        id: wait_rollback
+        if: steps.rollback.outputs.executed == 'true'
+        env:
+          EXPECTED_SHA: ${{ steps.plan.outputs.target_commit }}
+          HEALTH_URL: ${{ steps.target.outputs.api_base_url }}/health
+        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 30 10
+
+      - name: Restore the original head deployment
+        id: restore
+        if: always() && steps.rollback.outputs.executed == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          HEAD_ID: ${{ steps.plan.outputs.head_id }}
+        run: |
+          echo "🔄 Restoring $DRILL_ENVIRONMENT to head deployment ${HEAD_ID:0:8}..."
+          RESTORE_RESULT=$(jq -n --arg id "$HEAD_ID" \
+            '{query: "mutation($id: String!) { deploymentRedeploy(id: $id) { id status } }", variables: {id: $id}}' \
+            | curl -sS --max-time 30 -X POST "$RAILWAY_API_URL" \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d @-)
+
+          echo "$RESTORE_RESULT" | jq . 2>/dev/null || echo "$RESTORE_RESULT"
+
+          if echo "$RESTORE_RESULT" | jq -e '.data.deploymentRedeploy.id != null and .data.deploymentRedeploy.id != ""' > /dev/null 2>&1; then
+            echo "✅ deploymentRedeploy accepted"
+            echo "executed=true" >> "$GITHUB_OUTPUT"
+            echo "deployment_id=$(echo "$RESTORE_RESULT" | jq -r '.data.deploymentRedeploy.id')" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::deploymentRedeploy failed; manual recovery required."
+            echo "executed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Wait for the restored head commit to serve
+        id: wait_restore
+        if: always() && steps.restore.outputs.executed == 'true'
+        env:
+          EXPECTED_SHA: ${{ steps.plan.outputs.head_commit }}
+          HEALTH_URL: ${{ steps.target.outputs.api_base_url }}/health
+        run: bash .github/scripts/wait-for-commit-sha.sh "$HEALTH_URL" "$EXPECTED_SHA" 30 10
+
+      - name: Drill summary
+        if: always()
+        run: |
+          {
+            echo "## Rollback drill — $DRILL_ENVIRONMENT / $DRILL_MODE"
+            echo ""
+            echo "| Step | Outcome |"
+            echo "|------|---------|"
+            echo "| plan | ${{ steps.plan.outcome }} |"
+            echo "| rollback | ${{ steps.rollback.outcome }} |"
+            echo "| wait for rollback | ${{ steps.wait_rollback.outcome }} |"
+            echo "| restore | ${{ steps.restore.outcome }} |"
+            echo "| wait for restore | ${{ steps.wait_restore.outcome }} |"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Head | \`${{ steps.plan.outputs.head_id }}\` / \`${{ steps.plan.outputs.head_commit }}\` |"
+            echo "| Target | \`${{ steps.plan.outputs.target_id }}\` / \`${{ steps.plan.outputs.target_commit }}\` |"
+            echo "| Eligible deployments | \`${{ steps.plan.outputs.eligible_count }}\` |"
+            echo "| Selection | \`${{ steps.plan.outputs.reason }}\` |"
+            echo "| Production gate | \`${{ steps.plan.outputs.gate_allowed }}\` (\`${{ steps.plan.outputs.gate_reason }}\`) |"
+          } >> "$GITHUB_STEP_SUMMARY"

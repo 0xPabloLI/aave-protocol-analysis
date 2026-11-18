@@ -45,7 +45,7 @@ address-book 的 raw key（如 `MAIN_SPOKE`）在本项目中同时承担两个�
 | `spokeName` | 展示性标签     | SDK `spoke.name`       | `"Main"`              |
 
 - `spokeKey` 用于 DB 查找、configMap key、唯一性约束
-- `spokeName` 用于日志、API 输出、前端展示
+- `spokeName` 用于日志与 DB archive（**不再出现在 API 输出**，见下方 Amendment 2026-11-17）
 - `spokeName` 不保证全局唯一（当前观测唯一，但非合约级保证）
 
 ### 2. oracleAddress 链上读取
@@ -92,3 +92,13 @@ address-book 的 raw key（如 `MAIN_SPOKE`）在本项目中同时承担两个�
 - **fetcher 包**：`getAllAaveV3NetworksFromAddressBook()` 从 fallback 降级为纯 ABI + RPC fallback，address-book 根 barrel import 可消除
 - **SDK spoke.name 稳定性风险**：如果 SDK 改变 `spoke.name` 值，spokeName 会随之变化。但 SDK name 是协议官方命名，稳定性高于 address-book key
 - **SDK spoke.name 唯一性**：当前 10 个 spoke name 全局唯一，但非合约级保证。功能性唯一性由 spokeKey（`chainId:spokeAddress`）保证，spokeName 仅展示用
+
+## Amendment 2026-11-17 — `spokeName` 退出对外 API
+
+AAV-449 把 `spokeName` 从 `GET /api/markets` 移除（`MARKETS_API_VERSION` 升到 `snapshot-v4`，schema fingerprint 随之变化）：
+
+- **理由**：V4 的 `marketName`（`AaveV4${spoke.name}`）已经包含 spoke 名，`spokeName` 只是后缀重复；且它在两条链路下取值语义不同 —— SDK 给 `Main`，RPC fallback 给 address-book raw key（`MAIN_SPOKE`）或 `unknown`（ADR-0029 已知降级）。对外契约不能依赖这种漂移值。
+- **替代**：Spoke 身份用 `spokeId`；前端需要地址时由 `spokeAddress`（从 `reserveId` 解析，payload 本就不返回该字段）补足。
+- **保留部分**：`RuntimeReserveData.spokeName`、`EXPECTED_RUNTIME_FIELDS` 条目与 DB `spoke_name` 归档列不变 —— 该字段继续用于日志与档案，只是不再是公开字段。
+
+原「后果」一节中「`spokeName` 字段值从 `MAIN_SPOKE` 变为 `Main`（API 输出变化）」已被本条取代。

@@ -24,6 +24,7 @@ import type {
 } from "@internal/aave-shared-contracts";
 import { v4ReserveId } from "@internal/aave-shared-contracts";
 import { logger } from "./logger.js";
+import { auditV4ReserveShape } from "./reserve-shape.js";
 import { toFiniteNumber, percentValueToPercent } from "./utils/number.js";
 import { V4ChainsFetchError } from "./v4-errors.js";
 import { fetchV4WithRetry, type V4FetchResult } from "./v4-retry.js";
@@ -95,6 +96,11 @@ async function fetchV4MarketsDataInner(): Promise<V4FetchResult> {
 
   const v4Reserves = reservesResult.value;
   logger.info(`✅ [V4] Fetched ${v4Reserves.length} reserves`);
+
+  // AAV-1379 follow-up: report the payload shape before mapping it. `canBorrow`
+  // etc. default permissively here, so a key that goes missing would silently
+  // re-enable a reserve — the audit turns that into a logged warning instead.
+  auditV4ReserveShape(v4Reserves);
 
   // 3. Map each V4 Reserve → RuntimeReserveData
   const dataset: V4FormattedReserveData[] = [];

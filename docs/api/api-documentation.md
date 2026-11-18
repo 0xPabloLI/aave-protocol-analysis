@@ -19,10 +19,13 @@
 - **API 基础路径**:
   - `/api/markets` - 市场数据（含 on-chain 字段）
   - `/api/meta/side-data` - 侧数据聚合（categories + fdv + forecast）
+  - `/api/meta/e-mode`、`/api/meta/e-mode/{marketKey}` - V3 eMode 类别与资产成员关系（AAV-1394）
   - `/health`、`/api/health` - 健康检查
 - **数据格式**: JSON
 - **字符编码**: UTF-8
-- **端点总数**: **4 条 URL**（若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 3 个逻辑端点）
+- **端点总数**: **6 条 URL**（若将 `GET /health` 与 `GET /api/health` 视为同一逻辑则共 5 个逻辑端点）
+
+> **OpenAPI spec 的范围（AAV-1293 / AAV-1394）**：`/api/docs/openapi.json` 只描述**公开数据面**（`GET /markets`、`GET /meta/side-data`、`GET /meta/e-mode`、`GET /meta/e-mode/{marketKey}`）。`/api/seo/*` 是内部管理面（`X-Admin-Token`，经 Supabase `seo-proxy` 调用），单独记录在 [seo-api-documentation.md](./seo-api-documentation.md)，**不**纳入公开 spec；`/health`、`/metrics`、`/api/docs/openapi.json` 同样不在范围内。
 
 ## Rate Limiting & Security
 
@@ -30,6 +33,8 @@
 | ----------------------------- | ------------------- | ----------------------------- | --------------- |
 | `GET /api/markets`            | 120 req/min per IP  | 无（公开）                    | N/A (GET)       |
 | `GET /api/meta/side-data`     | 120 req/min per IP  | 无（公开）                    | N/A (GET)       |
+| `GET /api/meta/e-mode`        | 120 req/min per IP  | 无（公开）                    | N/A (GET)       |
+| `GET /api/meta/e-mode/:key`   | 120 req/min per IP  | 无（公开）                    | N/A (GET)       |
 | `GET /health`, `/api/health`  | 无                  | 无（公开）                    | N/A (GET)       |
 | `GET /api/seo/*`              | 无                  | `X-Admin-Token` (timing-safe) | N/A (GET)       |
 | `POST /api/seo/semrush`       | 无                  | `X-Admin-Token`               | 256 KB          |
@@ -47,6 +52,13 @@
 | 启动 warmup 未完成 | `MARKETS_SNAPSHOT_NOT_READY` | 10 秒       | 数据正在加载，稍后重试        |
 | 数据超过 hardTTL   | `MARKETS_SNAPSHOT_STALE`     | 60 秒       | cron 持续刷新失败，等待下一轮 |
 
+`GET /api/meta/e-mode` 与详情路径的 503：
+
+| 场景                              | errorCode                  | Retry-After | 含义                                        |
+| --------------------------------- | -------------------------- | ----------- | ------------------------------------------- |
+| snapshot 冷启动                   | `EMODE_SNAPSHOT_NOT_READY` | 10 秒       | markets 快照尚未建立                        |
+| snapshot 有数据但 V3 eMode 未就绪 | `EMODE_DATA_UNAVAILABLE`   | 15 秒       | V3 fetch 尚未成功，或硬 TTL 内无 stale 数据 |
+
 ## Freshness Contract
 
 API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即"建议刷新提示"而非最终服务边界。真正的 `hardTTL` 由后端 freshness 文档定义；当接口需要硬边界或 fallback 策略时，以后端实现和 `docs/backend/data-freshness-mechanism.md` 为准。
@@ -55,6 +67,7 @@ API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即"建议刷�
 | ------------------------------- | ------------------- | ------------------------------------------------------------ |
 | `GET /api/markets`              | snapshot 软过期提示 | 请求不触发刷新，硬边界由后端 markets 服务控制                |
 | `GET /api/meta/side-data`       | 各子块的 softTTL    | `categories` / `fdv` / `forecast` 各自保留独立 `staleTimeMs` |
+| `GET /api/meta/e-mode*`         | 无 `staleTimeMs`    | 跟随 markets snapshot 的 1m 刷新；响应头 `Cache-Control` 60s |
 | 其他带 `staleTimeMs` 的缓存字段 | 子快照 softTTL      | 仅表示刷新节奏，不代表一定会强制失败                         |
 
 ## 数据模型
@@ -63,7 +76,7 @@ API 文档中的 `staleTimeMs` 统一表示对外的 `softTTL`，即"建议刷�
 
 市场储备数据的完整结构，包含所有激励信息。
 
-> **前端字段映射**：各字段在前端界面中的展示名称、排序选项、派生计算公式见 [field-glossary.md](./field-glossary.md)。
+> **前端字段映射**：各字段在前端界面中的展示名称、排序选项、派生计算公式见 [field-glossary.md](../../aaveapy-doc/field-glossary.md)。
 
 ```typescript
 interface RuntimeReserveData {
@@ -84,8 +97,10 @@ interface RuntimeReserveData {
   hubName?: string; // 【仅 V4】Hub 名称，如 "Core"
   hubAddress?: string; // 【仅 V4】Hub 合约地址
   spokeId?: string; // 【仅 V4】Spoke 唯一标识符（base64）
-  spokeName?: string; // 【仅 V4】Spoke 名称，如 "Main"
   spokeAddress?: string; // 【仅 V4】Spoke 合约地址（市场入口）
+  // `spokeName` 不在 API 输出中（AAV-449）：它与 `marketName` 的后缀重复，
+  // 且 SDK 路径（"Main"）与 RPC fallback 路径（"MAIN_SPOKE"/"unknown"）取值语义漂移。
+  // Spoke 身份用 `spokeId`；`spokeAddress` 由前端从 `reserveId` 解析得到。
 
   // 【仅 V4】字段层级语义（Hub & Spoke 架构）
   // V4 的 Hub & Spoke 架构中，部分字段为 Hub 级别（同一 Hub+token 的所有 Spoke 共享），
@@ -107,6 +122,15 @@ interface RuntimeReserveData {
   borrowApy?: number; // 【单位: 百分比】Borrow APY，如 3.97 表示 3.97%（即使禁用也返回真实值）
   borrowDisabled?: boolean; // 借贷是否被禁用（仅当 true 时出现），原因：borrowingState=DISABLED 或 borrowCap=1
   borrowCapUsd?: number; // 【单位: USD】借贷上限金额，与 supplyCapUsd 对称
+
+  // 抵押与清算参数（AAV-1222 引入；百分比口径，链上 BPS / 100）
+  // ltv === 0 是协议真值，不是缺字段（AAV-1380）：该资产不提供 **base 模式**借力。
+  // 三种真实成因：治理把稳定币 base LTV 置 0（阻断递归借贷）／资产不具抵押资格（liquidationThreshold 亦为 0）／
+  // V3.6 isFrozen 时 ltv 被强制为 0（liquidationThreshold 不变，Health Factor 不受影响）。
+  // eMode 的 LTV **不**并入本字段：同一资产在 eMode 类别下可能更高（例：WETH base 81% vs ETH-correlated 93%）。
+  ltv?: number; // 【单位: 百分比】抵押 LTV（80 = 80%）。V3: supplyInfo.maxLTV，V4: settings.collateralFactor。
+  liquidationThreshold?: number; // 【单位: 百分比】清算阈值（82.5 = 82.5%）。V3: supplyInfo.liquidationThreshold，V4 与 ltv 相同（单一 collateralFactor）。0 = 不具抵押资格。
+  collateralRisk?: number; // 【仅 V4】【单位: 百分比】抵押风险参数（链上 uint24，BPS）。Risk Premium 模拟的输入，影响等效借款 APY；V3 不返回。
 
   // 协议激励（已完全迁移到结构化字段，单位: 百分比）
   // 注：Merit 激励字段（meritSupplys/meritBorrows）已随 Merit 计划终止移除（AAV-1289）。
@@ -320,6 +344,8 @@ flowchart LR
 - `partial`: 某个子块失败时仍可返回部分成功结果
 - `errors`: 按子块返回失败原因
 - 各子块保留自己的 `fetchedAt` / `staleTimeMs`（softTTL）
+- **`ETag`（AAV-365）**：弱标签 `W/"<32 hex>"`，由**语义内容**计算（对象键排序、数组保序），排除两个保活标记 `generatedAt` 与 `campaignAccess.updatedAt`；`fetchedAt` / `staleTimeMs` / 子块数据仍参与哈希，真实重取必换标签
+- **条件请求**：带 `If-None-Match: <上一轮 ETag>` 且内容未变 → `304`（空体，保留 `ETag` 与 `Cache-Control`）；请求头 `Cache-Control: no-cache` 一律返回完整 `200`
 
 **说明**:
 
@@ -330,7 +356,95 @@ flowchart LR
 
 ---
 
-### 3. 健康检查
+### 3. 获取 V3 eMode 类别
+
+**端点**:
+
+- `GET /api/meta/e-mode` — 市场索引
+- `GET /api/meta/e-mode/{marketKey}` — 单个市场的类别与成员关系
+
+**描述**: eMode 是 V3 的 per-market 类别配置，不属于 base 风险参数。`/api/markets` 的 `ltv` 永远是 base LTV（AAV-1380 已确认 `0` 是协议真值）；需要按用户实际启用的 eMode 类别取 LTV/LT 的消费方，从这里取数。
+
+- `marketKey` = `{chainId}:{poolAddress}`（pool 小写），与 `/api/markets` 的 `reserveId` 前两段同源。
+- 只覆盖 V3 市场。V4 的 eMode 是独立的 E-Mode Spoke（部署级隔离），不在本端点。
+- 请求只读内存快照；数据随 markets cron（1m）刷新。
+
+**请求参数**:
+
+- 索引：无
+- 详情：路径参数 `marketKey`，格式 `^[0-9]+:0x[0-9a-fA-F]{40}$`
+
+**响应格式**:
+
+```typescript
+interface EModeIndexPayload {
+  generatedAt: string; // markets snapshot 的 _metadata.timestamp
+  markets: {
+    marketKey: string;
+    chainId: number;
+    chainName: string;
+    marketName: string;
+    categoryCount: number;
+  }[];
+}
+
+interface EModeMarketPayload {
+  generatedAt: string;
+  marketKey: string;
+  chainId: number;
+  chainName: string;
+  marketName: string;
+  categories: {
+    id: number;
+    label: string;
+    maxLtv: number; // percent, 93 = 93%
+    liquidationThreshold: number; // percent
+    liquidationPenalty: number; // percent
+    collateralReserves: string[]; // 小写地址，只含 canBeCollateral=true
+    borrowableReserves: string[]; // 小写地址，只含 canBeBorrowed=true
+  }[];
+}
+```
+
+**响应示例**:
+
+```json
+{
+  "generatedAt": "2026-11-17T05:00:00.000Z",
+  "marketKey": "1:0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2",
+  "chainId": 1,
+  "chainName": "Ethereum",
+  "marketName": "AaveV3Ethereum",
+  "categories": [
+    {
+      "id": 1,
+      "label": "ETH correlated",
+      "maxLtv": 93,
+      "liquidationThreshold": 95,
+      "liquidationPenalty": 1,
+      "collateralReserves": ["0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"],
+      "borrowableReserves": ["0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"]
+    }
+  ]
+}
+```
+
+**状态码**:
+
+- `200`: 成功（索引无市场、或详情 `categories: []` 都是合法 200）
+- `400`: `EMODE_INVALID_MARKET_KEY`
+- `404`: `EMODE_MARKET_NOT_FOUND`（含 V4 市场 key）
+- `503`: `EMODE_SNAPSHOT_NOT_READY` / `EMODE_DATA_UNAVAILABLE`（见上文 503 表）
+
+**消费要点**:
+
+- 用 `getUserEMode()` 返回的类别 id 匹配 `categories[].id`；类别 0 回退 `/api/markets` 的 base `ltv`.
+- 只把 `collateralReserves` 里的地址当作该类别可抵押资产；不在数组里 = 该类别下不可抵押（不是“LTV=0 但可抵押”）。
+- 前端本地用 `tokenAddress` 关联 `/api/markets` 的 reserve 行，拿 symbol/decimals。
+
+---
+
+### 4. 健康检查
 
 **端点**: `GET /health` / `GET /api/health`
 
@@ -651,7 +765,8 @@ Merkl 返回里历史上存在两套命名：
 **状态码**:
 
 - `200`: 至少有一块数据成功（`partial` 可能为 `true`）。
-- `500`: categories、fdv、forecast、campaignAccess 均失败（无可用侧数据）。
+- `304`: `If-None-Match` 与当前内容标签一致（内容未变，无响应体）。
+- `500`: categories、fdv、forecast、campaignAccess 均失败（无可用侧数据）。错误路径强制 `Cache-Control: no-store`，且不携带内容标签。
 
 ---
 

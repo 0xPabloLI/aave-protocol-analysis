@@ -7,7 +7,7 @@ test("MarketsResponse.snapshot includes deficitFallbackReserveIds", () => {
   const response: MarketsResponse = {
     snapshot: {
       lastUpdated: new Date().toISOString(),
-      version: "snapshot-v3",
+      version: "snapshot-v4",
       staleTimeMs: 0,
       schemaFingerprint: "test",
       deficitFallbackReserveIds: [],
@@ -22,7 +22,7 @@ test("MarketsResponse.snapshot includes v4FallbackReserveIds", () => {
   const response: MarketsResponse = {
     snapshot: {
       lastUpdated: new Date().toISOString(),
-      version: "snapshot-v3",
+      version: "snapshot-v4",
       staleTimeMs: 0,
       schemaFingerprint: "test",
       deficitFallbackReserveIds: [],
@@ -41,7 +41,7 @@ test("MarketsResponse.snapshot deficitFallbackReserveIds can contain reserveIds"
   const response: MarketsResponse = {
     snapshot: {
       lastUpdated: new Date().toISOString(),
-      version: "snapshot-v3",
+      version: "snapshot-v4",
       staleTimeMs: 0,
       schemaFingerprint: "test",
       deficitFallbackReserveIds: [

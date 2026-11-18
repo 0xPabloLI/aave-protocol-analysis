@@ -6,6 +6,7 @@ import {
   v4SpokeCacheKey,
   v3PriceKey,
   v4PriceKey,
+  v3MarketKey,
   v3OnchainKey,
   v4OnchainKey,
   chainTokenKey,
@@ -115,6 +116,18 @@ describe("v4PriceKey", () => {
     const writeKey = v4PriceKey(1, "0xSPOKE", "0xTOKEN");
     const lookupKey = v4PriceKey(1, "0xspoke", "0xtoken");
     assert.equal(writeKey, lookupKey);
+  });
+});
+
+describe("v3MarketKey", () => {
+  test("produces chainId:normalizedPool format", () => {
+    assert.equal(v3MarketKey(1, "0xPool"), "1:0xpool");
+  });
+
+  test("is the first two segments of v3OnchainKey", () => {
+    const marketKey = v3MarketKey(1, "0xPOOL");
+    const reserveId = v3OnchainKey(1, "0xPOOL", "0xTOKEN");
+    assert.equal(reserveId.slice(0, reserveId.lastIndexOf(":")), marketKey);
   });
 });
 

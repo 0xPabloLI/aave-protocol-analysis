@@ -185,6 +185,45 @@ test(
   }
 );
 
+/**
+ * AAV-449: `spokeName` is no longer part of `/api/markets`. It repeated the V4
+ * `marketName` suffix (`AaveV4Main` vs `Main`) and carried no stable meaning —
+ * the SDK path said `Main`, the RPC fallback said `MAIN_SPOKE` or `unknown`.
+ * V4 identity travels through `spokeId` (and `spokeAddress`, which the client
+ * derives from `reserveId`).
+ *
+ * Asserting both halves matters: a serializer that accidentally dropped the
+ * whole V4 identity block would make the absence check pass vacuously.
+ */
+test(
+  "API fields v4 — spokeName is gone while V4 identity remains",
+  { skip: !process.env.RUN_API_FIELDS_TESTS },
+  () => {
+    const data = markets();
+    if (!data) {
+      assert.fail(`Could not fetch API at ${API_URL}`);
+    }
+
+    const leaked = data.reserves
+      .filter((reserve) => "spokeName" in reserve)
+      .slice(0, 5)
+      .map(reserveLabel);
+    assert.deepEqual(
+      leaked,
+      [],
+      `spokeName is still exposed on ${leaked.length} reserve(s): ${leaked.join(", ")}`
+    );
+
+    const v4WithIdentity = data.reserves.filter((reserve) =>
+      present(reserve, "spokeId")
+    );
+    assert.ok(
+      v4WithIdentity.length > 0,
+      "No V4 reserve carries spokeId — the absence assertion above would pass vacuously"
+    );
+  }
+);
+
 test(
   "API fields v3 — always-present fields are on every reserve",
   { skip: !process.env.RUN_API_FIELDS_TESTS },
@@ -208,6 +247,84 @@ test(
       missing,
       [],
       `${missing.length} missing field(s) out of ${data.reserves.length} reserves: ${missing.slice(0, 10).join(", ")}. Note baseBorrowRate is filled by an on-chain fallback — check RPC coverage before the serialiser.`
+    );
+  }
+);
+
+/**
+ * AAV-1380: 312 of 441 reserves ship `ltv: 0`. That is a real protocol value
+ * (governance LTV-0 on stablecoins, non-collateral assets, and V3.6 freeze),
+ * not the field-mapping defect the ticket suspected — chain state matched the
+ * API on 103/103 reserves. The count is governance-dependent, so nothing here
+ * pins it. What must hold forever is the relation between the two slots read
+ * from the same reserve config: borrow power can never exceed the liquidation
+ * threshold, and on V4 a single `collateralFactor` fills both. A mis-sourced
+ * field breaks these long before someone notices borrow capacity is wrong.
+ */
+test(
+  "API fields v3 — ltv never exceeds liquidationThreshold on any reserve",
+  { skip: !process.env.RUN_API_FIELDS_TESTS },
+  () => {
+    const data = markets();
+    if (!data) {
+      assert.fail(`Could not fetch API at ${API_URL}`);
+    }
+
+    const violations: string[] = [];
+    for (const reserve of data.reserves) {
+      const ltv = reserve.ltv;
+      const liquidationThreshold = reserve.liquidationThreshold;
+      // Absence is the ALWAYS_PRESENT assertion's job; only compare numbers.
+      if (typeof ltv !== "number" || typeof liquidationThreshold !== "number") {
+        continue;
+      }
+      if (ltv > liquidationThreshold) {
+        violations.push(
+          `${reserveLabel(reserve)}: ltv ${ltv} > liquidationThreshold ${liquidationThreshold}`
+        );
+      }
+    }
+
+    assert.deepEqual(
+      violations,
+      [],
+      `Borrow power above liquidation threshold on ${violations.length} reserve(s): ${violations.slice(0, 10).join(", ")}`
+    );
+  }
+);
+
+test(
+  "API fields v3 — V4 fills ltv and liquidationThreshold from one collateralFactor",
+  { skip: !process.env.RUN_API_FIELDS_TESTS },
+  () => {
+    const data = markets();
+    if (!data) {
+      assert.fail(`Could not fetch API at ${API_URL}`);
+    }
+
+    const v4 = data.reserves.filter((reserve) =>
+      String(reserve.marketName ?? "").startsWith("AaveV4")
+    );
+    assert.ok(v4.length > 0, "No V4 reserves in response — nothing checked");
+
+    const mismatched: string[] = [];
+    for (const reserve of v4) {
+      const ltv = reserve.ltv;
+      const liquidationThreshold = reserve.liquidationThreshold;
+      if (typeof ltv !== "number" || typeof liquidationThreshold !== "number") {
+        continue;
+      }
+      if (ltv !== liquidationThreshold) {
+        mismatched.push(
+          `${reserveLabel(reserve)}: ltv ${ltv} !== liquidationThreshold ${liquidationThreshold}`
+        );
+      }
+    }
+
+    assert.deepEqual(
+      mismatched,
+      [],
+      `V4 merges both risk parameters into one collateralFactor; ${mismatched.length} of ${v4.length} V4 reserves disagree: ${mismatched.slice(0, 10).join(", ")}`
     );
   }
 );

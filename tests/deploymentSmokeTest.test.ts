@@ -33,7 +33,9 @@ import {
   isCommitSha,
   normalizeEnvironmentName,
   resolveDeploymentTarget,
+  resolveRollbackGate,
   selectRailwayRollbackTarget,
+  selectRollbackCandidate,
 } from "../.github/scripts/deployment-smoke-test-helpers.mjs";
 
 // Real values from a Railway deployment_status event in this repository.
@@ -287,4 +289,461 @@ test("createSmokeTestIssuePayload: failure title when the rollback attempt faile
     payload.body,
     /Auto-rollback failed — manual intervention required/
   );
+});
+
+test("createSmokeTestIssuePayload: success title when the rollback executed", () => {
+  const payload = createSmokeTestIssuePayload({
+    environment: "staging",
+    sha: "1234567890abcdef",
+    runUrl: "https://example.com/run",
+    rollbackExecuted: "true",
+    rollbackOutcome: "success",
+  });
+
+  assert.equal(
+    payload.title,
+    "🚨 staging smoke test failed — auto-rollback accepted"
+  );
+  assert.match(
+    payload.body,
+    /Auto-rollback accepted — Railway is redeploying the previous release/
+  );
+});
+
+test("createSmokeTestIssuePayload: gated title wins over a failed rollback outcome", () => {
+  const payload = createSmokeTestIssuePayload({
+    environment: "production",
+    sha: "fedcba0987654321",
+    runUrl: "https://example.com/run",
+    rollbackExecuted: "false",
+    rollbackOutcome: "failure",
+    rollbackGated: "true",
+  });
+
+  assert.equal(
+    payload.title,
+    "🚨 production smoke test failed — auto-rollback GATED (manual action required)"
+  );
+  assert.match(payload.body, /Auto-rollback gated/);
+  assert.match(payload.body, /RAILWAY_PRODUCTION_ROLLBACK_ENABLED/);
+});
+
+test("createSmokeTestIssuePayload: gated accepts a boolean true as well as the output string", () => {
+  const payload = createSmokeTestIssuePayload({
+    environment: "production",
+    sha: "fedcba0987654321",
+    runUrl: "https://example.com/run",
+    rollbackExecuted: "false",
+    rollbackOutcome: "success",
+    rollbackGated: true,
+  });
+
+  assert.match(payload.title, /auto-rollback GATED/);
+});
+
+// ── rollback target selection: real Railway payloads ─────────────────────────
+//
+// Captured 2026-11-16 with the same `deployments(input:, first: 5)` query the
+// workflow runs. Only the fields the selector reads are kept. The head is the
+// first edge; Railway returns newest first.
+
+const STAGING_EDGES = [
+  {
+    node: {
+      id: "49e5f677-5755-4e9f-a25d-2d3829b030ae",
+      status: "SUCCESS",
+      createdAt: "2026-11-16T04:02:17.573Z",
+      canRollback: true,
+      meta: {
+        reason: "deploy",
+        commitHash: "5ceb6e65ebe2826ab23a79a315a05260d867f918",
+      },
+    },
+  },
+  {
+    node: {
+      id: "b211ea61-3dbf-4560-b9fb-5517c8188524",
+      status: "REMOVED",
+      createdAt: "2026-11-16T01:11:47.003Z",
+      canRollback: true,
+      meta: { reason: "deploy", commitHash: "878f41e" },
+    },
+  },
+  {
+    node: {
+      id: "0eadb3dd-ac48-4521-8907-9ab97388852a",
+      status: "REMOVED",
+      createdAt: "2026-11-15T15:03:52.683Z",
+      canRollback: true,
+      meta: { reason: "deploy", commitHash: "91a36af" },
+    },
+  },
+];
+
+const PRODUCTION_EDGES = [
+  {
+    node: {
+      id: "1586d53f-c8ac-46ad-9e16-22ffe458ff1a",
+      status: "SUCCESS",
+      createdAt: "2026-11-15T13:02:29.843Z",
+      canRollback: true,
+      meta: {
+        reason: "deploy",
+        commitHash: "4ab7243fd39df7d771c9ad6656cb31025dc6cce2",
+      },
+    },
+  },
+  {
+    node: {
+      id: "6195f301-ab73-4f8f-aba6-6cc52b72edd5",
+      status: "REMOVED",
+      createdAt: "2026-11-11T08:02:09.370Z",
+      canRollback: true,
+      meta: { reason: "deploy", commitHash: "192c3dc" },
+    },
+  },
+  {
+    node: {
+      id: "500bec81-2aa7-47aa-b589-3bc757d435ae",
+      status: "REMOVED",
+      createdAt: "2026-11-11T07:16:57.119Z",
+      canRollback: false,
+      meta: { reason: "deploy", commitHash: "81c0328" },
+    },
+  },
+];
+
+test("selectRollbackCandidate: real staging payload selects the previous deployment, never the head", () => {
+  const plan = selectRollbackCandidate(STAGING_EDGES);
+
+  assert.deepEqual(plan, {
+    headId: "49e5f677-5755-4e9f-a25d-2d3829b030ae",
+    targetId: "b211ea61-3dbf-4560-b9fb-5517c8188524",
+    targetCommit: "878f41e",
+    targetStatus: "REMOVED",
+    targetCreatedAt: "2026-11-16T01:11:47.003Z",
+    eligibleCount: 3,
+    reason: "selected",
+  });
+});
+
+test("selectRollbackCandidate: real production payload selects the previous deployment", () => {
+  const plan = selectRollbackCandidate(PRODUCTION_EDGES);
+
+  assert.equal(plan.headId, "1586d53f-c8ac-46ad-9e16-22ffe458ff1a");
+  assert.equal(plan.targetId, "6195f301-ab73-4f8f-aba6-6cc52b72edd5");
+  assert.equal(plan.targetCommit, "192c3dc");
+  assert.equal(plan.eligibleCount, 2);
+  assert.equal(plan.reason, "selected");
+});
+
+test("selectRollbackCandidate: a newer redeploy or rollback deployment is not a rollback target", () => {
+  // Captured after the third staging drill. The head is the restore redeploy,
+  // then the drill's rollback, the deploy that the restore copied, another
+  // redeploy, the second drill's rollback, and the last real release.
+  // Recovery copies are redundant rollback targets and can point at the
+  // head's own commit; only the release `b6a3be43` is selected.
+  const plan = selectRollbackCandidate([
+    {
+      node: {
+        id: "5cbb4957",
+        status: "SUCCESS",
+        createdAt: "2026-11-16T07:13:44.842Z",
+        canRollback: true,
+        meta: { reason: "redeploy", commitHash: "10cda0e" },
+      },
+    },
+    {
+      node: {
+        id: "697784e8",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:43:25.805Z",
+        canRollback: true,
+        meta: { reason: "rollback", commitHash: "12c6c16" },
+      },
+    },
+    {
+      node: {
+        id: "b2598e00",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:38:30.562Z",
+        canRollback: true,
+        meta: { reason: "deploy", commitHash: "10cda0e" },
+      },
+    },
+    {
+      node: {
+        id: "ef9f3c09",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:31:03.565Z",
+        canRollback: true,
+        meta: { reason: "redeploy", commitHash: "12c6c16" },
+      },
+    },
+    {
+      node: {
+        id: "e9044226",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:10:43.499Z",
+        canRollback: true,
+        meta: { reason: "rollback", commitHash: "61879da" },
+      },
+    },
+    {
+      node: {
+        id: "b6a3be43",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:05:52.344Z",
+        canRollback: true,
+        meta: { reason: "deploy", commitHash: "12c6c16" },
+      },
+    },
+  ]);
+
+  assert.equal(plan.headId, "5cbb4957");
+  assert.equal(plan.targetId, "b6a3be43");
+  assert.equal(plan.targetCommit, "12c6c16");
+  assert.equal(plan.targetCreatedAt, "2026-11-16T06:05:52.344Z");
+  assert.equal(plan.eligibleCount, 6);
+  assert.equal(plan.reason, "selected");
+});
+
+test("selectRollbackCandidate: a release with the head's commit is not a target", () => {
+  const plan = selectRollbackCandidate([
+    {
+      node: {
+        id: "restored-head",
+        status: "SUCCESS",
+        createdAt: "2026-11-16T07:13:44.842Z",
+        canRollback: true,
+        meta: { reason: "redeploy", commitHash: "10cda0e" },
+      },
+    },
+    {
+      node: {
+        id: "same-commit-release",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:38:30.562Z",
+        canRollback: true,
+        meta: { reason: "deploy", commitHash: "10cda0e" },
+      },
+    },
+  ]);
+
+  assert.equal(plan.targetId, "");
+  assert.equal(plan.eligibleCount, 2);
+  assert.equal(plan.reason, "same-commit-as-head");
+});
+
+test("selectRollbackCandidate: no release deployment is a target", () => {
+  const plan = selectRollbackCandidate([
+    {
+      node: {
+        id: "head",
+        status: "SUCCESS",
+        createdAt: "2026-11-16T07:13:44.842Z",
+        canRollback: true,
+        meta: { reason: "deploy", commitHash: "10cda0e" },
+      },
+    },
+    {
+      node: {
+        id: "previous-rollback",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:43:25.805Z",
+        canRollback: true,
+        meta: { reason: "rollback", commitHash: "12c6c16" },
+      },
+    },
+    {
+      node: {
+        id: "previous-redeploy",
+        status: "REMOVED",
+        createdAt: "2026-11-16T06:31:03.565Z",
+        canRollback: true,
+        meta: { reason: "redeploy", commitHash: "61879da" },
+      },
+    },
+  ]);
+
+  assert.equal(plan.targetId, "");
+  assert.equal(plan.eligibleCount, 3);
+  assert.equal(plan.reason, "no-release-deployment");
+});
+
+test("selectRollbackCandidate: a head-only canRollback list fails closed instead of redeploying the broken head", () => {
+  const plan = selectRollbackCandidate([
+    {
+      node: {
+        id: "broken-head",
+        status: "SUCCESS",
+        createdAt: "2026-11-16T04:00:00.000Z",
+        canRollback: true,
+        meta: { commitHash: "badc0de" },
+      },
+    },
+  ]);
+
+  assert.equal(plan.headId, "broken-head");
+  assert.equal(plan.targetId, "");
+  assert.equal(plan.eligibleCount, 1);
+  assert.equal(plan.reason, "only-head-eligible");
+});
+
+test("selectRollbackCandidate: a rollback head fails closed instead of looping", () => {
+  const plan = selectRollbackCandidate([
+    {
+      node: {
+        id: "rollback-head",
+        status: "REMOVED",
+        createdAt: "2026-11-16T05:46:36.786Z",
+        canRollback: true,
+        meta: { reason: "rollback", commitHash: "5ceb6e6" },
+      },
+    },
+    {
+      node: {
+        id: "previous-deploy",
+        status: "REMOVED",
+        createdAt: "2026-11-16T05:40:13.159Z",
+        canRollback: true,
+        meta: { reason: "deploy", commitHash: "61879da" },
+      },
+    },
+  ]);
+
+  assert.equal(plan.headId, "rollback-head");
+  assert.equal(plan.targetId, "");
+  assert.equal(plan.eligibleCount, 2);
+  assert.equal(plan.reason, "head-is-rollback");
+});
+
+test("selectRollbackCandidate: no canRollback deployment has no target", () => {
+  const plan = selectRollbackCandidate([
+    {
+      node: {
+        id: "head",
+        status: "SUCCESS",
+        createdAt: "2026-11-16T04:00:00.000Z",
+        canRollback: false,
+      },
+    },
+    {
+      node: {
+        id: "older",
+        status: "REMOVED",
+        createdAt: "2026-11-15T04:00:00.000Z",
+        canRollback: false,
+      },
+    },
+  ]);
+
+  assert.equal(plan.targetId, "");
+  assert.equal(plan.eligibleCount, 0);
+  assert.equal(plan.reason, "no-eligible-deployment");
+});
+
+test("selectRollbackCandidate: empty and malformed lists do not throw", () => {
+  for (const edges of [[], undefined, null, [null, {}], "not-an-array"]) {
+    const plan = selectRollbackCandidate(edges as never);
+    assert.equal(plan.targetId, "");
+    assert.equal(plan.reason, "no-deployments");
+  }
+});
+
+test("selectRollbackCandidate: a single non-head eligible deployment is selected", () => {
+  const plan = selectRollbackCandidate([
+    {
+      node: {
+        id: "head",
+        status: "SUCCESS",
+        createdAt: "2026-11-16T04:00:00.000Z",
+        canRollback: false,
+      },
+    },
+    {
+      node: {
+        id: "only-previous",
+        status: "REMOVED",
+        createdAt: "2026-11-15T04:00:00.000Z",
+        canRollback: true,
+        meta: { reason: "deploy", commitHash: "abc1234" },
+      },
+    },
+  ]);
+
+  assert.equal(plan.targetId, "only-previous");
+  assert.equal(plan.targetCommit, "abc1234");
+  assert.equal(plan.reason, "selected");
+});
+
+// ── production rollback gate ─────────────────────────────────────────────────
+
+test("resolveRollbackGate: staging is always allowed", () => {
+  assert.deepEqual(
+    resolveRollbackGate({
+      environmentLabel: "staging",
+      productionRollbackEnabled: undefined,
+    }),
+    { allowed: true, reason: "staging" }
+  );
+  assert.deepEqual(
+    resolveRollbackGate({
+      environmentLabel: "STAGING",
+      productionRollbackEnabled: "false",
+    }),
+    { allowed: true, reason: "staging" }
+  );
+});
+
+test("resolveRollbackGate: production is gated unless the exact literal true is set", () => {
+  const gatedValues = [
+    undefined,
+    null,
+    "",
+    "false",
+    "TRUE",
+    "True",
+    "1",
+    "yes",
+    "on",
+    " true ",
+  ];
+
+  for (const value of gatedValues) {
+    assert.deepEqual(
+      resolveRollbackGate({
+        environmentLabel: "production",
+        productionRollbackEnabled: value,
+      }),
+      { allowed: false, reason: "production-gated" },
+      `value ${JSON.stringify(value)} must stay gated`
+    );
+  }
+
+  assert.deepEqual(
+    resolveRollbackGate({
+      environmentLabel: "production",
+      productionRollbackEnabled: "true",
+    }),
+    { allowed: true, reason: "production-enabled" }
+  );
+});
+
+test("resolveRollbackGate: an unknown or empty environment fails closed", () => {
+  for (const environmentLabel of [
+    "",
+    "preview",
+    "aaveapy / preview",
+    undefined,
+  ]) {
+    assert.deepEqual(
+      resolveRollbackGate({
+        environmentLabel,
+        productionRollbackEnabled: "true",
+      }),
+      { allowed: false, reason: "unknown-environment" },
+      `environment ${JSON.stringify(environmentLabel)} must stay gated`
+    );
+  }
 });

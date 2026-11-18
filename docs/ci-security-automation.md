@@ -80,12 +80,16 @@ This repository has five related workflows:
    - Result: bot PRs merge automatically after required CI checks pass
 
 5. `Deployment Smoke Test` (`.github/workflows/deployment-smoke-test.yml`)
-   - Triggered via `deployment_status` when Railway reports a successful deployment on `main` / `railway`
+   - Triggered via `deployment_status` when Railway reports a successful deployment on `main` / `railway`; also exposes a manual `workflow_dispatch` rollback drill (below)
    - **Not** triggered by `push` — avoids deadlock with Railway's "Wait for CI" (see below)
    - Runs right after Railway reports deploy success: resolve target from `deployment.ref` with fallback to deployment environment, then health check, `/api/markets` (≥50 reserves + snapshot), `/api/meta/side-data`, frontend accessibility (curl retries only; no long poll for `commitSha`)
-   - On failure: auto-rollback via Railway GraphQL `deploymentRollback` mutation, then creates a GitHub issue with `smoke-test-failure` label
-   - Rollback target: newest `canRollback == true` deployment that is not the current broken head
-   - Rollback secret selection is branch-specific with no production→staging fallback when the chosen environment secret is empty; notification issue titles also reflect rollback succeeded/skipped/failed state
+   - On failure: auto-rollback via Railway GraphQL `deploymentRedeploy(target)` (not `deploymentRollback`), then creates a GitHub issue with `smoke-test-failure` label
+   - Rollback target: newest **release** deployment (`canRollback == true`, `meta.reason: "deploy"`) whose commit differs from the current broken head. `redeploy`/`rollback` deployments are recovery copies of an earlier release; recovering to one is redundant and can point at the head's own commit. Selection is **fail-closed**: `head-is-rollback`, `no-release-deployment`, `same-commit-as-head` and `only-head-eligible` all leave no target, so the job errors and requires manual intervention instead of recovering the broken commit or the same commit. The log records the head/target IDs, commits and the selection reason.
+   - **Production gate**: production auto-rollback runs only when the repository variable `RAILWAY_PRODUCTION_ROLLBACK_ENABLED` is exactly `true` (case-sensitive; padded values stay gated). Unset or any other value closes the gate: the rollback job exits non-zero, emits `rollback_gated=true`, and the failure issue is titled `auto-rollback GATED (manual action required)`. Staging is never gated. Do not set the variable until the staging drill has passed.
+   - **Concurrency**: keyed on `github.event.deployment.id`, with `cancel-in-progress: false`. Every deployment in an environment reports the same `"aaveapy / staging"` environment string, so an environment key let the rollback deployment cancel the run performing the rollback before the failure issue was created. The auto-rollback job and the drill also share the job-level `railway-rollback-<environment>` group, so a manual drill cannot mutate the same environment while a real rollback is running.
+   - **Manual drill**: `workflow_dispatch` takes `environment` (`staging`/`production`), `mode` (`plan`/`execute`) and `confirm`. `plan` is read-only and works for both environments; `execute` is staging-only, requires `confirm=rollback-staging`, checks the gate again, performs a real `deploymentRedeploy(targetId)`, polls `/health.commitSha` via `.github/scripts/wait-for-commit-sha.sh` for up to 5 minutes (the final staging drill `43835257174` passed: target 92s, restore 71s), then restores the original head via `deploymentRedeploy` even when the post-recovery wait failed. Command and evidence recording: `docs/runbooks/app-deploy-failure.md`.
+   - ⚠️ **`deploymentRollback` is not in the automated path.** It was executed four times on 2026-11-16: every call returned `true`, but the rollback deployment served in 10m43s at best, took 21m17s in the second drill, and did not serve within 30 minutes in the last two; `/health` was empty throughout. `deploymentRedeploy` of the same image served in 40–92 seconds, so the workflow uses it. A `deploymentRollback` experiment now lives only in the runbook, with the `deploymentRedeploy(headId)` recovery command next to it. The helper still fails closed with `head-is-rollback` (observed on staging deployment `4a9c722c`) in case a manual experiment leaves such a head; do not put `deploymentRollback` back into the workflow without re-testing the platform's rollout.
+   - Rollback secret selection is branch-specific with no production→staging fallback when the chosen environment secret is empty; notification issue titles reflect rollback accepted/skipped/failed/GATED state
    - Branch → environment mapping: `main` → production (`api.aaveapy.com`), `railway` → staging (`staging-api.aaveapy.com`)
 
 ### Third-party actions: SHA pinning
@@ -185,7 +189,7 @@ push → CI (push-triggered, Railway waits for this)
          Smoke test triggers (deployment_status event)
               ↓ health + API checks on live backend
               ├→ all checks pass → done
-              └→ any check fails → auto-rollback + GitHub issue
+              └→ any check fails → auto-rollback (staging always; production only when the gate is open) + GitHub issue
 ```
 
 Context fields come from `github.event.deployment.*` (not `github.sha` / `github.ref_name`). The workflow gates on `deployment_status.state == 'success'`, then resolves target branch/environment from `deployment.ref` with fallback to `deployment.environment` so commit-SHA deployments do not skip smoke tests when `ref` is empty.
