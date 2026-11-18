@@ -10,6 +10,7 @@
 3. 同一文件混有其他工作时，用 `git add -p` 只选择本 session hunk。
 4. stage 时显式列路径，不使用 `git add -A` 或 `git add .`。
 5. 不通过 restore、reset、clean、checkout 等方式覆盖或删除用户工作。
+6. 清理共享 checkout 前先拍 WIP 快照：`npm run wip:snapshot`（机制见 `~/Documents/code/agent-harness/slots/wip-snapshot.md`）。跟踪改动、未暂存改动、未跟踪文件一起进 `refs/wip/<stamp>`，不碰 index 与工作树；恢复命令 `git checkout <ref> -- .` 写进当轮汇报。`git stash create` 只覆盖跟踪改动，是错的工具。
 
 ## 2. Branch 与 Worktree
 

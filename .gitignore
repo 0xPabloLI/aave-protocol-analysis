@@ -96,6 +96,7 @@ node_modules
 scripts/*
 !scripts/sync-coingecko-platform-map.ts
 !scripts/patch-ethers-exports.js
+!scripts/wip-snapshot.mjs
 !scripts/check-no-hardcoded-bin-paths.sh
 !scripts/check-workspace-coverage.sh
 !scripts/check-no-omit-dev-in-ci-autofix.sh

@@ -22,6 +22,7 @@
   "scripts": {
     "build": "npm run build -w @internal/aave-shared-contracts -w @internal/aave-rpc-infra -w @internal/aave-fetcher && tsc",
     "dev": "tsx src/cli.ts",
+    "wip:snapshot": "node scripts/wip-snapshot.mjs",
     "dev:watch": "tsx watch src/cli.ts",
     "start": "node dist/cli.js",
     "postinstall": "node scripts/patch-ethers-exports.js",

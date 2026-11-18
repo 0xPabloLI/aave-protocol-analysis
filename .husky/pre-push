@@ -12,7 +12,11 @@ bash scripts/hook-autofix.sh pre-push
 # paths were re-validated against them. Do not re-add them — a reappearing copy of
 # glob 13 / minimatch 10 is a regression.
 # scan:mcp (.mcp.json supply chain) stays manual: npm run scan:mcp
-OSV_ALLOWLIST="GHSA-848j-6mx2-7j84"
+# picomatch ReDoS (<=4.0.7) is dev-only here and has no fixed release yet: npm's latest
+# is 4.0.7, OSV lists last_affected only. Re-check by 2026-11-30; drop the id once
+# 4.0.8 exists. `npm audit fix --package-lock-only` rewrites ~1500 unrelated lines
+# and still leaves 33 highs, so the lock stays put.
+OSV_ALLOWLIST="GHSA-848j-6mx2-7j84|GHSA-fc5q-39xc-vjpf"
 if command -v osv-scanner >/dev/null 2>&1; then
   # set -e safe: every pipeline that may match nothing ends with "|| true"
   if ! osv-scanner --lockfile package-lock.json 2>/dev/null; then
