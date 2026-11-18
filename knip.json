@@ -6,7 +6,8 @@
         "repro-consumer.ts",
         "ecosystem.config.cjs",
         "tests/*.test.ts",
-        "scripts/verification/**"
+        "scripts/verification/**",
+        "scripts/commit-msg-session-id.mjs"
       ],
       "project": ["src/**/*.ts", "scripts/**", "tests/**/*.ts"]
     },
