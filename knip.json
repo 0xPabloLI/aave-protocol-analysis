@@ -3,6 +3,7 @@
   "workspaces": {
     ".": {
       "entry": [
+        "scripts/commit-msg-session-id.mjs",
         "repro-consumer.ts",
         "ecosystem.config.cjs",
         "tests/*.test.ts",
@@ -15,8 +16,7 @@
       "ignore": ["dist/**"]
     },
     "packages/aave-fetcher": {
-      "entry": ["src/cli.ts", "tests/*.test.ts", "scripts/**/*.mjs"],
-      "ignoreDependencies": ["playwright"]
+      "entry": ["src/cli.ts", "tests/*.test.ts", "scripts/**/*.mjs"]
     }
   },
   "ignoreFiles": ["**/schema-fingerprint.ts"],

@@ -50,6 +50,19 @@ const run = (root: string, args: string[] = []) =>
     encoding: "utf8",
   });
 
+// CI runner 没有 user.name/user.email；快照必须在那种机器上也能落 ref，
+// 所以这里用空的 HOME + 禁 system config 复现「无身份」环境。
+const runWithoutIdentity = (root: string) =>
+  execFileSync(process.execPath, [SCRIPT, "--repo", root], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: root,
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: join(root, ".no-such-gitconfig"),
+    },
+  });
+
 const refs = (root: string) =>
   execFileSync("git", ["for-each-ref", "--format=%(refname)", "refs/wip"], {
     cwd: root,
@@ -127,6 +140,21 @@ test("dry-run reports paths and writes no ref", () => {
     writeFileSync(join(root, "scratch.txt"), "x\n");
     assert.match(run(root, ["--dry-run"]), /dry-run: 1 path/);
     assert.deepEqual(refs(root), []);
+  });
+});
+
+test("snapshots on a machine with no git identity (CI runner)", () => {
+  withRepo((root) => {
+    writeFileSync(join(root, "notes.txt"), "body\n");
+    runWithoutIdentity(root);
+    assert.equal(refs(root).length, 1);
+    assert.equal(
+      execFileSync("git", ["show", `${refs(root)[0]}:notes.txt`], {
+        cwd: root,
+        encoding: "utf8",
+      }).trim(),
+      "body"
+    );
   });
 });
 
