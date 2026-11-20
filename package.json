@@ -90,7 +90,7 @@
     "globals": "17.14.0",
     "husky": "9.1.7",
     "jscpd": "5.4.3",
-    "knip": "6.44.2",
+    "knip": "6.45.1",
     "lint-staged": "17.6.0",
     "prettier": "3.9.10",
     "syncpack": "15.3.3",
