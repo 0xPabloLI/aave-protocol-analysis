@@ -61,7 +61,7 @@
     "session:end": "node scripts/session-id.mjs end"
   },
   "dependencies": {
-    "@aave-dao/aave-address-book": "4.77.6",
+    "@aave-dao/aave-address-book": "4.77.8",
     "@aave/contract-helpers": "^1.37.1",
     "@internal/aave-fetcher": "1.0.0",
     "@internal/aave-shared-config": "1.0.0",
