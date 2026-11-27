@@ -29,7 +29,7 @@
     "@internal/aave-rpc-infra": "1.0.0",
     "@internal/aave-shared-config": "1.0.0",
     "@internal/aave-shared-contracts": "1.0.0",
-    "@sentry/node": "^10.74.0",
+    "@sentry/node": "^11.0.0",
     "@types/compression": "^1.8.1",
     "@types/pg": "^8.20.0",
     "compression": "^1.8.2",
