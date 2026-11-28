@@ -24,7 +24,7 @@
     "@internal/aave-shared-config": "1.0.0",
     "@internal/aave-shared-contracts": "1.0.0",
     "ethers": "5.8.0",
-    "viem": "2.57.19"
+    "viem": "2.58.4"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
